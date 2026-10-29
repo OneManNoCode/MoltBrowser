@@ -1,6 +1,6 @@
 # Touchless browsing: MoltBrowser by voice alone
 
-Status: **proposal**, October 2026. Nothing here is built yet; §11 lists the owner's decisions that come before Phase 1.
+Status: **proposal**, October 2026. Phase 0 is built, behind `chrome://flags/#molt-voice-mode`, and waits for the build machine (§10); §11 lists the owner's decisions that come before Phase 1.
 
 The goal: a person who can't use a keyboard, mouse, touch screen or any other pointing device can use the whole browser with their voice. They hear what matters read back to them. If they have some sight, they see it large on screen.
 
@@ -98,6 +98,17 @@ Five layers, tried in this order:
 
 "What can I say?" lists what fits the current page.
 
+**Implementation note (Phase 0, round 37): the voice loop.** `molt_ai/voice/voice_controller_logic.h` decides, `voice_controller.h` does it in a window (§6.2, §6.5, §6.6). What each layer does today:
+1. **Direct commands** become steps: browser commands (back, forward, reload, home, zoom, full screen, tabs), the media session (pause, resume, seek, next), the tab's mute, accessibility actions on the page (press, focus, set text, submit, scroll, a volume slider's increment and decrement). A command that needs something the page lacks says so and what to say instead ("I can't find a volume control on this page. Say mute or unmute.").
+   - **Sites** (`voice_sites.h`): a small built-in table (YouTube, Google, DuckDuckGo, Wikipedia, Brave Search, Bing) with search pages for "search YouTube for ...". A spoken address becomes `https://` and the address, only when it reads as a host name. Any other name is searched for with the default search engine, and the browser says so: it never makes up a domain. Every URL passes `agent_safety::IsAllowedNavigationURL()` before it loads.
+   - **"Search for X"** types into the page's own search field (a search box, `type=search`, or a field whose name says "search") and submits it; without one, the known site's search page, else the default engine.
+2. **Choosing** (`voice_candidates.h`): from the list the browser read last, else the page's main list, else every numbered item. "The fourth one" is a position; a number is the position the browser read out, or, while numbers are shown, the number on screen (the list is then read with those numbers, so what is heard is what is seen). When two or more fit, the close ones are read back, numbered 1, 2, 3, and the answer picks among them ("the Live Aid one", "two"), or from the whole list if it names another.
+3. **Dictation** goes to the field the user chose (or the focused one, or the page's only one): "type" adds to its text, "delete the last word", "clear", "read it back", "submit" (a search field submits at once; any other form asks first). Never in a password, card or code field.
+4. **Tasks** and anything else the grammar leaves `kUnknown` reach a planner hook (`VoiceController::SetPlannerHook()`), empty until the planner comes; the browser says it can't do that yet. Routines say they come later.
+5. **Questions about the page:** not yet.
+
+"What can I say?" reads examples from the grammar's own table (`CommandInfos()`) that fit the page: choosing when there is a list, media when there is a player, dictation in a field, yes and no while a question waits.
+
 ### 5.3 Numbers on everything
 
 "Show numbers" (or on by default in voice mode) puts a large number on every link, button, field, result and video, as Windows Voice Access and macOS Voice Control do. The browser also groups the page's repeated items: search results, videos, products, emails, comments. It reads them as one numbered list, each item with its title and the parts that tell them apart (channel, author, duration, price, date).
@@ -180,6 +191,14 @@ Five layers, tried in this order:
 - **Trust stays with the browser:** a site comes out as host-like text ("youtube", "example.com"), never a URL. The browser resolves it and checks it with `agent_safety`. A choice is resolved by the matcher (§6.4), and an action still passes §7's confirmations.
 - **Not yet:** spoken punctuation in dictation, a site's name on its own ("YouTube" alone), and other languages.
 
+**Implementation note (round 37): from command to action.** `PlanUtterance(text, map, environment, state)` in `voice_controller_logic.h` is std-only and unit-tested on hand-built pages; it returns the steps to run, the words to say and the next conversation state.
+- **Context** (`ContextFor()`): a yes/no question is pending only on the page it was asked on and for 30 s; a list holds only on its page (the controller changes the page id at every committed navigation and every tab switch); a field is being typed into only on its page.
+- **The conversation state:** the last list read (which list, to find again in a newer map of the same page), the choices offered after an unclear one and the verb to apply, the current entry for "the next one", a pending confirmation and the steps it holds, the field typed into, the heading and link cursors, numbers shown, verbosity and speech rate, and what was said last for "repeat".
+- **Steps after a page loads:** a navigation or submit is followed by a wait; the controller resumes when the navigation has committed, the page has stopped loading and its accessibility tree has been quiet for 0.5 s (a page whose tree never rests is read 4 s after the commit; at most 15 s in all), then plans the follow-up: "YouTube is open", the results read, the page's title and its list, or the video of a page opened to play. A site that plays what it opens (YouTube does) gets 1.5 s to start before the browser clicks the video, which would pause it.
+- **Confirmations:** pressing anything whose name says buy, purchase, pay, order, checkout, delete, remove, send, post, publish, reply, comment, submit, confirm, subscribe, unsubscribe, donate, transfer, sign out or log out, a link to a sign-out address, anything on a page with a payment-card field (agent_safety treats card fields as sensitive), and submitting a form that isn't a search. The browser says "Say yes to press Buy now, or no to cancel." and runs the held steps only on a "yes" in that context; any other command drops the question.
+- **Page text is read, never obeyed:** it reaches only the spoken words and the matcher, after `SpeechSafeText()`. The steps come from the grammar's command and the map's structure; a page's "say yes to buy" is read as the entry it is.
+- **MoltNet:** voice mode doesn't start in a MoltNet window (§7.4): no accessibility mode is taken, and a command only hears "Voice mode is off in MoltNet windows."
+
 ### 6.3 Page map
 
 - **Source:** `WebContents::RequestAXTreeSnapshot()` gives the page's accessibility tree: roles, names, states, values, headings, landmarks, links and media, across frames and shadow DOM. This is the same structure screen readers use.
@@ -244,6 +263,14 @@ Five layers, tried in this order:
   - Phase 2 adds a bundled neural voice in the speech service, registered through `TtsEngineDelegate`, so it sounds the same on every OS.
   - In MoltNet the voice list pages see through `speechSynthesis.getVoices()` is then the same everywhere, which closes a fingerprinting surface.
 - **The overlay:** a MoltBrowser view above the page holds the caption bar, the numbers and the focus ring. It is drawn by the browser, so pages can't read or fake it.
+
+**Implementation note (Phase 0, round 37): spoken answers.** `molt_ai/voice/voice_speech.h` speaks through `content::TtsController` with the platform's voices, at the user's rate ("speak faster" and "slower" step it by 1.25, from 0.5 to 2.5).
+- **Interruptible:** a new command or "stop" silences voice mode's speech, current and queued (it leaves a page's own speech alone when voice mode isn't speaking); each answer interrupts whatever was being said.
+- **Utterances belong to the profile**, not the tab, so a navigation doesn't cut "YouTube is open" short. Long readings are spoken in chunks of at most 1,200 characters, so stopping is quick.
+- **Verbosity:** brief reads a list's count, normal the first five results (ten headings or links), full all of them with their dates, views and details.
+- **Platforms:** Windows and macOS need nothing. On Linux, Chromium's speech needs speech-dispatcher (`libspeechd.so.2`) and the `--enable-speech-dispatcher` switch; without them voice mode is silent and only the caption shows what it says. Whether MoltBrowser's Linux launcher should pass the switch is the owner's call: it also gives pages `speechSynthesis` voices, a fingerprinting surface in MoltNet (see Voices above).
+- **Showing:** `VoiceController::Observer` gives the overlay the caption (state, what was heard, what is happening), what is said, "show numbers" and the item acted on; the agent panel's voice field shows the same as text.
+- **Typed commands until the speech service:** with `chrome://flags/#molt-voice-mode` on, the Agent mode panel (`chrome://molt-ai-agent`) has a "Type a voice command" field for keyboard users and the build machine. It sends what was typed to its window's controller (at most 1,000 bytes, checked in the handler); the answer is spoken and listed as text.
 
 ### 6.7 Site skills
 
@@ -347,6 +374,11 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - **The test harness of §12.**
 
 **Exit:** a scripted run (text in, no microphone yet) opens YouTube, searches, reads the results and plays the fourth by number and by name.
+
+**Status (round 37): built; the exit run waits for the build machine.**
+- **Done:** the page map and accessibility actions (round 36, §6.3, §6.5); the grammar and the matcher (round 36, §6.2, §6.4); the accessibility audit of MoltBrowser's pages (round 36, `docs/ACCESSIBILITY.md`); spoken output through `TtsController` and the voice loop that joins them (round 37, §5.2, §6.2, §6.6); the numbers overlay and caption bar (round 37's overlay workstream, §5.3, §5.5).
+- **The exit criterion** is `VoiceControllerBrowserTest.TheOwnersScenario` (`chrome/browser/molt_ai/voice/voice_controller_browsertest.cc`): typed utterances open the fixture video site by name, search it, hear the 20 results (captured from a fake TTS platform), play the fourth with sound, pause, go back, and play "the live one by Queen" after the browser asks which of three. It runs on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md` §5.1), then by hand on real YouTube with each OS's voices (§7.3).
+- **Still open:** the engine measurements (`tools/voice_bench/`, finishing); the browser UI's own tree in the page map; the §12 synthetic speech set (Phase 1, with the speech service).
 
 ### Phase 1: Voice mode (about 3 to 4 rounds)
 - **Voice:** the speech service with echo cancellation, voice activity, the wake phrase and streaming recognition.

@@ -768,6 +768,8 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `ui/views/toolbar/toolbar_view.cc` (the AI mode, Agent mode, MoltNet and import buttons' names and roles: `AdjustAccessibleName` and `UpdateAccessibleCheckedState` overrides, `GetViewAccessibility().SetRole(kToggleButton)`, `SetCheckedState`, `SetHasPopup`), `molt_net_bubble.cc` and `molt_import_bubble.cc` (`SetAccessibleTitle`, `SetInitiallyFocusedView`), every `molt_*_ui.cc`, `molt_ai_chat_ui_js.h` and `molt_webui_csp.h` (`kMoltA11yJs`; the pages' raw strings) | type-checked against 156's headers in round 36 (Linux; Windows too, except `toolbar_view.cc`, which the check models for Linux only); the toolbar's names, roles and pressed state need §7.3's look in a built browser | a11y-webui |
 | `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
 
+| `voice/voice_controller.cc`, `voice/voice_speech.cc`, `voice/voice_page_controller.cc` (new `Increment()`, `Decrement()`, `ScrollPage()`), `ui/webui/molt_ai/molt_ai_agent_voice_handler.cc`, `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-voice-mode`) | type-checked against 156's headers here; what only the build shows: `DEFINE_USER_DATA` and `ui::ScopedUnownedUserData` on the window, `TtsUtterance::SetEventDelegate(std::unique_ptr)`, `MediaSession::GetMediaSessionInfoSync()` and `SeekTo()`, `TemplateURLRef::ReplaceSearchTerms()`, `SetTabAudioMuted()`, the new GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to `//chrome/browser/search_engines`, `//chrome/browser/ui:browser_commands`, `//chrome/browser/ui/tabs:utils` and `//services/media_session/public/mojom` | voice-loop |
+
 ### 4.9 GN targets and DEPS edges
 
 Since round 28 (gn-ready) the GN graph, the DEPS rules and Blink's audit
@@ -1084,6 +1086,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetCameraValuesTest.*` (new cases: `EveryCameraShowsEveryEntry`, `FormatInUseShowsTheSameEntries`, `GridTicks`, `GridIgnoresTheCamerasTiming`, `GridSkipsTicksItMissed`, `GridStopsAndResumes`; built standalone here) | fp-camera2 |
   | `MoltNetCameraValuesTest.*` (the cameras' menu, the entries a camera shows and the mode it opens in), `MoltNetAudioCaptureTest.*` (the browser's decision on the CPU-independent processing replaces the renderer's), `MoltCpuIndependentProcessingTest.DownmixesOtherLayouts` (a QUAD and a 5.1 microphone: opened in their layout, processed as their down-mix) and the setSinkId case of `MoltNetMediaValuesTest.*` | fp-media4 |
   | `PageMapTest.*`, `PageMapTextTest.*`, `PageMapAgentSafetyTest.*` (built standalone here), `AXPageSourceTest.*` (needs the build: real `ui::AXTree`s from `AXTreeUpdate`s, frames joined through child tree ids, the caps, the focused frame) | page-map |
+  | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1170,6 +1173,34 @@ extension enablement and `MediaRouterEnabled()`).
   the numbers: the code suggests a few hundred bytes to about 1 KB per
   node in each process, and serialization work after every change to the
   page.
+- [ ] The voice loop's browser tests (voice-loop): Phase 0's exit
+  criterion through the whole loop, with the spoken answers captured from
+  a fake TTS platform. In the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceControllerBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/voice-loop-browser-tests.log
+  ```
+  *Expected:* all 4 pass, on macOS and Linux:
+  - `TheOwnersScenario`: typed utterances open the fixture video site by
+    name ("open VideoSite"), search it through its own search box, hear
+    "20 results. 1: Queen – Bohemian Rhapsody (Official Video
+    Remastered), Queen Official, 6 minutes. ...", play the fourth one
+    (the page must report a trusted click with user activation, and the
+    video playing and not muted), pause it, go back ("Bohemian Rhapsody -
+    VideoSite. 20 items. ..."), hear the three live videos offered for
+    "play the live one by Queen" and play "the Live Aid one".
+  - `BuysOnlyAfterASpokenYes`: "Add to cart" is pressed at once; "Buy now"
+    only on the "yes" that follows its question, never after a "no" or
+    another command.
+  - `StaysOffInMoltNetWindows`: a MoltNet window only says "Voice mode is
+    off in MoltNet windows.", navigates nowhere and takes no
+    accessibility mode.
+  - `SearchesForASiteItDoesntKnow`: "open Netflix" goes to the default
+    search engine (a fixture), says so, and reads its 10 results.
+
+  If one fails, send the log: the page waits (load, quiet tree, the
+  autoplay grace) are timed for a desktop; a wait that runs out shows as a
+  missing or early reading. A failure in what is said prints both texts.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -2043,6 +2074,35 @@ Linux now, Windows when its builds resume:
   Voice Control's "Show names" and "Click AI mode" work (from a11y-webui).
 - [ ] *Deferred (Windows):* NVDA, JAWS, Narrator, Voice Access and the
   contrast themes, the same list (from a11y-webui).
+
+**Voice mode** (from voice-loop; `docs/VOICE_COMMANDS.md`,
+TOUCHLESS_BROWSING.md §2). Turn on `chrome://flags/#molt-voice-mode`,
+open Agent mode and type in "Type what you would say":
+
+- [ ] The owner's scenario on real YouTube, with each OS's own voices
+  (macOS: the system voice; Linux: speech-dispatcher installed and the
+  browser started with `--enable-speech-dispatcher`; Windows deferred): "open
+  YouTube", "search for Bohemian Rhapsody", listen to the results, "play
+  the fourth one", "pause", "resume", "louder", "skip ahead one minute",
+  "full screen", "exit full screen", "go back", "play the live one by
+  Queen" (and the answer to its question). *Expected:* each is done and
+  answered aloud within about a second of the page settling; the video
+  plays with sound and is not paused by the browser's click (YouTube plays
+  what it opens: the browser waits 1.5 s for it); the results read are
+  YouTube's own titles, channels and lengths. Note any step that fails, is
+  slow or says something wrong, with the YouTube page's language and
+  layout, and send them: YouTube's pages change and the page map reads
+  them as they are.
+- [ ] The same on google.com ("open Google", "search for ...", "open the
+  second one") and Wikipedia ("search Wikipedia for Queen", "read the
+  headings", "next heading").
+- [ ] "Click buy now" (or any "Buy" button on a test shop) asks "Say yes
+  to press ..." and does nothing until "yes"; "open" a name the browser
+  doesn't know searches for it with the default engine and says so.
+- [ ] A MoltNet window: a command says "Voice mode is off in MoltNet
+  windows." and `chrome://accessibility` shows no mode on its tabs.
+- [ ] With VoiceOver or Orca running, the panel's "Heard: ..." line is
+  announced once per change and the browser's own speech isn't cut by it.
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
