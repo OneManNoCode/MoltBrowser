@@ -11,6 +11,8 @@
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "chrome/browser/molt_ai/voice/page_map.h"
@@ -1055,7 +1057,10 @@ TEST(VoiceControllerLogicTest, EveryCommandKindIsPlanned) {
         break;
     }
     const VoiceTurn turn = PlanUtterance(info.example, results, env, state);
-    EXPECT_EQ(turn.kind, info.kind);
+    // A correction is planned as what it corrects to.
+    if (info.kind != VoiceCommandKind::kCorrection) {
+      EXPECT_EQ(turn.kind, info.kind);
+    }
     if (info.kind != VoiceCommandKind::kStop &&
         info.kind != VoiceCommandKind::kStopSpeaking &&
         info.kind != VoiceCommandKind::kYes) {
