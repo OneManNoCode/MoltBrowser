@@ -30,9 +30,9 @@
 //   enumerateDevices() MediaDevices::DevicesEnumerated (InputDeviceInfo.
 //                       getCapabilities())     -> UseUniformCameraFormats
 //
-// Chromium's constraints algorithm runs on the menu entries a camera reaches
-// as if they were its modes, so the capabilities, the settings and the
-// constraints a page can or can't satisfy are the menu's. The selected
+// Chromium's constraints algorithm runs on the menu entries, every camera's
+// whatever its modes, as if they were its modes, so the capabilities, the
+// settings and the constraints a page can or can't satisfy are the menu's. The selected
 // settings then mark the track's VideoTrackAdapterSettings
 // (molt_uniform_camera()): its frames are cropped to the aspect ratio of the
 // track's size and scaled to exactly that size, into new I420 frames, where
@@ -40,10 +40,11 @@
 // (which a VideoFrame from MediaStreamTrackProcessor shows as codedWidth and
 // visibleRect) and would never scale up. A track whose page asked for
 // resizeMode "none" gets the entry's own size and getSettings() reports
-// "none". The device opens in the mode UniformCameraOpenMode() picks, which
-// reaches every entry the camera shows: the adapter only ever scales down
-// (but for a camera below the menu), and applyConstraints() reconfigures the
-// track on the running source instead of reopening the device.
+// "none". The device opens in the mode UniformCameraOpenMode() picks, the
+// smallest that reaches the larger entry (or the largest it has, from which
+// the entries it doesn't reach are scaled up), and applyConstraints()
+// reconfigures the track on the running source instead of reopening the
+// device.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIASTREAM_MOLTNET_CAMERA_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIASTREAM_MOLTNET_CAMERA_H_
@@ -79,9 +80,11 @@ namespace molt_fingerprinting {
 MODULES_EXPORT bool UsesUniformCamera(mojom::blink::MediaStreamType type);
 
 // The formats a page sees of a capture device of `type` whose modes are
-// `formats`: a MoltNet camera's are the menu entries it reaches
-// (moltnet::ReachableUniformCameraModes()), I420, none for a device without
-// a mode; other devices' are `formats`.
+// `formats`: a MoltNet camera's are the menu entries
+// (moltnet::ShownUniformCameraModes(): all of them), I420, none for a device
+// without a mode; other devices' are `formats`. They don't depend on which
+// of the camera's modes `formats` lists (all of them, or the one it runs in
+// when another window has it open).
 MODULES_EXPORT Vector<media::VideoCaptureFormat> UniformCameraFormats(
     const Vector<media::VideoCaptureFormat>& formats,
     mojom::blink::MediaStreamType type);
@@ -111,10 +114,10 @@ MODULES_EXPORT void UseUniformCameraSettings(
     Vector<VideoCaptureSettings>& settings);
 
 // The capture parameters a source of a device of `type` opens it with:
-// a MoltNet camera opens in its mode in `native_formats` that reaches every
-// entry it shows (moltnet::UniformCameraOpenMode()), at no more than the
-// menu's rate, whatever entry `params` (the selection's) asks for. Other
-// devices', or a camera without a mode, `params`.
+// a MoltNet camera opens in its mode in `native_formats` that reaches the
+// larger entry, or its largest (moltnet::UniformCameraOpenMode()), at no
+// more than the menu's rate, whatever entry `params` (the selection's) asks
+// for. Other devices', or a camera without a mode, `params`.
 MODULES_EXPORT media::VideoCaptureParams UniformCameraCaptureParams(
     const media::VideoCaptureParams& params,
     const Vector<media::VideoCaptureFormat>& native_formats,

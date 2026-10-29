@@ -20,7 +20,7 @@ Vector<moltnet::CameraMode> UniformCameraMenu(
     const Vector<moltnet::CameraMode>& modes) {
   Vector<moltnet::CameraMode> menu;
   for (const moltnet::CameraMode& entry :
-       moltnet::ReachableUniformCameraModes(AsSpan(modes))) {
+       moltnet::ShownUniformCameraModes(AsSpan(modes))) {
     menu.push_back(entry);
   }
   return menu;

@@ -14,16 +14,15 @@
 // adapter crops and scales the camera's frames to the size chosen
 // ("crop-and-scale", VideoTrackAdapter), also when the page asks for an
 // entry's own size (resizeMode "none"). The device itself opens in one of
-// its own modes, one that reaches every entry the camera shows
-// (UniformCameraOpenMode()), so the track adapter only ever scales down and
-// no later request reopens the device.
+// its own modes, the smallest that reaches the largest entry where it has one
+// (UniformCameraOpenMode()), so that no later request reopens the device.
 //
-// A camera shows the entries it reaches (ReachableUniformCameraModes()):
-// those its modes can be cropped and scaled down to, at the menu's rate. One
-// whose largest mode is 640x480 shows 640x480 alone; one that reaches no
-// entry (a 320x240 camera) shows the smallest entry, to which its frames are
-// scaled up. Either way a page sees entries of the menu, never a device's
-// own modes.
+// Every camera shows every entry (ShownUniformCameraModes()), whatever its
+// modes: a camera that doesn't reach an entry (a 640x480 camera's 1280x720,
+// a 320x240 camera's both) has its frames scaled up to it. So a page sees the
+// same entries of the menu on every machine, never a device's own modes, and
+// nothing that tells a camera that reaches the larger entry from one that
+// doesn't.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_CAMERA_VALUES_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_CAMERA_VALUES_H_
@@ -42,8 +41,7 @@ struct CameraMode {
 };
 
 // The menu, smallest entry first. Each entry is at least as wide and as tall
-// as the one before, so the entries a camera reaches are always a first part
-// of the menu.
+// as the one before.
 inline constexpr CameraMode kUniformCameraMenu[] = {
     {640, 480, 30.0f},
     {1280, 720, 30.0f},
@@ -57,18 +55,18 @@ inline constexpr float kUniformCameraFrameRate = 30.0f;
 // some cameras).
 inline constexpr float kUniformCameraFastFrameRate = 29.5f;
 
-// The entries of kUniformCameraMenu a camera with `modes` shows: those that
-// one of its modes is at least as wide and as tall as, among its modes at
-// the menu's rate (all of its modes if none is); the smallest entry if it
-// reaches none. Empty only when `modes` has no mode of a positive size.
-std::span<const CameraMode> ReachableUniformCameraModes(
+// The entries of kUniformCameraMenu a camera with `modes` shows: all of them,
+// whatever its modes. Empty only when `modes` has no mode of a positive size
+// (no camera to show).
+std::span<const CameraMode> ShownUniformCameraModes(
     std::span<const CameraMode> modes);
 
-// The mode, an index into `modes`, a camera opens in for a MoltNet page: of
-// the modes ReachableUniformCameraModes() went by, the smallest that reaches
-// the largest entry the camera shows, at the rate closest to the menu's from
-// above (the fastest if none is that fast); the largest of them if it
-// reaches no entry. nullopt when `modes` has no mode of a positive size.
+// The mode, an index into `modes`, a camera opens in for a MoltNet page.
+// Among its modes at the menu's rate (all of its modes if none is), the
+// smallest that is at least as wide and as tall as the largest entry, at the
+// rate closest to the menu's from above (the fastest if none is that fast);
+// the largest of them if none is that large, from which the larger entries
+// are scaled up. nullopt when `modes` has no mode of a positive size.
 std::optional<size_t> UniformCameraOpenMode(std::span<const CameraMode> modes);
 
 // The frame rate a camera opening in `mode` asks for: the menu's, or the

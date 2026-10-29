@@ -40,6 +40,10 @@ bool Reaches(const CameraMode& mode, const CameraMode& entry) {
   return mode.width >= entry.width && mode.height >= entry.height;
 }
 
+// The largest entry, which the mode a camera opens in reaches if it can.
+constexpr const CameraMode& kLargestEntry =
+    kUniformCameraMenu[std::size(kUniformCameraMenu) - 1];
+
 // Whether the modes a camera goes by are its fast ones: it has one.
 bool GoesByFastModes(std::span<const CameraMode> modes) {
   return std::ranges::any_of(modes, [](const CameraMode& mode) {
@@ -51,21 +55,11 @@ bool GoesBy(const CameraMode& mode, bool fast_modes) {
   return HasSize(mode) && (!fast_modes || IsFast(mode.frame_rate));
 }
 
-// How many entries of the menu, from the first, the modes gone by reach.
-size_t EntriesReached(std::span<const CameraMode> modes, bool fast_modes) {
-  size_t reached = 0;
-  for (const CameraMode& mode : modes) {
-    if (!GoesBy(mode, fast_modes)) {
-      continue;
-    }
-    size_t n = 0;
-    while (n < std::size(kUniformCameraMenu) &&
-           Reaches(mode, kUniformCameraMenu[n])) {
-      ++n;
-    }
-    reached = std::max(reached, n);
-  }
-  return reached;
+// Whether one of the modes gone by reaches the largest entry.
+bool ReachesLargestEntry(std::span<const CameraMode> modes, bool fast_modes) {
+  return std::ranges::any_of(modes, [fast_modes](const CameraMode& mode) {
+    return GoesBy(mode, fast_modes) && Reaches(mode, kLargestEntry);
+  });
 }
 
 int64_t Area(const CameraMode& mode) {
@@ -84,25 +78,23 @@ bool IsCloserRate(float a, float b) {
 
 }  // namespace
 
-std::span<const CameraMode> ReachableUniformCameraModes(
+std::span<const CameraMode> ShownUniformCameraModes(
     std::span<const CameraMode> modes) {
   if (std::ranges::none_of(modes, HasSize)) {
     return {};
   }
-  const size_t reached = EntriesReached(modes, GoesByFastModes(modes));
-  return std::span<const CameraMode>(kUniformCameraMenu)
-      .first(std::max<size_t>(reached, 1));
+  return std::span<const CameraMode>(kUniformCameraMenu);
 }
 
 std::optional<size_t> UniformCameraOpenMode(
     std::span<const CameraMode> modes) {
   const bool fast_modes = GoesByFastModes(modes);
-  const size_t reached = EntriesReached(modes, fast_modes);
+  const bool reaches_largest = ReachesLargestEntry(modes, fast_modes);
   std::optional<size_t> best;
   for (size_t i = 0; i < modes.size(); ++i) {
     const CameraMode& mode = modes[i];
     if (!GoesBy(mode, fast_modes) ||
-        (reached > 0 && !Reaches(mode, kUniformCameraMenu[reached - 1]))) {
+        (reaches_largest && !Reaches(mode, kLargestEntry))) {
       continue;
     }
     if (!best) {
@@ -111,9 +103,9 @@ std::optional<size_t> UniformCameraOpenMode(
     }
     const CameraMode& current = modes[*best];
     if (Area(mode) != Area(current)) {
-      // The smallest that reaches the largest entry shown, or the largest of
-      // all when none reaches an entry.
-      if ((Area(mode) < Area(current)) == (reached > 0)) {
+      // The smallest that reaches the largest entry, or the largest of all
+      // when none does.
+      if ((Area(mode) < Area(current)) == reaches_largest) {
         best = i;
       }
       continue;
