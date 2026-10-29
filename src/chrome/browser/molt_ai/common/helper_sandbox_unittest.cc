@@ -865,13 +865,23 @@ TEST_F(HelperSandboxLimitsTest, WritesFilesAndNothingElse) {
   EXPECT_TRUE(
       ReadHelperOutputFile(scratch_.path().AppendASCII("out.txt"), 16, &text));
   EXPECT_EQ(text, std::string(16, 'x'));
-  // What it wrote stays: not deleted, renamed or moved into a directory.
+  // A file outside the scratch directory, which the helper may neither read
+  // nor reach: a hard link to it would give the helper a write handle to it
+  // and so a way out of the one place it may write, so the link is refused
+  // too (the scratch directory stays the only place the launcher measures).
+  base::ScopedTempDir elsewhere;
+  ASSERT_TRUE(elsewhere.CreateUniqueTempDir());
+  const base::FilePath outside = elsewhere.GetPath().AppendASCII("outside");
+  ASSERT_TRUE(base::WriteFile(outside, "outside\n"));
+  // What it wrote stays: not deleted, renamed or moved into a directory, nor
+  // a hard link to a file outside the scratch directory made.
   for (const std::vector<std::string>& args :
        std::vector<std::vector<std::string>>{
            {"delete", In("out.txt")},
            {"rename", In("out.txt"), In("moved.txt")},
            {"mkdir", In("dir")},
            {"symlink", "/etc/hosts", In("link")},
+           {"link", outside.value(), In("outlink")},
            {"xattr", In("out.txt")}}) {
     const std::string output = Output(args);
     EXPECT_TRUE(output.starts_with("DENIED")) << args[0] << ": " << output;
@@ -879,6 +889,11 @@ TEST_F(HelperSandboxLimitsTest, WritesFilesAndNothingElse) {
   EXPECT_TRUE(base::PathExists(scratch_.path().AppendASCII("out.txt")));
   EXPECT_FALSE(base::PathExists(scratch_.path().AppendASCII("moved.txt")));
   EXPECT_FALSE(base::PathExists(scratch_.path().AppendASCII("dir")));
+  EXPECT_FALSE(base::PathExists(scratch_.path().AppendASCII("outlink")));
+  // The outside file is untouched.
+  std::string outside_text;
+  EXPECT_TRUE(base::ReadFileToString(outside, &outside_text));
+  EXPECT_EQ(outside_text, "outside\n");
 }
 
 TEST_F(HelperSandboxLimitsTest, StopsAHelperThatWritesTooMuch) {
