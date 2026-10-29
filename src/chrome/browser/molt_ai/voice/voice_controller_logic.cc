@@ -25,6 +25,9 @@ constexpr size_t kMaxRememberedSpeechBytes = 16384;
 constexpr size_t kMaxHelpExamples = 9;
 // A link's address is scanned this far for a sign-out path.
 constexpr size_t kMaxUrlScan = 2048;
+// One spoken text and the caption's status, in code points.
+constexpr size_t kMaxSpokenTextChars = 2 * kMaxSpeechChunkChars;
+constexpr size_t kMaxStatusChars = 300;
 
 using K = VoiceCommandKind;
 
@@ -226,6 +229,8 @@ class Planner {
   VoiceTurn& turn() { return turn_; }
 
   void Say(std::string text) {
+    // Built from cleaned pieces; cleaned once more as it leaves.
+    text = SpeechSafeText(text, kMaxSpokenTextChars);
     if (text.empty()) {
       return;
     }
@@ -246,7 +251,9 @@ class Planner {
 
   void Add(VoiceStep step) { turn_.steps.push_back(std::move(step)); }
 
-  void Status(std::string status) { turn_.status = std::move(status); }
+  void Status(std::string status) {
+    turn_.status = SpeechSafeText(status, kMaxStatusChars);
+  }
 
   // ---- Commands ----------------------------------------------------------
 

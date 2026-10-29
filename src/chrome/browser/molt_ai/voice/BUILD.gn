@@ -341,6 +341,21 @@ source_set("voice_controller") {
   ]
 }
 
+# The loop's decisions over hostile page maps (page text, through a
+# renderer that may be compromised) and what anyone the browser can hear
+# says. See docs/FUZZING.md.
+fuzzer_test("molt_voice_controller_fuzzer") {
+  sources = [ "molt_voice_controller_fuzzer.cc" ]
+  deps = [
+    ":voice_loop",
+    "//base",
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+  ]
+  dict = "dicts/voice_command.dict"
+  seed_corpus = "corpus/molt_voice_controller_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("voice_loop_unit_tests") {
   testonly = true

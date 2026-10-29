@@ -301,6 +301,20 @@ FUZZERS = {
         max_len=16384,
         smoke_runs=20000,
     ),
+    # --- The browser: the voice loop (page maps and utterances) -----------
+    "molt_voice_controller_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "voice_sites",
+                "voice_candidates", "voice_speech_text",
+                "voice_controller_logic")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
+        tier="std",
+        dict="dicts/voice_command.dict",
+        max_len=16384,
+        smoke_runs=20000,
+    ),
     # --- The browser: the page map (voice mode) ----------------------------
     "molt_page_map_fuzzer": dict(
         dir=BROWSER,
