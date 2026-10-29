@@ -597,7 +597,7 @@ void ApplyInChild(const Prepared& prepared) {
   // No file past kMaxHelperFileBytes and no core dump: a helper a hostile
   // input took over can't fill the disk before its deadline. At most
   // kMaxHelperDataBytes of private memory and kMaxHelperOpenFiles open
-  // files. Only exec() follows, which RLIMIT_DATA doesn't hold back.
+  // files. (Nothing below allocates memory before exec().)
   if (!LowerLimit(RLIMIT_FSIZE, kMaxHelperFileBytes)) {
     FailInChild("setrlimit(RLIMIT_FSIZE)");
   }
