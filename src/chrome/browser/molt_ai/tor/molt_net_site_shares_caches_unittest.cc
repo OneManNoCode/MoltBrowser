@@ -221,7 +221,23 @@ TEST(MoltNetSiteSharesAuthTest, AGreedySiteEvictsOnlyItsOwnEntries) {
         }
       }
       EXPECT_EQ(remembered("polite.test", 2), 2);
-      EXPECT_EQ(sign_in("late.test", 0), nullptr);
+      EXPECT_LE(cache.GetEntriesSizeForTesting(),
+                net::kMoltHttpAuthShares.total);
+      // What a site holding none signs in with is kept all the same: past
+      // the total it takes the place of an entry of a site holding the
+      // most, so the sign-in prompt doesn't come back on every request.
+      for (int i = 0; i < 3; ++i) {
+        const std::string late = "late" + base::NumberToString(i) + ".test";
+        EXPECT_NE(sign_in(late, 0), nullptr);
+        EXPECT_EQ(remembered(late, 1), 1);
+      }
+      // A site that signs in to several servers keeps each, taking the
+      // places of the sites that hold more.
+      for (int i = 0; i < 3; ++i) {
+        EXPECT_NE(sign_in("intranet.test", i), nullptr);
+      }
+      EXPECT_EQ(remembered("intranet.test", 3), 3);
+      EXPECT_EQ(remembered("polite.test", 2), 2);
       EXPECT_LE(cache.GetEntriesSizeForTesting(),
                 net::kMoltHttpAuthShares.total);
     } else {
@@ -267,6 +283,46 @@ TEST_F(MoltNetSiteSharesServerPropertiesTest,
     }
     EXPECT_EQ(spdy, shares ? 5 : 0);
     EXPECT_EQ(http11, shares ? 5 : 0);
+  }
+}
+
+// A server's demand for HTTP/1.1 is always kept, as the request that met it
+// is sent again over HTTP/1.1 only through it (HttpNetworkTransaction::
+// HandleHttp11Required()): past the total, a site holding none takes the
+// place of an entry of a site holding the most, and a site holding fewer
+// keeps its own.
+TEST_F(MoltNetSiteSharesServerPropertiesTest, AnHttp11DemandIsAlwaysKept) {
+  net::HttpServerProperties properties;
+  properties.MoltKeepPerSiteShares();
+  for (int i = 0; i < 2; ++i) {
+    properties.SetHTTP11Required(ServerOf("polite.test", i),
+                                 KeyOf("polite.test"));
+  }
+  const int per_site =
+      static_cast<int>(net::kMoltHttp11RequiredShares.per_site);
+  for (size_t s = 0; s < net::kMoltSiteShareSites + 2; ++s) {
+    const std::string site = "g" + base::NumberToString(s) + ".test";
+    for (int i = 0; i < per_site; ++i) {
+      properties.SetHTTP11Required(ServerOf(site, i), KeyOf(site));
+    }
+  }
+  for (int i = 0; i < 3; ++i) {
+    const std::string late = "late" + base::NumberToString(i) + ".test";
+    properties.SetHTTP11Required(ServerOf(late, 0), KeyOf(late));
+    EXPECT_TRUE(properties.RequiresHTTP11(ServerOf(late, 0), KeyOf(late)));
+  }
+  // A site with several such servers keeps each.
+  for (int i = 0; i < 3; ++i) {
+    properties.SetHTTP11Required(ServerOf("intranet.test", i),
+                                 KeyOf("intranet.test"));
+  }
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_TRUE(properties.RequiresHTTP11(ServerOf("intranet.test", i),
+                                          KeyOf("intranet.test")));
+  }
+  for (int i = 0; i < 2; ++i) {
+    EXPECT_TRUE(properties.RequiresHTTP11(ServerOf("polite.test", i),
+                                          KeyOf("polite.test")));
   }
 }
 

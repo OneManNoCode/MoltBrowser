@@ -274,7 +274,8 @@ class MEDIA_EXPORT ScopedPortableSubnormals {
 // modes off (ScopedPortableSubnormals).
 
 // Whether a device of `layout` is down-mixed so: a named layout other than
-// mono and stereo.
+// mono and stereo that media's ChannelMixer takes (not the deprecated
+// STEREO_AND_KEYBOARD_MIC).
 MEDIA_EXPORT bool PortableCaptureNeedsDownmix(ChannelLayout layout);
 
 class MEDIA_EXPORT PortableCaptureDownmix {

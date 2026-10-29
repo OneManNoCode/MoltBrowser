@@ -876,10 +876,14 @@ void HttpServerProperties::SetHTTP11RequiredInternal(
     return;
 
   // MoltBrowser: with per-site shares, room is made inside the key's own
-  // site, or the entry isn't kept (net/base/molt_site_share_policy.h).
+  // site, or, past the total for a site holding none or two fewer than the
+  // site holding the most, in the place of that site's least recently used
+  // entry: the entry is always kept, as the request that met the demand is sent again over
+  // HTTP/1.1 only through it (HttpNetworkTransaction::HandleHttp11Required())
+  // (net/base/molt_site_share_policy.h).
   ServerInfoMapKey molt_key =
       CreateServerInfoKey(std::move(server), network_anonymization_key);
-  if (!servers_requiring_http_11_.MoltMakeRoomFor(molt_key)) {
+  if (!servers_requiring_http_11_.MoltMakeRoomToKeep(molt_key)) {
     return;
   }
   servers_requiring_http_11_.Put(std::move(molt_key));

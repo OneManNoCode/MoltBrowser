@@ -44,9 +44,14 @@ def _free_ids(count, start=61001):
     return ids
 
 
-# The fake accounts' ids (alice, bob, and the many accounts of one test).
+# The fake accounts' ids (alice, bob, and the many accounts of one test),
+# and the fake groups' other than the user's and root's (the `users` group
+# alice and bob share, a system account's own): a user whose primary group
+# is the real `users`, gid 100 (SUSE's default), or `daemon`, gid 1, would
+# otherwise share them with the fake accounts.
 ALICE_ID, BOB_ID = _free_ids(2)
 MANY_IDS = _free_ids(10, start=62001)
+USERS_GID, DAEMON_ID = _free_ids(2, start=63001)
 
 
 class RunDirTest(unittest.TestCase):
@@ -447,9 +452,9 @@ def UserPrivateGroups(gid=None):
     gid = GID if gid is None else gid
     return Accounts(
         {0: ('root', []), gid: ('moltuser', []), ALICE_ID: ('alice', []),
-         BOB_ID: ('bob', []), 100: ('users', ['alice', 'bob'])},
+         BOB_ID: ('bob', []), USERS_GID: ('users', ['alice', 'bob'])},
         [('root', 0, 0), ('moltuser', UID, gid), ('alice', ALICE_ID, ALICE_ID),
-         ('bob', BOB_ID, BOB_ID), ('daemon', 1, 1)])
+         ('bob', BOB_ID, BOB_ID), ('daemon', DAEMON_ID, DAEMON_ID)])
 
 
 def SharedUsersGroup(gid=None):

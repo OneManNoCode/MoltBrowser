@@ -180,7 +180,8 @@ class NET_EXPORT HttpAuthCache {
   //   |path|     - absolute path for a resource contained in the protection
   //                space; this will be added to the list of known paths.
   //   returns    - the entry that was just added/updated (MoltBrowser: null
-  //                for a new server entry per-site shares don't keep).
+  //                for a new server entry per-site shares don't keep, which
+  //                their limits never leave).
   Entry* Add(const url::SchemeHostPort& scheme_host_port,
              HttpAuth::Target target,
              const std::string& realm,
@@ -226,8 +227,10 @@ class NET_EXPORT HttpAuthCache {
   // top-level site) keeps a share of the server entries of its own
   // (net/base/molt_site_share_policy.h, kMoltHttpAuthShares) instead of the
   // kMaxNumRealmEntries all sites shared: a new server entry takes the place
-  // of its own site's least recently used one, never another site's, or
-  // isn't kept (Add() then returns null). Proxy entries, the browser's own
+  // of its own site's least recently used one; past the total, for a site
+  // holding none or two fewer than the site that holds the most, the place
+  // of that site's least recently used entry, so that what the user signs in
+  // with is kept (otherwise Add() would return null). Proxy entries, the browser's own
   // and keyed by no site, are kept as they come. Called by MoltNet's network
   // context, whose server entries are keyed by site, before its first
   // request.
@@ -297,7 +300,9 @@ class NET_EXPORT HttpAuthCache {
 
   // MoltBrowser: with per-site shares, makes room for a new entry of
   // `target` under `entry_key_nak` (the key it will have) inside its own
-  // site; returns whether it is kept.
+  // site, or, past the total for a site holding none or two fewer than the
+  // site holding the most, in the place of that site's least recently used
+  // entry; returns whether it is kept.
   bool MoltMakeRoomFor(HttpAuth::Target target,
                        const NetworkAnonymizationKey& entry_key_nak);
 

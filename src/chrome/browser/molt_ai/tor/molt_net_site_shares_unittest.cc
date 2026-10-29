@@ -4,7 +4,9 @@
 // The per-site shares of MoltNet's fixed-size network caches
 // (net/base/molt_site_share_policy.h, std-only): a site evicts only its own
 // entries, least recently used first; past the total a new entry of a site
-// that holds none isn't kept; records go with a site's last entry. And the
+// that holds none isn't kept, but for one the cache must keep, which takes
+// the place of the least recently used entry of the site that holds the
+// most; records go with a site's last entry. And the
 // containers that keep them (net/base/molt_site_lru_cache.h, over
 // base::LRUCache and base::LRUCacheSet): without shares the base's own
 // behaviour; with them, the container evicts nothing itself and the record
@@ -76,6 +78,20 @@ TEST(MoltNetSiteSharesTest, TheDecisions) {
   EXPECT_FALSE(MoltSiteShareHasRoom(limits, 0, 6));
   // A share of nothing keeps nothing.
   EXPECT_FALSE(MoltSiteShareHasRoom({0, 6}, 0, 0));
+  // But an entry the cache must keep, at (or past) the total, of a site
+  // holding none, or two fewer than the site holding the most of the
+  // others, takes the place of that site's least recently used entry.
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 3, 6));
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 1, 6));
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 3, 7));
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 1, 3, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 1, 2, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 2, 3, 6));
+  // Not at its share, nor below the total, nor from no one.
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 3, 6, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 0, 3, 5));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 0, 0, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest({0, 6}, 0, 3, 6));
 }
 
 // A site at its share evicts its own least recently used entry; a use makes
@@ -122,6 +138,90 @@ TEST(MoltNetSiteSharesTest, AGreedySiteNeverEvictsAnother) {
   // And a site holding none gets none while the total is full.
   EXPECT_EQ(Put(shares, "newcomer", "n1"), "x");
   EXPECT_EQ(shares.total(), 16u);
+}
+
+// Adds an entry the cache must keep as a cache does: room first (an entry
+// of the site holding the most, past the total), then the entry, if kept.
+// Returns what was evicted, "" if nothing, "x" if not kept.
+std::string PutToKeep(Shares& shares,
+                      const std::string& site,
+                      const std::string& key) {
+  std::string evicted;
+  while (std::optional<std::string> victim = shares.NextToEvictToKeep(site)) {
+    evicted += (evicted.empty() ? "" : ",") + *victim;
+    shares.Removed(*victim);
+  }
+  if (!shares.HasRoomFor(site)) {
+    return "x";
+  }
+  shares.Added(site, key);
+  return evicted;
+}
+
+// An entry the cache must keep (an HTTP authentication entry, a server's
+// demand for HTTP/1.1): a site holding some makes room from its own, as for
+// any entry; a site holding none, once all sites hold the total, takes the
+// place of the least recently used entry of the site that holds the most
+// (of two holding as many, the one whose least recently used entry is the
+// older), so sites that fill the total can't keep it from having one, and a
+// site holding fewer than another keeps its own.
+TEST(MoltNetSiteSharesTest, AnEntryToKeepTakesTheLargestSitesPlace) {
+  Shares shares({4, 8});
+  ASSERT_EQ(PutToKeep(shares, "polite", "p1"), "");
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_EQ(PutToKeep(shares, "a", "a" + std::to_string(i)), "");
+  }
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_EQ(PutToKeep(shares, "b", "b" + std::to_string(i)), "");
+  }
+  ASSERT_EQ(shares.total(), 8u);
+  // An ordinary entry of a site holding none isn't kept...
+  EXPECT_EQ(Put(shares, "c", "c0"), "x");
+  // ...and one of a site holding some takes its own oldest's place.
+  EXPECT_EQ(PutToKeep(shares, "b", "b3"), "b0");
+  // One that must be kept takes the place of the oldest of a's, which holds
+  // the most (4).
+  EXPECT_EQ(PutToKeep(shares, "c", "c0"), "a0");
+  EXPECT_EQ(shares.HeldBy("a"), 3u);
+  EXPECT_EQ(shares.HeldBy("c"), 1u);
+  // a and b hold 3 each; a's entries are used, so b's least recently used is
+  // the older of the two.
+  shares.Used("a1");
+  shares.Used("a2");
+  shares.Used("a3");
+  EXPECT_EQ(PutToKeep(shares, "d", "d0"), "b1");
+  EXPECT_EQ(PutToKeep(shares, "e", "e0"), "a1");
+  EXPECT_EQ(PutToKeep(shares, "f", "f0"), "b2");
+  // A site holding the least keeps its own throughout, and the total holds.
+  EXPECT_TRUE(shares.Holds("p1"));
+  EXPECT_EQ(shares.total(), 8u);
+  // At the total a site holding some makes room from its own unless another
+  // holds two more: polite (1) and a (2), the most of the others, ...
+  EXPECT_EQ(PutToKeep(shares, "polite", "p2"), "p1");
+  // ...and a (2) and the others (1 each).
+  EXPECT_EQ(PutToKeep(shares, "a", "a4"), "a2");
+  EXPECT_EQ(shares.total(), 8u);
+}
+
+// An entry the cache must keep: a site that needs several, while sites that
+// fill the total hold more, takes theirs until it holds as many as they do,
+// give or take one; then its own.
+TEST(MoltNetSiteSharesTest, ASiteKeepsUpToAFairShare) {
+  Shares shares({4, 8});
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_EQ(PutToKeep(shares, "a", "a" + std::to_string(i)), "");
+    ASSERT_EQ(PutToKeep(shares, "b", "b" + std::to_string(i)), "");
+  }
+  ASSERT_EQ(shares.total(), 8u);
+  EXPECT_EQ(PutToKeep(shares, "x", "x0"), "a0");  // a and b hold 4: a0 older
+  EXPECT_EQ(PutToKeep(shares, "x", "x1"), "b0");  // b holds 4, x 1
+  EXPECT_EQ(PutToKeep(shares, "x", "x2"), "x0");  // a and b hold 3, x 2
+  EXPECT_EQ(shares.HeldBy("x"), 2u);
+  EXPECT_EQ(shares.HeldBy("a"), 3u);
+  EXPECT_EQ(shares.HeldBy("b"), 3u);
+  // An ordinary entry of a site holding some only ever takes its own place.
+  EXPECT_EQ(Put(shares, "x", "x3"), "x1");
+  EXPECT_EQ(shares.total(), 8u);
 }
 
 // A key already held is only used; removals and Clear() keep the counts.
@@ -306,6 +406,34 @@ TEST(MoltNetSiteSharesTest, TheSetKeepsEachSitesShare) {
   EXPECT_EQ(set.Peek("b/1"), set.end());
   EXPECT_EQ(set.molt_shares()->HeldBy("b"), 2u);
   EXPECT_NE(set.Get("b/2"), set.end());
+}
+
+// MoltMakeRoomToKeep(), for an entry the cache must keep (a server's demand
+// for HTTP/1.1): past the total, a site holding none takes the place of the
+// least recently used entry of the site holding the most, where
+// MoltMakeRoomFor() keeps nothing; a site holding fewer keeps its own.
+TEST(MoltNetSiteSharesTest, TheContainerKeepsAnEntryItMustKeep) {
+  CacheSet set(100);
+  set.MoltKeepPerSiteShares({2, 4});
+  for (const char* key : {"polite/1", "a/1", "a/2", "b/1"}) {
+    std::string k(key);
+    ASSERT_TRUE(set.MoltMakeRoomToKeep(k));
+    set.Put(std::move(k));
+  }
+  EXPECT_FALSE(set.MoltMakeRoomFor(std::string("late/1")));
+  EXPECT_EQ(set.size(), 4u);
+  ASSERT_TRUE(set.MoltMakeRoomToKeep(std::string("late/1")));
+  set.Put(std::string("late/1"));
+  EXPECT_EQ(set.Peek("a/1"), set.end());
+  EXPECT_NE(set.Peek("a/2"), set.end());
+  EXPECT_NE(set.Peek("polite/1"), set.end());
+  EXPECT_NE(set.Peek("b/1"), set.end());
+  EXPECT_EQ(set.size(), 4u);
+  EXPECT_EQ(set.molt_shares()->total(), 4u);
+  EXPECT_EQ(set.molt_shares()->HeldBy("late"), 1u);
+  // Without shares, the base's own: nothing to make room for.
+  CacheSet plain(2);
+  EXPECT_TRUE(plain.MoltMakeRoomToKeep(std::string("x/1")));
 }
 
 // Compression dictionaries are counted after they are added.
