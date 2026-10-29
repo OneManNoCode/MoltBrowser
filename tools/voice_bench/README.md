@@ -41,6 +41,8 @@ Linux and macOS (arm64):
 python3 -I tools/voice_bench/fetch.py --set auto          # ~4.5 GB
 python3 -I tools/voice_bench/fetch.py --set sizes         # other OSes' libraries, sizes only
 python3 -I tools/voice_bench/run_bench.py --build          # cmake + C compiler
+python3 -m pip install --user --require-hashes \
+    -r tools/voice_bench/requirements.txt                  # numpy, if missing
 python3 -I tools/voice_bench/gen_audio.py                  # ~30 min, ~0.5 GB of audio
 python3 -I tools/voice_bench/run_bench.py                  # several hours; resumable
 tools/voice_bench/build_whisper_cpp.sh ~/.cache/moltbrowser-voice-bench

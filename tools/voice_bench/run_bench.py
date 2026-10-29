@@ -204,6 +204,8 @@ class Bench:
             flags += ["--kind", entry["kind"]]
         for k, v in entry["files"].items():
             flags += [k, os.path.join(d, v)]
+        if "tail_pad_ms" in entry:
+            flags += ["--tail-pad-ms", str(entry["tail_pad_ms"])]
         return flags
 
     # -------------------------------------------------------------- steps

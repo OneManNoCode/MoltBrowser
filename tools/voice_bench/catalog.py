@@ -60,7 +60,10 @@ OFFLINE = {
 
 # Streaming transducers. "case": how biasing phrases must be written for
 # the model's vocabulary; "vocab": where the bpe.vocab for hotwords comes
-# from ("bpe.model" parsed, or tokens.txt with score = -id).
+# from ("bpe.model" parsed, or tokens.txt with score = -id); "tail_pad_ms":
+# silence fed after the VAD's end of speech so that the model's last chunk
+# is complete (default 300 ms; models with long chunks need more, or they
+# drop the last word).
 STREAM = {
     "zipformer-en-20m": {
         "artifact": "stream-zipformer-en-20m",
@@ -82,7 +85,9 @@ STREAM = {
         "files": {"--encoder": "encoder.onnx", "--decoder": "decoder.onnx",
                   "--joiner": "joiner.onnx", "--tokens": "tokens.txt"},
         "case": "lower", "vocab": "tokens", "label": "Kroko EN (zipformer, 2025-08-06)",
-        "tier": 1},
+        # 1.28 s chunks (decode_chunk_len 128): 0.3 s of padding loses the
+        # last word of a third of the commands.
+        "tier": 1, "tail_pad_ms": 1200},
     "fastconformer-80ms": {
         "artifact": "stream-fastconformer-en-80ms-int8",
         "files": {"--encoder": "encoder.int8.onnx", "--decoder": "decoder.int8.onnx",

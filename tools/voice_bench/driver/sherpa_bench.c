@@ -10,7 +10,8 @@
 //                         finds, plus 0.25 s each side, as deployed)
 //   sherpa_bench stream  --list L --threads N <model flags>
 //                        [--vad silero_vad.onnx] [--vad-silence 0.5]
-//                        [--chunk-ms 100] [--decoding greedy_search|
+//                        [--chunk-ms 100] [--tail-pad-ms 300]
+//                        [--decoding greedy_search|
 //                         modified_beam_search] [--hotwords-score 1.5]
 //   sherpa_bench kws     --list L --threads N <model flags> --keywords F
 //                        [--kws-threshold 0.25] [--kws-score 1.0]
@@ -192,6 +193,7 @@ typedef struct Options {
   float vad_silence;
   float vad_threshold;
   int chunk_ms;
+  int tail_pad_ms;
   const char *decoding;
   float hotwords_score;
   const char *keywords;
@@ -214,6 +216,7 @@ static void ParseOptions(int argc, char **argv, Options *o) {
   o->vad_silence = 0.5f;
   o->vad_threshold = 0.5f;
   o->chunk_ms = 100;
+  o->tail_pad_ms = 300;
   o->decoding = "greedy_search";
   o->hotwords_score = 1.5f;
   o->kws_threshold = 0.25f;
@@ -241,7 +244,8 @@ static void ParseOptions(int argc, char **argv, Options *o) {
     STR("--merged-decoder", merged_decoder)
     STR("--vad", vad) FLT("--vad-silence", vad_silence)
     FLT("--vad-threshold", vad_threshold)
-    INT("--chunk-ms", chunk_ms) STR("--decoding", decoding)
+    INT("--chunk-ms", chunk_ms) INT("--tail-pad-ms", tail_pad_ms)
+    STR("--decoding", decoding)
     FLT("--hotwords-score", hotwords_score) STR("--keywords", keywords)
     FLT("--kws-threshold", kws_threshold) FLT("--kws-score", kws_score)
     INT("--kws-trailing-blanks", kws_trailing_blanks)
@@ -262,6 +266,7 @@ static void ParseOptions(int argc, char **argv, Options *o) {
   }
   if (o->threads < 1 || o->threads > 64) Die("bad --threads", 0);
   if (o->chunk_ms < 10 || o->chunk_ms > 2000) Die("bad --chunk-ms", 0);
+  if (o->tail_pad_ms < 0 || o->tail_pad_ms > 3000) Die("bad --tail-pad-ms", 0);
 }
 
 // ---------------------------------------------------------------- list files
@@ -542,7 +547,11 @@ static int RunStream(const Options *o) {
   PrintLoad("stream", load_ms);
 
   const int chunk = 16000 * o->chunk_ms / 1000;
-  float *zeros = (float *)calloc(16000, sizeof(float));
+  // Silence after the end of speech, so that the model's last chunk (and
+  // its look-ahead) is complete: about one chunk of the model.
+  const int tail = 16 * o->tail_pad_ms;
+  float *zeros = (float *)calloc(tail > 0 ? tail : 1, sizeof(float));
+  if (!zeros) Die("out of memory", 0);
   double start = NowMs();
   for (int i = 0; i < l.n; ++i) {
     Item *it = &l.items[i];
@@ -612,7 +621,7 @@ static int RunStream(const Options *o) {
         // End of speech: flush the model's look-ahead with silence and
         // take the final result, as the service would.
         double f = NowMs();
-        SherpaOnnxOnlineStreamAcceptWaveform(s, 16000, zeros, 16000 * 3 / 10);
+        SherpaOnnxOnlineStreamAcceptWaveform(s, 16000, zeros, tail);
         SherpaOnnxOnlineStreamInputFinished(s);
         while (SherpaOnnxIsOnlineStreamReady(rec, s))
           SherpaOnnxDecodeOnlineStream(rec, s);
@@ -635,7 +644,7 @@ static int RunStream(const Options *o) {
     if (final_done < 0) {
       // No VAD (or it never closed the segment): finish at the end of input.
       double f = NowMs();
-      SherpaOnnxOnlineStreamAcceptWaveform(s, 16000, zeros, 16000 * 3 / 10);
+      SherpaOnnxOnlineStreamAcceptWaveform(s, 16000, zeros, tail);
       SherpaOnnxOnlineStreamInputFinished(s);
       while (SherpaOnnxIsOnlineStreamReady(rec, s))
         SherpaOnnxDecodeOnlineStream(rec, s);

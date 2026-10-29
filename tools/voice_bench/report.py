@@ -663,10 +663,18 @@ class Report:
         return text
 
     def licences(self):
-        rows = []
+        # Artifacts with the same licence and note (the runtime archives
+        # for each OS) share a row.
+        rows, index = [], {}
         for a in fetch.load_manifest():
-            rows.append((a["id"], a["license"], a.get("license_note", "")))
-        return table(["artifact", "licence", "source / note"], rows)
+            key = (a["license"], a.get("license_note", ""))
+            if key in index:
+                rows[index[key]][0].append(a["id"])
+            else:
+                index[key] = len(rows)
+                rows.append(([a["id"]], key[0], key[1]))
+        return table(["artifact", "licence", "source / note"],
+                     [(", ".join(ids), lic, note) for ids, lic, note in rows])
 
 
 def main(argv=None):
@@ -693,6 +701,10 @@ def main(argv=None):
         "### WER by condition (the 'a' voices)", "", acc["cond_wer"], "",
         "### Command accuracy by condition", "", acc["cond_cmd"], "",
         "## Real speech", "", acc["real"], "",
+        "The LibriSpeech clips are two 16 kHz test sentences and one 8 kHz "
+        "(telephone-band) one. Streaming runs treat a clip as one utterance, so "
+        "they stop at the first 0.5 s pause (the JFK clip has one); per-utterance "
+        "runs decode every VAD segment.", "",
         "## Per-utterance recognizers: decode time (median of 3 runs)", "",
         rep.offline_timing(), "",
         "## Streaming recognizers with Silero VAD (0.5 s), simulated real time", "",
