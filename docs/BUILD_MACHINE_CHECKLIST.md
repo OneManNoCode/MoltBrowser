@@ -1131,6 +1131,19 @@ extension enablement and `MediaRouterEnabled()`).
   and the test prints the map it got. With
   `AX_FAIL_FAST_BUILD()` on (DCHECK builds), an accessibility tree error
   crashes the test instead of failing it: send the crash too.
+- [ ] What voice mode's accessibility mode costs a page (page-map). Voice
+  mode has no switch yet, but `chrome://accessibility` sets the same mode:
+  only "Web accessibility" and "Extended properties" on (not native API
+  support, inline text boxes, screen reader support or HTML). In a release
+  build, on two pages (YouTube search results scrolled to about 100
+  videos, and a long Wikipedia article), note with the mode off and on:
+  the renderer's and the browser process's memory footprint (the browser's
+  task manager) once the page is idle; the renderer's CPU while scrolling
+  and while more results load; and, from a DevTools Performance recording
+  of the same scroll, the main thread's time in accessibility work. Send
+  the numbers: the code suggests a few hundred bytes to about 1 KB per
+  node in each process, and serialization work after every change to the
+  page.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
