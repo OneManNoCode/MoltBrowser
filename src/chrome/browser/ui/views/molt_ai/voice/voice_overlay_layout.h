@@ -226,7 +226,11 @@ inline constexpr size_t kMaxBadges = 500;
 // into the viewport get none. The current item (|current|, 0 for none) is
 // placed first; then each item in turn takes the first anchor where its
 // badge is free of the others, at full size, then at smaller sizes down to
-// the floor. Linear in the number of items (a grid holds placed badges).
+// the floor. If that leaves items without a badge, the placement is tried
+// again with the items closer together than a full-size badge starting
+// smaller, and the plan that numbers more items is kept (a tie keeps the
+// larger badges). Linear in the number of items (grids hold the badges and
+// the items' corners).
 BadgePlan PlaceBadges(const std::vector<BadgeRequest>& requests,
                       int current,
                       const OverlayRect& viewport,

@@ -269,9 +269,10 @@ switched on yet: the voice controller turns it on.
   (the page map's items, `molt_ai/voice/page_map.h`), black on yellow with
   a black border, so a number can be read from a distance and on any
   page. Badges sit on the item's top-left corner, or beside it when that
-  spot is taken; close items get smaller badges, never below a floor
-  (14 DIPs of text at the default size); an item with no room even then
-  gets none rather than a badge over another one. They follow scrolling
+  spot is taken; where items are closer together than a badge, badges
+  get smaller, never below a floor (14 DIPs of text at the default
+  size); an item with no room even then gets none rather than a badge
+  over another one. They follow scrolling
   and page changes, and go away when the page navigates, the tab is
   switched or the numbers would no longer name the same items.
 - **The focus ring** around the item the browser reads or acts on: a thick

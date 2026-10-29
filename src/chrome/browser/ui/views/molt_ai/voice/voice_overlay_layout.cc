@@ -178,8 +178,11 @@ constexpr OverlayColor kYellow = 0xFFFFE600;
 // ---------------------------------------------------------------------------
 
 bool OverlayRect::Intersects(const OverlayRect& other) const {
-  return !empty() && !other.empty() && x < other.right() &&
-         other.x < right() && y < other.bottom() && other.y < bottom();
+  // The same comparisons as Intersect(), so the two always agree (a
+  // sub-pixel overlap that float rounding loses is no overlap).
+  return !empty() && !other.empty() &&
+         std::max(x, other.x) < std::min(right(), other.right()) &&
+         std::max(y, other.y) < std::min(bottom(), other.bottom());
 }
 
 bool OverlayRect::Contains(const OverlayRect& other) const {
@@ -321,30 +324,20 @@ BadgeScales BadgeScalesFor(const BadgeStyle& style) {
   return scales;
 }
 
-BadgePlan PlaceBadges(const std::vector<BadgeRequest>& requests,
-                      int current,
-                      const OverlayRect& viewport,
-                      const BadgeStyle& style,
-                      float ring_width) {
+namespace {
+
+// Places badges for |requests| in |order|, each tried from scale step
+// |first_step[i]| down to the floor. See PlaceBadges().
+BadgePlan PlaceInOrder(const std::vector<BadgeRequest>& requests,
+                       const std::vector<size_t>& order,
+                       const std::vector<size_t>& first_step,
+                       int current,
+                       const OverlayRect& viewport,
+                       const BadgeStyle& style,
+                       float gap,
+                       float ring_width) {
   BadgePlan plan;
-  if (viewport.empty() || !Finite(viewport.x) || !Finite(viewport.y) ||
-      !Finite(viewport.width) || !Finite(viewport.height)) {
-    return plan;
-  }
-  const float gap = Finite(style.gap) ? std::max(style.gap, 0.0f) : 0;
   const BadgeScales scales = BadgeScalesFor(style);
-
-  // The current item first, then the rest in number order.
-  std::vector<size_t> order;
-  order.reserve(requests.size());
-  for (size_t i = 0; i < requests.size(); ++i) {
-    if (current > 0 && requests[i].number == current) {
-      order.insert(order.begin(), i);
-    } else {
-      order.push_back(i);
-    }
-  }
-
   const OverlaySize full = BadgeSize(1, style, 1);
   BadgeGrid grid(viewport, std::max(64.0f, 2 * full.height));
   for (size_t index : order) {
@@ -366,7 +359,8 @@ BadgePlan PlaceBadges(const std::vector<BadgeRequest>& requests,
       continue;
     }
     bool placed = false;
-    for (size_t step = 0; step < scales.count; ++step) {
+    for (size_t step = first_step[index]; step < scales.count && !placed;
+         ++step) {
       const float scale = scales.scale[step];
       const OverlaySize size = BadgeSize(request.number, style, scale);
       if (size.width > viewport.width || size.height > viewport.height) {
@@ -389,13 +383,126 @@ BadgePlan PlaceBadges(const std::vector<BadgeRequest>& requests,
         placed = true;
         break;
       }
-      if (placed) {
-        break;
-      }
     }
     if (!placed) {
       ++plan.crowded;
     }
+  }
+  return plan;
+}
+
+// For each request, the first scale step at which its badge would clear
+// the corner of its nearest neighbour (the corner badges sit on first):
+// items closer together than a full-size badge start smaller. Neighbours
+// are found through a grid of corners, so this stays linear.
+std::vector<size_t> StepsByDensity(const std::vector<BadgeRequest>& requests,
+                                   const OverlayRect& viewport,
+                                   const BadgeStyle& style,
+                                   float gap) {
+  const BadgeScales scales = BadgeScalesFor(style);
+  const float full = BadgeSize(1, style, 1).height + gap;
+  std::vector<size_t> steps(requests.size(), 0);
+  if (!(full > 0) || scales.count < 2) {
+    return steps;
+  }
+  // Corners in cells at least a full badge wide (so the 3 by 3 cells
+  // around a corner hold every corner nearer than that), at most about 64k
+  // cells whatever the viewport.
+  const float cell_size =
+      std::max(full, std::max(viewport.width, viewport.height) / 256);
+  const int columns = static_cast<int>(viewport.width / cell_size) + 1;
+  const int rows = static_cast<int>(viewport.height / cell_size) + 1;
+  auto cell_of = [&](float v, float origin, int count) {
+    return static_cast<int>(Clamp(std::floor((v - origin) / cell_size), 0,
+                                  static_cast<float>(count - 1)));
+  };
+  std::vector<std::vector<uint32_t>> cells(static_cast<size_t>(columns) *
+                                           static_cast<size_t>(rows));
+  std::vector<OverlayRect> visible(requests.size());
+  for (size_t i = 0; i < requests.size(); ++i) {
+    visible[i] = requests[i].item.Intersect(viewport);
+    if (visible[i].empty()) {
+      continue;
+    }
+    const size_t cell =
+        static_cast<size_t>(cell_of(visible[i].y, viewport.y, rows)) *
+            static_cast<size_t>(columns) +
+        static_cast<size_t>(cell_of(visible[i].x, viewport.x, columns));
+    cells[cell].push_back(static_cast<uint32_t>(i));
+  }
+  for (size_t i = 0; i < requests.size(); ++i) {
+    if (visible[i].empty()) {
+      continue;
+    }
+    const int column = cell_of(visible[i].x, viewport.x, columns);
+    const int row = cell_of(visible[i].y, viewport.y, rows);
+    float nearest = full;
+    for (int r = std::max(0, row - 1); r <= std::min(rows - 1, row + 1); ++r) {
+      for (int c = std::max(0, column - 1); c <= std::min(columns - 1, column + 1);
+           ++c) {
+        for (uint32_t j : cells[static_cast<size_t>(r) *
+                                    static_cast<size_t>(columns) +
+                                static_cast<size_t>(c)]) {
+          if (j == i) {
+            continue;
+          }
+          const float distance =
+              std::max(std::abs(visible[j].x - visible[i].x),
+                       std::abs(visible[j].y - visible[i].y));
+          nearest = std::min(nearest, distance);
+        }
+      }
+    }
+    size_t step = 0;
+    while (step + 1 < scales.count && scales.scale[step] * full > nearest) {
+      ++step;
+    }
+    steps[i] = step;
+  }
+  return steps;
+}
+
+}  // namespace
+
+BadgePlan PlaceBadges(const std::vector<BadgeRequest>& requests,
+                      int current,
+                      const OverlayRect& viewport,
+                      const BadgeStyle& style,
+                      float ring_width) {
+  if (viewport.empty() || !Finite(viewport.x) || !Finite(viewport.y) ||
+      !Finite(viewport.width) || !Finite(viewport.height)) {
+    return BadgePlan();
+  }
+  const float gap = Finite(style.gap) ? std::max(style.gap, 0.0f) : 0;
+
+  // The current item first, then the rest in number order.
+  std::vector<size_t> order;
+  order.reserve(requests.size());
+  for (size_t i = 0; i < requests.size(); ++i) {
+    if (current > 0 && requests[i].number == current) {
+      order.insert(order.begin(), i);
+    } else {
+      order.push_back(i);
+    }
+  }
+
+  // Every badge at full size where it fits, smaller only where nothing
+  // else is left: the largest badges, moved aside where items are close.
+  BadgePlan plan =
+      PlaceInOrder(requests, order, std::vector<size_t>(requests.size(), 0),
+                   current, viewport, style, gap, ring_width);
+  if (plan.crowded == 0) {
+    return plan;
+  }
+  // Some items got no badge. Where items are closer together than a badge,
+  // full-size badges take the room smaller ones could share: start those
+  // smaller, and keep that plan if it numbers more items.
+  BadgePlan dense =
+      PlaceInOrder(requests, order,
+                   StepsByDensity(requests, viewport, style, gap), current,
+                   viewport, style, gap, ring_width);
+  if (dense.badges.size() > plan.badges.size()) {
+    return dense;
   }
   return plan;
 }

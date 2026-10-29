@@ -372,8 +372,15 @@ TEST(VoiceOverlayLayoutTest, CrowdedBadgesShrinkButNeverOverlap) {
   EXPECT_GT(plan.crowded, 0u);  // some can't have a readable badge
   EXPECT_GT(plan.badges.size(), 30u);
   // Lower numbers come first.
-  ASSERT_TRUE(BadgeFor(plan, 1));
-  EXPECT_FLOAT_EQ(BadgeFor(plan, 1)->scale, 1);
+  EXPECT_TRUE(BadgeFor(plan, 1));
+
+  // Away from the grid, a lone button keeps a full-size badge.
+  requests.push_back({101, {900, 600, 80, 30}});
+  const BadgePlan with_lone = PlaceBadges(requests, 0, kViewport, style, 6);
+  ExpectWellPlaced(with_lone, requests, kViewport, style);
+  ASSERT_TRUE(BadgeFor(with_lone, 101));
+  EXPECT_FLOAT_EQ(BadgeFor(with_lone, 101)->scale, 1);
+  EXPECT_GE(with_lone.badges.size(), plan.badges.size());
 }
 
 TEST(VoiceOverlayLayoutTest, TheCurrentItemComesFirstWithARing) {

@@ -33,8 +33,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/molt_ai/voice/voice_caption_bar.h"
 #include "chrome/browser/ui/views/molt_ai/voice/voice_numbers_view.h"
@@ -52,7 +51,9 @@
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/base/base_window.h"
 #include "ui/base/page_transition_types.h"
+#include "ui/compositor/layer.h"
 #include "ui/display/display_switches.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
@@ -81,7 +82,7 @@ class VoiceOverlayBrowserTest : public InProcessBrowserTest {
     InProcessBrowserTest::SetUpOnMainThread();
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
-    browser()->window()->SetBounds(gfx::Rect(0, 0, 1280, 900));
+    browser()->GetWindow()->SetBounds(gfx::Rect(0, 0, 1280, 900));
     StartVoiceMode(web_contents());
   }
 
