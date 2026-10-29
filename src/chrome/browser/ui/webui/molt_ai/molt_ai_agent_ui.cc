@@ -1290,10 +1290,12 @@ function renderFrameTools(pairs){
       forget
     ]));
   });
-  $('libList').appendChild(box);
+  $('frameToolsBox').appendChild(box);
 }
+/* The cards have a container of their own, so refreshing the library never
+   takes the allowed frames' section away while it reloads. */
 function renderLibrary(list){
-  var box=$('libList');clear(box);libraryCards={};
+  var box=$('libCards');clear(box);libraryCards={};
   $('libSub').textContent = list.length
     ? (list.length+' workflow'+(list.length===1?'':'s')+' saved')
     : 'Teach the browser to do a task once — then let it repeat.';
@@ -2960,7 +2962,7 @@ h2[tabindex="-1"]:focus{outline:none!important}
           <button class="btn" id="importBtn">&#8615; Import</button>
         </div>
       </div>
-      <div class="scroll" id="libList"></div>
+      <div class="scroll" id="libList"><div id="libCards"></div><div id="frameToolsBox"></div></div>
     </section>
 
     <!-- 2. RECORDING -->
