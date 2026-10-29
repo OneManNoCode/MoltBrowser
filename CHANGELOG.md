@@ -460,6 +460,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   is refused for a processed stream, as in Chromium, instead of being
   down-mixed; and the leak test kit's tests pass for a user whose primary
   group is `users`.
+- Hardening (security review of PR #79, `docs/SECURITY_REVIEWS.md`): the
+  rule that an OCR or voice helper may write only inside its own scratch
+  folder is now tested against a hard link to a file outside it, besides
+  deleting, renaming and symbolic links, so the folder stays the only place
+  a helper's writes can reach.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

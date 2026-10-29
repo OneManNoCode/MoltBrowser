@@ -4,6 +4,71 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-29: PR #79 (October 2026)
+
+**Scope.** The code merged in pull request #79 (round 35), which only its
+authors had reviewed, in this order of priority:
+
+1. The OCR and voice helpers' limits on every OS: the launcher's watchdog
+   over a helper's scratch directory (races with a helper's next write;
+   hard links, open-but-deleted files, files renamed out and back, sparse
+   and preallocated files, names that change during a scan, the check after
+   the helper exits); on Linux the seccomp rules (the thread-only `clone`,
+   `clone3`/`openat2` ENOSYS fallbacks, other ways to get unaccounted
+   memory, `O_TMPFILE` and extended attributes) and the resource limits
+   (`RLIMIT_DATA`, `RLIMIT_NOFILE`); on macOS the Seatbelt write rule and
+   the footprint watchdog; on Windows the handle-based scanner (alternate
+   streams, compressed and sparse files, a file held with deny-sharing) and
+   the scratch directory's security descriptor; and whether one helper
+   run's limits or kill can reach another run or the browser.
+2. MoltNet's cameras: the renderer-local `ImageCapture` service (lifetime,
+   a track that ends or is cloned, the 2-second timeout, JPEG encoding on a
+   worker, the pan-tilt-zoom permission hook); `VideoTrackAdapter`'s 30 fps
+   grid (the clock's lifetime, ticks after the source stops, many tracks at
+   different rates, a page that adds and removes tracks quickly, the memory
+   the newest frame holds); the GPU readback (the worker task, coalescing, a
+   readback that finishes after the adapter is gone, the black-frame rule);
+   the colour conversion (odd sizes, strides, refused formats, integer
+   overflow in the Q14 arithmetic); and the camera menu.
+3. The per-site shares of sign-ins and HTTP/1.1 records (the entry a cache
+   must keep): whether sites can evict each other in a loop or keep another
+   from signing in, the cost of the passes over all sites, the use counter,
+   and every way an entry leaves.
+4. The down-mix layout exclusion, and the leak kit's camera probes and
+   expectations.
+
+**Method.** Each candidate traced from its attacker (a web page, a site a
+page embeds, a server, a compromised renderer, a helper that a hostile OCR
+or voice input took over, a device's reported modes) through MoltBrowser's
+code and the upstream Chromium 156 code at the pinned revision, with the
+upstream files' edits read from their import commit. The per-site share
+rule's eviction was traced for loops and for a site locked out of signing
+in: a site that holds none, or at least two fewer than the site that holds
+the most, always makes room for an entry a cache must keep, by taking that
+site's least recently used entry, so the keepers converge to equal counts
+and a site is never pushed below the mean; the passes over the sites are
+bounded by the cache's total. The camera's colour coefficients were
+recomputed and the Q14 arithmetic bounded against 8-bit inputs (no 32-bit
+overflow); the grid's clock was traced against the adapter's and the
+tracks' lifetimes (its ticks and readbacks keep the adapter alive, so
+neither outlives it) and for ticks after the source stops (the grid holds a
+second, then stops). On Linux the helper sandbox was exercised against the
+real kernel with the shipped code: a helper cannot hard-link a file from
+outside its scratch directory into it (the link is refused `EXDEV`), so it
+gains no write handle out of the one place it may write. The leak kit's
+Python suites and `molt_fuzz.py check` pass.
+
+**Findings.** A handful, all low or informational; most were by design or
+already correct. One platform-specific item is tracked privately.
+
+**Fixed.**
+
+- The helper sandbox's write-confinement test now also checks that a helper
+  can't hard-link a file from outside its scratch directory into it,
+  besides deleting, renaming, making directories and symbolic links, so the
+  scratch directory stays the only place a helper's writes can reach
+  (`chrome/browser/molt_ai/common/helper_sandbox_unittest.cc`).
+
 ## 2026-10-29: PR #78 (October 2026)
 
 **Scope.** The code merged in pull request #78 (round 34), which only its
