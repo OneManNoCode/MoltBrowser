@@ -1108,6 +1108,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   tools to the agent only after you allow that site on that page (for this
   session, or always, removable in Agent mode); every call to one asks you
   and names both sites, and MoltNet windows never use them.
+- **Touchless browsing, first part: understanding what was said.** A
+  direct-command grammar turns a recognized utterance into a command
+  without the AI model (open a site, search, tabs, scrolling, zoom, media,
+  reading, choosing, typing, "no, I said ...", routines), and a matcher
+  finds the item on screen that "the fourth one", "number 12" or "the live
+  one by Queen" means, sound-alikes included, asking when two items fit.
+  Both run on the device in a few milliseconds; not yet connected to a
+  microphone. What you can say: `docs/VOICE_COMMANDS.md`.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

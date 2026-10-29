@@ -173,6 +173,13 @@ Five layers, tried in this order:
 3. **Everything else goes to the planner:** the existing on-device model with constrained JSON output, given the page map and the conversation so far. It returns one action or a short plan, which is spoken and shown before it runs.
 4. **Context:** the last list the browser read, the last item chosen, and the current field. This lets "the next one", "play it again" and "read it back" work.
 
+**Implementation note (Phase 0, built):** `molt_ai/voice/voice_command.h`, `ParseVoiceCommand(utterance, ParseContext)`, std-only and unit-tested.
+- **Patterns, per language:** `voice_command_phrases_en.cc` holds ordered patterns (words, alternatives, optional groups and typed slots: a number, a length of time, a volume, a site, a choice, free text). They are matched left to right without backtracking, and the first that takes the whole utterance wins. `spoken_phrases_en.cc` holds the words: numbers, fillers, politeness, wake greetings, address words. A new language adds two files with the same tables. `docs/VOICE_COMMANDS.md` is generated from these tables, and its examples are checked to parse.
+- **Clean-up:** the wake phrase (with sound-alikes), fillers ("um") and politeness are dropped. "No. 4", "#4" and "50%" become words. Over 1,000 bytes, or invalid UTF-8, is refused, never cut down.
+- **Context:** "yes" and "no" count only after a yes/no question, the dictation edits only in a focused field, and a bare number or short description only right after a list. Everything else goes to the planner as `kUnknown`, with the text as heard.
+- **Trust stays with the browser:** a site comes out as host-like text ("youtube", "example.com"), never a URL. The browser resolves it and checks it with `agent_safety`. A choice is resolved by the matcher (§6.4), and an action still passes §7's confirmations.
+- **Not yet:** spoken punctuation in dictation, a site's name on its own ("YouTube" alone), and other languages.
+
 ### 6.3 Page map
 
 - **Source:** `WebContents::RequestAXTreeSnapshot()` gives the page's accessibility tree: roles, names, states, values, headings, landmarks, links and media, across frames and shadow DOM. This is the same structure screen readers use.
@@ -191,6 +198,12 @@ Five layers, tried in this order:
 - **The planner as last resort:** for descriptions ("the live one", "the shortest", "the one from 1985"), the on-device model ranks the candidates.
 - **Thresholds:** below a confidence threshold, or when two items are close, the browser asks.
 - **Tests:** every scorer is a pure function with tests built from real result lists and real recognition errors.
+
+**Implementation note (Phase 0, built):** `molt_ai/voice/spoken_choice.h`, `MatchSpokenChoice(ChoiceRef, candidates, MatchOptions)`, std-only and unit-tested. The page map fills `ChoiceCandidate`s: position, on-screen number, a coarse role, the title and typed fields (author, source, date, duration, counts, price, details). The header documents the role mapping from the accessibility tree.
+- **References:** a position ("the fourth one", "the second to last video"), a number ("number 12": the number shown on screen, else the position), a relation to the current item ("the next one"), or a description with "by" and "from" cues ("the live one by Queen"). A description can also carry an ordinal ("the second live one"). Role words narrow the items only when some item has that role.
+- **Scoring:** words are folded (case, punctuation, Latin accents) and compared exactly (1.0), as plurals (0.95), or by sound with MoltBrowser's own phonetic key (`phonetic_key.h`: 13 sound classes, a banded edit distance weighted for close sounds, at most 0.9). Words are also joined across two or three words on either side, for a recognizer's splits and merges ("rap city" / "rhapsody"). Each word is weighed by how few items it matches: a word every item shares counts 0.25, one no item has 0.5, and a "by" word at least 0.6. A sound-alike counts 0.6 of its score when another item has the word as spelled, because the recognizer is biased toward on-screen words (§6.1).
+- **Outcome:** below 0.5 nothing matches. A lead of 0.15 over the next item is unique. Otherwise the items within 0.15 are ambiguous (at most five, read back to the user). The ranked items and their scores always come with the outcome. Descriptions about what items don't say ("the shortest one") score low or tie, and go to the user or the planner.
+- **Bounds:** at most 1,000 items, 12 fields, a 1 KiB title and 256-byte fields, and 12 description words. 500 items of about 300 bytes are matched in about 4.4 ms on one desktop x86-64 core (target: 5 ms); a page of 20 results takes well under a millisecond. Non-Latin text only matches exactly.
 
 ### 6.5 Actions
 
