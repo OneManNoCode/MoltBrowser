@@ -1707,13 +1707,16 @@ class Planner {
   // ---- Conversation ------------------------------------------------------
 
   void Unknown(const VoiceCommand& command) {
-    if (command.heard.empty()) {
+    // What was heard is said back cleaned and capped, as page text is: an
+    // utterance can hold characters no voice should be given.
+    const std::string echo = PageText(command.heard);
+    if (echo.empty()) {
       Say("I didn't catch that.");
       return;
     }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
-    planner.preface = "I can't do that yet: " + Quoted(command.heard) +
+    planner.preface = "I can't do that yet: " + Quoted(echo) +
                       ". Say what can I say to hear what I can do.";
     Add(std::move(planner));
   }

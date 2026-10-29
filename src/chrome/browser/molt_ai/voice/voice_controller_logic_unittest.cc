@@ -958,6 +958,12 @@ TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
   EXPECT_EQ(turn.steps[0].preface,
             "I can't do that yet: \"find me a train from Paris to Lyon "
             "tomorrow\". Say what can I say to hear what I can do.");
+  // What is said back is cleaned: a private-use character is dropped.
+  turn = c.Say("find me a \xF4\x80\x80\x90train to Lyon");
+  ASSERT_EQ(Kinds(turn), (std::vector<VoiceStepKind>{K::kToPlanner}));
+  EXPECT_EQ(turn.steps[0].preface,
+            "I can't do that yet: \"find me a train to Lyon\". Say what can I "
+            "say to hear what I can do.");
 
   EXPECT_EQ(Said(c.Say("remember this as my news")), "Routines come later.");
   EXPECT_EQ(Said(c.Say("run my news")), "Routines come later.");
