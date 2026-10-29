@@ -58,6 +58,8 @@ DOCUMENT_PARSER = "src/chrome/services/molt_ai/document_parser"
 FINGERPRINTING = "src/third_party/blink/renderer/core/molt_fingerprinting"
 LLAMA = "src/third_party/llama_cpp"
 VOICE = f"{MOLT_AI}/voice"
+# molt-speech's std-only parts (voice/speech_helper/BUILD.gn: core).
+SPEECH_HELPER = f"{VOICE}/speech_helper"
 # The std-only voice intent code (voice/BUILD.gn: spoken_choice,
 # voice_command).
 VOICE_INTENT_SOURCES = [
@@ -312,6 +314,17 @@ FUZZERS = {
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
         tier="std",
         dict="dicts/voice_command.dict",
+        max_len=16384,
+        smoke_runs=20000,
+    ),
+    # --- The speech helper's stdin (touchless browsing) --------------------
+    "molt_speech_protocol_fuzzer": dict(
+        dir=SPEECH_HELPER,
+        sources=[f"{SPEECH_HELPER}/{name}.cc" for name in (
+            "frame_reader", "listener", "speech_config", "speech_events",
+            "speech_text")],
+        tier="std",
+        dict="dicts/speech_protocol.dict",
         max_len=16384,
         smoke_runs=20000,
     ),
