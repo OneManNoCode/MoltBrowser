@@ -1960,7 +1960,7 @@ function renderConnectForm(body, p) {
   rowb.className = 'row';
   var connectBtn = document.createElement('button');
   connectBtn.className = 'btn primary';
-  connectBtn.style.cssText = 'font-size:12px;padding:6px 16px';
+  connectBtn.style.cssText = 'font-size:.75rem;padding:6px 16px';
   connectBtn.textContent = 'Connect';
   connectBtn.onclick = function() {
     var k = key.value.trim();
@@ -2062,10 +2062,10 @@ function renderConnectedBody(body, p) {
   var addInp = document.createElement('input');
   addInp.type = 'text';
   addInp.placeholder = 'Model id (e.g. ' + exampleModel(p.id) + ')';
-  addInp.style.cssText = 'flex:1;padding:8px 12px;border-radius:8px;border:1px solid #333;background:#0a0a0a;color:#e0e0e0;font-size:13px;outline:none';
+  addInp.style.cssText = 'flex:1;padding:8px 12px;border-radius:8px;border:1px solid #333;background:#0a0a0a;color:#e0e0e0;font-size:.8125rem;outline:none';
   var addBtn = document.createElement('button');
   addBtn.className = 'btn secondary';
-  addBtn.style.cssText = 'font-size:12px;padding:6px 14px';
+  addBtn.style.cssText = 'font-size:.75rem;padding:6px 14px';
   addBtn.textContent = 'Add';
   var doAdd = function() {
     var m = addInp.value.trim();
@@ -2407,72 +2407,72 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   animation:lgDrift 34s ease-in-out infinite alternate}
 @keyframes lgDrift{from{transform:translate3d(-2%,-1%,0) scale(1.02)}to{transform:translate3d(2%,2%,0) scale(1.08)}}
 .container{max-width:640px;margin:0 auto;position:relative;z-index:1}
-.logo-area{display:flex;align-items:center;gap:10px;margin-bottom:4px}.logo-img{width:44px;height:44px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.5)}.logo-text{font-size:26px;font-weight:700;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.back-btn{display:none;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #333;border-radius:8px;color:#6366f1;text-decoration:none;font-size:16px;line-height:1;cursor:pointer;transition:all 0.2s;flex-shrink:0}
+.logo-area{display:flex;align-items:center;gap:10px;margin-bottom:4px}.logo-img{width:44px;height:44px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.5)}.logo-text{font-size:1.625rem;font-weight:700;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.back-btn{display:none;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #333;border-radius:8px;color:#6366f1;text-decoration:none;font-size:1rem;line-height:1;cursor:pointer;transition:all 0.2s;flex-shrink:0}
 .back-btn:hover{border-color:#6366f1;background:#111}
-.subtitle{color:#888;margin-bottom:24px;font-size:14px}
+.subtitle{color:#888;margin-bottom:24px;font-size:.875rem}
 .nav{display:flex;gap:12px;margin-bottom:24px}
-.nav a{color:#6366f1;text-decoration:none;font-size:13px;padding:6px 12px;border:1px solid #333;border-radius:8px;transition:all 0.2s}
+.nav a{color:#6366f1;text-decoration:none;font-size:.8125rem;padding:6px 12px;border:1px solid #333;border-radius:8px;transition:all 0.2s}
 .nav a:hover{border-color:#6366f1;background:#111}
 .section{background:rgba(255,255,255,0.085);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:20px;margin-bottom:16px;box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30);transition:border-color 0.2s,transform 0.2s}
 .section:hover{transform:translateY(-1px);border-color:rgba(255,255,255,0.20)}
-.section h2{font-size:16px;font-weight:600;margin-bottom:16px;color:#e0e0e0;display:flex;align-items:center;gap:8px}
-.section h2 .icon{font-size:18px}
+.section h2{font-size:1rem;font-weight:600;margin-bottom:16px;color:#e0e0e0;display:flex;align-items:center;gap:8px}
+.section h2 .icon{font-size:1.125rem}
 .field{margin-bottom:16px}
 .field:last-child{margin-bottom:0}
-.field label{display:block;font-size:13px;font-weight:600;color:#aaa;margin-bottom:6px}
-.field .desc{font-size:11px;color:#666;margin-bottom:6px}
-.field input[type="number"],.field input[type="text"],.field textarea{width:100%;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.25);color:#e0e0e0;font-size:13px;outline:none;transition:border-color 0.2s;font-family:inherit}
+.field label{display:block;font-size:.8125rem;font-weight:600;color:#aaa;margin-bottom:6px}
+.field .desc{font-size:.6875rem;color:#666;margin-bottom:6px}
+.field input[type="number"],.field input[type="text"],.field textarea{width:100%;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.25);color:#e0e0e0;font-size:.8125rem;outline:none;transition:border-color 0.2s;font-family:inherit}
 .field input:focus,.field textarea:focus{border-color:#6366f1}
 .field textarea{resize:vertical;min-height:80px}
-.field select{padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.25);color:#e0e0e0;font-size:13px;outline:none;width:100%;cursor:pointer}
+.field select{padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.25);color:#e0e0e0;font-size:.8125rem;outline:none;width:100%;cursor:pointer}
 .field .range-wrap{display:flex;align-items:center;gap:12px}
 .field input[type="range"]{flex:1;accent-color:#6366f1}
-.field .range-val{font-size:13px;color:#6366f1;min-width:40px;text-align:right;font-weight:600}
+.field .range-val{font-size:.8125rem;color:#6366f1;min-width:40px;text-align:right;font-weight:600}
 .field label.toggle,.toggle{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:normal;color:inherit;margin-bottom:0}
 .toggle input{display:none}
 .toggle .track{flex:0 0 auto;width:40px;height:22px;border-radius:11px;background:#333;position:relative;transition:background 0.2s}
 .toggle input:checked + .track{background:#6366f1}
 .toggle .track::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#e0e0e0;transition:transform 0.2s}
 .toggle input:checked + .track::after{transform:translateX(18px)}
-.toggle .label{font-size:13px;color:#ccc}
+.toggle .label{font-size:.8125rem;color:#ccc}
 .toggle.disabled{opacity:0.5;cursor:not-allowed}
 .browser-row.not-installed{opacity:0.45}
 .browser-logo{flex:0 0 auto;width:22px;height:22px;display:inline-block;vertical-align:middle}
-.not-installed-label{margin-left:auto;font-size:12px;color:#777;font-style:italic}
+.not-installed-label{margin-left:auto;font-size:.75rem;color:#777;font-style:italic}
 .actions{display:flex;gap:10px;margin-top:20px}
-.btn{padding:10px 24px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s}
+.btn{padding:10px 24px;border-radius:10px;border:none;font-size:.875rem;font-weight:600;cursor:pointer;transition:all 0.2s}
 .btn.primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;box-shadow:0 8px 22px -8px rgba(99,102,241,0.6),inset 0 1px 0 rgba(255,255,255,0.25)}
 .btn.primary:hover{opacity:0.9;transform:translateY(-1px)}
 .btn.secondary{background:rgba(255,255,255,0.085);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);border:1px solid rgba(255,255,255,0.12);color:#cfcfe0;box-shadow:inset 0 1px 0 rgba(255,255,255,0.14)}
 .btn.secondary:hover{border-color:#6366f1;color:#e0e0e0;transform:translateY(-1px)}
 .btn.danger{background:transparent;border:1px solid #f87171;color:#f87171}
 .btn.danger:hover{background:rgba(248,113,113,0.12)}
-.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:14px;background:rgba(26,46,26,0.55);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);color:#7ef0a0;font-size:13px;font-weight:600;border:1px solid rgba(122,222,128,0.35);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.16);transform:translateY(100px);opacity:0;transition:all 0.3s;z-index:2}
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:14px;background:rgba(26,46,26,0.55);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);color:#7ef0a0;font-size:.8125rem;font-weight:600;border:1px solid rgba(122,222,128,0.35);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.16);transform:translateY(100px);opacity:0;transition:all 0.3s;z-index:2}
 .toast.show{transform:translateY(0);opacity:1}
-.model-dir{font-family:monospace;font-size:12px;color:#888;padding:8px 12px;background:rgba(0,0,0,0.28);border-radius:8px;border:1px solid rgba(255,255,255,0.08);margin-top:6px}
+.model-dir{font-family:monospace;font-size:.75rem;color:#888;padding:8px 12px;background:rgba(0,0,0,0.28);border-radius:8px;border:1px solid rgba(255,255,255,0.08);margin-top:6px}
 .provider-row{border:1px solid rgba(255,255,255,0.10);border-radius:14px;padding:12px 14px;margin-bottom:10px;background:rgba(255,255,255,0.04);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12);transition:border-color 0.2s,transform 0.2s}
 .provider-row:hover{transform:translateY(-1px);border-color:rgba(255,255,255,0.18)}
 .provider-head{display:flex;align-items:center;gap:10px}
-.provider-name{font-size:13px;font-weight:600;color:#e0e0e0}
-.provider-badge{font-size:11px;font-weight:600;color:#4ade80;background:#12240f;border:1px solid #234d1a;border-radius:10px;padding:2px 8px}
-.provider-btn{margin-left:auto;font-size:12px;padding:6px 14px}
+.provider-name{font-size:.8125rem;font-weight:600;color:#e0e0e0}
+.provider-badge{font-size:.6875rem;font-weight:600;color:#4ade80;background:#12240f;border:1px solid #234d1a;border-radius:10px;padding:2px 8px}
+.provider-btn{margin-left:auto;font-size:.75rem;padding:6px 14px}
 .provider-body{margin-top:10px}
 .provider-form{display:flex;flex-direction:column;gap:8px}
-.provider-form input{width:100%;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.28);color:#e0e0e0;font-size:13px;outline:none;box-sizing:border-box}
+.provider-form input{width:100%;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.28);color:#e0e0e0;font-size:.8125rem;outline:none;box-sizing:border-box}
 .provider-form input:focus{border-color:#6366f1}
 .provider-form .row{display:flex;gap:8px}
-.provider-hint{font-size:11px;color:#666;line-height:1.5}
-.provider-err{font-size:12px;color:#f87171}
-.bridge-hint{font-size:12px;color:#fbbf24;line-height:1.5;margin-top:8px}
+.provider-hint{font-size:.6875rem;color:#666;line-height:1.5}
+.provider-err{font-size:.75rem;color:#f87171}
+.bridge-hint{font-size:.75rem;color:#fbbf24;line-height:1.5;margin-top:8px}
 .model-scroll{max-height:220px;overflow-y:auto;margin-top:6px}
-.model-toggle{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:13px;color:#ccc;border-top:1px solid #191919;cursor:pointer}
+.model-toggle{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:.8125rem;color:#ccc;border-top:1px solid #191919;cursor:pointer}
 .model-toggle:first-child{border-top:none}
 .model-toggle input{accent-color:#6366f1;width:16px;height:16px;flex:0 0 auto}
-.model-toggle .mt-name{font-family:monospace;font-size:12px;word-break:break-all}
+.model-toggle .mt-name{font-family:monospace;font-size:.75rem;word-break:break-all}
 .model-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
-.model-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(99,102,241,0.14);border:1px solid rgba(167,139,250,0.30);color:#c7c7f0;border-radius:12px;padding:3px 10px;font-size:12px;font-family:monospace}
-.model-chip button{background:none;border:none;color:#a78bfa;cursor:pointer;font-size:14px;line-height:1;padding:0}
+.model-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(99,102,241,0.14);border:1px solid rgba(167,139,250,0.30);color:#c7c7f0;border-radius:12px;padding:3px 10px;font-size:.75rem;font-family:monospace}
+.model-chip button{background:none;border:none;color:#a78bfa;cursor:pointer;font-size:.875rem;line-height:1;padding:0}
 .model-chip button:hover{color:#f87171}
 /* Motion is minimal by design; fully stop the ambient drift and lift when the
    user prefers reduced motion. */
@@ -2593,7 +2593,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="field">
       <div id="gpuTurnedOff"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
-        <button class="btn secondary" id="gpuRetryBtn" type="button" data-on-click="gpuRetry" style="font-size:12px;padding:6px 16px" hidden>Try the GPU again</button>
+        <button class="btn secondary" id="gpuRetryBtn" type="button" data-on-click="gpuRetry" style="font-size:.75rem;padding:6px 16px" hidden>Try the GPU again</button>
         <span class="desc" id="gpuStatus" role="status"></span>
       </div>
     </div>
@@ -2626,7 +2626,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="desc" id="webAiMemoryNote" style="display:none">This window keeps these answers only until it closes.</div>
       <div class="desc">Incognito windows keep their own answers until they close. Clearing "Site settings" in Clear browsing data removes these answers too; clearing history removes the pauses.</div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
-        <button class="btn secondary" id="webAiClearBtn" type="button" data-on-click="webAiClearSites" style="font-size:12px;padding:6px 16px">Remove all</button>
+        <button class="btn secondary" id="webAiClearBtn" type="button" data-on-click="webAiClearSites" style="font-size:.75rem;padding:6px 16px">Remove all</button>
         <span class="desc" id="webAiStatus" role="status"></span>
       </div>
     </div>
@@ -2679,19 +2679,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="field">
         <label>Connection Status</label>
         <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-          <span id="moltnetStatusBadge" style="background:#1a3a1a;color:#4ade80;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600">Disconnected</span>
-          <span id="moltnetIP" style="font-family:monospace;font-size:12px;color:#888"></span>
+          <span id="moltnetStatusBadge" style="background:#1a3a1a;color:#4ade80;padding:4px 12px;border-radius:12px;font-size:.75rem;font-weight:600">Disconnected</span>
+          <span id="moltnetIP" style="font-family:monospace;font-size:.75rem;color:#888"></span>
         </div>
       </div>
       <div class="field">
         <label>Circuit (Relay Chain)</label>
-        <div id="circuitDisplay" style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:14px">
+        <div id="circuitDisplay" style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:.875rem">
           <span style="color:#555">Not connected</span>
         </div>
       </div>
       <div class="field" style="display:flex;gap:10px">
-        <button class="btn secondary" id="newCircuitBtn" style="font-size:12px;padding:6px 16px">New Identity</button>
-        <select id="exitCountry" style="background:#111;border:1px solid #333;color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px">
+        <button class="btn secondary" id="newCircuitBtn" style="font-size:.75rem;padding:6px 16px">New Identity</button>
+        <select id="exitCountry" style="background:#111;border:1px solid #333;color:#ccc;padding:6px 10px;border-radius:6px;font-size:.75rem">
           <option value="">Any country</option>
         </select>
       </div>
@@ -2705,10 +2705,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         <option value="obfs4">obfs4 (built-in)</option>
         <option value="custom">Custom bridges&hellip;</option>
       </select>
-      <textarea id="bridgeLines" rows="4" style="display:none;margin-top:8px;font-family:monospace;font-size:12px" placeholder="obfs4 192.0.2.1:443 FINGERPRINT cert=... iat-mode=0"></textarea>
+      <textarea id="bridgeLines" rows="4" style="display:none;margin-top:8px;font-family:monospace;font-size:.75rem" placeholder="obfs4 192.0.2.1:443 FINGERPRINT cert=... iat-mode=0"></textarea>
       <div id="bridgeHint" class="bridge-hint" role="status" style="display:none"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
-        <button class="btn secondary" id="saveBridgesBtn" style="font-size:12px;padding:6px 16px">Save bridges</button>
+        <button class="btn secondary" id="saveBridgesBtn" style="font-size:.75rem;padding:6px 16px">Save bridges</button>
         <span id="bridgeStatus" class="desc"></span>
       </div>
       <div class="desc">One obfs4 or snowflake bridge per line (from bridges.torproject.org). Bridges need their pluggable transport: on Linux, your distribution's obfs4proxy (or lyrebird) and snowflake-client packages. Bridge settings apply the next time MoltNet connects.</div>
@@ -2725,7 +2725,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="field">
       <label>Current tabs</label>
       <div id="shieldTabs"></div>
-      <textarea id="shieldReport" readonly rows="8" style="display:none;width:100%;margin-top:8px;background:#111;color:#ccc;border:1px solid #333;border-radius:6px;font-family:monospace;font-size:12px"></textarea>
+      <textarea id="shieldReport" readonly rows="8" style="display:none;width:100%;margin-top:8px;background:#111;color:#ccc;border:1px solid #333;border-radius:6px;font-family:monospace;font-size:.75rem"></textarea>
     </div>
     <div class="field">
       <label>Sites with Shields down</label>
@@ -2735,7 +2735,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <label>Filter lists</label>
       <div id="shieldLists"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
-        <button class="btn secondary" id="shieldUpdateBtn" style="font-size:12px;padding:6px 16px">Update lists now</button>
+        <button class="btn secondary" id="shieldUpdateBtn" style="font-size:.75rem;padding:6px 16px">Update lists now</button>
         <span class="desc" id="shieldUpdateStatus"></span>
       </div>
     </div>

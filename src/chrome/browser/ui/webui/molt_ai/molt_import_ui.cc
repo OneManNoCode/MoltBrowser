@@ -425,10 +425,10 @@ class MoltImportDataSource : public content::URLDataSource {
   .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);transition:.25s}
   .dot.on{background:var(--ok);box-shadow:0 0 10px 1px rgba(95,227,161,.6)}
   .dot.busy{background:var(--accent);box-shadow:0 0 10px 1px rgba(255,82,87,.5)}
-  .title{font-size:14px;font-weight:700;letter-spacing:-.01em}
-  .st{font-size:11px;color:var(--muted);margin-top:1px}
+  .title{font-size:.875rem;font-weight:700;letter-spacing:-.01em}
+  .st{font-size:.6875rem;color:var(--muted);margin-top:1px}
 
-  .sec{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
+  .sec{font-size:.625rem;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
     padding:10px 18px 6px;flex:0 0 auto}
 
   .list{flex:1 1 auto;overflow-y:auto;padding:0 8px 4px}
@@ -439,24 +439,24 @@ class MoltImportDataSource : public content::URLDataSource {
   .row:hover{background:rgba(255,255,255,.06);border-color:var(--edge)}
   .row .flag{width:22px;height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
   .row .flag img.fav{width:16px;height:16px;border-radius:4px;display:block}
-  .seclabel{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  .seclabel{font-size:.625rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
             color:var(--faint);padding:10px 12px 4px;user-select:none}
   .row .flag svg{width:20px;height:20px;display:block}
-  .row .name{font-size:13px;flex:1}
-  .row .chk{color:var(--faint);font-size:15px;opacity:0;flex:0 0 auto;transition:opacity .14s}
+  .row .name{font-size:.8125rem;flex:1}
+  .row .chk{color:var(--faint);font-size:.9375rem;opacity:0;flex:0 0 auto;transition:opacity .14s}
   .row:hover .chk{opacity:.8}
   .row.active{background:rgba(95,227,161,.10);border-color:rgba(95,227,161,.30)}
   .row.active .chk{opacity:1;color:var(--ok)}
   .row.dim{opacity:.4;cursor:default}
   .row.dim:hover{background:transparent;border-color:transparent}
   .row.dim:hover .chk{opacity:0}
-  .empty{font-size:12px;color:var(--faint);text-align:center;padding:22px 16px}
+  .empty{font-size:.75rem;color:var(--faint);text-align:center;padding:22px 16px}
 
   .divider{height:1px;background:var(--edge);margin:0 14px;flex:0 0 auto}
 
   .toggle-row{padding:12px 18px 8px;display:flex;align-items:center;gap:12px;flex:0 0 auto}
-  .toggle-row .lbl{font-size:12.5px;color:var(--muted)}
-  .toggle-row .sub{font-size:11px;color:var(--faint);margin-top:1px}
+  .toggle-row .lbl{font-size:.78125rem;color:var(--muted)}
+  .toggle-row .sub{font-size:.6875rem;color:var(--faint);margin-top:1px}
   .sw{margin-left:auto;width:44px;height:25px;border-radius:13px;background:rgba(255,255,255,.12);
     border:1px solid var(--edge);cursor:pointer;position:relative;transition:.2s;flex:0 0 auto}
   .sw.on{background:linear-gradient(180deg,#ff676c,var(--accent-deep));border-color:transparent}
@@ -464,12 +464,12 @@ class MoltImportDataSource : public content::URLDataSource {
     background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
   .sw.on .knob{transform:translateX(19px)}
 
-  .status{flex:0 0 auto;min-height:16px;padding:2px 18px 4px;font-size:11px;
+  .status{flex:0 0 auto;min-height:16px;padding:2px 18px 4px;font-size:.6875rem;
     color:var(--muted);text-align:center;line-height:1.35}
 
   .foot{flex:0 0 auto;display:flex;gap:8px;padding:8px 14px 14px}
   .act{flex:1;padding:9px 4px;border-radius:11px;cursor:pointer;text-align:center;
-    font-size:11px;font-weight:600;background:rgba(255,255,255,.05);
+    font-size:.6875rem;font-weight:600;background:rgba(255,255,255,.05);
     border:1px solid var(--edge);color:var(--muted);transition:.15s;white-space:nowrap}
   .act:hover{background:rgba(255,255,255,.11);border-color:var(--edge-hi);color:var(--text)}
   .act.primary{flex:2;background:linear-gradient(180deg,#ff676c,var(--accent-deep));
@@ -479,7 +479,7 @@ class MoltImportDataSource : public content::URLDataSource {
   /* Segmented [ Bookmarks | Import ] switch under the header. */
   .tabs{display:flex;gap:4px;margin:0 14px 4px;padding:3px;border-radius:12px;
     background:rgba(255,255,255,.05);border:1px solid var(--edge);flex:0 0 auto}
-  .tab{flex:1;text-align:center;font-size:12px;font-weight:600;padding:7px 4px;
+  .tab{flex:1;text-align:center;font-size:.75rem;font-weight:600;padding:7px 4px;
     border-radius:9px;cursor:pointer;color:var(--muted);transition:.15s;user-select:none}
   .tab:hover{color:var(--text)}
   .tab.on{background:rgba(255,255,255,.12);color:var(--text);
@@ -490,7 +490,7 @@ class MoltImportDataSource : public content::URLDataSource {
   .view[hidden]{display:none}
 
   .search{margin:2px 14px 8px;flex:0 0 auto}
-  .search input{width:100%;padding:8px 11px;border-radius:10px;font-size:12.5px;
+  .search input{width:100%;padding:8px 11px;border-radius:10px;font-size:.78125rem;
     color:var(--text);background:rgba(255,255,255,.06);border:1px solid var(--edge);
     outline:none;font-family:var(--font)}
   .search input::placeholder{color:var(--faint)}
@@ -499,7 +499,7 @@ class MoltImportDataSource : public content::URLDataSource {
   /* Two-line bookmark rows: title over a dim host. */
   .row .meta{flex:1;min-width:0;display:flex;flex-direction:column}
   .row .meta .name{flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .row .meta .sub{font-size:11px;color:var(--faint);white-space:nowrap;
+  .row .meta .sub{font-size:.6875rem;color:var(--faint);white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 
   .empty .lnk{color:var(--accent);cursor:pointer;font-weight:600}

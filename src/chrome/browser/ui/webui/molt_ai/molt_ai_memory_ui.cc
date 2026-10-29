@@ -1065,9 +1065,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .header{background:linear-gradient(135deg,#1a1a2e,#16213e);
   padding:18px 28px;display:flex;align-items:center;gap:18px;
   border-bottom:1px solid rgba(255,255,255,0.08);}
-.header h1{font-size:22px;font-weight:600;}
+.header h1{font-size:1.375rem;font-weight:600;}
 .header h1 span{color:#a78bfa;font-weight:700;}
-.badge{background:#a78bfa;color:#0a0a0f;font-size:10px;padding:2px 8px;
+.badge{background:#a78bfa;color:#0a0a0f;font-size:.625rem;padding:2px 8px;
   border-radius:10px;font-weight:700;text-transform:uppercase;}
 .bar{flex:1;}
 .container{max-width:1080px;margin:0 auto;padding:32px 28px 64px;}
@@ -1077,11 +1077,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   font-family:monospace;color:#a78bfa;}
 .searchbar{display:flex;gap:8px;margin-bottom:8px;}
 .searchbar input{flex:1;background:#0d0d14;border:1px solid #2a2a3a;
-  color:#fff;padding:14px 18px;border-radius:10px;font-size:15px;}
+  color:#fff;padding:14px 18px;border-radius:10px;font-size:.9375rem;}
 .searchbar input:focus{outline:none;border-color:#a78bfa;}
-.engine{font-size:12px;color:#888;margin-bottom:14px;line-height:1.5;}
+.engine{font-size:.75rem;color:#888;margin-bottom:14px;line-height:1.5;}
 .btn{background:#a78bfa;border:none;color:#0a0a0f;padding:10px 20px;
-  border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;}
+  border-radius:8px;font-weight:700;cursor:pointer;font-size:.875rem;}
 .btn:hover{background:#c4b5fd;}
 .btn.ghost{background:transparent;border:1px solid #2a2a3a;color:#ccc;
   font-weight:500;}
@@ -1089,66 +1089,66 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .btn.red{background:#3a1a1a;color:#f87171;border:1px solid #4a2a2a;}
 .btn.red:hover{background:#4a2a2a;}
 .model{background:#0d0d14;border:1px solid #1a1a2a;border-radius:10px;
-  padding:14px 18px;margin-bottom:18px;font-size:13px;color:#ccc;
+  padding:14px 18px;margin-bottom:18px;font-size:.8125rem;color:#ccc;
   line-height:1.5;}
 .model-head{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;}
 .model-head b{color:#fff;}
-.model-license{font-size:12px;color:#888;}
+.model-license{font-size:.75rem;color:#888;}
 .model-license a{color:#a78bfa;}
-.model-note{font-size:12px;color:#888;margin-top:4px;}
+.model-note{font-size:.75rem;color:#888;margin-top:4px;}
 .model .row{margin-top:10px;display:flex;gap:8px;}
-.model .btn{padding:7px 14px;font-size:13px;}
+.model .btn{padding:7px 14px;font-size:.8125rem;}
 .progress{height:6px;background:#1a1a2a;border-radius:3px;margin-top:8px;
   overflow:hidden;}
 .progress-bar{height:100%;width:0;background:#a78bfa;transition:width 0.3s;}
-.stats{display:flex;gap:24px;margin-bottom:24px;color:#888;font-size:13px;}
+.stats{display:flex;gap:24px;margin-bottom:24px;color:#888;font-size:.8125rem;}
 .stats b{color:#ddd;}
 .hit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:10px;
   padding:14px 18px;margin-bottom:10px;}
 .hit:hover{border-color:#a78bfa;}
-.hit-title{font-size:15px;font-weight:600;margin-bottom:2px;}
+.hit-title{font-size:.9375rem;font-weight:600;margin-bottom:2px;}
 .hit-title a{color:#e0e0e8;text-decoration:none;}
 .hit-title a:hover{color:#a78bfa;}
-.hit-url{font-size:12px;color:#6b8f71;margin-bottom:4px;white-space:nowrap;
+.hit-url{font-size:.75rem;color:#6b8f71;margin-bottom:4px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;}
-.hit-meta{font-size:11px;color:#666;margin-bottom:6px;
+.hit-meta{font-size:.6875rem;color:#666;margin-bottom:6px;
   font-family:monospace;}
 .hit-meta .score{color:#a78bfa;font-weight:600;}
 .hit-delete{color:#666;margin-left:8px;}
-.hit-snippet{color:#aaa;font-size:13px;line-height:1.5;
+.hit-snippet{color:#aaa;font-size:.8125rem;line-height:1.5;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
   overflow:hidden;}
 .hit-snippet mark{background:rgba(167,139,250,0.25);color:#fff;
   padding:0 2px;border-radius:2px;}
-.section-title{font-size:13px;color:#888;text-transform:uppercase;
+.section-title{font-size:.8125rem;color:#888;text-transform:uppercase;
   letter-spacing:1px;margin:24px 0 10px;}
 .empty{color:#555;padding:32px;text-align:center;font-style:italic;}
-.timing{font-size:11px;color:#666;margin-top:6px;font-family:monospace;}
+.timing{font-size:.6875rem;color:#666;margin-top:6px;font-family:monospace;}
 .timing b{color:#a78bfa;}
 .controls{margin-top:30px;padding-top:20px;
   border-top:1px solid #1a1a2a;}
 .danger{display:flex;gap:8px;flex-wrap:wrap;}
 .danger input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:8px 12px;border-radius:6px;font-size:12px;}
+  padding:8px 12px;border-radius:6px;font-size:.75rem;}
 .toast{position:fixed;bottom:24px;right:24px;background:#1a3a1a;
   color:#4ade80;padding:12px 18px;border-radius:10px;
-  border:1px solid #2a4a2a;font-size:13px;font-weight:600;
+  border:1px solid #2a4a2a;font-size:.8125rem;font-weight:600;
   transform:translateY(120px);opacity:0;transition:all 0.25s;
   z-index:1000;}
 .toast.show{transform:translateY(0);opacity:1;}
 .toast.error{background:#3a1a1a;color:#f87171;border-color:#4a2a2a;}
 .notice{background:#1a1730;border:1px solid #4c3d8a;border-radius:10px;
   padding:14px 18px;margin-bottom:20px;color:#ddd;line-height:1.5;
-  font-size:13px;}
+  font-size:.8125rem;}
 .notice b{color:#fff;}
 .notice .row{margin-top:10px;display:flex;gap:8px;}
 .settings{background:#0d0d14;border:1px solid #1a1a2a;border-radius:10px;
   padding:14px 18px;margin-bottom:24px;display:flex;flex-wrap:wrap;
-  gap:18px;align-items:center;font-size:13px;color:#ccc;}
+  gap:18px;align-items:center;font-size:.8125rem;color:#ccc;}
 .settings label{display:flex;align-items:center;gap:8px;cursor:pointer;}
 .settings select{background:#0a0a0f;border:1px solid #2a2a3a;color:#fff;
-  padding:6px 8px;border-radius:6px;font-size:12px;}
-.settings .state{margin-left:auto;font-size:12px;color:#888;}
+  padding:6px 8px;border-radius:6px;font-size:.75rem;}
+.settings .state{margin-left:auto;font-size:.75rem;color:#888;}
 .settings .state.on{color:#4ade80;}
 [hidden]{display:none !important;}
 </style>
@@ -1159,9 +1159,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <h1><span>Molt</span>Memory</h1>
   <span class="badge">Local</span>
   <div class="bar"></div>
-  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
-  <a href="molt://ai-automation/" style="color:#888;text-decoration:none;font-size:13px;">Automation</a>
-  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
+  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:.8125rem;">AI Chat</a>
+  <a href="molt://ai-automation/" style="color:#888;text-decoration:none;font-size:.8125rem;">Automation</a>
+  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:.8125rem;">Settings</a>
 </div>
 
 <div class="container">

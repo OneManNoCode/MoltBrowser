@@ -168,14 +168,14 @@ function renderMarkdown(text) {
   // Code blocks (``` ... ```) with copy button
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
     var id = 'cb-' + (++codeBlockId);
-    var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:9px;color:var(--faint);text-transform:uppercase">' + lang + '</span>' : '';
+    var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:.5625rem;color:var(--faint);text-transform:uppercase">' + lang + '</span>' : '';
     return hold('<div class="code-wrap">' + langLabel +
       '<button class="code-copy" data-on-click="copyCode" data-copy-target="' + id + '">Copy</button>' +
-      '<pre id="' + id + '" style="background:var(--surface2);padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:8px;overflow-x:auto;font-size:12px;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre></div>');
+      '<pre id="' + id + '" style="background:var(--surface2);padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:8px;overflow-x:auto;font-size:.75rem;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre></div>');
   });
   // Inline code (`...`)
   s = s.replace(/`([^`\n]+)`/g, function(m, code) {
-    return hold('<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--text)">' + code + '</code>');
+    return hold('<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:.75rem;color:var(--text)">' + code + '</code>');
   });
   // esc() (textContent->innerHTML) encodes & < > but NOT double-quotes,
   // so quote-escape a url before it lands in the href attribute.
@@ -205,13 +205,13 @@ function renderMarkdown(text) {
   // Italic (*...*)
   s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
   // Headers (### ... , ## ... , # ...)
-  s = s.replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:700;margin:10px 0 4px;color:var(--text)">$1</div>');
-  s = s.replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:var(--text)">$1</div>');
-  s = s.replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;margin:14px 0 6px;color:var(--text)">$1</div>');
+  s = s.replace(/^### (.+)$/gm, '<div style="font-size:.875rem;font-weight:700;margin:10px 0 4px;color:var(--text)">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div style="font-size:.9375rem;font-weight:700;margin:12px 0 4px;color:var(--text)">$1</div>');
+  s = s.replace(/^# (.+)$/gm, '<div style="font-size:1rem;font-weight:700;margin:14px 0 6px;color:var(--text)">$1</div>');
   // Unordered lists (- item or * item)
   s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span style="position:absolute;left:4px;color:var(--muted)">•</span>$1</div>');
   // Ordered lists (1. item)
-  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:0;color:var(--muted);font-size:12px">$1.</span>$2</div>');
+  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:0;color:var(--muted);font-size:.75rem">$1.</span>$2</div>');
   // Line breaks (code blocks are held, so <pre> keeps its real newlines)
   s = s.replace(/\n/g, '<br>');
   // Expand placeholders. A held link may itself contain a held code span,
@@ -730,7 +730,7 @@ function ensureCloudStyles() {
       '.molt-cloud-consent li{margin:2px 0}' +
       '.molt-cloud-consent li.now{font-weight:600}' +
       '.message.ai.cloud-reply{flex-wrap:wrap}' +
-      '.cloud-badge{flex-basis:100%;order:-1;font-size:10px;' +
+      '.cloud-badge{flex-basis:100%;order:-1;font-size:.625rem;' +
       'color:var(--muted);margin:0 0 3px 4px}';
   document.head.appendChild(s);
 }
@@ -3668,7 +3668,7 @@ function moltBrandTile(company) {
   if (!b) {
     var ch = (company || '?').charAt(0).toUpperCase();
     return '<span class="brandtile" style="background:rgba(148,163,184,.16);color:#94a3b8;' +
-           'font-weight:700;font-size:13px">' + esc(ch) + '</span>';
+           'font-weight:700;font-size:.8125rem">' + esc(ch) + '</span>';
   }
   return '<span class="brandtile" style="background:' + b.t + '">' +
          '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' + b.g + '</svg></span>';
@@ -4006,7 +4006,7 @@ function renderModelChipDropdown() {
   var dd = document.getElementById('modelChipDropdown');
   if (!dd) return;
   if (allModels.length === 0) {
-    dd.innerHTML = moltHTML('<div style="padding:12px;color:var(--faint);font-size:11px;text-align:center">Loading\u2026</div>');
+    dd.innerHTML = moltHTML('<div style="padding:12px;color:var(--faint);font-size:.6875rem;text-align:center">Loading\u2026</div>');
     sendWithPromise('getModelStatus').then(function(r){
       allModels = r.models || [];
       renderModelChipDropdown();
@@ -5325,16 +5325,16 @@ function _stopRecording() {
   width:100%;max-width:calc(72ch + 32px);margin:0 auto 8px}
 .agent-bar.active{display:flex}
 .agent-bar-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-.agent-bar-title{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:0.5px}
-.agent-stop-btn{font-size:10px;padding:2px 8px;border-radius:6px;
+.agent-bar-title{font-size:.6875rem;font-weight:700;color:var(--muted);letter-spacing:0.5px}
+.agent-stop-btn{font-size:.625rem;padding:2px 8px;border-radius:6px;
   background:transparent;border:1px solid var(--err);color:var(--err);cursor:pointer}
 .agent-stop-btn:hover{background:rgba(240,112,112,0.12)}
 .agent-steps{display:flex;flex-direction:column;gap:3px;max-height:220px;overflow-y:auto;
   scrollbar-width:thin}
 .agent-step{display:flex;gap:6px;align-items:flex-start;padding:4px 5px;border-radius:5px}
 .agent-step.ok{background:var(--surface2)}.agent-step.fail{background:rgba(240,112,112,0.08)}
-.agent-step-num{font-size:9px;color:var(--faint);min-width:18px;text-align:right;padding-top:2px}
-.agent-step-badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:5px;
+.agent-step-num{font-size:.5625rem;color:var(--faint);min-width:18px;text-align:right;padding-top:2px}
+.agent-step-badge{font-size:.5rem;font-weight:700;padding:1px 5px;border-radius:5px;
   white-space:nowrap;min-width:52px;text-align:center;background:var(--bg)}
 .badge-NAVIGATE,.badge-SEARCH{color:var(--muted)}
 .badge-CLICK{color:var(--ok)}
@@ -5346,39 +5346,39 @@ function _stopRecording() {
 .agent-plan{display:none;margin:0 0 6px;padding:6px 8px;border-radius:6px;
   background:var(--surface2)}
 .agent-plan.shown{display:block}
-.agent-plan-title{font-size:9px;font-weight:700;letter-spacing:0.5px;color:var(--muted);
+.agent-plan-title{font-size:.5625rem;font-weight:700;letter-spacing:0.5px;color:var(--muted);
   margin-bottom:3px}
 .agent-plan-steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}
-.agent-plan-step{font-size:10px;color:var(--muted);word-break:break-word}
+.agent-plan-step{font-size:.625rem;color:var(--muted);word-break:break-word}
 .agent-plan-step.done{color:var(--faint);text-decoration:line-through}
 .agent-plan-step.current{color:var(--text);font-weight:600}
-.agent-plan-check{font-size:9px;color:var(--faint);font-weight:400}
-.agent-plan-note{font-size:10px;color:var(--muted);word-break:break-word}
+.agent-plan-check{font-size:.5625rem;color:var(--faint);font-weight:400}
+.agent-plan-note{font-size:.625rem;color:var(--muted);word-break:break-word}
 .agent-step-body{flex:1;min-width:0}
-.agent-step-target{font-size:10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.agent-step-reason{font-size:9px;color:var(--faint);margin-top:1px}
+.agent-step-target{font-size:.625rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-step-reason{font-size:.5625rem;color:var(--faint);margin-top:1px}
 .agent-spinner-sm{width:7px;height:7px;border:1.5px solid var(--accent);
   border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;
   margin-top:3px;flex-shrink:0}
-.agent-result{font-size:11px;color:var(--text);padding:5px 8px;background:var(--surface2);
+.agent-result{font-size:.6875rem;color:var(--text);padding:5px 8px;background:var(--surface2);
   border-radius:5px;margin-top:4px;border-left:2px solid var(--ok)}
 .agent-result.fail{background:rgba(240,112,112,0.08);border-color:var(--err);color:var(--err)}
 .agent-confirm{display:flex;flex-direction:column;gap:6px;padding:7px 8px;border-radius:6px;
   background:var(--surface2);border-left:2px solid var(--accent);margin:2px 0}
-.agent-confirm-title{font-size:9px;font-weight:700;letter-spacing:0.5px;color:var(--muted);
+.agent-confirm-title{font-size:.5625rem;font-weight:700;letter-spacing:0.5px;color:var(--muted);
   text-transform:uppercase}
-.agent-confirm-msg{font-size:11px;color:var(--text);word-break:break-word}
+.agent-confirm-msg{font-size:.6875rem;color:var(--text);word-break:break-word}
 .agent-confirm-btns{display:flex;gap:6px;justify-content:flex-end}
-.agent-confirm-btns button{font-size:10px;padding:3px 10px;border-radius:6px;cursor:pointer;
+.agent-confirm-btns button{font-size:.625rem;padding:3px 10px;border-radius:6px;cursor:pointer;
   border:1px solid var(--border);background:transparent;color:var(--text)}
 .agent-confirm-btns .agent-allow{background:var(--accent);border-color:var(--accent);color:#fff}
 .agent-save{display:none;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
 .agent-save.shown{display:flex}
-.agent-save button{font-size:10px;padding:3px 10px;border-radius:6px;cursor:pointer;
+.agent-save button{font-size:.625rem;padding:3px 10px;border-radius:6px;cursor:pointer;
   border:1px solid var(--border);background:transparent;color:var(--text)}
 .agent-save .agent-save-btn{background:var(--accent);border-color:var(--accent);color:#fff}
 .agent-save button:disabled{opacity:0.6;cursor:default}
-.agent-save-note{flex-basis:100%;font-size:10px;color:var(--muted);word-break:break-word}
+.agent-save-note{flex-basis:100%;font-size:.625rem;color:var(--muted);word-break:break-word}
 .agent-save-note.ok{color:var(--text)}
   `;
   var s = document.createElement('style');

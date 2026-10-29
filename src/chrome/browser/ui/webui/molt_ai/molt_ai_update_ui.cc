@@ -172,20 +172,20 @@ constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
          color:#e8e8ea; margin:0; padding:40px; display:flex;
          justify-content:center; }
   .card { width:100%; max-width:620px; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:#8a8a92; font-size:13px; margin-bottom:28px; }
+  h1 { font-size:1.375rem; margin:0 0 4px; }
+  .sub { color:#8a8a92; font-size:.8125rem; margin-bottom:28px; }
   .panel { background:#16161a; border:1px solid #26262c; border-radius:14px;
            padding:24px; margin-bottom:18px; }
   .row { display:flex; align-items:center; justify-content:space-between;
          gap:16px; }
-  .vlabel { color:#8a8a92; font-size:12px; text-transform:uppercase;
+  .vlabel { color:#8a8a92; font-size:.75rem; text-transform:uppercase;
             letter-spacing:.05em; }
-  .vnum { font-size:18px; font-weight:600; }
+  .vnum { font-size:1.125rem; font-weight:600; }
   #badge { display:inline-block; padding:6px 12px; border-radius:999px;
-           font-size:13px; font-weight:600; background:#1f2430; color:#9aa4b2; }
-  #status { font-size:15px; margin:18px 0 6px; }
+           font-size:.8125rem; font-weight:600; background:#1f2430; color:#9aa4b2; }
+  #status { font-size:.9375rem; margin:18px 0 6px; }
   #notes { white-space:pre-wrap; background:#0f0f12; border:1px solid #26262c;
-           border-radius:10px; padding:14px; font-size:13px; color:#c2c2c8;
+           border-radius:10px; padding:14px; font-size:.8125rem; color:#c2c2c8;
            max-height:220px; overflow:auto; margin-top:14px; display:none; }
   .bar { height:8px; background:#26262c; border-radius:999px; overflow:hidden;
          margin:14px 0 4px; display:none; }
@@ -196,11 +196,11 @@ constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
   .primary { background:#6d5cff; color:#fff; }
   .primary:disabled { background:#34343c; color:#7a7a82; cursor:default; }
   .ghost { background:#26262c; color:#e8e8ea; }
-  .toggle { display:flex; align-items:center; gap:10px; font-size:14px; }
+  .toggle { display:flex; align-items:center; gap:10px; font-size:.875rem; }
   .toggle input { width:18px; height:18px; accent-color:#6d5cff; }
   a { color:#9a8cff; }
-  .muted { color:#8a8a92; font-size:12px; margin-top:10px; }
-  .ok { color:#4ade80; font-size:13px; margin-top:10px; display:none; }
+  .muted { color:#8a8a92; font-size:.75rem; margin-top:10px; }
+  .ok { color:#4ade80; font-size:.8125rem; margin-top:10px; display:none; }
 </style>
 </head>
 <body>

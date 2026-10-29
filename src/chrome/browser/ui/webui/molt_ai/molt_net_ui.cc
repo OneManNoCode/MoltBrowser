@@ -294,13 +294,13 @@ class MoltNetDataSource : public content::URLDataSource {
   .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);transition:.25s}
   .dot.on{background:var(--ok);box-shadow:0 0 10px 1px rgba(95,227,161,.6)}
   .dot.busy{background:var(--accent);box-shadow:0 0 10px 1px rgba(255,82,87,.5)}
-  .title{font-size:14px;font-weight:700;letter-spacing:-.01em}
-  .st{font-size:11px;color:var(--muted);margin-top:1px}
-  .brand{margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--faint)}
+  .title{font-size:.875rem;font-weight:700;letter-spacing:-.01em}
+  .st{font-size:.6875rem;color:var(--muted);margin-top:1px}
+  .brand{margin-left:auto;font-size:.625rem;font-weight:700;letter-spacing:.14em;color:var(--faint)}
 
   .toggle-row{padding:2px 18px 14px;display:flex;align-items:center;gap:12px;flex:0 0 auto}
-  .toggle-row .lbl{font-size:12.5px;color:var(--muted)}
-  .toggle-row .sub{font-size:11px;color:var(--faint);margin-top:1px}
+  .toggle-row .lbl{font-size:.78125rem;color:var(--muted)}
+  .toggle-row .sub{font-size:.6875rem;color:var(--faint);margin-top:1px}
   .sw{margin-left:auto;width:44px;height:25px;border-radius:13px;background:rgba(255,255,255,.12);
     border:1px solid var(--edge);cursor:pointer;position:relative;transition:.2s;flex:0 0 auto}
   .sw.on{background:linear-gradient(180deg,#ff676c,var(--accent-deep));border-color:transparent}
@@ -315,26 +315,26 @@ class MoltNetDataSource : public content::URLDataSource {
   .mode:hover{background:rgba(255,255,255,.10);border-color:var(--edge-hi)}
   .mode.active{background:linear-gradient(180deg,rgba(255,103,108,.30),rgba(224,53,59,.20));
     border-color:rgba(255,82,87,.55);box-shadow:0 0 0 1px rgba(255,82,87,.18) inset}
-  .mode .mname{font-size:11.5px;font-weight:650;color:var(--text)}
-  .mode .mdesc{font-size:9px;letter-spacing:.02em;color:var(--faint);margin-top:2px;text-transform:uppercase}
+  .mode .mname{font-size:.71875rem;font-weight:650;color:var(--text)}
+  .mode .mdesc{font-size:.5625rem;letter-spacing:.02em;color:var(--faint);margin-top:2px;text-transform:uppercase}
 
   .divider{height:1px;background:var(--edge);margin:0 14px;flex:0 0 auto}
-  .sec{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
+  .sec{font-size:.625rem;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
     padding:13px 18px 6px;flex:0 0 auto}
 
   .list{padding:0}
   .row{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:11px;cursor:pointer;
     border:1px solid transparent;transition:background .14s,border-color .14s}
   .row:hover{background:rgba(255,255,255,.06);border-color:var(--edge)}
-  .row .flag{font-size:17px;width:22px;text-align:center;flex:0 0 auto}
-  .row .name{font-size:13px;flex:1}
-  .row .chk{color:var(--ok);font-size:14px;opacity:0;flex:0 0 auto;transition:opacity .14s}
+  .row .flag{font-size:1.0625rem;width:22px;text-align:center;flex:0 0 auto}
+  .row .name{font-size:.8125rem;flex:1}
+  .row .chk{color:var(--ok);font-size:.875rem;opacity:0;flex:0 0 auto;transition:opacity .14s}
   .row.active{background:rgba(95,227,161,.10);border-color:rgba(95,227,161,.30)}
   .row.active .chk{opacity:1}
 
   .foot{flex:0 0 auto;display:flex;gap:8px;padding:10px 14px 14px}
   .act{flex:1;padding:9px 4px;border-radius:11px;cursor:pointer;text-align:center;
-    font-size:11px;font-weight:600;background:rgba(255,255,255,.05);
+    font-size:.6875rem;font-weight:600;background:rgba(255,255,255,.05);
     border:1px solid var(--edge);color:var(--muted);transition:.15s;white-space:nowrap}
   .act:hover{background:rgba(255,255,255,.11);border-color:var(--edge-hi);color:var(--text)}
 
@@ -346,20 +346,20 @@ class MoltNetDataSource : public content::URLDataSource {
   .hop{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:11px;border:1px solid transparent}
   .hop.dev{background:rgba(255,255,255,.04);border-color:var(--edge)}
   .hop.exit{background:rgba(255,82,87,.09);border-color:rgba(255,82,87,.24)}
-  .hop .hflag{font-size:16px;width:20px;text-align:center;flex:0 0 auto}
+  .hop .hflag{font-size:1rem;width:20px;text-align:center;flex:0 0 auto}
   .hop .hmain{flex:1;min-width:0}
-  .hop .hrole{font-size:12.5px;color:var(--text);font-weight:600}
-  .hop .hip{font-size:10.5px;color:var(--faint);font-family:var(--mono,ui-monospace,monospace);margin-top:1px;overflow-wrap:anywhere;word-break:normal}
+  .hop .hrole{font-size:.78125rem;color:var(--text);font-weight:600}
+  .hop .hip{font-size:.65625rem;color:var(--faint);font-family:var(--mono,ui-monospace,monospace);margin-top:1px;overflow-wrap:anywhere;word-break:normal}
   .hop .hip.reveal{color:var(--ok)}
-  .hop .hbtn{font-size:10.5px;padding:3px 10px;border-radius:8px;border:1px solid var(--edge-hi);background:transparent;color:var(--text);cursor:pointer;flex:0 0 auto;white-space:nowrap}
+  .hop .hbtn{font-size:.65625rem;padding:3px 10px;border-radius:8px;border:1px solid var(--edge-hi);background:transparent;color:var(--text);cursor:pointer;flex:0 0 auto;white-space:nowrap}
   .hop .hbtn:hover{background:rgba(255,255,255,.10)}
   .hline{width:2px;height:9px;background:rgba(255,255,255,.22);margin-left:19px}
-  .note{font-size:9.5px;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
+  .note{font-size:.59375rem;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
   .note.warn{color:#ffb4b4;padding-top:0}
   .note.warn:empty{display:none}
-  .note.fonts{padding:0 18px 8px;font-size:10px;color:var(--muted)}
+  .note.fonts{padding:0 18px 8px;font-size:.625rem;color:var(--muted)}
   .note.fonts:empty{display:none}
-  #where{padding:0 18px 8px;font-size:10.5px}
+  #where{padding:0 18px 8px;font-size:.65625rem}
   .evlink{cursor:pointer;color:var(--muted)}
   .evlink:hover{color:var(--text)}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}

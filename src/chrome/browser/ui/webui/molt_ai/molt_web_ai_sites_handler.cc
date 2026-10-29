@@ -296,7 +296,7 @@ const char kWebAISitesSettingsJs[] = R"JS(
         }
         var remove = el('button', 'btn secondary', 'Remove');
         remove.type = 'button';
-        remove.style.cssText = 'font-size:12px;padding:4px 12px;' +
+        remove.style.cssText = 'font-size:.75rem;padding:4px 12px;' +
                                'margin-left:auto';
         remove.setAttribute('data-site', r.site);
         remove.setAttribute('aria-label', 'Remove ' + name);

@@ -715,7 +715,7 @@ function buildScheduleHTML(s) {
     nextLine = '<div class="next-fire disabled">No upcoming fire</div>';
   }
 
-  var enabledHTML = '<label style="font-size:12px;color:#aaa;">' +
+  var enabledHTML = '<label style="font-size:.75rem;color:#aaa;">' +
     '<input type="checkbox" data-sched="enabled"' +
     (s.enabled === false ? '' : ' checked') + ' style="margin-right:6px;">' +
     'Enabled (untick to pause without losing schedule)</label>';
@@ -856,7 +856,7 @@ function buildDetailHTML(s) {
     + '<div class="detail-section">'
     +   '<h4>Stats</h4>'
     +   buildSparklineHTML(s)
-    +   '<div style="font-size:12px;color:#aaa;line-height:1.7;margin-top:6px;">'
+    +   '<div style="font-size:.75rem;color:#aaa;line-height:1.7;margin-top:6px;">'
     +     'Runs: ' + esc(runs) + ' &middot; Successes: ' + esc(ok)
     +     ' &middot; Last run: ' + esc(lastRun)
     +     (s.stats && s.stats.ai_tokens_total
@@ -1388,27 +1388,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .header{background:linear-gradient(135deg,#1a1a2e,#16213e);
   padding:18px 28px;display:flex;align-items:center;gap:18px;
   border-bottom:1px solid rgba(255,255,255,0.08);}
-.header h1{font-size:22px;font-weight:600;}
+.header h1{font-size:1.375rem;font-weight:600;}
 .header h1 span{color:#ff4444;font-weight:700;}
-.badge{background:#ff4444;color:#fff;font-size:10px;padding:2px 8px;
+.badge{background:#ff4444;color:#fff;font-size:.625rem;padding:2px 8px;
   border-radius:10px;font-weight:600;text-transform:uppercase;}
 .bar{flex:1}
 .btn{background:#ff4444;border:none;color:#fff;padding:8px 16px;
-  border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;}
+  border-radius:8px;font-weight:600;cursor:pointer;font-size:.8125rem;}
 .btn:hover{background:#ff5555;}
 .btn:disabled{opacity:0.5;cursor:not-allowed;}
 .btn.ghost{background:transparent;border:1px solid #2a2a3a;color:#ccc;}
 .btn.ghost:hover{border-color:#ff4444;color:#fff;}
 .btn.green{background:#16a34a;}
 .btn.green:hover{background:#22c55e;}
-.btn.small{padding:5px 10px;font-size:11px;border-radius:6px;}
+.btn.small{padding:5px 10px;font-size:.6875rem;border-radius:6px;}
 .container{max-width:1080px;margin:0 auto;padding:32px 28px 64px;}
 .intro{color:#888;margin-bottom:24px;line-height:1.5;}
 .intro b{color:#ddd;}
 .toolbar-row{display:flex;gap:10px;margin-bottom:24px;align-items:center;}
 .toolbar-row .grow{flex:1;}
 .search-input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:8px 14px;border-radius:8px;font-size:13px;width:240px;}
+  padding:8px 14px;border-radius:8px;font-size:.8125rem;width:240px;}
 .search-input:focus{outline:none;border-color:#ff4444;}
 .script-list{display:flex;flex-direction:column;gap:12px;}
 .empty{padding:48px;text-align:center;color:#555;background:#0d0d14;
@@ -1421,28 +1421,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   cursor:pointer;user-select:none;}
 .script-summary:hover{background:rgba(255,255,255,0.02);}
 .script-summary .info{flex:1;min-width:0;}
-.script-summary .name{font-size:15px;font-weight:600;margin-bottom:4px;
+.script-summary .name{font-size:.9375rem;font-weight:600;margin-bottom:4px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.script-summary .meta{font-size:12px;color:#888;}
+.script-summary .meta{font-size:.75rem;color:#888;}
 .script-summary .actions{display:flex;gap:8px;flex-shrink:0;}
-.script-summary .chev{color:#555;font-size:14px;transition:transform 0.2s;
+.script-summary .chev{color:#555;font-size:.875rem;transition:transform 0.2s;
   margin-left:4px;}
 .script-card.open .chev{transform:rotate(90deg);}
 .script-detail{display:none;padding:0 22px 18px;border-top:1px solid #1a1a2a;
   background:#08080d;}
 .script-card.open .script-detail{display:block;}
 .detail-section{margin-top:16px;}
-.detail-section h4{font-size:11px;text-transform:uppercase;
+.detail-section h4{font-size:.6875rem;text-transform:uppercase;
   letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;}
 .var-grid{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;
   align-items:center;}
-.var-grid label{font-size:12px;color:#aaa;font-family:monospace;}
+.var-grid label{font-size:.75rem;color:#aaa;font-family:monospace;}
 .var-grid input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:6px 10px;border-radius:6px;font-size:12px;width:100%;
+  padding:6px 10px;border-radius:6px;font-size:.75rem;width:100%;
   font-family:monospace;}
 .var-grid input:focus{outline:none;border-color:#ff4444;}
-.var-empty{color:#555;font-size:12px;font-style:italic;padding:6px 0;}
-.steps-list{font-family:monospace;font-size:11px;line-height:1.7;}
+.var-empty{color:#555;font-size:.75rem;font-style:italic;padding:6px 0;}
+.steps-list{font-family:monospace;font-size:.6875rem;line-height:1.7;}
 .step-row{display:flex;gap:8px;padding:4px 8px;border-radius:4px;}
 .step-row:hover{background:rgba(255,255,255,0.03);}
 .step-num{color:#444;width:24px;text-align:right;}
@@ -1454,17 +1454,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .dot.green{background:#4ade80;}
 .dot.yellow{background:#fbbf24;}
 .dot.red{background:#f87171;}
-.section-title{font-size:13px;color:#888;text-transform:uppercase;
+.section-title{font-size:.8125rem;color:#888;text-transform:uppercase;
   letter-spacing:1px;margin:24px 0 10px;display:flex;align-items:center;
   gap:10px;}
-.section-title .count{background:#1a1a2a;color:#aaa;font-size:11px;
+.section-title .count{background:#1a1a2a;color:#aaa;font-size:.6875rem;
   padding:2px 8px;border-radius:10px;}
 .audit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
-  padding:14px 18px;font-family:monospace;font-size:11px;color:#bbb;
+  padding:14px 18px;font-family:monospace;font-size:.6875rem;color:#bbb;
   max-height:240px;overflow-y:auto;line-height:1.6;}
 .toast{position:fixed;bottom:24px;right:24px;background:#1a3a1a;
   color:#4ade80;padding:12px 18px;border-radius:10px;
-  border:1px solid #2a4a2a;font-size:13px;font-weight:600;
+  border:1px solid #2a4a2a;font-size:.8125rem;font-weight:600;
   transform:translateY(120px);opacity:0;transition:all 0.25s;
   z-index:1000;}
 .toast.show{transform:translateY(0);opacity:1;}
@@ -1478,17 +1478,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 /* Day 3: schedule editor */
 .sched-row{display:flex;gap:10px;align-items:center;margin-bottom:10px;
   flex-wrap:wrap;}
-.sched-row label{font-size:11px;color:#888;text-transform:uppercase;
+.sched-row label{font-size:.6875rem;color:#888;text-transform:uppercase;
   letter-spacing:1px;}
 .sched-row select,.sched-row input{background:#0d0d14;border:1px solid #2a2a3a;
-  color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;
+  color:#fff;padding:6px 10px;border-radius:6px;font-size:.75rem;
   font-family:inherit;}
 .sched-row select:focus,.sched-row input:focus{outline:none;border-color:#ff4444;}
-.sched-row .preset{background:#1a1a2a;border:none;color:#aaa;font-size:11px;
+.sched-row .preset{background:#1a1a2a;border:none;color:#aaa;font-size:.6875rem;
   padding:4px 10px;border-radius:14px;cursor:pointer;}
 .sched-row .preset:hover{background:#ff4444;color:#fff;}
-.sched-help{font-size:11px;color:#666;margin-top:4px;font-family:monospace;}
-.next-fire{font-size:12px;color:#fbbf24;margin-top:6px;}
+.sched-help{font-size:.6875rem;color:#666;margin-top:4px;font-family:monospace;}
+.next-fire{font-size:.75rem;color:#fbbf24;margin-top:6px;}
 .next-fire.disabled{color:#555;}
 
 /* Day 4: step editor */
@@ -1497,33 +1497,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   gap:6px;align-items:center;margin-bottom:6px;}
 .step-edit-row select,.step-edit-row input{background:#0d0d14;
   border:1px solid #2a2a3a;color:#fff;padding:5px 8px;border-radius:5px;
-  font-size:11px;font-family:monospace;}
+  font-size:.6875rem;font-family:monospace;}
 .step-edit-row .step-num{font-family:monospace;color:#666;text-align:right;}
 .step-edit-row .step-ctrls{display:flex;gap:3px;}
 .step-edit-row .step-ctrls button{background:#1a1a2a;border:none;color:#aaa;
-  width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;
+  width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:.6875rem;
   display:flex;align-items:center;justify-content:center;}
 .step-edit-row .step-ctrls button:hover{background:#ff4444;color:#fff;}
 .add-step-btn{background:transparent;border:1px dashed #2a2a3a;color:#888;
-  padding:8px;border-radius:6px;cursor:pointer;width:100%;font-size:12px;
+  padding:8px;border-radius:6px;cursor:pointer;width:100%;font-size:.75rem;
   font-family:inherit;margin-top:6px;}
 .add-step-btn:hover{border-color:#ff4444;color:#fff;}
 
 /* Day 5: trust badge */
-.trust-badge{font-size:10px;font-weight:600;text-transform:uppercase;
+.trust-badge{font-size:.625rem;font-weight:600;text-transform:uppercase;
   padding:2px 8px;border-radius:10px;letter-spacing:0.5px;}
 .trust-casual{background:#3a2a2a;color:#f87171;}
 .trust-approved{background:#3a3a1a;color:#fbbf24;}
 .trust-trusted{background:#1a3a2a;color:#4ade80;}
 .trust-admin{background:#2a2a3a;color:#a78bfa;}
 .promote-banner{background:linear-gradient(90deg,#16a34a,#22c55e);
-  color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;
+  color:#fff;padding:10px 14px;border-radius:8px;font-size:.8125rem;
   margin-top:12px;display:flex;align-items:center;gap:12px;
   box-shadow:0 0 0 1px rgba(74,222,128,0.3);}
 .promote-banner .grow{flex:1;}
 .promote-banner button{background:rgba(255,255,255,0.15);border:none;
   color:#fff;padding:6px 12px;border-radius:5px;font-weight:600;
-  cursor:pointer;font-size:12px;}
+  cursor:pointer;font-size:.75rem;}
 .promote-banner button:hover{background:rgba(255,255,255,0.25);}
 .promote-banner button.dismiss{background:transparent;}
 
@@ -1536,10 +1536,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .sparkline .bar.ok{background:#4ade80;}
 .sparkline .bar.fail{background:#f87171;}
 .sparkline .bar:hover{filter:brightness(1.4);}
-.spark-legend{display:flex;gap:14px;font-size:11px;color:#888;
+.spark-legend{display:flex;gap:14px;font-size:.6875rem;color:#888;
   margin-top:6px;align-items:center;}
 .spark-legend b{color:#ddd;font-weight:500;}
-.timeline{margin-top:10px;font-family:monospace;font-size:11px;
+.timeline{margin-top:10px;font-family:monospace;font-size:.6875rem;
   max-height:280px;overflow-y:auto;background:#08080d;
   border:1px solid #1a1a2a;border-radius:6px;padding:6px 10px;}
 .timeline-row{display:flex;gap:10px;padding:3px 4px;border-radius:3px;
@@ -1554,12 +1554,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .timeline-extra{color:#777;flex:1;overflow:hidden;
   white-space:nowrap;text-overflow:ellipsis;}
 .retry-bar{background:#3a2a1a;color:#fbbf24;padding:8px 12px;
-  border-radius:6px;font-size:12px;margin-top:10px;
+  border-radius:6px;font-size:.75rem;margin-top:10px;
   display:flex;align-items:center;gap:10px;border:1px solid #4a3a1a;}
 .retry-bar .grow{flex:1;}
 .retry-bar button{background:#fbbf24;color:#0a0a0f;border:none;
   padding:5px 10px;border-radius:5px;font-weight:600;cursor:pointer;
-  font-size:11px;}
+  font-size:.6875rem;}
 .retry-bar button:hover{background:#fdd95e;}
 
 /* Day 5: confirmation modal */
@@ -1568,8 +1568,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .modal-bg.show{display:flex;}
 .modal{background:#0d0d14;border:1px solid #2a2a3a;border-radius:12px;
   padding:24px;max-width:480px;width:90%;}
-.modal h3{font-size:16px;margin-bottom:10px;}
-.modal p{color:#aaa;font-size:13px;line-height:1.6;margin-bottom:16px;}
+.modal h3{font-size:1rem;margin-bottom:10px;}
+.modal p{color:#aaa;font-size:.8125rem;line-height:1.6;margin-bottom:16px;}
 .modal .actions{display:flex;gap:10px;justify-content:flex-end;}
 </style>
 </head>
@@ -1579,9 +1579,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <h1><span>Molt</span>Automation</h1>
   <span class="badge">Beta</span>
   <div class="bar"></div>
-  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
-  <a href="molt://ai-agent/" style="color:#888;text-decoration:none;font-size:13px;">Agent</a>
-  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
+  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:.8125rem;">AI Chat</a>
+  <a href="molt://ai-agent/" style="color:#888;text-decoration:none;font-size:.8125rem;">Agent</a>
+  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:.8125rem;">Settings</a>
 </div>
 
 <div class="container">

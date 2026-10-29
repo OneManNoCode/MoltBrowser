@@ -133,11 +133,11 @@ class MoltHomeDataSource : public content::URLDataSource {
     align-items:center;justify-content:center;padding:40px 24px;gap:30px}
 
   .brand{text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
-  .logo{font-size:clamp(40px,7vw,72px);font-weight:800;letter-spacing:-0.035em;line-height:1}
+  .logo{font-size:clamp(2.5rem,7vw,4.5rem);font-weight:800;letter-spacing:-0.035em;line-height:1}
   .logo .m{color:var(--brand)}
   .logo .s{color:var(--text)}
   .logo .beta{font-size:.28em;font-weight:700;letter-spacing:.18em;color:var(--faint);vertical-align:super;margin-left:.4em}
-  .kick{font-size:11.5px;letter-spacing:.34em;text-transform:uppercase;color:var(--brand);font-weight:600}
+  .kick{font-size:.71875rem;letter-spacing:.34em;text-transform:uppercase;color:var(--brand);font-weight:600}
 
   /* Glass search */
   .search{width:min(620px,92vw);display:flex;align-items:center;gap:12px;height:62px;
@@ -149,10 +149,10 @@ class MoltHomeDataSource : public content::URLDataSource {
   .search:focus-within{border-color:var(--edge-hi);
     box-shadow:0 30px 70px -20px rgba(0,0,0,.7),inset 0 1px 0 var(--specular),0 0 0 4px rgba(255,82,87,.14)}
   .search input{flex:1;background:transparent;border:none;outline:none;color:var(--text);
-    font-family:var(--font);font-size:16px}
+    font-family:var(--font);font-size:1rem}
   .search input::placeholder{color:var(--faint)}
   .search .go{flex:0 0 auto;width:44px;height:44px;border-radius:14px;border:none;cursor:pointer;
-    display:grid;place-items:center;color:#fff;font-size:19px;
+    display:grid;place-items:center;color:#fff;font-size:1.1875rem;
     background:linear-gradient(180deg,var(--brand),var(--brand-deep));
     box-shadow:0 10px 24px -8px rgba(255,82,87,.6);transition:transform .15s,opacity .15s}
   .search .go:hover{transform:translateY(-1px)}
@@ -165,12 +165,12 @@ class MoltHomeDataSource : public content::URLDataSource {
     box-shadow:0 22px 54px -20px rgba(0,0,0,.65),inset 0 1px 0 var(--specular);
     transition:transform .18s,border-color .18s,background .18s}
   .card:hover{transform:translateY(-4px);border-color:var(--edge-hi);background:var(--glass-hi)}
-  .card .t{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:650}
-  .card .ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:15px;flex:0 0 auto}
+  .card .t{display:flex;align-items:center;gap:10px;font-size:.875rem;font-weight:650}
+  .card .ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:.9375rem;flex:0 0 auto}
   .card.ai .ic{background:rgba(167,139,250,.22);box-shadow:inset 0 0 0 1px rgba(167,139,250,.3)}
   .card.net .ic{background:rgba(95,227,161,.18);box-shadow:inset 0 0 0 1px rgba(95,227,161,.28)}
   .card.imp .ic{background:rgba(255,82,87,.2);box-shadow:inset 0 0 0 1px rgba(255,82,87,.3)}
-  .card .d{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.5}
+  .card .d{font-size:.75rem;color:var(--faint);margin-top:8px;line-height:1.5}
 
   @media (prefers-reduced-motion: reduce){.orb{animation:none}.card:hover,.search .go:hover{transform:none}}
 </style>
