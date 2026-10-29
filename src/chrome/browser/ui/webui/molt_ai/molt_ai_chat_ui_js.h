@@ -170,7 +170,7 @@ function renderMarkdown(text) {
     var id = 'cb-' + (++codeBlockId);
     var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:.5625rem;color:var(--faint);text-transform:uppercase">' + lang + '</span>' : '';
     return hold('<div class="code-wrap">' + langLabel +
-      '<button class="code-copy" data-on-click="copyCode" data-copy-target="' + id + '">Copy</button>' +
+      '<button class="code-copy" aria-label="Copy code" data-on-click="copyCode" data-copy-target="' + id + '">Copy</button>' +
       '<pre id="' + id + '" style="background:var(--surface2);padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:8px;overflow-x:auto;font-size:.75rem;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre></div>');
   });
   // Inline code (`...`)
@@ -204,12 +204,13 @@ function renderMarkdown(text) {
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--text)">$1</strong>');
   // Italic (*...*)
   s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
-  // Headers (### ... , ## ... , # ...)
-  s = s.replace(/^### (.+)$/gm, '<div style="font-size:.875rem;font-weight:700;margin:10px 0 4px;color:var(--text)">$1</div>');
-  s = s.replace(/^## (.+)$/gm, '<div style="font-size:.9375rem;font-weight:700;margin:12px 0 4px;color:var(--text)">$1</div>');
-  s = s.replace(/^# (.+)$/gm, '<div style="font-size:1rem;font-weight:700;margin:14px 0 6px;color:var(--text)">$1</div>');
+  // Headers (### ... , ## ... , # ...): headings to screen readers too,
+  // below the page's own (an answer sits under the conversation's level 2).
+  s = s.replace(/^### (.+)$/gm, '<div role="heading" aria-level="5" style="font-size:.875rem;font-weight:700;margin:10px 0 4px;color:var(--text)">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div role="heading" aria-level="4" style="font-size:.9375rem;font-weight:700;margin:12px 0 4px;color:var(--text)">$1</div>');
+  s = s.replace(/^# (.+)$/gm, '<div role="heading" aria-level="3" style="font-size:1rem;font-weight:700;margin:14px 0 6px;color:var(--text)">$1</div>');
   // Unordered lists (- item or * item)
-  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span style="position:absolute;left:4px;color:var(--muted)">•</span>$1</div>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span aria-hidden="true" style="position:absolute;left:4px;color:var(--muted)">•</span>$1</div>');
   // Ordered lists (1. item)
   s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:0;color:var(--muted);font-size:.75rem">$1.</span>$2</div>');
   // Line breaks (code blocks are held, so <pre> keeps its real newlines)
@@ -227,7 +228,8 @@ function renderMarkdown(text) {
 function setStatus(state, text) {
   var el = document.getElementById('statusIndicator');
   el.className = 'status ' + state;
-  el.textContent = text;
+  // A live region (role=status): written only when the words change.
+  if (el.textContent !== text) el.textContent = text;
 }
 
 // ---- Theme (Gray default / Black / White) ----
@@ -252,6 +254,9 @@ function applyTheme(theme) {
   for (var key in checks) {
     var el = document.getElementById(checks[key]);
     if (el) el.classList.toggle('visible', key === theme);
+    if (el && el.parentNode) {
+      el.parentNode.setAttribute('aria-pressed', key === theme ? 'true' : 'false');
+    }
   }
 }
 
@@ -349,10 +354,10 @@ function startEditMessage(btn) {
   var original = (body || textEl).textContent;
   var area = document.createElement('div');
   area.className = 'msg-edit-area';
-  area.innerHTML = moltHTML('<textarea></textarea>' +
+  area.innerHTML = moltHTML('<textarea aria-label="Edit your message"></textarea>' +
       '<div class="msg-edit-btns">' +
-        '<button class="cancel-edit">Cancel</button>' +
-        '<button class="save">Save &amp; resubmit</button>' +
+        '<button class="cancel-edit" type="button">Cancel</button>' +
+        '<button class="save" type="button">Save &amp; resubmit</button>' +
       '</div>');
   var ta = area.querySelector('textarea');
   ta.value = original;
@@ -364,6 +369,7 @@ function startEditMessage(btn) {
     msgEl.removeChild(area);
     textEl.style.display = '';
     btn.style.display = '';
+    btn.focus();  // back where the edit started
   };
   area.querySelector('.save').onclick = function() {
     if (isGenerating) return;
@@ -443,12 +449,37 @@ function startAiMessage() {
   var m = document.getElementById('messages');
   var d = document.createElement('div');
   d.className = 'message ai';
-  d.innerHTML = moltHTML('<div class="sender">AI Assistant</div><div class="text"><span class="cursor"></span></div>');
+  d.innerHTML = moltHTML('<div class="sender">AI Assistant</div><div class="text" aria-busy="true"><span class="cursor" aria-hidden="true"></span></div>');
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
   currentAiMessageEl = d.querySelector('.text');
   currentAiText = '';
   return d;
+}
+
+// A streamed answer is read out once, when it is complete: screen readers
+// would otherwise read every token. Very long answers are cut short here;
+// the whole answer is in the conversation.
+var ANNOUNCE_MAX = 2000;
+// The answer's words, with a space between blocks; buttons (Copy) and
+// hidden marks left out.
+function answerWords(node) {
+  if (node.nodeType === 3) return node.data;
+  if (node.nodeType !== 1 || node.tagName === 'BUTTON' ||
+      node.getAttribute('aria-hidden') === 'true') {
+    return '';
+  }
+  var out = '';
+  for (var c = node.firstChild; c; c = c.nextSibling) out += answerWords(c);
+  return /^(DIV|P|BR|LI|PRE|UL|OL)$/.test(node.tagName) ? ' ' + out + ' ' : out;
+}
+function announceAnswer(el) {
+  var said = answerWords(el).replace(/\s+/g, ' ').trim();
+  if (!said) return;
+  if (said.length > ANNOUNCE_MAX) {
+    said = said.slice(0, ANNOUNCE_MAX) + '… The rest of the answer is in the conversation.';
+  }
+  moltA11y.announce('AI Assistant: ' + said);
 }
 
 function appendToken(token) {
@@ -457,7 +488,7 @@ function appendToken(token) {
   // A reply is text, never scanned for actions: page actions are
   // proposed by the browser after the reply (runPageActionProposal).
   var visible = currentAiText.trim();
-  currentAiMessageEl.innerHTML = moltHTML(renderMarkdown(visible) + '<span class="cursor"></span>');
+  currentAiMessageEl.innerHTML = moltHTML(renderMarkdown(visible) + '<span class="cursor" aria-hidden="true"></span>');
   var m = document.getElementById('messages');
   m.scrollTop = m.scrollHeight;
 }
@@ -477,11 +508,13 @@ function finishAiMessage() {
   if (currentAiMessageEl) {
     var visibleText = scrubSpecialTokens(currentAiText).trim();
     currentAiMessageEl.innerHTML = moltHTML(renderMarkdown(visibleText));
+    currentAiMessageEl.removeAttribute('aria-busy');
     // Add copy response button
     var actions = document.createElement('div');
     actions.className = 'msg-actions';
     actions.innerHTML = moltHTML('<button class="msg-action" data-on-click="copyResponse">Copy response</button>');
     currentAiMessageEl.parentNode.appendChild(actions);
+    announceAnswer(currentAiMessageEl);
   }
   currentAiMessageEl = null;
   currentAiText = '';
@@ -497,7 +530,7 @@ function appendToAiMessage(text) {
   if (!currentAiMessageEl) startAiMessage();
   currentAiText += text;
   currentAiMessageEl.innerHTML =
-      moltHTML(renderMarkdown(currentAiText) + '<span class="cursor"></span>');
+      moltHTML(renderMarkdown(currentAiText) + '<span class="cursor" aria-hidden="true"></span>');
   var m = document.getElementById('messages');
   if (m) m.scrollTop = m.scrollHeight;
 }
@@ -539,6 +572,7 @@ var abortPageActionProposal = null;
 
 // |title| and |label| are browser-written text that quotes page labels
 // and model text: they are set as text, never markup.
+var confirmChipSeq = 0;
 function _renderConfirmChip(title, label, onAllow, onDeny) {
   var msgs = document.getElementById('messages');
   if (!msgs) { onDeny(); return; }
@@ -546,19 +580,27 @@ function _renderConfirmChip(title, label, onAllow, onDeny) {
   d.className = 'molt-action-confirm';
   // Stylesheet for this chip is added inline so it can't be skinned
   // out by site CSS injection into our message area.
+  var chipId = 'acChip' + (++confirmChipSeq);
+  d.setAttribute('role', 'group');
+  d.setAttribute('aria-labelledby', chipId + 't');
+  d.setAttribute('aria-describedby', chipId + 'l');
   d.innerHTML =
-    moltHTML('<span class="ac-icon">⚡</span>' +
+    moltHTML('<span class="ac-icon" aria-hidden="true">⚡</span>' +
     '<div class="ac-body">' +
-      '<div class="ac-title"></div>' +
-      '<div class="ac-label"></div>' +
+      '<div class="ac-title" id="' + chipId + 't"></div>' +
+      '<div class="ac-label" id="' + chipId + 'l"></div>' +
     '</div>' +
     '<div class="ac-buttons">' +
-      '<button class="ac-deny">Deny</button>' +
-      '<button class="ac-allow">Allow</button>' +
+      '<button class="ac-deny" type="button">Deny</button>' +
+      '<button class="ac-allow" type="button">Allow</button>' +
     '</div>');
   d.querySelector('.ac-title').textContent = title;
   var labelEl = d.querySelector('.ac-label');
   labelEl.textContent = label;
+  // Read out at once; focus stays where it is (an Enter meant for the
+  // composer must never land on Allow).
+  moltA11y.announce(title + ': ' + label + '. Allow or Deny, in the conversation.',
+                    {assertive: true});
   // The user approves all of it: no ellipsis.
   labelEl.style.whiteSpace = 'normal';
   labelEl.style.wordBreak = 'break-word';
@@ -592,13 +634,14 @@ function appendStatusChip(icon, text) {
   if (!m) return null;
   var d = document.createElement('div');
   d.className = 'molt-navigating-chip';
-  d.innerHTML = moltHTML('<span class="nav-icon"></span>' +
+  d.innerHTML = moltHTML('<span class="nav-icon" aria-hidden="true"></span>' +
                 '<span class="nav-label"></span>' +
-                '<span class="nav-spinner"></span>');
+                '<span class="nav-spinner" aria-hidden="true"></span>');
   d.querySelector('.nav-icon').textContent = icon;
   d.querySelector('.nav-label').textContent = text;
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
+  moltA11y.announce(text);
   return d;
 }
 
@@ -710,10 +753,12 @@ function appendActionResult(ok, label, detail) {
   if (!m) return;
   var d = document.createElement('div');
   d.className = 'molt-action-result ' + (ok ? 'ok' : 'fail');
-  d.innerHTML = moltHTML((ok ? '&#10003; ' : '&#10007; ') + esc(label) +
+  d.innerHTML = moltHTML('<span aria-hidden="true">' + (ok ? '&#10003; ' : '&#10007; ') + '</span>' +
+                '<span class="sr-only">' + (ok ? 'Done: ' : 'Failed: ') + '</span>' + esc(label) +
                 (detail ? ' <span class="detail">(' + esc(detail) + ')</span>' : ''));
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
+  moltA11y.announce(d.textContent, {assertive: !ok});
 }
 
 // --------------------------------------------------------------
@@ -760,8 +805,10 @@ function askCloudConsent(r) {
     }).join('');
     var d = document.createElement('div');
     d.className = 'molt-action-confirm molt-cloud-consent';
+    d.setAttribute('role', 'group');
+    d.setAttribute('aria-label', 'Send to ' + String(r.provider_name || '') + '?');
     d.innerHTML = moltHTML(
-        '<span class="ac-icon">☁️</span>' +
+        '<span class="ac-icon" aria-hidden="true">☁️</span>' +
         '<div class="ac-body cc-body">' +
           '<div class="ac-title">Send to ' + esc(r.provider_name) + '?</div>' +
           '<div>This chat would leave your device: it goes to ' +
@@ -770,11 +817,14 @@ function askCloudConsent(r) {
           '<ul>' + list + '</ul>' +
         '</div>' +
         '<div class="ac-buttons">' +
-          '<button class="ac-deny">Cancel</button>' +
-          '<button class="ac-allow">Allow</button>' +
+          '<button class="ac-deny" type="button">Cancel</button>' +
+          '<button class="ac-allow" type="button">Allow</button>' +
         '</div>');
     msgs.appendChild(d);
     msgs.scrollTop = msgs.scrollHeight;
+    moltA11y.announce('Send to ' + String(r.provider_name || '') +
+                      '? This chat would leave your device. Allow or Cancel, in the conversation.',
+                      {assertive: true});
     var settle = function(ok) {
       return function() {
         try { d.parentNode && d.parentNode.removeChild(d); } catch (e) {}
@@ -3320,11 +3370,12 @@ function sendMessage() {
 
 function addErrorMessage(text) {
   // Slim inline notice in the message flow (left red border) — errors
-  // never take over the header.
+  // never take over the header. An alert: read out at once.
   var m = document.getElementById('messages');
   if (!m) return;
   var d = document.createElement('div');
   d.className = 'message error';
+  d.setAttribute('role', 'alert');
   d.innerHTML = moltHTML('<div class="text">' + esc(text) + '</div>');
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
@@ -3354,7 +3405,7 @@ function _renderAttachChip(name, size, state, note) {
   if (!wrap) return;
   var status;
   if (state === 'loading') {
-    status = '<span class="a-spin"></span>';
+    status = '<span class="a-spin" aria-hidden="true"></span><span class="sr-only">Reading the file…</span>';
   } else if (state === 'ok') {
     status = '<span class="a-status ok">✓' +
              (note ? ' ' + esc(note) : '') + '</span>';
@@ -3367,13 +3418,13 @@ function _renderAttachChip(name, size, state, note) {
   // a downloaded file named `x" onmouseover="...` must not be able to
   // inject attributes into this privileged WebUI page.
   var attrName = esc(name).replace(/"/g, '&quot;');
-  wrap.innerHTML = moltHTML('<div class="attach-chip">' +
-      '<span>📎</span>' +
+  wrap.innerHTML = moltHTML('<div class="attach-chip" role="group" aria-label="Attachment">' +
+      '<span aria-hidden="true">📎</span>' +
       '<span class="a-name" title="' + attrName + '">' + esc(name) +
       '</span>' +
       '<span class="a-size">' + _fmtBytes(size) + '</span>' +
       status +
-      '<button class="a-close" title="Remove attachment" ' +
+      '<button class="a-close" title="Remove attachment" aria-label="Remove attachment" ' +
           'data-on-click="clearAttachment">✕</button>' +
       '</div>');
   wrap.style.display = 'flex';
@@ -3524,6 +3575,12 @@ function setActionMode(mode) {
   var name = document.getElementById('modeChipName');
   if (icon) icon.innerHTML = moltHTML(actionAutoMode ? '&#9889;' : '&#128737;');
   if (name) name.textContent = actionAutoMode ? 'Auto' : 'Ask first';
+  if (chkAsk && chkAsk.parentNode) {
+    chkAsk.parentNode.setAttribute('aria-pressed', actionAutoMode ? 'false' : 'true');
+  }
+  if (chkAuto && chkAuto.parentNode) {
+    chkAuto.parentNode.setAttribute('aria-pressed', actionAutoMode ? 'true' : 'false');
+  }
   closeModeDropdown();
 }
 
@@ -3537,22 +3594,46 @@ function toggleModeDropdown(ev) {
   closeModelDropdown();
   dd.classList.toggle('open');
   chip.classList.toggle('open');
+  chip.setAttribute('aria-expanded', dd.classList.contains('open') ? 'true' : 'false');
 }
 
 // Shared "close the model popup" used by both toggles above/below.
+// Focus inside a popup that closes goes back to its button.
 function closeModelDropdown() {
   var chip = document.getElementById('modelChip');
   var dd = document.getElementById('modelChipDropdown');
+  var hadFocus = dd && dd.contains(document.activeElement);
   if (dd) dd.classList.remove('open');
-  if (chip) chip.classList.remove('open');
+  if (chip) {
+    chip.classList.remove('open');
+    chip.setAttribute('aria-expanded', 'false');
+    if (hadFocus) chip.focus();
+  }
 }
 
 function closeModeDropdown() {
   var chip = document.getElementById('modeChip');
   var dd = document.getElementById('modeChipDropdown');
+  var hadFocus = dd && dd.contains(document.activeElement);
   if (dd) dd.classList.remove('open');
-  if (chip) chip.classList.remove('open');
+  if (chip) {
+    chip.classList.remove('open');
+    chip.setAttribute('aria-expanded', 'false');
+    if (hadFocus) chip.focus();
+  }
 }
+
+// Escape closes whichever popup is open (the composer menus, the ⋯
+// menu, the chats drawer) and puts focus back on its button.
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  var mode = document.getElementById('modeChipDropdown');
+  var model = document.getElementById('modelChipDropdown');
+  var menu = document.getElementById('overflowMenu');
+  if (mode && mode.classList.contains('open')) { closeModeDropdown(); e.preventDefault(); }
+  if (model && model.classList.contains('open')) { closeModelDropdown(); e.preventDefault(); }
+  if (menu && menu.classList.contains('open')) { closeOverflowMenu(); e.preventDefault(); }
+});
 
 // Close the mode menu on outside click (mirrors the model dropdown).
 document.addEventListener('click', function(e) {
@@ -3632,13 +3713,18 @@ function cancelGeneration() {
 
 // ---- Model Management ----
 
+// The model panel covers the chat: a modal dialog (moltA11y): focus
+// moves in, the chat behind is inert, Escape closes it and focus goes
+// back.
 function toggleModelPanel() {
   var p = document.getElementById('modelPanel');
   if (!p) return;
   if (p.classList.contains('open')) {
     p.classList.remove('open');
+    moltA11y.closeDialog(p, {fallback: document.getElementById('chatInput')});
   } else {
     p.classList.add('open');
+    moltA11y.openDialog(p, {labelledBy: 'modelPanelTitle', onEscape: toggleModelPanel});
     refreshModelList();
   }
 }
@@ -3719,7 +3805,9 @@ function refreshModelList() {
         '<div style="margin-top:4px">' + statusBadge + '</div>' +
         (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
         '<div class="progress-wrap" id="pw-' + escAttr(m.model_id) + '">' +
-          '<div class="progress-bar"><div class="progress-fill" id="pf-' + escAttr(m.model_id) + '"></div></div>' +
+          '<div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"' +
+            ' aria-label="Download of ' + escAttr(m.display_name || m.model_id) + '"' +
+            ' id="pb-' + escAttr(m.model_id) + '"><div class="progress-fill" id="pf-' + escAttr(m.model_id) + '"></div></div>' +
           '<div class="progress-text" id="pt-' + escAttr(m.model_id) + '"></div>' +
         '</div>');
 
@@ -3999,6 +4087,7 @@ function toggleModelDropdown(ev) {
   var willOpen = !dd.classList.contains('open');
   dd.classList.toggle('open');
   chip.classList.toggle('open');
+  chip.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
   if (willOpen) renderModelChipDropdown();
 }
 
@@ -4028,15 +4117,16 @@ function renderModelChipDropdown() {
   // ---- Cloud connect: the FIRST, most-prominent option so bring-your-own-
   // key frontier models are the top action in the picker. Opens the Connect
   // AI Providers settings (a manage entry once any provider is connected). ----
-  var cloudCta = document.createElement('div');
+  var cloudCta = document.createElement('button');
+  cloudCta.type = 'button';
   cloudCta.className = 'mcd-cloud-cta';
   cloudCta.innerHTML =
-    moltHTML('<span class="mcc-icon">☁️</span>' +
+    moltHTML('<span class="mcc-icon" aria-hidden="true">☁️</span>' +
     '<span class="mcc-text">' +
       (cloudModels.length ? 'Manage cloud providers' : 'Connect a cloud model') +
       '<span class="mcc-sub">OpenAI, Claude, Gemini &amp; more — your key</span>' +
     '</span>' +
-    '<span class="mcc-arrow">→</span>');
+    '<span class="mcc-arrow" aria-hidden="true">→</span>');
   cloudCta.onclick = function() {
     toggleModelDropdown();
     openMoltSettings('providers');
@@ -4067,37 +4157,51 @@ function renderModelChipDropdown() {
     //   downloading     \u2192 live % (see the download-progress listener)
     //   on disk         \u2192 subtle check; click loads
     //   not downloaded  \u2192 \u2b07 + size; click starts the download
+    // The row's button picks the model; its state is said in words (the
+    // marks are pictures); the licence link sits beside it.
     var right;
+    var state;
     if (isActive) {
       item.className += ' active';
-      right = '<span class="mcheck on">\u2713</span>';
+      right = '<span class="mcheck on" aria-hidden="true">\u2713</span>';
+      state = ', in use';
     } else if (isDownloading) {
       item.className += ' downloading';
-      right = '<span class="mpct" id="chipRowPct-' + m.model_id + '">\u2026</span>';
+      right = '<span class="mpct" id="chipRowPct-' + escAttr(m.model_id) + '">\u2026</span>';
+      state = ', downloading';
     } else if (m.is_downloaded) {
-      right = '<span class="mcheck disk" title="Downloaded \u2014 click to load">\u2713</span>';
+      right = '<span class="mcheck disk" aria-hidden="true" title="Downloaded \u2014 click to load">\u2713</span>';
+      state = ', downloaded';
     } else {
-      right = '<span class="mget">\u2b07 ' + sizeStr + '</span>';
+      right = '<span class="mget"><span aria-hidden="true">\u2b07</span><span class="sr-only">Download</span> ' + sizeStr + '</span>';
+      state = '';
       // Single concurrent download: while one is running, other
       // download rows are disabled (handler enforces this too).
       if (downloadingModelId) item.className += ' disabled';
     }
-    item.innerHTML =
+    var pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'mpick';
+    if (isActive) pick.setAttribute('aria-current', 'true');
+    if (!isActive && !isDownloading && !m.is_downloaded && downloadingModelId) {
+      pick.setAttribute('aria-disabled', 'true');
+    }
+    pick.innerHTML =
       moltHTML(moltBrandTile(m.company) +
-      '<div class="mmain">' +
-        '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
-          esc(m.company || 'Local') + '</div>' +
-        '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
-        '<div class="msize">' + esc(meta) + '</div>' +
+      '<span class="mmain">' +
+        '<span class="mco" style="color:' + moltBrandColor(m.company) + '">' +
+          esc(m.company || 'Local') + '</span>' +
+        '<span class="mname">' + esc(m.display_name || m.model_id) + '</span>' +
+        '<span class="msize">' + esc(meta) + '</span>' +
         (isDownloading
-            ? '<div class="mrow-bar"><div class="mrow-fill" id="chipRowFill-' +
-              escAttr(m.model_id) + '"></div></div>'
+            ? '<span class="mrow-bar" aria-hidden="true"><span class="mrow-fill" id="chipRowFill-' +
+              escAttr(m.model_id) + '"></span></span>'
             : '') +
-      '</div>' + right);
+      '</span>' + right + '<span class="sr-only">' + state + '</span>');
+    item.appendChild(pick);
     var licNode = modelLicenseNode(m);
-    var mainCol = item.querySelector('.mmain');
-    if (licNode && mainCol) mainCol.appendChild(licNode);
-    item.onclick = function(ev) {
+    if (licNode) item.appendChild(licNode);
+    pick.onclick = function(ev) {
       // The re-render below detaches the clicked row; without this the
       // document-level outside-click handler sees a detached target and
       // closes the menu we mean to keep open.
@@ -4134,18 +4238,23 @@ function renderModelChipDropdown() {
       item.className = 'model-chip-item';
       var isActive = activeModelId === m.model_id;
       var right = isActive
-          ? '<span class="mcheck on">\u2713</span>'
-          : '<span class="mcheck disk" title="Click to use">\u2713</span>';
+          ? '<span class="mcheck on" aria-hidden="true">\u2713</span><span class="sr-only">, in use</span>'
+          : '<span class="mcheck disk" aria-hidden="true" title="Click to use">\u2713</span>';
       if (isActive) item.className += ' active';
-      item.innerHTML =
+      var pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'mpick';
+      if (isActive) pick.setAttribute('aria-current', 'true');
+      pick.innerHTML =
         moltHTML(moltBrandTile(m.provider) +
-        '<div class="mmain">' +
-          '<div class="mco" style="color:' + moltBrandColor(m.provider) + '">' +
-            esc(m.provider || 'Cloud') + '</div>' +
-          '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
-          '<div class="msize">cloud \u00b7 via your key</div>' +
-        '</div>' + right);
-      item.onclick = function(ev) {
+        '<span class="mmain">' +
+          '<span class="mco" style="color:' + moltBrandColor(m.provider) + '">' +
+            esc(m.provider || 'Cloud') + '</span>' +
+          '<span class="mname">' + esc(m.display_name || m.model_id) + '</span>' +
+          '<span class="msize">cloud \u00b7 via your key</span>' +
+        '</span>' + right);
+      item.appendChild(pick);
+      pick.onclick = function(ev) {
         if (ev) ev.stopPropagation();
         if (isActive) return;
         selectCloudModel(m.model_id);
@@ -4162,7 +4271,8 @@ function renderModelChipDropdown() {
   }
   // (Cloud connect/manage lives at the TOP of the dropdown now \u2014 see the
   // .mcd-cloud-cta entry above \u2014 so it's the first thing the user sees.)
-  var foot = document.createElement('div');
+  var foot = document.createElement('button');
+  foot.type = 'button';
   foot.className = 'mcd-footer';
   foot.textContent = 'Manage local models\u2026';
   foot.onclick = function() {
@@ -4290,6 +4400,8 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
   if (fill && total > 0) {
     var pct = Math.round((current / total) * 100);
     fill.style.width = pct + '%';
+    var pbar = document.getElementById('pb-' + modelId);
+    if (pbar) pbar.setAttribute('aria-valuenow', String(pct));
     if (pw) pw.classList.add('active');
     var info = pct + '% (' + Math.round(current / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB)';
     if (speed > 0) {
@@ -4350,6 +4462,7 @@ cr.addWebUiListener('download-complete', function(modelId, success) {
     var wo = document.getElementById('welcomeOverlay');
     if (wo && wo.classList.contains('open')) {
       wo.classList.remove('open');
+      moltA11y.closeDialog(wo, {fallback: document.getElementById('chatInput')});
       setStatus('offline', 'Model ready \u2014 send a message to start');
     }
   }
@@ -4392,7 +4505,16 @@ function startFirstRunDownload() {
 }
 
 function skipFirstRun() {
-  document.getElementById('welcomeOverlay').classList.remove('open');
+  var wo = document.getElementById('welcomeOverlay');
+  wo.classList.remove('open');
+  moltA11y.closeDialog(wo, {fallback: document.getElementById('chatInput')});
+}
+// The first-run welcome covers the panel: a modal dialog, and Escape is
+// "Skip for now".
+function openWelcome() {
+  var wo = document.getElementById('welcomeOverlay');
+  wo.classList.add('open');
+  moltA11y.openDialog(wo, {labelledBy: 'welcomeTitle', onEscape: skipFirstRun});
 }
 
 // Hook download progress into welcome overlay too
@@ -4401,6 +4523,7 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
   if (wo && wo.classList.contains('open') && total > 0) {
     var pct = Math.round((current / total) * 100);
     document.getElementById('welcomePfill').style.width = pct + '%';
+    document.getElementById('welcomePbar').setAttribute('aria-valuenow', String(pct));
     var info = pct + '% \u2014 ' + Math.round(current / 1048576) + ' / ' +
       Math.round(total / 1048576) + ' MB';
     if (speed > 0) {
@@ -4422,6 +4545,7 @@ function copyCode(id, btn) {
   if (!pre) return;
   var text = pre.textContent;
   navigator.clipboard.writeText(text).then(function() {
+    moltA11y.announce('Code copied');
     btn.textContent = 'Copied!';
     btn.classList.add('copied');
     setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
@@ -4434,6 +4558,7 @@ function copyResponse(btn) {
   var textEl = msg.querySelector('.text');
   if (!textEl) return;
   navigator.clipboard.writeText(textEl.innerText).then(function() {
+    moltA11y.announce('Response copied');
     btn.textContent = 'Copied!';
     setTimeout(function() { btn.textContent = 'Copy response'; }, 1500);
   });
@@ -4464,7 +4589,7 @@ function doSearch() {
     if (text.indexOf(query) >= 0) {
       count++;
       highlightTextNodes(el, query);
-      if (count === 1) el.scrollIntoView({behavior:'smooth', block:'center'});
+      if (count === 1) el.scrollIntoView({behavior:moltA11y.scrollBehavior(), block:'center'});
     }
   }
   document.getElementById('searchCount').textContent = count + ' match' + (count !== 1 ? 'es' : '');
@@ -4549,11 +4674,14 @@ function toggleDrawer() {
   else openDrawer();
 }
 
+// The chats drawer slides over the panel: a modal dialog (moltA11y).
 function openDrawer() {
   var d = document.getElementById('drawer');
   var s = document.getElementById('drawerScrim');
   if (d) d.classList.add('open');
   if (s) s.classList.add('open');
+  if (d) moltA11y.openDialog(d, {label: 'Chats', onEscape: closeDrawer});
+  setDrawerButton(true);
   refreshConvList();
 }
 
@@ -4562,6 +4690,13 @@ function closeDrawer() {
   var s = document.getElementById('drawerScrim');
   if (d) d.classList.remove('open');
   if (s) s.classList.remove('open');
+  if (d) moltA11y.closeDialog(d, {fallback: document.getElementById('chatInput')});
+  setDrawerButton(false);
+}
+
+function setDrawerButton(open) {
+  var b = document.getElementById('drawerBtn');
+  if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
 function refreshConvList() {
@@ -4589,8 +4724,13 @@ function renderConvList() {
     shown++;
     var row = document.createElement('div');
     row.className = 'conv-item' + (c.id === conversationId ? ' active' : '');
-    row.innerHTML = moltHTML('<span class="conv-title">' + esc(title) + '</span>' +
-                    '<button class="conv-del" title="Delete chat">🗑</button>');
+    // The title is the button that opens the chat; delete is named after
+    // it. A click anywhere else on the row opens it too.
+    row.innerHTML = moltHTML('<button type="button" class="conv-title"' +
+                    (c.id === conversationId ? ' aria-current="true"' : '') + '>' +
+                    esc(title) + '</button>' +
+                    '<button type="button" class="conv-del" title="Delete chat" aria-label="Delete chat: ' +
+                    escAttr(title) + '">🗑</button>');
     (function(id) {
       row.onclick = function() { loadConversationById(id); };
       row.querySelector('.conv-del').onclick = function(ev) {
@@ -4717,6 +4857,8 @@ function toggleOverflowMenu(e) {
   if (!menu) return;
   var willOpen = !menu.classList.contains('open');
   menu.classList.toggle('open', willOpen);
+  var btn = document.getElementById('overflowBtn');
+  if (btn) btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
   if (willOpen) {
     // Exclude the whole .overflow-wrap (menu + its ⋯ button): this
     // runs in the capture phase, so if it closed on the button the
@@ -4725,6 +4867,7 @@ function toggleOverflowMenu(e) {
     var close = function(ev) {
       if (!wrap.contains(ev.target)) {
         menu.classList.remove('open');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
         document.removeEventListener('click', close, true);
       }
     };
@@ -4734,7 +4877,13 @@ function toggleOverflowMenu(e) {
 
 function closeOverflowMenu() {
   var menu = document.getElementById('overflowMenu');
+  var btn = document.getElementById('overflowBtn');
+  var hadFocus = menu && menu.contains(document.activeElement);
   if (menu) menu.classList.remove('open');
+  if (btn) {
+    btn.setAttribute('aria-expanded', 'false');
+    if (hadFocus) btn.focus();
+  }
 }
 
 // ---- Import Chat History ----
@@ -4796,6 +4945,7 @@ function addSystemMessage(text) {
   var d = document.createElement('div');
   d.className = 'message system';
   d.innerHTML = moltHTML('<div class="text">' + esc(text) + '</div>');
+  moltA11y.announce(text);
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
@@ -4978,6 +5128,7 @@ function _setDictationHint(state) {
   if (state === 'listening') {
     h.className = 'dictation-hint on';
     if (t) t.textContent = 'Listening…';
+    moltA11y.announce('Listening');
   } else if (state === 'transcribing') {
     h.className = 'dictation-hint on transcribing';
     if (t) t.textContent = 'Transcribing…';
@@ -5022,6 +5173,7 @@ function _resetMicButton() {
   btn.classList.remove('transcribing');
   btn.textContent = '🎙';
   btn.title = 'Hold or click to record (local Whisper)';
+  btn.setAttribute('aria-pressed', 'false');
 }
 
 // Tear the dictation session down (final pass done, error, too short).
@@ -5169,6 +5321,7 @@ function _startRecording() {
       btn.classList.add('recording');
       btn.textContent = '⏺';
       btn.title = 'Recording... click to stop (auto-stops at 30s)';
+      btn.setAttribute('aria-pressed', 'true');
     }
   }, function(err) {
     addErrorMessage('Mic permission denied: ' + err);
@@ -5243,7 +5396,7 @@ function _stopRecording() {
       // Show first-run welcome overlay
       isFirstRun = true;
       setStatus('offline', 'Setup required');
-      document.getElementById('welcomeOverlay').classList.add('open');
+      openWelcome();
     } else {
       var downloaded = (info.models || []).filter(function(m) { return m.is_downloaded; });
       if (downloaded.length > 0) {
@@ -5391,10 +5544,12 @@ function _stopRecording() {
     var bar = document.createElement('div');
     bar.id = 'agentBar';
     bar.className = 'agent-bar';
+    bar.setAttribute('role', 'region');
+    bar.setAttribute('aria-label', 'Agent run');
     bar.innerHTML =
       moltHTML('<div class="agent-bar-hdr">' +
         '<span class="agent-bar-title">&#129302; AGENT RUNNING</span>' +
-        '<button class="agent-stop-btn" id="agentStopBtn">&#9632; Stop</button>' +
+        '<button class="agent-stop-btn" id="agentStopBtn" type="button" aria-label="Stop the agent">&#9632; Stop</button>' +
       '</div>' +
       '<div class="agent-plan" id="agentPlan"></div>' +
       '<div class="agent-steps" id="agentSteps"></div>' +
@@ -5421,7 +5576,7 @@ function _stopRecording() {
     document.getElementById('agentBar').classList.add('active');
     document.getElementById('agentSteps').innerHTML =
       moltHTML('<div class="agent-step ok">' +
-        '<div class="agent-spinner-sm"></div>' +
+        '<div class="agent-spinner-sm" aria-hidden="true"></div>' +
         '<div class="agent-step-body"><div class="agent-step-target">Goal: ' +
           goal.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
         '</div></div></div>');
@@ -5438,6 +5593,8 @@ function _stopRecording() {
     if (stopBtn) stopBtn.style.display = '';
     // A new run: the last one's save offer is gone.
     clearSave();
+    lastSpokenPlanStep = 0;
+    moltA11y.announce('Agent started: ' + goal);
   }
 
   // ---- "Save as automation" (docs/design/AGENT_ACTIONS.md §2.9) ----
@@ -5555,6 +5712,9 @@ function _stopRecording() {
     row.querySelector('.agent-step-badge').textContent = badge;
     steps.appendChild(row);
     steps.scrollTop = steps.scrollHeight;
+    // Each step is read out once, as it happens.
+    moltA11y.announce('Step ' + (Number(step.number) || 0) + ': ' + badge +
+                      (target ? ' ' + target : '') + (step.success ? '' : ', failed'));
   });
 
   // The agent's plan (#molt-agent-planner) and its current step. The model
@@ -5562,6 +5722,7 @@ function _stopRecording() {
   // shape it: every step is shown as text (DOM nodes + textContent), never
   // markup, and the plan never changes what the agent may do.
   // update: {event, steps: [{goal, done_when}], current, replans, note}.
+  var lastSpokenPlanStep = 0;
   function renderPlan(update) {
     var box = document.getElementById('agentPlan');
     if (!box || !update || typeof update !== 'object') return;
@@ -5606,6 +5767,12 @@ function _stopRecording() {
     });
     box.appendChild(list);
     box.classList.add('shown');
+    // The plan's current step is read out when it changes.
+    if (current > 0 && current <= steps.length && current !== lastSpokenPlanStep) {
+      lastSpokenPlanStep = current;
+      moltA11y.announce('Plan step ' + current + ' of ' + steps.length + ': ' +
+                        String((steps[current - 1] && steps[current - 1].goal) || '').substring(0, 200));
+    }
   }
 
   cr.addWebUiListener('agent-plan', function(update) {
@@ -5665,16 +5832,20 @@ function _stopRecording() {
     }
     var row = document.createElement('div');
     row.className = 'agent-confirm';
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', 'Agent needs your OK');
     row.innerHTML =
       moltHTML('<div class="agent-confirm-title">Agent needs your OK</div>' +
       '<div class="agent-confirm-msg"></div>' +
       '<div class="agent-confirm-btns">' +
-        '<button class="agent-deny">Deny</button>' +
-        '<button class="agent-allow">Allow</button>' +
+        '<button class="agent-deny" type="button">Deny</button>' +
+        '<button class="agent-allow" type="button">Allow</button>' +
       '</div>');
     // The message quotes page text / URLs — text only, never markup.
     row.querySelector('.agent-confirm-msg').textContent =
         String(req.message || '').substring(0, 300);
+    moltA11y.announce('Agent needs your OK: ' + String(req.message || '').substring(0, 300) +
+                      '. Allow or Deny, in the agent run.', {assertive: true});
     var answered = false;
     function answer(allowed) {
       if (answered) return;
@@ -5750,6 +5921,8 @@ function _stopRecording() {
       resultEl.style.display = 'block';
     }
     appendAgentOutcome(success, result);
+    // A failure is already an alert (addErrorMessage).
+    if (success) moltA11y.announce('Agent done: ' + String(result || '(no result)').substring(0, 400));
     offerSave(success ? r : null);
     // Auto-collapse the bar after 10 s, unless it offers to save the run
     // (then "Not now" closes it).

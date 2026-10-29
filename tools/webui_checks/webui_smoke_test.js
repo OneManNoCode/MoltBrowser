@@ -390,7 +390,8 @@ async function checkChatFormFill(window) {
   await waitFor(() => /saved profile is empty/.test(doc.getElementById('messages').textContent),
                 'the failure note');
   const rows = doc.querySelectorAll('#messages .molt-action-result.fail');
-  assert(/^✗ Nothing filled \(Your saved profile is empty/.test(
+  // "Failed: " is the row's words for screen readers (the ✗ is hidden).
+  assert(/^✗ (Failed: )?Nothing filled \(Your saved profile is empty/.test(
              rows[rows.length - 1].textContent),
          'headed as a form fill: ' + rows[rows.length - 1].textContent);
 

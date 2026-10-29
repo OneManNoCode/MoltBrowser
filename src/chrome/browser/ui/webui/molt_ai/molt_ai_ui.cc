@@ -173,8 +173,20 @@ function appendTok(tok) {
 // readers would otherwise read every token). Very long answers are cut
 // short here; the whole answer is in the conversation.
 var ANNOUNCE_MAX = 2000;
+// The answer's words, with a space between blocks; buttons (Copy) and
+// hidden marks left out.
+function answerWords(node) {
+  if (node.nodeType === 3) return node.data;
+  if (node.nodeType !== 1 || node.tagName === 'BUTTON' ||
+      node.getAttribute('aria-hidden') === 'true') {
+    return '';
+  }
+  var out = '';
+  for (var c = node.firstChild; c; c = c.nextSibling) out += answerWords(c);
+  return /^(DIV|P|BR|LI|PRE|UL|OL)$/.test(node.tagName) ? ' ' + out + ' ' : out;
+}
 function announceAnswer(el) {
-  var said = (el.textContent || '').replace(/\s+/g, ' ').trim();
+  var said = answerWords(el).replace(/\s+/g, ' ').trim();
   if (!said) return;
   if (said.length > ANNOUNCE_MAX) {
     said = said.slice(0, ANNOUNCE_MAX) + '… The rest of the answer is in the conversation.';
