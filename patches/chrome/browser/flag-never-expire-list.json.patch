@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-never-expire-list.json b/chrome/browser/flag-never-expire-list.json
-index 61e17350935055ade6be2f7473a7d47a626cc468..96dde5db76a2fd70f265bae95cc05c0b26656f3d 100644
+index 61e17350935055ade6be2f7473a7d47a626cc468..b69733b08906295d29c4e94f136f3a3845a58110 100644
 --- a/chrome/browser/flag-never-expire-list.json
 +++ b/chrome/browser/flag-never-expire-list.json
-@@ -100,6 +100,17 @@
+@@ -100,6 +100,18 @@
    "isolate-origins",
    "iwa-key-distribution-component-exp-cohort",
    "media-router-cast-allow-all-ips",
@@ -23,6 +23,7 @@ index 61e17350935055ade6be2f7473a7d47a626cc468..96dde5db76a2fd70f265bae95cc05c0b
 +  "molt-shield-removeparam",
 +  "molt-shield-request-proxy",
 +  "molt-shield-websocket",
++  "molt-voice-mode",
    "omaha-min-sdk-version-android",
    "omnibox-debug-logs",
    "on-device-app-controls",
