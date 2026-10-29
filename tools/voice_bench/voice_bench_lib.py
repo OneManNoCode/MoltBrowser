@@ -421,9 +421,13 @@ def read_sentencepiece(path):
 
 
 def vocab_from_tokens(tokens_path):
-    """[(piece, score, type)] from a sherpa-onnx tokens.txt, with
-    score = -id. For a SentencePiece BPE model the ids follow the score
-    order, so BPE merges come out the same as with the real scores."""
+    """[(piece, score, type)] from a sherpa-onnx tokens.txt, for models that
+    ship no SentencePiece model. sherpa-onnx cuts hotwords with the
+    highest-scoring split (Viterbi), so the scores have to look like a
+    unigram model's log-probabilities: SentencePiece orders pieces by score,
+    and score = -ln(id + 2) (a Zipf-like guess) reproduces 85-86% of the
+    real splits of the page names for the two models here that ship their
+    bpe.model, where score = -id gets 9%."""
     out = []
     with open(tokens_path, encoding="utf-8") as f:
         for line in f:
@@ -431,7 +435,7 @@ def vocab_from_tokens(tokens_path):
             if len(parts) != 2:
                 continue
             piece, idx = parts
-            out.append((piece, -float(idx), 1))
+            out.append((piece, -math.log(int(idx) + 2), 1))
     return out
 
 

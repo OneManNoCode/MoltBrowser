@@ -200,7 +200,12 @@ class ProtoTest(unittest.TestCase):
             out = os.path.join(d, "bpe.vocab")
             vbl.write_bpe_vocab(v, out)
             with open(out, encoding="utf-8") as f:
-                self.assertEqual(f.read().splitlines()[1], "▁THE\t-1.0")
+                piece, score = f.read().splitlines()[1].split("\t")
+        self.assertEqual(piece, "▁THE")
+        self.assertAlmostEqual(float(score), -1.0986, places=3)  # -ln(3)
+        # Common pieces still beat spelling out: "▁THE" over "▁T H E".
+        v = [("▁T", -1.2, 1), ("H", -1.3, 1), ("E", -1.4, 1)] + v
+        self.assertEqual(vbl.sp_encode("THE", v), ["▁THE"])
 
     def test_onnx_metadata(self):
         entry = _field(1, 2, b"model_type") + _field(2, 2, b"zipformer")
