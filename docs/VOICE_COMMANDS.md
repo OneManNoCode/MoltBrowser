@@ -524,6 +524,24 @@ said.
 - `(forget | delete | remove) [the | my] routine [called | named] {name}`
 - `forget {name}`
 
+## Voice mode
+
+**Start listening (typed in the Agent mode panel).** For example: "turn on voice mode".
+
+- `(turn | switch) on voice [mode | control | commands]`
+- `(turn | switch) voice [mode | control] on`
+- `voice [mode | control] on`
+- `(start | enter) voice [mode | control | commands]`
+- `start listening [to me]`
+
+**Stop listening. The browser asks first: afterwards the Voice button in the toolbar, or settings, turns it back on.** For example: "turn off voice mode".
+
+- `(turn | switch | shut) (off | down) voice [mode | control | commands]`
+- `(turn | switch) voice [mode | control] off`
+- `voice [mode | control] off`
+- `(stop | quit | exit | end | leave | close) voice [mode | control | commands]`
+- `stop listening [to me]`
+
 <!-- END GENERATED -->
 
 ## Not yet

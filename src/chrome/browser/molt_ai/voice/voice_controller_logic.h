@@ -100,6 +100,8 @@ enum class VoiceStepKind : uint8_t {
   // Hand |text| (what was heard) to the on-device planner; without one,
   // say |preface|.
   kToPlanner,
+  // |flag|: start (true) or stop (false) listening (voice_session.h).
+  kSetVoiceMode,
 };
 
 enum class BrowserCommand : uint8_t {
@@ -231,6 +233,9 @@ struct VoiceEnvironment {
   bool muted = false;
   // The window is in full screen.
   bool fullscreen = false;
+  // The browser listens to the microphone (voice_session.h); false while
+  // commands are only typed.
+  bool listening = false;
   std::vector<TabInfo> tabs;
   int active_tab = 0;
   // A monotonic clock, in milliseconds.

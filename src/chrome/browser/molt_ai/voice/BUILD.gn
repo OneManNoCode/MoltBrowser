@@ -413,3 +413,61 @@ source_set("voice_loop_browser_tests") {
     "//url",
   ]
 }
+
+# --- Touchless browsing: listening (docs/design/TOUCHLESS_BROWSING.md §5.1,
+# §6.1; docs/design/SPEECH_HELPER_PROTOCOL.md) ----------------------------
+
+# The browser's side of the speech helper protocol (frames, CONFIG, the
+# helper's lines read as untrusted, hotwords from the page map), when voice
+# mode listens and what it does with what it hears, and the audio as
+# numbers (the helper's frames, the earcons). Std-only: molt_ai_unittests,
+# a standalone harness and molt_voice_listener_fuzzer build the same code.
+source_set("voice_listening") {
+  sources = [
+    "voice_audio_samples.cc",
+    "voice_audio_samples.h",
+    "voice_listener_protocol.cc",
+    "voice_listener_protocol.h",
+    "voice_session_logic.cc",
+    "voice_session_logic.h",
+  ]
+
+  public_deps = [
+    ":page_map",
+    ":voice_command",
+  ]
+}
+
+# The speech helper's stdout, as a helper a hostile input took over may
+# write it, and the session's rules over any order of events. See
+# docs/FUZZING.md.
+fuzzer_test("molt_voice_listener_fuzzer") {
+  sources = [ "molt_voice_listener_fuzzer.cc" ]
+  deps = [
+    ":voice_listening",
+    "//base",
+  ]
+  dict = "dicts/voice_listener.dict"
+  seed_corpus = "corpus/molt_voice_listener_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("voice_listening_unit_tests") {
+  testonly = true
+  sources = [
+    "voice_audio_samples_unittest.cc",
+    "voice_listener_protocol_unittest.cc",
+    "voice_session_logic_unittest.cc",
+  ]
+
+  deps = [
+    ":page_map",
+    ":voice_command",
+    ":voice_listening",
+
+    # Voice mode turned on and off by voice, through the loop.
+    ":voice_loop",
+    "//testing/gtest",
+  ]
+}

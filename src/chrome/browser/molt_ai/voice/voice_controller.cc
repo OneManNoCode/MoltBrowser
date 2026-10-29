@@ -762,6 +762,12 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       }
       return true;
 
+    case VoiceStepKind::kSetVoiceMode:
+      for (Observer& observer : observers_) {
+        observer.OnVoiceModeRequested(step.flag);
+      }
+      return true;
+
     case VoiceStepKind::kWaitForPage:
       BeginWait(step);
       return false;

@@ -455,6 +455,7 @@ group("molt_fuzzers") {
     "//chrome/browser/molt_ai/voice:molt_spoken_choice_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_voice_command_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_voice_controller_fuzzer",
+    "//chrome/browser/molt_ai/voice:molt_voice_listener_fuzzer",
     "//chrome/services/molt_ai/inference/fuzzers",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_farbling_fuzzer",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_moltnet_font_set_fuzzer",

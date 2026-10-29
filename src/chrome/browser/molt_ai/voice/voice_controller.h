@@ -95,6 +95,9 @@ class VoiceController {
     // The item (its number in the page map) the browser acts on or reads;
     // 0 for none.
     virtual void OnVoiceCurrentItem(int item_number) {}
+    // "Turn on voice mode" / "turn off voice mode" (after its "yes"): the
+    // window's listening (voice_session.h) starts or stops.
+    virtual void OnVoiceModeRequested(bool on) {}
     // The window is closing: stop observing |controller|.
     virtual void OnVoiceControllerDestroying(VoiceController* controller) {}
   };
