@@ -452,9 +452,14 @@ void VoiceController::NotifyCaption() {
       break;
     case VoiceActivity::kOff:
     case VoiceActivity::kListening:
-      state = listening_.waiting || listening_.starting
-                  ? VoiceState::kWaiting
-                  : VoiceState::kListening;
+      if (!listening_.listening && !listening_.problem.empty()) {
+        // It can't listen: off, and why.
+        state = VoiceState::kOff;
+      } else if (listening_.waiting || listening_.starting) {
+        state = VoiceState::kWaiting;
+      } else {
+        state = VoiceState::kListening;
+      }
       break;
   }
   const std::string& heard =

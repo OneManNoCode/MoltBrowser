@@ -102,8 +102,8 @@ class VoiceSession : public VoiceController::Observer,
   // Starts listening in this window. False, after saying why, in a MoltNet
   // window or while #molt-voice-mode is off.
   bool Start();
-  // Stops listening (the microphone and the helper); voice mode stays on
-  // for typed commands.
+  // Stops listening (the microphone and the helper) and voice mode in the
+  // window (the caption bar goes); typed commands start it again.
   void Stop();
   void Toggle();
   // Listening, or getting ready to.
@@ -145,8 +145,12 @@ class VoiceSession : public VoiceController::Observer,
   void OnSettingsRead(const VoiceModeSettings& settings);
   void OnHelperFound(std::optional<VoiceListener::Paths> paths,
                      const std::string& why);
-  // Stops listening and says |message| (a problem).
+  // Stops listening and says |message| (a problem); voice mode stays on
+  // to show it.
   void Fail(const std::string& message);
+  // Stops listening; and voice mode too with |stop_voice_mode| (not after
+  // "turn off voice mode", whose controller stops once it has said so).
+  void StopSession(bool stop_voice_mode);
   void StopListening();
 
   // Carries out what the logic decided.

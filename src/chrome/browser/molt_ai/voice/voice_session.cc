@@ -282,7 +282,17 @@ void VoiceSession::OnHelperFound(std::optional<VoiceListener::Paths> paths,
 }
 
 void VoiceSession::Stop() {
+  StopSession(/*stop_voice_mode=*/true);
+}
+
+void VoiceSession::StopSession(bool stop_voice_mode) {
   if (!logic_.running()) {
+    if (stop_voice_mode && controller_ && !problem_.empty()) {
+      // A problem left on screen goes with voice mode.
+      problem_.clear();
+      UpdateCaption();
+      controller_->Stop();
+    }
     return;
   }
   Apply(logic_.Stop(NowMs()));
@@ -291,6 +301,9 @@ void VoiceSession::Stop() {
   UpdateCaption();
   if (g_listening == this) {
     g_listening = nullptr;
+  }
+  if (stop_voice_mode && controller_) {
+    controller_->Stop();
   }
   for (Observer& observer : observers_) {
     observer.OnVoiceSessionChanged(this);
@@ -437,7 +450,8 @@ void VoiceSession::OnVoiceModeRequested(bool on) {
   if (on) {
     Start();
   } else {
-    Stop();
+    // The controller stops itself once it has said "Voice mode is off".
+    StopSession(/*stop_voice_mode=*/false);
   }
 }
 
