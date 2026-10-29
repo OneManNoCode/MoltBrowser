@@ -27,7 +27,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
-#include "base/test/run_until.h"
+#include "base/run_loop.h"
+#include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
@@ -123,11 +124,28 @@ class VoiceOverlayBrowserTest : public InProcessBrowserTest {
         browser(), embedded_test_server()->GetURL("video.test", path)));
   }
 
+  // Polls |condition| (which may run script in the page) every 50 ms, up
+  // to the action timeout.
+  static bool Poll(base::FunctionRef<bool()> condition) {
+    const base::TimeTicks deadline =
+        base::TimeTicks::Now() + TestTimeouts::action_timeout();
+    while (!condition()) {
+      if (base::TimeTicks::Now() > deadline) {
+        return false;
+      }
+      base::RunLoop loop;
+      base::OneShotTimer timer;
+      timer.Start(FROM_HERE, base::Milliseconds(50), loop.QuitClosure());
+      loop.Run();
+    }
+    return true;
+  }
+
   // The map once |ready| finds it complete (the trees arrive after the page
   // loads and change as its scripts run).
   PageMap WaitForMap(base::FunctionRef<bool(const PageMap&)> ready) {
     PageMap map;
-    EXPECT_TRUE(base::test::RunUntil([&] {
+    EXPECT_TRUE(Poll([&] {
       map = controller()->BuildMap();
       return ready(map);
     })) << "The map never got ready";
@@ -357,9 +375,10 @@ IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, NumbersFollowScrolling) {
   // after the scroll's location changes) under the same numbers.
   ASSERT_TRUE(content::ExecJs(web_contents(), "window.scrollTo(0, 700)",
                               content::EXECUTE_SCRIPT_NO_USER_GESTURE));
-  ASSERT_TRUE(base::test::RunUntil([&] {
+  const std::vector<gfx::RectF> titles = PageRects("a#video-title");
+  ASSERT_EQ(titles.size(), 20u);
+  ASSERT_TRUE(Poll([&] {
     const std::optional<gfx::RectF> item = BadgedItem(fourth);
-    const std::vector<gfx::RectF> titles = PageRects("a#video-title");
     return item && !BadgedItem(first) &&
            std::abs(item->y() - titles[3].y()) < kTolerance;
   }));
@@ -434,7 +453,7 @@ IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, NumbersHideWhenTheyMove) {
       "const a = document.createElement('a'); a.href = 'watch.html?v=more';"
       "a.textContent = 'More results'; document.body.append(a);",
       content::EXECUTE_SCRIPT_NO_USER_GESTURE));
-  ASSERT_TRUE(base::test::RunUntil([&] {
+  ASSERT_TRUE(Poll([&] {
     return controller()->BuildMap().items.size() > map.items.size();
   }));
   overlay()->FollowPageNowForTesting();
@@ -447,7 +466,7 @@ IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, NumbersHideWhenTheyMove) {
       "const b = document.createElement('a'); b.href = 'watch.html?v=top';"
       "b.textContent = 'Top'; document.body.prepend(b);",
       content::EXECUTE_SCRIPT_NO_USER_GESTURE));
-  ASSERT_TRUE(base::test::RunUntil([&] { return !hidden.empty(); }));
+  ASSERT_TRUE(Poll([&] { return !hidden.empty(); }));
   EXPECT_EQ(hidden[0], OverlayHidden::kPageChanged);
   EXPECT_FALSE(overlay()->numbers_shown());
 }
@@ -516,7 +535,7 @@ IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, TheCaptionBarSitsUnderThePage) {
   EXPECT_EQ(bar->y(), page->bounds().bottom());
   EXPECT_EQ(bar->width(), page->width());
   EXPECT_EQ(page->height(), page_before.height() - bar->height());
-  ASSERT_TRUE(base::test::RunUntil([&] { return InnerHeight() < inner_before; }));
+  ASSERT_TRUE(Poll([&] { return InnerHeight() < inner_before; }));
   const int inner_with_bar = InnerHeight();
 
   // New text: the same height, so the page isn't resized.
@@ -534,8 +553,7 @@ IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, TheCaptionBarSitsUnderThePage) {
   views::test::RunScheduledLayout(bar->GetWidget());
   EXPECT_FALSE(bar->GetVisible());
   EXPECT_EQ(page->bounds(), page_before);
-  ASSERT_TRUE(
-      base::test::RunUntil([&] { return InnerHeight() == inner_before; }));
+  ASSERT_TRUE(Poll([&] { return InnerHeight() == inner_before; }));
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, TheCaptionBarIsALiveRegion) {

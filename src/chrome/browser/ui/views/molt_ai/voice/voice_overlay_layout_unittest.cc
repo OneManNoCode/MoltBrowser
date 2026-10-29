@@ -424,6 +424,52 @@ TEST(VoiceOverlayLayoutTest, RandomPagesAreWellPlaced) {
   }
 }
 
+// Bounds come from the page: whatever they are, nothing lands outside the
+// viewport and nothing breaks.
+TEST(VoiceOverlayLayoutTest, HostileBoundsAreSafe) {
+  const BadgeStyle style = Style();
+  const float values[] = {kNaN, kInf, -kInf, 0, -1, 1e30f, -1e30f, 3e38f,
+                          1e-30f, 640, 12};
+  std::vector<OverlayItem> items;
+  int number = 0;
+  for (float x : values) {
+    for (float y : values) {
+      for (float size : values) {
+        OverlayItem item;
+        item.number = ++number;
+        item.handle = {0, number};
+        item.bounds = {x, y, size, size};
+        items.push_back(item);
+      }
+    }
+  }
+  for (float scale : {1.0f, 2.0f, kNaN, 0.0f}) {
+    const std::vector<BadgeRequest> requests =
+        VisibleItems(items, {0, 0, scale}, kViewport);
+    for (const BadgeRequest& request : requests) {
+      EXPECT_TRUE(std::isfinite(request.item.x));
+      EXPECT_TRUE(std::isfinite(request.item.y));
+      EXPECT_TRUE(std::isfinite(request.item.right()));
+      EXPECT_TRUE(std::isfinite(request.item.bottom()));
+      EXPECT_TRUE(request.item.Intersects(kViewport));
+    }
+    const BadgePlan plan = PlaceBadges(requests, 7, kViewport, style, 6);
+    ExpectWellPlaced(plan, requests, kViewport, style);
+  }
+  // Requests made by hand with what VisibleItems() refuses.
+  const std::vector<BadgeRequest> raw = {{1, {kNaN, 0, 10, 10}},
+                                         {2, {0, kInf, 10, 10}},
+                                         {3, {0, 0, -kInf, 10}},
+                                         {4, {-1e30f, -1e30f, 2e30f, 2e30f}}};
+  const BadgePlan plan = PlaceBadges(raw, 4, kViewport, style, 6);
+  for (const BadgePlacement& badge : plan.badges) {
+    EXPECT_TRUE(kViewport.Contains(badge.badge));
+  }
+  if (plan.ring) {
+    EXPECT_TRUE(kViewport.Contains(*plan.ring));
+  }
+}
+
 TEST(VoiceOverlayLayoutTest, BadgesAreCapped) {
   const BadgeStyle style = Style();
   // 900 well-spread items, each with room for its badge.
