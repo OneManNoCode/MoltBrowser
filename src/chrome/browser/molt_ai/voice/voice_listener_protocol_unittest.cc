@@ -248,6 +248,41 @@ TEST(VoiceListenerProtocolTest, ParsesEveryType) {
   EXPECT_EQ(error.event.message, "unknown type 9");
 }
 
+// The helper's side of the example session in SPEECH_HELPER_PROTOCOL.md §5,
+// as written there.
+TEST(VoiceListenerProtocolTest, ParsesTheProtocolExample) {
+  const std::vector<std::string_view> lines = {
+      R"({"type":"ready","protocol":1,"engine":"sherpa-onnx 2.0.1, )"
+      R"(onnxruntime 1.28.2","models":["kws-zipformer-gigaspeech-3.3m-)"
+      R"(2024-01-01","silero-vad-v4","kroko-en-2025-08-06"],)"
+      R"("sample_rate":16000})",
+      R"({"type":"wake","epoch":0,"audio_ms":1940})",
+      R"({"type":"speech_start","epoch":0,"audio_ms":2600})",
+      R"({"type":"partial","epoch":0,"audio_ms":2600,"text":"Hey Molt, play"})",
+      R"({"type":"partial","epoch":0,"audio_ms":3900,"text":"Hey Molt, play )"
+      R"(Bohemian Rhapsody"})",
+      R"({"type":"speech_end","epoch":0,"audio_ms":4500})",
+      R"({"type":"final","epoch":0,"audio_ms":4500,"text":"Hey Molt, play )"
+      R"(Bohemian Rhapsody.","confidence":0.91})"};
+  const std::vector<HelperEventType> types = {
+      HelperEventType::kReady,       HelperEventType::kWake,
+      HelperEventType::kSpeechStart, HelperEventType::kPartial,
+      HelperEventType::kPartial,     HelperEventType::kSpeechEnd,
+      HelperEventType::kFinal};
+  ASSERT_EQ(lines.size(), types.size());
+  for (size_t i = 0; i < lines.size(); ++i) {
+    ParsedHelperLine parsed = Parse(lines[i]);
+    ASSERT_EQ(parsed.error, HelperLineError::kNone) << lines[i];
+    EXPECT_EQ(parsed.event.type, types[i]) << lines[i];
+  }
+  EXPECT_EQ(Parse(lines[0]).event.models.size(), 3u);
+  ParsedHelperLine final_line = Parse(lines.back());
+  EXPECT_EQ(final_line.event.text, "Hey Molt, play Bohemian Rhapsody.");
+  EXPECT_DOUBLE_EQ(final_line.event.confidence, 0.91);
+  EXPECT_EQ(final_line.event.epoch, 0);
+  EXPECT_EQ(final_line.event.audio_ms, 4500);
+}
+
 TEST(VoiceListenerProtocolTest, EpochAndAudioTime) {
   ParsedHelperLine wake = Parse(R"({"type":"wake","epoch":2,"audio_ms":1940})");
   ASSERT_EQ(wake.error, HelperLineError::kNone);
