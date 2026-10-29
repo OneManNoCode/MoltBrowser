@@ -315,15 +315,32 @@ std::u16string CountryFlagEmoji(const std::string& cc) {
 // while forcing the label text to bright white so "Local AI" stays legible in
 // every state. This avoids the violet-on-violet legibility trap of the default
 // solid-fill highlight, and matches the Liquid Glass concept mockup.
+//
+// For assistive technology it is a toggle button named by its words alone
+// (`accessible_name`, e.g. "AI mode" for the "🤖 AI mode" label), pressed
+// while its side panel is open (UpdateAiAgentModeHighlights()); the tooltip
+// becomes its description.
 class LocalAiToolbarButton : public ToolbarButton {
   METADATA_HEADER(LocalAiToolbarButton, ToolbarButton)
 
  public:
-  explicit LocalAiToolbarButton(PressedCallback callback)
-      : ToolbarButton(std::move(callback)) {}
+  LocalAiToolbarButton(PressedCallback callback, std::u16string accessible_name)
+      : ToolbarButton(std::move(callback)),
+        accessible_name_(std::move(accessible_name)) {
+    GetViewAccessibility().SetRole(ax::mojom::Role::kToggleButton);
+    GetViewAccessibility().SetCheckedState(ax::mojom::CheckedState::kFalse);
+  }
   LocalAiToolbarButton(const LocalAiToolbarButton&) = delete;
   LocalAiToolbarButton& operator=(const LocalAiToolbarButton&) = delete;
   ~LocalAiToolbarButton() override = default;
+
+  // views::View: every label change (SetHighlight) renames a LabelButton to
+  // its text; keep the plain name instead, so the emoji is not read out and
+  // no name-change event fires.
+  void AdjustAccessibleName(std::u16string& new_name,
+                            ax::mojom::NameFrom& name_from) override {
+    new_name = accessible_name_;
+  }
 
  protected:
   // Blend the highlight (violet) into the bar as a subtle tint rather than a
@@ -334,6 +351,13 @@ class LocalAiToolbarButton : public ToolbarButton {
   std::optional<SkColor> GetHighlightTextColor() const override {
     return SK_ColorWHITE;
   }
+  // views::Button would set the toggle's state from the mouse (pressed while
+  // held, none when hovered); it is the side panel's, set only by
+  // UpdateAiAgentModeHighlights().
+  void UpdateAccessibleCheckedState() override {}
+
+ private:
+  const std::u16string accessible_name_;
 };
 
 // MoltBrowser: Toolbar control for MoltNet (Tor). Left-click opens the
@@ -355,6 +379,8 @@ class TorExitCountryButton : public ToolbarButton,
     SetCallback(base::BindRepeating(&TorExitCountryButton::ButtonPressed,
                                     base::Unretained(this)));
     SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    // Opens the MoltNet popover, a dialog.
+    GetViewAccessibility().SetHasPopup(ax::mojom::HasPopup::kDialog);
     // Keep the label in sync when Tor starts/stops (from any window).
     tor_state_subscription_ =
         molt_ai::tor::TorManager::Get()->AddStateChangedCallback(
@@ -365,6 +391,18 @@ class TorExitCountryButton : public ToolbarButton,
   TorExitCountryButton(const TorExitCountryButton&) = delete;
   TorExitCountryButton& operator=(const TorExitCountryButton&) = delete;
   ~TorExitCountryButton() override = default;
+
+  // views::View: the label is emoji plus a word ("🧅 Tor 🇬🇧"); assistive
+  // technology gets words that start with the visible one ("Tor, exit
+  // country United Kingdom"), set in UpdateLabel() before each label change.
+  void AdjustAccessibleName(std::u16string& new_name,
+                            ax::mojom::NameFrom& name_from) override {
+    if (!accessible_name_.empty()) {
+      new_name = accessible_name_;
+      return;
+    }
+    ToolbarButton::AdjustAccessibleName(new_name, name_from);
+  }
 
   // ui::SimpleMenuModel::Delegate:
   bool IsCommandIdChecked(int command_id) const override {
@@ -395,6 +433,7 @@ class TorExitCountryButton : public ToolbarButton,
         molt_ai::tor::MoltNetWindow::TurnOff();
       } else {
         // Tor bootstrap (~15-30s), then a new isolated MoltNet window.
+        accessible_name_ = u"MoltNet, starting Tor";
         SetHighlight(u"\U0001F9C5 …", std::nullopt);
         molt_ai::tor::MoltNetWindow::Open(
             browser_->GetProfile(), GURL(),
@@ -509,31 +548,40 @@ class TorExitCountryButton : public ToolbarButton,
     switch (state) {
       case MoltNetRouting::RoutingState::kRoutedViaTor:
         label = u"\U0001F9C5 Tor";
+        accessible_name_ = u"Tor";
         if (!cc.empty()) {
           label += u" " + CountryFlagEmoji(cc);
+          accessible_name_ +=
+              u", exit country " +
+              base::UTF8ToUTF16(molt_ai::tor::ExitCountryDisplayName(cc));
         }
         SetTooltipText(u"MoltNet — this window is routed through Tor");
         break;
       case MoltNetRouting::RoutingState::kBlockedTorDown:
       case MoltNetRouting::RoutingState::kProxyOverridden:
         label = u"⚠️ Tor";
+        accessible_name_ = u"Tor, warning";
         SetTooltipText(
             u"MoltNet — Tor isn't usable; this window is blocked, not "
             u"routed directly");
         break;
       case MoltNetRouting::RoutingState::kNotRouted:
         label = u"\U0001F9C5 MoltNet";
+        accessible_name_ = u"MoltNet";
         SetTooltipText(
             u"MoltNet — this window is NOT routed through Tor. Open a "
             u"MoltNet window for private browsing over Tor.");
         break;
     }
+    // The tooltip, which says what the state means, stays the description.
     SetHighlight(label, std::nullopt);
   }
 
   const raw_ptr<BrowserWindowInterface> browser_;
   ui::SimpleMenuModel menu_model_;
   const std::vector<std::string> country_codes_;
+  // The words assistive technology reads for the current label.
+  std::u16string accessible_name_;
   base::CallbackListSubscription tor_state_subscription_;
   base::WeakPtrFactory<TorExitCountryButton> weak_factory_{this};
 };
@@ -662,15 +710,24 @@ void ToolbarView::UpdateAiAgentModeHighlights() {
   std::optional<SidePanelEntryId> id =
       ui ? ui->GetCurrentEntryId() : std::nullopt;
   const std::optional<SkColor> kViolet = SkColorSetRGB(0xA7, 0x8B, 0xFA);
+  // The ring is also the toggle's pressed state for assistive technology.
+  auto pressed = [&id](SidePanelEntryId entry) {
+    return id == entry ? ax::mojom::CheckedState::kTrue
+                       : ax::mojom::CheckedState::kFalse;
+  };
   if (molt_ai_mode_button_) {
     molt_ai_mode_button_->SetHighlight(
         u"🤖 AI mode",
         id == SidePanelEntryId::kMoltAiChat ? kViolet : std::nullopt);
+    molt_ai_mode_button_->GetViewAccessibility().SetCheckedState(
+        pressed(SidePanelEntryId::kMoltAiChat));
   }
   if (agent_mode_button_) {
     agent_mode_button_->SetHighlight(
         u"🎬 Agent mode",
         id == SidePanelEntryId::kMoltAgent ? kViolet : std::nullopt);
+    agent_mode_button_->GetViewAccessibility().SetCheckedState(
+        pressed(SidePanelEntryId::kMoltAgent));
   }
 }
 
@@ -876,6 +933,11 @@ void ToolbarView::Init() {
     import_button->SetVectorIcon(kBookmarksManagerOldIcon);
     import_button->SetTooltipText(
         u"Bookmarks — view yours, or import from another browser");
+    // A short name for the icon-only button (the tooltip becomes its
+    // description); it opens the import popover, a dialog.
+    import_button->GetViewAccessibility().SetName(u"Bookmarks and import");
+    import_button->GetViewAccessibility().SetHasPopup(
+        ax::mojom::HasPopup::kDialog);
     ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
     import_button_ptr->SetCallback(base::BindRepeating(
         [](ToolbarButton* anchor, BrowserWindowInterface* browser) {
@@ -988,7 +1050,7 @@ void ToolbarView::Init() {
               SidePanelEntryKey(SidePanelEntryId::kMoltAiChat),
               SidePanelOpenTrigger::kToolbarButton);
         },
-        browser_));
+        browser_), u"AI mode");
     // SetHighlight is the public API for showing a label on a ToolbarButton
     // (SetText is intentionally private). MoltBrowser: give the primary on-device
     // AI button a signature violet accent (light violet label/border + faint
@@ -1026,7 +1088,7 @@ void ToolbarView::Init() {
               SidePanelEntryKey(SidePanelEntryId::kMoltAgent),
               SidePanelOpenTrigger::kToolbarButton);
         },
-        browser_));
+        browser_), u"Agent mode");
     // 🎬 (record & replay) emoji in the label carries the icon, matching the
     // AI mode robot; no separate vector icon. Idle by default; the violet ring
     // is driven by UpdateAiAgentModeHighlights() while kMoltAgent is open.

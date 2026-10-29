@@ -145,6 +145,9 @@ For anyone changing a page. The tests above enforce most of it.
   dialog (`has popup: dialog`).
 - *Bookmarks and import* (icon only) is named "Bookmarks and import" and
   opens a dialog; *Software update* is named by its tooltip.
+- The two popovers are dialogs named "MoltNet" and "Bookmarks and import"
+  (`molt_net_bubble.cc`, `molt_import_bubble.cc`), and focus starts in
+  their page when they open.
 
 ## 3. Manual checks
 
@@ -167,7 +170,9 @@ items wait for a Windows build.
   toolbar (Alt+Shift+T on Windows and Linux; F6 or Tab from the address
   bar on macOS), the arrow keys reach AI mode, Agent mode, MoltNet,
   Bookmarks and import, and Software update, and Enter or Space works
-  each one.
+  each one. The MoltNet and Bookmarks popovers open with focus inside
+  (Tab reaches their first control), and Escape closes them and returns
+  focus to the toolbar button.
 - [ ] At 200% zoom (Ctrl/Cmd +) and with a 24 px default font size
   (settings, Appearance): no text is cut off or overlaps, nothing needs
   horizontal scrolling in the side panel at its default width, every

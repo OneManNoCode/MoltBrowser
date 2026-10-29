@@ -60,6 +60,11 @@ MoltNetBubbleView::MoltNetBubbleView(views::View* anchor,
   web_view->set_allow_accelerators(true);
   web_view->LoadInitialURL(GURL(chrome::kChromeUIMoltNetURL));
   web_view_ = AddChildView(std::move(web_view));
+  // A name for the dialog (screen readers say it as the popover opens; no
+  // visible title), and focus starts in the page, so the keyboard and screen
+  // readers are inside the popover at once.
+  SetAccessibleTitle(u"MoltNet");
+  SetInitiallyFocusedView(web_view_);
 
   g_instance = this;
 }
