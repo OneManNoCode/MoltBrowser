@@ -1174,6 +1174,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   YouTube-, Google- and Wikipedia-like pages test it, a new fuzzer covers
   hostile trees, and the first browser tests drive a video site from search
   to sound by these actions alone.
+- **Touchless browsing: numbers and a caption bar on screen** (not switched
+  on yet; `docs/design/TOUCHLESS_BROWSING.md` §5.3, §5.5). For people with
+  partial sight, the browser can draw a large, high-contrast number on
+  everything on screen that can be acted on, a thick ring around the item
+  it reads or acts on, and a large-type caption bar under the page with
+  what it heard and what it is doing. The browser draws all of it above and
+  below the page, never in it: pages can't read or fake it, it takes no
+  focus, and the page's size changes only when the bar appears or goes.
+  Numbers never cover each other, follow scrolling and go away when the
+  page changes; the caption bar is a live region for screen readers; sizes
+  and colours follow the user's text size and contrast settings
+  ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md) §5). The page map now keeps
+  items' positions current as a page scrolls.
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):
   one command runs a built browser's MoltNet window in a network namespace
   where only Tor's traffic may leave. It captures every packet and every

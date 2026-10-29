@@ -766,6 +766,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | every fuzzer target's `BUILD.gn`, `seed_corpus` and `dict` paths, DEPS and visibility | build with the real `//base`, `//url`, `//crypto`, BoringSSL, llama.cpp's grammar API | #41 and later |
 | `agents/frame_tool_permissions.*` (a `ProfileKeyedServiceFactory`, `RegisterListPref`), `agents/site_tool_host.cc` (`RenderFrameHost::IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::kTools)`), `automation/automation_runner.cc` (fallback locators, the run's questions, CALL_TOOL steps), the new GN targets (`agents:frame_tools` → `automation:agent_run_draft`; `automation:locators`, `:tool_steps`, `:run_questions`; `automation` → `molt_ai_agents`), and the one-line hooks in `chrome_browser_main_extra_parts_profiles.cc`, `chrome_browsing_data_remover_delegate.cc` and `profile_resetter.cc` | type-checked against 156's headers only | agent-replay |
 | `ui/views/toolbar/toolbar_view.cc` (the AI mode, Agent mode, MoltNet and import buttons' names and roles: `AdjustAccessibleName` and `UpdateAccessibleCheckedState` overrides, `GetViewAccessibility().SetRole(kToggleButton)`, `SetCheckedState`, `SetHasPopup`), `molt_net_bubble.cc` and `molt_import_bubble.cc` (`SetAccessibleTitle`, `SetInitiallyFocusedView`), every `molt_*_ui.cc`, `molt_ai_chat_ui_js.h` and `molt_webui_csp.h` (`kMoltA11yJs`; the pages' raw strings) | type-checked against 156's headers in round 36 (Linux; Windows too, except `toolbar_view.cc`, which the check models for Linux only); the toolbar's names, roles and pressed state need §7.3's look in a built browser | a11y-webui |
+| `ui/views/frame/contents_container_view.{h,cc}` (imported in round 37: two members, the views made in the constructor, the caption bar taken off the page area in `CalculateProposedLayout`, `GetContentsViewBounds`, the rounded corners), `ui/views/molt_ai/voice/*` (`VoiceNumbersView`, `VoiceCaptionBar`: `SetLiveRegionContainer`, `views::AsViewClass`, `ProposedLayout`, `WebView::AddWebContentsAttachedCallback`, `RegisterActiveTabDidChange`, `WebContents::GetOrCreateWebPreferences`), `molt_ai/voice/voice_page_controller.{h,cc}` (`AccessibilityLocationChangesReceived`, `AXNode::SetLocation`/`SetScrollInfo`) | type-checked against 156's headers only; the overlay needs §5.1's browser tests and §7.3's look | voice-overlay |
 | `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
 
 ### 4.9 GN targets and DEPS edges
@@ -795,7 +796,8 @@ toolchains, a third-party library's own `include_dirs`).
   cd chromium/src
   for p in '//chrome/browser/molt_ai/*' '//chrome/services/molt_ai/*' \
            '//chrome/common/molt_ai/*' '//chrome/renderer/molt_ai/*' \
-           '//chrome/browser/ui/webui/molt_ai/*' '//third_party/llama_cpp/*' \
+           '//chrome/browser/ui/webui/molt_ai/*' '//chrome/browser/ui/views/molt_ai/*' \
+           '//third_party/llama_cpp/*' \
            '//third_party/blink/renderer/core/molt_fingerprinting/*' \
            '//components/omnibox/browser/*' '//content/utility/on_device_model/*' \
            '//chrome/browser/client_hints/*' '//chrome/utility/*'; do
@@ -814,7 +816,8 @@ toolchains, a third-party library's own `include_dirs`).
   ```bash
   cd chromium/src
   for d in chrome/browser/molt_ai chrome/services/molt_ai chrome/common/molt_ai \
-           chrome/renderer/molt_ai third_party/blink/renderer/core/molt_fingerprinting chrome/utility; do
+           chrome/renderer/molt_ai third_party/blink/renderer/core/molt_fingerprinting chrome/utility \
+           chrome/browser/ui/views/molt_ai; do
     python3 buildtools/checkdeps/checkdeps.py "$d" || echo "CHECKDEPS FAILED: $d"
   done
   python3 buildtools/checkdeps/checkdeps.py 2>&1 | tee ~/molt-v0.3.0/checkdeps.log   # the whole tree
@@ -1084,6 +1087,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetCameraValuesTest.*` (new cases: `EveryCameraShowsEveryEntry`, `FormatInUseShowsTheSameEntries`, `GridTicks`, `GridIgnoresTheCamerasTiming`, `GridSkipsTicksItMissed`, `GridStopsAndResumes`; built standalone here) | fp-camera2 |
   | `MoltNetCameraValuesTest.*` (the cameras' menu, the entries a camera shows and the mode it opens in), `MoltNetAudioCaptureTest.*` (the browser's decision on the CPU-independent processing replaces the renderer's), `MoltCpuIndependentProcessingTest.DownmixesOtherLayouts` (a QUAD and a 5.1 microphone: opened in their layout, processed as their down-mix) and the setSinkId case of `MoltNetMediaValuesTest.*` | fp-media4 |
   | `PageMapTest.*`, `PageMapTextTest.*`, `PageMapAgentSafetyTest.*` (built standalone here), `AXPageSourceTest.*` (needs the build: real `ui::AXTree`s from `AXTreeUpdate`s, frames joined through child tree ids, the caps, the focused frame) | page-map |
+  | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1157,6 +1161,38 @@ extension enablement and `MediaRouterEnabled()`).
   and the test prints the map it got. With
   `AX_FAIL_FAST_BUILD()` on (DCHECK builds), an accessibility tree error
   crashes the test instead of failing it: send the crash too.
+- [ ] The voice overlay's browser tests (voice-overlay), in the same
+  `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceOverlay*BrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/voice-overlay-browser-tests.log
+  ```
+  *Expected:* all 12 pass, on macOS and Linux (`DISABLED_ManualLook` is
+  §7.3's look, not a test):
+  - `BadgesSitOnTheItems`, `BadgesSitOnTheItemsAt200Zoom` and
+    `VoiceOverlayHighDpiBrowserTest.BadgesSitOnTheItems` (a 2x screen):
+    the video site's result titles, filter chips and guide links have
+    their badges where the page lays them out (`getBoundingClientRect()`,
+    within 2 DIPs), none off screen, none overlapping; at 200% the badges
+    keep their size.
+  - `NumbersFollowScrolling`: after `scrollTo(0, 700)` the badges move
+    with the results under the same numbers (this also checks the page
+    controller now takes Blink's location and scroll changes).
+  - `NumbersHideOnNavigation` (a jump to a fragment keeps them),
+    `NumbersHideOnTabSwitch`, `NumbersHideWhenTheyMove` (a link appended
+    keeps the numbers, one prepended hides them).
+  - `TheCurrentItemHasARing`, `NumbersStayOutOfThePagesWay` (no events,
+    no focus, invisible to assistive technology, its own layer).
+  - `TheCaptionBarSitsUnderThePage` (the page area shrinks by the bar's
+    height once, the page's `innerHeight` with it, and not again when
+    the text changes), `TheCaptionBarIsALiveRegion` (role status, name
+    "Voice mode", live status polite, the state as description, page text
+    cleaned), `TheCaptionStaysWithTheWindowAcrossTabs`.
+
+  If a badge is a few DIPs off on the zoomed or 2x page, send the log (it
+  prints both rects): Blink's accessibility bounds round differently
+  there. A badge off by an iframe's border on a page with frames is known
+  (frames are offset by their host's border box).
 - [ ] What voice mode's accessibility mode costs a page (page-map). Voice
   mode has no switch yet, but `chrome://accessibility` sets the same mode:
   only "Web accessibility" and "Extended properties" on (not native API
@@ -2043,6 +2079,43 @@ Linux now, Windows when its builds resume:
   Voice Control's "Show names" and "Click AI mode" work (from a11y-webui).
 - [ ] *Deferred (Windows):* NVDA, JAWS, Narrator, Voice Access and the
   contrast themes, the same list (from a11y-webui).
+
+**Voice mode's overlay** (from voice-overlay;
+[ACCESSIBILITY.md](ACCESSIBILITY.md) §5). Until voice mode can be turned
+on, a disabled browser test shows it for a person to look at, until the
+window is closed (verify the flags: they let it render and wait):
+```bash
+chromium/src/out/MoltTests/browser_tests --gtest_also_run_disabled_tests \
+  --gtest_filter='VoiceOverlayBrowserTest.DISABLED_ManualLook' \
+  --enable-pixel-output-in-tests --single-process-tests \
+  --ui-test-action-max-timeout=3600000 --test-launcher-timeout=3600000
+```
+Scroll, zoom (Ctrl/Cmd +), resize, open a new tab and navigate in it: the
+active tab gets numbers again within a second.
+
+- [ ] macOS: the numbers sit on each link, button and chip, readable at
+  arm's length; close items' badges move aside or shrink but never cover
+  each other; the yellow ring around the third item is visible; the
+  caption bar under the page reads "Speaking", "Heard: show numbers" and
+  the count. With **Zoom** (Accessibility, Zoom: full screen and split
+  screen), **Increase contrast** and **VoiceOver** (the bar reads as
+  "Voice mode", status; its text is announced when it changes; the
+  numbers aren't in VoiceOver's rotor; VO focus never lands on them).
+  *Expected:* all as described; send a screenshot of anything else.
+- [ ] Linux (GNOME): the same with the **Zoom** magnifier, **High
+  Contrast** and **Large Text** (Accessibility settings; with Large Text
+  the badges and the caption are larger), and **Orca**.
+- [ ] Both: Settings, Appearance, Font size "Very large": the badges and
+  the caption are 1.5 times larger; DevTools, Rendering, "Emulate CSS
+  media feature forced-colors: active": the badges, ring and caption use
+  the system colours. Scrolling moves the badges with the items (within
+  about a tenth of a second); navigating hides them until the page is
+  mapped again.
+- [ ] *Deferred (Windows):* the same with **Magnifier** (full screen,
+  docked, lens), a **contrast theme** (badges in Highlight colours),
+  **Text size** at 150% (larger badges and caption), **Narrator** and
+  **NVDA** (the caption announced as it changes), and **Voice Access**
+  ("Show numbers" numbers the page, never the overlay).
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
