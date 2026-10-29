@@ -502,6 +502,101 @@ TEST(VoiceListenerProtocolTest, LineBudget) {
   }
 }
 
+// ---- The order of events --------------------------------------------------
+
+HelperEvent Event(HelperEventType type, int64_t epoch, int64_t audio_ms) {
+  HelperEvent event;
+  event.type = type;
+  if (type != HelperEventType::kReady && type != HelperEventType::kError) {
+    event.epoch = epoch;
+    event.audio_ms = audio_ms;
+  }
+  return event;
+}
+
+constexpr HelperEventType kReady = HelperEventType::kReady;
+constexpr HelperEventType kWake = HelperEventType::kWake;
+constexpr HelperEventType kStart = HelperEventType::kSpeechStart;
+constexpr HelperEventType kPartial = HelperEventType::kPartial;
+constexpr HelperEventType kEnd = HelperEventType::kSpeechEnd;
+constexpr HelperEventType kFinal = HelperEventType::kFinal;
+constexpr HelperEventType kError = HelperEventType::kError;
+
+// Whether the whole of |types| is accepted, at epoch 0 and rising times.
+bool Accepts(const std::vector<HelperEventType>& types) {
+  HelperEventSequence sequence;
+  int64_t ms = 0;
+  for (HelperEventType type : types) {
+    if (!sequence.Accept(Event(type, 0, ms += 100), 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+TEST(VoiceListenerProtocolTest, SequencesThatFollowTheProtocol) {
+  // With the wake phrase, its command in the same breath or after a pause.
+  EXPECT_TRUE(Accepts({kReady, kWake, kStart, kPartial, kPartial, kEnd, kFinal,
+                       kWake, kStart, kEnd, kFinal}));
+  // A wake phrase alone, no command within 6 s.
+  EXPECT_TRUE(Accepts({kReady, kWake, kFinal, kWake, kFinal}));
+  // Without it.
+  EXPECT_TRUE(
+      Accepts({kReady, kStart, kPartial, kEnd, kFinal, kStart, kEnd, kFinal}));
+  // An error at any time.
+  EXPECT_TRUE(Accepts({kError}));
+  EXPECT_TRUE(Accepts({kReady, kWake, kStart, kError}));
+  EXPECT_TRUE(Accepts({kReady}));
+}
+
+TEST(VoiceListenerProtocolTest, SequencesThatDont) {
+  EXPECT_FALSE(Accepts({kWake}));             // before ready
+  EXPECT_FALSE(Accepts({kReady, kReady}));    // ready twice
+  EXPECT_FALSE(Accepts({kReady, kPartial}));  // outside an utterance
+  EXPECT_FALSE(Accepts({kReady, kEnd}));
+  EXPECT_FALSE(Accepts({kReady, kFinal}));  // nothing to answer
+  EXPECT_FALSE(Accepts({kReady, kWake, kWake}));
+  EXPECT_FALSE(Accepts({kReady, kStart, kWake}));
+  EXPECT_FALSE(Accepts({kReady, kStart, kStart}));
+  EXPECT_FALSE(Accepts({kReady, kStart, kFinal}));  // before speech_end
+  EXPECT_FALSE(Accepts({kReady, kStart, kEnd, kPartial}));
+  EXPECT_FALSE(Accepts({kReady, kStart, kEnd, kEnd}));
+  EXPECT_FALSE(Accepts({kReady, kStart, kEnd, kStart}));  // final first
+  EXPECT_FALSE(Accepts({kReady, kWake, kStart, kEnd, kFinal, kFinal}));
+}
+
+TEST(VoiceListenerProtocolTest, SequenceEpochsAndTimes) {
+  HelperEventSequence sequence;
+  ASSERT_TRUE(sequence.Accept(Event(kReady, 0, 0), 0));
+  EXPECT_TRUE(sequence.ready());
+  // Stamps are required.
+  HelperEvent bare;
+  bare.type = kWake;
+  EXPECT_FALSE(HelperEventSequence(sequence).Accept(bare, 0));
+  // A RESET the browser didn't send.
+  EXPECT_FALSE(HelperEventSequence(sequence).Accept(Event(kWake, 1, 10), 0));
+
+  ASSERT_TRUE(sequence.Accept(Event(kWake, 0, 100), 0));
+  ASSERT_TRUE(sequence.Accept(Event(kStart, 0, 200), 0));
+  // Time going back.
+  EXPECT_FALSE(
+      HelperEventSequence(sequence).Accept(Event(kPartial, 0, 150), 0));
+  // The same time is fine (speech_end and final come together).
+  ASSERT_TRUE(sequence.Accept(Event(kPartial, 0, 200), 0));
+  // The browser sent a RESET; until the helper reads it, epoch 0 goes on.
+  ASSERT_TRUE(sequence.Accept(Event(kPartial, 0, 300), 1));
+  // Read: the utterance in progress was dropped, a new one may start.
+  ASSERT_TRUE(sequence.Accept(Event(kStart, 1, 400), 1));
+  ASSERT_TRUE(sequence.Accept(Event(kEnd, 1, 500), 1));
+  ASSERT_TRUE(sequence.Accept(Event(kFinal, 1, 500), 1));
+  // Epochs never go back.
+  EXPECT_FALSE(HelperEventSequence(sequence).Accept(Event(kStart, 0, 600), 1));
+  // A RESET also closes a wake: no final for it after.
+  ASSERT_TRUE(sequence.Accept(Event(kWake, 1, 700), 2));
+  EXPECT_FALSE(HelperEventSequence(sequence).Accept(Event(kFinal, 2, 800), 2));
+  EXPECT_TRUE(sequence.Accept(Event(kWake, 2, 800), 2));
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai

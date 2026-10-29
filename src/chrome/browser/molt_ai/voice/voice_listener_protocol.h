@@ -270,6 +270,33 @@ class HelperLineBudget {
   int64_t last_ms_ = -1;
 };
 
+// The order of the helper's events (SPEECH_HELPER_PROTOCOL.md §4): `ready`
+// first, once; after it each `speech_start` is followed by `partial`s,
+// `speech_end` and then `final` before anything else starts, and each
+// `wake` by exactly one `final` (alone when no command came). Every event
+// but `ready` and `error` carries `epoch` and `audio_ms`, which never go
+// back; `epoch` never passes the RESETs sent, and a higher one (the helper
+// read a RESET) drops whatever was in progress. `error` may come at any
+// time. A helper that breaks the order is stopped.
+class HelperEventSequence {
+ public:
+  HelperEventSequence();
+
+  // Whether |event| may come next, |resets_sent| RESET frames having been
+  // sent to the helper so far.
+  bool Accept(const HelperEvent& event, int64_t resets_sent);
+
+  bool ready() const { return ready_; }
+
+ private:
+  bool ready_ = false;
+  bool wake_open_ = false;     // a `wake` its `final` hasn't answered yet
+  bool in_utterance_ = false;  // from `speech_start` to `final`
+  bool ended_ = false;         // `speech_end` came
+  int64_t epoch_ = 0;
+  int64_t audio_ms_ = 0;
+};
+
 }  // namespace voice
 }  // namespace molt_ai
 

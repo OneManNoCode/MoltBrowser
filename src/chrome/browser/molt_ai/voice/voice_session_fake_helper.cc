@@ -20,8 +20,10 @@
 // Times count the 16 kHz samples of AUDIO frames received. It checks every
 // frame as the real helper must: an unknown type or a frame over 65536
 // bytes is a protocol error (an `error` line with the code `protocol`, then
-// exit 2). It exits 0 on
-// SHUTDOWN or end of file. Plain C++, no //base.
+// exit 2). A RESET drops the utterance in progress as the real helper does:
+// the script's partial, speech_end and final events up to the next wake or
+// speech_start are skipped. It exits 0 on SHUTDOWN or end of file. Plain
+// C++, no //base.
 
 #ifdef UNSAFE_BUFFERS_BUILD
 // A C entry point's argv is a raw array, and this test-only program has no
@@ -149,6 +151,10 @@ int main(int argc, char* argv[]) {
   size_t next = 0;
   long long samples = 0;
   long long epoch = 0;
+  // A wake or an utterance its final hasn't ended yet, and one a RESET
+  // dropped.
+  bool open = false;
+  bool dropping = false;
   std::vector<unsigned char> payload;
   for (;;) {
     unsigned char header[8];
@@ -170,6 +176,8 @@ int main(int argc, char* argv[]) {
     }
     if (type == 3) {
       ++epoch;  // RESET
+      dropping = open;
+      open = false;
       continue;
     }
     if (type != 1) {
@@ -178,7 +186,20 @@ int main(int argc, char* argv[]) {
     samples += length / 2;
     const long long ms = samples * 1000 / 16000;
     while (next < events.size() && events[next].at_ms <= ms) {
-      Play(events[next++], epoch);
+      const Event& event = events[next++];
+      if (event.kind == "wake" || event.kind == "speech_start") {
+        dropping = false;
+        open = true;
+      } else if (event.kind == "partial" || event.kind == "speech_end" ||
+                 event.kind == "final") {
+        if (dropping) {
+          continue;
+        }
+        if (event.kind == "final") {
+          open = false;
+        }
+      }
+      Play(event, epoch);
     }
   }
 }

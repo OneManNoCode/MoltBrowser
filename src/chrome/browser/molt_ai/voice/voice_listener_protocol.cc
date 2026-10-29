@@ -1168,5 +1168,64 @@ bool HelperLineBudget::Take(int64_t now_ms) {
   return true;
 }
 
+HelperEventSequence::HelperEventSequence() = default;
+
+bool HelperEventSequence::Accept(const HelperEvent& event,
+                                 int64_t resets_sent) {
+  if (event.type == HelperEventType::kError) {
+    return true;
+  }
+  if (event.type == HelperEventType::kReady) {
+    if (ready_) {
+      return false;
+    }
+    ready_ = true;
+    return true;
+  }
+  if (!ready_ || event.epoch < epoch_ || event.epoch > resets_sent ||
+      event.audio_ms < audio_ms_) {
+    return false;
+  }
+  if (event.epoch > epoch_) {
+    // The helper read a RESET: what was in progress was dropped.
+    wake_open_ = in_utterance_ = ended_ = false;
+  }
+  epoch_ = event.epoch;
+  audio_ms_ = event.audio_ms;
+  switch (event.type) {
+    case HelperEventType::kWake:
+      if (in_utterance_ || wake_open_) {
+        return false;
+      }
+      wake_open_ = true;
+      return true;
+    case HelperEventType::kSpeechStart:
+      if (in_utterance_) {
+        return false;
+      }
+      in_utterance_ = true;
+      ended_ = false;
+      return true;
+    case HelperEventType::kPartial:
+      return in_utterance_ && !ended_;
+    case HelperEventType::kSpeechEnd:
+      if (!in_utterance_ || ended_) {
+        return false;
+      }
+      ended_ = true;
+      return true;
+    case HelperEventType::kFinal:
+      if (in_utterance_ ? !ended_ : !wake_open_) {
+        return false;
+      }
+      wake_open_ = in_utterance_ = ended_ = false;
+      return true;
+    case HelperEventType::kReady:
+    case HelperEventType::kError:
+      break;
+  }
+  return false;
+}
+
 }  // namespace voice
 }  // namespace molt_ai

@@ -405,6 +405,7 @@ void VoiceListener::Launch() {
   ++generation_;
   ready_ = false;
   resets_sent_ = 0;
+  sequence_ = HelperEventSequence();
   stalled_since_ = base::TimeTicks();
   connection_ = base::MakeRefCounted<Connection>();
   launched_at_ = base::TimeTicks::Now();
@@ -440,10 +441,16 @@ void VoiceListener::OnLine(int generation, HelperEvent event) {
   if (generation != generation_ || !connection_) {
     return;
   }
+  // Checked before anything is dropped: the helper's own order holds
+  // whatever the browser sent it.
+  if (!sequence_.Accept(event, resets_sent_)) {
+    connection_->Kill();
+    EndConnection(StopReason::kProtocolError,
+                  sequence_.ready() ? "it wrote events out of order"
+                                    : "it spoke before it was ready");
+    return;
+  }
   if (event.type == HelperEventType::kReady) {
-    if (ready_) {
-      return;
-    }
     ready_ = true;
     ready_at_ = base::TimeTicks::Now();
     sink_->Attach(connection_);
@@ -453,12 +460,6 @@ void VoiceListener::OnLine(int generation, HelperEvent event) {
   // What it wrote before it read our last RESET is about a dropped
   // utterance.
   if (event.epoch >= 0 && event.epoch < resets_sent_) {
-    return;
-  }
-  // Before `ready` only an error makes sense (a model it couldn't load).
-  if (!ready_ && event.type != HelperEventType::kError) {
-    connection_->Kill();
-    EndConnection(StopReason::kProtocolError, "it spoke before it was ready");
     return;
   }
   delegate_->OnListenerEvent(event);

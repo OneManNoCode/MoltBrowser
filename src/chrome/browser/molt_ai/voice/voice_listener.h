@@ -12,7 +12,8 @@
 //   - Untrusted output: every line passes HelperLineReader (at most
 //     kMaxHelperLineBytes), HelperLineBudget (no flood) and
 //     ParseHelperLine() (known types and fields only, valid UTF-8, capped,
-//     text through SpeechSafeText()). Anything else ends the helper; it is
+//     text through SpeechSafeText()), then HelperEventSequence (the
+//     protocol's order of events). Anything else ends the helper; it is
 //     then restarted like a crash.
 //   - Restarts: after a crash, a protocol error, a limit or a stall, the
 //     helper starts again after kRestartDelays (1 s, then 4 s, then 16 s).
@@ -170,8 +171,6 @@ class VoiceListener {
   const Paths paths_;
   scoped_refptr<Sink> sink_;
   scoped_refptr<Connection> connection_;
-  scoped_refptr<base::SingleThreadTaskRunner> reader_;
-  scoped_refptr<base::SingleThreadTaskRunner> writer_;
   bool started_ = false;
   bool ready_ = false;
   int generation_ = 0;
@@ -179,6 +178,8 @@ class VoiceListener {
   // RESET frames sent to the current helper: its events from before the
   // last one (a lower "epoch") are dropped.
   int64_t resets_sent_ = 0;
+  // The current helper's events so far.
+  HelperEventSequence sequence_;
   base::TimeTicks launched_at_;
   base::TimeTicks ready_at_;
   base::TimeTicks stalled_since_;
