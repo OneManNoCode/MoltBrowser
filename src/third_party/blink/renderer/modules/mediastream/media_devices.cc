@@ -1492,8 +1492,8 @@ void MediaDevices::DevicesEnumerated(
                 String::FromUtf8(device_info.group_id), device_type);
         if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
             !video_input_capabilities.empty()) {
-          // MoltBrowser: a MoltNet page's cameras show the menu formats they
-          // reach (moltnet_camera.h).
+          // MoltBrowser: a MoltNet page's cameras show the menu's formats
+          // (moltnet_camera.h).
           molt_fingerprinting::UseUniformCameraFormats(
               *video_input_capabilities[j]);
           input_device_info->SetVideoInputCapabilities(

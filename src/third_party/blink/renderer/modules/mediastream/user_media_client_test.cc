@@ -3316,8 +3316,8 @@ TEST_F(UserMediaClientTest, MoltNetCameraTrackReportsTheMenu) {
 
 // MoltBrowser: applyConstraints() on a MoltNet camera track chooses among
 // the menu formats too, and reconfigures the track on the running source:
-// the camera opened in a mode that reaches every format it shows, so the
-// device is never reopened. Normal windows reopen it in another mode
+// the camera opened in a mode every format is cropped and scaled from, so
+// the device is never reopened. Normal windows reopen it in another mode
 // (ApplyConstraintsVideoDeviceSingleTrack).
 TEST_F(UserMediaClientTest, MoltNetApplyConstraintsKeepsTheCameraOpen) {
   ScopedMoltNetCameras moltnet;
