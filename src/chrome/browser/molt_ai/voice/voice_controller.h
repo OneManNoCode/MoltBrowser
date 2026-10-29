@@ -271,6 +271,12 @@ class VoiceController {
   // The overlay (voice_overlay.h).
   void ShowNumbersOnPage(bool shown);
   void SetCurrentItemOnPage(int number);
+  // "Number 5" while numbers are on screen names the item the user sees
+  // as 5. |map| was made just now; a page that renumbered since the
+  // overlay drew (a frame changed, within its follow interval) would make
+  // it name another item. False, having said so and drawn the new numbers,
+  // when the item drawn as |command|'s number isn't that number in |map|.
+  bool NumberStillOnScreen(const VoiceCommand& command, const PageMap& map);
   void OnOverlayHidden(int run_of_tab, int reason);
   void RefreshNumbers();
   // Voice mode turned itself off ("turn off voice mode"): once it has said

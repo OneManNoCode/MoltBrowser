@@ -521,6 +521,45 @@ void VoiceController::SetCurrentItemOnPage(int number) {
   }
 }
 
+bool VoiceController::NumberStillOnScreen(const VoiceCommand& command,
+                                          const PageMap& map) {
+  // A number in a list of tabs or headings is a position, not one shown.
+  if (!state_.numbers_shown || command.kind != VoiceCommandKind::kChoose ||
+      command.choice.kind != ChoiceRef::Kind::kNumber ||
+      state_.list == ListContext::kTabs ||
+      state_.list == ListContext::kHeadings) {
+    return true;
+  }
+  content::WebContents* contents = active_ ? ActiveContents() : nullptr;
+  VoiceOverlay* overlay =
+      contents ? VoiceOverlay::FromWebContents(contents) : nullptr;
+  const int number = command.choice.number;
+  const PageItem* now = map.ItemByNumber(number);
+  if (overlay && overlay->numbers_shown()) {
+    const OverlayItem* drawn = nullptr;
+    for (const OverlayItem& item : overlay->items()) {
+      if (item.number == number) {
+        drawn = &item;
+        break;
+      }
+    }
+    // No such number at all: the planner says so.
+    if (!drawn && !now) {
+      return true;
+    }
+    if (drawn && now && drawn->handle == now->handle) {
+      return true;
+    }
+  }
+  // The numbers on screen are gone (the page changed or navigated) or no
+  // longer match the page: nothing is done with a stale number.
+  heard_ = SpeechSafeText(command.heard, kMaxNoticeChars);
+  ShowNumbersOnPage(true);
+  SayNotice(
+      "The page changed, so its numbers moved. Say the number you see now.");
+  return false;
+}
+
 void VoiceController::OnOverlayHidden(int run_of_tab, int reason) {
   if (run_of_tab != tab_run_ || !active_ || !state_.numbers_shown) {
     return;
@@ -648,7 +687,14 @@ void VoiceController::HandleUtterance(const std::string& text) {
   for (Observer& observer : observers_) {
     observer.OnVoicePageMapped(map);
   }
-  VoiceTurn turn = PlanUtterance(utterance, map, Environment(), state_);
+  const VoiceEnvironment env = Environment();
+  // As PlanUtterance() does, with the numbers on screen checked between.
+  const VoiceCommand command =
+      ParseVoiceCommand(utterance, ContextFor(state_, map, env));
+  if (!NumberStillOnScreen(command, map)) {
+    return;
+  }
+  VoiceTurn turn = PlanCommand(command, map, env, state_);
   heard_ = turn.heard;
   status_ = turn.status;
   RunTurn(std::move(turn));
