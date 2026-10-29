@@ -59,10 +59,11 @@ ASan/UBSan, clang `-fno-exceptions`; each pasted hook block checked against
 the tree): the HTTP authentication cache's and the HTTP/1.1 records' hooks
 at round 34 and now, past a total that sixteen sites filled; the down-mix
 of every layout it takes with Chromium 156's `ChannelMixer`; the shares'
-std-only unit tests (16) and 13 mutants of the new rule, each caught. The leak kit's test suite passes as root, as an
-unprivileged account, and as one whose primary group is `users` or
-`daemon`; the tools' own test suites and `molt_fuzz.py check` pass; the
-changed C++ was compiled against Chromium 156's headers.
+std-only unit tests (16) and 13 mutants of the new rule, each caught. The
+leak kit's test suite passes as root, as an unprivileged account, and as
+one whose primary group is `users` or `daemon`; the tools' own test suites
+and `molt_fuzz.py check` pass; the changed C++ was compiled against
+Chromium 156's headers.
 
 **Findings.** 12: 3 low, 9 informational. Fixed: two of the low, and two
 informational.
