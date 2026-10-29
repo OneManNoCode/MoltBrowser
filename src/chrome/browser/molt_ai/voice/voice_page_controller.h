@@ -41,6 +41,7 @@
 #include <optional>
 #include <string_view>
 
+#include "base/callback_list.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -60,6 +61,7 @@ namespace ui {
 class AXNode;
 class AXTree;
 struct AXActionData;
+struct AXLocationAndScrollUpdates;
 struct AXUpdatesAndEvents;
 }  // namespace ui
 
@@ -155,6 +157,13 @@ class VoicePageController
 
   const Stats& stats() const { return stats_; }
 
+  // Runs |callback| after each batch of updates that changed a tree: its
+  // nodes, or where they are (location and scroll changes). The voice
+  // overlay follows the page with it (chrome/browser/ui/views/molt_ai/voice/
+  // voice_overlay.h).
+  base::CallbackListSubscription AddTreesUpdatedCallback(
+      base::RepeatingClosure callback);
+
   // Runs |callback| after each batch of tree updates that changed a tree.
   void SetTreesUpdatedCallbackForTesting(base::RepeatingClosure callback);
 
@@ -191,6 +200,9 @@ class VoicePageController
   // content::WebContentsObserver:
   void AccessibilityEventReceived(
       const ui::AXUpdatesAndEvents& details) override;
+  void AccessibilityLocationChangesReceived(
+      const ui::AXTreeID& tree_id,
+      ui::AXLocationAndScrollUpdates& details) override;
   void RenderFrameDeleted(content::RenderFrameHost* render_frame_host) override;
   void PrimaryPageChanged(content::Page& page) override;
   void WebContentsDestroyed() override;
@@ -216,6 +228,7 @@ class VoicePageController
   std::optional<PendingSubmit> pending_submit_;
   base::OneShotTimer submit_timer_;
   base::RepeatingClosure trees_updated_for_testing_;
+  base::RepeatingClosureList trees_updated_;
   base::WeakPtrFactory<VoicePageController> weak_factory_{this};
 };
 

@@ -23,6 +23,7 @@ What this covers:
 | Bookmarks and import popover (`molt://import`) | `molt_import_ui.cc` |
 | MoltNet popover (`molt://net`) | `molt_net_ui.cc` |
 | Toolbar: AI mode, Agent mode, MoltNet, Bookmarks and import, Software update | `ui/views/toolbar/toolbar_view.cc` |
+| Voice mode's numbers, focus ring and caption bar (§5) | `ui/views/molt_ai/voice/` |
 
 Paths are under `src/chrome/browser/` (WebUI pages under
 `ui/webui/molt_ai/`).
@@ -253,3 +254,79 @@ These need layout or a real browser, which jsdom doesn't have. They are in
   the platform inspectors show the toolbar's names, roles and states
   (§3).
 - **Screen readers and voice control** on each OS (§3).
+- **Voice mode's overlay** (§5): its checklist items are tagged
+  "voice-overlay".
+
+## 5. Voice mode's overlay
+
+For people who browse by voice and have some sight
+([TOUCHLESS_BROWSING.md](design/TOUCHLESS_BROWSING.md) §5.3, §5.5). Not
+switched on yet: the voice controller turns it on.
+
+**What it shows:**
+
+- **Numbers:** a large badge on everything on screen that can be acted on
+  (the page map's items, `molt_ai/voice/page_map.h`), black on yellow with
+  a black border, so a number can be read from a distance and on any
+  page. Badges sit on the item's top-left corner, or beside it when that
+  spot is taken; where items are closer together than a badge, badges
+  get smaller, never below a floor (14 DIPs of text at the default
+  size); an item with no room even then gets none rather than a badge
+  over another one. They follow scrolling
+  and page changes, and go away when the page navigates, the tab is
+  switched or the numbers would no longer name the same items.
+- **The focus ring** around the item the browser reads or acts on: a thick
+  yellow band between two black lines, visible on light and dark pages.
+- **The caption bar**, under the page, in large type: the state
+  (Listening, Thinking, Speaking, Waiting, Off: a word on a coloured pill,
+  never colour alone), what was heard ("Heard: …") and what is happening.
+
+**For assistive technology:**
+
+- The caption bar is a polite live region (role status) named "Voice
+  mode", with the state as its description: screen readers read what was
+  heard and what is happening as they change, and the state when the user
+  reaches the bar, not at every change. Voice mode also speaks, so a
+  screen reader user may hear both; a setting for that comes with the
+  speech output.
+- The numbers and the ring are invisible to assistive technology: screen
+  readers and OS voice control (Windows Voice Access, macOS Voice
+  Control) have their own numbers, and these would only add noise.
+- Nothing in the overlay takes keyboard focus or clicks. Focus stays in
+  the page, so an OS magnifier that follows focus stays where the user is.
+  The caption bar sits at the bottom of the window: with full-screen
+  magnification it may be out of view; the docked (Windows) or split
+  (macOS) magnifier keeps it in view.
+
+**Sizes and colours follow the user's settings:**
+
+- Text: 22 DIPs for numbers and 26 for the caption at the default sizes,
+  scaled by the larger of the OS's text size (Windows' "Text size" and
+  the Linux desktop's font, through the browser's interface font) and the
+  browser's default page font size (Settings, Appearance, Font size: Very
+  large is 1.5 times), up to three times. macOS has no system text size
+  that the browser reads. The caption bar's height depends on its text
+  size and the window, never on what it says, so the page isn't resized
+  as the caption changes; it takes at most a third of the page area (the
+  text shrinks to fit, down to a floor).
+- Colours: fixed high-contrast pairs (every text pair at least 7:1,
+  checked in `voice_overlay_layout_unittest.cc`); in forced colours (a
+  Windows contrast theme, or DevTools' emulation) only the OS's colours:
+  badges in Highlight and HighlightText, the caption in Window and
+  WindowText.
+
+**Not part of the page:** the overlay is views drawn by the browser above
+(numbers, ring) and below (caption bar) the page's view, so pages can't
+read, style or fake it, and it changes nothing in the page's layout. The
+caption bar takes its height from the page area as other browser bars do;
+in MoltNet windows the letterbox then rounds the page's size as usual.
+
+**Checks:** `VoiceOverlayLayoutTest.*` in `molt_ai_unittests` (placement,
+overlaps, sizes, the caption's text, colours and contrast; also built
+standalone), `VoiceOverlayBrowserTest.*` in `browser_tests` (badges on the
+fixture pages at 100% and 200% zoom and on a 2x screen, following
+scrolling, hidden on navigation, tab switches and renumbering; the
+caption bar's place, fixed height and accessibility), and the
+"voice-overlay" items of [BUILD_MACHINE_CHECKLIST.md](BUILD_MACHINE_CHECKLIST.md)
+§7.3: a look on each OS with its magnifier, high contrast and a screen
+reader.

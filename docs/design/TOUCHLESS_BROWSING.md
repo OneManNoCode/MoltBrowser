@@ -102,6 +102,13 @@ Five layers, tried in this order:
 
 "Show numbers" (or on by default in voice mode) puts a large number on every link, button, field, result and video, as Windows Voice Access and macOS Voice Control do. The browser also groups the page's repeated items: search results, videos, products, emails, comments. It reads them as one numbered list, each item with its title and the parts that tell them apart (channel, author, duration, price, date).
 
+**Implementation note (round 37, built; not switched on yet):** `chrome/browser/ui/views/molt_ai/voice/`. The voice controller calls `VoiceOverlay` (`voice_overlay.h`, one per tab): `ShowNumbers(map)`, `HideNumbers()`, `SetCurrentItem(map, number)`, and a callback when the numbers hide by themselves.
+- **Where they are drawn:** a view laid over the page's view in each contents area (`ContentsContainerView`, the split-view slot, which already lays the enterprise watermark, the capture border and the Glic overlays over the page; small hooks marked `MoltBrowser:`). It paints to its own layer, takes no events or focus, and is invisible to assistive technology. A child widget, as the find bar uses, would add a window to activate and an accessibility root for nothing: the overlay is never interactive.
+- **Coordinates:** the page map's bounds are Blink's physical pixels relative to the page's viewport, zoom and frame offsets included; they become DIPs by the screen's scale factor, from the page view's origin. On macOS the trees leave out pinch zoom, so no numbers are drawn while a page is pinch-zoomed there.
+- **Placing badges** (`voice_overlay_layout.h`, pure and unit-tested): a badge goes on the item's top-left corner, else beside it (left, above, the other corners, right, below, centred), clamped inside the viewport and next to its item, never over another badge. Where none fits, it shrinks in two steps to a floor (14 DIPs of text at the default size). If that leaves items without a badge, the badges are placed again with the items closer together than a badge starting smaller, and the plan that numbers more items is kept. An item with no room even then gets no badge, and the plan counts it, so the controller can suggest zooming in. The current item is placed first. At most 500 badges.
+- **Following the page:** the page controller applies Blink's location and scroll changes to its trees, so bounds stay current as the page scrolls, and tells subscribers about every change. While numbers are shown, the overlay maps the page again at most ten times a second; if every number still names the same item (items added after the last are fine), the badges move with them, else they hide and the callback says the page changed. They also hide on navigation (a jump to a fragment aside) and when the tab is hidden.
+- **Readability:** black on yellow badges with a black border, at least 7:1; a thick yellow ring between black lines around the current item; the OS's colours in forced-colours mode; sizes from the user's text settings (`docs/ACCESSIBILITY.md` §5).
+
 ### 5.4 Speaking back
 
 - **Verbosity levels:**
@@ -122,6 +129,13 @@ Five layers, tried in this order:
 - **Magnification** that follows the item being read or acted on: "zoom in", "zoom out", "bigger text".
 - **High-contrast and dark themes**, and Chromium's forced colours.
 - **Reading mode:** the article alone, in large text, read aloud with the sentence highlighted.
+
+**Implementation note (round 37, built; not switched on yet):** `VoiceOverlay::SetCaption(state, heard, status)` and `HideCaption()` (or the same for a window), `voice_caption_bar.h`.
+- **Where:** a bar under the page in each contents area; the window's caption shows in the area with the active tab and stays across tab switches. It takes its height from the page area, as the new tab page's footer does, so it covers nothing; a tab-modal dialog's scrim doesn't cover it.
+- **Fixed height:** two lines (the state with what was heard; what is happening), whatever they say. The page is resized only when the bar is shown or hidden, never per utterance, so a page (in MoltNet too) sees no resize tied to what the user says. It takes at most a third of the page area; its text shrinks to fit, down to a floor.
+- **Text:** what was heard and the status pass `SpeechSafeText()` and are capped at 200 characters; long lines end with an ellipsis.
+- **Assistive technology:** a polite live region named "Voice mode" (role status) with the state as its description; never focused, so the OS magnifier stays with the page.
+- **Not yet:** magnification that follows the item being read, and reading mode.
 
 ### 5.6 When things go wrong
 
@@ -189,7 +203,7 @@ Five layers, tried in this order:
 - **Shared with the agent:** this replaces its 40-element snapshot with a richer, more robust one.
 
 **Implementation (round 36, Phase 0).** In `chrome/browser/molt_ai/voice/`:
-- **Source:** live trees rather than snapshots. `VoicePageController` (`voice_page_controller.*`, one per tab) holds a scoped accessibility mode on its tab while voice mode is on, and keeps each frame's `ui::AXTree` from `AccessibilityEventReceived()`, in the browser process. Actions need the renderer's accessibility to stay on anyway, and a snapshot's node ids would not be the live ones. The mode is `kWebContents | kExtendedProperties`: the second adds checked states, placeholders, heading levels, list positions, HTML tags, autocomplete and default actions. It has no `kNativeAPIs` (no platform tree), `kInlineTextBoxes`, `kHTML` or `kScreenReader`. The reasons are in the controller's `.cc`.
+- **Source:** live trees rather than snapshots. `VoicePageController` (`voice_page_controller.*`, one per tab) holds a scoped accessibility mode on its tab while voice mode is on, and keeps each frame's `ui::AXTree` from `AccessibilityEventReceived()` and, since round 37, the location and scroll changes Blink sends apart (`AccessibilityLocationChangesReceived()`), in the browser process. Actions need the renderer's accessibility to stay on anyway, and a snapshot's node ids would not be the live ones. The mode is `kWebContents | kExtendedProperties`: the second adds checked states, placeholders, heading levels, list positions, HTML tags, autocomplete and default actions. It has no `kNativeAPIs` (no platform tree), `kInlineTextBoxes`, `kHTML` or `kScreenReader`. The reasons are in the controller's `.cc`.
 - **Joining frames:** `ax_page_source.*` walks the top-level tree and joins each frame's tree under its host (child tree ids), each tree at most once. Only the tab's own primary-page frames are looked up.
 - **The map:** `page_map.*` is std-only, over a flat node list.
   - **Items:** everything that can be acted on and isn't hidden is numbered in reading order, on screen or not, so scrolling never changes a number. Off-screen items are marked; the overlay will number only the visible ones.
@@ -199,7 +213,7 @@ Five layers, tried in this order:
   - **Text and secrets:** all text is cleaned for speech (no control, bidi or invisible characters, capped). Credential fields are marked (agent_safety's classification plus their labels), and their values are never kept.
   - **Bounds:** the work is capped (20,000 nodes, depth 256, a work budget).
   - **Tests:** unit tests with hand-built YouTube-, Google- and Wikipedia-like trees; `molt_page_map_fuzzer`.
-- **Not yet:** the browser UI's own tree, the numbers overlay (it will draw `PageItem::bounds`), speech, and the agent acting through `PageNodeHandle`s instead of its isolated-world scripts.
+- **Not yet:** the browser UI's own tree, speech, and the agent acting through `PageNodeHandle`s instead of its isolated-world scripts. The numbers overlay (round 37) draws `PageItem::bounds` (§5.3).
 
 ### 6.4 Matching what was said to what is on screen
 
@@ -243,7 +257,7 @@ Five layers, tried in this order:
   - Phase 1 uses `content::TtsController` with the platform's voices (Windows SAPI/OneCore, macOS, speech-dispatcher on Linux).
   - Phase 2 adds a bundled neural voice in the speech service, registered through `TtsEngineDelegate`, so it sounds the same on every OS.
   - In MoltNet the voice list pages see through `speechSynthesis.getVoices()` is then the same everywhere, which closes a fingerprinting surface.
-- **The overlay:** a MoltBrowser view above the page holds the caption bar, the numbers and the focus ring. It is drawn by the browser, so pages can't read or fake it.
+- **The overlay:** MoltBrowser views above the page (the numbers and the focus ring) and below it (the caption bar). They are drawn by the browser, so pages can't read or fake them (§5.3, §5.5).
 
 ### 6.7 Site skills
 
