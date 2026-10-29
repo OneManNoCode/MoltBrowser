@@ -21,8 +21,8 @@
 //
 // The OS confinement keeps everything the helper writes in that directory,
 // where it can be measured. The helper may create and write files there,
-// but may not delete, rename or link them, so a file it still holds open
-// can't leave the directory, and may not make directories. On Linux,
+// but may not delete or rename them, so a file it still holds open can't
+// leave the directory, nor make directories or symbolic links. On Linux,
 // RLIMIT_FSIZE also caps each file at kMaxHelperWriteBytes, and fallocate()
 // is refused. There a file grows only as fast as the helper writes to it,
 // so the launcher's next check sees it. On macOS (F_PREALLOCATE) and
@@ -31,7 +31,9 @@
 //
 // Memory: at most kMaxHelperMemoryBytes on every OS. Linux sets
 // RLIMIT_DATA; Windows sets its job's memory limit; on macOS the launcher
-// checks the helper's memory footprint every kScratchCheckInterval.
+// checks the helper's memory footprint every kScratchCheckInterval. On
+// every OS the helper is one process (it can start no other), so that is
+// all its memory.
 //
 // Pure C++ (POSIX or Win32 calls, no //base on POSIX), so a standalone
 // harness runs the measuring code that ships against real file systems.

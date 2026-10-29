@@ -166,6 +166,8 @@ constexpr uint32_t kX32SyscallBit = 0x40000000U;
 constexpr uint32_t kCloneNamespaceFlags =
     CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC |
     CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET;
+// The clone() flag that makes a thread rather than a process.
+constexpr uint32_t kCloneThread = CLONE_THREAD;
 
 // open() flags: O_TMPFILE without O_DIRECTORY (the same on x86_64 and
 // aarch64), the bit that makes a file in no directory.
@@ -411,18 +413,27 @@ std::vector<sock_filter> BuildSeccompProgram() {
   Deny(__NR_add_key, EPERM, &program);
   Deny(__NR_request_key, EPERM, &program);
 
-  // Namespaces and mounts. clone() is allowed for threads and processes
-  // but not for new namespaces; clone3() passes its flags in memory BPF
-  // can't read, so it reports ENOSYS and libc falls back to clone().
+  // Threads only, in no new namespace: the helper is one process, so
+  // RLIMIT_DATA (per process) bounds all its memory, and the launcher's
+  // kill all of it. clone() makes a thread or a process; clone3() passes
+  // its flags in memory BPF can't read, so it reports ENOSYS and libc falls
+  // back to clone().
   OnSyscall(__NR_clone,
             {
                 LoadWord(ArgLow(0)),
-                Jump(BPF_JMP | BPF_JSET | BPF_K, kCloneNamespaceFlags, 0, 1),
+                Jump(BPF_JMP | BPF_JSET | BPF_K, kCloneNamespaceFlags, 1, 0),
+                Jump(BPF_JMP | BPF_JSET | BPF_K, kCloneThread, 1, 0),
                 Return(ReturnErrno(EPERM)),
                 Return(SECCOMP_RET_ALLOW),
             },
             &program);
   Deny(__NR_clone3, ENOSYS, &program);
+#if defined(__NR_fork)
+  Deny(__NR_fork, EPERM, &program);
+#endif
+#if defined(__NR_vfork)
+  Deny(__NR_vfork, EPERM, &program);
+#endif
   Deny(__NR_unshare, EPERM, &program);
   Deny(__NR_setns, EPERM, &program);
   Deny(__NR_mount, EPERM, &program);

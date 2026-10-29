@@ -143,8 +143,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   The browser checks the folder every 10 ms while the helper runs, and once
   more when it ends; past a limit the helper is stopped, and OCR or voice
   says which limit. The helpers may only create and write files there (not
-  delete or rename them, or make folders), so all they write is counted;
-  on Linux each file also stops at 64 MiB and no core dump is written. A
+  delete or rename them, or make folders), so all they write is counted,
+  and start no other program on any platform; on Linux each file also
+  stops at 64 MiB and no core dump is written. A
   helper that a malicious file takes over is stopped as soon as it passes
   a limit, instead of writing until its deadline.
 - **macOS: OCR ships with its own libraries.** The bundled tesseract still

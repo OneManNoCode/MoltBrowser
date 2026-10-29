@@ -19,8 +19,8 @@
 //     private memory and kMaxHelperOpenFiles open files.
 //   - Landlock: read (and execute) beneath the policy's read-only paths and
 //     the system locations a dynamically linked helper needs, read, create
-//     and write files beneath one scratch directory (not delete, rename or
-//     link them, nor make directories), nothing else. ABI >= 4: no TCP bind
+//     and write files beneath one scratch directory (not delete or rename
+//     them, nor make directories), nothing else. ABI >= 4: no TCP bind
 //     or connect. ABI >= 6: no connecting to abstract UNIX sockets or
 //     signalling processes outside the sandbox.
 //   - seccomp-bpf (x86_64 and aarch64): an allow-by-default filter with a
@@ -78,10 +78,11 @@ inline constexpr uint32_t kRestrictSelfLogNewExecOn = 1U << 1;
 inline constexpr uint64_t kReadAccess = kFsReadFile | kFsReadDir;
 inline constexpr uint64_t kReadExecuteAccess = kReadAccess | kFsExecute;
 // The scratch directory: read, create, write and truncate files. Not:
-// delete, rename or link them (a file deleted while the helper holds it
-// open would take space the launcher's measuring can't see), make
-// directories, execute what was written there, or create symlinks,
-// sockets, FIFOs or device nodes.
+// delete or rename them (a file deleted while the helper holds it open
+// would take space the launcher's measuring can't see), link them into or
+// out of another directory, make directories, execute what was written
+// there, or create symlinks, sockets, FIFOs or device nodes. (A hard link
+// within it is another name the launcher counts.)
 inline constexpr uint64_t kScratchAccess =
     kFsReadFile | kFsReadDir | kFsWriteFile | kFsMakeReg | kFsTruncate;
 
@@ -136,7 +137,10 @@ uint64_t HandledFsAccess(int abi);
 //   keyctl, add_key, request_key: EPERM (the user's kernel keyrings);
 //   unshare, setns, clone() with namespace flags, mount and the new mount
 //     API, umount2, pivot_root: EPERM; clone3: ENOSYS (its flags can't be
-//     inspected; libc falls back to clone()).
+//     inspected; libc falls back to clone());
+//   clone() for anything but a thread, fork, vfork: EPERM (the helper is
+//     one process: RLIMIT_DATA, which is per process, bounds all its
+//     memory, and the launcher's kill reaches all of it);
 // and keeps what the helper writes where the launcher measures it, and its
 // memory where RLIMIT_DATA counts it (helper_limits.h):
 //   fallocate: EOPNOTSUPP (it reserves space past RLIMIT_FSIZE with

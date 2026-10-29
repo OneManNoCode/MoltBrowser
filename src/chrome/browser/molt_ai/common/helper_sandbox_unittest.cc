@@ -465,10 +465,18 @@ TEST(HelperSandboxLinuxTest, SeccompVerdicts) {
   EXPECT_EQ(RunFilter(program, Call(__NR_write)), SECCOMP_RET_ALLOW);
   EXPECT_EQ(RunFilter(program, Call(__NR_mmap)), SECCOMP_RET_ALLOW);
   EXPECT_EQ(RunFilter(program, Call(__NR_execve)), SECCOMP_RET_ALLOW);
-  // Threads (pthread_create) and processes (fork) still work.
+  // Threads (pthread_create) still work; processes don't (fork, posix_spawn
+  // and vfork).
   EXPECT_EQ(RunFilter(program, Call(__NR_clone, 0x003d0f00)),
             SECCOMP_RET_ALLOW);
-  EXPECT_EQ(RunFilter(program, Call(__NR_clone, SIGCHLD)), SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, Call(__NR_clone, SIGCHLD)), Errno(EPERM));
+  EXPECT_EQ(RunFilter(program,
+                      Call(__NR_clone, CLONE_VM | CLONE_VFORK | SIGCHLD)),
+            Errno(EPERM));
+#if defined(__NR_fork)
+  EXPECT_EQ(RunFilter(program, Call(__NR_fork)), Errno(EPERM));
+  EXPECT_EQ(RunFilter(program, Call(__NR_vfork)), Errno(EPERM));
+#endif
 
   // Network: only AF_UNIX sockets, and no connect().
   EXPECT_EQ(RunFilter(program, Call(__NR_socket, AF_UNIX)), SECCOMP_RET_ALLOW);
@@ -703,10 +711,10 @@ TEST(HelperSandboxLinuxTest, KillsAtTheDeadline) {
   HelperSandboxPolicy policy;
   policy.writable_dir = scratch.GetPath();
   const base::TimeTicks start = base::TimeTicks::Now();
-  // Also closes its output early, and leaves a child behind in its group.
+  // Also closes its output early. (A shell's builtins only: the sandbox
+  // lets the helper start no process.)
   const HelperRunResult run =
-      RunSandboxedHelper(Shell("exec >/dev/null 2>&1; (while :; do :; done) & "
-                               "while :; do :; done"),
+      RunSandboxedHelper(Shell("exec >/dev/null 2>&1; while :; do :; done"),
                          policy, base::Milliseconds(300), 4096);
   EXPECT_TRUE(run.launched);
   EXPECT_TRUE(run.timed_out);
@@ -760,38 +768,17 @@ TEST(HelperSandboxLinuxTest, WritesNoFileLargerThanTheLimit) {
   EXPECT_EQ(run.error, "it wrote 64 MiB or more to its scratch directory");
 }
 
-TEST(HelperSandboxLinuxTest, AScratchDirectoryItLockedIsStillDeleted) {
-  base::FilePath path;
-  {
-    HelperScratchDir scratch;
-    ASSERT_TRUE(scratch.Create("molt_test"));
-    path = scratch.path();
-    // Landlock doesn't cover chmod: the helper can take the browser's own
-    // access away.
-    const HelperRunResult run =
-        RunSandboxedHelper(Shell("echo x > out.txt; chmod 000 .; sleep 2"),
-                           scratch.MakePolicy(), base::Seconds(30), 4096);
-    ASSERT_TRUE(run.launched) << run.error;
-    if (geteuid() != 0) {
-      // What it wrote can't be measured any more: it is stopped.
-      EXPECT_TRUE(run.limit_exceeded);
-      EXPECT_EQ(run.error,
-                "what it wrote to its scratch directory couldn't be measured");
-    }
-  }
-  EXPECT_FALSE(base::PathExists(path));
-}
-
 TEST(HelperSandboxLinuxTest, ConfinesWhenTheKernelCan) {
   HelperScratchDir scratch;
   base::ScopedTempDir elsewhere;
   ASSERT_TRUE(scratch.Create("molt_test"));
   ASSERT_TRUE(elsewhere.CreateUniqueTempDir());
   const base::FilePath secret = elsewhere.GetPath().AppendASCII("secret");
-  ASSERT_TRUE(base::WriteFile(secret, "secret"));
+  // A whole line, which the shell's read builtin reads.
+  ASSERT_TRUE(base::WriteFile(secret, "secret\n"));
   const HelperSandboxPolicy policy = scratch.MakePolicy();
   const HelperRunResult run =
-      RunSandboxedHelper(Shell("cat '" + secret.value() +
+      RunSandboxedHelper(Shell("read line < '" + secret.value() +
                                "' && echo READ; "
                                "echo x > '" +
                                elsewhere.GetPath().value() +
@@ -922,6 +909,12 @@ TEST_F(HelperSandboxLimitsTest, CountsWhatItLeftWhenItExited) {
             "directory");
 }
 
+TEST_F(HelperSandboxLimitsTest, StartsNoOtherProcess) {
+  // A child would be a process the launcher doesn't count or kill.
+  const std::string output = Output({"fork"});
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+}
+
 TEST_F(HelperSandboxLimitsTest, AnInputDoesntCount) {
   // A 100 MiB input the browser wrote, and a small output.
   ASSERT_TRUE(base::WriteFile(scratch_.path().AppendASCII("input.pnm"),
@@ -955,6 +948,32 @@ TEST_F(HelperSandboxLimitsTest, MemoryLimit) {
   }
 }
 
+TEST(HelperSandboxLinuxLimitsTest, AScratchDirectoryItLockedIsStillDeleted) {
+  base::FilePath exe_dir;
+  ASSERT_TRUE(base::PathService::Get(base::DIR_EXE, &exe_dir));
+  base::FilePath path;
+  {
+    HelperScratchDir scratch;
+    ASSERT_TRUE(scratch.Create("molt_test"));
+    path = scratch.path();
+    // Landlock doesn't cover chmod: the helper can take the browser's own
+    // access away.
+    base::CommandLine cmd(exe_dir.AppendASCII("molt_helper_sandbox_test_helper"));
+    cmd.AppendArg("lock");
+    cmd.AppendArg(path.value());
+    const HelperRunResult run =
+        RunSandboxedHelper(cmd, scratch.MakePolicy(), base::Seconds(30), 4096);
+    ASSERT_TRUE(run.launched) << run.error;
+    if (geteuid() != 0) {
+      // What it wrote can't be measured any more: it is stopped.
+      EXPECT_TRUE(run.limit_exceeded);
+      EXPECT_EQ(run.error,
+                "what it wrote to its scratch directory couldn't be measured");
+    }
+  }
+  EXPECT_FALSE(base::PathExists(path));
+}
+
 TEST_F(HelperSandboxLimitsTest, NothingHiddenFromTheCheck) {
   if (hsl::BuildSeccompProgram().empty()) {
     GTEST_SKIP() << "no seccomp filter for this architecture";
@@ -969,11 +988,6 @@ TEST_F(HelperSandboxLimitsTest, NothingHiddenFromTheCheck) {
 #endif  // BUILDFLAG(IS_LINUX)
 
 #if BUILDFLAG(IS_MAC)
-TEST_F(HelperSandboxLimitsTest, StartsNoOtherProcess) {
-  const std::string output = Output({"fork"});
-  EXPECT_TRUE(output.starts_with("DENIED")) << output;
-}
-
 TEST_F(HelperSandboxLimitsTest, StopsAHelperThatReservesSpace) {
   // F_PREALLOCATE reserves space without writing it; the next check sees it.
   EXPECT_EQ(Stopped({"preallocate", In("big"), "1024"}),

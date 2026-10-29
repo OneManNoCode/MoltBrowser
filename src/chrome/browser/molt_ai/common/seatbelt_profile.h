@@ -25,10 +25,10 @@
 //   - reading beneath each READ_<i> (the model or tessdata directory, the
 //     input file);
 //   - reading beneath SCRATCH, and creating and writing regular files
-//     there; not deleting, renaming or linking them, making directories or
-//     changing modes, flags, owners, times or extended attributes, so all
-//     it writes stays where the launcher measures it (helper_limits.h);
-//     not replacing SCRATCH itself.
+//     there; not deleting or renaming them, making directories or symbolic
+//     links, or changing modes, flags, owners, times or extended
+//     attributes, so all it writes stays where the launcher measures it
+//     (helper_limits.h); not replacing SCRATCH itself.
 // No network, no Mach service lookups, no IOKit (so no GPU): a helper that
 // wants any of those fails rather than reaching them.
 //

@@ -284,9 +284,10 @@ repo/
   connect() fail with EACCES; io_uring, leaving the process group
   (setsid/setpgid), ptrace, process_vm_*, pidfd_getfd, bpf,
   perf_event_open, userfaultfd, the keyring calls, namespaces and mounts
-  are refused, and so are fallocate(), O_TMPFILE, setting extended
-  attributes, shared anonymous memory, memfds and SysV IPC; rlimits: 64 MiB
-  per file, no core dump, 4 GiB `RLIMIT_DATA`, 256 open files. Kernels
+  are refused, and so are other processes (threads only), fallocate(),
+  O_TMPFILE, setting extended attributes, shared anonymous memory, memfds
+  and SysV IPC; rlimits: 64 MiB per file, no core dump, 4 GiB
+  `RLIMIT_DATA`, 256 open files. Kernels
   without Landlock (before 5.13) keep the seccomp layer only (files
   unconfined); the browser logs the layers once. A layer the kernel has but
   that fails to apply stops the run.

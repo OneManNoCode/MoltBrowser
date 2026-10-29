@@ -53,9 +53,9 @@ constexpr std::string_view kProfileHead = R"sb((version 1)
 
 ; The scratch directory: list it; read beneath it; create and write
 ; regular files there. Not the directory itself, so it can't be replaced
-; by a symlink. Nothing else: no deleting, renaming or linking (a file
-; deleted while still open would take space no listing shows), no
-; directories, modes, flags, owners, times or extended attributes.
+; by a symlink. Nothing else: no deleting or renaming (a file deleted
+; while still open would take space no listing shows), no directories,
+; symbolic links, modes, flags, owners, times or extended attributes.
 (allow file-read* (literal (param "SCRATCH")))
 (allow file-read* (prefix (string-append (param "SCRATCH") "/")))
 (allow file-write-create file-write-data

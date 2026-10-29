@@ -16,8 +16,8 @@
 // input file) and the system's libraries, create and write files in
 // |writable_dir| (a fresh scratch directory per call, HelperScratchDir,
 // which also holds the input and output and is the working directory), and
-// nothing else: not delete, rename or link files there, nor make
-// directories. Never the network. Its environment is reduced to a few
+// nothing else: not delete or rename files there, nor make directories or
+// symbolic links. Never the network. Its environment is reduced to a few
 // variables naming the scratch directory and the system's (POSIX: HOME,
 // TMPDIR, PATH; Windows: TEMP, TMP, SystemRoot, SystemDrive, windir, Path).
 //
@@ -33,7 +33,7 @@
 //     between fork and exec (helper_sandbox_linux.h), and resource limits:
 //     no file larger than 64 MiB, no core dump, at most 4 GiB of private
 //     memory (RLIMIT_DATA; seccomp refuses the shared memory it doesn't
-//     count) and 256 open files. A layer the kernel lacks is skipped and
+//     count, and other processes) and 256 open files. A layer the kernel lacks is skipped and
 //     logged once (e.g. Landlock before Linux 5.13: then files are not
 //     confined); one the kernel has but that can't be set up fails the run.
 //   macOS: /usr/bin/sandbox-exec with a deny-by-default Seatbelt profile

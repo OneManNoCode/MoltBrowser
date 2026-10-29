@@ -29,6 +29,8 @@
 //                        "RESERVED" or "FAILED <errno>"
 //   rsrc PATH MIB        (macOS) writes MIB MiB to PATH's resource fork,
 //                        then waits
+//   lock DIR             writes DIR/out.txt, takes away all access to DIR
+//                        (chmod 000), then waits
 //   limits               its file size, core, data and open file limits
 //   spin                 loops until killed
 //
@@ -341,6 +343,14 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 #endif
+  if (argc == 3 && strcmp(argv[1], "lock") == 0) {
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/out.txt", argv[2]);
+    Write(path, 1);
+    Result(chmod(argv[2], 0), "LOCKED\n");
+    sleep(2);
+    return 0;
+  }
   if (argc == 2 && strcmp(argv[1], "limits") == 0) {
     return Limits();
   }
@@ -350,6 +360,6 @@ int main(int argc, char* argv[]) {
   }
   Print("usage: echo|write|spread|files|delete|rename|link|symlink|mkdir|"
         "fork|preallocate|xattr|tmpfile|memfd|shm|shared|alloc|reserve|rsrc|"
-        "limits|spin ...\n");
+        "lock|limits|spin ...\n");
   return 2;
 }

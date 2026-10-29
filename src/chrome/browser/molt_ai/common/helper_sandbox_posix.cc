@@ -398,11 +398,10 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
     return result;
   }
 
-  // Anything the helper left running in its process group goes too (on
-  // Linux seccomp keeps its children from leaving the group; on macOS it
-  // can't start any). While any member is alive the group keeps its id; an
-  // empty group's id could only be handed out again after the pid counter
-  // wraps around.
+  // Anything left running in the helper's process group goes too (the
+  // sandboxes let it start no process; this is a second line). While any
+  // member is alive the group keeps its id; an empty group's id could only
+  // be handed out again after the pid counter wraps around.
   kill(-process.Pid(), SIGKILL);
 
   if (SandboxSetupFailed(result)) {

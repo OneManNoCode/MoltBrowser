@@ -1013,7 +1013,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `InferenceProcessHostTest` (crash mid-stream, hang, flood, bad UTF-8, the projector handle, GPU fallback, `kBackendFailed` off the GPU) | #15, #38, #52, #53 |
   | `HelperSandboxTest`, `HelperSandboxLinuxTest`, `SeatbeltProfileTest` | #16 |
   | `HelperSandboxWinPolicyTest` (every platform: the capability SID from its name, the SDDL, the attribute list, the mitigations), `HelperScratchDirTest`, `RecordedWavTest`, `OcrImageTest`, `OcrImageFileTest` (a fake data decoder service over real Mojo pipes, since the binary doesn't start Blink: the decode's limits, a hung or crashed decoder; the PNM written from a decoded bitmap), and `OcrRenderedPagesTest`, `RenderAndOcrPdfTest` (now asynchronous); on Windows (deferred) `HelperSandboxWinTest`, `HelperSandboxWinOutputTest` (§7.5) | helpers-win |
-  | `HelperLimitsTest`, `HelperLimitsWatchTest` (every platform: measuring a scratch directory, links never followed, the limits; the Mac: a resource fork counts; Windows: every stream, a file still open for writing, paths past `MAX_PATH`), `HelperSandboxLimitsTest` (Linux and the Mac, with `molt_helper_sandbox_test_helper` next to the binary: a helper writing too much or making too many files is stopped and the run says which limit; it can't delete, rename, make directories, symlinks or extended attributes; Linux: its rlimits, `RLIMIT_DATA`, and no shared memory, `fallocate()` or `O_TMPFILE`; the Mac: no `fork()`, `F_PREALLOCATE` and a resource fork are counted, and a helper past 4 GiB of memory is stopped, which touches up to 4 GiB once), `HelperSandboxLinuxTest.AScratchDirectoryItLockedIsStillDeleted`, `SeccompKeepsWritesAndMemoryCounted`, the new `HelperSandboxWinTest` cases (§7.5) | helpers-limits |
+  | `HelperLimitsTest`, `HelperLimitsWatchTest` (every platform: measuring a scratch directory, links never followed, the limits; the Mac: a resource fork counts; Windows: every stream, a file still open for writing, paths past `MAX_PATH`), `HelperSandboxLimitsTest` (Linux and the Mac, with `molt_helper_sandbox_test_helper` next to the binary: a helper writing too much or making too many files is stopped and the run says which limit; it can't delete, rename, make directories, symlinks or extended attributes, or `fork()`; Linux: its rlimits, `RLIMIT_DATA`, and no shared memory, `fallocate()` or `O_TMPFILE`, and a scratch directory it locked (chmod 000) is still deleted; the Mac: `F_PREALLOCATE` and a resource fork are counted, and a helper past 4 GiB of memory is stopped, which touches up to 4 GiB once), `HelperSandboxLinuxLimitsTest`, `HelperSandboxLinuxTest.SeccompKeepsWritesAndMemoryCounted` and its threads-only `clone()` verdicts, the new `HelperSandboxWinTest` cases (§7.5) | helpers-limits |
   | `OcrRenderedPagesTest`, `RenderAndOcrPdfTest`, `PdfPageImageSizeTest` | #18 |
   | `MoltNetContentSettingsTest` (real `HostContentSettingsMap`), `MoltNetPrefServiceTest`, `MoltNetIsolationTest` | #21 |
   | `MoltNetWebRtcBindersTest` (real mojo), `MoltNetRefusingP2PSocketManagerTest` | #22 |
@@ -2598,7 +2598,10 @@ files (helpers-limits):
   (a tesseract built with OpenMP starts a thread, and an 8 MiB stack, per
   core). *Expected:* the text, as before. A failure that names memory
   (`Cannot allocate memory`, `std::bad_alloc`) means 4 GiB is too little
-  there: report the core count and the helper.
+  there: report the core count and the helper. The helpers may start no
+  process now (seccomp allows threads only): a failure with "Operation
+  not permitted" from `fork` or `posix_spawn` means a distribution build
+  does; report which.
 - [ ] Every OS, the sandbox tests (helpers-limits; Windows deferred):
   `molt_ai_unittests --gtest_filter='HelperLimits*:HelperSandboxLimits*:HelperSandboxWin*:HelperSandboxLinux*'`
   with `molt_helper_sandbox_test_helper` next to it. *Expected:* all pass:
