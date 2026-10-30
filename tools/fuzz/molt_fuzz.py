@@ -60,6 +60,13 @@ LLAMA = "src/third_party/llama_cpp"
 VOICE = f"{MOLT_AI}/voice"
 # molt-speech's std-only parts (voice/speech_helper/BUILD.gn: core).
 SPEECH_HELPER = f"{VOICE}/speech_helper"
+# molt-voice's std-only parts (voice/voice_helper/BUILD.gn: core).
+VOICE_HELPER = f"{VOICE}/voice_helper"
+VOICE_HELPER_SOURCES = [
+    f"{VOICE_HELPER}/{name}.cc" for name in (
+        "voice_frames", "voice_lts", "voice_phonemes", "voice_synth",
+        "voice_text")
+]
 # The std-only voice intent code (voice/BUILD.gn: spoken_choice,
 # voice_command).
 VOICE_INTENT_SOURCES = [
@@ -339,6 +346,24 @@ FUZZERS = {
         tier="std",
         dict="dicts/speech_protocol.dict",
         max_len=16384,
+        smoke_runs=20000,
+    ),
+    # --- The voice helper's stdin and text front end (touchless browsing) --
+    "molt_voice_helper_fuzzer": dict(
+        dir=VOICE_HELPER,
+        sources=VOICE_HELPER_SOURCES,
+        tier="std",
+        dict="dicts/voice_helper.dict",
+        max_len=8192,
+        smoke_runs=20000,
+    ),
+    # --- The browser: molt-voice's stdout (touchless browsing) -------------
+    "molt_voice_speech_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_HELPER_SOURCES + [f"{VOICE}/voice_speech_protocol.cc"],
+        tier="std",
+        dict="dicts/voice_speech.dict",
+        max_len=65536,
         smoke_runs=20000,
     ),
     # --- The browser: the page map (voice mode) ----------------------------

@@ -340,6 +340,8 @@ void VoiceSession::StopListening() {
   SetDucking(false);
   partial_.clear();
   hotwords_.clear();
+  microphone_on_ = false;
+  echo_ = EchoCancellation::kNone;
 }
 
 void VoiceSession::Fail(const std::string& message) {
@@ -384,6 +386,7 @@ void VoiceSession::OnListenerEvent(const HelperEvent& event) {
       event.type != HelperEventType::kReady) {
     Apply(logic_.OnOtherSpeech(OthersSpeaking(), now));
     Apply(logic_.OnPageAudible(AnyTabAudible(), now));
+    Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), now));
   }
   switch (event.type) {
     case HelperEventType::kWake:
@@ -426,6 +429,9 @@ void VoiceSession::OnListenerGaveUp(const std::string& why) {
 // ---- The microphone ---------------------------------------------------------
 
 void VoiceSession::OnMicrophoneStarted(EchoCancellation echo) {
+  microphone_on_ = true;
+  echo_ = echo;
+  Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), NowMs()));
   LOG(INFO) << "[MoltVoice] microphone on, echo cancellation: "
             << (echo == EchoCancellation::kChromeWide ? "Chrome-wide"
                 : echo == EchoCancellation::kPlatform ? "the platform's"
@@ -618,6 +624,11 @@ bool VoiceSession::OthersSpeaking() const {
   return controller_ && controller_->OthersSpeaking();
 }
 
+bool VoiceSession::OwnSpeechInReference() const {
+  return microphone_on_ && echo_ != EchoCancellation::kNone && controller_ &&
+         controller_->SpeechInEchoReference();
+}
+
 bool VoiceSession::AnyTabAudible() const {
   for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
     TabStripModel* tabs = window->GetTabStripModel();
@@ -633,6 +644,7 @@ bool VoiceSession::AnyTabAudible() const {
 
 void VoiceSession::OnPoll() {
   Apply(logic_.OnOtherSpeech(OthersSpeaking(), NowMs()));
+  Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), NowMs()));
   Apply(logic_.OnPageAudible(AnyTabAudible(), NowMs()));
 }
 

@@ -21,4 +21,7 @@ specific_include_rules = {
   r"voice_session_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
+  r"voice_speech_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
 }

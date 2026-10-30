@@ -255,6 +255,9 @@ source_set("browser_tests") {
     # Listening: a stand-in helper under the real sandbox, fake audio.
     ":voice_session_browser_tests",
 
+    # Speaking: the bundled voice with a stand-in helper.
+    ":voice_speech_browser_tests",
+
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
 
@@ -325,20 +328,49 @@ source_set("features") {
   public_deps = [ "//base" ]
 }
 
+# The browser's side of the voice helper protocol: molt-voice's frames read
+# as untrusted (docs/design/VOICE_HELPER_PROTOCOL.md). Std-only:
+# molt_ai_unittests and molt_voice_speech_fuzzer build the same code.
+source_set("voice_speaking") {
+  sources = [
+    "voice_speech_protocol.cc",
+    "voice_speech_protocol.h",
+  ]
+
+  public_deps = [ "//chrome/browser/molt_ai/voice/voice_helper:core" ]
+}
+
+# molt-voice's stdout, as a helper a hostile input took over may write it.
+# See docs/FUZZING.md.
+fuzzer_test("molt_voice_speech_fuzzer") {
+  sources = [ "molt_voice_speech_fuzzer.cc" ]
+  deps = [
+    ":voice_speaking",
+    "//base",
+  ]
+  dict = "dicts/voice_speech.dict"
+  seed_corpus = "corpus/molt_voice_speech_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # Voice mode in a browser window: runs the loop's steps on the active tab
 # (VoicePageController), the browser's commands, the media session and the
-# tab's mute, and speaks through TtsController.
+# tab's mute, and speaks through its own voice (the molt-voice helper,
+# played through the audio service) or TtsController.
 source_set("voice_controller") {
   sources = [
     "voice_controller.cc",
     "voice_controller.h",
     "voice_speech.cc",
     "voice_speech.h",
+    "voice_speech_bundled.cc",
+    "voice_speech_bundled.h",
   ]
 
   public_deps = [
     ":voice_loop",
     ":voice_planner",
+    ":voice_speaking",
     "//base",
 
     # Voice mode asks the activation guard's questions on its tab
@@ -350,6 +382,16 @@ source_set("voice_controller") {
   deps = [
     ":features",
     ":voice_page",
+
+    # The voice helper: the bundled copy only, under the resident sandbox.
+    "//chrome/browser/molt_ai/common:helper_binary",
+    "//chrome/browser/molt_ai/common:helper_resident",
+
+    # Its audio, played through the audio service.
+    "//media",
+    "//media/mojo/mojom",
+    "//mojo/public/cpp/bindings",
+    "//services/audio/public/cpp",
     "//chrome/app:command_ids",
 
     # The tab's activation guard, which voice mode answers.
@@ -556,12 +598,16 @@ source_set("voice_listening_unit_tests") {
     "voice_audio_samples_unittest.cc",
     "voice_listener_protocol_unittest.cc",
     "voice_session_logic_unittest.cc",
+    "voice_speech_protocol_unittest.cc",
   ]
 
   deps = [
     ":page_map",
     ":voice_command",
     ":voice_listening",
+
+    # The voice helper's frames, as the browser reads them.
+    ":voice_speaking",
 
     # Voice mode turned on and off by voice, through the loop.
     ":voice_loop",
@@ -575,6 +621,40 @@ source_set("voice_listening_unit_tests") {
 executable("molt_fake_speech_helper") {
   testonly = true
   sources = [ "voice_session_fake_helper.cc" ]
+}
+
+# A stand-in for the voice helper in the bundled voice's browser tests: it
+# answers each request with a tone (voice_speech_fake_helper.cc). Plain
+# C++, no //base.
+executable("molt_fake_voice_helper") {
+  testonly = true
+  sources = [ "voice_speech_fake_helper.cc" ]
+}
+
+# The bundled voice end to end but for the voice: the real BundledVoice and
+# resident sandbox, the stand-in helper, the audio service's fake output.
+# Picked up by :browser_tests.
+source_set("voice_speech_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_speech_browsertest.cc" ]
+
+  deps = [
+    ":voice_controller",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media",
+    "//testing/gtest",
+  ]
+
+  data_deps = [ ":molt_fake_voice_helper" ]
 }
 
 # Listening end to end but for the recognizer: Chromium's fake audio

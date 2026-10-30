@@ -598,6 +598,55 @@ opt-in until voice listening ships (`MOLT_BUNDLE_SPEECH=1`, §11).
   machine (compilers), so it is recorded, not pinned; the sources and models
   are pinned (§2.7).
 
+### 3.5 Voice mode's own voice (bundled-voice)
+
+`molt-voice` (`docs/design/VOICE_HELPER_PROTOCOL.md`) is built by the same
+script from the same ONNX Runtime and sherpa-onnx (now built with its TTS
+code: the first run after this change rebuilds sherpa-onnx, 5 minutes, and
+relinks `molt-speech`, which gets smaller), with the Piper
+`en_US-ljspeech-medium` voice and sherpa-onnx's English lexicon (70 MB,
+pinned). Opt-in: `MOLT_BUNDLE_VOICE=1`, or `--parts voice`.
+
+- [ ] macOS arm64 (from bundled-voice; not run on a Mac yet):
+  ```bash
+  MOLT_BUNDLE_SPEECH=1 MOLT_BUNDLE_VOICE=1 ./scripts/build.sh 2>&1 | tee ~/molt-v0.3.0/build-voice-mac.log
+  # or, after a build:
+  scripts/bundle-speech.sh --app chromium/src/out/MoltBrowser/MoltBrowser.app --parts speech,voice
+  otool -L chromium/src/out/MoltBrowser/MoltBrowser.app/Contents/Resources/voice/molt-voice
+  scripts/bundle-speech.sh --verify chromium/src/out/MoltBrowser/MoltBrowser.app/Contents/Resources --parts speech,voice
+  ```
+  *Expected:* "[bundle-speech] molt-voice ... MB, SHA-256 ..."; `otool -L`
+  lists only `/usr/lib/` and `/System/Library/`; the verify step says "OK:
+  13 model files match their pins" and "OK: 5 voice model files match
+  their pins". On Linux x64 the stripped helper is 25 MB. The source files
+  hold IPA in UTF-8 string literals (Xcode's clang reads UTF-8; MSVC gets
+  `/utf-8` from the CMake file).
+- [ ] macOS signing (from bundled-voice): `release.sh`, `sign-app.sh` and
+  `dev-install-mac.sh` sign `Contents/Resources/voice/molt-voice` like
+  `molt-speech`. *Expected:* `codesign -dvv` shows the Developer ID, the
+  runtime flag and a timestamp; notarization accepts the app.
+- [ ] Linux x64 (from bundled-voice): `MOLT_BUNDLE_VOICE=1
+  ./scripts/package-linux.sh` puts it in `opt/moltbrowser/voice/`.
+  *Expected:* `ldd .../voice/molt-voice` lists only glibc's libraries.
+  This is the platform it was built and measured on.
+- [ ] Windows x64 (from bundled-voice; deferred, like the speech helper):
+  `scripts/bundle-speech.sh --dest <staging> --parts voice` gives
+  `<staging>/voice/molt-voice.exe`; the installer must grant the helpers'
+  capability on `voice\` as on `speech\`.
+- [ ] On each OS, the helper's own checks (from bundled-voice):
+  ```bash
+  V=<the voice/ folder>; S=<the speech/ folder>
+  python3 -I tools/voice_bench/voice_helper_check.py --helper $V/molt-voice --models $V/models \
+    --speech-helper $S/molt-speech --speech-models $S/models --wav-dir ~/molt-v0.3.0/voice-wav \
+    protocol speak cost intelligible
+  ```
+  *Expected:* "protocol: 16 of 16 as specified"; the first audio of each
+  sentence under 0.3 s and an RTF near 0.1 (a slower laptop: compare with
+  `docs/design/VOICE_HELPER_PROTOCOL.md` §8, and say if the first audio
+  is over 0.5 s); listen to the WAVs written: every word said, numbers,
+  dates and addresses as the protocol page's §4.1 says; note any word
+  mispronounced.
+
 ## 4. Compile-risk hot spots
 
 When the build fails, find the file here; the PR tag says which change to
@@ -1187,6 +1236,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
   | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
   | `VoiceListenerProtocolTest.*` (frames, CONFIG, the helper's lines refused or taken, hotwords), `VoiceSessionLogicTest.*` and `VoiceSessionCommandsTest.*` (wake phrase, follow-up window, always listening, barge-in, "stop", the browser's own voice, a page's speech, crashes), `VoiceAudioSamplesTest.*` (frames, earcons), `CpuUsageWindowTest.*`, `ProcStatTest.*`, `ResidentHelperTest.*` (the resident sandbox with the stand-in helper: reads only its model directory, writes nothing, no network, no process, its limits, its pipes, dies with the browser; Linux and macOS) and `HelperSandboxWinPolicyTest.Resident*`; all built standalone here, `ResidentHelperTest.*` against this machine's kernel | speech-session |
+  | `VoiceTextTest.*`, `VoiceLtsTest.*`, `VoicePhonemesTest.*`, `VoiceFramesTest.*`, `VoiceSynthTest.*` (std only, built standalone here under ASan and UBSan: the voice helper's text front end on page-like and hostile text, its letter-to-sound rules, lexicon and forms, the frames both ways, and the work for one request against a fake engine: the short first unit, pacing, cancelling, the limits), `VoiceSpeechProtocolTest.*` and the `VoiceSessionLogicTest` cases `ACommandInterruptsTheBrowsersOwnVoice`, `TheOwnVoiceHeardBackIsNotACommand`, `ThePlatformVoiceStillNeedsTheWakePhrase` (built standalone here) | bundled-voice |
   | `SpeechFrameReaderTest.*`, `SpeechConfigTest.*`, `SpeechTextTest.*`, `SpeechEventsTest.*`, `SpeechListenerTest.*` (std only, built standalone here under ASan and UBSan: the speech helper's frames, CONFIG's strict JSON, hotword cleaning and the wake phrase's word pieces, the event lines, and the listening states against fake engines) | speech-helper |
   | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
   | `ActivationPolicyTest.*` (when a tab acts for voice mode or the agent, and every decision: new windows, downloads, other apps, permission prompts, full screen, clipboard writes; the words said), `VoiceControllerLogicTest.ThePagesRequestsWaitForASpokenYes` and the intents of the "full screen" and play presses; all built standalone here (ASan and UBSan) | activation-guard |
@@ -1428,6 +1478,21 @@ extension enablement and `MediaRouterEnabled()`).
     says "Speech recognition stopped working: ...".
   - `NeverListensInMoltNetWindows`: no helper looked for, no microphone,
     "Voice mode is off in MoltNet windows.".
+- [ ] Voice mode's own voice's browser tests (bundled-voice): the real
+  `BundledVoice` starts the stand-in helper `molt_fake_voice_helper`
+  (built next to `browser_tests`) under the real resident sandbox and
+  plays its tones through the audio service's fake output
+  (`--disable-audio-output`):
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceSpeechBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/bundled-voice-browser-tests.log
+  ```
+  *Expected:* all 5 pass on Linux and macOS: `SpeaksWithItsOwnVoice` (no
+  platform utterance; speaking ends once the tone played),
+  `StopSilencesAtOnce`, `ACrashFallsBackThenTheVoiceComesBack`,
+  `TwoFailuresAndThePlatformVoicesSpeak`, `WithoutTheVoiceThePlatforms`. If
+  one fails, send the log with the `[MoltVoice]` lines (the helper's
+  confinement, "voice helper ended: ...").
 
   If one fails, send the log, with the lines `[MoltVoice]` and
   `[MoltHelperSandbox]`: they say which echo canceller the microphone got
@@ -1986,6 +2051,8 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   `molt_agent_page_map_fuzzer`)
   (activation-guard adds a seed and the guard's questions to
   `molt_voice_controller_fuzzer`)
+  (bundled-voice adds `molt_voice_helper_fuzzer` and
+  `molt_voice_speech_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2446,6 +2513,47 @@ each with a real microphone: a laptop's built-in one and a USB headset.
   "Voice mode is off in MoltNet windows." and the microphone indicator
   stays off; while a regular window listens, a MoltNet tab's video isn't
   turned down when you speak.
+
+**Voice mode's own voice** (from bundled-voice; TOUCHLESS_BROWSING.md §6.6,
+`docs/design/VOICE_HELPER_PROTOCOL.md`). With `molt-voice` bundled
+(`MOLT_BUNDLE_VOICE=1`, §3.5) and `molt-speech`, on macOS and Linux
+(Windows deferred), through the computer's speakers, not headphones:
+
+- [ ] Its voice (bundled-voice): turn voice mode on. *Expected:* the log
+  has `[MoltVoice] voice helper ready: piper-en_US-ljspeech-medium ...`
+  with its confinement; "Voice mode is on..." is said in the same woman's
+  voice on every OS (not the system's voice); on Linux without
+  speech-dispatcher and without `--enable-speech-dispatcher` it speaks.
+- [ ] Listening to it (bundled-voice): "Hey Molt, search YouTube for
+  Bohemian Rhapsody", then "read the results", and on a news site "read
+  the headings". *Expected:* every word is said (none skipped), numbers,
+  durations ("6 minutes"), counts ("1.2 million views"), dates and
+  addresses read as words; it starts within a quarter of a second of the
+  caption. Note each word said wrong (names especially), and whether the
+  voice is pleasant enough to listen to for a minute; "speak faster" and
+  "speak slower" change its pace.
+- [ ] Interrupting it by voice (bundled-voice), the point of this voice:
+  while it reads a long list, say "the third one" (no "Hey Molt") over it.
+  *Expected:* it stops at once and opens the third result. Then, while it
+  reads, say nothing and let it finish: nothing it says is taken as a
+  command (the log shows no utterance taken while it spoke). Repeat at a
+  loud volume with the microphone near the speakers, and count anything
+  done that you didn't say. The log says `echo cancellation: Chrome-wide`.
+- [ ] A page's speech (bundled-voice): a page reading aloud with
+  `speechSynthesis`, then "Hey Molt, what time is it". *Expected:* voice
+  mode answers at once over it (its own queue), and the page's reading
+  isn't paused, cut or restarted.
+- [ ] The fallback (bundled-voice): `kill -9` the `molt-voice` process
+  while it reads. *Expected:* the system's voice says what was being said,
+  and the next answer after a few seconds is in the bundled voice again;
+  kill it twice more within a minute: the system's voices speak from then
+  on (the log says "the platform's voices speak from now on"). Remove
+  `voice/` from the app: voice mode speaks with the system's voices, and a
+  command said over them isn't taken (the old rule).
+- [ ] Its cost (bundled-voice): while it reads a long page the
+  `molt-voice` process shows about 10% of one core and under 400 MB, and
+  nothing between answers; `NoNewPrivs: 1` and `Seccomp: 2` on Linux; it
+  goes away when voice mode is turned off.
 
 **The web agent on the page map, and voice mode's planner** (from
 agent-pagemap; `docs/design/AGENT_ACTIONS.md` §2.10,

@@ -1,0 +1,60 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# molt-voice, voice mode's own voice (docs/design/VOICE_HELPER_PROTOCOL.md),
+# is built outside GN by scripts/bundle-speech.sh --parts voice
+# (CMakeLists.txt here), like molt-speech: it links sherpa-onnx and ONNX
+# Runtime, which aren't in the tree. GN builds its std-only parts, for
+# molt_ai_unittests, the fuzzer and the browser (which reads the helper's
+# frames with the same code); standalone/ (the engine, stdout and main) is
+# CMake only.
+
+import("//testing/libfuzzer/fuzzer_test.gni")
+
+# The frames both ways, the text front end (normalization, the lexicon and
+# letter-to-sound) and the work for one request. Std-only, no exceptions;
+# the helper builds the same files.
+source_set("core") {
+  sources = [
+    "voice_frames.cc",
+    "voice_frames.h",
+    "voice_lts.cc",
+    "voice_lts.h",
+    "voice_phonemes.cc",
+    "voice_phonemes.h",
+    "voice_synth.cc",
+    "voice_synth.h",
+    "voice_text.cc",
+    "voice_text.h",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "voice_frames_unittest.cc",
+    "voice_lts_unittest.cc",
+    "voice_phonemes_unittest.cc",
+    "voice_synth_unittest.cc",
+    "voice_text_unittest.cc",
+  ]
+  deps = [
+    ":core",
+    "//testing/gtest",
+  ]
+}
+
+# Page-derived text through the front end, and what the browser (or
+# anything that takes its place) writes to the helper's stdin. See
+# docs/FUZZING.md.
+fuzzer_test("molt_voice_helper_fuzzer") {
+  sources = [ "molt_voice_helper_fuzzer.cc" ]
+  deps = [
+    ":core",
+    "//base",
+  ]
+  dict = "dicts/voice_helper.dict"
+  seed_corpus = "corpus/molt_voice_helper_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}

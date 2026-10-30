@@ -274,6 +274,10 @@ bool VoiceController::Start() {
     return false;
   }
   active_ = true;
+  // Voice mode's own voice runs while voice mode is on.
+  if (speech_) {
+    speech_->SetActive(true);
+  }
   AttachToActiveTab();
   NotifyCaption();
   return true;
@@ -285,6 +289,9 @@ void VoiceController::Stop() {
   refresh_numbers_timer_.Stop();
   DetachFromTab();
   active_ = false;
+  if (speech_) {
+    speech_->SetActive(false);
+  }
   // The user's preferences stay; the conversation doesn't.
   ConversationState fresh;
   fresh.speech_rate = state_.speech_rate;
@@ -314,6 +321,10 @@ void VoiceController::StopSpeaking() {
 
 bool VoiceController::OthersSpeaking() const {
   return speech_ && speech_->OthersSpeaking();
+}
+
+bool VoiceController::SpeechInEchoReference() const {
+  return speech_ && speech_->InEchoReference();
 }
 
 void VoiceController::SayNotice(const std::string& text) {
