@@ -17,7 +17,16 @@
 //   - the voice loop cancels the run on anything else the user says, and
 //     on "stop";
 //   - without a model, or when the model can't load, it says so plainly,
-//     with what the user can do instead.
+//     with what the user can do instead;
+//   - each step the run carried out is reported to voice mode, which keeps
+//     it in "this" for a routine (voice_agent_replay.h's PlannerStepsFor(),
+//     TOUCHLESS_BROWSING.md §6.8);
+//   - Replay() runs a routine's step again without the model: a WebAgent
+//     whose replies are the recorded step (voice_agent_replay.h), found
+//     again on the page as it is now, with every check and question a run's
+//     own step gets; it says nothing but its questions, and when the step's
+//     element isn't on the page, or more than one element could be it, the
+//     step isn't done.
 // The agent observes and acts through the page map, as voice mode does
 // (outside MoltNet windows, where voice mode is off anyway); every check
 // the agent makes still applies.
@@ -31,6 +40,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/molt_ai/agents/voice_agent_replay.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_speech.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
@@ -56,6 +66,9 @@ class VoiceAgentPlanner : public voice::VoicePlanner {
              const std::string& heard,
              const voice::PageMap& map,
              Delegate* delegate) override;
+  void Replay(content::WebContents* contents,
+              const voice::PlannerStep& step,
+              Delegate* delegate) override;
   void Answer(int question, bool yes) override;
   void Cancel() override;
 
@@ -74,6 +87,17 @@ class VoiceAgentPlanner : public voice::VoicePlanner {
                       std::string goal,
                       ModelCheck check);
   void OnAction(const WebAgent::Step& step);
+  // A step Start()'s run carried out: reported to the delegate.
+  void OnStep(const WebAgent::Step& step);
+  // Replay(): the reply for the observation (the step, then the end), the
+  // step as it ran, and the run's end.
+  std::string PickReplay(const agent_actions::Observation& observation);
+  void OnReplayStep(const WebAgent::Step& step);
+  void OnReplayDone(int run, bool success, std::string result);
+  // Replay()'s outcome, then the run is over (from a task: never inside
+  // the delegate's own call).
+  void EndReplaySoon(voice::PlannerReplay outcome);
+  void ResetReplay();
   void OnPlan(const WebAgent::PlanUpdate& update);
   void OnConfirm(const WebAgent::ConfirmRequest& request);
   void OnDone(int run, bool success, std::string result);
@@ -89,6 +113,13 @@ class VoiceAgentPlanner : public voice::VoicePlanner {
   bool has_plan_ = false;
   int question_ = 0;
   bool declined_ = false;
+  // Replay(): the step, whether its action was picked, whether it ran, and
+  // what the pick found (kNotFound, kAmbiguous; else kFailed until it runs).
+  bool replaying_ = false;
+  voice::PlannerStep replay_step_;
+  bool replay_picked_ = false;
+  bool replay_ran_ = false;
+  voice::PlannerReplay replay_outcome_ = voice::PlannerReplay::kFailed;
   base::WeakPtrFactory<VoiceAgentPlanner> weak_factory_{this};
 };
 

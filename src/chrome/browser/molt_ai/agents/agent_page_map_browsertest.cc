@@ -444,6 +444,12 @@ class StubPlanner : public voice::VoicePlanner {
     delegate_->PlannerSays("I'll search the site for trains to Lyon.");
     delegate_->PlannerAsks(1, "open trains.example");
   }
+  void Replay(content::WebContents* contents,
+              const voice::PlannerStep& step,
+              Delegate* delegate) override {
+    delegate->PlannerReplayed(voice::PlannerReplay::kFailed);
+    delegate->PlannerFinished();
+  }
   void Answer(int question, bool yes) override {
     log_->answers.push_back(base::NumberToString(question) +
                             (yes ? " yes" : " no"));

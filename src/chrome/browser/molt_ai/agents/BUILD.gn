@@ -159,6 +159,31 @@ source_set("voice_agent_speech") {
   deps = [ "//chrome/browser/molt_ai/voice:page_map" ]
 }
 
+# The on-device planner's steps in routines taught by voice
+# (docs/design/TOUCHLESS_BROWSING.md §6.8): what a routine keeps of a step
+# the web agent carried out, and the reply that replays it on the page as
+# it is now. Pure logic (base, url), so molt_ai_unittests links it.
+source_set("voice_agent_replay") {
+  sources = [
+    "voice_agent_replay.cc",
+    "voice_agent_replay.h",
+  ]
+
+  public_deps = [
+    ":agent_actions",
+
+    # The agent's record of a step (agent_draft::RunStep).
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+    "//chrome/browser/molt_ai/voice:voice_planner",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//url",
+  ]
+}
+
 # The web agent's prompt: the rules and the turn, as one raw prompt or as
 # a chat with a screenshot (docs/design/AGENT_ACTIONS.md §2.6), and the
 # planner's request (§2.8). Pure logic, so molt_ai_unittests links it.
@@ -259,6 +284,7 @@ source_set("unit_tests") {
     "chat_actions_unittest.cc",
     "frame_tools_unittest.cc",
     "hidden_chars_unittest.cc",
+    "voice_agent_replay_unittest.cc",
     "voice_agent_speech_unittest.cc",
   ]
   deps = [
@@ -271,8 +297,11 @@ source_set("unit_tests") {
     ":chat_actions",
     ":frame_tools",
     ":hidden_chars",
+    ":voice_agent_replay",
     ":voice_agent_speech",
     "//base",
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+    "//chrome/browser/molt_ai/voice:voice_planner",
 
     # Hand-built page trees (YouTube-, Google-like, a sign-in form, frames)
     # for the page map's observation.
