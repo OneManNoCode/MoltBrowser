@@ -417,6 +417,19 @@ FUZZERS = {
         max_len=65536,
         smoke_runs=1000,
     ),
+    "molt_page_questions_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "page_reading", "page_questions",
+                "site_skills", "site_skills_data", "html_fixture_tree")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/agent_safety.cc",
+             f"{ENGINE}/bounded_json.cc"],
+        tier="stand_ins",
+        dict="dicts/page_questions.dict",
+        max_len=65536,
+    ),
     "molt_page_map_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/voice/page_map.cc",

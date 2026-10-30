@@ -356,6 +356,16 @@ void CheckTurn(const VoiceTurn& turn,
       case VoiceStepKind::kToPlanner:
         CheckSpeakable(step.preface, kMaxSpokenChars);
         break;
+      case VoiceStepKind::kAskPage:
+        // A question about the page: the user's words, cleaned; it names
+        // nothing on the page, and a page that isn't the web gets none.
+        CHECK(env.web_page);
+        CheckSpeakable(step.text, molt_ai::voice::kMaxCommandTextBytes);
+        CHECK_GE(step.index, 0);
+        CHECK_LE(step.index,
+                 static_cast<int>(molt_ai::voice::PageQuestionKind::kMore));
+        CHECK(!step.target.valid());
+        break;
       case VoiceStepKind::kRead:
         // Only a section has words: the user's, cleaned.
         if (step.read == molt_ai::voice::ReadOp::kSection) {

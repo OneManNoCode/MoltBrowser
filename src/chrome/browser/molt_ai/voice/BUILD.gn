@@ -328,6 +328,40 @@ source_set("page_questions_unit_tests") {
   ]
 }
 
+# Questions about the page through the whole loop, with a scripted model
+# and a fake TTS platform (chrome/test/data/molt_voice/article.html and
+# injection.html): the fenced prompt, the answer said, a page that tells the
+# model to say a voice command, "stop", MoltNet. Picked up by
+# :browser_tests.
+source_set("voice_page_questions_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_page_questions_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":page_questions",
+    ":voice_controller",
+    ":voice_page",
+    ":voice_page_questions",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 # Hostile pages and hostile model replies for questions about the page. See
 # docs/FUZZING.md.
 fuzzer_test("molt_page_questions_fuzzer") {
@@ -487,6 +521,9 @@ source_set("browser_tests") {
 
     # The browser's prompts and a page's dialogs answered by voice.
     ":voice_prompts_browser_tests",
+
+    # Questions about the page, with a scripted model.
+    ":voice_page_questions_browser_tests",
 
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
