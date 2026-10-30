@@ -26,6 +26,11 @@ Steps:
   bias       the accuracy set again, each utterance after a CONFIG with the
              names of the screen it is spoken at as hotwords: how many of
              the names on screen come out right (§3.7 of the bench).
+  gesture    the voice gesture's confirmation words (gen_audio.py
+             --gesture), each said alone: how many come out as the word,
+             and how many as another word of the list (which refuses the
+             prompt), without hotwords and with the word as the only
+             hotword (TOUCHLESS_BROWSING.md §7.3).
 
 The audio comes from tools/voice_bench/gen_audio.py (work/sets/*.tsv under
 --dir). Python standard library only (the bench's scoring from
@@ -687,6 +692,60 @@ def step_listen(args):
     return res
 
 
+def step_gesture(args):
+    words = vbl.gesture_words()
+    rows = load_set(args.dir, "gesture-words")
+    if args.gesture_condition != "all":
+        rows = [r for r in rows if len(r) > 3 and r[3] == args.gesture_condition]
+    res = {"words": len(words), "clips": len(rows),
+           "condition": args.gesture_condition}
+    passes = {"off": (False,), "on": (True,), "both": (False, True)}
+    for biased in passes[args.gesture_hotword]:
+        h = Helper(args, env_threads=args.asr_threads)
+        ready(h)
+        h.send(config({"wake_required": False, "hotwords": []}))
+        before = None
+        if biased:
+            def before(row):
+                return config({"hotwords": [row[1]]})
+        recs = run_clips(h, rows, realtime=False, before=before)
+        h.close()
+        right = other = none = 0
+        per_word = {}
+        by_cond = {}
+        transcripts = {}
+        for rec in recs:
+            word = rec["row"][1]
+            cond = rec["row"][3] if len(rec["row"]) > 3 else "clean"
+            hyp = vbl.normalize(finals_text(rec)).split()
+            transcripts[rec["id"]] = " ".join(hyp)
+            ok = hyp == [word]
+            wrong = len(hyp) == 1 and hyp[0] != word and hyp[0] in words
+            right += ok
+            other += wrong
+            none += not hyp
+            w = per_word.setdefault(word, [0, 0])
+            w[0] += ok
+            w[1] += 1
+            c = by_cond.setdefault(cond, [0, 0])
+            c[0] += ok
+            c[1] += 1
+        key = "with_hotword" if biased else "without_hotwords"
+        res[key] = {
+            "right": right, "another_word": other, "nothing": none,
+            "rate": round(right / max(1, len(recs)), 3),
+            "by_condition": {k: round(v[0] / v[1], 3) for k, v in by_cond.items()},
+            "worst_words": sorted(((round(v[0] / v[1], 3), k) for k, v in per_word.items()))[:8],
+            "transcripts": transcripts,
+        }
+        print("gesture words%s: %d/%d right (%.1f%%), %d as another word of the list, "
+              "%d heard as nothing; by condition %s"
+              % (" (the word as hotword)" if biased else "", right, len(recs),
+                 100 * right / max(1, len(recs)), other, none, res[key]["by_condition"]))
+        print("  worst words:", res[key]["worst_words"])
+    return res
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--helper", required=True)
@@ -697,8 +756,13 @@ def main(argv=None):
     p.add_argument("--asr-threads", type=int, default=1)
     p.add_argument("--listen-seconds", type=float, default=120)
     p.add_argument("--json", default="")
+    p.add_argument("--gesture-hotword", choices=["off", "on", "both"], default="both",
+                   help="gesture: without the word as hotword, with it, or both")
+    p.add_argument("--gesture-condition", default="all",
+                   help="gesture: only the clips of this condition (clean, pink10)")
     p.add_argument("steps", nargs="+",
-                   choices=["protocol", "accuracy", "bias", "wake", "latency", "listen"])
+                   choices=["protocol", "accuracy", "bias", "wake", "latency", "listen",
+                            "gesture"])
     args = p.parse_args(argv)
     results = {}
     for step in args.steps:
@@ -714,6 +778,11 @@ def main(argv=None):
             results["latency"] = step_latency(args)
         elif step == "listen":
             results["listen"] = step_listen(args)
+        elif step == "gesture":
+            key = "gesture"
+            if args.gesture_hotword != "both" or args.gesture_condition != "all":
+                key += "-%s-%s" % (args.gesture_hotword, args.gesture_condition)
+            results[key] = step_gesture(args)
     if args.json:
         old = {}
         if os.path.exists(args.json):

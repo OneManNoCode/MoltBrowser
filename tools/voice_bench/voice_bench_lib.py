@@ -651,3 +651,20 @@ def read_jsonl(path):
             if line.startswith("{"):
                 out.append(json.loads(line))
     return out
+
+
+# ------------------------------------------------------------------ the voice gesture
+
+GESTURE_SOURCE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "src", "chrome",
+    "browser", "molt_ai", "voice", "voice_gesture.cc")
+
+
+def gesture_words(path=GESTURE_SOURCE):
+    """The voice gesture's confirmation words, as the browser has them
+    (kWords in voice_gesture.cc)."""
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    start = src.index("kWords = std::to_array<std::string_view>({")
+    end = src.index("});", start)
+    return re.findall(r'"([a-z]+)"', src[start:end])
