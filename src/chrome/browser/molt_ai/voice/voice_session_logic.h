@@ -29,14 +29,17 @@
 //     canceller has no reference for them and a recognizer transcribes
 //     the browser's own voice (VOICE_BENCH.md §3.2): what it hears then may
 //     be the browser itself. A wake phrase while the browser's own words
-//     held one is ignored too.
+//     held one (or a word that sounds like its name, "mold", or one that
+//     begins with the name after "hey": "Hey Moltbrowser") is ignored too.
 //   - While it speaks with its own voice (voice_speech.h: browser output,
 //     in the echo canceller's reference; OnOwnSpeechInReference()), the
 //     user can interrupt it with a command, no wake phrase needed: an
 //     utterance begun then counts if it has kMinConfidenceWithoutWake and
 //     isn't the browser's own words heard back (all its words among what
-//     the browser said in the last kSpokenMemoryMs, which is what an echo
-//     the canceller missed would be). It stops the browser's speech.
+//     the browser said in the last kSpokenMemoryMs, as written or as its
+//     voice says them, voice_said_aloud.h: "example dot com" for
+//     "example.com"; that is what an echo the canceller missed would be).
+//     It stops the browser's speech.
 //   - While the speech engine speaks for someone else (a page's
 //     speechSynthesis; OnOtherSpeech()), and kOtherSpeechTailMs after,
 //     only the commands that always count do: no wake phrase, no command
