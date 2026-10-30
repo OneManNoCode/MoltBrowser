@@ -550,7 +550,6 @@ void BundledVoice::OnFrame(int generation, molt_voice::Frame frame) {
                 << ", " << event.ready.sample_rate << " Hz, "
                 << (ready_at_ - launched_at_).InMilliseconds() << " ms, "
                 << confinement_;
-      base::WeakPtr<BundledVoice> self = weak_factory_.GetWeakPtr();
       delegate_->OnBundledVoiceReady();
       return;
     }

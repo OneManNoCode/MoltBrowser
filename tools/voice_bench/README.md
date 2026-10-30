@@ -33,6 +33,7 @@ the repository, never from inside the data directory.
 | `voice_bench_lib.py` | Test set loading and checks, normalization, WER, command and entity accuracy, hotwords, SentencePiece and ONNX readers. |
 | `voice_bench_test.py` | Offline tests of the above. |
 | `speech_helper_check.py` | Checks a built `molt-speech` (`scripts/bundle-speech.sh`, `docs/design/SPEECH_HELPER_PROTOCOL.md`) over its stdin and stdout: the protocol's error and edge cases, then accuracy, the wake phrase, latency and listening cost on this kit's audio. |
+| `voice_helper_check.py` | Checks a built `molt-voice` (`scripts/bundle-speech.sh --parts voice`, `docs/design/VOICE_HELPER_PROTOCOL.md`) the same way: the protocol's error and edge cases, page-like sentences (first audio, real-time factor), the cost of a long reading, and `molt-speech`'s recognizer on the voice's output (WER). |
 
 ## Running it
 

@@ -1157,6 +1157,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page reading aloud is never cut off by voice mode, and what it says
   isn't taken as a command. It never listens in MoltNet windows. How:
   `docs/VOICE_COMMANDS.md`.
+- **Touchless browsing: voice mode speaks with its own voice** (preview,
+  behind `chrome://flags/#molt-voice-mode`, bundled with
+  `MOLT_BUNDLE_VOICE=1`). Answers are spoken by an on-device voice that
+  sounds the same on every OS, in a sandboxed helper like the speech
+  engine's, and every word is said: numbers, prices, dates, times, counts
+  like "1.2M", abbreviations and web addresses ("example dot com") are read
+  as words, and names it doesn't know are sounded out instead of skipped.
+  The browser plays it itself, so the microphone's echo cancellation
+  removes it: you can talk over it with a new command ("the third one")
+  without "Hey Molt", and it stops at once. A page's own speech can't
+  pause it, and it can't cut a page's speech short. The system's voices
+  remain the fallback when it isn't installed or stops working, and Linux
+  no longer needs speech-dispatcher for voice mode to speak. Details:
+  `docs/design/VOICE_HELPER_PROTOCOL.md`.
 - **The AI agent sees and acts on pages as voice mode does, and voice mode
   takes open-ended requests.** Outside MoltNet windows the web agent reads
   a page through its accessibility tree (numbered items, lists of results,

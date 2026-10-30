@@ -41,8 +41,10 @@ namespace molt_voice {
 // The lexicon file is 6.3 MB.
 inline constexpr size_t kMaxLexiconBytes = 16 << 20;
 // One unit of synthesis, in phoneme code points: a longer sentence is
-// split at a pause or between words.
-inline constexpr size_t kMaxUnitCodePoints = 320;
+// split at a pause or between words. About 9 s of speech, under a second
+// to synthesize: the engine can't be stopped inside a unit, so this bounds
+// how long a CANCEL takes.
+inline constexpr size_t kMaxUnitCodePoints = 128;
 
 // sherpa-onnx's English lexicon format: "word || p h o n e s" per line,
 // "#" comments. Only entries whose word is ASCII lower-case letters and
