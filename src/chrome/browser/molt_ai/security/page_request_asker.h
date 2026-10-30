@@ -33,7 +33,7 @@ class PageRequestAsker {
   // Whether this asker reads permission prompts aloud and takes a spoken
   // answer (voice mode listening, the voice gesture): the guard then leaves
   // a prompt raised while acting to it instead of dismissing it.
-  virtual bool TakesPromptsByVoice() const { return false; }
+  virtual bool TakesPromptsByVoice() const;
 };
 
 }  // namespace activation

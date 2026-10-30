@@ -14,7 +14,9 @@
 //   - a permission prompt after voice mode's click is dismissed and said,
 //     never granted, and the site isn't blocked for later;
 //   - full screen nobody asked for is refused, and said; full screen asked
-//     for is not.
+//     for is not;
+//   - full screen the page hands to a window it opened (postMessage's
+//     capability delegation) is refused too.
 
 #include <memory>
 #include <optional>
@@ -496,7 +498,7 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   ASSERT_EQ(asker_.told.size(), 1u);
   EXPECT_EQ(asker_.told[0],
             "The page asked for location permission. I can't take an answer "
-            "to that by voice yet, so I turned it down.");
+            "to that by voice right now, so I turned it down.");
   // Dismissed, not denied: the site may ask again another time.
   const GURL url = page_->GetLastCommittedURL();
   HostContentSettingsMap* settings =
@@ -528,6 +530,47 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   ASSERT_EQ(controller->Press(big->handle, activation::Intent::kFullScreen),
             ActionResult::kDone);
   EXPECT_TRUE(WaitForLog("fullscreen:yes"));
+}
+
+// The page hands full screen to a window it opened earlier
+// (postMessage(..., {delegate: "fullscreen"}), with the activation voice
+// mode's press gave it): that window doesn't go full screen either.
+IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
+                       FullScreenHandedToAnotherWindowIsRefused) {
+  OpenPage();
+  // The window, opened by the page with a person's click (allowed).
+  content::WebContentsAddedObserver opened;
+  ASSERT_TRUE(content::ExecJs(
+      page_.get(),
+      "window.moltSlides = window.open('slides.html', '_blank');"));
+  content::WebContents* slides = opened.GetWebContents();
+  ASSERT_TRUE(content::WaitForLoadStop(slides));
+  // Back to the page, which voice mode acts on.
+  browser()->GetTabStripModel()->ActivateTabAt(
+      browser()->GetTabStripModel()->GetIndexOfWebContents(page_));
+
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kVoiceMode);
+  const std::optional<voice::PageItem> present =
+      WaitForItem(controller, voice::ItemKind::kButton, "Present slides");
+  ASSERT_TRUE(present);
+  ASSERT_EQ(controller->Press(present->handle), ActionResult::kDone);
+  EXPECT_TRUE(WaitForLog("present:delegated"));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return content::EvalJs(slides, "moltLog.join(' ')",
+                           content::EXECUTE_SCRIPT_NO_USER_GESTURE)
+               .ExtractString()
+               .find("fullscreen:") != std::string::npos;
+  }));
+  EXPECT_EQ("fullscreen:no",
+            content::EvalJs(slides, "moltLog.join(' ')",
+                            content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+  EXPECT_FALSE(slides->IsFullscreen());
+  // Said on the tab that acted.
+  ASSERT_EQ(asker_.told.size(), 1u);
+  EXPECT_EQ(asker_.told[0],
+            "The page tried to go full screen. I stopped it. Say full screen "
+            "if you want it.");
 }
 
 }  // namespace

@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "chrome/browser/molt_ai/security/page_request_asker.h"
+
 namespace molt_ai {
 namespace activation {
 
@@ -125,6 +127,10 @@ Ruling Decide(const TabRecord& tab,
       return Ruling{Decision::kRefuse, voice};
   }
   return Ruling{Decision::kRefuse, false};
+}
+
+bool PageRequestAsker::TakesPromptsByVoice() const {
+  return false;
 }
 
 std::string_view RequestName(Request request) {
