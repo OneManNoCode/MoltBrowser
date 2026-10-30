@@ -212,6 +212,19 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
       echo "[build] macOS's own fonts (its allow-list) instead."
     }
     echo ""
+    # Touchless browsing's speech helper (Contents/Resources/speech), built
+    # from pinned sources. Opt-in while voice listening is behind
+    # chrome://flags/#molt-voice-mode: MOLT_BUNDLE_SPEECH=1. The first run
+    # builds ONNX Runtime (about an hour); later runs reuse the cache.
+    if [ "${MOLT_BUNDLE_SPEECH:-0}" = "1" ]; then
+      echo "=== Bundling the speech helper ==="
+      "$SCRIPT_DIR/bundle-speech.sh" --app "$APP" || {
+        bundling_failed speech
+        echo "[build] WARNING: speech helper bundling failed. Voice mode"
+        echo "[build] can't listen (typed commands still work)."
+      }
+      echo ""
+    fi
   elif [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
     echo "[build] ERROR: no $APP to bundle the helpers into."
     exit 1

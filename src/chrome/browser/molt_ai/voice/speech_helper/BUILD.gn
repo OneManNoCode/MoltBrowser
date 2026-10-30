@@ -1,0 +1,57 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# molt-speech, touchless browsing's resident speech helper
+# (docs/design/SPEECH_HELPER_PROTOCOL.md), is built outside GN by
+# scripts/bundle-speech.sh (CMakeLists.txt here), like whisper-cli: it links
+# sherpa-onnx and ONNX Runtime, which aren't in the tree. GN builds its
+# std-only parts, for molt_ai_unittests and the fuzzer; standalone/ (the
+# engines, stdout and main) is CMake only.
+
+import("//testing/libfuzzer/fuzzer_test.gni")
+
+# The frames, CONFIG, events, text cleaning and listening states. Std-only,
+# no exceptions; the helper builds the same files.
+source_set("core") {
+  sources = [
+    "frame_reader.cc",
+    "frame_reader.h",
+    "listener.cc",
+    "listener.h",
+    "speech_config.cc",
+    "speech_config.h",
+    "speech_events.cc",
+    "speech_events.h",
+    "speech_text.cc",
+    "speech_text.h",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "frame_reader_unittest.cc",
+    "listener_unittest.cc",
+    "speech_config_unittest.cc",
+    "speech_events_unittest.cc",
+    "speech_text_unittest.cc",
+  ]
+  deps = [
+    ":core",
+    "//testing/gtest",
+  ]
+}
+
+# What the browser (or anything that takes its place) writes to the
+# helper's stdin, and the events the helper writes. See docs/FUZZING.md.
+fuzzer_test("molt_speech_protocol_fuzzer") {
+  sources = [ "molt_speech_protocol_fuzzer.cc" ]
+  deps = [
+    ":core",
+    "//base",
+  ]
+  dict = "dicts/speech_protocol.dict"
+  seed_corpus = "corpus/molt_speech_protocol_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}

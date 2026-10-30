@@ -114,6 +114,19 @@ if ! "$SCRIPT_DIR/bundle-fonts.sh" --dest "$STAGE_DIR/opt/moltbrowser"; then
   echo "WARNING: MoltNet font bundling failed; MoltNet will use the system's fonts."
 fi
 
+# Touchless browsing's speech helper (opt/moltbrowser/speech/), built from
+# pinned sources by scripts/bundle-speech.sh. Opt-in while voice listening
+# is behind chrome://flags/#molt-voice-mode: MOLT_BUNDLE_SPEECH=1.
+if [ "${MOLT_BUNDLE_SPEECH:-0}" = "1" ]; then
+  if ! "$SCRIPT_DIR/bundle-speech.sh" --dest "$STAGE_DIR/opt/moltbrowser"; then
+    if [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
+      echo "ERROR: speech helper bundling failed; a release that asked for it can't ship without it."
+      exit 1
+    fi
+    echo "WARNING: speech helper bundling failed; voice mode can't listen."
+  fi
+fi
+
 # Desktop entry
 mkdir -p "$STAGE_DIR/usr/share/applications"
 cat > "$STAGE_DIR/usr/share/applications/moltbrowser.desktop" << EOF

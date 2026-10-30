@@ -85,9 +85,9 @@ echo ""
 # the bare helpers in the framework's Helpers/ (chrome_crashpad_handler,
 # app_mode_loader, ...), the GPU/GL dylibs in its Libraries/ (libEGL,
 # libGLESv2, libvk_swiftshader; the linker signs them ad hoc, and notarization
-# rejects that) and the tor/ocr/whisper binaries in Contents/Resources/, all
-# before the bundles around them are sealed (the inside-out order of
-# scripts/release.sh).
+# rejects that) and the tor/ocr/whisper/speech binaries in
+# Contents/Resources/, all before the bundles around them are sealed (the
+# inside-out order of scripts/release.sh).
 echo "→ Step 1: standalone Mach-O binaries..."
 count=0
 while IFS= read -r -d '' f; do

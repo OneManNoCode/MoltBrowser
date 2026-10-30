@@ -1228,6 +1228,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and colours follow the user's text size and contrast settings
   ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md) §5). The page map now keeps
   items' positions current as a page scrolls.
+- **Touchless browsing: a speech helper that listens** (not switched on
+  yet; `docs/design/SPEECH_HELPER_PROTOCOL.md`). `molt-speech` hears the
+  wake phrase ("Hey Molt"), notices when you stop speaking and writes down
+  what you said, word by word as you speak, on your computer's processor
+  and with nothing from the network: sherpa-onnx with the Kroko streaming
+  recognizer, a keyword spotter and Silero's voice activity detector, the
+  choices of the voice bench. It runs as a separate helper process the
+  browser starts once per voice session; it reads only its own model
+  folder, cleans the names it gets from the page before they reach the
+  recognizer, bounds everything it holds and writes, and stops at the first
+  malformed message from the browser. `scripts/bundle-speech.sh` builds it
+  and ONNX Runtime from pinned sources into one executable, with its three
+  models (about 80 MB, bundled only with `MOLT_BUNDLE_SPEECH=1` for now); a
+  new fuzzer covers what the browser sends it.
 - **Voice bench** (`tools/voice_bench/`, `docs/VOICE_BENCH.md`): a
   reproducible kit that measures open-source, on-device speech engines for
   touchless browsing (wake phrase, end of speech, streaming and
