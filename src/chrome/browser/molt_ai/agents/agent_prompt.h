@@ -66,6 +66,10 @@ struct PromptInput {
   // The current page offers tools (a TOOLS list in |page_state|): the
   // rules describe CALL_TOOL. Without, the prompt doesn't mention it.
   bool with_tools = false;
+  // The current page's ELEMENTS list a select SELECT may choose from (an
+  // observation through the page map, agent_page_map.h): the rules
+  // describe SELECT. Without, the prompt doesn't mention it.
+  bool with_select = false;
   // The run's plan (agent_plan::DescribePlan(): model output, written from
   // the goal and page text), fenced here; empty without a plan, and then
   // the prompt doesn't mention plans.

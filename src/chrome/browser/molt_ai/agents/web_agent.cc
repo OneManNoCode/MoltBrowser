@@ -8,6 +8,7 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/agents/frame_tools.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
@@ -57,6 +59,31 @@ constexpr char kRefusePasswordNote[] =
     "Refused: the agent never types into password fields. Ask the user to "
     "sign in themselves, then continue.";
 
+// The page map (agent_page_map.h): how long the page's tree must be quiet
+// before it is mapped, and how long an observation waits for it at most.
+constexpr base::TimeDelta kMapQuiet = base::Milliseconds(300);
+constexpr base::TimeDelta kMapWait = base::Seconds(2);
+// After an accessibility action, before the page is observed: the action
+// reaches the renderer apart from the observation's scripts.
+constexpr base::TimeDelta kAfterPageAction = base::Milliseconds(600);
+// A map's selects whose options are read, per observation.
+constexpr size_t kMaxSelectsRead = 40;
+
+// Step note when an element of the page map is gone or changed.
+constexpr char kStaleNote[] =
+    "Not done: the page changed before the agent could act (the element "
+    "moved, changed or went away), so it read the page again. Choose from "
+    "the new ELEMENTS.";
+
+using VoicePage = voice::VoicePageController;
+using PageActionResult = voice::VoicePageController::ActionResult;
+
+// The model browser tests use instead of the runtime.
+WebAgent::ModelForTesting& TestingModel() {
+  static base::NoDestructor<WebAgent::ModelForTesting> model;
+  return *model;
+}
+
 // The parts of a GenerationResult the reply decisions need
 // (agent_actions::InterpretReply, agent_plan::InterpretPlanReply).
 agent_actions::ModelReply ToModelReply(GenerationResult& result) {
@@ -87,6 +114,32 @@ WebAgent::Step::Element StepElement(const ObservedElement& element,
 
 }  // namespace
 
+WebAgent::PendingMap::PendingMap() = default;
+WebAgent::PendingMap::~PendingMap() = default;
+
+// static
+std::string_view WebAgent::ObservationSourceName(ObservationSource source) {
+  switch (source) {
+    case ObservationSource::kNone:
+      return "";
+    case ObservationSource::kPageMap:
+      return "page_map";
+    case ObservationSource::kElementSnapshot:
+      return "element_snapshot";
+  }
+  return "";
+}
+
+// static
+void WebAgent::SetModelForTesting(ModelForTesting model) {
+  TestingModel() = std::move(model);
+}
+
+// static
+bool WebAgent::HasModelForTesting() {
+  return !TestingModel().is_null();
+}
+
 WebAgent::PlanUpdate::PlanUpdate() = default;
 WebAgent::PlanUpdate::~PlanUpdate() = default;
 WebAgent::PlanUpdate::PlanUpdate(const PlanUpdate&) = default;
@@ -106,7 +159,13 @@ WebAgent::WebAgent(content::WebContents* web_contents,
       screenshotter_(std::make_unique<AgentScreenshotter>(web_contents)),
       site_tools_(std::make_unique<SiteToolHost>()) {}
 
-WebAgent::~WebAgent() = default;
+WebAgent::~WebAgent() {
+  ReleasePage();
+}
+
+void WebAgent::SetActionCallback(StepCallback on_action) {
+  action_cb_ = std::move(on_action);
+}
 
 // ----------------------------------------------------------------
 // Public API
@@ -141,6 +200,11 @@ void WebAgent::Start(const std::string& goal,
   frame_question_.reset();
   pending_frame_question_id_ = 0;
   frame_pairs_asked_.clear();
+  ReleasePage();
+  page_map_text_.clear();
+  observation_source_ = ObservationSource::kNone;
+  observation_counts_ = ObservationCounts();
+  stale_note_.clear();
   goal_       = goal;
   step_cb_    = std::move(on_step);
   done_cb_    = std::move(on_done);
@@ -176,12 +240,26 @@ void WebAgent::Start(const std::string& goal,
   DVLOG(1) << "[WebAgent] Start (" << allowed_origins_.size()
            << " allowed origins)";
 
+  // The page map: the tab's accessibility tree, held for the run. Never in
+  // MoltNet windows, where a page could notice the accessibility mode
+  // (TOUCHLESS_BROWSING.md §7.4): there the element snapshot is the only
+  // source, as it was.
+  content::WebContents* contents = web_contents();
+  page_map_on_ =
+      agent_features::AgentPageMapEnabled() && contents &&
+      !tor::IsMoltNetProfile(
+          Profile::FromBrowserContext(contents->GetBrowserContext()));
+  if (page_map_on_) {
+    HoldPage();
+  }
+
   // Bootstrap: observe wherever the user is before the first LLM call.
   ObservePage();
 }
 
 void WebAgent::Cancel() {
   cancelled_ = true;
+  ReleasePage();
   pending_confirm_.Reset();
   frame_question_.reset();
   screenshotter_->Cancel();
@@ -271,6 +349,17 @@ void WebAgent::AskLLM() {
   // sent again.
   sent_screenshot_ = screenshot_.has_value();
 
+  if (HasModelForTesting()) {
+    sent_screenshot_ = false;
+    GenerationResult result =
+        TestingModel().Run(agent_prompt::ToRawPrompt(prompt), opts);
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&WebAgent::OnLLMDecision,
+                                  weak_factory_.GetWeakPtr(),
+                                  std::move(result)));
+    return;
+  }
+
   // Generation is blocking. Post it to a background thread; reply on UI.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
@@ -352,6 +441,9 @@ void WebAgent::OnLLMDecision(GenerationResult result) {
   if (plan_.Report(pending_action_.plan_step))
     ReportPlan(PlanEvent::kAdvanced, std::string());
   pending_step_ = DescribeAction(pending_action_);
+  if (action_cb_)
+    action_cb_.Run(pending_step_);
+  if (cancelled_) return;
   DispatchAction();
 }
 
@@ -360,7 +452,8 @@ void WebAgent::DispatchAction() {
 
   const ActionType a = pending_action_.type;
   if (a == ActionType::kClick || a == ActionType::kType ||
-      a == ActionType::kFillForm || a == ActionType::kCallTool) {
+      a == ActionType::kFillForm || a == ActionType::kCallTool ||
+      a == ActionType::kSelect) {
     // The page may have changed origin since the last observation (a
     // redirect or script navigation after a click), so check again right
     // before acting on it. A site tool runs only on the page it was listed
@@ -402,7 +495,7 @@ void WebAgent::RunAction() {
   // The page an element action acts on (DispatchAction checked it).
   const ActionType a = pending_action_.type;
   if (a == ActionType::kClick || a == ActionType::kType ||
-      a == ActionType::kFillForm) {
+      a == ActionType::kFillForm || a == ActionType::kSelect) {
     pending_step_.origin = action_origin_.Serialize();
   }
 
@@ -418,6 +511,7 @@ void WebAgent::RunAction() {
     case ActionType::kError:    Finish(false, pending_action_.result); break;
     case ActionType::kCallTool: DoCallTool(); break;
     case ActionType::kReplan:   DoReplan(); break;
+    case ActionType::kSelect:   DoSelect(); break;
   }
 }
 
@@ -523,6 +617,10 @@ void WebAgent::DoClick() {
     OnActionDone(false, "Click failed: not_found");
     return;
   }
+  if (element->from_page_map()) {
+    DoPageMapClick(*element);
+    return;
+  }
   action_selector_ = element->selector;
   pending_step_.elements = {StepElement(*element, std::string())};
   CaptureLocators(
@@ -542,29 +640,22 @@ void WebAgent::OnClickProbed(std::vector<ElementProbe> probes) {
   }
   // A click that follows a link (or submits a form) to a new origin is a
   // navigation off the run's allowed set; a form submission is a
-  // state-changing action. Both need the user's approval.
-  std::vector<std::string> effects;
-  std::optional<url::Origin> new_origin;
-  GURL dest(p.navigates_to);
-  if (agent_safety::IsAllowedNavigationURL(dest)) {
-    url::Origin o = url::Origin::Create(dest);
-    if (!IsOriginAllowed(o)) {
-      effects.push_back("opens " + o.Serialize());
-      new_origin = o;
-    }
-  }
-  if (p.submits_form)
-    effects.push_back("submits a form on " + CurrentOriginText());
-  if (effects.empty()) {
+  // state-changing action. Both need the user's approval (the same
+  // question on the page map's path: agent_page_map::CheckClick()).
+  agent_page_map::ClickQuestion question = agent_page_map::CheckClick(
+      p, allowed_origins_, CurrentOriginText());
+  if (question.effects.empty()) {
     ClickNow();
     return;
   }
   std::string what =
       p.label.empty() ? pending_step_.target : "\"" + p.label + "\"";
   RequestConfirmation(
-      "CLICK", "Click " + what + " — it " + base::JoinString(effects, " and "),
+      "CLICK",
+      "Click " + what + " — it " + base::JoinString(question.effects, " and "),
       base::BindOnce(&WebAgent::AllowOriginAndClick,
-                     weak_factory_.GetWeakPtr(), std::move(new_origin)));
+                     weak_factory_.GetWeakPtr(),
+                     std::move(question.new_origin)));
 }
 
 void WebAgent::AllowOriginAndClick(std::optional<url::Origin> origin) {
@@ -596,6 +687,10 @@ void WebAgent::DoType() {
   const ObservedElement* element = observation_.Find(pending_action_.ref);
   if (!element || !element->typeable) {
     OnActionDone(false, "not_found");
+    return;
+  }
+  if (element->from_page_map()) {
+    DoPageMapType(*element);
     return;
   }
   action_selector_ = element->selector;
@@ -653,6 +748,10 @@ void WebAgent::TypeNow() {
 }
 
 void WebAgent::DoFillForm() {
+  if (observation_.from_page_map) {
+    DoPageMapFillForm();
+    return;
+  }
   // Each field is an observed text field (ParseAction checked that).
   FieldList fields;
   std::vector<std::string> selectors;
@@ -745,6 +844,20 @@ void WebAgent::FillNow(FieldList fields, std::string note) {
 }
 
 void WebAgent::DoScroll() {
+  // On a page observed through the page map, as assistive technology
+  // scrolls it (the page controller); else the scroll script.
+  if (observation_.from_page_map) {
+    if (VoicePage* controller = PageController()) {
+      const PageActionResult result = controller->ScrollPage(
+          pending_action_.direction == "up"
+              ? VoicePage::PageScrollAction::kUp
+              : VoicePage::PageScrollAction::kDown);
+      if (result == PageActionResult::kDone) {
+        AfterPageAction();
+        return;
+      }
+    }
+  }
   // "down" or "up" (ParseAction allows nothing else).
   const std::string js =
       agent_actions::BuildScrollScript(pending_action_.direction);
@@ -924,6 +1037,16 @@ void WebAgent::ContinueAfterObserve(const StructuredPage& page) {
   content::WeakDocumentPtr document;
   if (web_contents_ && web_contents_->GetPrimaryMainFrame())
     document = web_contents_->GetPrimaryMainFrame()->GetWeakDocumentPtr();
+  if (UsePageMapNow()) {
+    ObserveThroughPageMap(page, std::move(document));
+    return;
+  }
+  ObserveThroughSnapshot(page, std::move(document));
+}
+
+void WebAgent::ObserveThroughSnapshot(const StructuredPage& page,
+                                      content::WeakDocumentPtr document) {
+  if (cancelled_) return;
   EvalJS(agent_actions::BuildElementSnapshotScript(),
          base::BindOnce(&WebAgent::OnElementsObserved,
                         weak_factory_.GetWeakPtr(), page, std::move(document)));
@@ -947,6 +1070,24 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   if (!origin_allowed || !snapshot_is_current) {
     observation_ = agent_actions::Observation();
   }
+  observation_source_ = ObservationSource::kElementSnapshot;
+  ++observation_counts_.element_snapshot;
+  page_map_text_.clear();
+  const bool document_is_current =
+      snapshot_is_current && IsCurrentDocument(document);
+  ListToolsThenContinue(page, std::move(document), std::move(snapshot_origin),
+                        origin_allowed, document_is_current);
+}
+
+void WebAgent::ListToolsThenContinue(const StructuredPage& page,
+                                     content::WeakDocumentPtr document,
+                                     std::string snapshot_origin,
+                                     bool origin_allowed,
+                                     bool document_is_current) {
+  if (cancelled_) return;
+  url::Origin current;
+  if (web_contents_ && web_contents_->GetPrimaryMainFrame())
+    current = web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin();
   // The last observation's tools are gone with it.
   tools_main_document_ = content::WeakDocumentPtr();
   tool_documents_.clear();
@@ -955,7 +1096,7 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   agent_tools::ListFacts facts;
   facts.switched_on = agent_features::AgentSiteToolsEnabled();
   facts.origin_allowed = origin_allowed;
-  facts.snapshot_is_current = snapshot_is_current && IsCurrentDocument(document);
+  facts.snapshot_is_current = document_is_current;
   if (agent_tools::ShouldListTools(facts)) {
     // The main document's tools and its same-origin frames', the allowed
     // frames of other sites', and how many the others have (SiteToolHost).
@@ -1095,20 +1236,25 @@ void WebAgent::ContinueObservation(const StructuredPage& page,
                                    bool origin_allowed) {
   if (cancelled_) return;
 
-  std::string compact = page.ToCompactText();
-  if (static_cast<int>(compact.size()) > kMaxPageChars)
-    compact = compact.substr(0, kMaxPageChars) + "\n[… truncated]";
-
   // Everything here is page-controlled; BuildPrompt fences it. The element
   // and tool ids are the browser's; labels, tool names, descriptions and a
   // tool's answer are page text. The answer of the tool just called comes
   // first, so the step's history keeps it.
-  current_page_state_ = tool_result_ +
-                         "URL: " + page.page_url +
-                         "\nTitle: " + page.page_title +
-                         "\n\n" + compact +
-                         "\nELEMENTS:\n" +
-                         agent_actions::DescribeElements(observation_);
+  if (observation_.from_page_map) {
+    // The page map's observation (agent_page_map::BuildObservation()):
+    // URL, title, headings, lists, text and ELEMENTS, within its budget.
+    current_page_state_ = tool_result_ + page_map_text_;
+  } else {
+    std::string compact = page.ToCompactText();
+    if (static_cast<int>(compact.size()) > kMaxPageChars)
+      compact = compact.substr(0, kMaxPageChars) + "\n[… truncated]";
+    current_page_state_ = tool_result_ +
+                           "URL: " + page.page_url +
+                           "\nTitle: " + page.page_title +
+                           "\n\n" + compact +
+                           "\nELEMENTS:\n" +
+                           agent_actions::DescribeElements(observation_);
+  }
   tool_result_.clear();
   if (!observation_.tools.empty()) {
     current_page_state_ += "TOOLS (functions this page offers):\n" +
@@ -1117,8 +1263,13 @@ void WebAgent::ContinueObservation(const StructuredPage& page,
 
   // A new observation: the last one's screenshot no longer applies. Take
   // one of this one if the model sees images (AgentScreenshotter decides,
-  // and answers at once when it won't capture).
+  // and answers at once when it won't capture). Not of a page-map
+  // observation: its elements have no selectors to measure and tag.
   screenshot_.reset();
+  if (observation_.from_page_map) {
+    FinishObservation(page);
+    return;
+  }
   AgentScreenshotter::Request request;
   request.observation = observation_;
   request.document = std::move(document);
@@ -1151,6 +1302,14 @@ void WebAgent::FinishObservation(const StructuredPage& page) {
 
   // All other paths — the observe completes the current action.
   pending_step_.observation = current_page_state_;
+  // An action that found its element stale observed the page again; it did
+  // nothing.
+  if (!stale_note_.empty()) {
+    std::string note = std::move(stale_note_);
+    stale_note_.clear();
+    OnActionDone(false, std::move(note));
+    return;
+  }
   switch (pending_action_.type) {
     case ActionType::kNavigate:
     case ActionType::kSearch:
@@ -1161,6 +1320,10 @@ void WebAgent::FinishObservation(const StructuredPage& page) {
       break;
     case ActionType::kScroll:
       OnActionDone(true, "Scrolled");
+      break;
+    case ActionType::kSelect:
+      OnActionDone(true, "Chose \"" + pending_action_.option +
+                             "\" and re-observed page");
       break;
     case ActionType::kCallTool:
       OnActionDone(true, tool_call_note_);
@@ -1287,7 +1450,12 @@ void WebAgent::Finish(bool success, const std::string& result) {
   if (cancelled_) return;
   cancelled_ = true;
   pending_confirm_.Reset();
-  DVLOG(1) << "[WebAgent] Done success=" << success;
+  // The page's accessibility mode goes with the run, unless voice mode
+  // holds it too.
+  ReleasePage();
+  DVLOG(1) << "[WebAgent] Done success=" << success << " (page map: "
+           << observation_counts_.page_map << " observations, element "
+           << "snapshot: " << observation_counts_.element_snapshot << ")";
   if (done_cb_) std::move(done_cb_).Run(success, result);
 }
 
@@ -1341,12 +1509,444 @@ agent_prompt::PromptInput WebAgent::BuildPromptInput() const {
   input.retry_note = retry_note_;
   input.with_screenshot = screenshot_.has_value();
   input.with_tools = !observation_.tools.empty();
+  input.with_select = observation_.HasSelectable();
   if (plan_.has_plan()) {
     // Model output: agent_prompt fences it, apart from the GOAL.
     input.plan = agent_plan::DescribePlan(plan_.plan());
     input.plan_progress = plan_.DescribeProgress();
   }
   return input;
+}
+
+// ----------------------------------------------------------------
+// The page map (agent_page_map.h, docs/design/AGENT_ACTIONS.md §2.10)
+// ----------------------------------------------------------------
+
+voice::VoicePageController* WebAgent::PageController() {
+  content::WebContents* contents = web_contents();
+  if (!holds_page_ || !contents) {
+    return nullptr;
+  }
+  VoicePage* controller = VoicePage::FromWebContents(contents);
+  return controller && controller->active() ? controller : nullptr;
+}
+
+void WebAgent::HoldPage() {
+  content::WebContents* contents = web_contents();
+  if (holds_page_ || !contents) {
+    return;
+  }
+  // The accessibility mode for this tab only (VoicePageController::
+  // AccessibilityMode()); voice mode may hold it already.
+  VoicePage::CreateForWebContents(contents);
+  VoicePage::FromWebContents(contents)->Start(VoicePage::Holder::kWebAgent);
+  holds_page_ = true;
+}
+
+void WebAgent::ReleasePage() {
+  map_quiet_timer_.Stop();
+  map_deadline_timer_.Stop();
+  trees_subscription_ = base::CallbackListSubscription();
+  pending_map_.reset();
+  if (!holds_page_) {
+    return;
+  }
+  holds_page_ = false;
+  if (content::WebContents* contents = web_contents()) {
+    if (VoicePage* controller = VoicePage::FromWebContents(contents)) {
+      controller->Stop(VoicePage::Holder::kWebAgent);
+    }
+  }
+}
+
+bool WebAgent::UsePageMapNow() {
+  content::WebContents* contents = web_contents();
+  return page_map_on_ && PageController() && contents &&
+         contents->GetPrimaryMainFrame() &&
+         agent_safety::IsAllowedNavigationURL(
+             contents->GetPrimaryMainFrame()->GetLastCommittedURL());
+}
+
+void WebAgent::ObserveThroughPageMap(const StructuredPage& page,
+                                     content::WeakDocumentPtr document) {
+  VoicePage* controller = PageController();
+  if (!controller) {
+    ObserveThroughSnapshot(page, std::move(document));
+    return;
+  }
+  pending_map_ = std::make_unique<PendingMap>();
+  pending_map_->page = page;
+  pending_map_->document = std::move(document);
+  pending_map_->started = base::TimeTicks::Now();
+  // The renderer sends its tree, and every change to it, apart from the
+  // page's load: map it once it has been quiet a moment.
+  trees_subscription_ = controller->AddTreesUpdatedCallback(base::BindRepeating(
+      &WebAgent::OnPageTreeChanged, weak_factory_.GetWeakPtr()));
+  map_quiet_timer_.Start(FROM_HERE, kMapQuiet,
+                         base::BindOnce(&WebAgent::OnPageMapSettled,
+                                        weak_factory_.GetWeakPtr()));
+  map_deadline_timer_.Start(FROM_HERE, kMapWait,
+                            base::BindOnce(&WebAgent::OnPageMapSettled,
+                                           weak_factory_.GetWeakPtr()));
+}
+
+void WebAgent::OnPageTreeChanged() {
+  if (!pending_map_) {
+    return;
+  }
+  map_quiet_timer_.Start(FROM_HERE, kMapQuiet,
+                         base::BindOnce(&WebAgent::OnPageMapSettled,
+                                        weak_factory_.GetWeakPtr()));
+}
+
+void WebAgent::OnPageMapSettled() {
+  if (cancelled_ || !pending_map_) {
+    return;
+  }
+  VoicePage* controller = PageController();
+  const bool waited = base::TimeTicks::Now() - pending_map_->started >= kMapWait;
+  // Quiet, but no tree yet (the mode was only just taken): wait for it, up
+  // to the deadline.
+  if (!waited && controller && !controller->HasPageTree()) {
+    map_quiet_timer_.Start(FROM_HERE, kMapQuiet,
+                           base::BindOnce(&WebAgent::OnPageMapSettled,
+                                          weak_factory_.GetWeakPtr()));
+    return;
+  }
+  map_quiet_timer_.Stop();
+  map_deadline_timer_.Stop();
+  trees_subscription_ = base::CallbackListSubscription();
+  std::unique_ptr<PendingMap> pending = std::move(pending_map_);
+  FinishPageMapObservation(pending->page, std::move(pending->document));
+}
+
+void WebAgent::FinishPageMapObservation(const StructuredPage& page,
+                                        content::WeakDocumentPtr document) {
+  if (cancelled_) return;
+  VoicePage* controller = PageController();
+  content::WebContents* contents = web_contents();
+  // No tree came, or the page moved on meanwhile: the element snapshot.
+  if (!controller || !contents || !controller->HasPageTree() ||
+      !IsCurrentDocument(document)) {
+    ObserveThroughSnapshot(page, std::move(document));
+    return;
+  }
+  content::RenderFrameHost* main = contents->GetPrimaryMainFrame();
+  const url::Origin current = main->GetLastCommittedOrigin();
+  const bool origin_allowed = IsWebOrigin(current) && IsOriginAllowed(current);
+
+  const voice::PageMap map = controller->BuildMap();
+  agent_page_map::PageMapInput input;
+  input.url = main->GetLastCommittedURL().spec();
+  input.origin = current.Serialize();
+  // The trees the map holds, and of those the frames of the page's own
+  // origin: only their items are listed (another site's frame never is).
+  std::vector<int32_t> trees;
+  auto note_tree = [&](int32_t tree) {
+    if (tree >= 0 && std::find(trees.begin(), trees.end(), tree) == trees.end())
+      trees.push_back(tree);
+  };
+  note_tree(map.page_tree);
+  for (const voice::PageItem& item : map.items)
+    note_tree(item.handle.tree);
+  for (const voice::PageList& list : map.lists)
+    note_tree(list.container.tree);
+  for (const voice::PageHeading& heading : map.headings)
+    note_tree(heading.handle.tree);
+  for (int32_t tree : trees) {
+    const std::optional<url::Origin> origin = controller->OriginOfTree(tree);
+    if (origin && IsWebOrigin(*origin) && origin->IsSameOriginWith(current))
+      input.same_origin_trees.push_back(tree);
+  }
+  // The options of its selects, read from the live tree.
+  size_t selects = 0;
+  for (const voice::PageItem& item : map.items) {
+    if (item.kind != voice::ItemKind::kSelect || item.disabled ||
+        std::find(input.same_origin_trees.begin(),
+                  input.same_origin_trees.end(),
+                  item.handle.tree) == input.same_origin_trees.end()) {
+      continue;
+    }
+    if (++selects > kMaxSelectsRead)
+      break;
+    input.select_options.emplace_back(item.number,
+                                      controller->OptionsOf(item.handle));
+  }
+  input.page_text = page.main_content;
+
+  agent_page_map::PageMapObservation observed =
+      agent_page_map::BuildObservation(map, input);
+  if (!observed.usable) {
+    // Nothing on the map the agent could use: a canvas page, unlabelled
+    // controls, a tree that isn't complete yet.
+    ObserveThroughSnapshot(page, std::move(document));
+    return;
+  }
+  observation_ = std::move(observed.observation);
+  // Elements only from the page the run is on (OnPageObserved asked about
+  // any other), as for the element snapshot.
+  if (!origin_allowed)
+    observation_.elements.clear();
+  page_map_text_ = std::move(observed.text);
+  observation_source_ = ObservationSource::kPageMap;
+  ++observation_counts_.page_map;
+  DVLOG(1) << "[WebAgent] Observed through the page map: "
+           << observation_.elements.size() << " element(s)";
+  ListToolsThenContinue(page, std::move(document), current.Serialize(),
+                        origin_allowed, /*document_is_current=*/true);
+}
+
+WebAgent::LiveResult WebAgent::FindLiveTarget(
+    const agent_actions::ObservedElement& element,
+    LiveTarget* target) {
+  VoicePage* controller = PageController();
+  content::WebContents* contents = web_contents();
+  if (!controller || !contents || !contents->GetPrimaryMainFrame()) {
+    return LiveResult::kStale;
+  }
+  // The page as it is now: the element's node, of the kind and with the
+  // name the model was shown.
+  const voice::PageMap fresh = controller->BuildMap();
+  const voice::PageItem* item = agent_page_map::FindLiveItem(element, fresh);
+  if (!item) {
+    return LiveResult::kStale;
+  }
+  PageActionResult error = PageActionResult::kStale;
+  std::optional<VoicePage::TargetFacts> facts =
+      controller->Inspect(item->handle, &error);
+  if (!facts) {
+    return error == PageActionResult::kNotAllowed ? LiveResult::kBlocked
+                                                  : LiveResult::kStale;
+  }
+  // Origins per frame: its frame still has the origin it was observed
+  // with, which is the page's, a web origin in the run's scope.
+  switch (agent_page_map::CheckFrameOrigin(
+      element.frame_origin, facts->origin,
+      contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(),
+      allowed_origins_)) {
+    case agent_page_map::FrameCheck::kOk:
+      break;
+    case agent_page_map::FrameCheck::kStale:
+      return LiveResult::kStale;
+    case agent_page_map::FrameCheck::kRefused:
+      return LiveResult::kBlocked;
+  }
+  target->handle = item->handle;
+  target->item = *item;
+  target->probe = agent_page_map::ProbeNode(facts->chain, facts->form_index);
+  return LiveResult::kFound;
+}
+
+void WebAgent::ReobserveStale(std::string note) {
+  if (cancelled_) return;
+  stale_note_ = std::move(note);
+  ObservePage();
+}
+
+void WebAgent::FailLive(LiveResult result, std::string_view what) {
+  if (result == LiveResult::kBlocked) {
+    OnActionDone(false, std::string(what) +
+                            " not done: the agent only acts on this site's "
+                            "own http(s) pages");
+    return;
+  }
+  ReobserveStale(kStaleNote);
+}
+
+void WebAgent::DoPageMapClick(const agent_actions::ObservedElement& element) {
+  pending_step_.elements = {StepElement(element, std::string())};
+  LiveTarget target;
+  const LiveResult found = FindLiveTarget(element, &target);
+  if (found != LiveResult::kFound) {
+    FailLive(found, "Click");
+    return;
+  }
+  pending_step_.elements[0].field_kind = target.probe.field_kind;
+  // The same questions as for the element snapshot's probe.
+  agent_page_map::ClickQuestion question = agent_page_map::CheckClick(
+      target.probe, allowed_origins_, CurrentOriginText());
+  if (question.effects.empty()) {
+    PressNow();
+    return;
+  }
+  const std::string what = target.probe.label.empty()
+                               ? pending_step_.target
+                               : "\"" + target.probe.label + "\"";
+  RequestConfirmation(
+      "CLICK",
+      "Click " + what + " — it " + base::JoinString(question.effects, " and "),
+      base::BindOnce(&WebAgent::AllowOriginAndPress,
+                     weak_factory_.GetWeakPtr(),
+                     std::move(question.new_origin)));
+}
+
+void WebAgent::AllowOriginAndPress(std::optional<url::Origin> origin) {
+  if (origin)
+    AllowOrigin(*origin);
+  PressNow();
+}
+
+void WebAgent::PressNow() {
+  if (cancelled_) return;
+  const ObservedElement* element = observation_.Find(pending_action_.ref);
+  if (!element) {
+    OnActionDone(false, "Click failed: not_found");
+    return;
+  }
+  // Found again right before the press: the user may have taken a while
+  // to answer.
+  LiveTarget target;
+  const LiveResult found = FindLiveTarget(*element, &target);
+  if (found != LiveResult::kFound) {
+    FailLive(found, "Click");
+    return;
+  }
+  // The element's default action: Blink notifies user activation and
+  // dispatches its click as for assistive technology, so media it starts
+  // plays with sound.
+  const PageActionResult result = PageController()->Press(target.handle);
+  if (result == PageActionResult::kStale) {
+    ReobserveStale(kStaleNote);
+    return;
+  }
+  if (result != PageActionResult::kDone) {
+    OnActionDone(false, "Click failed: " +
+                            std::string(VoicePage::ActionResultName(result)));
+    return;
+  }
+  AfterPageAction();
+}
+
+void WebAgent::DoPageMapType(const agent_actions::ObservedElement& element) {
+  pending_step_.elements = {StepElement(element, pending_action_.text)};
+  LiveTarget target;
+  const LiveResult found = FindLiveTarget(element, &target);
+  if (found != LiveResult::kFound) {
+    FailLive(found, "Typing");
+    return;
+  }
+  pending_step_.elements[0].field_kind = target.probe.field_kind;
+  // Never a credential field on this path, whatever the probe or the map
+  // says; the controller refuses one again.
+  const agent_page_map::TypeCheck check = agent_page_map::CheckType(target.item);
+  if (check != agent_page_map::TypeCheck::kType ||
+      target.probe.field_kind != FieldKind::kOrdinary) {
+    const agent_page_map::TypeCheck refusal =
+        check != agent_page_map::TypeCheck::kType
+            ? check
+            : target.probe.field_kind == FieldKind::kPassword
+                  ? agent_page_map::TypeCheck::kRefusePassword
+                  : agent_page_map::TypeCheck::kRefuseCredential;
+    OnActionDone(false,
+                 std::string(agent_page_map::TypeRefusalNote(refusal)));
+    return;
+  }
+  const PageActionResult result =
+      PageController()->SetText(target.handle, pending_action_.text);
+  switch (result) {
+    case PageActionResult::kDone:
+      // As for the snapshot's TYPE: the page isn't observed again.
+      OnActionDone(true, "typed");
+      return;
+    case PageActionResult::kStale:
+      ReobserveStale(kStaleNote);
+      return;
+    case PageActionResult::kCredentialField:
+      OnActionDone(false, std::string(agent_page_map::TypeRefusalNote(
+                              agent_page_map::TypeCheck::kRefuseCredential)));
+      return;
+    default:
+      OnActionDone(false, "Not typed: " + std::string(
+                                              VoicePage::ActionResultName(
+                                                  result)));
+      return;
+  }
+}
+
+void WebAgent::DoPageMapFillForm() {
+  pending_step_.elements.clear();
+  int filled = 0;
+  int refused = 0;
+  for (const agent_actions::FormFieldValue& field : pending_action_.fields) {
+    const ObservedElement* element = observation_.Find(field.ref);
+    if (!element || !element->typeable) {
+      continue;
+    }
+    LiveTarget target;
+    const LiveResult found = FindLiveTarget(*element, &target);
+    if (found != LiveResult::kFound) {
+      // Nothing more is written to a page that changed.
+      pending_step_.elements.clear();
+      FailLive(found, "Form fill");
+      return;
+    }
+    if (agent_page_map::CheckType(target.item) !=
+            agent_page_map::TypeCheck::kType ||
+        target.probe.field_kind != FieldKind::kOrdinary) {
+      ++refused;
+      continue;
+    }
+    if (PageController()->SetText(target.handle, field.text) ==
+        PageActionResult::kDone) {
+      ++filled;
+      pending_step_.elements.push_back(StepElement(*element, field.text));
+    }
+  }
+  std::string note = "Filled " + base::NumberToString(filled) + " fields";
+  if (refused > 0) {
+    note += " (skipped " + base::NumberToString(refused) +
+            " password, card or code field(s): the agent never types there)";
+  }
+  if (static_cast<size_t>(filled) != pending_action_.fields.size())
+    pending_step_.elements.clear();
+  OnActionDone(filled > 0, std::move(note));
+}
+
+void WebAgent::DoSelect() {
+  // ParseAction checked the element is a select of the observation and the
+  // option one it lists.
+  const ObservedElement* element = observation_.Find(pending_action_.ref);
+  if (!element || !element->selectable || !element->from_page_map()) {
+    OnActionDone(false, "Not chosen: not_found");
+    return;
+  }
+  pending_step_.elements = {StepElement(*element, pending_action_.option)};
+  LiveTarget target;
+  const LiveResult found = FindLiveTarget(*element, &target);
+  if (found != LiveResult::kFound) {
+    FailLive(found, "Choosing");
+    return;
+  }
+  const PageActionResult result =
+      PageController()->SelectOption(target.handle, pending_action_.option);
+  switch (result) {
+    case PageActionResult::kDone:
+      AfterPageAction();
+      return;
+    case PageActionResult::kStale:
+      ReobserveStale(kStaleNote);
+      return;
+    case PageActionResult::kNoSuchOption:
+      OnActionDone(false,
+                   "Not chosen: the select no longer lists that option");
+      return;
+    default:
+      OnActionDone(false, "Not chosen: " + std::string(
+                                               VoicePage::ActionResultName(
+                                                   result)));
+      return;
+  }
+}
+
+void WebAgent::AfterPageAction() {
+  if (cancelled_) return;
+  // The action reaches the renderer apart from the scripts that observe
+  // the page: give it a moment, then observe once anything it loaded has.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&WebAgent::WaitForLoadThenObserve,
+                     weak_factory_.GetWeakPtr()),
+      kAfterPageAction);
 }
 
 // ----------------------------------------------------------------
@@ -1373,6 +1973,15 @@ void WebAgent::AskPlanner() {
   opts.stream = false;
   // The reply must be a plan: 1 to kMaxPlanSteps steps, each capped.
   opts.json_schema = agent_plan::BuildPlanSchema();
+
+  if (HasModelForTesting()) {
+    GenerationResult result = TestingModel().Run(prompt, opts);
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&WebAgent::OnPlanReply,
+                                  weak_factory_.GetWeakPtr(),
+                                  std::move(result)));
+    return;
+  }
 
   // Text-only, even when the model sees images: a plan needs the page's
   // text, and the screenshot belongs to the next action's request.
@@ -1488,6 +2097,7 @@ WebAgent::Step WebAgent::DescribeAction(
   step.action = std::string(agent_actions::ActionName(action.type));
   step.reason = action.reason;
   step.plan_step = action.plan_step;
+  step.observed_with = observation_source_;
   auto describe = [&](const std::string& ref) {
     const ObservedElement* e = observation_.Find(ref);
     return e ? agent_actions::DescribeElement(*e) : ref;
@@ -1541,6 +2151,10 @@ WebAgent::Step WebAgent::DescribeAction(
     }
     case ActionType::kReplan:
       step.target = "plan step " + base::NumberToString(action.plan_step);
+      break;
+    case ActionType::kSelect:
+      step.target = describe(action.ref);
+      step.value = action.option;
       break;
   }
   return step;

@@ -13,6 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
@@ -56,6 +57,13 @@ constexpr size_t kMaxTabTitleChars = 160;
 constexpr size_t kMaxTabsListed = 200;
 // A notice the listening side says, in code points.
 constexpr size_t kMaxNoticeChars = 400;
+// What the planner says, in code points.
+constexpr size_t kMaxPlannerSpeechChars = 400;
+// What "repeat" keeps of what the planner said.
+constexpr size_t kMaxPlannerSpeechRemembered = 8;
+// Said when the planner's question went unanswered.
+constexpr char kPlannerNoAnswer[] = "I didn't hear yes, so I stopped.";
+
 // After a navigation hid the numbers: how often, and how many times, to
 // look for the new page's tree to number.
 constexpr base::TimeDelta kNumbersRefreshDelay = base::Milliseconds(700);
@@ -87,6 +95,8 @@ std::optional<StepFailure> FailureFor(ActionResult result) {
       return StepFailure::kFocusNotConfirmed;
     case ActionResult::kCancelled:
       return StepFailure::kCancelled;
+    case ActionResult::kNoSuchOption:
+      return StepFailure::kUnavailable;
   }
   return StepFailure::kUnavailable;
 }
@@ -222,6 +232,8 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
   speech_ = std::make_unique<VoiceSpeech>(browser->GetProfile());
   speech_->SetSpeakingChangedCallback(base::BindRepeating(
       &VoiceController::OnSpeakingChanged, weak_factory_.GetWeakPtr()));
+  // The web agent's on-device planner, for what the grammar can't do.
+  planner_ = CreateVoiceAgentPlanner();
 }
 
 VoiceController::~VoiceController() {
@@ -327,7 +339,10 @@ void VoiceController::SetNumbersShown(bool shown) {
   state_.numbers_shown = shown;
 }
 
-void VoiceController::CancelRun() {
+void VoiceController::CancelRun(bool keep_planner) {
+  if (!keep_planner) {
+    CancelPlanner();
+  }
   ++run_;
   run_weak_factory_.InvalidateWeakPtrs();
   pending_.clear();
@@ -402,8 +417,10 @@ void VoiceController::OnTabGone() {
   attached_.reset();
 }
 
-void VoiceController::SetPlannerHook(PlannerHook hook) {
-  planner_hook_ = std::move(hook);
+void VoiceController::SetPlannerForTesting(
+    std::unique_ptr<VoicePlanner> planner) {
+  CancelPlanner();
+  planner_ = std::move(planner);
 }
 
 void VoiceController::AddObserver(Observer* observer) {
@@ -420,15 +437,21 @@ void VoiceController::SetIdleCallbackForTesting(
 }
 
 bool VoiceController::busy() const {
-  return !pending_.empty() || wait_ || submitting_;
+  return !pending_.empty() || wait_ || submitting_ ||
+         (planner_running_ && planner_question_ == 0);
 }
 
 VoiceActivity VoiceController::activity() const {
-  if (busy()) {
+  if (!pending_.empty() || wait_ || submitting_) {
     return VoiceActivity::kThinking;
   }
+  // While the planner works, what it says is the browser speaking (the
+  // listening side treats what it hears then as the browser's own voice).
   if (speech_ && speech_->speaking()) {
     return VoiceActivity::kSpeaking;
+  }
+  if (busy()) {
+    return VoiceActivity::kThinking;
   }
   return active_ ? VoiceActivity::kListening : VoiceActivity::kOff;
 }
@@ -675,8 +698,9 @@ void VoiceController::HandleUtterance(const std::string& text) {
   if (!browser_ || !VoiceModeEnabled()) {
     return;
   }
-  // Barge-in: what was being said and done stops.
-  CancelRun();
+  // Barge-in: what was being said and done stops (the planner's run too,
+  // unless this answers its question: below).
+  CancelRun(/*keep_planner=*/true);
   commits_at_utterance_ = commits_;
   if (!active_ && !IsMoltNet()) {
     Start();
@@ -691,6 +715,9 @@ void VoiceController::HandleUtterance(const std::string& text) {
   // As PlanUtterance() does, with the numbers on screen checked between.
   const VoiceCommand command =
       ParseVoiceCommand(utterance, ContextFor(state_, map, env));
+  if (!AnswersPlannerQuestion(command, map, env)) {
+    CancelPlanner();
+  }
   if (!NumberStillOnScreen(command, map)) {
     return;
   }
@@ -1008,15 +1035,131 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       BeginWait(step);
       return false;
 
-    case VoiceStepKind::kToPlanner:
-      if (planner_hook_) {
-        planner_hook_.Run(step.text, CurrentMap());
-      } else {
+    case VoiceStepKind::kToPlanner: {
+      if (!planner_) {
         Say(step.preface);
+        return true;
+      }
+      CancelPlanner();
+      planner_running_ = true;
+      planner_question_ = 0;
+      // What the user said is the run's goal; the planner works in the
+      // active tab, on the page this map is of.
+      planner_->Start(contents, step.text, CurrentMap(), this);
+      return true;
+    }
+
+    case VoiceStepKind::kPlannerAnswer:
+      // Only the question pending now; an older one's answer is dropped.
+      if (planner_ && planner_running_ && planner_question_ != 0 &&
+          step.index == planner_question_) {
+        planner_question_ = 0;
+        planner_question_timer_.Stop();
+        planner_->Answer(step.index, step.flag);
       }
       return true;
   }
   return true;
+}
+
+// ---- The planner ------------------------------------------------------------
+
+bool VoiceController::AnswersPlannerQuestion(
+    const VoiceCommand& command,
+    const PageMap& map,
+    const VoiceEnvironment& env) const {
+  return planner_running_ && planner_question_ != 0 &&
+         (command.kind == VoiceCommandKind::kYes ||
+          command.kind == VoiceCommandKind::kNo) &&
+         ContextFor(state_, map, env).expecting_yes_no &&
+         PlannerQuestionHeld(state_) == planner_question_;
+}
+
+void VoiceController::CancelPlanner() {
+  planner_question_timer_.Stop();
+  planner_question_ = 0;
+  if (!planner_running_) {
+    return;
+  }
+  planner_running_ = false;
+  if (planner_) {
+    planner_->Cancel();
+  }
+}
+
+void VoiceController::PlannerSays(const std::string& text) {
+  if (!planner_running_ || !speech_) {
+    return;
+  }
+  // Model output and page text: cleaned and capped, as page text is.
+  const std::string said = SpeechSafeText(text, kMaxPlannerSpeechChars);
+  if (said.empty()) {
+    return;
+  }
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSpeech(said);
+  }
+  // In turn: each step after the one before.
+  speech_->Speak(said, state_.speech_rate, /*interrupt=*/false);
+  std::vector<std::string>& last = state_.last_spoken;
+  last.push_back(said);
+  if (last.size() > kMaxPlannerSpeechRemembered) {
+    last.erase(last.begin());
+  }
+  SetStatus(said);
+}
+
+void VoiceController::PlannerAsks(int question, const std::string& what) {
+  if (!planner_running_ || question <= 0) {
+    return;
+  }
+  // Asked as the loop asks before pressing Buy, and answered only by a
+  // "yes" or "no" heard in that context.
+  VoiceTurn turn =
+      PlanPlannerQuestion(question, what, Environment(), state_);
+  if (PlannerQuestionHeld(turn.state) != question) {
+    CancelPlanner();
+    Idle();
+    return;
+  }
+  planner_question_ = question;
+  planner_question_timer_.Start(
+      FROM_HERE, base::Milliseconds(kConfirmationTimeoutMs),
+      base::BindOnce(&VoiceController::OnPlannerQuestionTimeout,
+                     base::Unretained(this)));
+  interrupt_next_speech_ = false;
+  state_ = std::move(turn.state);
+  if (!turn.status.empty()) {
+    status_ = std::move(turn.status);
+  }
+  for (VoiceStep& step : turn.steps) {
+    pending_.push_back(std::move(step));
+  }
+  NotifyCaption();
+  RunSteps();
+}
+
+void VoiceController::OnPlannerQuestionTimeout() {
+  if (!planner_running_ || planner_question_ == 0) {
+    return;
+  }
+  CancelPlanner();
+  Say(kPlannerNoAnswer);
+  Idle();
+}
+
+void VoiceController::PlannerFinished() {
+  if (!planner_running_) {
+    return;
+  }
+  planner_running_ = false;
+  planner_question_ = 0;
+  planner_question_timer_.Stop();
+  if (!busy()) {
+    Idle();
+  } else {
+    NotifyCaption();
+  }
 }
 
 void VoiceController::OnSubmitted(int run, int result) {

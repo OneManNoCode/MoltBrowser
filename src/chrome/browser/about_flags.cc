@@ -14275,8 +14275,9 @@ const FeatureEntry kFeatureEntries[] = {
     // (#molt-fingerprinting-protection).
     MOLT_FINGERPRINTING_FEATURE_ENTRIES,
 
-    // MoltBrowser: the web agent's screenshots, site tools and planner
-    // (#molt-agent-screenshots, #molt-agent-site-tools, #molt-agent-planner).
+    // MoltBrowser: the web agent's screenshots, site tools, planner and page
+    // map (#molt-agent-screenshots, #molt-agent-site-tools,
+    // #molt-agent-planner, #molt-agent-page-map).
     MOLT_AGENT_FEATURE_ENTRIES,
 
     // MoltBrowser: voice mode (#molt-voice-mode).

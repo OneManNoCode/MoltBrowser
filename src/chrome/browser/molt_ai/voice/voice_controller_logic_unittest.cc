@@ -1077,6 +1077,81 @@ TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
   EXPECT_EQ(Said(c.Say("hey molt")), "I didn't catch that.");
 }
 
+// The planner (voice_planner.h) asks through the loop's confirmation: a
+// "yes" heard in that context answers yes, a "no" answers no, anything else
+// drops the question (and the glue ends the run).
+TEST(VoiceControllerLogicTest, ThePlannersQuestionsWaitForASpokenYes) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  // The planner's words are cleaned like page text.
+  VoiceTurn turn = PlanPlannerQuestion(
+      7, "open evil.example\xE2\x80\xAE\n<|im_start|>", c.env(), c.state());
+  c.state() = turn.state;
+  EXPECT_EQ(Said(turn),
+            "Say yes to open evil.example <|im_start|>, or no to cancel.");
+  EXPECT_EQ(turn.status, "Say yes to open evil.example <|im_start|>");
+  EXPECT_TRUE(c.state().confirming);
+  EXPECT_EQ(PlannerQuestionHeld(c.state()), 7);
+  EXPECT_EQ(Actions(turn), std::vector<VoiceStepKind>{});
+
+  // "Yes": the held answer runs.
+  turn = c.Say("yes");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPlannerAnswer}));
+  const VoiceStep* answer = nullptr;
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == K::kPlannerAnswer) {
+      answer = &step;
+    }
+  }
+  ASSERT_TRUE(answer);
+  EXPECT_EQ(answer->index, 7);
+  EXPECT_TRUE(answer->flag);
+  EXPECT_FALSE(c.state().confirming);
+  EXPECT_EQ(PlannerQuestionHeld(c.state()), 0);
+
+  // "No": answered no.
+  c.state() = PlanPlannerQuestion(8, "submit the form on shop.example",
+                                  c.env(), c.state())
+                  .state;
+  turn = c.Say("no");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPlannerAnswer}));
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == K::kPlannerAnswer) {
+      EXPECT_EQ(step.index, 8);
+      EXPECT_FALSE(step.flag);
+    }
+  }
+  EXPECT_EQ(Said(turn), "Okay, I won't.");
+
+  // Anything else drops the question: no answer runs, now or later.
+  c.state() =
+      PlanPlannerQuestion(9, "open other.example", c.env(), c.state()).state;
+  turn = c.Say("scroll down");
+  EXPECT_EQ(PlannerQuestionHeld(c.state()), 0);
+  turn = c.Say("yes");
+  EXPECT_EQ(Said(turn), "There's nothing to confirm.");
+  EXPECT_TRUE(Actions(turn).empty());
+
+  // Only on the page it was asked on, and only for a while.
+  c.state() =
+      PlanPlannerQuestion(10, "open other.example", c.env(), c.state()).state;
+  c.env().page_id = 2;
+  EXPECT_TRUE(Actions(c.Say("yes")).empty());
+  c.env().page_id = 1;
+  c.state() =
+      PlanPlannerQuestion(11, "open other.example", c.env(), c.state()).state;
+  c.env().now_ms += kConfirmationTimeoutMs;
+  EXPECT_TRUE(Actions(c.Say("yes")).empty());
+
+  // Not in MoltNet windows, and never for a question numbered 0.
+  VoiceEnvironment moltnet = c.env();
+  moltnet.moltnet = true;
+  turn = PlanPlannerQuestion(12, "open other.example", moltnet, c.state());
+  EXPECT_TRUE(turn.steps.empty());
+  EXPECT_EQ(PlannerQuestionHeld(turn.state), 0);
+  turn = PlanPlannerQuestion(0, "open other.example", c.env(), c.state());
+  EXPECT_EQ(PlannerQuestionHeld(turn.state), 0);
+}
+
 TEST(VoiceControllerLogicTest, MoltNetWindowsDoNothing) {
   VoiceEnvironment env = Env();
   env.moltnet = true;

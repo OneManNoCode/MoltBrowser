@@ -553,6 +553,17 @@ class Planner {
         ClearConfirmation();
         break;
       case K::kNo:
+        // The planner's question (PlanPlannerQuestion()) hears its "no".
+        if (confirming) {
+          for (const VoiceStep& held : state().confirm_steps) {
+            if (held.kind == VoiceStepKind::kPlannerAnswer) {
+              VoiceStep no = held;
+              no.flag = false;
+              Add(std::move(no));
+              break;
+            }
+          }
+        }
         ClearConfirmation();
         Say(confirming ? "Okay, I won't." : "Okay.");
         break;
@@ -650,6 +661,23 @@ class Planner {
         break;
       }
     }
+  }
+
+  // ---- The planner's questions ------------------------------------------
+
+  void PlannerQuestion(int question, std::string_view what) {
+    turn_.kind = K::kUnknown;
+    if (env_.moltnet || question <= 0) {
+      return;
+    }
+    // The planner's words: model output and page text among them.
+    const std::string text = PageText(what);
+    VoiceStep yes = Step(VoiceStepKind::kPlannerAnswer);
+    yes.index = question;
+    yes.flag = true;
+    std::vector<VoiceStep> steps;
+    steps.push_back(std::move(yes));
+    AskToConfirm(std::move(steps), text.empty() ? std::string("go on") : text);
   }
 
   // ---- Follow-ups --------------------------------------------------------
@@ -1789,6 +1817,16 @@ class Planner {
       Say("I didn't catch that.");
       return;
     }
+    // A "yes" or "no" with no question pending (it expired, or another
+    // command dropped it) is no task for the planner.
+    ParseContext answering = ContextFor(state(), map_, env_);
+    answering.expecting_yes_no = true;
+    const VoiceCommandKind answer =
+        ParseVoiceCommand(command.heard, answering).kind;
+    if (answer == K::kYes || answer == K::kNo) {
+      Say("There's nothing to confirm.");
+      return;
+    }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
     planner.preface = "I can't do that yet: " + Quoted(echo) +
@@ -1967,6 +2005,28 @@ VoiceTurn PlanFollowUp(const VoiceStep& wait,
   Planner planner(map, env, state);
   planner.FollowUp(wait);
   return planner.Finish();
+}
+
+VoiceTurn PlanPlannerQuestion(int question,
+                              std::string_view what,
+                              const VoiceEnvironment& env,
+                              const ConversationState& state) {
+  const PageMap no_map;
+  Planner planner(no_map, env, state);
+  planner.PlannerQuestion(question, what);
+  return planner.Finish();
+}
+
+int PlannerQuestionHeld(const ConversationState& state) {
+  if (!state.confirming) {
+    return 0;
+  }
+  for (const VoiceStep& held : state.confirm_steps) {
+    if (held.kind == VoiceStepKind::kPlannerAnswer && held.flag) {
+      return held.index;
+    }
+  }
+  return 0;
 }
 
 bool NeedsConfirmation(std::string_view label,

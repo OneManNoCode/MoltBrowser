@@ -248,6 +248,9 @@ source_set("browser_tests") {
 
     # Listening: a stand-in helper under the real sandbox, fake audio.
     ":voice_session_browser_tests",
+
+    # The web agent on the page map, and the planner fallback.
+    "//chrome/browser/molt_ai/agents:browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",
@@ -291,6 +294,14 @@ source_set("voice_loop") {
   deps = [ "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion" ]
 }
 
+# What voice mode hands open-ended requests to (the planner fallback,
+# docs/design/TOUCHLESS_BROWSING.md §6.2): the interface the web agent's
+# planner implements (//chrome/browser/molt_ai:molt_ai_agents,
+# agents/voice_agent_planner.h). Header-only.
+source_set("voice_planner") {
+  sources = [ "voice_planner.h" ]
+}
+
 # chrome://flags/#molt-voice-mode (about_flags.cc includes
 # voice_controller_features.h).
 source_set("features") {
@@ -315,6 +326,7 @@ source_set("voice_controller") {
 
   public_deps = [
     ":voice_loop",
+    ":voice_planner",
     "//base",
     "//ui/base/unowned_user_data",
   ]
@@ -323,6 +335,10 @@ source_set("voice_controller") {
     ":features",
     ":voice_page",
     "//chrome/app:command_ids",
+
+    # The planner fallback: the web agent's on-device planner
+    # (agents/voice_agent_planner.h).
+    "//chrome/browser/molt_ai:molt_ai_agents",
 
     # Every URL is checked before it loads.
     "//chrome/browser/molt_ai/security:agent_safety",
