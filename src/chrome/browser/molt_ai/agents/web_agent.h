@@ -288,6 +288,11 @@ class WebAgent : public content::WebContentsObserver {
   // Start(); may be null.
   void SetActionCallback(StepCallback on_action);
 
+  // The run uses the page map (outside MoltNet windows) even while
+  // #molt-agent-page-map is off: voice mode's runs, which act on the page
+  // voice mode already reads through it. Set before Start().
+  void SetUsePageMap(bool use) { use_page_map_ = use; }
+
   // How this run has observed pages so far.
   const ObservationCounts& observation_counts() const {
     return observation_counts_;
@@ -516,6 +521,7 @@ class WebAgent : public content::WebContentsObserver {
   // whether the run uses it, holds the tab's controller, the observation
   // being made (waiting for the tree), and the current observation's text.
   bool page_map_on_ = false;
+  bool use_page_map_ = false;
   bool holds_page_ = false;
   struct PendingMap {
     PendingMap();

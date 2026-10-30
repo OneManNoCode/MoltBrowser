@@ -2426,8 +2426,9 @@ agent-pagemap; `docs/design/AGENT_ACTIONS.md` §2.10,
 - [ ] A sign-in page and a checkout page: the agent never types into the
   password, card or code field (the step says it refused), and asks before
   pressing the form's button.
-- [ ] `chrome://flags/#molt-agent-page-map` off: the same task runs through
-  the element snapshot as before (`observed_with` `element_snapshot`).
+- [ ] `chrome://flags/#molt-agent-page-map` off (the default): the same
+  task runs through the element snapshot as before (`observed_with`
+  `element_snapshot`); the page-map items above run with it on.
 - [ ] Voice mode on, with a model installed: "Hey Molt, find me a train
   from Paris to Lyon tomorrow" on a train site. *Expected:* "Working on
   it.", then each plan step before it runs ("I'll search the site for

@@ -23,7 +23,8 @@ allowed while recording as steps (§3.5). Outside MoltNet windows the web
 agent observes pages through the accessibility page map voice mode reads
 them through, with the map's numbers as its element ids, and acts through
 accessibility actions, which pages take as the user's own; the element
-snapshot is the fallback (§2.10).
+snapshot is the fallback (§2.10; behind `#molt-agent-page-map`, off by
+default, except in voice mode's runs).
 
 | Decision | Code | Format |
 |---|---|---|
@@ -1855,9 +1856,12 @@ name, landmark) for Agent mode.
 
 #### 2.10.6 The switch
 
-`chrome://flags/#molt-agent-page-map` (`--disable-features=MoltAgentPageMap`),
-**on by default**, read when a run starts; never expires. Off, the agent
-observes and acts through the element snapshot and its scripts only.
+`chrome://flags/#molt-agent-page-map` (`--enable-features=MoltAgentPageMap`),
+**off by default** until the build machine has run it, read when a run
+starts; never expires. Off, the agent observes and acts through the
+element snapshot and its scripts only, except in runs voice mode starts
+(`WebAgent::SetUsePageMap()`), which use the page map outside MoltNet
+windows whatever the switch says.
 
 #### 2.10.7 Tests
 

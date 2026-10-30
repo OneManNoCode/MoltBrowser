@@ -26,12 +26,15 @@
 //   chrome://flags/#molt-agent-page-map
 //   --disable-features=MoltAgentPageMap
 //
-// Enabled by default: outside MoltNet windows the agent observes pages
-// through the accessibility page map (voice mode's numbered items, lists
-// and fields) and acts through accessibility actions, which pages take as
-// the user's own interaction; the element snapshot stays the fallback.
-// Disabled, the agent observes and acts through the element snapshot and
-// its scripts only, as it did. Read when a run starts.
+// Disabled by default until the build machine has run it: enabled,
+// outside MoltNet windows the agent observes pages through the
+// accessibility page map (voice mode's numbered items, lists and fields)
+// and acts through accessibility actions, which pages take as the user's
+// own interaction; the element snapshot stays the fallback. Disabled, the
+// agent observes and acts through the element snapshot and its scripts
+// only, as it did, except in runs voice mode starts (WebAgent::
+// SetUsePageMap()), which always use the page map outside MoltNet windows.
+// Read when a run starts.
 //
 // Planner (§2.8):
 //   chrome://flags/#molt-agent-planner

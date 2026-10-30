@@ -136,6 +136,7 @@ void VoiceAgentPlanner::OnModelChecked(
                                       &BrowserAIRuntime::GetInstance());
   agent_->SetActionCallback(base::BindRepeating(&VoiceAgentPlanner::OnAction,
                                                 weak_factory_.GetWeakPtr()));
+  agent_->SetUsePageMap(true);
   agent_->Start(goal, WebAgent::StepCallback(),
                 base::BindOnce(&VoiceAgentPlanner::OnDone,
                                weak_factory_.GetWeakPtr(), run),

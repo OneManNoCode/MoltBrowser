@@ -51,7 +51,7 @@
      "fields), and clicks, types and chooses through accessibility "          \
      "actions, which pages treat as your own interaction. It never types "    \
      "into password, card or code fields there. Disabled, it reads and "      \
-     "acts through page scripts only.",                                       \
+     "acts through page scripts only, except in voice mode's runs.",          \
      kOsAll,                                                                  \
      FEATURE_VALUE_TYPE(molt_ai::agent_features::kMoltAgentPageMap)}
 // clang-format on

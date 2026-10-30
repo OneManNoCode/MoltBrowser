@@ -1173,8 +1173,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   said before it runs, anything that needs your approval waits for a
   spoken "yes", and "stop" ends it; without a model installed, the browser
   says so and what you can say instead. Runs that acted this way can't yet
-  be saved as workflows. The agent's use of the accessibility tree can be
-  turned off at `chrome://flags/#molt-agent-page-map`.
+  be saved as workflows. The chat agent's use of the accessibility tree is
+  off until `chrome://flags/#molt-agent-page-map` is turned on; voice
+  mode's runs always use it.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

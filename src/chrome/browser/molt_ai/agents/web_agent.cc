@@ -246,7 +246,7 @@ void WebAgent::Start(const std::string& goal,
   // source, as it was.
   content::WebContents* contents = web_contents();
   page_map_on_ =
-      agent_features::AgentPageMapEnabled() && contents &&
+      (use_page_map_ || agent_features::AgentPageMapEnabled()) && contents &&
       !tor::IsMoltNetProfile(
           Profile::FromBrowserContext(contents->GetBrowserContext()));
   if (page_map_on_) {

@@ -15,7 +15,7 @@ BASE_FEATURE(kMoltAgentSiteTools, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kMoltAgentPlanner, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Feature name: "MoltAgentPageMap".
-BASE_FEATURE(kMoltAgentPageMap, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kMoltAgentPageMap, base::FEATURE_DISABLED_BY_DEFAULT);
 
 bool AgentScreenshotsEnabled() {
   return base::FeatureList::IsEnabled(kMoltAgentScreenshots);
