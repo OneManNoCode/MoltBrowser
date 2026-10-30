@@ -7133,6 +7133,12 @@
     "expiry_milestone": 160
   },
   {
+    // MoltBrowser: the web agent's page map switch; never expires.
+    "name": "molt-agent-page-map",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     // MoltBrowser: the web agent's planner switch; never expires.
     "name": "molt-agent-planner",
     "owners": [ "moltbrowser" ],

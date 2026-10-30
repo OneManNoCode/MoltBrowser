@@ -5918,6 +5918,8 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
         d.Set("success",     step.success);
         d.Set("note",        step.note);
         d.Set("plan_step",   step.plan_step);
+        d.Set("observed_with", molt_ai::WebAgent::ObservationSourceName(
+                                   step.observed_with));
         self->FireWebUIListener("agent-step", base::Value(std::move(d)));
       },
       weak_this, run_id);
@@ -5982,10 +5984,21 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
          int run_id, bool success, std::string result) {
         if (!self || !self->IsJavascriptAllowed()) return;
+        // How the run read pages: the accessibility page map, the element
+        // snapshot (its fallback), or both (docs/design/AGENT_ACTIONS.md
+        // §2.10).
+        base::DictValue observed;
+        if (self->web_agent_) {
+          const molt_ai::WebAgent::ObservationCounts& counts =
+              self->web_agent_->observation_counts();
+          observed.Set("page_map", counts.page_map);
+          observed.Set("element_snapshot", counts.element_snapshot);
+        }
         self->web_agent_.reset();
         base::DictValue d;
         d.Set("success", success);
         d.Set("result",  result);
+        d.Set("observed_with", std::move(observed));
         // save_run / save_note: whether the run can be saved as a draft.
         self->FinishAgentRunRecord(run_id, success, &d);
         self->ResolveJavascriptCallback(base::Value(cb_id),

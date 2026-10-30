@@ -145,12 +145,19 @@ source_set("molt_ai_agents") {
     "//url",
   ]
 
+  # The page map (#molt-agent-page-map): the tab's accessibility trees and
+  # actions, through voice mode's page controller (held for a run).
+  deps += [ "//chrome/browser/molt_ai/voice:voice_page" ]
+
   # web_agent.h exposes agent_safety types (navigation allowlist, element
   # probe, prompt fencing), the action format (agents/agent_actions.h), the
   # planner (agents/agent_plan.h), the prompt (agents/agent_prompt.h) and
   # the screenshot logic (agents/agent_vision.h, runtime/model_image.h).
   public_deps = [
     "//chrome/browser/molt_ai/agents:agent_actions",
+
+    # web_agent.h: the page map's observation and live targets.
+    "//chrome/browser/molt_ai/agents:agent_page_map",
     "//chrome/browser/molt_ai/agents:agent_plan",
     "//chrome/browser/molt_ai/agents:agent_prompt",
     "//chrome/browser/molt_ai/agents:agent_vision",
