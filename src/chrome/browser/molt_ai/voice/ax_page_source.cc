@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/voice/ax_page_source.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <optional>
@@ -356,7 +357,9 @@ PageTree BuildPageTree(const AXFrameTree& main,
   const ui::AXNodeID focus_id = focus_frame.tree->data().focus_id;
 
   // The selection: the focused frame's, else the top-level document's.
-  for (const AXFrameTree* frame : {&focus_frame, &main}) {
+  const std::array<const AXFrameTree*, 2> selection_frames = {&focus_frame,
+                                                              &main};
+  for (const AXFrameTree* frame : selection_frames) {
     const ui::AXTreeData& data = frame->tree->data();
     if (data.sel_anchor_object_id == ui::kInvalidAXNodeID ||
         data.sel_focus_object_id == ui::kInvalidAXNodeID) {
