@@ -111,8 +111,13 @@ class Helper:
                 self.cond.notify_all()
 
     def send(self, data):
-        self.proc.stdin.write(data)
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write(data)
+            self.proc.stdin.flush()
+        except BrokenPipeError:
+            raise SystemExit("the helper exited (status %s): %s %s" % (
+                self.proc.poll(), [ev for _, ev in self.lines[-2:]],
+                self.stderr[-300:]))
 
     def wait_for(self, pred, timeout, start=0):
         """The first event (from index |start|) matching pred, or None."""
@@ -248,7 +253,7 @@ def step_protocol(args):
     h = Helper(args)
     ready(h)
     h.send(config({"hotwords": ["AC/DC :9.0", "#1 @home", "a/b/c", "x" * 1000,
-                                "‮bidi‬", "Beyoncé", "o'clock"] * 100,
+                                "\u202ebidi\u202c", "Beyonc\u00e9", "o'clock"] * 50,
                    "wake_required": False}))
     if clip:
         for f in audio_frames(clip + silence(1.0)):
@@ -330,7 +335,8 @@ def step_protocol(args):
         try:
             while time.monotonic() - t0 < 120:
                 for f in frames:
-                    h.send(f)
+                    h.proc.stdin.write(f)
+                    h.proc.stdin.flush()
                 status = h.proc.poll()
                 if status is not None:
                     break
@@ -647,8 +653,6 @@ def step_listen(args):
     res["every_utterance_counts"] = listen(args, rows, {"wake_required": False},
                                            args.listen_seconds)
     print("every utterance counting:", res["every_utterance_counts"])
-    silent = [("silence", "-", None)]
-    h = None
     # Pure silence: what waiting costs with nothing to hear.
     path = os.path.join(args.dir, "work", "silence-60s.wav")
     if not os.path.exists(path):
@@ -659,7 +663,6 @@ def step_listen(args):
             w.writeframes(silence(60))
     res["waiting_in_silence"] = listen(args, [("s", "-", path)], None, 60)
     print("waiting in silence:", res["waiting_in_silence"])
-    del silent, h
     return res
 
 
