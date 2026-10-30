@@ -6,9 +6,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace molt_voice {
 
@@ -268,21 +268,68 @@ constexpr Rule kZ[] = {
     {"", "z", "", "z"},
 };
 
-struct RuleSet {
-  const Rule* rules;
-  size_t size;
-};
-
+// The rules of a letter, and how many there are.
 template <size_t N>
-constexpr RuleSet Set(const Rule (&rules)[N]) {
-  return RuleSet{rules, N};
+std::pair<const Rule*, size_t> Set(const Rule (&rules)[N]) {
+  return {rules, N};
 }
 
-constexpr RuleSet kRules[26] = {
-    Set(kA), Set(kB), Set(kC), Set(kD), Set(kE), Set(kF), Set(kG),
-    Set(kH), Set(kI), Set(kJ), Set(kK), Set(kL), Set(kM), Set(kN),
-    Set(kO), Set(kP), Set(kQ), Set(kR), Set(kS), Set(kT), Set(kU),
-    Set(kV), Set(kW), Set(kX), Set(kY), Set(kZ)};
+std::pair<const Rule*, size_t> RulesFor(char letter) {
+  switch (letter) {
+    case 'a':
+      return Set(kA);
+    case 'b':
+      return Set(kB);
+    case 'c':
+      return Set(kC);
+    case 'd':
+      return Set(kD);
+    case 'e':
+      return Set(kE);
+    case 'f':
+      return Set(kF);
+    case 'g':
+      return Set(kG);
+    case 'h':
+      return Set(kH);
+    case 'i':
+      return Set(kI);
+    case 'j':
+      return Set(kJ);
+    case 'k':
+      return Set(kK);
+    case 'l':
+      return Set(kL);
+    case 'm':
+      return Set(kM);
+    case 'n':
+      return Set(kN);
+    case 'o':
+      return Set(kO);
+    case 'p':
+      return Set(kP);
+    case 'q':
+      return Set(kQ);
+    case 'r':
+      return Set(kR);
+    case 's':
+      return Set(kS);
+    case 't':
+      return Set(kT);
+    case 'u':
+      return Set(kU);
+    case 'v':
+      return Set(kV);
+    case 'w':
+      return Set(kW);
+    case 'x':
+      return Set(kX);
+    case 'y':
+      return Set(kY);
+    default:
+      return Set(kZ);
+  }
+}
 
 bool IsVowelLetter(char c) {
   return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u';
@@ -527,10 +574,10 @@ std::string LetterToSound(std::string_view word) {
       ++i;
       continue;
     }
-    const RuleSet& set = kRules[c - 'a'];
+    const auto [rules, count] = RulesFor(c);
     bool matched = false;
-    for (size_t r = 0; r < set.size; ++r) {
-      const Rule& rule = set.rules[r];
+    for (size_t r = 0; r < count; ++r) {
+      const Rule& rule = rules[r];
       const std::string_view letters(rule.letters);
       if (w.compare(i, letters.size(), letters) != 0 ||
           !MatchLeft(w, static_cast<ptrdiff_t>(i) - 1, rule.left) ||

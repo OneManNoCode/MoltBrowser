@@ -35,6 +35,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_bundled.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_platform.h"
@@ -136,7 +137,7 @@ class VoiceSpeechBrowserTest : public InProcessBrowserTest {
  protected:
   // A VoiceSpeech for the window's profile, active, its voice ready.
   VoiceSpeech* ReadySpeech() {
-    speech_ = std::make_unique<VoiceSpeech>(browser()->profile());
+    speech_ = std::make_unique<VoiceSpeech>(browser()->GetProfile());
     speech_->SetActive(true);
     EXPECT_TRUE(base::test::RunUntil([&]() {
       return speech_->bundled_for_testing() &&
@@ -228,7 +229,7 @@ IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest,
 IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest, WithoutTheVoiceThePlatforms) {
   BundledVoice::SetPathsForTesting(std::nullopt);
   // DIR_EXE/voice/ doesn't exist next to the test binary.
-  speech_ = std::make_unique<VoiceSpeech>(browser()->profile());
+  speech_ = std::make_unique<VoiceSpeech>(browser()->GetProfile());
   speech_->SetActive(true);
   speech_->Speak("Voice mode is on.", 1.0, true);
   ASSERT_TRUE(base::test::RunUntil([&]() { return !tts_.spoken().empty(); }));

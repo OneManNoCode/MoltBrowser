@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/voice/voice_helper/voice_synth.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <string>
 #include <utility>
@@ -29,8 +30,8 @@ class FakeEngine : public VoiceEngine {
                   const AudioCallback& on_audio) override {
     units.push_back(phonemes);
     scales.push_back(length_scale);
-    if (now) {
-      *now += ms_per_unit;
+    if (on_unit) {
+      on_unit(ms_per_unit);
     }
     if (fail) {
       return false;
@@ -46,7 +47,8 @@ class FakeEngine : public VoiceEngine {
   size_t samples_per_code_point = 10;
   int64_t ms_per_unit = 5;
   bool fail = false;
-  int64_t* now = nullptr;
+  // Runs with |ms_per_unit| for each unit (the test's clock moves).
+  std::function<void(int64_t)> on_unit;
 };
 
 class FakeHooks : public SynthHooks {
@@ -95,7 +97,7 @@ TEST(VoiceSynthTest, SpeaksAndReports) {
   const Phonemizer phonemizer = MakePhonemizer();
   FakeEngine engine;
   FakeHooks hooks;
-  engine.now = &hooks.now;
+  engine.on_unit = [&hooks](int64_t ms) { hooks.now += ms; };
   const DoneInfo done = SpeakRequestNow(Request("It is open.", 125), phonemizer,
                                         engine, hooks, SynthLimits());
   EXPECT_EQ(4u, done.id);
@@ -150,7 +152,7 @@ TEST(VoiceSynthTest, PacedAheadOfRealTime) {
   FakeEngine engine;
   engine.samples_per_code_point = 100;  // long audio for each unit
   FakeHooks hooks;
-  engine.now = &hooks.now;
+  engine.on_unit = [&hooks](int64_t ms) { hooks.now += ms; };
   std::string text;
   for (int i = 0; i < 20; ++i) {
     text += "It is open. ";

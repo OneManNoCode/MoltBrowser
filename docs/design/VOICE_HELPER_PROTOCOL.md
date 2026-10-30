@@ -367,6 +367,12 @@ build machine runs it again on the minimum hardware
 | SPEAK after a CANCEL; SHUTDOWN after work | spoken; exit 0 |
 | A browser that stops reading stdout (a 64 KiB pipe) | exit 3, 3.5 s after the request: filling the pipe, then the 2 s limit |
 
+The same 16 checks and the sentences of §8.3 also ran with the helper
+inside MoltBrowser's Linux helper sandbox (`helper_sandbox_linux.cc`:
+Landlock ABI 7 and the seccomp-bpf filter, through the speech helper's
+test wrapper, which grants its folder and an empty scratch directory): the
+same answers, the same timings.
+
 ### 8.3 Speaking
 
 Page-like sentences (`voice_helper_check.py`'s set: a short answer, a
@@ -441,7 +447,15 @@ words exactly right, 22.3% of the phoneme bytes wrong (stress ignored).
 - **Fuzzers:** `molt_voice_helper_fuzzer` (page text through the whole
   front end; the frames a browser writes, each SPEAK said through a fake
   engine) and `molt_voice_speech_fuzzer` (the helper's stdout as the
-  browser reads it): FUZZ_RESULTS.
+  browser reads it), under ASan and UBSan: 304,633 runs in 301 s and
+  1,703,098 runs in 241 s, no finding; their 20,000-run smokes in 18 s and
+  2 s. The first run of the helper's fuzzer found, in 39 s, text on which
+  the scan stood still (".1.2" read as a version with no digits before
+  it); fixed, and the input is in its seed corpus.
+- **Hostile text costs little:** a request of 195 random 20-letter words,
+  one of words joined from many lexicon words and suffixes, and one of
+  100 40-letter words each take under 20 ms of the front end (the
+  lexicon loads once, in 70 ms).
 - **Bounded:** frames of at most 64 KiB; 4,096 bytes of text, 1,500 words
   and 40 letters a word per request; units of 128 phoneme code points,
   30 s of audio a unit and 360 s a request; 16 waiting requests; 4 MiB of
