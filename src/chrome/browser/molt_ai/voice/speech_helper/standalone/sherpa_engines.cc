@@ -22,6 +22,13 @@ constexpr int kSileroWindow = 512;
 // it for each 32 ms window, so a stretch of speech is cut at 20 s (as an
 // utterance is): memory and work stay bounded under endless audio.
 constexpr int64_t kMaxVadSpeechSamples = 20 * kSampleRate;
+// Run over one long stream, Silero holds on to the end of speech longer and
+// longer (its recurrent state carries over): in a session of one utterance
+// after another the end came 0.4 s late by the fourteenth (measured), and
+// on time when it starts fresh, as the bench's did for each clip. So it
+// starts fresh after every stretch of speech, and after this much audio
+// without one; between stretches of speech nothing is lost.
+constexpr int64_t kVadFreshAfterSamples = 10 * kSampleRate;
 // Silence fed after the end of speech so that the recognizer's last chunk
 // is complete: Kroko's chunks are 1.28 s long, and with less padding it
 // drops the last word (docs/VOICE_BENCH.md §2.4).
@@ -178,6 +185,7 @@ void SherpaEngines::DestroyVad() {
   }
   vad_pending_.clear();
   vad_speech_samples_ = 0;
+  vad_quiet_samples_ = 0;
 }
 
 bool SherpaEngines::SetKeywords(const std::vector<std::string>& lines) {
@@ -310,11 +318,14 @@ VadUpdate SherpaEngines::Detect(const std::vector<float>& samples) {
       used += kSileroWindow;
       if (!SherpaOnnxVoiceActivityDetectorEmpty(vad_)) {
         update.segment_ended = true;
-        while (!SherpaOnnxVoiceActivityDetectorEmpty(vad_)) {
-          SherpaOnnxVoiceActivityDetectorPop(vad_);
-        }
+        // Reset() also drops the finished segments.
+        SherpaOnnxVoiceActivityDetectorReset(vad_);
+        vad_speech_samples_ = 0;
+        vad_quiet_samples_ = 0;
+        continue;
       }
       if (SherpaOnnxVoiceActivityDetectorDetected(vad_)) {
+        vad_quiet_samples_ = 0;
         vad_speech_samples_ += kSileroWindow;
         if (vad_speech_samples_ >= kMaxVadSpeechSamples) {
           SherpaOnnxVoiceActivityDetectorReset(vad_);
@@ -323,6 +334,11 @@ VadUpdate SherpaEngines::Detect(const std::vector<float>& samples) {
         }
       } else {
         vad_speech_samples_ = 0;
+        vad_quiet_samples_ += kSileroWindow;
+        if (vad_quiet_samples_ >= kVadFreshAfterSamples) {
+          SherpaOnnxVoiceActivityDetectorReset(vad_);
+          vad_quiet_samples_ = 0;
+        }
       }
     }
     update.in_speech = SherpaOnnxVoiceActivityDetectorDetected(vad_) != 0;
@@ -345,6 +361,7 @@ void SherpaEngines::ResetVad() {
   }
   vad_pending_.clear();
   vad_speech_samples_ = 0;
+  vad_quiet_samples_ = 0;
 }
 
 void SherpaEngines::BeginUtterance(const std::string& hotwords) {

@@ -91,6 +91,8 @@ class SherpaEngines : public SpeechEngines {
   std::vector<float> vad_pending_;
   // How long the VAD has been hearing speech without a pause.
   int64_t vad_speech_samples_ = 0;
+  // How long it has heard no speech since it last started fresh.
+  int64_t vad_quiet_samples_ = 0;
 
   const SherpaOnnxOnlineRecognizer* asr_ = nullptr;
   const SherpaOnnxOnlineStream* asr_stream_ = nullptr;
