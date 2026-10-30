@@ -311,6 +311,9 @@ source_set("browser_tests") {
     # Speaking: the bundled voice with a stand-in helper.
     ":voice_speech_browser_tests",
 
+    # The browser's prompts and a page's dialogs answered by voice.
+    ":voice_prompts_browser_tests",
+
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
 
@@ -409,12 +412,32 @@ fuzzer_test("molt_voice_speech_fuzzer") {
   libfuzzer_options = [ "max_len=65536" ]
 }
 
+# A page's dialogs in a tab voice mode listens on: the tab's own dialog
+# manager, with voice mode told when one shows and closes
+# (voice_dialog_manager.h). Small, so the browser's WebContentsDelegate
+# (its GetJavaScriptDialogManager() hook) can depend on it.
+source_set("voice_dialog_manager") {
+  sources = [
+    "voice_dialog_manager.cc",
+    "voice_dialog_manager.h",
+  ]
+
+  public_deps = [
+    ":voice_prompts",
+    "//base",
+    "//content/public/browser",
+    "//url",
+  ]
+}
+
 # Voice mode in a browser window: runs the loop's steps on the active tab
 # (VoicePageController), the browser's commands, the media session and the
 # tab's mute, and speaks through its own voice (the molt-voice helper,
 # played through the audio service) or TtsController.
 source_set("voice_controller") {
   sources = [
+    "voice_browser_prompts.cc",
+    "voice_browser_prompts.h",
     "voice_controller.cc",
     "voice_controller.h",
     "voice_speech.cc",
@@ -424,14 +447,21 @@ source_set("voice_controller") {
   ]
 
   public_deps = [
+    ":voice_dialog_manager",
     ":voice_loop",
     ":voice_planner",
+    ":voice_prompts",
     ":voice_speaking",
     "//base",
 
     # Voice mode asks the activation guard's questions on its tab
     # (page_request_asker.h).
     "//chrome/browser/molt_ai/security:activation_policy",
+
+    # The browser's prompts read and answered by voice
+    # (voice_browser_prompts.h): permission prompts, downloads.
+    "//components/download/content/public",
+    "//components/permissions",
     "//ui/base/unowned_user_data",
   ]
 
@@ -452,6 +482,14 @@ source_set("voice_controller") {
 
     # The tab's activation guard, which voice mode answers.
     "//chrome/browser/molt_ai/security:activation_guard",
+
+    # A dangerous download kept or discarded as the download bubble does,
+    # and the password manager's save bubble answered as its buttons do.
+    "//chrome/browser/download",
+    "//chrome/browser/ui/passwords",
+    "//components/download/public/common:public",
+    "//components/password_manager/core/browser",
+    "//components/password_manager/core/common",
 
     # The planner fallback: the web agent's on-device planner
     # (agents/voice_agent_planner.h).
@@ -517,6 +555,36 @@ source_set("voice_loop_unit_tests") {
 
     # Every URL the loop builds passes agent_safety's navigation check.
     "//chrome/browser/molt_ai/security:agent_safety",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+# A permission prompt allowed by its confirmation word and refused by "no";
+# the word typed, unclean, replayed or late refused; confirm(), prompt() and
+# beforeunload answered by voice (chrome/test/data/molt_voice/prompts.html).
+# Picked up by :browser_tests.
+source_set("voice_prompts_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_browser_prompts_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_prompts",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/permissions",
+    "//components/permissions:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
     "//testing/gtest",
     "//url",
   ]

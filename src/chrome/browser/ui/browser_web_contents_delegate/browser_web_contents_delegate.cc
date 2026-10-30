@@ -21,6 +21,7 @@
 #include "chrome/browser/headless/headless_mode_util.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/voice/voice_dialog_manager.h"  // MoltBrowser
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/preloading/preloading_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -1120,7 +1121,11 @@ void BrowserWebContentsDelegate::RendererResponsive(
 content::JavaScriptDialogManager*
 BrowserWebContentsDelegate::GetJavaScriptDialogManager(
     content::WebContents* source) {
-  return javascript_dialogs::TabModalDialogManager::FromWebContents(source);
+  // MoltBrowser: voice mode is told about the page's dialogs, to read and
+  // answer them (molt_ai/voice/voice_dialog_manager.h); they show as before.
+  return molt_ai::voice::VoiceDialogManager::For(
+      source,
+      javascript_dialogs::TabModalDialogManager::FromWebContents(source));
 }
 
 bool BrowserWebContentsDelegate::GuestSaveFrame(

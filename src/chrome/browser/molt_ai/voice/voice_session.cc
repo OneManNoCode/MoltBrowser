@@ -456,8 +456,9 @@ void VoiceSession::OnVoiceCaption(VoiceActivity activity,
   const int64_t now = NowMs();
   Apply(logic_.OnBrowserActivity(ToBrowserActivity(activity), now));
   const ConversationState& state = controller_->state();
-  Apply(
-      logic_.OnAwaitingAnswer(state.confirming || state.expecting_choice, now));
+  // The browser's prompt waits for its answer too (voice_prompts.h).
+  Apply(logic_.OnAwaitingAnswer(
+      state.confirming || state.expecting_choice || state.prompt.id != 0, now));
 }
 
 void VoiceSession::OnVoiceSpeech(const std::string& text) {
@@ -531,7 +532,8 @@ void VoiceSession::Apply(SessionActions actions) {
   if (actions.utterance && controller_) {
     // As if typed. The controller's caption calls report what it does.
     base::WeakPtr<VoiceSession> self = weak_factory_.GetWeakPtr();
-    controller_->HandleUtterance(*actions.utterance);
+    controller_->HandleHeardUtterance(*actions.utterance,
+                                      actions.heard_cleanly);
     if (!self) {
       return;
     }
