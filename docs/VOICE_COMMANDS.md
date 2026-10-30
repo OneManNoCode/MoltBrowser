@@ -81,6 +81,15 @@ and the bar only.
   deleting, sending, posting, subscribing, signing out or sending a form,
   the browser asks "Say yes to press ..." and does it only if your next
   words are "yes".
+- **When a page tries something after the browser clicks for you,** such
+  as opening another site in a new window, downloading a file or opening
+  another app, the browser asks first: "The page tried to open a new
+  window to example.com. Say yes to open it, or no to cancel." It happens
+  only if your next words are "yes". A page that tries to go full screen
+  (unless you said "full screen" or "play") or to change your clipboard is
+  stopped; a permission it asks for, such as your location, is turned down,
+  because voice mode can't answer permission questions yet. The browser
+  tells you each time.
 - **Typing:** choose a field ("click the search box"), then "type ...",
   "delete the last word", "clear the field", "read it back", "submit".
   Password, card and code fields are never typed into or read out.

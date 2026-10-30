@@ -485,6 +485,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   never include a "yes"; and the AI agent reading a page through its
   accessibility tree leaves out, and never acts in, a frame of the page's
   site that another site's frame (an ad) embeds.
+- Hardening: when voice mode (preview) or the web agent clicks on a page,
+  the page can't use that click for things you didn't ask for. A new
+  window or tab, a download or another app the page then tries is asked
+  about first ("The page tried to open a new window to example.com. Say
+  yes to open it", or a question in the agent's run); full screen is
+  allowed only after "full screen" or "play", clipboard writes are
+  refused, and voice mode turns down permission prompts it can't yet
+  answer by voice and says so. Your own clicks work as before, and MoltNet
+  windows are unchanged (`docs/design/TOUCHLESS_BROWSING.md` §7.5).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

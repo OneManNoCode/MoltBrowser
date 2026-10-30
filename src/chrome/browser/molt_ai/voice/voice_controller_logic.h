@@ -40,6 +40,13 @@
 // can't do that yet). Its questions go through the same confirmation:
 // PlanPlannerQuestion() holds a kPlannerAnswer step for "yes", and "no"
 // answers it with one too.
+//
+// The activation guard (molt_ai/security/activation_guard.h,
+// TOUCHLESS_BROWSING.md §7.5) asks the same way when a page tries to use
+// the activation voice mode's actions gave it (a new window, a download,
+// another app): PlanPageRequestQuestion() holds a kPageRequestAnswer step.
+// The presses voice mode makes for full screen and to play carry that
+// intent (VoiceStep::intent), so the page may then go full screen.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
@@ -50,6 +57,7 @@
 #include <string_view>
 #include <vector>
 
+#include "chrome/browser/molt_ai/security/activation_policy.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
@@ -106,6 +114,9 @@ enum class VoiceStepKind : uint8_t {
   kSetVoiceMode,
   // The answer to the planner's question |index|: |flag| yes (true) or no.
   kPlannerAnswer,
+  // The answer to the activation guard's question |index| (a page's new
+  // window, download or app): |flag| yes (true) or no.
+  kPageRequestAnswer,
 };
 
 enum class BrowserCommand : uint8_t {
@@ -165,6 +176,10 @@ struct VoiceStep {
   bool new_tab = false;
   // Actions on a node of the map.
   PageNodeHandle target;
+  // kPress: what the user asked for, when the browser knows (full screen,
+  // playing a video): the page may go full screen then
+  // (activation_policy.h).
+  activation::Intent intent = activation::Intent::kNone;
   int count = 1;
   int index = 0;
   int seconds = 0;
@@ -365,6 +380,22 @@ VoiceTurn PlanPlannerQuestion(int question,
 
 // The planner question |state| holds for its "yes", or 0 if none.
 int PlannerQuestionHeld(const ConversationState& state);
+
+// The activation guard asks about what the page tried with the activation
+// voice mode's action gave it: |said| ("The page tried to open a new window
+// to ads.example.", the browser's words with the site cleaned; cleaned again
+// here), then "Say yes to |verb|, or no to cancel." ("open it"), on this
+// page, within kConfirmationTimeoutMs. A "yes" runs a kPageRequestAnswer
+// step (|index| |question|, |flag| true), a "no" one with |flag| false; any
+// other command drops the question. Nothing in a MoltNet window.
+VoiceTurn PlanPageRequestQuestion(int question,
+                                  std::string_view said,
+                                  std::string_view verb,
+                                  const VoiceEnvironment& env,
+                                  const ConversationState& state);
+
+// The activation guard's question |state| holds for its "yes", or 0.
+int PageRequestQuestionHeld(const ConversationState& state);
 
 // Whether pressing an item named |label| (linking to |url|, raw page data)
 // on |map| needs a spoken "yes" first: its words buy, purchase, pay,

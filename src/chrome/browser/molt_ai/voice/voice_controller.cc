@@ -14,6 +14,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
@@ -368,6 +369,9 @@ void VoiceController::AttachToActiveTab() {
   VoicePageController::CreateForWebContents(contents);
   VoicePageController::FromWebContents(contents)->Start();
   attached_ = contents->GetWeakPtr();
+  // What the page tries with the activation voice mode's actions give it is
+  // asked about, or said, here (activation_guard.h).
+  ActivationGuard::SetAsker(contents, activation::Asker::kVoiceMode, this);
   watcher_ = std::make_unique<TabWatcher>(this, contents);
   // The numbers and the ring follow the page; when they hide by
   // themselves, they are shown again from a new map.
@@ -391,6 +395,10 @@ void VoiceController::DetachFromTab() {
   watcher_.reset();
   refresh_numbers_timer_.Stop();
   if (attached_) {
+    // Its question, if any, is answered "no" by the guard.
+    page_request_timer_.Stop();
+    page_request_question_ = 0;
+    ActivationGuard::RemoveAsker(attached_.get(), this);
     if (VoiceOverlay* overlay =
             VoiceOverlay::FromWebContents(attached_.get())) {
       overlay->SetHiddenCallback(VoiceOverlay::HiddenCallback());
@@ -415,6 +423,8 @@ void VoiceController::OnActiveTabChanged(BrowserWindowInterface* browser) {
 void VoiceController::OnTabGone() {
   watcher_.reset();
   attached_.reset();
+  page_request_timer_.Stop();
+  page_request_question_ = 0;
 }
 
 void VoiceController::SetPlannerForTesting(
@@ -715,7 +725,10 @@ void VoiceController::HandleUtterance(const std::string& text) {
   // As PlanUtterance() does, with the numbers on screen checked between.
   const VoiceCommand command =
       ParseVoiceCommand(utterance, ContextFor(state_, map, env));
-  if (!AnswersPlannerQuestion(command, map, env)) {
+  // The guard's question, asked during a planner run, is answered without
+  // ending the run.
+  if (!AnswersPlannerQuestion(command, map, env) &&
+      !AnswersPageRequestQuestion(command, map, env)) {
     CancelPlanner();
   }
   if (!NumberStillOnScreen(command, map)) {
@@ -725,6 +738,8 @@ void VoiceController::HandleUtterance(const std::string& text) {
   heard_ = turn.heard;
   status_ = turn.status;
   RunTurn(std::move(turn));
+  // Any other command drops the guard's question: a "no" for the page.
+  DropPageRequestQuestionIfGone();
 }
 
 void VoiceController::RunTurn(VoiceTurn turn) {
@@ -732,7 +747,9 @@ void VoiceController::RunTurn(VoiceTurn turn) {
   if (!turn.status.empty()) {
     status_ = std::move(turn.status);
   }
-  interrupt_next_speech_ = true;
+  // The activation guard's question, asked while a page loaded, is heard to
+  // its end: what follows is said after it.
+  interrupt_next_speech_ = page_request_question_ == 0;
   for (VoiceStep& step : turn.steps) {
     pending_.push_back(std::move(step));
   }
@@ -884,7 +901,9 @@ bool VoiceController::RunStep(const VoiceStep& step) {
     }
 
     case VoiceStepKind::kPress:
-      return page_result(page ? page->Press(step.target)
+      // A press for full screen or to play lets the page go full screen
+      // (activation_policy.h).
+      return page_result(page ? page->Press(step.target, step.intent)
                               : ActionResult::kNotActive);
     case VoiceStepKind::kPlayMedia:
       return page_result(page ? page->PlayMedia(step.target)
@@ -1049,6 +1068,14 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       return true;
     }
 
+    case VoiceStepKind::kPageRequestAnswer:
+      // Only the guard's question pending now, on the tab it was about.
+      if (page_request_question_ != 0 &&
+          step.index == page_request_question_) {
+        AnswerPageRequest(step.flag);
+      }
+      return true;
+
     case VoiceStepKind::kPlannerAnswer:
       // Only the question pending now; an older one's answer is dropped.
       if (planner_ && planner_running_ && planner_question_ != 0 &&
@@ -1060,6 +1087,117 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       return true;
   }
   return true;
+}
+
+// ---- The activation guard ---------------------------------------------------
+
+bool VoiceController::AskAboutPageRequest(
+    int id,
+    const activation::Question& question) {
+  if (!active_ || !speech_ || IsMoltNet() || id <= 0) {
+    return false;
+  }
+  // A question of the loop's own (a purchase, the planner's) keeps its
+  // place: the page's request is refused instead.
+  const VoiceEnvironment env = Environment();
+  if (state_.confirming && env.now_ms < state_.confirm_expires_ms &&
+      state_.confirm_page_id == env.page_id) {
+    return false;
+  }
+  VoiceTurn turn = PlanPageRequestQuestion(id, question.said, question.verb,
+                                           env, state_);
+  if (PageRequestQuestionHeld(turn.state) != id) {
+    return false;
+  }
+  page_request_question_ = id;
+  page_request_tab_ = attached_;
+  page_request_timer_.Start(
+      FROM_HERE, base::Milliseconds(kConfirmationTimeoutMs),
+      base::BindOnce(&VoiceController::OnPageRequestTimeout,
+                     base::Unretained(this)));
+  state_ = std::move(turn.state);
+  if (!turn.status.empty()) {
+    status_ = std::move(turn.status);
+  }
+  // Said after what is being said now; not through the steps, which may be
+  // waiting for a page.
+  interrupt_next_speech_ = false;
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == VoiceStepKind::kSpeak) {
+      Say(step.text);
+    }
+  }
+  NotifyCaption();
+  return true;
+}
+
+void VoiceController::TellAboutPageRequest(const std::string& text) {
+  if (!active_ || !speech_) {
+    return;
+  }
+  const std::string said = SpeechSafeText(text, kMaxNoticeChars);
+  if (said.empty()) {
+    return;
+  }
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSpeech(said);
+  }
+  speech_->Speak(said, state_.speech_rate, /*interrupt=*/false);
+  SetStatus(said);
+}
+
+void VoiceController::PageRequestQuestionWithdrawn(int id) {
+  if (id == 0 || id != page_request_question_) {
+    return;
+  }
+  page_request_timer_.Stop();
+  page_request_question_ = 0;
+  if (PageRequestQuestionHeld(state_) == id) {
+    state_.confirming = false;
+    state_.confirm_steps.clear();
+    state_.confirm_what.clear();
+  }
+}
+
+bool VoiceController::AnswersPageRequestQuestion(
+    const VoiceCommand& command,
+    const PageMap& map,
+    const VoiceEnvironment& env) const {
+  return page_request_question_ != 0 &&
+         (command.kind == VoiceCommandKind::kYes ||
+          command.kind == VoiceCommandKind::kNo) &&
+         ContextFor(state_, map, env).expecting_yes_no &&
+         PageRequestQuestionHeld(state_) == page_request_question_;
+}
+
+void VoiceController::AnswerPageRequest(bool allow) {
+  const int id = page_request_question_;
+  page_request_question_ = 0;
+  page_request_timer_.Stop();
+  content::WebContents* tab = page_request_tab_.get();
+  ActivationGuard* guard = tab ? ActivationGuard::FromWebContents(tab) : nullptr;
+  if (guard && id != 0) {
+    guard->Answer(id, allow);
+  }
+}
+
+void VoiceController::OnPageRequestTimeout() {
+  if (page_request_question_ == 0) {
+    return;
+  }
+  if (PageRequestQuestionHeld(state_) == page_request_question_) {
+    state_.confirming = false;
+    state_.confirm_steps.clear();
+    state_.confirm_what.clear();
+  }
+  AnswerPageRequest(false);
+}
+
+void VoiceController::DropPageRequestQuestionIfGone() {
+  if (page_request_question_ != 0 &&
+      PageRequestQuestionHeld(state_) != page_request_question_) {
+    AnswerPageRequest(false);
+  }
 }
 
 // ---- The planner ------------------------------------------------------------

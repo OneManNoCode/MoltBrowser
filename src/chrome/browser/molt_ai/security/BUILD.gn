@@ -17,6 +17,90 @@ source_set("agent_safety") {
   ]
 }
 
+# What a page may do with the user activation an agent's or voice mode's
+# accessibility action gave it (docs/design/TOUCHLESS_BROWSING.md §7.5): the
+# tab's state and the decisions. Std-only, so molt_ai_unittests and a
+# standalone harness build the same code.
+source_set("activation_policy") {
+  sources = [
+    "activation_policy.cc",
+    "activation_policy.h",
+
+    # Who asks (voice mode, the web agent): an interface, header-only.
+    "page_request_asker.h",
+  ]
+}
+
+# The browser's side: the tab's record (from VoicePageController's
+# actions), the functions the upstream hooks call (CanCreateWindow,
+# OpenURLFromTab, CheckDownloadAllowed, HandleExternalProtocol,
+# CanEnterFullscreenModeForTab, IsClipboardCopyAllowedByPolicy), the popup
+# blocker's and the permission prompts' observers, and the questions.
+# Nothing here depends on voice mode or the agents: they register as askers.
+source_set("activation_guard") {
+  sources = [
+    "activation_guard.cc",
+    "activation_guard.h",
+  ]
+
+  public_deps = [
+    ":activation_policy",
+    "//base",
+    "//components/blocked_content",
+    "//components/permissions",
+    "//content/public/browser",
+    "//ui/base",
+    "//url",
+  ]
+
+  # blink::kActivationLifespan, the input events and their key codes.
+  deps = [
+    "//third_party/blink/public/common:headers",
+    "//ui/events:events_base",
+  ]
+}
+
+# The guard on a page that uses the activation of whatever clicks it
+# (chrome/test/data/molt_voice/activation.html): the web agent's click, voice
+# mode's, a person's, with a scripted model and a fake TTS platform. Picked
+# up by browser_tests through //chrome/browser/molt_ai/voice:browser_tests.
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "activation_guard_browsertest.cc" ]
+
+  deps = [
+    ":activation_guard",
+    ":activation_policy",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/browser/molt_ai:molt_ai_agents",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai/agents:features",
+    "//chrome/browser/molt_ai/voice:features",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/browser/molt_ai/voice:voice_controller",
+    "//chrome/browser/molt_ai/voice:voice_page",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//components/download/public/common:public",
+    "//components/permissions",
+    "//components/permissions:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 # Who may open chrome:// / molt:// pages (S19). Pure logic, unit-tested.
 source_set("webui_navigation_policy") {
   sources = [
@@ -48,10 +132,12 @@ source_set("webui_navigation_throttle") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "activation_policy_unittest.cc",
     "agent_safety_unittest.cc",
     "webui_navigation_policy_unittest.cc",
   ]
   deps = [
+    ":activation_policy",
     ":agent_safety",
     ":webui_navigation_policy",
     "//base",

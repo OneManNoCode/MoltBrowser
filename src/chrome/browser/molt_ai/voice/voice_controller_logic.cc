@@ -553,10 +553,12 @@ class Planner {
         ClearConfirmation();
         break;
       case K::kNo:
-        // The planner's question (PlanPlannerQuestion()) hears its "no".
+        // The planner's question (PlanPlannerQuestion()) and the
+        // activation guard's (PlanPageRequestQuestion()) hear their "no".
         if (confirming) {
           for (const VoiceStep& held : state().confirm_steps) {
-            if (held.kind == VoiceStepKind::kPlannerAnswer) {
+            if (held.kind == VoiceStepKind::kPlannerAnswer ||
+                held.kind == VoiceStepKind::kPageRequestAnswer) {
               VoiceStep no = held;
               no.flag = false;
               Add(std::move(no));
@@ -678,6 +680,25 @@ class Planner {
     std::vector<VoiceStep> steps;
     steps.push_back(std::move(yes));
     AskToConfirm(std::move(steps), text.empty() ? std::string("go on") : text);
+  }
+
+  void PageRequestQuestion(int question,
+                           std::string_view said,
+                           std::string_view verb) {
+    turn_.kind = K::kUnknown;
+    if (env_.moltnet || question <= 0) {
+      return;
+    }
+    // The browser's words, with the page's site in them: cleaned again.
+    Say(PageText(said));
+    const std::string what = PageText(verb);
+    VoiceStep yes = Step(VoiceStepKind::kPageRequestAnswer);
+    yes.index = question;
+    yes.flag = true;
+    std::vector<VoiceStep> steps;
+    steps.push_back(std::move(yes));
+    AskToConfirm(std::move(steps),
+                 what.empty() ? std::string("allow it") : what);
   }
 
   // ---- Follow-ups --------------------------------------------------------
@@ -1108,6 +1129,10 @@ class Planner {
             verb == ChoiceVerb::kPlay || candidate.role == ChoiceRole::kVideo;
         std::vector<VoiceStep> steps;
         steps.push_back(NodeStep(VoiceStepKind::kPress, target.handle, name));
+        if (play) {
+          // To play: its player may go full screen (activation_policy.h).
+          steps.back().intent = activation::Intent::kPlayMedia;
+        }
         steps.push_back(WaitStep(play ? FollowUpKind::kPlayOpened
                                       : FollowUpKind::kAnnouncePage,
                                  name));
@@ -1411,10 +1436,13 @@ class Planner {
       return;
     }
     // The player's own button first: it makes the video fill the screen.
+    // The page may go full screen from this press (activation_policy.h).
     if (const PageItem* button = ItemSaying(
             map_, ItemKind::kButton, {"full screen", "fullscreen"})) {
-      Add(NodeStep(VoiceStepKind::kPress, button->handle,
-                   PageText(button->label)));
+      VoiceStep press = NodeStep(VoiceStepKind::kPress, button->handle,
+                                 PageText(button->label));
+      press.intent = activation::Intent::kFullScreen;
+      Add(std::move(press));
       Say("Full screen.");
       return;
     }
@@ -2023,6 +2051,29 @@ int PlannerQuestionHeld(const ConversationState& state) {
   }
   for (const VoiceStep& held : state.confirm_steps) {
     if (held.kind == VoiceStepKind::kPlannerAnswer && held.flag) {
+      return held.index;
+    }
+  }
+  return 0;
+}
+
+VoiceTurn PlanPageRequestQuestion(int question,
+                                  std::string_view said,
+                                  std::string_view verb,
+                                  const VoiceEnvironment& env,
+                                  const ConversationState& state) {
+  const PageMap no_map;
+  Planner planner(no_map, env, state);
+  planner.PageRequestQuestion(question, said, verb);
+  return planner.Finish();
+}
+
+int PageRequestQuestionHeld(const ConversationState& state) {
+  if (!state.confirming) {
+    return 0;
+  }
+  for (const VoiceStep& held : state.confirm_steps) {
+    if (held.kind == VoiceStepKind::kPageRequestAnswer && held.flag) {
       return held.index;
     }
   }

@@ -188,12 +188,18 @@ source_set("voice_page") {
   public_deps = [
     ":page_map",
     "//base",
+
+    # activation::Intent, in Press().
+    "//chrome/browser/molt_ai/security:activation_policy",
     "//content/public/browser",
     "//ui/accessibility",
   ]
 
   deps = [
     ":ax_page_source",
+
+    # Every action is noted with the tab's activation guard.
+    "//chrome/browser/molt_ai/security:activation_guard",
 
     # Actions only in http(s) documents.
     "//chrome/browser/molt_ai/security:agent_safety",
@@ -251,6 +257,9 @@ source_set("browser_tests") {
 
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
+
+    # What a page may do with the activation those actions give it.
+    "//chrome/browser/molt_ai/security:browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",
@@ -288,6 +297,9 @@ source_set("voice_loop") {
     ":page_map",
     ":spoken_choice",
     ":voice_command",
+
+    # activation::Intent in VoiceStep (std-only).
+    "//chrome/browser/molt_ai/security:activation_policy",
   ]
 
   # MOLT_RAW_PTR_EXCLUSION (header-only).
@@ -328,6 +340,10 @@ source_set("voice_controller") {
     ":voice_loop",
     ":voice_planner",
     "//base",
+
+    # Voice mode asks the activation guard's questions on its tab
+    # (page_request_asker.h).
+    "//chrome/browser/molt_ai/security:activation_policy",
     "//ui/base/unowned_user_data",
   ]
 
@@ -335,6 +351,9 @@ source_set("voice_controller") {
     ":features",
     ":voice_page",
     "//chrome/app:command_ids",
+
+    # The tab's activation guard, which voice mode answers.
+    "//chrome/browser/molt_ai/security:activation_guard",
 
     # The planner fallback: the web agent's on-device planner
     # (agents/voice_agent_planner.h).

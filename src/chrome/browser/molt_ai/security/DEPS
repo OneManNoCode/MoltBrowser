@@ -1,0 +1,7 @@
+specific_include_rules = {
+  # The activation guard's browser test lets voice mode speak through a fake
+  # TTS platform (as voice/voice_controller_browsertest.cc does).
+  r"activation_guard_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+}

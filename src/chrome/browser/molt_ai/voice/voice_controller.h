@@ -38,6 +38,14 @@
 // anything else the user says, "stop" included, ends its run. What it says
 // is cleaned with SpeechSafeText().
 //
+// The activation guard (molt_ai/security/activation_guard.h,
+// TOUCHLESS_BROWSING.md §7.5): voice mode is the asker on the tab it is
+// attached to. What a page tries with the activation voice mode's actions
+// gave it (a new window, a download, another app) is asked about through
+// the loop's confirmation ("The page tried to open a new window to
+// ads.example. Say yes to open it, or no to cancel."); what the guard
+// refused (full screen, the clipboard, a permission prompt) is said.
+//
 // The window owns nothing of it: the controller is created on first use
 // and deletes itself when the window closes. The agent side panel's voice
 // field and the window's listening (voice_session.h) listen through
@@ -74,6 +82,7 @@
 #include "base/observer_list_types.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/security/page_request_asker.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
@@ -100,7 +109,8 @@ enum class VoiceActivity {
   kSpeaking,
 };
 
-class VoiceController : public VoicePlanner::Delegate {
+class VoiceController : public VoicePlanner::Delegate,
+                        public activation::PageRequestAsker {
  public:
   DECLARE_USER_DATA(VoiceController);
 
@@ -294,6 +304,21 @@ class VoiceController : public VoicePlanner::Delegate {
   // the planner's run unless |keep_planner|.
   void CancelRun(bool keep_planner = false);
 
+  // activation::PageRequestAsker (the tab's ActivationGuard asks):
+  bool AskAboutPageRequest(int id,
+                           const activation::Question& question) override;
+  void TellAboutPageRequest(const std::string& text) override;
+  void PageRequestQuestionWithdrawn(int id) override;
+  // Whether |command| answers the activation guard's pending question.
+  bool AnswersPageRequestQuestion(const VoiceCommand& command,
+                                  const PageMap& map,
+                                  const VoiceEnvironment& env) const;
+  // Tells the guard |allow| for its question, which no longer waits here.
+  void AnswerPageRequest(bool allow);
+  // The question went unanswered, or another command dropped it.
+  void OnPageRequestTimeout();
+  void DropPageRequestQuestionIfGone();
+
   // VoicePlanner::Delegate:
   void PlannerSays(const std::string& text) override;
   void PlannerAsks(int question, const std::string& what) override;
@@ -359,6 +384,11 @@ class VoiceController : public VoicePlanner::Delegate {
   bool planner_running_ = false;
   int planner_question_ = 0;
   base::OneShotTimer planner_question_timer_;
+  // The activation guard's question this controller asks (0 for none), and
+  // the tab it is about.
+  int page_request_question_ = 0;
+  base::WeakPtr<content::WebContents> page_request_tab_;
+  base::OneShotTimer page_request_timer_;
   base::ObserverList<Observer> observers_;
   base::RepeatingClosure idle_for_testing_;
   base::WeakPtrFactory<VoiceController> run_weak_factory_{this};

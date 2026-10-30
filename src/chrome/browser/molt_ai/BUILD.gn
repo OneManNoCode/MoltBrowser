@@ -125,6 +125,11 @@ source_set("molt_ai_agents") {
     # #molt-agent-planner.
     "//chrome/browser/molt_ai/agents:features",
 
+    # The run asks the activation guard's questions on its tab
+    # (page_request_asker.h, in web_agent.h).
+    "//chrome/browser/molt_ai/security:activation_guard",
+    "//chrome/browser/molt_ai/security:activation_policy",
+
     # The screenshot scaled for the model on a worker (Skia).
     "//chrome/browser/molt_ai/runtime:model_image_prep",
 
@@ -404,6 +409,10 @@ group("core_hooks") {
     "fingerprinting:device",
     "fingerprinting:storage",
     "fingerprinting:storage_values",
+
+    # The activation guard's hooks (CanCreateWindow, HandleExternalProtocol,
+    # IsClipboardCopyAllowedByPolicy).
+    "security:activation_guard",
     "security:webui_navigation_throttle",
     "shield",
     "tor",
