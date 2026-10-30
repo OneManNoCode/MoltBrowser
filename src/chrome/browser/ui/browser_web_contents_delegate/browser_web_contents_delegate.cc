@@ -20,6 +20,7 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/headless/headless_mode_util.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"  // MoltBrowser
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/preloading/preloading_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -532,9 +533,15 @@ bool BrowserWebContentsDelegate::ShouldShowStaleContentOnEviction(
 
 content::WebContents* BrowserWebContentsDelegate::OpenURLFromTab(
     content::WebContents* source,
-    const content::OpenURLParams& params,
+    const content::OpenURLParams& original_params,  // MoltBrowser: renamed
     base::OnceCallback<void(content::NavigationHandle&)>
         navigation_handle_callback) {
+  // MoltBrowser: a new tab or window the page asks for with the user
+  // activation an agent's or voice mode's accessibility action gave it goes
+  // to the popup blocker as one without a gesture; the user is asked
+  // (molt_ai/security/activation_guard.h).
+  const content::OpenURLParams params =
+      molt_ai::ActivationGuard::ParamsForNewTab(source, original_params);
   TRACE_EVENT1("navigation", "BrowserWebContentsDelegate::OpenURLFromTab",
                "source", source);
 #if DCHECK_IS_ON()
@@ -1188,6 +1195,13 @@ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
   // If the tab strip isn't editable then a drag session is in progress, and it
   // is not safe to enter fullscreen. https://crbug.com/40059349
   if (!browser_->GetTabStripModel()->delegate()->IsTabStripEditable()) {
+    return false;
+  }
+
+  // MoltBrowser: not with the user activation an agent's or voice mode's
+  // accessibility action gave the page, unless the user asked for full
+  // screen or for media to play (molt_ai/security/activation_guard.h).
+  if (!molt_ai::ActivationGuard::MayEnterFullscreen(requesting_frame)) {
     return false;
   }
 

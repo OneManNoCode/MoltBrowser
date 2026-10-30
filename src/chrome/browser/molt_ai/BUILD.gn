@@ -404,6 +404,10 @@ group("core_hooks") {
     "fingerprinting:device",
     "fingerprinting:storage",
     "fingerprinting:storage_values",
+
+    # The activation guard's hooks (CanCreateWindow, HandleExternalProtocol,
+    # IsClipboardCopyAllowedByPolicy).
+    "security:activation_guard",
     "security:webui_navigation_throttle",
     "shield",
     "tor",

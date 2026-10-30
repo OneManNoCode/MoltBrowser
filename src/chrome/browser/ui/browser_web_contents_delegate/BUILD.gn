@@ -23,6 +23,9 @@ if (!is_android) {
       "//chrome/browser/custom_handlers",
       "//chrome/browser/devtools",
       "//chrome/browser/headless",
+
+      # MoltBrowser: what the activation guard's hooks call.
+      "//chrome/browser/molt_ai/security:activation_guard",
       "//chrome/browser/picture_in_picture",
       "//chrome/browser/preloading:prefs",
       "//chrome/browser/search",

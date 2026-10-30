@@ -49,6 +49,7 @@
 #include "chrome/browser/download/save_package_file_picker.h"
 #include "chrome/browser/enterprise/connectors/common.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"  // MoltBrowser
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -2489,6 +2490,14 @@ void ChromeDownloadManagerDelegate::CheckDownloadAllowed(
     NewNavigationObserver::GetInstance()->StartObserving(web_contents);
   }
 #endif
+
+  // MoltBrowser: a download the page starts with the user activation an
+  // agent's or voice mode's accessibility action gave it waits, once the
+  // checks below allow it, for the user's answer
+  // (molt_ai/security/activation_guard.h).
+  check_download_allowed_cb = molt_ai::ActivationGuard::GuardDownload(
+      web_contents, url, request_initiator,
+      std::move(check_download_allowed_cb));
 
   CanDownloadCallback cb = base::BindOnce(
       &ChromeDownloadManagerDelegate::OnCheckDownloadAllowedComplete,
