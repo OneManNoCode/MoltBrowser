@@ -13,8 +13,8 @@
 //      question, hints are clean; it saves and reads back the same.
 //   1: a .molt file. Checks: a routine voice mode would run has at most
 //      kMaxRoutineSteps steps of routine kinds, each describable; built
-//      again from them it reads back the same steps, and it holds no "{{"
-//      outside a variable.
+//      again from them it reads back the same steps (after one opening the
+//      site the first was said on, when the first opens none).
 //   2: two utterances, split at the first newline: a correction lined up
 //      with the first and applied to the second. Checks: the results are
 //      valid UTF-8 within the grammar's cap.
@@ -107,9 +107,19 @@ void RoutineFile(std::string_view input) {
   const molt_ai::voice::ReadRoutineResult again =
       molt_ai::voice::ReadRoutine(*loaded);
   CHECK(again.ok);
-  CHECK_EQ(again.steps.size(), read.steps.size());
+  // The same steps; when the first doesn't open a site, after one that
+  // opens the site it was said on (BuildRoutine()).
+  CHECK_GE(again.steps.size(), read.steps.size());
+  const size_t opened = again.steps.size() - read.steps.size();
+  CHECK_LE(opened, 1u);
+  if (opened == 1) {
+    CHECK(!molt_ai::voice::IsTaskStart(read.steps.front()));
+    CHECK(again.steps.front().command.kind ==
+          molt_ai::voice::VoiceCommandKind::kOpenSite);
+    CHECK_EQ(again.steps.front().command.site, read.steps.front().host);
+  }
   for (size_t i = 0; i < read.steps.size(); ++i) {
-    CHECK(again.steps[i].command.kind == read.steps[i].command.kind);
+    CHECK(again.steps[i + opened].command.kind == read.steps[i].command.kind);
   }
 }
 
