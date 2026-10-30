@@ -248,6 +248,9 @@ source_set("browser_tests") {
 
     # Listening: a stand-in helper under the real sandbox, fake audio.
     ":voice_session_browser_tests",
+
+    # The web agent on the page map, and the planner fallback.
+    "//chrome/browser/molt_ai/agents:browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",

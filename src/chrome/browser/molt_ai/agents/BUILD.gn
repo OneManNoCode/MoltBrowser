@@ -211,6 +211,41 @@ source_set("features") {
   public_deps = [ "//base" ]
 }
 
+# The web agent on the page map and voice mode's planner fallback, on the
+# fixture pages in chrome/test/data/molt_voice/ with a scripted model
+# (agent_page_map_browsertest.cc). Picked up by browser_tests through
+# //chrome/browser/molt_ai/voice:browser_tests.
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "agent_page_map_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai:molt_ai_agents",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai/voice:features",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/browser/molt_ai/voice:voice_controller",
+    "//chrome/browser/molt_ai/voice:voice_page",
+    "//chrome/browser/molt_ai/voice:voice_planner",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media:media_buildflags",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true

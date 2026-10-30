@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!-- A page whose accessibility tree has nothing to act on: its one control
+     is a <span role="button"> (not focusable) inside an aria-hidden
+     subtree, so the page map is empty, while the web agent's element
+     snapshot still lists it. The browser test checks the agent falls back
+     to the snapshot and clicks it there. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Hidden controls</title>
+</head>
+<body>
+<div aria-hidden="true">
+  <span id="go" role="button"
+        style="display: inline-block; padding: 8px; background: #ccc">Go</span>
+</div>
+<script>
+  window.went = 0;
+  document.getElementById('go').addEventListener('click', () => {
+    window.went++;
+  });
+</script>
+</body>
+</html>
