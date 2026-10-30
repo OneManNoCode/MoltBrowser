@@ -30,6 +30,10 @@ class PageRequestAsker {
   // Question |id| no longer waits for an answer: it timed out, or the page
   // it was about is gone (what it asked about stays refused).
   virtual void PageRequestQuestionWithdrawn(int id) {}
+  // Whether this asker reads permission prompts aloud and takes a spoken
+  // answer (voice mode listening, the voice gesture): the guard then leaves
+  // a prompt raised while acting to it instead of dismissing it.
+  virtual bool TakesPromptsByVoice() const { return false; }
 };
 
 }  // namespace activation

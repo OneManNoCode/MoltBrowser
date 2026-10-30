@@ -952,6 +952,15 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       return true;
 
     case VoiceStepKind::kBrowserCommand: {
+      // "Go back" skips the entries a page added with an action's sticky
+      // activation (activation_guard.h).
+      if (step.command == BrowserCommand::kBack && contents) {
+        const int offset = ActivationGuard::VoiceBackOffset(contents);
+        if (offset < -1 && contents->GetController().CanGoToOffset(offset)) {
+          contents->GetController().GoToOffset(offset);
+          return true;
+        }
+      }
       const std::optional<int> id = CommandId(step.command);
       if (!id || !chrome::ExecuteCommand(browser_, *id)) {
         Fail(StepFailure::kUnavailable);

@@ -33,13 +33,25 @@
 //                              "yes" (HoldsExternalProtocol()).
 //       full screen            BrowserWebContentsDelegate::
 //                              CanEnterFullscreenModeForTab()
-//                              (MayEnterFullscreen()).
+//                              (MayEnterFullscreen()): the requesting tab's
+//                              guard, and every acting tab whose page can
+//                              reach the requesting frame (the same
+//                              browsing context group: what postMessage's
+//                              capability delegation can hand full screen
+//                              to).
 //       clipboard writes       ChromeContentBrowserClient::
 //                              IsClipboardCopyAllowedByPolicy()
 //                              (RefusesClipboardWrite()).
 //       permission prompts     PermissionRequestManager's observer
-//                              (OnPromptAdded()): voice mode dismisses it
-//                              and says so; never accepted.
+//                              (OnPromptAdded()): left to voice mode when
+//                              it reads prompts aloud (it asks, and the
+//                              confirmation word allows it); dismissed
+//                              and said when it doesn't; never accepted
+//                              by the guard.
+//       session history        the entries a page adds with an action's
+//                              sticky activation (DidFinishNavigation()):
+//                              voice mode's "go back" skips them
+//                              (VoiceBackOffset()).
 //   - The askers: voice mode on the tab (voice_controller.h) and web agent
 //     runs on it (agents/web_agent.h) register with SetAsker(). Voice mode
 //     asks when it is on the tab (its user hears; an agent run in voice
@@ -164,6 +176,13 @@ class ActivationGuard
   // comes from an action's activation and wasn't a copy the user asked for.
   static bool RefusesClipboardWrite(content::WebContents* contents);
 
+  // Voice mode's "go back": the offset (-1, or further back) that skips the
+  // entries the page added with an action's sticky activation
+  // (activation::NoteHistoryEntry()); -1 when there are none.
+  static int VoiceBackOffset(content::WebContents* contents);
+  // The most entries remembered as skippable per tab.
+  static constexpr size_t kMaxSkippableEntries = 64;
+
   // For tests: the clock, and the record.
   void SetClockForTesting(base::RepeatingCallback<base::TimeTicks()> clock);
   const activation::TabRecord& record_for_testing() const { return record_; }
@@ -224,6 +243,10 @@ class ActivationGuard
   // Dismissing the prompt for |request| (its address, compared only),
   // if it is still the one shown (OnPromptAdded()).
   void RefusePrompt(uintptr_t request);
+  // Whether voice mode, the asker here, takes prompts by voice.
+  bool PromptsByVoice() const;
+  // Notes a session history entry the page added (DidFinishNavigation()).
+  void NoteHistoryEntry(content::NavigationHandle* navigation);
 
   // content::WebContentsObserver:
   void DidGetUserInteraction(const blink::WebInputEvent& event) override;
@@ -254,6 +277,11 @@ class ActivationGuard
   base::OneShotTimer question_timer_;
 
   std::vector<Withheld> withheld_windows_;
+
+  // The last committed session history entry, and the entries voice mode's
+  // "go back" skips (their unique ids, oldest first).
+  int last_entry_id_ = 0;
+  std::vector<int> skippable_entries_;
 
   int own_key_code_ = 0;
   base::TimeTicks own_key_until_;
