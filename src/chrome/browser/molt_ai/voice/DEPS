@@ -20,6 +20,9 @@ specific_include_rules = {
   r"voice_controller_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
+  r"voice_browser_prompts_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
   r"voice_learning_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
