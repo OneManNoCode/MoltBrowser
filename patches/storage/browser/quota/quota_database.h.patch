@@ -1,11 +1,11 @@
 MoltBrowser patch for storage/browser/quota/quota_database.h
-Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
 Generated from src/storage/browser/quota/quota_database.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/quota/quota_database.h b/storage/browser/quota/quota_database.h
-index ae01225b4b3c4eefc8793c60f6f08126d3462ec5..e7c34142166dc9735e72a03ad06ee96d45c326f9 100644
+index bf2685ac3e7c681b25cc73a9b3e5a3516317ff40..006d51d91ec813ab332fc688ffd88f78fa2d46e3 100644
 --- a/storage/browser/quota/quota_database.h
 +++ b/storage/browser/quota/quota_database.h
 @@ -176,6 +176,17 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaDatabase {
