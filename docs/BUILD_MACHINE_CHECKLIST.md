@@ -607,6 +607,9 @@ opt-in until voice listening ships (`MOLT_BUNDLE_SPEECH=1`, §11).
   base", "NX compatible", "High Entropy Virtual Addresses" and "Guard" in
   the DLL characteristics and "CF Instrumented" in the guard flags; a link
   error naming `/guard:cf` with the static ONNX Runtime: report it.
+  The same for the voice helper, `voice/molt-voice` (its core: the text
+  front end and frame reader; "MOLT_VOICE_HAVE_STACK_CLASH_PROTECTION" in
+  `voice-configure.log`; checked here on Linux the same way).
 - [ ] Record the helper's SHA-256 per OS (printed, and in
   `speech/.build-info`) with the release. It differs from machine to
   machine (compilers), so it is recorded, not pinned; the sources and models
