@@ -201,6 +201,8 @@ std::string_view PromptKindName(PromptKind kind) {
       return "dangerous download";
     case PromptKind::kSavePassword:
       return "save password";
+    case PromptKind::kConfirmSites:
+      return "confirm sites";
   }
   return "unknown";
 }
@@ -231,7 +233,8 @@ std::string_view PromptAnswerName(PromptAnswer answer) {
 
 bool NeedsGesture(PromptKind kind) {
   return kind == PromptKind::kPermission ||
-         kind == PromptKind::kDangerousDownload;
+         kind == PromptKind::kDangerousDownload ||
+         kind == PromptKind::kConfirmSites;
 }
 
 int64_t PromptWindowMs(PromptKind kind) {
@@ -244,6 +247,7 @@ int64_t PromptWindowMs(PromptKind kind) {
     case PromptKind::kPermission:
     case PromptKind::kDangerousDownload:
     case PromptKind::kSavePassword:
+    case PromptKind::kConfirmSites:
       return kPromptWindowMs;
   }
   return kPromptWindowMs;
@@ -329,6 +333,22 @@ std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word) {
     case PromptKind::kSavePassword:
       return "Save your password for " + site +
              "? Say save, never, or not now.";
+    case PromptKind::kConfirmSites: {
+      // The sites, each already a cleaned host ("a.example and b.example");
+      // cleaned again here.
+      const std::string sites =
+          SpeechSafeText(prompt.text, kMaxDialogSpokenChars);
+      std::string out =
+          sites.empty() ? std::string("Confirm the sites this routine uses?")
+                        : "Confirm the sites this routine uses: " + sites + "?";
+      if (!word.empty()) {
+        out += " To confirm them, say " + std::string(word) +
+               ". To leave them unconfirmed, say no.";
+      } else {
+        out += " Confirm them in the Agent studio, or say no.";
+      }
+      return out;
+    }
   }
   return std::string();
 }
@@ -340,6 +360,8 @@ std::string PromptTimeoutSpeech(PromptKind kind) {
     case PromptKind::kDangerousDownload:
       return "No answer, so the file stays blocked. You can decide on the "
              "downloads page.";
+    case PromptKind::kConfirmSites:
+      return "No answer, so the sites stay unconfirmed.";
     case PromptKind::kAlert:
     case PromptKind::kConfirm:
     case PromptKind::kTextPrompt:
@@ -420,6 +442,18 @@ PromptReply ParsePromptReply(const PendingPrompt& prompt,
                                          : PromptAnswer::kNeedWord);
       }
       return PromptReply();
+    case PromptKind::kConfirmSites:
+      if (In(kNo, folded) || In(kDismiss, folded)) {
+        return Reply(PromptAnswer::kDecline);
+      }
+      if (std::optional<PromptAnswer> word = WordAnswer(prompt, heard)) {
+        return Reply(*word);
+      }
+      if (In(kYes, folded) || In(kAllowWords, folded)) {
+        return Reply(prompt.word.empty() ? PromptAnswer::kCantAllow
+                                         : PromptAnswer::kNeedWord);
+      }
+      return PromptReply();
     case PromptKind::kSavePassword:
       if (In(kSave, folded)) {
         return Reply(PromptAnswer::kAccept);
@@ -435,11 +469,12 @@ PromptReply ParsePromptReply(const PendingPrompt& prompt,
 
 std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply) {
   const bool download = prompt.kind == PromptKind::kDangerousDownload;
+  const bool sites = prompt.kind == PromptKind::kConfirmSites;
   switch (reply.answer) {
     case PromptAnswer::kNone:
       return std::string();
     case PromptAnswer::kAllow:
-      return download ? "Kept the file." : "Allowed.";
+      return download ? "Kept the file." : sites ? "Confirmed." : "Allowed.";
     case PromptAnswer::kWrongWord:
       return download ? "That wasn't the word, so I didn't keep the file."
                       : "That wasn't the word, so I turned it down.";
@@ -479,6 +514,8 @@ std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply) {
           return "Not now.";
         case PromptKind::kPermission:
           return "Dismissed.";
+        case PromptKind::kConfirmSites:
+          return "Left unconfirmed.";
         default:
           return "Okay.";
       }
@@ -488,6 +525,7 @@ std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply) {
              ". Say yes to send it, or no to cancel.";
     case PromptAnswer::kNeedWord:
       return download ? "To keep it, say " + prompt.word + "."
+             : sites  ? "To confirm them, say " + prompt.word + "."
                       : "To allow it, say " + prompt.word + ".";
     case PromptAnswer::kCantAllow:
       return download && prompt.malicious

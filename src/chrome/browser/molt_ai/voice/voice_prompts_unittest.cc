@@ -197,6 +197,29 @@ TEST(VoicePromptsTest, SavePasswordNeverSaysThePassword) {
   EXPECT_EQ(Answer(prompt, "no"), PromptAnswer::kDecline);
 }
 
+TEST(VoicePromptsTest, ADraftsSitesAreConfirmedWithTheWord) {
+  BrowserPrompt sites =
+      Prompt(PromptKind::kConfirmSites, "", "news.example and video.example");
+  EXPECT_EQ(PromptSpeech(sites, "kayak"),
+            "Confirm the sites this routine uses: news.example and "
+            "video.example? To confirm them, say kayak. To leave them "
+            "unconfirmed, say no.");
+  EXPECT_EQ(PromptSpeech(sites, ""),
+            "Confirm the sites this routine uses: news.example and "
+            "video.example? Confirm them in the Agent studio, or say no.");
+  const PendingPrompt prompt = Waiting(PromptKind::kConfirmSites, "kayak");
+  EXPECT_EQ(Answer(prompt, "kayak"), PromptAnswer::kAllow);
+  EXPECT_EQ(Answer(prompt, AnotherWord("kayak")), PromptAnswer::kWrongWord);
+  EXPECT_EQ(Answer(prompt, "yes"), PromptAnswer::kNeedWord);
+  EXPECT_EQ(Answer(prompt, "confirm"), PromptAnswer::kNeedWord);
+  EXPECT_EQ(Answer(prompt, "no"), PromptAnswer::kDecline);
+  EXPECT_EQ(ReplySpeech(prompt, ParsePromptReply(prompt, "yes")),
+            "To confirm them, say kayak.");
+  EXPECT_EQ(ReplySpeech(prompt, ParsePromptReply(prompt, "kayak")),
+            "Confirmed.");
+  EXPECT_TRUE(NeedsGesture(PromptKind::kConfirmSites));
+}
+
 TEST(VoicePromptsTest, DialogTextIsCleanedAndBounded) {
   const std::string hostile =
       "Hello\xE2\x80\xAE\x07 there" + std::string(5000, 'a') + " tail";

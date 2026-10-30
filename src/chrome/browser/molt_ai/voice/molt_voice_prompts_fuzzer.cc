@@ -6,7 +6,8 @@
 // and a file's name are page text, the site is the page's host, and what
 // is heard is whatever the microphone (or a helper someone took over)
 // gives. The input is text, so seeds and the dictionary stay readable:
-//   byte 0      bits 0-2 the prompt's kind; bit 3 a gesture word is
+//   byte 0      bits 0-2 the prompt's kind (7: a draft's sites); bit 3 a
+//               gesture word is
 //               offered; bit 4 a malicious download; bit 5 a reload; bit 6
 //               a flood
 //   line 0      the site
@@ -55,7 +56,7 @@ constexpr PromptKind kKinds[] = {
     PromptKind::kPermission,   PromptKind::kAlert,
     PromptKind::kConfirm,      PromptKind::kTextPrompt,
     PromptKind::kBeforeUnload, PromptKind::kDangerousDownload,
-    PromptKind::kSavePassword, PromptKind::kAlert,
+    PromptKind::kSavePassword, PromptKind::kConfirmSites,
 };
 
 // The browser's framing around the page's text, at most.

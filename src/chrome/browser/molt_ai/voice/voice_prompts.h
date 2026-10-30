@@ -7,33 +7,30 @@
 // side (voice_browser_prompts.h) finds the prompts and carries out the
 // answers.
 //
-//   prompt                 said                                   answers
-//   a permission prompt    "example.com wants to use your         its word:
-//   allow (the voice
-//                          camera. To allow it, say harbor.       gesture,
-//                          voice_gesture.h); To block it, say no." "no",
-//                          "block", "deny"
-//   alert()                "example.com says: <text>. Say OK."    "OK", "yes",
-//   "close" confirm()              "example.com asks: <text>. Say yes "yes",
-//   "OK"; "no", "cancel"
-//                          or no."
-//   prompt()               "example.com asks: <text>. Say         "answer ...",
-//   then "yes" to
-//                          answer, then what to answer."          send it;
-//                          "no", "cancel"
-//   beforeunload           "Leave this page on example.com?       "leave" (or
-//   "reload"), "yes";
-//                          Changes you made may not be saved.     "stay", "no",
-//                          "cancel" Say leave or stay."
-//   a dangerous download   "The file setup.exe from example.com   its word:
-//   keep; "discard",
-//                          may be harmful. To keep it, say        "delete",
-//                          "no". A file known harbor. To delete it, say
-//                          discard."    to be malicious: discard only
-//   saving a password      "Save your password for example.com?   "save",
-//   "yes"; "never";
-//                          Say save, never, or not now."          "not now",
-//                          "no"
+//   - A permission prompt: "example.com wants to use your camera. To allow
+//     it, say harbor. To block it, say no." Its word allows it (the voice
+//     gesture, voice_gesture.h); "no", "block" or "deny" blocks it;
+//     "cancel" or "not now" dismisses it.
+//   - alert(): "example.com says: <text>. Say OK to close it." "OK",
+//     "yes" or "close" closes it.
+//   - confirm(): "example.com asks: <text>. Say yes or no." "yes" or "OK";
+//     "no" or "cancel".
+//   - prompt(): "example.com asks: <text>. Say answer, then your answer,
+//     or say no to cancel." "answer ..." dictates the answer, read back,
+//     then "yes" sends it; "no" or "cancel" cancels.
+//   - beforeunload: "Leave example.com? Changes you made may not be saved.
+//     Say leave or stay." "leave" (or "reload"), "yes"; "stay", "no",
+//     "cancel".
+//   - A dangerous download: "The file setup.exe from example.com may be
+//     harmful. To keep it, say harbor. To delete it, say discard." Its word
+//     keeps it; "discard", "delete" or "no" deletes it. A file known to be
+//     malicious can only be discarded by voice.
+//   - Saving a password: "Save your password for example.com? Say save,
+//     never, or not now." "save" or "yes"; "never"; "not now" or "no".
+//   - A workflow draft's sites: "Confirm the sites this routine uses:
+//     a.example and b.example? To confirm them, say harbor. To leave them
+//     unconfirmed, say no." Its word confirms them, as a click in the
+//     Agent studio would (automation_security.h); "no" leaves them.
 //
 //   - Page text (a dialog's message, a file's name) is cleaned and capped
 //     (SpeechSafeText()), and always said after the site it comes from;
@@ -85,6 +82,9 @@ enum class PromptKind : uint8_t {
   kBeforeUnload,
   kDangerousDownload,
   kSavePassword,
+  // A workflow draft's sites (automation_security.h's ConfirmDraftSites()):
+  // |text| holds them, "a.example and b.example", each cleaned as a site.
+  kConfirmSites,
 };
 
 std::string_view PromptKindName(PromptKind kind);

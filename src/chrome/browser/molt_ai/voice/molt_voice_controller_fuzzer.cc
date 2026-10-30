@@ -19,7 +19,7 @@
 //            "L label" (a new list); "% k text" (the browser reads its prompt
 //            or a page's dialog k: 0 permission, 1 alert, 2 confirm, 3
 //            prompt(), 4 beforeunload, 5 a dangerous download, 6 saving a
-//            password; the word is "harbor"); "E
+//            password, 7 a workflow draft's sites; the word is "harbor"); "E
 //            title\tchannel\tduration\tdate\tcount\ttext" (an entry of the
 //            list, with a link item of its own); "I k label\t value\turl" (an
 //            item: k is l link, b button, t text field, s search field, p
@@ -507,9 +507,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           molt_ai::voice::PromptKind::kBeforeUnload,
           molt_ai::voice::PromptKind::kDangerousDownload,
           molt_ai::voice::PromptKind::kSavePassword,
+          molt_ai::voice::PromptKind::kConfirmSites,
       };
       molt_ai::voice::BrowserPrompt prompt;
-      prompt.kind = kKinds[static_cast<unsigned char>(utterance[2]) % 7];
+      prompt.kind = kKinds[static_cast<unsigned char>(utterance[2]) % 8];
       prompt.site = env.host;
       prompt.text = std::string(utterance.substr(4));
       prompt.what = prompt.text;
