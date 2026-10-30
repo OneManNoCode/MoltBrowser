@@ -16,6 +16,7 @@
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_reader.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_sites.h"
+#include "chrome/browser/molt_ai/voice/voice_routines.h"
 #include "chrome/browser/molt_ai/voice/voice_speech.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
@@ -34,10 +35,10 @@ using K = VoiceCommandKind;
 // What the loop says, in code points.
 constexpr size_t kMaxSaidChars = 400;
 
+// Any reading of the page's text, "continue reading" included: a barge-in
+// stops the reader before it is planned, so the reader can't tell then.
 bool IsReadingKind(K kind) {
-  return kind == K::kReadPage || kind == K::kReadFromHere ||
-         kind == K::kReadSelection || kind == K::kReadSection ||
-         kind == K::kNextParagraph || kind == K::kPreviousParagraph;
+  return ReadsPageText(kind);
 }
 
 // Whether |turn| did what a command of |kind| asks: a step that acts, a
@@ -653,8 +654,10 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
   // By voice, with the voice gesture, while the window listens
   // (VoiceBrowserPrompts::ConfirmDraftSites(): the sites said and shown, a
   // confirmation word heard cleanly, bound to exactly this workflow and
-  // these sites); else the confirmer says what to do instead.
-  if (controller_->ConfirmDraftSitesByVoice(
+  // these sites); else the confirmer says what to do instead. Only sites
+  // the prompt can say in full: the word confirms every one.
+  if (RoutineSitesSayable(sites) &&
+      controller_->ConfirmDraftSitesByVoice(
           id, sites,
           base::BindOnce(
               [](RoutineSiteConfirmer::Done done, bool confirmed) {

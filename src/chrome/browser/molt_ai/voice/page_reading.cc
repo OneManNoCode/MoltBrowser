@@ -65,6 +65,147 @@ char LowerAscii(char c) {
   return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
 }
 
+// ---- How long a text takes to say (SpokenLength()) -------------------------
+
+bool IsAsciiLetter(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+bool IsAsciiDigit(char c) {
+  return c >= '0' && c <= '9';
+}
+
+// A digit of a number said in words ("123456789012" is "one hundred twenty
+// three billion ..."): up to this many letters each.
+constexpr size_t kDigitWeight = 11;
+// A letter said by its name ("x k c d", "B B C"); "w" is "double you".
+constexpr size_t kSpelledWeight = 4;
+constexpr size_t kSpelledWWeight = 11;
+// A symbol said as a word ("percent", "at"); a picture as its name
+// ("grinning face").
+constexpr size_t kSymbolWeight = 8;
+constexpr size_t kPictureWeight = 15;
+// An ideograph or a syllable block: a syllable.
+constexpr size_t kSyllableWeight = 4;
+
+// The weight of code point |cp|, at or past U+0080.
+size_t NonAsciiWeight(uint32_t cp) {
+  if (cp < 0x2000) {
+    return 2;  // Latin, Greek, Cyrillic, Hebrew, Arabic, Indic letters ...
+  }
+  if (cp < 0x2070 || (cp >= 0x2E00 && cp < 0x2E80) ||
+      (cp >= 0xE000 && cp < 0xF900)) {
+    return 1;  // punctuation (dashes, quotes), private use (dropped)
+  }
+  if (cp < 0x2C00) {
+    return kPictureWeight;  // arrows, maths, symbols, dingbats
+  }
+  if (cp < 0x2E80 || (cp >= 0xA4D0 && cp < 0xAC00)) {
+    return 2;
+  }
+  if (cp < 0xD800 || (cp >= 0xF900 && cp < 0x10000) ||
+      (cp >= 0x20000 && cp < 0x40000)) {
+    return kSyllableWeight;  // CJK, kana, Hangul, full-width forms
+  }
+  return kPictureWeight;  // emoji, and the rest past the BMP
+}
+
+// The weight of one letter of an ASCII word.
+size_t LetterWeight(char c, bool spelled) {
+  if (!spelled) {
+    return 1;
+  }
+  return LowerAscii(c) == 'w' ? kSpelledWWeight : kSpelledWeight;
+}
+
+// Whether voices say ASCII word |word| letter by letter: one letter alone,
+// no vowel, or capitals only.
+bool Spelled(std::string_view word) {
+  bool vowel = false;
+  bool lower = false;
+  for (char c : word) {
+    const char l = LowerAscii(c);
+    vowel = vowel || l == 'a' || l == 'e' || l == 'i' || l == 'o' || l == 'u' ||
+            l == 'y';
+    lower = lower || l == c;
+  }
+  return word.size() == 1 || !vowel || !lower;
+}
+
+// The byte length of the longest prefix of |s| that weighs at most
+// |max_weight| (whole words, numbers and code points; a first one heavier
+// than that is cut within it, after its first code point), and its weight
+// in |weight| when not null. Linear in what it reads.
+size_t SpokenPrefix(std::string_view s, size_t max_weight, size_t* weight) {
+  size_t total = 0;
+  size_t i = 0;
+  // Everything weighs 1 at least: nothing fits once |max_weight| is reached
+  // (or passed by the first code point, which is always taken).
+  while (i < s.size() && (i == 0 || total < max_weight)) {
+    const char c = s[i];
+    if (IsAsciiLetter(c) || IsAsciiDigit(c)) {
+      const bool letters = IsAsciiLetter(c);
+      // Each weighs 1 at least: a run longer than what is left can't fit,
+      // and isn't read further.
+      const size_t left = max_weight - total;
+      size_t end = i;
+      while (end < s.size() && end - i <= left &&
+             (letters ? IsAsciiLetter(s[end]) : IsAsciiDigit(s[end]))) {
+        ++end;
+      }
+      const bool spelled = letters && Spelled(s.substr(i, end - i));
+      size_t w = 0;
+      for (size_t k = i; k < end && w <= left; ++k) {
+        w += letters ? LetterWeight(s[k], spelled) : kDigitWeight;
+      }
+      if (w <= left) {
+        total += w;
+        i = end;
+        continue;
+      }
+      // Too heavy: left whole for later, unless it comes first.
+      if (i == 0) {
+        while (i < end) {
+          const size_t each =
+              letters ? LetterWeight(s[i], spelled) : kDigitWeight;
+          if (i > 0 && total + each > max_weight) {
+            break;
+          }
+          total += each;
+          ++i;
+        }
+      }
+      break;
+    }
+    size_t length = 1;
+    size_t w = 1;
+    const unsigned char b = static_cast<unsigned char>(c);
+    if (b < 0x80) {
+      const bool plain = c == ' ' || c == '.' || c == ',' || c == ';' ||
+                         c == ':' || c == '!' || c == '?' || c == '\'' ||
+                         c == '"' || c == '(' || c == ')' || c == '-';
+      w = plain ? 1 : kSymbolWeight;
+    } else {
+      length = b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4;
+      length = std::min(length, s.size() - i);
+      uint32_t cp = b & (b < 0xE0 ? 0x1F : b < 0xF0 ? 0x0F : 0x07);
+      for (size_t k = 1; k < length; ++k) {
+        cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
+      }
+      w = NonAsciiWeight(cp);
+    }
+    if (i > 0 && total + w > max_weight) {
+      break;
+    }
+    total += w;
+    i += length;
+  }
+  if (weight) {
+    *weight = total;
+  }
+  return i;
+}
+
 // Whether the full stop at |dot| in |text| ends a sentence: not after an
 // abbreviation or a single letter ("U.S.", "J. R. R.").
 bool EndsSentence(std::string_view text, size_t dot) {
@@ -645,6 +786,12 @@ std::optional<std::string> SelectedText(const PageTree& tree,
   return text.empty() ? std::nullopt : std::optional<std::string>(text);
 }
 
+size_t SpokenLength(std::string_view text) {
+  size_t weight = 0;
+  SpokenPrefix(text, std::numeric_limits<size_t>::max(), &weight);
+  return weight;
+}
+
 size_t ReadingChunkChars(double rate) {
   if (!std::isfinite(rate) || rate <= 0) {
     rate = 1;
@@ -681,12 +828,20 @@ std::optional<ReadingChunk> ChunkAt(const ReadingDocument& document,
                                  block.sentences.end(),
                                  static_cast<uint32_t>(at.offset));
   size_t end = at.offset;
+  // What the sentences taken take to say, each measured once.
+  size_t spoken = 0;
   for (auto it = starts; it != block.sentences.end() || end < text.size();) {
     const size_t next = it != block.sentences.end() ? *it : text.size();
-    if (end > at.offset &&
-        CodePoints(text.substr(at.offset, next - at.offset)) > max_chars) {
+    // Read only as far as it could fit.
+    const std::string_view sentence = text.substr(end, next - end);
+    size_t more = 0;
+    if (SpokenPrefix(sentence, max_chars, &more) < sentence.size()) {
+      more = max_chars + 1;
+    }
+    if (end > at.offset && spoken + more > max_chars) {
       break;
     }
+    spoken += more;
     end = next;
     if (it == block.sentences.end()) {
       break;
@@ -694,9 +849,10 @@ std::optional<ReadingChunk> ChunkAt(const ReadingDocument& document,
     ++it;
   }
   // One sentence too long: cut at a word.
-  if (CodePoints(text.substr(at.offset, end - at.offset)) > max_chars) {
+  if (spoken > max_chars) {
     const size_t limit =
-        at.offset + OffsetOfChars(text.substr(at.offset), max_chars);
+        at.offset + SpokenPrefix(text.substr(at.offset, end - at.offset),
+                                 max_chars, nullptr);
     const size_t space = text.substr(at.offset, limit - at.offset).rfind(' ');
     end = space == std::string_view::npos || space == 0 ? limit
                                                         : at.offset + space + 1;

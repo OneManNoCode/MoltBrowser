@@ -129,6 +129,9 @@ class AutomationSecurity {
   // already on disk, else starts CASUAL. Only promoteTrust changes trust.
   // Nor does saving confirm a draft's sites: if |existing| is an
   // unconfirmed draft, so is |incoming| (only ConfirmDraftSites clears it).
+  // And a routine taught by voice that a save brings in (|incoming| has
+  // voice steps, |existing| is null or had none: an import, a copy) is
+  // saved as an unconfirmed draft, with no sites.
   static void ClampTrustForSave(Script& incoming, const Script* existing);
 
   // The user confirms the sites of an unconfirmed draft (a real click in

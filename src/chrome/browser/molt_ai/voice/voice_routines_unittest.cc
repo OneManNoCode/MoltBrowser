@@ -275,6 +275,44 @@ TEST(VoiceRoutinesTest, AHostileFileIsntRunByVoice) {
   EXPECT_FALSE(ReadRoutine(recorded).ok);
 }
 
+TEST(VoiceRoutinesTest, AnImportedRoutineRunsOnlyOnConfirmedSites) {
+  // A file that claims to be a routine the user taught, saved as an
+  // import or a copy is (molt://ai-automation, the Agent studio).
+  const BuiltRoutine built = BuildRoutine("voice_6", "my news", MyNews(), kNow);
+  ASSERT_TRUE(built.script);
+  Script imported = *Script::FromJSONString(built.script->ToJSONString());
+  imported.steps[0].target = "https://evil.example/";
+  automation::AutomationSecurity::ClampTrustForSave(imported, nullptr);
+  const ReadRoutineResult read = ReadRoutine(imported);
+  ASSERT_TRUE(read.ok);
+  EXPECT_TRUE(read.needs_sites_confirmed);
+  const automation::SecurityPolicy policy =
+      automation::AutomationSecurity::EffectivePolicy(imported);
+  EXPECT_FALSE(automation::AutomationSecurity().AllowNavigation(
+      policy, "https://evil.example/"));
+  // What voice mode saved itself runs as it is.
+  EXPECT_FALSE(ReadRoutine(*built.script).needs_sites_confirmed);
+}
+
+TEST(VoiceRoutinesTest, SitesAreConfirmedByVoiceOnlyWhenAllAreSaid) {
+  EXPECT_TRUE(RoutineSitesSayable({"www.youtube.com"}));
+  EXPECT_TRUE(RoutineSitesSayable({"news.example", "shop.example"}));
+  EXPECT_FALSE(RoutineSitesSayable({}));
+  // A site the prompt would shorten, or couldn't say.
+  EXPECT_FALSE(RoutineSitesSayable(
+      {"news.example", std::string(90, 'a') + ".evil.example"}));
+  EXPECT_FALSE(RoutineSitesSayable({"news.example", "[::1]"}));
+  EXPECT_FALSE(RoutineSitesSayable({"news.example", "!!!"}));
+  // More than the prompt says of its text: the last ones would go unsaid.
+  std::vector<std::string> many;
+  for (int i = 0; i < 20; ++i) {
+    many.push_back("site-number-" + std::to_string(i) + ".example");
+  }
+  EXPECT_FALSE(RoutineSitesSayable(many));
+  many.resize(5);
+  EXPECT_TRUE(RoutineSitesSayable(many));
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai

@@ -120,8 +120,10 @@ void NoteActivation(TabRecord& tab, int64_t now_ms);
 void NoteUserInput(TabRecord& tab);
 bool IsActing(const TabRecord& tab, int64_t now_ms);
 // The page added a session history entry (not a replacement, not a move
-// back or forward) at |now_ms|. Returns whether the entry it was added from
-// counts as skippable for voice mode's "go back" (above).
+// back or forward) by a navigation that began at |now_ms| (it may commit
+// later: a server that answers late doesn't make the page an action led to
+// one the page added on its own). Returns whether the entry it was added
+// from counts as skippable for voice mode's "go back" (above).
 bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms);
 
 // One question per action: once the user was asked about one of the page's
@@ -176,7 +178,9 @@ std::string_view DecisionName(Decision decision);
 
 // A host as the browser says and shows it: lower-case ASCII letters,
 // digits, dots and dashes only (anything else, and a leading "www.", is
-// dropped; IDNs stay in their xn-- form), at most kMaxSiteChars.
+// dropped; IDNs stay in their xn-- form), at most kMaxSiteChars. A longer
+// host is said from its end, whole labels where it can, so the registrable
+// domain that says whose site it is is always said.
 inline constexpr size_t kMaxSiteChars = 80;
 std::string SiteForSpeech(std::string_view host);
 

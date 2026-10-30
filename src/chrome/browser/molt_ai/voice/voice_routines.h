@@ -104,6 +104,14 @@ struct ReadRoutineResult {
 // The voice routine in |script|, read as untrusted.
 ReadRoutineResult ReadRoutine(const automation::Script& script);
 
+// Whether a routine's |sites| (AutomationSecurity::HostsReferencedBy())
+// can be confirmed by voice: the prompt that asks (the voice gesture's,
+// VoiceBrowserPrompts::ConfirmDraftSites()) says every one of them, each
+// in full as the browser says a site, within what a prompt says of its
+// text. Otherwise they're confirmed in the Agent studio, where they're
+// shown: the word confirms them all, so the user must have heard them all.
+bool RoutineSitesSayable(const std::vector<std::string>& sites);
+
 // The extra["voice"] of |step|'s command (the wire format), and back
 // (nullopt for anything invalid). Exposed for the tests and the fuzzer.
 base::DictValue VoiceCommandToDict(const RoutineStep& step);

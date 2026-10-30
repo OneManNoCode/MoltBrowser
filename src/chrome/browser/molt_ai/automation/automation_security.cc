@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/strings/string_util.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -213,6 +214,15 @@ void AutomationSecurity::ClampTrustForSave(Script& incoming,
       existing ? existing->security.trust : TrustLevel::CASUAL;
   if (existing && existing->security.sites_unconfirmed)
     incoming.security.sites_unconfirmed = true;
+  // A routine taught by voice that this save brings in (a new workflow, or
+  // one that had no voice steps: an import, a copy, an edit) is a draft:
+  // voice mode, which runs it, acts on no site of it until the user has
+  // confirmed them (automation_voice_steps.h). Only voice mode's own save
+  // of what the user said and did starts it confirmed.
+  if (HasVoiceSteps(incoming) && !(existing && HasVoiceSteps(*existing))) {
+    incoming.security.sites_unconfirmed = true;
+    incoming.security.domain_whitelist.clear();
+  }
 }
 
 // static
