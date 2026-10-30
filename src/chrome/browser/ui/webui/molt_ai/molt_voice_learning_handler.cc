@@ -16,6 +16,7 @@
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_ui.h"
 
 namespace {

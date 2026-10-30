@@ -336,15 +336,17 @@ std::optional<std::string> PersonalVocabulary::ApplyCorrections(
   }
   struct Rule {
     std::vector<std::string> words;
-    const VocabularyEntry* entry;
+    // Into |entries_|.
+    size_t entry = 0;
   };
   std::vector<Rule> rules;
-  for (const VocabularyEntry& entry : entries_) {
+  for (size_t index = 0; index < entries_.size(); ++index) {
+    const VocabularyEntry& entry = entries_[index];
     if (!entry.correction()) {
       continue;
     }
     Rule rule;
-    rule.entry = &entry;
+    rule.entry = index;
     size_t start = 0;
     while (start < entry.heard.size()) {
       size_t space = entry.heard.find(' ', start);
@@ -400,11 +402,11 @@ std::optional<std::string> PersonalVocabulary::ApplyCorrections(
       continue;
     }
     out.append(utterance.substr(copied, begin - copied));
-    out += applied->entry->phrase;
+    out += entries_[applied->entry].phrase;
     copied = end;
     changed = true;
     if (used) {
-      used->push_back(applied->entry->heard);
+      used->push_back(entries_[applied->entry].heard);
     }
     i += applied->words.size();
   }

@@ -258,6 +258,9 @@ source_set("browser_tests") {
     # Speaking: the bundled voice with a stand-in helper.
     ":voice_speech_browser_tests",
 
+    # Learning: routines by voice, corrections, nothing in MoltNet.
+    ":voice_learning_browser_tests",
+
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
 
@@ -732,6 +735,42 @@ source_set("voice_speech_browser_tests") {
 # Listening end to end but for the recognizer: Chromium's fake audio
 # capture, the real listener and resident sandbox, the stand-in helper.
 # Picked up by :browser_tests.
+# Learning from use (§6.8): a routine taught by voice on the fixture video
+# site and run again, a correction through the stand-in speech helper, and
+# nothing learned in a MoltNet window. Picked up by :browser_tests.
+source_set("voice_learning_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_learning_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_loop",
+    ":voice_session",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+
+  data_deps = [ ":molt_fake_speech_helper" ]
+}
+
 source_set("voice_session_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]

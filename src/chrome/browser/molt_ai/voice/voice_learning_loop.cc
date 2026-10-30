@@ -15,6 +15,7 @@
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech.h"
+#include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"

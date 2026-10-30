@@ -26,6 +26,7 @@
 #include <string_view>
 
 #include "base/check.h"
+#include "base/check_op.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
