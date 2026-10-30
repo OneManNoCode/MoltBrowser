@@ -22,6 +22,14 @@ int VoiceRatePercent(double rate) {
                  static_cast<double>(molt_voice::kMaxRatePercent)));
 }
 
+bool StoppedAnswering(size_t outstanding,
+                      uint64_t pushed_samples,
+                      uint64_t played_samples,
+                      int64_t since_progress_ms) {
+  return outstanding > 0 && played_samples >= pushed_samples &&
+         since_progress_ms >= kMaxAnswerGapMs;
+}
+
 VoiceEvent::VoiceEvent() = default;
 VoiceEvent::VoiceEvent(const VoiceEvent&) = default;
 VoiceEvent& VoiceEvent::operator=(const VoiceEvent&) = default;

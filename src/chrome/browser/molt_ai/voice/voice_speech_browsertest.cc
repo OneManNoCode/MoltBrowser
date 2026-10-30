@@ -30,10 +30,12 @@
 #include "base/path_service.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_bundled.h"
+#include "chrome/browser/molt_ai/voice/voice_speech_protocol.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -203,6 +205,25 @@ IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest,
   speech->Speak("Back again.", 1.0, true);
   ASSERT_TRUE(base::test::RunUntil([&]() { return !speech->speaking(); }));
   EXPECT_EQ(1u, tts_.spoken().size());
+}
+
+// A helper that never answers a request would keep voice mode speaking
+// (and so open to commands without the wake phrase) for good: it is ended
+// once it has sent nothing for kMaxAnswerGapMs, and the platform's voice
+// says what it didn't.
+IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest, AHelperThatStopsAnswering) {
+  // Longer than RunUntil()'s usual wait.
+  const base::test::ScopedRunLoopTimeout timeout(
+      FROM_HERE, base::Milliseconds(kMaxAnswerGapMs) + base::Seconds(30));
+  VoiceSpeech* speech = ReadySpeech();
+  const base::TimeTicks start = base::TimeTicks::Now();
+  speech->Speak("A silent answer.", 1.0, true);
+  EXPECT_TRUE(speech->speaking());
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !tts_.spoken().empty(); }));
+  EXPECT_GE(base::TimeTicks::Now() - start,
+            base::Milliseconds(kMaxAnswerGapMs));
+  EXPECT_EQ("A silent answer.", tts_.spoken()[0]);
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !speech->speaking(); }));
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest,

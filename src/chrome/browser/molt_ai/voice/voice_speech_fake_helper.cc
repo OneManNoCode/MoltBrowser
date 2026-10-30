@@ -15,6 +15,8 @@
 //     would.
 //   - A text with "garbage" in it: it writes AUDIO for a request that isn't
 //     being said, as a helper a hostile text took over might.
+//   - A text with "silent" in it: no AUDIO and no DONE for it, ever (it
+//     still reads what comes next).
 //   - CANCEL: nothing to do (each request is written at once).
 //   - SHUTDOWN or the end of input: exit 0. Anything malformed: an ERROR
 //     frame (code 3) and exit 2.
@@ -154,6 +156,9 @@ int main(int argc, char** argv) {
       size_t written = 0;
       Audio(id + 7, 100, &written);
       continue;
+    }
+    if (text.find("silent") != std::string::npos) {
+      continue;  // never answered
     }
     if (text.find_first_not_of(". ") == std::string::npos) {
       Done(id, 2, 0);
