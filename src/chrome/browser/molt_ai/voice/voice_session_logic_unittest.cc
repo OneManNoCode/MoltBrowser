@@ -812,6 +812,28 @@ TEST_F(VoiceSessionLogicTest, TheEchoTailAndOtherSpeechReachBackWithTheLag) {
   EXPECT_FALSE(logic_->OnWake(now_ + 9700, /*lag_ms=*/100).reset_helper);
 }
 
+// What the browser says is its own for as long as it speaks, however
+// long, and kSpokenMemoryMs after: a page title read late in a long answer
+// is still the browser's.
+TEST_F(VoiceSessionLogicTest, ALongAnswerIsRememberedWhileItIsSpoken) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  // One long chunk, noted when it was handed to the voice.
+  logic_->OnBrowserSaid("20 results. 17: Hey Molt fan club, live.", now_);
+  // Its title is read 40 s in.
+  SessionActions echo = logic_->OnWake(now_ + 40000);
+  EXPECT_TRUE(echo.reset_helper);
+  EXPECT_FALSE(echo.stop_speech);
+  // And in its echo tail, though it was noted a minute before.
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 60000);
+  EXPECT_TRUE(logic_->OnWake(now_ + 60000 + kEchoTailMs - 100).reset_helper);
+  // After that, the wake phrase is the user's.
+  EXPECT_FALSE(logic_->OnWake(now_ + 60000 + kEchoTailMs + 100).reset_helper);
+}
+
 // Voice mode's own voice where the microphone has no echo canceller: its
 // helper chooses what plays, so nothing heard then is a command but "stop".
 TEST_F(VoiceSessionLogicTest, TheOwnVoiceWithoutAnEchoCanceller) {

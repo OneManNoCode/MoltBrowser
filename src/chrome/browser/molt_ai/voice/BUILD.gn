@@ -1050,6 +1050,9 @@ source_set("voice_session_browser_tests") {
     ":voice_session",
     "//base",
     "//base/test:test_support",
+
+    # settings.json's writers, at the same time.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",

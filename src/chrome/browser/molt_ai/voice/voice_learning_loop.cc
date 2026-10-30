@@ -252,8 +252,9 @@ std::optional<VoiceCommand> VoiceLearningLoop::BeforePlanning(
   }
 
   // The corrections learned, applied; never to an answer, nor while one
-  // is asked for.
-  if (learn && !context.expecting_yes_no && command.kind != K::kYes &&
+  // is asked for (the loop's question, or a browser prompt's).
+  if (learn && !context.expecting_yes_no &&
+      controller_->state_.prompt.id == 0 && command.kind != K::kYes &&
       command.kind != K::kNo) {
     std::vector<std::string> used;
     if (std::optional<std::string> applied =

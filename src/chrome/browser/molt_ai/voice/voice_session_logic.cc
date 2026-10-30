@@ -401,7 +401,7 @@ SessionActions VoiceSessionLogic::OnBrowserSaid(std::string_view text,
                                                 int64_t now_ms) {
   said_.emplace_back(now_ms, SaidWords(text));
   while (said_.size() > kMaxSpokenTexts ||
-         (!said_.empty() && now_ms - said_.front().first > kSpokenMemoryMs)) {
+         (!said_.empty() && !SaidLately(said_.front().first, now_ms))) {
     said_.pop_front();
   }
   return Finish(SessionActions(), now_ms);
@@ -614,7 +614,7 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
         std::string_view(folded).substr(start, end - start);
     bool said = false;
     for (const auto& [when, words] : said_) {
-      if (now_ms - when <= kSpokenMemoryMs && HasWords(words, word)) {
+      if (SaidLately(when, now_ms) && HasWords(words, word)) {
         said = true;
         break;
       }
@@ -627,9 +627,16 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
   return true;
 }
 
+bool VoiceSessionLogic::SaidLately(int64_t noted_ms, int64_t at_ms) const {
+  if (activity_ == BrowserActivity::kSpeaking) {
+    return true;
+  }
+  return at_ms - std::max(noted_ms, speaking_ended_ms_) <= kSpokenMemoryMs;
+}
+
 bool VoiceSessionLogic::SaidWakePhrase(int64_t now_ms) const {
   for (const auto& [when, words] : said_) {
-    if (now_ms - when > kSpokenMemoryMs) {
+    if (!SaidLately(when, now_ms)) {
       continue;
     }
     for (const std::string& phrase : settings_.wake_phrases) {

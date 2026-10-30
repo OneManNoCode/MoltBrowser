@@ -1554,6 +1554,12 @@ extension enablement and `MediaRouterEnabled()`).
   is read with the site only ("Save your password for localhost?"), and
   "not now" closes it. If the download test finds no bubble controller in
   the test window, it still passes through the same record and command.
+- [ ] settings.json's writers (voice-hardening):
+  `MoltSettingsFileBrowserTest.WritersAtTheSameTimeKeepEachOthersKeys` (in
+  `voice_session_browsertest.cc`). *Expected:* passes on macOS and Linux:
+  voice mode's switches and speech rate, and another key posted from a
+  worker, written at the same time over a file with `max_tokens`, all end
+  up in the file with `max_tokens` kept.
 - [ ] Voice mode's own voice's browser tests (bundled-voice): the real
   `BundledVoice` starts the stand-in helper `molt_fake_voice_helper`
   (built next to `browser_tests`) under the real resident sandbox and

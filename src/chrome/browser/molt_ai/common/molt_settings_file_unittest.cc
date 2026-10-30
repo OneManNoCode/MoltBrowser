@@ -42,7 +42,8 @@ class MoltSettingsFileTest : public testing::Test {
     return contents;
   }
   base::DictValue Parsed() {
-    std::optional<base::Value> parsed = base::JSONReader::Read(Contents());
+    std::optional<base::Value> parsed =
+        base::JSONReader::Read(Contents(), base::JSON_PARSE_RFC);
     EXPECT_TRUE(parsed && parsed->is_dict());
     return parsed && parsed->is_dict() ? std::move(parsed->GetDict())
                                        : base::DictValue();

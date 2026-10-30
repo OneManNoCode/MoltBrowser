@@ -119,7 +119,9 @@ inline constexpr int64_t kEchoTailMs = 700;
 // A final after the end of speech, and an utterance's longest.
 inline constexpr int64_t kFinalGraceMs = 2000;
 inline constexpr int64_t kMaxUtteranceMs = 30000;
-// What the browser said, kept to recognize its own wake phrase.
+// What the browser said, kept to recognize its own wake phrase: for as
+// long as it speaks, and this long after its speech ended (or after it was
+// noted, if later).
 inline constexpr int64_t kSpokenMemoryMs = 20000;
 inline constexpr size_t kMaxSpokenTexts = 32;
 // An utterance without the wake phrase while a page plays sound.
@@ -319,6 +321,11 @@ class VoiceSessionLogic {
   // Whether every word of |text| is among what the browser said lately:
   // its own voice heard back.
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
+  // Whether what the browser noted at |noted_ms| may still be heard at
+  // |at_ms|: while it speaks (a long answer, or reading aloud, can last far
+  // longer than kSpokenMemoryMs), and kSpokenMemoryMs after the later of
+  // its noting and the end of its speech.
+  bool SaidLately(int64_t noted_ms, int64_t at_ms) const;
   // A command may interrupt the browser's own voice now.
   bool BargeInOpen() const;
   // Whether |utterance|, taken with |confidence|, was heard cleanly (the
