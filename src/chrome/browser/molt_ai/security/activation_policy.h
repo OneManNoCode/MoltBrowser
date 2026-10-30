@@ -3,7 +3,7 @@
 //
 // What a page may do with the user activation an agent's or voice mode's
 // accessibility action gives it (docs/design/TOUCHLESS_BROWSING.md §7.5,
-// docs/design/AGENT_ACTIONS.md §2.10.9).
+// docs/design/AGENT_ACTIONS.md §2.10.8).
 //
 // Blink at 156 takes the accessibility actions voice mode and the web agent
 // send (kDoDefault, kFocus, kIncrement, kDecrement) as the user's own

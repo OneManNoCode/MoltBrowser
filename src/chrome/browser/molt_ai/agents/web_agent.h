@@ -94,7 +94,7 @@
 // mode's own hold on the tab stays.
 //
 // The activation guard (molt_ai/security/activation_guard.h,
-// docs/design/AGENT_ACTIONS.md §2.10.9): those accessibility actions give
+// docs/design/AGENT_ACTIONS.md §2.10.8): those accessibility actions give
 // the page user activation. While the run holds the page it is the tab's
 // asker (unless voice mode is on the tab, which asks itself): a new window,
 // a download or another app the page tries with that activation is held and

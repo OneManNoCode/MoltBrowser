@@ -864,6 +864,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `molt_ai/voice/voice_audio.cc` (its own `media::AudioInputIPC` passing a `media::mojom::AudioProcessingConfig` to `AudioStreamFactory::CreateInputStream`, under `media::AudioInputDevice`; `audio::OutputDevice` for the earcons; `system_permission_settings::IsDenied/CanPrompt/Request`), `voice_listener.cc` (dedicated `ThreadPool` single-thread runners, `ReleaseSoon`), `voice_session.cc` (`content::MediaSession::StartDucking()`, `GetAllBrowserWindowInterfaces()`), `voice_speech.cc` (`TtsController::RemoveUtteranceEventDelegate()` and `IsSpeaking()`; utterances that never clear the queue), `common/helper_resident_{posix,win}.cc` (Windows: `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION`, `StartupInformationHelper` with a stdin handle), `ui/views/molt_ai/voice/voice_toolbar_button.cc`, the `toolbar_view.cc` hook, `molt_voice_settings_handler.cc` | type-checked against 156's headers here; what only the build shows: the audio service accepting a processing config from the browser process for a 16 kHz mono 10 ms stream, the GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to the overlay (`//chrome/browser/ui/views/molt_ai/voice:overlay`) and from the toolbar to `:voice_session` | speech-session |
 
 | `agents/web_agent.cc` (the page map path: `VoicePageController::CreateForWebContents()` and its `Start(Holder)`/`Stop(Holder)`, `AddTreesUpdatedCallback()`, `base::OneShotTimer`, `RenderFrameHost::GetLastCommittedURL()`; the testing model), `agents/voice_agent_planner.cc` (`base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `SequencedTaskRunner::DeleteSoon` of a `std::unique_ptr<WebAgent>`, `web_ai::PickWebModel`), `voice/voice_page_controller.cc` (`Inspect()`: `ui::AXNode::parent()`, `GetRole()`; `SelectOption()`: `kDoDefault` on an option), `voice/voice_controller.cc` (it is now a `VoicePlanner::Delegate`), `ui/webui/molt_ai/molt_ai_chat_handler.cc` (`observed_with`), `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-agent-page-map`); the new GN edges `//chrome/browser/molt_ai/voice:voice_controller` → `//chrome/browser/molt_ai:molt_ai_agents`, `molt_ai_agents` → `voice:voice_page`, `voice:voice_planner`, `voice:page_map`, `web_ai:logic`, `agents:agent_page_map`, `agents:voice_agent_speech`, and `voice:browser_tests` → `agents:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges above in `gn gen` (no cycle through `//chrome/browser/profiles` or the overlay), and §5.1's browser tests | agent-pagemap |
+| `security/activation_guard.cc` (new: a `WebContentsUserData` that is a `WebContentsObserver` (`DidGetUserInteraction()`, `FrameReceivedUserActivation()`), a `blocked_content::UrlListManager::Observer` and a `permissions::PermissionRequestManager::Observer`; `PopupBlockerTabHelper::ShowBlockedPopup()`, `PermissionRequestManager::Dismiss(PromptOptions(std::monostate()))`, `blink::kActivationLifespan`, `blink::WebKeyboardEvent`); the hooks in `chrome_content_browser_client.cc` (`CanCreateWindow()`; `HandleExternalProtocol()`: `base::BindOnce(&LaunchURL, ...)` with a typed null `out_factory`; `IsClipboardCopyAllowedByPolicy()`: `ClipboardEndpoint::web_contents()`), `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (imported: `OpenURLFromTab()` copies its `OpenURLParams`, `CanEnterFullscreenModeForTab()`) and `download/chrome_download_manager_delegate.cc` (imported: `CheckDownloadAllowed()` wraps its callback); `voice/voice_page_controller.cc` (`Press(handle, intent)`), `voice/voice_controller.cc` and `agents/web_agent.cc` (now `ActivationGuard::Asker`s); the new GN edges `//chrome/browser/molt_ai:core_hooks`, `//chrome/browser/ui/browser_web_contents_delegate`, `//chrome/browser/download:impl`, `voice:voice_page`, `voice:voice_controller` and `molt_ai_agents` → `security:activation_guard` (→ `//components/blocked_content`, `//components/permissions`), `voice:voice_loop` → `security:activation_policy`, and `voice:browser_tests` → `security:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen` (no cycle from `//chrome/browser/ui` or `//chrome/browser/download` through the guard), and §5.1's browser tests | activation-guard |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1188,6 +1189,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `VoiceListenerProtocolTest.*` (frames, CONFIG, the helper's lines refused or taken, hotwords), `VoiceSessionLogicTest.*` and `VoiceSessionCommandsTest.*` (wake phrase, follow-up window, always listening, barge-in, "stop", the browser's own voice, a page's speech, crashes), `VoiceAudioSamplesTest.*` (frames, earcons), `CpuUsageWindowTest.*`, `ProcStatTest.*`, `ResidentHelperTest.*` (the resident sandbox with the stand-in helper: reads only its model directory, writes nothing, no network, no process, its limits, its pipes, dies with the browser; Linux and macOS) and `HelperSandboxWinPolicyTest.Resident*`; all built standalone here, `ResidentHelperTest.*` against this machine's kernel | speech-session |
   | `SpeechFrameReaderTest.*`, `SpeechConfigTest.*`, `SpeechTextTest.*`, `SpeechEventsTest.*`, `SpeechListenerTest.*` (std only, built standalone here under ASan and UBSan: the speech helper's frames, CONFIG's strict JSON, hotword cleaning and the wake phrase's word pieces, the event lines, and the listening states against fake engines) | speech-helper |
   | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
+  | `ActivationPolicyTest.*` (when a tab acts for voice mode or the agent, and every decision: new windows, downloads, other apps, permission prompts, full screen, clipboard writes; the words said), `VoiceControllerLogicTest.ThePagesRequestsWaitForASpokenYes` and the intents of the "full screen" and play presses; all built standalone here (ASan and UBSan) | activation-guard |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1366,6 +1368,36 @@ extension enablement and `MediaRouterEnabled()`).
   If `SearchesChoosesAndPlays` fails on a missing element, send the log
   with the prompts (`--vmodule=web_agent=1`): the page map's names for the
   fixture's controls may differ from what the scripted model looks for.
+- [ ] The activation guard's browser tests (activation-guard): a page
+  that uses the user activation of whatever clicks it
+  (`chrome/test/data/molt_voice/activation.html`, new, with `offer.html`
+  and `report.txt`), a scripted model and a fake TTS platform. In the same
+  `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='ActivationGuardBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/activation-guard-browser-tests.log
+  ```
+  *Expected:* all 5 pass, on macOS and Linux:
+  - `AnAgentsClickOpensNoOtherSiteUnasked`: the agent presses "Open
+    offer"; the page's `window.open` to `ads.test` gets null, the run is
+    asked ("PAGE_REQUEST: The page tried to open a new window to
+    ads.test.") while there is still one tab, and "Allow" opens it.
+  - `VoiceModesDownloadClickIsAsked`: "click download report" is held and
+    asked ("Say yes to download it, or no to cancel."), no download starts
+    until "yes", then one does.
+  - `APersonsOwnClickIsUnchanged`: after an agent's action, a real mouse
+    click on "Open offer" opens the tab, and nothing is asked.
+  - `APromptAfterAVoiceClickIsNotGrantedSilently`: the location prompt
+    after voice mode's click is dismissed and said, the page gets an error,
+    and the site's location setting stays "ask".
+  - `FullScreenOnlyWhenAskedFor`: refused and said after a plain press,
+    allowed after a press for "full screen".
+
+  If the prompt test fails because no prompt was shown, check the
+  geolocation prompt reaches `PermissionRequestManager` in this setup
+  (`localhost` is a secure context); if the full-screen test times out,
+  send the log: the page's `requestFullscreen()` promise waits for the
+  window to change.
 - [ ] Voice mode listening's browser tests (speech-session): Chromium's
   fake audio capture feeds the real microphone path (Chrome-wide echo
   cancellation) and the real listener starts the stand-in helper
@@ -1448,6 +1480,7 @@ pass except where the table below says otherwise (verify the filters).
 | `unit_tests` | `ChromeBrowsingDataRemoverDelegateTest.*:ProfileResetterTest.*` | #32 |
 | `unit_tests` | `AboutFlagsTest.*:AboutFlagsHistogramTest.*` | #39, #45, #47 |
 | `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*:NetInfo*:*NetworkInformation*:LazyLoad*:FrameFetchContext*` | #20, #27, #33, #37, network quality |
+| `browser_tests` | `*PopupBlocker*:DownloadTest.*:*ExternalProtocol*:*Fullscreen*:*Clipboard*` (none of them makes a voice mode or agent action, so the guard changes nothing for them) | activation-guard |
 | `blink_unittests` | `*MediaQuery*:*WebViewTest*:*OverlayScrollbar*` | fingerprinting 156 |
 | `blink_unittests` | `AudioContext*:BaseAudioContext*:*ScriptProcessor*:*RealtimeAudioDestination*:*EncryptedMedia*:*MediaKey*:MediaCapabilities*:*VideoDecoder*:*VideoEncoder*:*DecoderTemplate*` (normal windows: the hooks only act in MoltNet) | fp-media |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
@@ -1951,6 +1984,8 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   (page-map adds `molt_page_map_fuzzer`)
   (speech-helper adds `molt_speech_protocol_fuzzer`; agent-pagemap adds
   `molt_agent_page_map_fuzzer`)
+  (activation-guard adds a seed and the guard's questions to
+  `molt_voice_controller_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2437,6 +2472,35 @@ agent-pagemap; `docs/design/AGENT_ACTIONS.md` §2.10,
   "I can't do that by myself yet: no on-device AI model is installed..."
 - [ ] A MoltNet window: the agent's run takes no accessibility mode
   (`chrome://accessibility` shows the tab without it) and works as before.
+
+**What a page does with voice mode's and the agent's clicks** (from
+activation-guard; `docs/design/TOUCHLESS_BROWSING.md` §7.5,
+`docs/design/AGENT_ACTIONS.md` §2.10.8):
+
+- [ ] Voice mode on a site whose links open another site in a new tab, or
+  that opens pop-unders on a click (a news or download site with ads):
+  "click" such a link or button. *Expected:* no tab opens by itself;
+  "The page tried to open a new window to <site>. Say yes to open it, or
+  no to cancel."; "yes" opens it as a new tab, "no" or anything else
+  doesn't (the blocked pop-up icon in the address bar still lists it).
+- [ ] Voice mode on a page with a download link: "click download ...".
+  *Expected:* asked first; the file downloads only after "yes".
+- [ ] Voice mode on a page with a `mailto:` link: asked first; "yes" opens
+  your mail app (or Chrome's prompt for it).
+- [ ] A site that asks for your location or notifications when you press
+  a button, pressed by voice. *Expected:* "The page asked for location
+  permission. I can't take an answer to that by voice yet, so I turned it
+  down."; the site's settings (page info) still say "Ask".
+- [ ] YouTube by voice: "play" a video, then "full screen". *Expected:*
+  full screen works; a site that goes full screen on a plain click
+  (without "full screen" or "play") is stopped, and voice mode says so.
+- [ ] The AI chat's agent on a page whose button opens another site in a
+  new tab (`chrome://flags/#molt-agent-page-map` on). *Expected:* a "The
+  page tried this" chip in the run, with Allow and Deny; the run goes on
+  either way; Allow opens the tab.
+- [ ] After either, click a link that opens a new tab yourself, with the
+  mouse: it opens at once, as always.
+- [ ] A MoltNet window: nothing changes (no voice mode, no page map).
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
