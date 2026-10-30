@@ -278,9 +278,9 @@ void CheckObservation(const PageMapInput& input,
     // Found again on the same page, as before every action.
     CHECK_EQ(molt_ai::agent_page_map::FindLiveItem(e, map), item);
   }
-  CHECK(JsonSchemaToGrammar(
+  CHECK(molt_ai::JsonSchemaToGrammar(
             molt_ai::agent_actions::BuildActionSchema(out.observation))
-            .status == SchemaGrammarStatus::kOk);
+            .status == molt_ai::SchemaGrammarStatus::kOk);
 }
 
 void CheckReply(std::string_view reply,
