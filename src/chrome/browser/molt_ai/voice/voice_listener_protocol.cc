@@ -1183,7 +1183,12 @@ HelperEventSequence::HelperEventSequence() = default;
 
 bool HelperEventSequence::Accept(const HelperEvent& event,
                                  int64_t resets_sent) {
+  // The helper exits after an `error`: nothing follows it.
+  if (errored_) {
+    return false;
+  }
   if (event.type == HelperEventType::kError) {
+    errored_ = true;
     return true;
   }
   if (event.type == HelperEventType::kReady) {
@@ -1236,6 +1241,32 @@ bool HelperEventSequence::Accept(const HelperEvent& event,
       break;
   }
   return false;
+}
+
+HelperFailureCount::HelperFailureCount() = default;
+
+void HelperFailureCount::Clear() {
+  failures_ = 0;
+  ready_ms_ = -1;
+}
+
+void HelperFailureCount::OnStarted() {
+  ready_ms_ = -1;
+}
+
+void HelperFailureCount::OnReady(int64_t now_ms) {
+  ready_ms_ = now_ms;
+}
+
+int HelperFailureCount::OnEnded(int64_t now_ms) {
+  if (ready_ms_ >= 0 && now_ms - ready_ms_ >= kStableRunMs) {
+    failures_ = 0;
+  }
+  ready_ms_ = -1;
+  if (failures_ < kMaxFailures) {
+    ++failures_;
+  }
+  return failures_;
 }
 
 }  // namespace voice

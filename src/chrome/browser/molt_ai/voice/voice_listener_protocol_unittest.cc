@@ -579,6 +579,12 @@ TEST(VoiceListenerProtocolTest, SequencesThatDont) {
   EXPECT_FALSE(Accepts({kReady, kStart, kEnd, kEnd}));
   EXPECT_FALSE(Accepts({kReady, kStart, kEnd, kStart}));  // final first
   EXPECT_FALSE(Accepts({kReady, kWake, kStart, kEnd, kFinal, kFinal}));
+  // The helper exits after an error: nothing follows it, not another one.
+  EXPECT_FALSE(Accepts({kError, kError}));
+  EXPECT_FALSE(Accepts({kError, kReady}));
+  EXPECT_FALSE(Accepts({kReady, kError, kError}));
+  EXPECT_FALSE(Accepts({kReady, kError, kWake}));
+  EXPECT_FALSE(Accepts({kReady, kWake, kStart, kError, kEnd}));
 }
 
 TEST(VoiceListenerProtocolTest, SequenceEpochsAndTimes) {
@@ -611,6 +617,66 @@ TEST(VoiceListenerProtocolTest, SequenceEpochsAndTimes) {
   ASSERT_TRUE(sequence.Accept(Event(kWake, 1, 700), 2));
   EXPECT_FALSE(HelperEventSequence(sequence).Accept(Event(kFinal, 2, 800), 2));
   EXPECT_TRUE(sequence.Accept(Event(kWake, 2, 800), 2));
+}
+
+// ---- Failures in a row -----------------------------------------------------
+
+constexpr int64_t kMinute = 60000;
+constexpr int64_t kHour = 60 * kMinute;
+
+TEST(VoiceListenerProtocolTest, FailuresInARowGiveUp) {
+  HelperFailureCount count;
+  count.Clear();
+  // Crashes before it got ready, or soon after.
+  count.OnStarted();
+  EXPECT_EQ(count.OnEnded(1000), 1);
+  EXPECT_FALSE(count.exhausted());
+  count.OnStarted();
+  count.OnReady(5000);
+  EXPECT_EQ(count.OnEnded(5000 + kMinute - 1), 2);
+  EXPECT_FALSE(count.exhausted());
+  count.OnStarted();
+  EXPECT_EQ(count.OnEnded(kHour), 3);
+  EXPECT_TRUE(count.exhausted());
+  // Voice mode turned on again: a fresh count.
+  count.Clear();
+  EXPECT_EQ(count.failures(), 0);
+  EXPECT_FALSE(count.exhausted());
+}
+
+TEST(VoiceListenerProtocolTest, AStableRunStartsTheCountAfresh) {
+  // Every end counts the same, whatever ended it (a limit, a protocol
+  // error, a stall): a helper that ran a minute after its `ready` and then
+  // ended, three times hours apart, never makes voice mode give up.
+  HelperFailureCount count;
+  count.Clear();
+  int64_t now = 0;
+  for (int run = 0; run < 10; ++run) {
+    count.OnStarted();
+    count.OnReady(now += 4000);
+    EXPECT_EQ(count.OnEnded(now += 3 * kHour), 1) << run;
+    EXPECT_FALSE(count.exhausted()) << run;
+  }
+  // Exactly kStableRunMs is a stable run.
+  count.OnStarted();
+  count.OnReady(now += 1000);
+  EXPECT_EQ(count.OnEnded(now + HelperFailureCount::kStableRunMs), 1);
+}
+
+TEST(VoiceListenerProtocolTest, OnlyTheCurrentHelpersReadyCounts) {
+  HelperFailureCount count;
+  count.Clear();
+  // Ready long ago, then ended: the next helper never got ready, so its
+  // end isn't a stable run's.
+  count.OnStarted();
+  count.OnReady(0);
+  EXPECT_EQ(count.OnEnded(kHour), 1);
+  count.OnStarted();
+  EXPECT_EQ(count.OnEnded(2 * kHour), 2);
+  count.OnStarted();
+  count.OnReady(2 * kHour + 4000);
+  EXPECT_EQ(count.OnEnded(2 * kHour + 5000), 3);
+  EXPECT_TRUE(count.exhausted());
 }
 
 }  // namespace

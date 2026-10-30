@@ -224,6 +224,21 @@ TEST_F(ResidentHelperTest, StartsNoOtherProcess) {
 }
 
 #if BUILDFLAG(IS_LINUX)
+// Signals go to the helper itself only, on every kernel (the seccomp
+// filter; Landlock's scoping too from ABI 6), and abort() still works.
+TEST_F(ResidentHelperTest, SignalsOnlyItself) {
+  const std::string output = Output({"signals"});
+  EXPECT_TRUE(output.starts_with("SELF 5 5\n")) << output;
+  for (std::string_view way :
+       {"kill", "everyone", "tgkill", "tkill", "sigqueue", "tgsigqueue",
+        "pidfd", "owner", "limits"}) {
+    EXPECT_NE(output.find(std::string(way) + " DENIED "), std::string::npos)
+        << way << ": " << output;
+  }
+  EXPECT_EQ(output.find("SENT"), std::string::npos) << output;
+  EXPECT_EQ(Output({"abort"}), "ABORTED\n");
+}
+
 TEST_F(ResidentHelperTest, ResourceLimits) {
   policy_.max_memory_bytes = uint64_t{512} << 20;
   const std::string output = Output({"limits"});

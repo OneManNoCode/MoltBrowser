@@ -64,11 +64,17 @@ sandbox's tests on the real kernel, the agent page map's unit tests
 built standalone on the `//url` stand-ins, the voice listener fuzzer
 (four minutes after the fixes), `molt_fuzz.py check`; the changed C++ was
 compiled against Chromium 156's headers; the tests that need Chromium run
-on the build machine.
+on the build machine. The fixes made later in the round were tested the
+same way, and also with the seccomp filter alone (as on a kernel whose
+Landlock doesn't scope signals): the helper sandbox's tests in a child
+confined by it, and the speech helper's 21 protocol checks under it; the
+speech helper's own unit tests and fuzzer, and its Linux build checked
+with `readelf`.
 
 **Findings.** 16: 9 low and 7 informational (wording, defence in depth,
-performance, or what later phases of the design cover). Fixed: four of
-the low; the others are tracked privately.
+performance, or what later phases of the design cover). Fixed: six of
+the low and three of the informational; the others are tracked
+privately.
 
 **Fixed.**
 
@@ -94,6 +100,35 @@ the low; the others are tracked privately.
   the page's URLs of its choosing, with its buttons) is left out like the
   frame around it, and refused at action time (`agents/web_agent.cc`,
   `agent_page_map.cc`, `voice/voice_page_controller.cc`).
+- On Linux the helpers' seccomp filter keeps their signals to the helper
+  itself, its threads and its process group on every kernel, as Landlock
+  does from ABI 6 (Linux 6.12): `kill()`, `tgkill()` and the `sigqueue`
+  calls name the helper's own process ID, which the child writes into its
+  copy of the filter after `fork()`; `tkill()` and `pidfd_send_signal()`
+  are refused (glibc's `raise()`, `abort()` and `pthread_kill()` use
+  `tgkill()`); a file's owner for `SIGIO` and `SIGURG` can only be the
+  helper; and `prlimit64()` changes only its own limits
+  (`common/helper_sandbox_linux.cc`).
+- The voice listener counts a speech helper that ran a minute after it was
+  ready as a fresh start however it ended (a limit, a protocol error, a
+  stall), not only when it exited, so failures hours apart don't add up
+  to giving up (`voice/voice_listener.cc`, `HelperFailureCount` in
+  `voice_listener_protocol.cc`).
+- The speech helper exits after an `error` line (SPEECH_HELPER_PROTOCOL.md
+  §3.7): the browser now ends it at the first, passed on once to the log,
+  and refuses any line after one, so a helper that writes errors and
+  carries on is restarted with the backoff like a crash
+  (`voice/voice_listener.cc`, `voice_listener_protocol.cc`).
+- The speech helper's frame reader and CONFIG parser are built with the
+  program's hardening (stack protector, `_FORTIFY_SOURCE`, stack clash
+  protection where the compiler has it, a position-independent
+  executable; Control Flow Guard on Windows), whatever the toolchain's
+  defaults (`voice/speech_helper/CMakeLists.txt`).
+- The speech helper rebuilds its wake-phrase spotter only when the wake
+  phrases change, not at every CONFIG, which carries them each time the
+  follow-up window opens or closes: such a CONFIG took 0.8 s here, during
+  which the helper read no audio, and now takes 0.1 ms
+  (`voice/speech_helper/listener.cc`).
 
 **Tests added.**
 
@@ -114,6 +149,21 @@ the low; the others are tracked privately.
   another site's frame is refused at action time.
   `agent_page_map_browsertest.cc`: the same widget listed when the page
   embeds it, and left out when another site's frame does.
+- `helper_sandbox_unittest.cc`: the seccomp filter's verdicts for each
+  signal call and owner command, its own-ID slots; a child confined by the
+  seccomp filter alone (as on a kernel without Landlock's signal scoping)
+  can't signal its parent in any of those ways, still signals itself and
+  still ends with `SIGABRT` on `abort()`; the stand-in helper (new
+  `signals` and `abort` actions) under the short-lived sandbox.
+  `helper_resident_unittest.cc`: the same under the resident one.
+- `voice_listener_protocol_unittest.cc`: nothing after an `error`; the
+  failure count, its fresh start after a stable run and its giving up.
+  The voice listener fuzzer checks that nothing follows an accepted
+  `error`. `voice_session_browsertest.cc`: a helper that writes `error`
+  lines and carries on is ended three times, then voice mode gives up.
+- `speech_helper/listener_unittest.cc`: CONFIGs with the same wake phrases
+  keep the spotter (a wake phrase heard across one still wakes it); new
+  ones rebuild it.
 
 ## 2026-10-29: PR #80 (October 2026)
 

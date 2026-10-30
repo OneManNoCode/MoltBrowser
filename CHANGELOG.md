@@ -494,6 +494,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   refused, and voice mode turns down permission prompts it can't yet
   answer by voice and says so. Your own clicks work as before, and MoltNet
   windows are unchanged (`docs/design/TOUCHLESS_BROWSING.md` §7.5).
+- Hardening (security review of rounds 38 and 39, continued): on Linux the
+  OCR, voice and speech helpers can signal only themselves on every
+  kernel, as they already could where the kernel's Landlock scopes
+  signals (6.12 and later); voice mode's (preview) speech helper is
+  stopped and restarted when it reports an error, keeps listening after
+  an occasional failure once it has run a minute, is built with the same
+  compiler hardening throughout, and reloads its wake-phrase model only
+  when the wake phrase changes.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

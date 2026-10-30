@@ -10,7 +10,7 @@
 //      event ParseHelperLine() accepts has clean text within its caps and a
 //      confidence in 0..1, and a line is refused the same way twice; the
 //      events also go through HelperEventSequence, which accepts nothing
-//      but an error before `ready`;
+//      but an error before `ready`, and nothing after an error;
 //   1  the bytes are page text: ReduceSpeechPhrase() gives only ASCII
 //      letters and digits, apostrophes inside words and single spaces,
 //      within the caps, and
@@ -118,6 +118,7 @@ void CheckEvent(const HelperEvent& event) {
 void FuzzStream(std::string_view data) {
   HelperLineReader reader;
   HelperEventSequence sequence;
+  bool errored = false;
   int64_t resets = 0;
   size_t pos = 0;
   while (pos < data.size()) {
@@ -139,8 +140,12 @@ void FuzzStream(std::string_view data) {
         CheckEvent(parsed.event);
         CHECK(parsed.event.text == again.event.text);
         const bool was_ready = sequence.ready();
-        if (sequence.Accept(parsed.event, resets) &&
-            parsed.event.type != HelperEventType::kError) {
+        const bool accepted = sequence.Accept(parsed.event, resets);
+        // Nothing follows an error: the helper exits after one.
+        CHECK(!(accepted && errored));
+        errored = errored || (accepted && parsed.event.type ==
+                                              HelperEventType::kError);
+        if (accepted && parsed.event.type != HelperEventType::kError) {
           CHECK(sequence.ready());
           CHECK(was_ready || parsed.event.type == HelperEventType::kReady);
         }

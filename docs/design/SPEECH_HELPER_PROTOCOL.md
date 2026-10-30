@@ -116,7 +116,10 @@ is cased, as the screen is.
 - `wake_phrases` and `wake_required` apply at once while the helper waits
   for a wake phrase or for speech. An utterance already being recognized
   finishes first, and a `wake` already heard is still answered by its
-  `final`. New wake phrases rebuild the spotter (about 0.1 s).
+  `final`. New wake phrases rebuild the spotter, reloading its model
+  (0.8 s on the server of §8, during which the helper reads no input); a
+  CONFIG whose wake phrases are the ones in use, as every CONFIG the
+  browser sends carries them, keeps it (0.1 ms).
 - `hotwords` apply from the next utterance; `vad_silence_ms` from the next
   time the helper is waiting (it rebuilds the voice activity detector).
 
@@ -237,6 +240,10 @@ Then the helper exits with status 2. Codes:
 
 The message is printable ASCII, at most 200 bytes, for logs. It never
 echoes the browser's input (it may give a number: a length, a byte offset).
+
+Nothing follows an `error`. The browser logs the first, ends the helper
+at once (as a failure: it is restarted, with the backoff of §3.8) and
+treats any line after one as a protocol error.
 
 ### 3.8 Exit status
 
