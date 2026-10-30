@@ -323,7 +323,8 @@ void SiteHints::Age(int64_t now) {
 
 bool SiteHints::Restore(SiteHint hint) {
   if (hints_.size() >= kMaxHintedSites || hint.last_used < 0 ||
-      HintHost(hint.host) != hint.host || Find(hint.host)) {
+      hint.host.empty() || HintHost(hint.host) != hint.host ||
+      Find(hint.host)) {
     return false;
   }
   for (const SitePart part : {SitePart::kSearchField, SitePart::kResultList,

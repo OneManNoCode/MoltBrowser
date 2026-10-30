@@ -452,6 +452,47 @@ fuzzer_test("molt_voice_controller_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# What voice mode learned, as files (docs/design/TOUCHLESS_BROWSING.md §6.8):
+# routines as Agent-mode workflows (voice_routines) and the personal words
+# and site hints (voice_learning_store), both read back as untrusted.
+# base::Value and GURL only: molt_ai_unittests links it; fuzzed by
+# molt_voice_learning_fuzzer.
+source_set("voice_learning_store") {
+  sources = [
+    "voice_learning_store.cc",
+    "voice_learning_store.h",
+    "voice_routines.cc",
+    "voice_routines.h",
+  ]
+
+  public_deps = [
+    ":voice_loop",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+  ]
+
+  deps = [
+    # Secret-looking values and addresses (agent_draft::TextLooksSecret()).
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+    "//url",
+  ]
+}
+
+# The learning file and a routine's .molt as anything on the machine may
+# have written them, and corrections applied to any utterance. See
+# docs/FUZZING.md.
+fuzzer_test("molt_voice_learning_fuzzer") {
+  sources = [ "molt_voice_learning_fuzzer.cc" ]
+  deps = [
+    ":voice_learning_store",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+  ]
+  dict = "dicts/voice_learning.dict"
+  seed_corpus = "corpus/molt_voice_learning_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("voice_loop_unit_tests") {
   testonly = true
@@ -459,7 +500,9 @@ source_set("voice_loop_unit_tests") {
     "voice_candidates_unittest.cc",
     "voice_controller_logic_unittest.cc",
     "voice_hints_unittest.cc",
+    "voice_learning_store_unittest.cc",
     "voice_routines_logic_unittest.cc",
+    "voice_routines_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
     "voice_speech_text_unittest.cc",
@@ -468,7 +511,10 @@ source_set("voice_loop_unit_tests") {
 
   deps = [
     ":page_map_test_support",
+    ":voice_learning_store",
     ":voice_loop",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
 
     # Every URL the loop builds passes agent_safety's navigation check.
     "//chrome/browser/molt_ai/security:agent_safety",

@@ -194,6 +194,9 @@ TEST(VoiceHintsTest, RestoresOnlyValidHints) {
   bad.last_used = -5;
   EXPECT_FALSE(hints.Restore(bad));
   bad.last_used = kNow;
+  bad.host.clear();  // no host
+  EXPECT_FALSE(hints.Restore(bad));
+  bad.host = "example.com";
   EXPECT_TRUE(hints.Restore(bad));
   EXPECT_EQ(HintHost("Sub.Example.COM"), "sub.example.com");
   EXPECT_EQ(HintHost("exa_mple.com"), "");
