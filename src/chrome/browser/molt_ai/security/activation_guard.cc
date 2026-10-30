@@ -199,9 +199,20 @@ void ActivationGuard::FrameReceivedUserActivation(
   activation::NoteActivation(record_, NowMs());
 }
 
+void ActivationGuard::DidStartNavigation(
+    content::NavigationHandle* navigation) {
+  // Few are in flight; a page that piles them up has them counted from
+  // when they commit.
+  if (navigation_started_ms_.size() >= kMaxNavigationsInFlight) {
+    navigation_started_ms_.clear();
+  }
+  navigation_started_ms_[navigation->GetNavigationId()] = NowMs();
+}
+
 void ActivationGuard::DidFinishNavigation(
     content::NavigationHandle* navigation) {
   NoteHistoryEntry(navigation);
+  navigation_started_ms_.erase(navigation->GetNavigationId());
   if (!navigation->IsInPrimaryMainFrame() || !navigation->HasCommitted() ||
       navigation->IsSameDocument()) {
     return;
@@ -236,7 +247,13 @@ void ActivationGuard::NoteHistoryEntry(content::NavigationHandle* navigation) {
       (navigation->GetPageTransition() & ui::PAGE_TRANSITION_FORWARD_BACK)) {
     return;
   }
-  if (!activation::NoteHistoryEntry(record_, NowMs()) || from_id == 0) {
+  // As of when its navigation began: the page an action led to, from a
+  // server that answers late, is still that page.
+  const auto started =
+      navigation_started_ms_.find(navigation->GetNavigationId());
+  const int64_t started_ms =
+      started != navigation_started_ms_.end() ? started->second : NowMs();
+  if (!activation::NoteHistoryEntry(record_, started_ms) || from_id == 0) {
     return;
   }
   if (skippable_entries_.size() >= kMaxSkippableEntries) {

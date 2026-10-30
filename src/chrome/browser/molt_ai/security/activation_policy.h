@@ -120,8 +120,10 @@ void NoteActivation(TabRecord& tab, int64_t now_ms);
 void NoteUserInput(TabRecord& tab);
 bool IsActing(const TabRecord& tab, int64_t now_ms);
 // The page added a session history entry (not a replacement, not a move
-// back or forward) at |now_ms|. Returns whether the entry it was added from
-// counts as skippable for voice mode's "go back" (above).
+// back or forward) by a navigation that began at |now_ms| (it may commit
+// later: a server that answers late doesn't make the page an action led to
+// one the page added on its own). Returns whether the entry it was added
+// from counts as skippable for voice mode's "go back" (above).
 bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms);
 
 // One question per action: once the user was asked about one of the page's

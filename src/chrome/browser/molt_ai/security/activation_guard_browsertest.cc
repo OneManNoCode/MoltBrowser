@@ -55,12 +55,15 @@
 #include "components/permissions/permission_request_manager.h"
 #include "components/permissions/test/mock_permission_prompt_factory.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_platform.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -630,6 +633,76 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   EXPECT_EQ(asker_.told[0],
             "The page tried to go full screen. I stopped it. Say full screen "
             "if you want it.");
+}
+
+// With a page whose server answers late (/molt_voice/late.html).
+class ActivationGuardLateServerBrowserTest : public ActivationGuardBrowserTest {
+ public:
+  void SetUpOnMainThread() override {
+    // Before the server starts.
+    late_ = std::make_unique<net::test_server::ControllableHttpResponse>(
+        embedded_test_server(), "/molt_voice/late.html");
+    ActivationGuardBrowserTest::SetUpOnMainThread();
+  }
+
+  void TearDownOnMainThread() override {
+    late_.reset();
+    ActivationGuardBrowserTest::TearDownOnMainThread();
+  }
+
+  std::unique_ptr<net::test_server::ControllableHttpResponse> late_;
+};
+
+// A link pressed for the user opens a page whose server answers after the
+// action's window: that page is still the one the action led to, so voice
+// mode's "go back" from what it adds next returns to the user's page, not
+// past it.
+IN_PROC_BROWSER_TEST_F(ActivationGuardLateServerBrowserTest,
+                       GoingBackFromALatePageReturnsToTheUsersPage) {
+  // A page before the user's (the first entry is never skipped).
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("localhost", "/title1.html")));
+  OpenPage();
+  ActivationGuard* guard = ActivationGuard::FromWebContents(page_);
+  ASSERT_TRUE(guard);
+  base::TimeTicks now = base::TimeTicks::Now();
+  guard->SetClockForTesting(
+      base::BindRepeating([](base::TimeTicks* now) { return *now; }, &now));
+  const GURL users_page = page_->GetLastCommittedURL();
+  ASSERT_TRUE(
+      content::ExecJs(page_.get(),
+                      "const late = document.createElement('a');"
+                      "late.href = 'late.html'; late.textContent = 'Late page';"
+                      "document.querySelector('main').append(late);",
+                      content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kVoiceMode);
+  const std::optional<voice::PageItem> link =
+      WaitForItem(controller, voice::ItemKind::kLink, "Late page");
+  ASSERT_TRUE(link);
+  ASSERT_EQ(controller->Press(link->handle), ActionResult::kDone);
+  late_->WaitForRequest();
+  // The server answers well after the action's window.
+  now += base::Milliseconds(activation::kActingWindowMs) + base::Minutes(1);
+  late_->Send(
+      "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+      "<!doctype html><title>Late</title><p>Late page</p>");
+  late_->Done();
+  ASSERT_TRUE(content::WaitForLoadStop(page_));
+  ASSERT_EQ(page_->GetLastCommittedURL().path(), "/molt_voice/late.html");
+
+  // The late page adds an entry of its own with the action's activation.
+  ASSERT_TRUE(content::ExecJs(page_.get(), "history.pushState({}, '', '#a');",
+                              content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return page_->GetLastCommittedURL().ref() == "a"; }));
+  content::NavigationController& history = page_->GetController();
+  const int offset = ActivationGuard::VoiceBackOffset(page_);
+  content::NavigationEntry* back =
+      history.GetEntryAtIndex(history.GetLastCommittedEntryIndex() + offset);
+  ASSERT_TRUE(back);
+  EXPECT_EQ(back->GetURL(), users_page);
 }
 
 }  // namespace
