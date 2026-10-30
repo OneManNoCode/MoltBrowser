@@ -95,6 +95,9 @@ TEST(VoiceTextTest, Numbers) {
   EXPECT_EQ("seventy two degrees Fahrenheit.", Said("72\xC2\xB0"
                                                     "F"));
   EXPECT_EQ("two point zero point one.", Said("2.0.1"));
+  // A decimal without its leading zero, then another number (found by
+  // molt_voice_helper_fuzzer: once a scan that stood still).
+  EXPECT_EQ("zero point one. | two Mcom.", Said("-.1.2Mcom"));
   // Leading zeros and very long numbers: digit by digit, at most
   // kMaxDigitsRead digits.
   EXPECT_EQ("zero zero seven.", Said("007"));

@@ -953,16 +953,19 @@ class Reader {
     while (k < b.size() && !out_.full()) {
       const char c = b[k];
       const bool digit_next = k + 1 < b.size() && IsDigit(b[k + 1]);
+      size_t next = k;
       if (IsAlpha(c)) {
-        k = Letters(b, k);
+        next = Letters(b, k);
       } else if (IsDigit(c) || (IsCurrency(c) && digit_next) ||
                  (c == '#' && digit_next) ||
                  ((c == '-' || c == '+') && k == 0 && digit_next) ||
                  (c == '.' && digit_next && (k == 0 || !IsAlnum(b[k - 1])))) {
-        k = Number(b, k);
+        next = Number(b, k);
       } else {
-        k = Sign(b, k);
+        next = Sign(b, k);
       }
+      // Every step reads at least one character: the scan is linear.
+      k = std::max(next, k + 1);
     }
   }
 
@@ -1166,7 +1169,10 @@ class Reader {
     if (k + 1 < b.size() && b[k] == '.' && IsDigit(b[k + 1])) {
       const size_t n = DigitsAt(b, k + 1);
       const size_t after = k + 1 + n;
-      if (after + 1 < b.size() && b[after] == '.' && IsDigit(b[after + 1])) {
+      // A version ("1.2.3") starts with its digits; ".1.2" is a decimal
+      // and a separate number.
+      if (!digits.empty() && after + 1 < b.size() && b[after] == '.' &&
+          IsDigit(b[after + 1])) {
         return Version(b, start);
       }
       fraction.assign(b.substr(k + 1, std::min(n, kMaxDigitsRead)));
