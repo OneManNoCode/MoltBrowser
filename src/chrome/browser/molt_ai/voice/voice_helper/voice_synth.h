@@ -6,9 +6,10 @@
 // each unit of phonemes through the engine, the samples out as AUDIO
 // frames, then one DONE.
 //
-//   - Fast first audio: the first unit of a request is short (cut at a
-//     pause, or between words, after kFirstUnitCodePoints), so the first
-//     sound doesn't wait for a long sentence to be synthesized.
+//   - Fast first audio: the first unit of a request is short (its first
+//     sentence cut at its first pause after kMinFirstUnitCodePoints, else
+//     between words before kFirstUnitCodePoints), so the first sound
+//     doesn't wait for a long sentence to be synthesized.
 //   - Paced: the helper stays at most |lookahead_ms| of audio ahead of real
 //     time (counted from the request's first AUDIO frame), so the browser
 //     never holds much more than that, and a CANCEL has little to undo.
@@ -37,8 +38,10 @@
 namespace molt_voice {
 
 // The first unit of a request, in phoneme code points, when its first
-// sentence is longer.
-inline constexpr size_t kFirstUnitCodePoints = 80;
+// sentence is longer: about a second of speech. It ends at the first pause
+// after kMinFirstUnitCodePoints ("Two," alone would be too short a unit).
+inline constexpr size_t kFirstUnitCodePoints = 48;
+inline constexpr size_t kMinFirstUnitCodePoints = 8;
 // AUDIO frames carry at most this many samples (0.19 s at 22,050 Hz).
 inline constexpr size_t kAudioChunkSamples = 4096;
 

@@ -32,10 +32,10 @@ std::vector<std::vector<int32_t>> FirstSentenceUnits(
   if (phonemes.size() <= kFirstUnitCodePoints) {
     return Phonemizer::Units(phonemes);
   }
-  // A cut after a pause in the first unit's second half, else at its last
-  // space.
+  // A cut after the first pause past kMinFirstUnitCodePoints, else at the
+  // last space within kFirstUnitCodePoints.
   size_t cut = 0;
-  for (size_t i = kFirstUnitCodePoints; i > kFirstUnitCodePoints / 2; --i) {
+  for (size_t i = kMinFirstUnitCodePoints; i <= kFirstUnitCodePoints; ++i) {
     if (phonemes[i - 1] == ',') {
       cut = i;
       break;

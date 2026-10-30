@@ -313,20 +313,49 @@ source_set("features") {
   public_deps = [ "//base" ]
 }
 
+# The browser's side of the voice helper protocol: molt-voice's frames read
+# as untrusted (docs/design/VOICE_HELPER_PROTOCOL.md). Std-only:
+# molt_ai_unittests and molt_voice_speech_fuzzer build the same code.
+source_set("voice_speaking") {
+  sources = [
+    "voice_speech_protocol.cc",
+    "voice_speech_protocol.h",
+  ]
+
+  public_deps = [ "//chrome/browser/molt_ai/voice/voice_helper:core" ]
+}
+
+# molt-voice's stdout, as a helper a hostile input took over may write it.
+# See docs/FUZZING.md.
+fuzzer_test("molt_voice_speech_fuzzer") {
+  sources = [ "molt_voice_speech_fuzzer.cc" ]
+  deps = [
+    ":voice_speaking",
+    "//base",
+  ]
+  dict = "dicts/voice_speech.dict"
+  seed_corpus = "corpus/molt_voice_speech_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # Voice mode in a browser window: runs the loop's steps on the active tab
 # (VoicePageController), the browser's commands, the media session and the
-# tab's mute, and speaks through TtsController.
+# tab's mute, and speaks through its own voice (the molt-voice helper,
+# played through the audio service) or TtsController.
 source_set("voice_controller") {
   sources = [
     "voice_controller.cc",
     "voice_controller.h",
     "voice_speech.cc",
     "voice_speech.h",
+    "voice_speech_bundled.cc",
+    "voice_speech_bundled.h",
   ]
 
   public_deps = [
     ":voice_loop",
     ":voice_planner",
+    ":voice_speaking",
     "//base",
     "//ui/base/unowned_user_data",
   ]
@@ -334,6 +363,16 @@ source_set("voice_controller") {
   deps = [
     ":features",
     ":voice_page",
+
+    # The voice helper: the bundled copy only, under the resident sandbox.
+    "//chrome/browser/molt_ai/common:helper_binary",
+    "//chrome/browser/molt_ai/common:helper_resident",
+
+    # Its audio, played through the audio service.
+    "//media",
+    "//media/mojo/mojom",
+    "//mojo/public/cpp/bindings",
+    "//services/audio/public/cpp",
     "//chrome/app:command_ids",
 
     # The planner fallback: the web agent's on-device planner
@@ -537,12 +576,16 @@ source_set("voice_listening_unit_tests") {
     "voice_audio_samples_unittest.cc",
     "voice_listener_protocol_unittest.cc",
     "voice_session_logic_unittest.cc",
+    "voice_speech_protocol_unittest.cc",
   ]
 
   deps = [
     ":page_map",
     ":voice_command",
     ":voice_listening",
+
+    # The voice helper's frames, as the browser reads them.
+    ":voice_speaking",
 
     # Voice mode turned on and off by voice, through the loop.
     ":voice_loop",

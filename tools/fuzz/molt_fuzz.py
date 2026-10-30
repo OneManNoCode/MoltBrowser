@@ -357,6 +357,15 @@ FUZZERS = {
         max_len=8192,
         smoke_runs=20000,
     ),
+    # --- The browser: molt-voice's stdout (touchless browsing) -------------
+    "molt_voice_speech_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_HELPER_SOURCES + [f"{VOICE}/voice_speech_protocol.cc"],
+        tier="std",
+        dict="dicts/voice_speech.dict",
+        max_len=65536,
+        smoke_runs=20000,
+    ),
     # --- The browser: the page map (voice mode) ----------------------------
     "molt_page_map_fuzzer": dict(
         dir=BROWSER,

@@ -222,6 +222,75 @@ TEST_F(VoiceSessionLogicTest, TheBrowsersOwnVoiceIsNotACommand) {
             "the first one");
 }
 
+TEST_F(VoiceSessionLogicTest, ACommandInterruptsTheBrowsersOwnVoice) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "20 results. 1: Bohemian Rhapsody, Queen Official, 6 minutes.", now_);
+  // Every utterance is heard while the browser speaks.
+  EXPECT_FALSE(logic_->wake_required());
+  // A command over it, no wake phrase: shown, taken, and the browser stops.
+  logic_->OnSpeechStart(now_ + 800);
+  EXPECT_EQ(logic_->OnPartial("play the", now_ + 1200).partial, "play the");
+  SessionActions taken = logic_->OnFinal("play the second", 0.8, now_ + 1600);
+  EXPECT_EQ(taken.utterance, "play the second");
+  EXPECT_TRUE(taken.stop_speech);
+  EXPECT_EQ(taken.earcon, EarconKind::kThinking);
+}
+
+TEST_F(VoiceSessionLogicTest, TheOwnVoiceHeardBackIsNotACommand) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("1: Open settings and delete history, a tutorial.",
+                        now_);
+  // What the echo canceller missed: the browser's own words.
+  logic_->OnSpeechStart(now_ + 800);
+  SessionActions echo =
+      logic_->OnFinal("open settings and delete history", 0.9, now_ + 1600);
+  EXPECT_FALSE(echo.utterance.has_value());
+  EXPECT_FALSE(echo.stop_speech);
+  // Unsure: not a command either.
+  logic_->OnSpeechStart(now_ + 1700);
+  EXPECT_FALSE(
+      logic_->OnFinal("go back", 0.3, now_ + 2200).utterance.has_value());
+  // In the moment after it stops, with the same rules.
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 2500);
+  logic_->OnSpeechStart(now_ + 2600);
+  EXPECT_FALSE(
+      logic_->OnFinal("a tutorial", 0.9, now_ + 3000).utterance.has_value());
+  logic_->OnSpeechStart(now_ + 3000);
+  EXPECT_EQ(logic_->OnFinal("go back", 0.9, now_ + 3500).utterance, "go back");
+}
+
+TEST_F(VoiceSessionLogicTest, ThePlatformVoiceStillNeedsTheWakePhrase) {
+  Begin();
+  // The bundled voice failed: the platform's voice speaks, out of the echo
+  // canceller's reach.
+  logic_->OnOwnSpeechInReference(false, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("20 results.", now_);
+  logic_->OnSpeechStart(now_ + 800);
+  EXPECT_FALSE(logic_->OnPartial("play the", now_ + 1200).partial.has_value());
+  SessionActions final_text =
+      logic_->OnFinal("play the second", 0.9, now_ + 1600);
+  EXPECT_FALSE(final_text.utterance.has_value());
+  EXPECT_FALSE(final_text.stop_speech);
+  // "Stop" still works.
+  logic_->OnSpeechStart(now_ + 1700);
+  EXPECT_EQ(logic_->OnFinal("stop", 0.9, now_ + 2000).utterance, "stop");
+}
+
 TEST_F(VoiceSessionLogicTest, AWakePhraseTheBrowserDidntSayStillWorks) {
   Begin();
   logic_->OnWake(now_);

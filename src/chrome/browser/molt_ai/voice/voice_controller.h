@@ -187,6 +187,9 @@ class VoiceController : public VoicePlanner::Delegate {
   // Whether the speech engine is speaking for someone else (a page's
   // speechSynthesis): the microphone may hear it (voice_speech.h).
   bool OthersSpeaking() const;
+  // Whether voice mode speaks through its own voice now, whose audio is in
+  // the echo canceller's reference (voice_speech.h).
+  bool SpeechInEchoReference() const;
 
   // Says |text| (what the listening side has to tell: "Voice mode is on",
   // "I can't use the microphone") and shows it as the status.
