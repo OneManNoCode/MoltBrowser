@@ -534,6 +534,100 @@ TEST_F(VoiceSessionLogicTest, ATabsSoundWithEchoCancellation) {
   EXPECT_EQ(logic_->OnFinal("louder", 0.9, now_ + 900).utterance, "louder");
 }
 
+// The voice gesture (voice_gesture.h): which answers can stand in for a
+// click.
+TEST_F(VoiceSessionLogicTest, AWordSaidAfterThePromptIsHeardCleanly) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  // "example.com wants to use your location. To allow it, say harbor."
+  BrowserAnswers(/*awaiting=*/true);
+  logic_->OnSpeechStart(now_ + kGestureQuietMs);
+  SessionActions word = logic_->OnFinal("harbor", 0.9, now_ + 2000);
+  EXPECT_EQ(word.utterance, "harbor");
+  EXPECT_TRUE(word.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, AWordRightAfterTheBrowsersSpeechIsNotClean) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers(/*awaiting=*/true);
+  // Past the echo tail, so it counts, but within the helper's lag of the
+  // browser's last word ("harbor", from a platform voice).
+  logic_->OnSpeechStart(now_ + kEchoTailMs + 100);
+  SessionActions word = logic_->OnFinal("harbor", 0.9, now_ + 1500);
+  EXPECT_EQ(word.utterance, "harbor");
+  EXPECT_FALSE(word.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, AWordOverTheBrowsersOwnVoiceIsNotClean) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("To allow it, say harbor.", now_);
+  // Barge-in takes a command, but never as a gesture.
+  logic_->OnSpeechStart(now_ + 500);
+  SessionActions word = logic_->OnFinal("open the second", 0.9, now_ + 1000);
+  EXPECT_EQ(word.utterance, "open the second");
+  EXPECT_FALSE(word.heard_cleanly);
+  // Woken while the browser spoke: not clean either.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 1100);
+  logic_->OnWake(now_ + 1200);
+  SessionActions woke = logic_->OnFinal("Hey Molt, maple", 0.9, now_ + 1800);
+  EXPECT_EQ(woke.utterance, "Hey Molt, maple");
+  EXPECT_FALSE(woke.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, AWordWhileAnotherSourceSpeaksIsNotClean) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers(/*awaiting=*/true);
+  now_ += kGestureQuietMs;
+  // "Stop" counts whoever says it, but never as a gesture.
+  logic_->OnOtherSpeech(true, now_);
+  SessionActions stop = logic_->OnFinal("stop", 0.9, now_ + 500);
+  EXPECT_EQ(stop.utterance, "stop");
+  EXPECT_FALSE(stop.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, AWordOverATabsSound) {
+  Begin();
+  logic_->OnEchoCancellation(true, now_);
+  logic_->OnPageAudible(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers(/*awaiting=*/true);
+  // With an echo canceller: only with the confidence needed then.
+  logic_->OnSpeechStart(now_ + kGestureQuietMs);
+  SessionActions sure =
+      logic_->OnFinal("Hey Molt, harbor", 0.9, now_ + kGestureQuietMs + 500);
+  EXPECT_TRUE(sure.heard_cleanly);
+  now_ += kGestureQuietMs + 600;
+  logic_->OnWake(now_);
+  SessionActions unsure = logic_->OnFinal("Hey Molt, harbor", 0.3, now_ + 500);
+  EXPECT_EQ(unsure.utterance, "Hey Molt, harbor");
+  EXPECT_FALSE(unsure.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, TypedTextIsNeverHeardCleanly) {
+  // Typed text never goes through the session at all; the controller's own
+  // entry point marks it typed (voice_controller.h). Here: an utterance
+  // that doesn't count marks nothing.
+  Begin();
+  SessionActions none = logic_->OnFinal("harbor", 1.0, now_);
+  EXPECT_FALSE(none.utterance.has_value());
+  EXPECT_FALSE(none.heard_cleanly);
+}
+
 TEST(VoiceSessionCommandsTest, AlwaysHeardCommands) {
   for (const char* text :
        {"stop", "Stop.", "hey molt stop", "stop talking", "be quiet", "cancel",

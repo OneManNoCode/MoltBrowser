@@ -49,6 +49,15 @@
 //     sound, and kOtherSpeechTailMs after, it is taken as another source's
 //     speech, so only the commands that always count do.
 //
+// The voice gesture (voice_gesture.h, TOUCHLESS_BROWSING.md §7.3): an
+// utterance that counts is also marked heard_cleanly when it can stand in
+// for a click: it began kGestureQuietMs or more after the browser last
+// spoke (with either voice: the platform's isn't in the echo canceller's
+// reference, and the helper reports the start of speech a little late), the
+// browser didn't speak while it was said, no other source spoke since it
+// began (nor, without an echo canceller, did a tab play sound), and with a
+// tab playing sound it had kMinConfidenceWithoutWake.
+//
 // Barge-in: the wake phrase (and "stop") while the browser speaks stops its
 // speech at once; the command follows. With the browser's own voice, a
 // command said over it does too (above).
@@ -97,6 +106,9 @@ inline constexpr double kMinConfidenceWithoutWake = 0.5;
 // still be it (the room, the spotter's and the recognizer's lag, and the
 // time between two looks at the speech engine).
 inline constexpr int64_t kOtherSpeechTailMs = 1000;
+// An utterance heard cleanly (the voice gesture) began at least this long
+// after the browser last spoke.
+inline constexpr int64_t kGestureQuietMs = 1200;
 
 enum class SessionState : uint8_t {
   kOff,
@@ -150,6 +162,8 @@ struct SessionActions {
 
   // The voice loop gets this, as if typed.
   std::optional<std::string> utterance;
+  // |utterance| was heard cleanly enough for the voice gesture (above).
+  bool heard_cleanly = false;
   // What is being said, live, for the caption; empty clears it.
   std::optional<std::string> partial;
   // Stop the browser's speech now (barge-in).
@@ -252,6 +266,9 @@ class VoiceSessionLogic {
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
   // A command may interrupt the browser's own voice now.
   bool BargeInOpen() const;
+  // Whether |utterance|, taken with |confidence|, was heard cleanly (the
+  // voice gesture).
+  bool HeardCleanly(const Utterance& utterance, double confidence) const;
   Utterance NewUtterance(bool woke, int64_t now_ms) const;
   SessionState ComputeState(int64_t now_ms) const;
   // Fills in what changed (state, wake_required, ducking) and the earcon
