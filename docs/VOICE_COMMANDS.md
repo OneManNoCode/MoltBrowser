@@ -98,6 +98,23 @@ and the bar only.
   "turn on captions".
 - **Reading:** the title, the headings, the links, the results, "next
   heading", "next link", "next item", "where am I", "what's on the screen".
+- **Routines:** do something by voice ("open YouTube", "search for news",
+  "play the first one"), then say "remember this as my news". The
+  browser reads back what it will keep and saves it on your "yes". Later,
+  "run my news", or just "my news", does it again, saying each step; it
+  still asks before anything that can't be undone, and "stop" ends it.
+  A choice made by position ("the first one") picks the same position
+  next time; one made by name picks by name. A text that looks like a
+  password or a code isn't kept: the browser asks for it at each run.
+  "What are my routines?" lists them; "forget my news" deletes one after
+  your "yes". Routines are listed in Agent mode too, which can't run them.
+- **Learning your words:** names you say often, and your corrections
+  ("no, I said Queen" after the browser heard "Green"), help it hear you
+  next time. Nothing is learned in MoltNet or private windows, from what
+  you dictate into a field, or while the browser reads a page aloud.
+  Settings, "What voice mode learned", lists everything and deletes it;
+  "Learn from what I say" turns it off. By voice: "forget the word
+  Queen", "forget everything you learned".
 - **"Stop"** stops the browser speaking and whatever it was doing; a new
   command does too. "Repeat" says the last answer again.
 
@@ -120,7 +137,10 @@ and the bar only.
   shown on the page, say a number ("four"), a position ("the last one") or
   what the item says ("the live one by Queen"). If two items fit, the
   browser asks which one you meant.
-- **If it heard you wrong**, say "no, I said ..." and what you meant.
+- **If it heard you wrong**, say "no, I said ..." and what you meant:
+  the whole command ("no, I said open YouTube") or only the words it
+  misheard ("no, I said Queen"). It does what you meant and, when the two
+  sound alike, remembers the correction for next time.
   "Cancel", "stop" and "go back" always work.
 - **"What can I say?"** lists what fits the page you are on.
 
@@ -618,8 +638,10 @@ said.
   punctuation itself.
 - **A site's name on its own** ("YouTube" alone) doesn't open it: say "open
   YouTube". A spoken address on its own ("example dot com") does.
-- **A routine's name on its own** ("my news") is looked up among your
-  routines before the AI is asked; "run my news" always runs it.
+- **Routines with the AI's steps:** a routine is made of the commands you
+  said; what the on-device AI did for a request isn't kept in one yet.
+- **Confirming a routine's sites by voice:** a routine with steps the AI
+  planned would need its sites confirmed with a click in Agent mode.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
   "Hey Molt" for now. If the browser keeps missing your "Hey Molt", turn on
   "Always listening" in settings.
@@ -630,7 +652,7 @@ said.
   uses when its own isn't installed, start with "Hey Molt" (or say
   "stop").
 - **Still to come in voice mode:** the on-device AI for anything these
-  commands don't cover, routines, setting the volume to a level, the
+  commands don't cover, setting the volume to a level, the
   playback speed, reading the page's text and the selection, undo, and
   questions about the page. Until then the browser says so when you ask
   for them.
