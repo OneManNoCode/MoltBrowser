@@ -1217,6 +1217,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   be saved as workflows. The chat agent's use of the accessibility tree is
   off until `chrome://flags/#molt-agent-page-map` is turned on; voice
   mode's runs always use it.
+- **Touchless browsing: voice mode knows the big sites and reads pages
+  aloud** (preview, behind `chrome://flags/#molt-voice-mode`). On YouTube,
+  Google, DuckDuckGo, Bing and Wikipedia, built-in site skills (data
+  compiled into the browser, checked against stored copies of the sites'
+  pages) say where the search box, the results, the player's buttons and
+  the next page are: "search YouTube for ..." types into YouTube's own
+  box, results are read as the site shows them, and "skip the ad" and
+  "next page" work; a site that changes falls back to the usual guessing.
+  "Read the page" reads the article, not its menus or ads; "read the
+  section on history", "read the selection", "next heading" and "next
+  paragraph" work too, "stop" or any command stops it where it is,
+  "continue reading" goes on, and "faster" or "slower" set a reading speed
+  that is kept. Page text read aloud is never taken as a command. Details:
+  `docs/design/VOICE_SKILLS.md`.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

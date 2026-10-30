@@ -144,6 +144,13 @@ Five layers, tried in this order:
 - **Secrets are never read aloud:** passwords, one-time codes and card numbers ("password field, filled from your vault").
 - **Private content** (mail, messages) is read aloud only after asking whether others can hear, unless headphones are connected.
 
+**Implementation note (round 41): reading pages aloud.** `molt_ai/voice/page_reading.h` takes the text, `voice_reader.h` reads it with the voice; [VOICE_SKILLS.md](VOICE_SKILLS.md) §5 has the detail.
+- **The text:** from the accessibility tree the page controller already keeps, as a screen reader's "say all" walks it: the site skill's content root (§6.7), else the main landmark, else the first article, else the page; navigation, search, forms and controls, menus, dialogs, tables, images, media and frames left out (and the page's banner, footer and asides when the whole page is read), and the skill's own skips (edit links, reference marks, infoboxes). Not Chromium's distillers: the DOM distiller runs its script in the page's renderer for a reader view, and Read Anything's logic runs in a WebUI renderer; neither gives the browser the blocks with their nodes, which moving by heading and paragraph, sections by name, scrolling along and resuming need.
+- **Commands:** "read the page", "read from here" (the focused item when the focus moved, else where it stopped), "continue reading", "read the selection" (never a credential field's), "read the section on history", "next/previous heading" (said; reading goes on from it when it was reading), "next/previous paragraph" (read). "Stop", "pause" and any new command stop it and keep the place; "faster" and "slower" while it reads set its pace and go on; the rate is a setting (`voice_speech_rate` in settings.json).
+- **Bounded chunks:** blocks split into sentences; whole sentences handed to the voice as chunks of about 13 s at the current rate (80 to 300 characters), the one being said and one more, so "stop" and barge-in act at once. Each chunk is noted with the session as it starts, so page text the microphone hears back is known as the browser's own for the 20 s `voice_session_logic.h` remembers it: never a command, and a page's "Hey Molt" can't wake it. Page text is cleaned (`SpeechSafeText()`) and capped (4,000 characters a block, 300 a sentence, 256 KiB and 4,000 blocks a page, 20,000 nodes walked).
+- **Showing it:** the caption bar shows the chunk being read; each block is scrolled into view as it starts. Not highlighted: the overlay's ring follows numbered items, and a sentence's highlight needs the renderer's inline text boxes (`kInlineTextBoxes`, left out for their cost, §6.3).
+- **Not yet:** questions about the page through the on-device model ("what is this page about?"); a reading position that survives a jump within the page (any navigation, a fragment's included, starts the page afresh).
+
 ### 5.5 The screen, for low vision
 
 - **A caption bar** in large type:
@@ -352,6 +359,14 @@ Five layers, tried in this order:
 - **WebMCP:** where a site offers WebMCP tools, they are used as the agent already does.
 - **When a site changes:** skills are data, versioned and tested against stored copies of the pages. A broken skill falls back to the generic page map.
 
+**Implementation note (round 41): built-in skills** for YouTube, Google, DuckDuckGo, Bing and Wikipedia (`molt_ai/voice/site_skills.h`, the format and how to add a site in [VOICE_SKILLS.md](VOICE_SKILLS.md)).
+- **Data, not code:** JSON compiled in (`site_skills_data.cc`), versioned, parsed with the strict, capped JSON reader (`bounded_json.h`); anything unexpected refuses that skill. Selectors name nodes by role and name, or by what the tree exposes (HTML tag, id, class, link target, input type), with one level of "inside" or "has".
+- **What they name:** the search box and its button, what one result is (its title; the result is the largest subtree around one title holding no other, read with the page map's own entry reader as the first list), the player's media, skip-ad, captions and full-screen buttons, the next page (or that the site loads more as it scrolls), and for reading the content root and what to leave out. Only nodes of the top-level document, and only as the item kind each part needs; the loop's checks apply as before.
+- **Order:** the built-in skill, then a learned site hint in the same form (§6.8), then the generic map, part by part (`BuildPageMapWithSkills()`), in `VoicePageController::BuildMap()`, so voice mode, the overlay and the agent see the same map. A skill that finds nothing it expects on a page (its `pages`) is logged once for that page (`[MoltVoice] site skill youtube@1 found no results ...`).
+- **What it gives:** "search YouTube for X" on YouTube fills YouTube's box and presses its button; results read as "1: Queen – Bohemian Rhapsody, Queen Official, 6 minutes"; "play the fourth one"; "skip the ad"; "next page"; "read the section on history" on Wikipedia.
+- **Tests:** unit tests on reduced copies of the sites' pages (`chrome/test/data/molt_voice/skills/`, read as Blink's tree by a test converter), browser tests on the same pages, and `molt_page_reading_fuzzer`.
+- **WebMCP:** unchanged; a site's own tools are the agent's (AGENT_ACTIONS.md).
+
 ### 6.8 Learning from use
 The navigator gets better for each user from what they say and what worked, all on the device:
 - **Routines taught by voice.** After a task succeeds, "remember this as *my news*" saves it as a workflow in the automation engine's format, under its trust policy. "Hey Molt, my news" then replays it without the language model. The agent can already save a run as a draft workflow; voice mode adds naming and starting it by voice.
@@ -492,6 +507,8 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - **Commands and choices:** the direct-command grammar, choosing by number and name, the numbers overlay, the caption bar, and the follow-up window.
 - **Media and reading:** media control, reading the page, headings and links.
 - **Sites:** skills for YouTube, Google, DuckDuckGo and Wikipedia.
+
+**Status (round 41): sites and reading built; they wait for the build machine.** Built-in skills for YouTube, Google, DuckDuckGo, Bing and Wikipedia (§6.7's note) and reading pages, sections and selections aloud (§5.4's note); unit-tested on stored copies of the sites' pages and fuzzed; browser tests and the real sites are on the build machine's checklist ("skills-reading").
 
 **Exit:**
 - The owner's song scenario and 50 scripted spoken tasks pass with at least 90% success, in a quiet room and with music playing.

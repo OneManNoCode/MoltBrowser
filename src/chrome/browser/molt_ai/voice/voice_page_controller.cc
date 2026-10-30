@@ -3,17 +3,20 @@
 
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/voice/ax_page_source.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/site_skills.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/media_session.h"
@@ -446,6 +449,7 @@ void VoicePageController::RenderFrameDeleted(
 void VoicePageController::PrimaryPageChanged(content::Page& page) {
   DropTreesNotInPrimaryPage();
   resets_this_page_ = 0;
+  skill_missing_logged_ = 0;
 }
 
 void VoicePageController::WebContentsDestroyed() {
@@ -463,19 +467,22 @@ bool VoicePageController::HasPageTree() {
   return it != trees_.end() && it->second.tree->root();
 }
 
-PageMap VoicePageController::BuildMap(const PageMapLimits& limits) {
+PageTree VoicePageController::JoinedTree(size_t max_nodes,
+                                         size_t max_depth,
+                                         size_t max_string_bytes) {
   if (!HasPageTree()) {
-    return PageMap();
+    return PageTree();
   }
   const HeldTree& main =
       trees_.find(web_contents()->GetPrimaryMainFrame()->GetAXTreeID())->second;
   AXPageSourceLimits source_limits;
-  source_limits.max_nodes = limits.max_nodes;
-  source_limits.max_depth = limits.max_depth;
+  source_limits.max_nodes = max_nodes;
+  source_limits.max_depth = max_depth;
   source_limits.max_trees = kMaxTrees;
+  source_limits.max_string_bytes = max_string_bytes;
   // Only this tab's primary page's frames are here (the line above dropped
   // the rest), so a child tree id can only join a frame of this page.
-  const PageTree page = BuildPageTree(
+  return BuildPageTree(
       AXFrameTree{main.index, main.tree.get()},
       [this](const ui::AXTreeID& tree_id) {
         auto it = trees_.find(tree_id);
@@ -484,7 +491,48 @@ PageMap VoicePageController::BuildMap(const PageMapLimits& limits) {
                    : AXFrameTree{it->second.index, it->second.tree.get()};
       },
       source_limits);
-  return BuildPageMap(page, limits);
+}
+
+PageTree VoicePageController::BuildTree(size_t max_string_bytes) {
+  const PageMapLimits limits;
+  return JoinedTree(limits.max_nodes, limits.max_depth,
+                    std::min(max_string_bytes, kMaxReadingStringBytes));
+}
+
+PageMap VoicePageController::BuildMap(const PageMapLimits& limits) {
+  const PageTree page =
+      JoinedTree(limits.max_nodes, limits.max_depth,
+                 AXPageSourceLimits().max_string_bytes);
+  if (page.nodes.empty()) {
+    return PageMap();
+  }
+  // The site's skill (site_skills.h), on its http(s) pages only.
+  const GURL& url = web_contents()->GetPrimaryMainFrame()->GetLastCommittedURL();
+  const SiteSkill* skill =
+      url.SchemeIsHTTPOrHTTPS() ? BuiltInSkillForHost(url.host()) : nullptr;
+  if (!skill) {
+    return BuildPageMap(page, limits);
+  }
+  SkillReport report;
+  PageMap map = BuildPageMapWithSkills(page, limits, skill, /*hint=*/nullptr,
+                                       url.path(), &report);
+  // A skill that no longer finds what it expects here (the site changed):
+  // the generic map stands in, and the log says so, once for this page.
+  const uint32_t unlogged = report.missing & ~skill_missing_logged_;
+  if (unlogged) {
+    skill_missing_logged_ |= unlogged;
+    std::string parts;
+    for (uint32_t bit = kPartSearch; bit <= kPartContent; bit <<= 1) {
+      if (unlogged & bit) {
+        parts += std::string(parts.empty() ? "" : ", ") +
+                 std::string(SkillPartName(static_cast<SkillPartBit>(bit)));
+      }
+    }
+    LOG(WARNING) << "[MoltVoice] site skill " << report.skill
+                 << " found no " << parts << " on " << url.host()
+                 << url.path() << "; the generic page map stands in";
+  }
+  return map;
 }
 
 std::optional<VoicePageController::Target> VoicePageController::Resolve(

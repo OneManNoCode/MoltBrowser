@@ -147,12 +147,85 @@ source_set("page_map") {
   ]
 }
 
-# Hand-built page trees for the page map's tests (std-only).
+# Site skills (docs/design/VOICE_SKILLS.md, TOUCHLESS_BROWSING.md §6.7):
+# declarative data naming the parts of big sites' pages (search box,
+# results, player, next page, reading), compiled in as JSON and parsed as
+# untrusted with caps; the page map with them. Std-only, so
+# molt_ai_unittests, a standalone harness and molt_page_reading_fuzzer build
+# the same code.
+source_set("site_skills") {
+  sources = [
+    "site_skills.cc",
+    "site_skills.h",
+    "site_skills_data.cc",
+  ]
+
+  public_deps = [ ":page_map" ]
+
+  deps = [
+    # FoldForComparison(), as names are compared everywhere in voice mode.
+    ":spoken_choice",
+
+    # The strict, capped JSON reader (bounded_json.h; std-only).
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
+}
+
+# Reading a page aloud (TOUCHLESS_BROWSING.md §5.4, §6.6): the page's text
+# as blocks and sentences from the accessibility tree, chunks sized for the
+# speech rate, the reading position and its moves, the selection. Std-only:
+# molt_ai_unittests, a standalone harness and molt_page_reading_fuzzer build
+# the same code.
+source_set("page_reading") {
+  sources = [
+    "page_reading.cc",
+    "page_reading.h",
+  ]
+
+  public_deps = [ ":page_map" ]
+
+  deps = [
+    # Sections named as spoken names are matched (spoken_choice.h).
+    ":spoken_choice",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
+}
+
+# Site skills and reading aloud over hostile pages (a renderer that may be
+# compromised) and skill files. See docs/FUZZING.md.
+fuzzer_test("molt_page_reading_fuzzer") {
+  sources = [ "molt_page_reading_fuzzer.cc" ]
+  deps = [
+    ":page_map_test_support",
+    ":page_reading",
+    ":site_skills",
+    "//base",
+  ]
+  dict = "dicts/page_reading.dict"
+  seed_corpus = "corpus/molt_page_reading_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
+# Hand-built page trees for the page map's tests, and the stored copies of
+# sites' pages (chrome/test/data/molt_voice/skills/) read as Blink's tree
+# (std-only).
 source_set("page_map_test_support") {
   testonly = true
   sources = [
+    "html_fixture_tree.cc",
+    "html_fixture_tree.h",
     "page_map_test_trees.cc",
     "page_map_test_trees.h",
+  ]
+
+  deps = [
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
   ]
 
   public_deps = [ ":page_map" ]
@@ -197,6 +270,9 @@ source_set("voice_page") {
 
   deps = [
     ":ax_page_source",
+
+    # The map with the site's skill (site_skills.h).
+    ":site_skills",
 
     # Every action is noted with the tab's activation guard.
     "//chrome/browser/molt_ai/security:activation_guard",
@@ -290,6 +366,8 @@ source_set("voice_loop") {
     "voice_candidates.h",
     "voice_controller_logic.cc",
     "voice_controller_logic.h",
+    "voice_reader.cc",
+    "voice_reader.h",
     "voice_sites.cc",
     "voice_sites.h",
     "voice_speech_text.cc",
@@ -298,6 +376,9 @@ source_set("voice_loop") {
 
   public_deps = [
     ":page_map",
+
+    # Reading aloud (voice_reader.h reads page_reading.h's documents).
+    ":page_reading",
     ":spoken_choice",
     ":voice_command",
 
@@ -305,8 +386,13 @@ source_set("voice_loop") {
     "//chrome/browser/molt_ai/security:activation_policy",
   ]
 
-  # MOLT_RAW_PTR_EXCLUSION (header-only).
-  deps = [ "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion" ]
+  deps = [
+    # The site's skill names where a page's text is (voice_reader.cc).
+    ":site_skills",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
 }
 
 # What voice mode hands open-ended requests to (the planner fallback,
@@ -361,6 +447,8 @@ source_set("voice_controller") {
   sources = [
     "voice_controller.cc",
     "voice_controller.h",
+    "voice_reading_settings.cc",
+    "voice_reading_settings.h",
     "voice_speech.cc",
     "voice_speech.h",
     "voice_speech_bundled.cc",
@@ -381,6 +469,9 @@ source_set("voice_controller") {
 
   deps = [
     ":features",
+
+    # The reader takes the site's skill for the page (site_skills.h).
+    ":site_skills",
     ":voice_page",
 
     # The voice helper: the bundled copy only, under the resident sandbox.
@@ -448,16 +539,28 @@ fuzzer_test("molt_voice_controller_fuzzer") {
 source_set("voice_loop_unit_tests") {
   testonly = true
   sources = [
+    "page_reading_unittest.cc",
+    "site_skills_unittest.cc",
     "voice_candidates_unittest.cc",
+    "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
+    "voice_reader_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
     "voice_speech_text_unittest.cc",
   ]
 
+  # The sites' stored pages the skills are tested on.
+  data = [ "//chrome/test/data/molt_voice/skills/" ]
+
   deps = [
     ":page_map_test_support",
+    ":page_reading",
+    ":site_skills",
     ":voice_loop",
+
+    # The stored pages, read from the source tree.
+    "//base",
 
     # Every URL the loop builds passes agent_safety's navigation check.
     "//chrome/browser/molt_ai/security:agent_safety",
@@ -473,10 +576,17 @@ source_set("voice_loop_unit_tests") {
 source_set("voice_loop_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "voice_controller_browsertest.cc" ]
+  sources = [
+    "voice_controller_browsertest.cc",
+
+    # Site skills and reading aloud on the sites' stored pages
+    # (chrome/test/data/molt_voice/skills/).
+    "voice_skills_browsertest.cc",
+  ]
 
   deps = [
     ":features",
+    ":site_skills",
     ":voice_controller",
     ":voice_loop",
     ":voice_page",

@@ -283,8 +283,10 @@ bool IsFieldLike(std::string_view text) {
 
 class Builder {
  public:
-  Builder(const PageTree& tree, const PageMapLimits& limits)
-      : tree_(&tree), limits_(limits) {}
+  Builder(const PageTree& tree,
+          const PageMapLimits& limits,
+          const PageMapHints* hints)
+      : tree_(&tree), limits_(limits), hints_(hints) {}
 
   PageMap Build() {
     if (!tree_->nodes.empty()) {
@@ -649,10 +651,69 @@ class Builder {
     std::vector<uint32_t> entries;
   };
 
+  // The site's results, as its skill named their entries (PageMapHints):
+  // the entries this walk reached, in the top-level document, in order and
+  // not inside one another, under their nearest common ancestor.
+  std::optional<Candidate> SiteCandidate() {
+    if (!hints_ || hints_->result_entries.size() < 2 || order_.empty()) {
+      return std::nullopt;
+    }
+    std::vector<uint32_t> pos_of(tree_->nodes.size(), kNoPos);
+    for (uint32_t p = 0; p < order_.size(); ++p) {
+      pos_of[order_[p].node] = p;
+    }
+    Spend(order_.size());
+    Candidate c;
+    c.kind = ListKind::kRepeated;
+    uint32_t after = 0;
+    for (uint32_t node : hints_->result_entries) {
+      if (c.entries.size() >= limits_.max_entries_per_list || !Spend(1)) {
+        break;
+      }
+      const uint32_t pos = node < pos_of.size() ? pos_of[node] : kNoPos;
+      if (pos == kNoPos || pos == 0 || pos < after || !InPage(pos) ||
+          NodeAt(pos).Has(kStateInvisible)) {
+        continue;
+      }
+      c.entries.push_back(pos);
+      after = end_[pos];
+    }
+    if (c.entries.size() < 2) {
+      return std::nullopt;
+    }
+    // The nearest ancestor of the first entry that holds the last.
+    uint32_t container = order_[c.entries.front()].parent;
+    const uint32_t last = c.entries.back();
+    while (container != kNoPos && end_[container] <= last) {
+      container = order_[container].parent;
+    }
+    c.container = container == kNoPos ? 0 : container;
+    return c;
+  }
+
+  // Whether |c| (a list the map found) mostly lists the site's entries, or
+  // parts or wrappers of them.
+  bool AmongSiteEntries(const Candidate& c, const Candidate& site) const {
+    size_t shared = 0;
+    for (uint32_t e : c.entries) {
+      // The site entry at or before |e|: |e| is inside it, or holds it.
+      auto it = std::upper_bound(site.entries.begin(), site.entries.end(), e);
+      const bool inside = it != site.entries.begin() && e < end_[*(it - 1)];
+      const bool holds = it != site.entries.end() && *it < end_[e];
+      shared += inside || holds ? 1 : 0;
+    }
+    return !c.entries.empty() && 2 * shared >= c.entries.size();
+  }
+
   void MakeLists() {
     // The top-level document's lists are looked for (and read) first, so
     // that the frames it embeds can't spend the work budget before them.
     std::vector<Candidate> candidates;
+    // The site's own results come before all of them.
+    const std::optional<Candidate> site = SiteCandidate();
+    if (site) {
+      candidates.push_back(*site);
+    }
     for (const bool page_pass : {true, false}) {
       for (uint32_t p = 0; p < order_.size() && !OutOfWork(); ++p) {
         const PageNode& node = NodeAt(p);
@@ -678,17 +739,35 @@ class Builder {
       }
     }
 
-    for (const Candidate& c : candidates) {
+    for (size_t i = 0; i < candidates.size(); ++i) {
       if (OutOfWork()) {
         break;
       }
-      map_.lists.push_back(MakeList(c));
+      const bool from_site = site && i == 0;
+      if (site && !from_site && AmongSiteEntries(candidates[i], *site)) {
+        continue;
+      }
+      map_.lists.push_back(MakeList(candidates[i]));
+      if (from_site) {
+        PageList& list = map_.lists.back();
+        list.from_site = true;
+        list.in_navigation = false;
+        const std::string label =
+            SpeechSafeText(hints_->results_label, kMaxItemLabelChars);
+        if (!label.empty()) {
+          list.label = label;
+        }
+      }
     }
-    // The top-level document's lists first, then the frames'; each most
-    // prominent first, ties in document order (candidates are).
+    // The site's results first, then the top-level document's lists, then
+    // the frames'; each most prominent first, ties in document order
+    // (candidates are).
     const int32_t page_tree = map_.page_tree;
     std::stable_sort(map_.lists.begin(), map_.lists.end(),
                      [page_tree](const PageList& a, const PageList& b) {
+                       if (a.from_site != b.from_site) {
+                         return a.from_site;
+                       }
                        const bool a_page = a.container.tree == page_tree;
                        const bool b_page = b.container.tree == page_tree;
                        if (a_page != b_page) {
@@ -1299,6 +1378,8 @@ class Builder {
   // The input outlives the builder (BuildPageMap() makes it on the stack).
   MOLT_RAW_PTR_EXCLUSION const PageTree* const tree_;
   const PageMapLimits limits_;
+  // Outlives the builder too; null without hints.
+  MOLT_RAW_PTR_EXCLUSION const PageMapHints* const hints_;
   PageMap map_;
   size_t work_ = 0;
 
@@ -1357,6 +1438,13 @@ PageList::PageList(const PageList&) = default;
 PageList& PageList::operator=(const PageList&) = default;
 PageList::PageList(PageList&&) = default;
 PageList& PageList::operator=(PageList&&) = default;
+
+SiteParts::SiteParts() = default;
+SiteParts::~SiteParts() = default;
+SiteParts::SiteParts(const SiteParts&) = default;
+SiteParts& SiteParts::operator=(const SiteParts&) = default;
+SiteParts::SiteParts(SiteParts&&) = default;
+SiteParts& SiteParts::operator=(SiteParts&&) = default;
 
 PageMap::PageMap() = default;
 PageMap::~PageMap() = default;
@@ -1519,7 +1607,13 @@ CredentialKind ClassifyCredential(const PageNode& node) {
 }
 
 PageMap BuildPageMap(const PageTree& tree, const PageMapLimits& limits) {
-  return Builder(tree, limits).Build();
+  return Builder(tree, limits, nullptr).Build();
+}
+
+PageMap BuildPageMap(const PageTree& tree,
+                     const PageMapLimits& limits,
+                     const PageMapHints& hints) {
+  return Builder(tree, limits, &hints).Build();
 }
 
 }  // namespace voice

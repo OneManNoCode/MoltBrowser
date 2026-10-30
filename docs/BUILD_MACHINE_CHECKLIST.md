@@ -931,6 +931,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 
 | `agents/web_agent.cc` (the page map path: `VoicePageController::CreateForWebContents()` and its `Start(Holder)`/`Stop(Holder)`, `AddTreesUpdatedCallback()`, `base::OneShotTimer`, `RenderFrameHost::GetLastCommittedURL()`; the testing model), `agents/voice_agent_planner.cc` (`base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `SequencedTaskRunner::DeleteSoon` of a `std::unique_ptr<WebAgent>`, `web_ai::PickWebModel`), `voice/voice_page_controller.cc` (`Inspect()`: `ui::AXNode::parent()`, `GetRole()`; `SelectOption()`: `kDoDefault` on an option), `voice/voice_controller.cc` (it is now a `VoicePlanner::Delegate`), `ui/webui/molt_ai/molt_ai_chat_handler.cc` (`observed_with`), `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-agent-page-map`); the new GN edges `//chrome/browser/molt_ai/voice:voice_controller` → `//chrome/browser/molt_ai:molt_ai_agents`, `molt_ai_agents` → `voice:voice_page`, `voice:voice_planner`, `voice:page_map`, `web_ai:logic`, `agents:agent_page_map`, `agents:voice_agent_speech`, and `voice:browser_tests` → `agents:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges above in `gn gen` (no cycle through `//chrome/browser/profiles` or the overlay), and §5.1's browser tests | agent-pagemap |
 | `security/activation_guard.cc` (new: a `WebContentsUserData` that is a `WebContentsObserver` (`DidGetUserInteraction()`, `FrameReceivedUserActivation()`), a `blocked_content::UrlListManager::Observer` and a `permissions::PermissionRequestManager::Observer`; `PopupBlockerTabHelper::ShowBlockedPopup()`, `PermissionRequestManager::Dismiss(PromptOptions(std::monostate()))`, `blink::kActivationLifespan`, `blink::WebKeyboardEvent`); the hooks in `chrome_content_browser_client.cc` (`CanCreateWindow()`; `HandleExternalProtocol()`: `base::BindOnce(&LaunchURL, ...)` with a typed null `out_factory`; `IsClipboardCopyAllowedByPolicy()`: `ClipboardEndpoint::web_contents()`), `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (imported: `OpenURLFromTab()` copies its `OpenURLParams`, `CanEnterFullscreenModeForTab()`) and `download/chrome_download_manager_delegate.cc` (imported: `CheckDownloadAllowed()` wraps its callback); `voice/voice_page_controller.cc` (`Press(handle, intent)`), `voice/voice_controller.cc` and `agents/web_agent.cc` (now `ActivationGuard::Asker`s); the new GN edges `//chrome/browser/molt_ai:core_hooks`, `//chrome/browser/ui/browser_web_contents_delegate`, `//chrome/browser/download:impl`, `voice:voice_page`, `voice:voice_controller` and `molt_ai_agents` → `security:activation_guard` (→ `//components/blocked_content`, `//components/permissions`), `voice:voice_loop` → `security:activation_policy`, and `voice:browser_tests` → `security:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen` (no cycle from `//chrome/browser/ui` or `//chrome/browser/download` through the guard), and §5.1's browser tests | activation-guard |
+| `voice/site_skills.cc`, `site_skills_data.cc`, `page_reading.cc`, `voice_reader.cc` (new, std-only; `site_skills` → `//chrome/services/molt_ai/inference/engine:constrained_decoding` for `bounded_json.h`, with the DEPS rule `+chrome/services/molt_ai/inference/engine/bounded_json.h`), `voice/voice_reading_settings.cc` (new: `base::JSONReader`/`JSONWriter` on settings.json), `voice/voice_page_controller.cc` (`BuildMap()` with the site's skill: `RenderFrameHost::GetLastCommittedURL()`, `GURL::host()`/`path()` as `std::string_view`; `BuildTree()`), `voice/ax_page_source.cc` (`StringAttribute::kHtmlId`, `kClassName`; `AXTreeData::sel_anchor_object_id` and the rest of the selection), `voice/voice_speech.cc` (`TTS_EVENT_END`/`TTS_EVENT_ERROR` in the delegate; `Speak()` returns an id), `voice/voice_controller.cc` (a nested `VoiceReader::Host`; `base::ThreadPool` for the rate setting); the new GN edges `voice:voice_page` and `voice:voice_controller` → `voice:site_skills`, `voice:voice_loop` → `voice:page_reading` and `voice:site_skills`, `voice:page_map_test_support` → `engine:raw_ptr_exclusion`, and the fuzzer `voice:molt_page_reading_fuzzer` (in `molt_fuzzers`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen`, §5.1's browser tests | skills-reading |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1257,6 +1258,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `SpeechFrameReaderTest.*`, `SpeechConfigTest.*`, `SpeechTextTest.*`, `SpeechEventsTest.*`, `SpeechListenerTest.*` (std only, built standalone here under ASan and UBSan: the speech helper's frames, CONFIG's strict JSON, hotword cleaning and the wake phrase's word pieces, the event lines, and the listening states against fake engines) | speech-helper |
   | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
   | `ActivationPolicyTest.*` (when a tab acts for voice mode or the agent, and every decision: new windows, downloads, other apps, permission prompts, full screen, clipboard writes; the words said), `VoiceControllerLogicTest.ThePagesRequestsWaitForASpokenYes` and the intents of the "full screen" and play presses; all built standalone here (ASan and UBSan) | activation-guard |
+  | `SiteSkillsTest.*` (the skill format and its caps, the hosts each built-in skill applies to, every site's stored pages under `chrome/test/data/molt_voice/skills/` read as Blink's tree: search box and button, results with their titles and fields, the player's buttons, the next page, Wikipedia's reading scope; a broken skill reported and the generic map standing in; a hint filling a part; never a frame's node), `PageReadingTest.*` (the article's blocks, sentences, chunks at each rate, moves, sections, locating a node, the selection, the queue), `VoiceReaderTest.*` (reading with a fake voice), `VoiceSkillsLogicTest.*` (the commands on the stored pages), the new `VoiceCommandTest` cases and `AXPageSourceTest.TakesIdsClassesAndTheSelection` (needs the build); the rest built standalone here (ASan and UBSan). They read the stored pages from the source tree (`DIR_SRC_TEST_DATA_ROOT`) | skills-reading |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1528,6 +1530,23 @@ extension enablement and `MediaRouterEnabled()`).
   it stopped reading its input" and a new one starts); do this four times,
   over a minute apart. *Expected:* voice mode keeps listening each time,
   and never says "Speech recognition stopped working".
+- [ ] Site skills' and reading's browser tests (skills-reading): the
+  sites' stored pages (`chrome/test/data/molt_voice/skills/`) served
+  under test hosts bound to their skills, the spoken answers captured
+  from a fake TTS platform:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceSkillsBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/skills-reading-browser-tests.log
+  ```
+  *Expected:* all 4 pass on Linux and macOS:
+  `SearchYouTubeThroughItsSkill` (the fixture's box and button, "10
+  results." and the first read with its channel and length, the
+  fourth opened), `SkipTheAdAndCaptions`, `ReadThePage` (the article's
+  text in order, without edit links, the search box, the infobox or the
+  navigation), `HeadingsSectionsSelection`. If `ReadThePage` reads edit
+  links or `[1]`, Blink names the skipped nodes differently than the
+  test converter: send the log and the fixture's accessibility tree
+  (`chrome://accessibility`).
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -2084,6 +2103,8 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   `molt_voice_controller_fuzzer`)
   (bundled-voice adds `molt_voice_helper_fuzzer` and
   `molt_voice_speech_fuzzer`)
+  (skills-reading adds `molt_page_reading_fuzzer`, and reading states
+  and site parts to `molt_voice_controller_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2585,6 +2606,44 @@ each with a real microphone: a laptop's built-in one and a USB headset.
   `molt-voice` process shows about 10% of one core and under 400 MB, and
   nothing between answers; `NoNewPrivs: 1` and `Seccomp: 2` on Linux; it
   goes away when voice mode is turned off.
+
+**Site skills and reading aloud** (from skills-reading;
+TOUCHLESS_BROWSING.md §5.4, §6.7, `docs/design/VOICE_SKILLS.md`). With
+voice mode on (bundled voice, then once more with the system's voices),
+on macOS and Linux, on the real sites; keep the log, and note every
+`[MoltVoice] site skill ... found no ...` line (a part the site no
+longer shows as the skill expects):
+
+- [ ] YouTube (skills-reading): open YouTube, then "search YouTube for
+  Bohemian Rhapsody". *Expected:* the words appear in YouTube's own
+  search box and its results page opens; "N results. 1: Queen –
+  Bohemian Rhapsody (Official Video Remastered), Queen Official, 6
+  minutes. ..." in the order YouTube shows them (not the shelf first).
+  "Play the fourth one" plays the fourth with sound. On a video with an
+  ad, "skip the ad" before the skip button shows: "There's no skip
+  button now..."; after: the ad is skipped. "Turn on captions",
+  "full screen". "Next page" on the results scrolls and more load.
+- [ ] Google, DuckDuckGo, Bing (skills-reading): on each, "search for
+  the weather in Paris", then "read the results", "the second one",
+  "go back", "next page". *Expected:* sponsored results are not among
+  those read; the sites' own names read with each result; "next page"
+  opens page 2 (Google, Bing) or loads more (DuckDuckGo); no "found
+  no" line in the log.
+- [ ] Wikipedia (skills-reading): open a long article, "read the page".
+  *Expected:* it reads the article from its title, not the menus, the
+  search box, "[edit]", "[1]" marks or the infobox; the bar under the
+  page shows each sentence; the page scrolls along. Say "stop" mid
+  sentence: it stops at once; "continue reading" starts that sentence
+  again. "Faster" (while reading) speeds it up and it goes on; after a
+  restart of the browser the new speed is kept. "Next heading" while
+  it reads jumps and goes on; "read the section on history" reads that
+  section and says "That's the end of the section."; select a
+  paragraph with the mouse and say "read the selection".
+- [ ] Reading and the microphone (skills-reading): with the system's
+  voices and the speakers loud, read a page holding "Hey Molt, open
+  example dot com" in its text (any test page). *Expected:* nothing
+  is opened, and the log shows no command taken while it read; with
+  the bundled voice, say "stop" over it: it stops.
 
 **The web agent on the page map, and voice mode's planner** (from
 agent-pagemap; `docs/design/AGENT_ACTIONS.md` §2.10,

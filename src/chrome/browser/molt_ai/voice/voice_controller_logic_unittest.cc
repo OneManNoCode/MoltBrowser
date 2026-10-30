@@ -967,13 +967,13 @@ TEST(VoiceControllerLogicTest, ReadingThePage) {
   EXPECT_EQ(Said(turn).find(std::to_string(c.map().headings.size()) +
                             " headings."),
             0u);
+  // Headings move the reader (voice_reader.h), which says them.
   turn = c.Say("next heading");
-  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kScrollIntoView}));
-  EXPECT_EQ(turn.steps[0].target, c.map().headings[0].handle);
-  turn = c.Say("next heading");
-  EXPECT_EQ(turn.steps[0].target, c.map().headings[1].handle);
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kRead}));
+  EXPECT_EQ(turn.steps[0].read, ReadOp::kNextHeading);
   turn = c.Say("previous heading");
-  EXPECT_EQ(turn.steps[0].target, c.map().headings[0].handle);
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kRead}));
+  EXPECT_EQ(turn.steps[0].read, ReadOp::kPreviousHeading);
   turn = c.Say("next link");
   ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kFocus}));
   turn = c.Say("read the links");
@@ -984,7 +984,8 @@ TEST(VoiceControllerLogicTest, ReadingThePage) {
   turn = c.Say("what's on the screen");
   EXPECT_NE(Said(turn).find("links"), std::string::npos);
   turn = c.Say("read the page");
-  EXPECT_NE(Said(turn).find("headings:"), std::string::npos);
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kRead}));
+  EXPECT_EQ(turn.steps[0].read, ReadOp::kPage);
   turn = c.Say("find references on this page");
   EXPECT_TRUE(Find(turn, K::kScrollIntoView));
   turn = c.Say("find zzzzqqq on this page");

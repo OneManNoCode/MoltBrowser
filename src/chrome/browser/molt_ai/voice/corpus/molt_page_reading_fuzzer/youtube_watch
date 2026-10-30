@@ -1,0 +1,122 @@
+A<!DOCTYPE html>
+<!-- A YouTube watch page (desktop, 2026) while an ad plays: the player (its <video>, the ad's skip button, play, captions, full screen), the video's title and the related videos.
+     A reduced copy that keeps the structure the browser reads (roles,
+     names, ids, classes, link targets); every text but titles and names is
+     a stand-in. See docs/design/VOICE_SKILLS.md, "Refreshing a site's test
+     pages". -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Queen – Bohemian Rhapsody (Official Video Remastered) - YouTube</title>
+</head>
+<body>
+<ytd-app>
+<div id="masthead-container">
+<ytd-masthead id="masthead">
+  <a id="logo" href="youtube_home.html" title="YouTube Home" aria-label="YouTube Home"><span>YouTube</span></a>
+  <yt-searchbox>
+    <form id="search-form" action="youtube_results.html" role="search">
+      <input id="search" name="search_query" type="text" role="combobox" aria-label="Search" placeholder="Search" autocomplete="off">
+      <button id="search-icon-legacy" aria-label="Search"><yt-icon></yt-icon></button>
+    </form>
+  </yt-searchbox>
+  <button id="voice-search-button" aria-label="Search with your voice"><yt-icon></yt-icon></button>
+  <a id="sign-in" href="#signin" aria-label="Sign in">Sign in</a>
+</ytd-masthead>
+</div>
+<tp-yt-app-drawer id="guide">
+  <nav aria-label="Guide">
+    <a href="youtube_home.html" title="Home">Home</a>
+    <a href="#shorts" title="Shorts">Shorts</a>
+    <a href="#subscriptions" title="Subscriptions">Subscriptions</a>
+    <a href="#history" title="History">History</a>
+  </nav>
+</tp-yt-app-drawer>
+<ytd-page-manager id="page-manager"><ytd-watch-flexy>
+<div id="columns"><div id="primary">
+<div id="player">
+<div id="movie_player" class="html5-video-player ytp-ad-showing" tabindex="-1" aria-label="YouTube Video Player">
+  <div class="html5-video-container"><video class="video-stream html5-main-video" src="/media/bigbuck.webm" preload="auto" aria-label="Video player"></video></div>
+  <div class="video-ads ytp-ad-module">
+    <div class="ytp-ad-player-overlay-layout">
+      <span class="ytp-ad-badge">Sponsored</span>
+      <button class="ytp-skip-ad-button" id="skip-button:2" aria-label="Skip">Skip</button>
+    </div>
+  </div>
+  <div class="ytp-chrome-bottom">
+    <div class="ytp-chrome-controls">
+      <button class="ytp-play-button ytp-button" aria-label="Pause (k)" title="Pause (k)"></button>
+      <a class="ytp-next-button ytp-button" href="youtube_watch.html?v=v2" aria-label="Next (SHIFT+n)"></a>
+      <div class="ytp-volume-area"><button class="ytp-mute-button ytp-button" aria-label="Mute (m)"></button>
+        <div class="ytp-volume-panel" role="slider" aria-label="Volume" aria-valuenow="100" tabindex="0"></div></div>
+      <button class="ytp-subtitles-button ytp-button" aria-label="Subtitles/closed captions (c)" aria-pressed="false" title="Subtitles/closed captions (c)"></button>
+      <button class="ytp-settings-button ytp-button" aria-label="Settings" title="Settings"></button>
+      <button class="ytp-fullscreen-button ytp-button" aria-label="Full screen (f)" title="Full screen (f)"></button>
+    </div>
+  </div>
+</div>
+</div>
+<div id="below">
+  <ytd-watch-metadata><div id="title"><h1><yt-formatted-string>Queen – Bohemian Rhapsody (Official Video Remastered)</yt-formatted-string></h1></div>
+  <ytd-channel-name><a href="/@QueenOfficial">Queen Official</a></ytd-channel-name>
+  <button aria-label="Subscribe to Queen Official.">Subscribe</button>
+  <div id="description"><yt-formatted-string>A stand-in for the video's description.</yt-formatted-string></div>
+  </ytd-watch-metadata>
+</div>
+</div>
+<div id="secondary"><ytd-watch-next-secondary-results-renderer><div id="items">
+<ytd-compact-video-renderer><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v2" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">5:55</div></a></ytd-thumbnail>
+  <div class="details"><a class="yt-simple-endpoint" href="youtube_watch.html?v=v2"><h3><span id="video-title" title="Bohemian Rhapsody (Remastered 2011)">Bohemian Rhapsody (Remastered 2011)</span></h3>
+  <ytd-video-meta-block><ytd-channel-name><yt-formatted-string id="text">Queen - Topic</yt-formatted-string></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">310M views</span><span class="inline-metadata-item">9 years ago</span></div></ytd-video-meta-block></a></div>
+</div></ytd-compact-video-renderer>
+<ytd-compact-video-renderer><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v3" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">6:07</div></a></ytd-thumbnail>
+  <div class="details"><a class="yt-simple-endpoint" href="youtube_watch.html?v=v3"><h3><span id="video-title" title="Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)">Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)</span></h3>
+  <ytd-video-meta-block><ytd-channel-name><yt-formatted-string id="text">Queen Official</yt-formatted-string></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">48M views</span><span class="inline-metadata-item">6 years ago</span></div></ytd-video-meta-block></a></div>
+</div></ytd-compact-video-renderer>
+<ytd-compact-video-renderer><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v4" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">2:31</div></a></ytd-thumbnail>
+  <div class="details"><a class="yt-simple-endpoint" href="youtube_watch.html?v=v4"><h3><span id="video-title" title="Queen - Bohemian Rhapsody (Live Aid 1985)">Queen - Bohemian Rhapsody (Live Aid 1985)</span></h3>
+  <ytd-video-meta-block><ytd-channel-name><yt-formatted-string id="text">Queen Official</yt-formatted-string></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">95M views</span><span class="inline-metadata-item">5 years ago</span></div></ytd-video-meta-block></a></div>
+</div></ytd-compact-video-renderer>
+<ytd-compact-video-renderer><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v5" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">4:47</div></a></ytd-thumbnail>
+  <div class="details"><a class="yt-simple-endpoint" href="youtube_watch.html?v=v5"><h3><span id="video-title" title="Bohemian Rhapsody | Muppet Music Video | The Muppets">Bohemian Rhapsody | Muppet Music Video | The Muppets</span></h3>
+  <ytd-video-meta-block><ytd-channel-name><yt-formatted-string id="text">The Muppets</yt-formatted-string></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">120M views</span><span class="inline-metadata-item">16 years ago</span></div></ytd-video-meta-block></a></div>
+</div></ytd-compact-video-renderer>
+</div></ytd-watch-next-secondary-results-renderer></div>
+</div>
+</ytd-watch-flexy></ytd-page-manager>
+</ytd-app>
+<script>
+  // As YouTube's player: a click on the video plays or pauses it; the skip
+  // button ends the ad.
+  const player = document.querySelector('video');
+  window.playResult = 'none';
+  window.skipped = false;
+  player.addEventListener('click', () => {
+    if (player.paused) {
+      player.play().then(() => { window.playResult = 'playing'; },
+                         (error) => { window.playResult = error.name; });
+    } else {
+      player.pause();
+    }
+  });
+  document.querySelector('.ytp-skip-ad-button').addEventListener('click',
+      (event) => {
+        window.skipped = true;
+        event.target.parentElement.parentElement.remove();
+      });
+  document.querySelector('.ytp-subtitles-button').addEventListener('click',
+      (event) => {
+        const on = event.target.getAttribute('aria-pressed') === 'true';
+        event.target.setAttribute('aria-pressed', on ? 'false' : 'true');
+      });
+</script>
+</body>
+</html>

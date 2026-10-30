@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<!-- DuckDuckGo's results for "bohemian rhapsody" (desktop, 2026): the search form, the result tabs, an ad, five results (articles with an h2 title link) and the "More results" button.
+     A reduced copy that keeps the structure the browser reads (roles,
+     names, ids, classes, link targets); every text but titles and names is
+     a stand-in. See docs/design/VOICE_SKILLS.md, "Refreshing a site's test
+     pages". -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bohemian rhapsody at DuckDuckGo</title>
+</head>
+<body>
+<div id="header_wrapper"><div id="header">
+<form id="search_form" action="duckduckgo_results.html" role="search">
+  <input id="search_form_input" type="text" name="q" value="bohemian rhapsody" aria-label="Search with DuckDuckGo" autocomplete="off">
+  <button id="search_button" type="submit" aria-label="Search"></button>
+</form>
+<nav aria-label="Search verticals"><ul><li><a href="#all">All</a></li><li><a href="#images">Images</a></li><li><a href="#videos">Videos</a></li></ul></nav>
+</div></div>
+<div id="web_content_wrapper"><section data-testid="mainline"><ol class="react-results--main">
+<li data-layout="ad"><article data-testid="ad"><h2><a href="https://duckduckgo.com/y.js?ad_domain=tickets.example">Bohemian Rhapsody Tickets</a></h2><span>Ad</span></article></li>
+<li data-layout="organic"><article id="r1-0" data-testid="result">
+  <div><a href="https://en.wikipedia.org/wiki/Bohemian_Rhapsody" data-testid="result-extras-url-link"><span>en.wikipedia.org</span></a></div>
+  <h2><a href="https://en.wikipedia.org/wiki/Bohemian_Rhapsody" data-testid="result-title-a"><span>Bohemian Rhapsody - Wikipedia</span></a></h2>
+  <div data-result="snippet"><span>A stand-in for the result's snippet.</span></div>
+</article></li>
+<li data-layout="organic"><article id="r1-1" data-testid="result">
+  <div><a href="https://www.youtube.com/watch?v=v1" data-testid="result-extras-url-link"><span>www.youtube.com</span></a></div>
+  <h2><a href="https://www.youtube.com/watch?v=v1" data-testid="result-title-a"><span>Queen – Bohemian Rhapsody (Official Video Remastered) - YouTube</span></a></h2>
+  <div data-result="snippet"><span>A stand-in for the result's snippet.</span></div>
+</article></li>
+<li data-layout="organic"><article id="r1-2" data-testid="result">
+  <div><a href="https://genius.com/Queen-bohemian-rhapsody-lyrics" data-testid="result-extras-url-link"><span>genius.com</span></a></div>
+  <h2><a href="https://genius.com/Queen-bohemian-rhapsody-lyrics" data-testid="result-title-a"><span>Bohemian Rhapsody Lyrics - Genius</span></a></h2>
+  <div data-result="snippet"><span>A stand-in for the result's snippet.</span></div>
+</article></li>
+<li data-layout="organic"><article id="r1-3" data-testid="result">
+  <div><a href="https://www.queenonline.com/bohemian-rhapsody" data-testid="result-extras-url-link"><span>www.queenonline.com</span></a></div>
+  <h2><a href="https://www.queenonline.com/bohemian-rhapsody" data-testid="result-title-a"><span>Bohemian Rhapsody | Queen Official</span></a></h2>
+  <div data-result="snippet"><span>A stand-in for the result's snippet.</span></div>
+</article></li>
+<li data-layout="organic"><article id="r1-4" data-testid="result">
+  <div><a href="https://www.bbc.co.uk/music/articles/bohemian" data-testid="result-extras-url-link"><span>www.bbc.co.uk</span></a></div>
+  <h2><a href="https://www.bbc.co.uk/music/articles/bohemian" data-testid="result-title-a"><span>The story behind Bohemian Rhapsody - BBC</span></a></h2>
+  <div data-result="snippet"><span>A stand-in for the result's snippet.</span></div>
+</article></li>
+</ol>
+<button id="more-results" type="button">More results</button>
+</section></div>
+</body>
+</html>

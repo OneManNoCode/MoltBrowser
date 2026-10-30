@@ -111,6 +111,7 @@ enum class VoiceCommandKind : uint8_t {
   kSpeedUp,
   kSlowDown,
   kNormalSpeed,
+  kSkipAd,  // the player's "skip ad" button
 
   // --- Reading ------------------------------------------------------------
   kReadPage,
@@ -130,6 +131,10 @@ enum class VoiceCommandKind : uint8_t {
   // while media plays.
   kNextItem,
   kPreviousItem,
+  // The next or previous paragraph of the text being read.
+  kNextParagraph,
+  kPreviousParagraph,
+  kReadSection,  // |text|: the section's name ("history")
 
   // --- Choosing -----------------------------------------------------------
   kChoose,  // |verb|, |choice|
@@ -252,7 +257,7 @@ struct VoiceCommand {
   // "node.js"), cleaned like |heard|, at most kMaxCommandTextBytes: the
   // query (kSearch, kFindInPage), the text (kType), the correction
   // (kCorrection), the routine's name (kRememberRoutine, kForgetRoutine,
-  // kRunRoutine).
+  // kRunRoutine), the section's name (kReadSection).
   std::string text;
   // kOpenSite, and kSearch with kNamedSite: the site as host-like text,
   // lower case: "youtube", "new york times" -> "newyorktimes",

@@ -46,6 +46,13 @@
 // ads.example. Say yes to open it, or no to cancel."); what the guard
 // refused (full screen, the clipboard, a permission prompt) is said.
 //
+// Reading aloud (voice_reader.h, TOUCHLESS_BROWSING.md §5.4): the loop's
+// kRead steps go to the window's reader, which reads the active tab's text
+// a chunk at a time through VoiceSpeech; every chunk is said to observers
+// (OnVoiceSpeech) as it starts. A new utterance or "stop" stops it,
+// keeping its place (VoiceEnvironment::reading). The speech rate is kept
+// as a setting (voice_reading_settings.h).
+//
 // The window owns nothing of it: the controller is created on first use
 // and deletes itself when the window closes. The agent side panel's voice
 // field and the window's listening (voice_session.h) listen through
@@ -99,6 +106,7 @@ namespace molt_ai {
 namespace voice {
 
 class VoicePageController;
+class VoiceReader;
 class VoiceSpeech;
 
 // What voice mode is doing, for the caption bar (§5.1).
@@ -238,6 +246,7 @@ class VoiceController : public VoicePlanner::Delegate,
   GURL SearchURLForTesting(const std::string& query);
 
  private:
+  class ReaderHost;
   class TabWatcher;
   struct PageWait;
 
@@ -346,6 +355,10 @@ class VoiceController : public VoicePlanner::Delegate,
 
   bool active_ = false;
   std::unique_ptr<VoiceSpeech> speech_;
+  // Reading aloud: the reader and its side in the browser (the host
+  // outlives the reader).
+  std::unique_ptr<ReaderHost> reader_host_;
+  std::unique_ptr<VoiceReader> reader_;
   std::unique_ptr<TabWatcher> watcher_;
   // The tab whose page controller voice mode started.
   base::WeakPtr<content::WebContents> attached_;

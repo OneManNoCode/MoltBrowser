@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!-- A Wikipedia article (Vector 2022 skin, 2026), reduced: the header with the search box, the article with its sections, edit links, reference marks, an infobox, the table of contents, the references and the footer.
+     A reduced copy that keeps the structure the browser reads (roles,
+     names, ids, classes, link targets); every text but titles and names is
+     a stand-in. See docs/design/VOICE_SKILLS.md, "Refreshing a site's test
+     pages". -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Queen (band) - Wikipedia</title>
+</head>
+<body>
+<a class="mw-jump-link" href="#bodyContent">Jump to content</a>
+<header class="vector-header mw-header">
+  <nav aria-label="Site"><a href="#main">Main page</a><a href="#contents">Contents</a><a href="#random">Random article</a></nav>
+  <a href="wikipedia_article.html" class="mw-logo"><span>Wikipedia</span></a>
+  <div id="p-search" role="search" class="vector-search-box">
+    <form action="wikipedia_search.html" id="searchform">
+      <input type="search" name="search" placeholder="Search Wikipedia" aria-label="Search Wikipedia" title="Search Wikipedia [f]" accesskey="f" id="searchInput" autocomplete="off">
+      <button class="cdx-button cdx-search-input__end-button">Search</button>
+    </form>
+  </div>
+</header>
+<div class="mw-page-container">
+<nav id="mw-panel-toc" aria-label="Contents" class="vector-toc"><h2>Contents</h2><ul>
+<li><a href="#History">History</a></li><li><a href="#Musical_style">Musical style</a></li><li><a href="#Legacy">Legacy</a></li></ul></nav>
+<main id="content" class="mw-body">
+<header class="mw-body-header"><h1 id="firstHeading" class="firstHeading mw-first-heading"><span class="mw-page-title-main">Queen (band)</span></h1></header>
+<nav aria-label="Namespaces"><a href="#article">Article</a><a href="#talk">Talk</a></nav>
+<div id="bodyContent" class="vector-body">
+<div id="siteSub">From Wikipedia, the free encyclopedia</div>
+<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output">
+<div role="note" class="hatnote">This is a stand-in for a hatnote.</div>
+<table class="infobox vcard"><tr><th>Queen</th></tr><tr><td>A stand-in for the infobox.</td></tr></table>
+<p><b>Queen</b> stands in for the article's subject here. This first sentence stands in for the lead.<sup class="reference"><a href="#cite_note-1">[1]</a></sup> A second sentence follows it, with <a href="#link">a link</a> inside.</p>
+<p>The lead's second paragraph stands in for more text. It ends here.</p>
+<div class="mw-heading mw-heading2"><h2 id="History">History</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="wikipedia_article.html?action=edit&amp;section=1" title="Edit section: History"><span>edit</span></a><span class="mw-editsection-bracket">]</span></span></div>
+<p>The history section starts with this sentence. It has a second sentence too.<sup class="reference"><a href="#cite_note-2">[2]</a></sup></p>
+<div class="mw-heading mw-heading3"><h3 id="Early_years">Early years</h3><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="wikipedia_article.html?action=edit&amp;section=2" title="Edit section: Early years"><span>edit</span></a><span class="mw-editsection-bracket">]</span></span></div>
+<p>The early years come first. Then the next step follows.</p>
+<ul><li>A first point of a list.</li><li>A second point of the list.</li></ul>
+<div class="mw-heading mw-heading2"><h2 id="Musical_style">Musical style</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="wikipedia_article.html?action=edit&amp;section=3" title="Edit section: Musical style"><span>edit</span></a><span class="mw-editsection-bracket">]</span></span></div>
+<p>The style section has one paragraph. It has two sentences.</p>
+<div class="mw-heading mw-heading2"><h2 id="Legacy">Legacy</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="wikipedia_article.html?action=edit&amp;section=4" title="Edit section: Legacy"><span>edit</span></a><span class="mw-editsection-bracket">]</span></span></div>
+<p>The legacy section is the last one read. Its text ends the article.</p>
+<div class="mw-heading mw-heading2"><h2 id="References">References</h2></div>
+<div class="reflist"><ol class="references"><li id="cite_note-1">A stand-in reference.</li><li id="cite_note-2">Another stand-in reference.</li></ol></div>
+<div role="navigation" class="navbox" aria-label="Navbox"><a href="#queen">Queen</a><a href="#albums">Albums</a></div>
+</div></div>
+<div id="catlinks" class="catlinks"><a href="#categories">Categories</a>: <a href="#cat">Stand-in category</a></div>
+</div>
+</main>
+</div>
+<footer class="mw-footer"><ul><li>This page was last edited on a stand-in date.</li><li><a href="#privacy">Privacy policy</a></li></ul></footer>
+</body>
+</html>

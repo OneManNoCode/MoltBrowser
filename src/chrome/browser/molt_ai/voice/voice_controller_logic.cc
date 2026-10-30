@@ -383,9 +383,19 @@ class Planner {
       // Media.
       case K::kPlay:
       case K::kResume:
+        if (command.kind == K::kResume && ResumesReading()) {
+          Read(ReadOp::kResume);
+          break;
+        }
         Play();
         break;
       case K::kPause:
+        if (env_.reading == VoiceEnvironment::Reading::kReading) {
+          // The new command stopped the reading; its place is kept.
+          Status("Paused reading");
+          Say("Paused. Say continue reading to go on.");
+          break;
+        }
         if (!env_.media_playing) {
           Say("Nothing is playing.");
           break;
@@ -464,17 +474,26 @@ class Planner {
         break;
       case K::kSpeedUp:
       case K::kSlowDown:
+        // While the browser reads, "faster" is its reading speed.
+        if (env_.reading != VoiceEnvironment::Reading::kNone) {
+          SpeechRate(command.kind == K::kSpeedUp);
+          break;
+        }
+        Say("Changing the playback speed comes later.");
+        break;
       case K::kNormalSpeed:
         Say("Changing the playback speed comes later.");
+        break;
+      case K::kSkipAd:
+        SkipAd();
         break;
 
       // Reading.
       case K::kReadPage:
-        ReadPage();
+        Read(ReadOp::kPage);
         break;
       case K::kReadFromHere:
-        Say("Reading on from here comes later. Say read the page, read the "
-            "headings or read the results.");
+        Read(ReadOp::kFromHere);
         break;
       case K::kReadHeadings:
         ReadHeadings();
@@ -492,14 +511,25 @@ class Planner {
                                : "The title is: " + PageText(map_.title) + ".");
         break;
       case K::kReadSelection:
-        Say("Reading the selection comes later.");
+        Read(ReadOp::kSelection);
+        break;
+      case K::kReadSection:
+        Read(ReadOp::kSection, PageText(command.text));
         break;
       case K::kDescribeScreen:
         Describe();
         break;
       case K::kNextHeading:
+        Read(ReadOp::kNextHeading);
+        break;
       case K::kPreviousHeading:
-        MoveHeading(command.kind == K::kNextHeading);
+        Read(ReadOp::kPreviousHeading);
+        break;
+      case K::kNextParagraph:
+        Read(ReadOp::kNextParagraph);
+        break;
+      case K::kPreviousParagraph:
+        Read(ReadOp::kPreviousParagraph);
         break;
       case K::kNextLink:
       case K::kPreviousLink:
@@ -596,19 +626,9 @@ class Planner {
         WhereAmI();
         break;
       case K::kSpeakFaster:
-      case K::kSpeakSlower: {
-        const bool faster = command.kind == K::kSpeakFaster;
-        double rate = state().speech_rate * (faster ? kSpeechRateStep
-                                                    : 1 / kSpeechRateStep);
-        rate = std::clamp(rate, kMinSpeechRate, kMaxSpeechRate);
-        if (rate == state().speech_rate) {
-          Say(faster ? "That's as fast as I go." : "That's as slow as I go.");
-          break;
-        }
-        state().speech_rate = rate;
-        Say(faster ? "Speaking faster." : "Speaking slower.");
+      case K::kSpeakSlower:
+        SpeechRate(command.kind == K::kSpeakFaster);
         break;
-      }
       case K::kVerbosity:
         SetVerbosity(command.verbosity);
         break;
@@ -1219,6 +1239,16 @@ class Planner {
     if (scope == SearchScope::kNamedSite) {
       const KnownSite* site =
           command.site_is_address ? nullptr : FindKnownSite(command.site);
+      // On that site already, with its search box: the box, as the user
+      // would (below).
+      if (site && env_.web_page && KnownSiteForHost(env_.host) == site &&
+          FindSearchField(map_)) {
+        scope = SearchScope::kCurrentSite;
+      }
+    }
+    if (scope == SearchScope::kNamedSite) {
+      const KnownSite* site =
+          command.site_is_address ? nullptr : FindKnownSite(command.site);
       if (site) {
         VoiceStep open = Step(VoiceStepKind::kNavigate);
         open.url = SiteSearchURL(*site, query);
@@ -1250,7 +1280,14 @@ class Planner {
     if (env_.web_page) {
       if (const PageItem* field = FindSearchField(map_)) {
         Add(NodeStep(VoiceStepKind::kSetText, field->handle, query));
-        Add(NodeStep(VoiceStepKind::kSubmit, field->handle, field->label));
+        // The site's own search button (its skill names it), else the
+        // form's submit or Enter.
+        if (const PageItem* submit = SitePart(map_, map_.site.search_submit)) {
+          Add(NodeStep(VoiceStepKind::kPress, submit->handle,
+                       PageText(submit->label)));
+        } else {
+          Add(NodeStep(VoiceStepKind::kSubmit, field->handle, field->label));
+        }
         Status("Searching for " + query);
         Add(WaitStep(FollowUpKind::kReadResults, query));
         return;
@@ -1271,8 +1308,22 @@ class Planner {
   }
 
   void NextPage() {
-    const PageItem* next = ItemSaying(map_, ItemKind::kLink,
-                                      {"next", "next page", "more results"});
+    // The site's own (its skill names it): a link, a button, or more
+    // results as the page scrolls.
+    const PageItem* next = SitePart(map_, map_.site.next_page);
+    if (!next && map_.site.next_page_scrolls) {
+      VoiceStep scroll = Step(VoiceStepKind::kScrollPage);
+      scroll.scroll = PageScroll::kDown;
+      scroll.count = 2;
+      Add(std::move(scroll));
+      Say("This site shows more results as you scroll, so I scrolled down. "
+          "Say read the results to hear them.");
+      return;
+    }
+    if (!next) {
+      next = ItemSaying(map_, ItemKind::kLink,
+                        {"next", "next page", "more results"});
+    }
     if (!next) {
       next = ItemSaying(map_, ItemKind::kButton,
                         {"next", "next page", "more results", "show more",
@@ -1404,6 +1455,16 @@ class Planner {
       Say("Playing.");
       return;
     }
+    // The site's player (its skill names it), else the page's first.
+    const PageItem* site_media = map_.ItemForHandle(map_.site.media);
+    if (site_media && site_media->kind == ItemKind::kMedia) {
+      Add(NodeStep(VoiceStepKind::kPlayMedia, site_media->handle,
+                   PageText(site_media->label)));
+      SetCurrentItem(site_media->number);
+      Status("Playing");
+      Say("Playing.");
+      return;
+    }
     if (!map_.media.empty()) {
       const PageMedia& media = map_.media[0];
       const std::string name = PageText(media.label);
@@ -1437,8 +1498,12 @@ class Planner {
     }
     // The player's own button first: it makes the video fill the screen.
     // The page may go full screen from this press (activation_policy.h).
-    if (const PageItem* button = ItemSaying(
-            map_, ItemKind::kButton, {"full screen", "fullscreen"})) {
+    const PageItem* button = SitePart(map_, map_.site.fullscreen);
+    if (!button) {
+      button =
+          ItemSaying(map_, ItemKind::kButton, {"full screen", "fullscreen"});
+    }
+    if (button) {
       VoiceStep press = NodeStep(VoiceStepKind::kPress, button->handle,
                                  PageText(button->label));
       press.intent = activation::Intent::kFullScreen;
@@ -1450,10 +1515,35 @@ class Planner {
     Say("Full screen.");
   }
 
+  // "Skip the ad": the site skill's skip button, else a button of the page
+  // or of a frame its player is in that says "skip ad".
+  void SkipAd() {
+    const PageItem* button = SitePart(map_, map_.site.skip_ad);
+    if (!button) {
+      button = ItemSaying(map_, ItemKind::kButton,
+                          {"skip ad", "skip ads", "skip advertisement"});
+    }
+    if (!button) {
+      Say("There's no skip button now. An ad can often be skipped after a "
+          "few seconds: say skip the ad again then.");
+      return;
+    }
+    if (button->disabled) {
+      Say("The ad can't be skipped yet.");
+      return;
+    }
+    Add(NodeStep(VoiceStepKind::kPress, button->handle,
+                 PageText(button->label)));
+    Status("Skipping the ad");
+    Say("Skipped the ad.");
+  }
+
   void Captions(bool on) {
-    const PageItem* button =
-        ItemSaying(map_, ItemKind::kButton,
-                   {"subtitles", "captions", "closed captions", "cc"});
+    const PageItem* button = SitePart(map_, map_.site.captions);
+    if (!button) {
+      button = ItemSaying(map_, ItemKind::kButton,
+                          {"subtitles", "captions", "closed captions", "cc"});
+    }
     if (!button) {
       Say("I can't find a captions button on this page.");
       return;
@@ -1465,6 +1555,63 @@ class Planner {
     Add(NodeStep(VoiceStepKind::kPress, button->handle,
                  PageText(button->label)));
     Say(on ? "Captions on." : "Captions off.");
+  }
+
+  // ---- Reading aloud -----------------------------------------------------
+
+  // A reading the user stopped, which "continue" or "resume" goes on with
+  // (rather than media): it was reading when they spoke, or it stopped
+  // earlier and nothing has played since.
+  bool ResumesReading() const {
+    using R = VoiceEnvironment::Reading;
+    return !env_.media_playing &&
+           (env_.reading == R::kReading ||
+            (env_.reading == R::kStopped && !env_.media_session));
+  }
+
+  // The reader (voice_reader.h) reads or moves; it says what it does.
+  void Read(ReadOp op, std::string section = std::string()) {
+    if (op == ReadOp::kSection && section.empty()) {
+      Say("Which section? Say read the section on, then its name.");
+      return;
+    }
+    VoiceStep read = Step(VoiceStepKind::kRead);
+    read.read = op;
+    read.text = std::move(section);
+    switch (op) {
+      case ReadOp::kPage:
+        Status("Reading the page");
+        break;
+      case ReadOp::kSection:
+        Status("Reading the section on " + read.text);
+        break;
+      case ReadOp::kSelection:
+        Status("Reading the selection");
+        break;
+      default:
+        break;
+    }
+    Add(std::move(read));
+  }
+
+  // "Speak faster" and "slower", and "faster" and "slower" while reading:
+  // the voice's rate, kept for the window; a reading the command stopped
+  // goes on at the new rate.
+  void SpeechRate(bool faster) {
+    double rate =
+        state().speech_rate * (faster ? kSpeechRateStep : 1 / kSpeechRateStep);
+    rate = std::clamp(rate, kMinSpeechRate, kMaxSpeechRate);
+    const bool reading = env_.reading == VoiceEnvironment::Reading::kReading;
+    if (rate == state().speech_rate) {
+      Say(faster ? "That's as fast as I go." : "That's as slow as I go.");
+    } else {
+      state().speech_rate = rate;
+      Say(reading ? (faster ? "Faster." : "Slower.")
+                  : (faster ? "Speaking faster." : "Speaking slower."));
+    }
+    if (reading) {
+      Read(ReadOp::kResume);
+    }
   }
 
   // ---- Reading -----------------------------------------------------------
@@ -1508,29 +1655,6 @@ class Planner {
     state().expecting_choice = true;
     Say(ListSpeech(links, "link", "links", state().verbosity,
                    kNormalOutlineRead));
-  }
-
-  void ReadPage() {
-    std::vector<std::string> sentences;
-    const std::string title = PageText(map_.title);
-    sentences.push_back(title.empty() ? std::string("This page has no title.")
-                                      : title + ".");
-    if (!map_.headings.empty()) {
-      const size_t read = std::min(map_.headings.size(), kNormalOutlineRead);
-      sentences.push_back(
-          CountOf(map_.headings.size(), "heading", "headings") + ":");
-      for (size_t i = 0; i < read; ++i) {
-        sentences.push_back(PageText(map_.headings[i].text) + ".");
-      }
-    }
-    if (const PageList* list = MainList(map_)) {
-      sentences.push_back("A list of " +
-                          CountOf(list->entries.size(), "item", "items") +
-                          ". Say read the results to hear it.");
-    }
-    sentences.emplace_back(
-        "Reading the page's text aloud comes later.");
-    Say(ChunkSentences(sentences));
   }
 
   void Describe() {
@@ -1636,26 +1760,6 @@ class Planner {
       said += " It's in " + std::to_string(found) + " places.";
     }
     Say(said);
-  }
-
-  void MoveHeading(bool next) {
-    ConversationState& s = state();
-    const int n = static_cast<int>(map_.headings.size());
-    if (n == 0) {
-      Say("This page has no headings.");
-      return;
-    }
-    const int at = s.heading_cursor + (next ? 1 : -1);
-    if (at < 1 || at > n) {
-      Say(next ? "That's the last heading." : "That's the first heading.");
-      return;
-    }
-    s.heading_cursor = at;
-    const PageHeading& heading = map_.headings[at - 1];
-    Add(NodeStep(VoiceStepKind::kScrollIntoView, heading.handle,
-                 PageText(heading.text)));
-    Say("Heading level " + std::to_string(heading.level) + ": " +
-        PageText(heading.text) + ".");
   }
 
   void MoveLink(bool next) {
@@ -2111,7 +2215,23 @@ bool NeedsConfirmation(std::string_view label,
   return false;
 }
 
+const PageItem* SitePart(const PageMap& map, const PageNodeHandle& part) {
+  if (!part.valid() || !map.InPage(part)) {
+    return nullptr;
+  }
+  const PageItem* item = map.ItemForHandle(part);
+  return item && !item->disabled ? item : nullptr;
+}
+
 const PageItem* FindSearchField(const PageMap& map) {
+  // The site's (its skill names it).
+  if (map.site.search_field.valid() && map.InPage(map.site.search_field)) {
+    const PageItem* field = map.ItemForHandle(map.site.search_field);
+    if (field && field->kind == ItemKind::kTextField && field->writable &&
+        field->credential == CredentialKind::kNone) {
+      return field;
+    }
+  }
   const PageItem* found = nullptr;
   for (const PageItem& item : map.items) {
     // Never a frame's: what the user searches for isn't typed into a box
