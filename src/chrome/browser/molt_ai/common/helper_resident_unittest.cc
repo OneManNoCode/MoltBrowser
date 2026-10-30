@@ -10,6 +10,8 @@
 
 #include <stdint.h>
 
+#include <algorithm>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -34,6 +36,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -189,6 +192,30 @@ TEST_F(ResidentHelperTest, HasNoNetwork) {
       Output({"connect", std::to_string(ntohs(address.sin_port))});
   close(listener);
   EXPECT_TRUE(output.starts_with("DENIED")) << output;
+}
+
+// A datagram reaches a named UNIX socket without connect(), as a logger
+// reaches the system log or the journal: refused too.
+TEST_F(ResidentHelperTest, SendsNoDatagramToANamedSocket) {
+  const std::string path = elsewhere_.GetPath().AppendASCII("log").value();
+  sockaddr_un address = {};
+  address.sun_family = AF_UNIX;
+  if (path.size() >= sizeof(address.sun_path)) {
+    GTEST_SKIP() << "the temporary directory is too deep for a socket's name";
+  }
+  std::ranges::copy(path, std::begin(address.sun_path));
+  const int listener = socket(AF_UNIX, SOCK_DGRAM, 0);
+  ASSERT_GE(listener, 0);
+  ASSERT_EQ(
+      bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)),
+      0);
+  const std::string output = Output({"dgram", path});
+  char received[16] = {};
+  const ssize_t got =
+      recv(listener, received, sizeof(received), MSG_DONTWAIT);
+  close(listener);
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+  EXPECT_LT(got, 0);
 }
 
 TEST_F(ResidentHelperTest, StartsNoOtherProcess) {

@@ -205,6 +205,8 @@ void FuzzSession(std::string_view data) {
     return out;
   };
   bool other_speaking = false;
+  bool page_audible = false;
+  bool echo_cancelled = true;
   while (pos < data.size()) {
     const uint8_t op = next();
     now += next() * 37;
@@ -253,9 +255,17 @@ void FuzzSession(std::string_view data) {
       case 11:
         actions = logic.OnAwaitingAnswer(next() & 1, now);
         break;
-      case 12:
-        actions = logic.OnPageAudible(next() & 1, now);
+      case 12: {
+        const uint8_t byte = next();
+        if (byte & 2) {
+          echo_cancelled = byte & 4;
+          actions = logic.OnEchoCancellation(echo_cancelled, now);
+        } else {
+          page_audible = byte & 1;
+          actions = logic.OnPageAudible(page_audible, now);
+        }
         break;
+      }
       case 13: {
         ListeningSettings changed = settings;
         changed.always_listening = next() & 1;
@@ -275,7 +285,7 @@ void FuzzSession(std::string_view data) {
       CHECK(listening_before);
       CHECK_EQ(*actions.utterance, said);
       CHECK(!said.empty());
-      if (other_speaking) {
+      if (other_speaking || (page_audible && !echo_cancelled)) {
         CHECK(IsAlwaysHeardCommand(said));
       }
     }

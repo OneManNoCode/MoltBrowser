@@ -4,6 +4,117 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-30: rounds 38 and 39 (October 2026)
+
+**Scope.** The code of rounds 38 and 39 (touchless browsing's listening,
+the web agent on the accessibility page map and voice mode's planner
+fallback), which only its authors had reviewed, without the Chromium
+rebase's mechanical changes, in this order of priority:
+
+1. The speech helper (`voice/speech_helper/`, `scripts/bundle-speech.sh`):
+   the frame reader and the CONFIG parser (bounds, integer overflow,
+   partial reads), the hotwords' cleaning against sherpa-onnx's hotword
+   syntax and spelling, the output caps and the stall rules, and the
+   supply chain (the pins, the `git archive` fallback, extraction, and the
+   checks that CMake fetches nothing).
+2. The helper sandbox's resident mode (`common/helper_resident*`, and the
+   resident parts of `helper_sandbox_linux.*`, `seatbelt_profile.*` and
+   `helper_sandbox_win_policy.*`): whether a helper a hostile input took
+   over can write anything, reach the network or a local service, start a
+   process, read outside its models, outlive the browser or pass its memory
+   and CPU caps; the restarts and their backoff.
+3. The listening session (`voice_session*`, `voice_listener*`,
+   `voice_audio*`, `voice_listener_protocol*`): the helper's output (caps,
+   UTF-8, the order of events, RESET epochs, and what a hijacked helper's
+   text is to the browser); page audio and page speech against voice mode
+   (with echo cancellation and without, `speechSynthesis`, the wake phrase,
+   the follow-up window, and "stop", "cancel" and "turn off voice mode"
+   said by a page or by the browser reading a page); the hotwords taken
+   from page text; when the microphone opens and closes (MoltNet windows,
+   stopping, closing the window); the settings handler, the toolbar
+   button and the real-click rule.
+4. The agent on the page map (`agents/agent_page_map*`, `web_agent.cc`,
+   `voice_agent_planner*`, `voice_agent_speech*`, `voice_page_controller.cc`'s
+   `Inspect()`, `OptionsOf()`, `SelectOption()` and holders): every
+   agent_safety rule on the new path (origins per frame and the frames
+   between them, credential fields, the fence, the questions before a
+   click), page-controlled names, a target that changes between the check
+   and the action, an option's default action, holders that never release
+   the accessibility mode, and the planner's questions and results read
+   aloud.
+5. The rebase's merges of `quota_database.{cc,h}`, `mouse_event.cc` and
+   `media_stream_video_track.cc`: MoltBrowser's hooks still in place and
+   still correct after upstream's changes.
+
+**Method.** Each candidate traced from its attacker (a web page or a frame
+it embeds, page audio and page speech, the page text the browser reads
+aloud, a helper that a hostile input took over, a compromised renderer)
+through MoltBrowser's code, sherpa-onnx 2.0.1's hotword encoder and
+keyword parser (`EncodeHotwords()`, `EncodeBase()`), ONNX Runtime 1.28.2's
+dependency fetching, and the upstream Chromium 156 code at the pinned
+revision (Blink's accessibility serialization of forms, buttons and input
+types, `HTMLOptionElement`'s default action). On Linux the helper sandbox
+was exercised against the real kernel (Landlock ABI 7 and seccomp-bpf):
+the resident mode's tests, a confined program sending a datagram to a
+named socket outside its paths, and the bundled speech helper itself
+under the resident sandbox (the protocol checks of
+`speech_helper_check.py`, 21 of 21). Fixes tested with the std-only unit
+tests built standalone (system gtest, ASan and UBSan), the helper
+sandbox's tests on the real kernel, the agent page map's unit tests
+built standalone on the `//url` stand-ins, the voice listener fuzzer
+(four minutes after the fixes), `molt_fuzz.py check`; the changed C++ was
+compiled against Chromium 156's headers; the tests that need Chromium run
+on the build machine.
+
+**Findings.** 16: 9 low and 7 informational (wording, defence in depth,
+performance, or what later phases of the design cover). Fixed: four of
+the low; the others are tracked privately.
+
+**Fixed.**
+
+- On Linux a helper's UNIX sockets are stream or seqpacket sockets only:
+  connect() was already refused, but a datagram socket reaches a named
+  socket without it, as a logger reaches the system log. This holds for
+  the OCR and voice helpers and the resident speech helper alike
+  (`common/helper_sandbox_linux.cc`).
+- Where the microphone has no echo canceller (Chrome-wide echo
+  cancellation turned off, and a device without its own), a tab's sound
+  reaches the recognizer as it is. A tab playing sound then counts as
+  another source's speech, as a page's `speechSynthesis` does: only
+  "stop", "cancel" and "turn off voice mode" count while it plays and a
+  second after. The session also looks at the tabs' sound at each of the
+  helper's events (`voice/voice_session_logic.cc`, `voice_session.cc`).
+- The page's names that bias recognition (hotwords) leave out any phrase
+  the grammar reads as a yes ("Yes", "OK", "Sure, go ahead"), so page
+  text never biases the answer that confirms an action
+  (`voice/voice_listener_protocol.cc`).
+- The web agent's page map lists, and acts in, the page's own frame and
+  frames of its origin that only frames of that origin embed: a frame of
+  the page's origin inside another site's frame (an ad that embeds one of
+  the page's URLs of its choosing, with its buttons) is left out like the
+  frame around it, and refused at action time (`agents/web_agent.cc`,
+  `agent_page_map.cc`, `voice/voice_page_controller.cc`).
+
+**Tests added.**
+
+- `helper_sandbox_unittest.cc`: the seccomp filter's verdicts for each
+  socket type and flag; a confined short-lived helper can't send a
+  datagram to a named socket outside its scratch directory.
+  `helper_resident_unittest.cc`: the same for a resident helper. The
+  stand-in helper (`helper_sandbox_test_helper_posix.cc`) has a `dgram`
+  action for them.
+- `voice_session_logic_unittest.cc`: a video's wake phrase and command,
+  and an answer in the follow-up window, without an echo canceller; the
+  same with one. The voice listener fuzzer drives the new input and checks
+  that only the commands that always count are taken while a tab plays
+  sound without one.
+- `voice_listener_protocol_unittest.cc`: yes-phrases left out of a page's
+  hotwords, other names kept.
+- `agent_page_map_unittest.cc`: a frame of the page's origin inside
+  another site's frame is refused at action time.
+  `agent_page_map_browsertest.cc`: the same widget listed when the page
+  embeds it, and left out when another site's frame does.
+
 ## 2026-10-29: PR #80 (October 2026)
 
 **Scope.** The code merged in pull request #80 (rounds 36 and 37, touchless

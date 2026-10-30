@@ -68,6 +68,20 @@ namespace voice {
 
 namespace {
 
+// Whether every frame above |frame|, up to the top-level document (through
+// a fenced frame's outer document), has |frame|'s origin.
+bool AncestorsHaveOrigin(const content::RenderFrameHost& frame) {
+  const url::Origin& origin = frame.GetLastCommittedOrigin();
+  for (const content::RenderFrameHost* parent =
+           frame.GetParentOrOuterDocument();
+       parent; parent = parent->GetParentOrOuterDocument()) {
+    if (!parent->GetLastCommittedOrigin().IsSameOriginWith(origin)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // How long Submit() waits for the field to report the focus.
 constexpr base::TimeDelta kSubmitFocusTimeout = base::Seconds(3);
 // How far Submit() looks for the form and its submit input.
@@ -550,6 +564,7 @@ std::optional<VoicePageController::TargetFacts> VoicePageController::Inspect(
   }
   facts.origin = found->frame->GetLastCommittedOrigin();
   facts.main_frame = found->frame->IsInPrimaryMainFrame();
+  facts.framed_by_own_origin = AncestorsHaveOrigin(*found->frame);
   return facts;
 }
 
@@ -564,6 +579,15 @@ std::optional<url::Origin> VoicePageController::OriginOfTree(
     return std::nullopt;
   }
   return frame->GetLastCommittedOrigin();
+}
+
+bool VoicePageController::FramedByItsOwnOrigin(int32_t tree_index) {
+  auto id = tree_ids_.find(tree_index);
+  if (id == tree_ids_.end()) {
+    return false;
+  }
+  content::RenderFrameHost* frame = FrameFor(id->second);
+  return frame && AncestorsHaveOrigin(*frame);
 }
 
 namespace {

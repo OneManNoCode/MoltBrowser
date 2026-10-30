@@ -27,8 +27,9 @@
 //     UNIX sockets or signalling processes outside the sandbox.
 //   - seccomp-bpf (x86_64 and aarch64): an allow-by-default filter with a
 //     short deny list (BuildSeccompProgram()). socket() for anything but
-//     AF_UNIX and connect() fail with EACCES, so libraries that probe for
-//     the network fail gracefully instead of being killed. It also keeps
+//     an AF_UNIX stream or seqpacket socket, and connect(), fail with
+//     EACCES, so libraries that probe for the network fail gracefully
+//     instead of being killed. It also keeps
 //     what the helper writes in files the launcher can measure, and its
 //     memory where RLIMIT_DATA counts it.
 // A layer the kernel lacks (Landlock before 5.13, or disabled at boot) is
@@ -143,9 +144,11 @@ uint64_t HandledFsAccess(int abi);
 // The seccomp-bpf program for this build's CPU architecture (x86_64,
 // aarch64), empty on any other. It checks the architecture first (a foreign
 // syscall ABI, e.g. int 0x80 or x32, kills the process), then denies:
-//   socket() / socketpair() other than AF_UNIX, and connect(): EACCES
-//     (no network; no talking to the session bus, X11, ssh-agent or other
-//     named services through a UNIX socket);
+//   socket() / socketpair() other than an AF_UNIX stream or seqpacket
+//     socket, and connect(): EACCES (no network; no talking to the session
+//     bus, X11, ssh-agent or other named services through a UNIX socket,
+//     nor sending datagrams to one, such as the system log, without
+//     connect());
 //   io_uring_*: EPERM (it can open sockets without socket());
 //   setsid, setpgid: EPERM (what the helper starts stays in its process
 //     group, which the launcher kills);

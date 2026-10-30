@@ -13,9 +13,10 @@
 //     map's number as its id ("e12" is the item numbered 12, the number
 //     voice mode shows on screen), its kind and name, and the credential
 //     fields marked. The page's own content comes first, as the map orders
-//     it, then the frames of the page's own origin; another site's frames
-//     (ads, widgets) are left out, as the element snapshot leaves out
-//     every frame.
+//     it, then the frames of the page's own origin that only frames of
+//     that origin embed; another site's frames (ads, widgets), and what
+//     they embed, are left out, as the element snapshot leaves out every
+//     frame.
 //   - Acting: an element names its node (PageNodeHandle). Before an action
 //     the browser maps the page again and finds the node there, still of
 //     its kind and name (FindLiveItem()); a node that is gone or changed is
@@ -89,8 +90,9 @@ struct PageMapInput {
   std::string origin;
   // The trees (voice::PageNodeHandle::tree) of the frames whose committed
   // origin is |origin|: the page's own (map->page_tree, which must be one
-  // of them for anything to be listed) and its frames of the same origin.
-  // Items of other trees are left out.
+  // of them for anything to be listed) and its frames of the same origin
+  // whose every ancestor frame has it too (not one inside another site's
+  // frame). Items of other trees are left out.
   std::vector<int32_t> same_origin_trees;
   // The options of the map's selects, by item number
   // (VoicePageController::OptionsOf(): page text, cleaned for speech).
@@ -186,14 +188,18 @@ ClickQuestion CheckClick(const agent_safety::ElementProbe& probe,
 // Origins per frame, at action time: the element's frame must have the
 // origin it was observed with (|observed|, as ObservedElement::frame_origin
 // holds it), which must be the page's (|page|, the tab's committed origin)
-// and an http(s) origin in the run's |allowed| set. A frame that changed
-// origin is stale (observe again); one that is another site's, or not a
-// web page, is refused.
+// and an http(s) origin in the run's |allowed| set, and every frame between
+// it and the top-level document must have that origin too
+// (|framed_by_own_origin|, VoicePageController::TargetFacts). A frame that
+// changed origin is stale (observe again); one that is another site's, one
+// of the page's origin that another site's frame embeds (which chose what
+// it shows), or one that isn't a web page, is refused.
 enum class FrameCheck { kOk, kStale, kRefused };
 FrameCheck CheckFrameOrigin(std::string_view observed,
                             const url::Origin& live,
                             const url::Origin& page,
-                            const std::vector<url::Origin>& allowed);
+                            const std::vector<url::Origin>& allowed,
+                            bool framed_by_own_origin);
 
 // What typing into a field found now as |live| needs: the page-map path
 // types into no credential field (|kRefuse|, with a note for the model),

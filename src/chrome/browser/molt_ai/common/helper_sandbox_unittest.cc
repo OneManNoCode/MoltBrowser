@@ -6,7 +6,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
 #include <array>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,7 +27,9 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_POSIX)
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -428,6 +432,13 @@ constexpr uint32_t Errno(int error) {
   return SECCOMP_RET_ERRNO | static_cast<uint32_t>(error);
 }
 
+// socket() or socketpair() (|nr|) of |family| and |type|.
+seccomp_data SocketCall(int nr, uint64_t family, uint64_t type) {
+  seccomp_data data = Call(nr, family);
+  data.args[1] = type;
+  return data;
+}
+
 TEST(HelperSandboxLinuxTest, SeccompProgramShape) {
   const std::vector<sock_filter> program = hsl::BuildSeccompProgram();
   if (hsl::SeccompArchName().empty()) {
@@ -478,19 +489,38 @@ TEST(HelperSandboxLinuxTest, SeccompVerdicts) {
   EXPECT_EQ(RunFilter(program, Call(__NR_vfork)), Errno(EPERM));
 #endif
 
-  // Network: only AF_UNIX sockets, and no connect().
-  EXPECT_EQ(RunFilter(program, Call(__NR_socket, AF_UNIX)), SECCOMP_RET_ALLOW);
-  EXPECT_EQ(RunFilter(program, Call(__NR_socketpair, AF_UNIX)),
-            SECCOMP_RET_ALLOW);
-  for (int family : {AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, AF_UNSPEC}) {
-    EXPECT_EQ(RunFilter(program, Call(__NR_socket, family)), Errno(EACCES))
-        << family;
-    EXPECT_EQ(RunFilter(program, Call(__NR_socketpair, family)), Errno(EACCES))
-        << family;
+  // Network: only AF_UNIX stream and seqpacket sockets, and no connect().
+  for (int nr : {__NR_socket, __NR_socketpair}) {
+    for (uint64_t type :
+         {uint64_t{SOCK_STREAM}, uint64_t{SOCK_STREAM | SOCK_CLOEXEC},
+          uint64_t{SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC}}) {
+      EXPECT_EQ(RunFilter(program, SocketCall(nr, AF_UNIX, type)),
+                SECCOMP_RET_ALLOW)
+          << nr << " " << type;
+    }
+    // A datagram socket sends to a named one without connect() (the
+    // system log, the journal); AF_UNIX takes SOCK_RAW as one too.
+    for (uint64_t type :
+         {uint64_t{SOCK_DGRAM}, uint64_t{SOCK_DGRAM | SOCK_CLOEXEC},
+          uint64_t{SOCK_DGRAM | SOCK_NONBLOCK}, uint64_t{SOCK_RAW},
+          uint64_t{SOCK_RDM}, uint64_t{0}}) {
+      EXPECT_EQ(RunFilter(program, SocketCall(nr, AF_UNIX, type)),
+                Errno(EACCES))
+          << nr << " " << type;
+    }
+    for (int family : {AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, AF_UNSPEC}) {
+      EXPECT_EQ(RunFilter(program, SocketCall(nr, family, SOCK_STREAM)),
+                Errno(EACCES))
+          << nr << " " << family;
+    }
   }
-  // Only the low 32 bits are the family, as in the kernel.
-  EXPECT_EQ(RunFilter(program, Call(__NR_socket, (1ULL << 32) | AF_UNIX)),
+  // Only the low 32 bits are the family and the type, as in the kernel.
+  EXPECT_EQ(RunFilter(program, SocketCall(__NR_socket, (1ULL << 32) | AF_UNIX,
+                                          SOCK_STREAM)),
             SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, SocketCall(__NR_socket, AF_UNIX,
+                                          (1ULL << 32) | SOCK_DGRAM)),
+            Errno(EACCES));
   EXPECT_EQ(RunFilter(program, Call(__NR_connect)), Errno(EACCES));
 
   for (int nr : {__NR_io_uring_setup,
@@ -929,6 +959,32 @@ TEST_F(HelperSandboxLimitsTest, StartsNoOtherProcess) {
   // A child would be a process the launcher doesn't count or kill.
   const std::string output = Output({"fork"});
   EXPECT_TRUE(output.starts_with("DENIED")) << output;
+}
+
+TEST_F(HelperSandboxLimitsTest, SendsNoDatagramToANamedSocket) {
+  // A named UNIX socket outside the scratch directory, as the system log's
+  // is: a datagram reaches it without connect().
+  base::ScopedTempDir elsewhere;
+  ASSERT_TRUE(elsewhere.CreateUniqueTempDir());
+  const std::string path = elsewhere.GetPath().AppendASCII("log").value();
+  sockaddr_un address = {};
+  address.sun_family = AF_UNIX;
+  if (path.size() >= sizeof(address.sun_path)) {
+    GTEST_SKIP() << "the temporary directory is too deep for a socket's name";
+  }
+  std::ranges::copy(path, std::begin(address.sun_path));
+  const int listener = socket(AF_UNIX, SOCK_DGRAM, 0);
+  ASSERT_GE(listener, 0);
+  ASSERT_EQ(
+      bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)),
+      0);
+  const std::string output = Output({"dgram", path});
+  char received[16] = {};
+  const ssize_t got =
+      recv(listener, received, sizeof(received), MSG_DONTWAIT);
+  close(listener);
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+  EXPECT_LT(got, 0);
 }
 
 TEST_F(HelperSandboxLimitsTest, AnInputDoesntCount) {

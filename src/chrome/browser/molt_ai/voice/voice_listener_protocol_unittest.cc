@@ -173,7 +173,7 @@ TEST(VoiceListenerProtocolTest, HotwordsFromPageMap) {
       Entry("Bohemian Rhapsody | Live Aid 1985", "Queen Official"));
   results.entries.push_back(
       Entry("Panic! At The Disco: Bohemian Rhapsody", "Panic! At The Disco"));
-  results.entries.push_back(Entry("Hey-ya - OutKast", ""));
+  results.entries.push_back(Entry("Ms-Jackson - OutKast", ""));
   map.lists.push_back(results);
   PageList navigation;
   navigation.entries.push_back(Entry("Home", ""));
@@ -184,7 +184,8 @@ TEST(VoiceListenerProtocolTest, HotwordsFromPageMap) {
       (std::vector<std::string>{
           "Queen", "Bohemian Rhapsody", "Official Video Remastered",
           "Queen Official", "Live Aid nineteen eighty five", "Panic",
-          "At The Disco", "Panic At The Disco", "Hey ya", "OutKast", "Home"}));
+          "At The Disco", "Panic At The Disco", "Ms Jackson", "OutKast",
+          "Home"}));
   EXPECT_EQ(HotwordsFromPageMap(map, 3),
             (std::vector<std::string>{"Queen", "Bohemian Rhapsody",
                                       "Official Video Remastered"}));
@@ -195,6 +196,21 @@ TEST(VoiceListenerProtocolTest, HotwordsFromPageMap) {
   shouting.lists.push_back(list);
   EXPECT_EQ(HotwordsFromPageMap(shouting), (std::vector<std::string>{"QUEEN"}));
   EXPECT_TRUE(HotwordsFromPageMap(PageMap()).empty());
+}
+
+// The recognizer is biased toward the page's names, never toward a yes: a
+// page can't tip what the user answers to "Say yes to ..." into one.
+TEST(VoiceListenerProtocolTest, HotwordsHoldNoYes) {
+  PageMap map;
+  PageList list;
+  list.entries.push_back(Entry("Yes", "OK"));
+  list.entries.push_back(Entry("Sure, go ahead! | Yes please do", "Okay"));
+  list.entries.push_back(Entry("Yesterday - Right Said Fred", "yeah"));
+  // The grammar drops a wake phrase it hears first: "Hey ya" is a yes.
+  list.entries.push_back(Entry("Hey-ya", ""));
+  map.lists.push_back(list);
+  EXPECT_EQ(HotwordsFromPageMap(map),
+            (std::vector<std::string>{"Yesterday", "Right Said Fred"}));
 }
 
 // ---- Lines -----------------------------------------------------------------

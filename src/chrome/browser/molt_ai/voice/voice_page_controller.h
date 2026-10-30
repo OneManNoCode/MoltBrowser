@@ -181,6 +181,9 @@ class VoicePageController
     // document's.
     url::Origin origin;
     bool main_frame = false;
+    // Whether every frame above it, up to the top-level document, has its
+    // origin (FramedByItsOwnOrigin()).
+    bool framed_by_own_origin = false;
   };
   // As every action does, the target is found again first: a stale handle
   // (*|error| kStale) or a frame that isn't an http(s) document
@@ -191,6 +194,11 @@ class VoicePageController
   // The committed origin of the frame whose tree has |tree_index|
   // (PageNodeHandle::tree), if it is one of this tab's primary page's.
   std::optional<url::Origin> OriginOfTree(int32_t tree_index);
+  // Whether that frame is one of this tab's primary page's and every frame
+  // above it, up to the top-level document (through a fenced frame's outer
+  // document), has its origin: false for a frame of the page's origin that
+  // another site's frame embeds, which chose what it shows.
+  bool FramedByItsOwnOrigin(int32_t tree_index);
 
   // The names of a select's options (a collapsed <select>, whose options
   // the map doesn't number, or a list box), in order: at most kMaxOptions,

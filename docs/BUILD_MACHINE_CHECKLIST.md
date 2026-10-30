@@ -3182,6 +3182,15 @@ files (helpers-limits):
   process now (seccomp allows threads only): a failure with "Operation
   not permitted" from `fork` or `posix_spawn` means a distribution build
   does; report which.
+- [ ] Linux, UNIX sockets stream or seqpacket only (redteam11): OCR of an
+  attachment and voice, with the distribution's tesseract and whisper-cli
+  and with bundled builds, and voice mode listening (the speech helper,
+  checked here under the resident sandbox: 21 of 21 protocol checks).
+  *Expected:* as before. A failure that names `socket` with "Permission
+  denied" means a helper opens a datagram UNIX socket (a logger, say):
+  report which. `molt_ai_unittests
+  --gtest_filter='*SendsNoDatagramToANamedSocket*'` passes: a confined
+  helper's datagram never reaches a named socket outside its paths.
 - [ ] Every OS, the sandbox tests (helpers-limits; Windows deferred):
   `molt_ai_unittests --gtest_filter='HelperLimits*:HelperSandboxLimits*:HelperSandboxWin*:HelperSandboxLinux*'`
   with `molt_helper_sandbox_test_helper` next to it. *Expected:* all pass:
