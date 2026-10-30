@@ -378,7 +378,7 @@ void VoiceListener::Start() {
     return;
   }
   started_ = true;
-  failures_ = 0;
+  failures_.Clear();
   Launch();
 }
 
@@ -409,6 +409,7 @@ void VoiceListener::Launch() {
   stalled_since_ = base::TimeTicks();
   connection_ = base::MakeRefCounted<Connection>();
   launched_at_ = base::TimeTicks::Now();
+  failures_.OnStarted();
 
   // The helper gets the path of its model directory, and nothing else
   // (SPEECH_HELPER_PROTOCOL.md §1).
@@ -452,7 +453,7 @@ void VoiceListener::OnLine(int generation, HelperEvent event) {
   }
   if (event.type == HelperEventType::kReady) {
     ready_ = true;
-    ready_at_ = base::TimeTicks::Now();
+    failures_.OnReady(NowMs());
     sink_->Attach(connection_);
     delegate_->OnListenerReady(event);
     return;
@@ -462,7 +463,16 @@ void VoiceListener::OnLine(int generation, HelperEvent event) {
   if (event.epoch >= 0 && event.epoch < resets_sent_) {
     return;
   }
+  const bool error = event.type == HelperEventType::kError;
+  base::WeakPtr<VoiceListener> self = weak_factory_.GetWeakPtr();
   delegate_->OnListenerEvent(event);
+  // The helper exits after an `error` (SPEECH_HELPER_PROTOCOL.md §3.7),
+  // passed on once: it ends now, so one that writes more and carries on is
+  // restarted, with the backoff, like a crash.
+  if (error && self && connection_) {
+    connection_->Kill();
+    EndConnection(StopReason::kExited, "it reported an error");
+  }
 }
 
 void VoiceListener::OnEnded(int generation,
@@ -473,12 +483,7 @@ void VoiceListener::OnEnded(int generation,
   if (generation != generation_) {
     return;
   }
-  const bool was_ready = ready_;
-  if (was_ready && !ready_at_.is_null() &&
-      base::TimeTicks::Now() - ready_at_ >= kStableRunTime) {
-    failures_ = 0;
-  }
-  if (!was_ready && IsStartFailure(exit_code)) {
+  if (!ready_ && IsStartFailure(exit_code)) {
     reason = StopReason::kStartFailed;
     why = "its sandbox couldn't be set up";
   }
@@ -541,14 +546,16 @@ void VoiceListener::EndConnection(StopReason reason, const std::string& why) {
   if (!started_) {
     return;
   }
-  ++failures_;
+  // However it ended (HelperFailureCount: a helper that ran a while starts
+  // the count afresh).
+  const int failures = failures_.OnEnded(NowMs());
   LOG(WARNING) << "[MoltVoice] speech helper ended: " << why;
-  if (reason == StopReason::kStartFailed || failures_ >= kMaxFailures) {
+  if (reason == StopReason::kStartFailed || failures_.exhausted()) {
     started_ = false;
     delegate_->OnListenerGaveUp(why);
     return;
   }
-  const size_t delay = std::min<size_t>(static_cast<size_t>(failures_ - 1),
+  const size_t delay = std::min<size_t>(static_cast<size_t>(failures - 1),
                                         std::size(kRestartDelays) - 1);
   delegate_->OnListenerLost(reason, why, /*restarting=*/true);
   restart_timer_.Start(

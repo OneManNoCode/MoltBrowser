@@ -11,8 +11,9 @@
 // loop; what is heard while the browser speaks doesn't command it, but
 // "stop" does; a page's speech (speechSynthesis) is never cut short by
 // voice mode, and what a page says doesn't command it; a crash and the
-// restart; giving up after crashes in a row; and MoltNet windows, where
-// the microphone is never opened.
+// restart; giving up after crashes in a row, and after `error` lines from
+// a helper that carries on; and MoltNet windows, where the microphone is
+// never opened.
 //
 // Linux and macOS: on Windows the helper's AppContainer reads only the
 // folders MoltBrowser's installer grants, which a test binary's isn't.
@@ -401,6 +402,23 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, GivesUpAfterCrashesInARow) {
             std::string::npos)
       << tts_.AllSpoken();
   EXPECT_EQ(tabs(), 1);
+}
+
+IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, AnErrorLineEndsTheHelper) {
+  // The helper exits after an `error` line. One that writes errors and
+  // carries on is ended at the first, restarted like a crash, and voice
+  // mode gives up after three in a row.
+  Script(
+      "ready\n"
+      "200 line {\"type\":\"error\",\"code\":\"engine\",\"message\":\"a\"}\n"
+      "250 line {\"type\":\"error\",\"code\":\"engine\",\"message\":\"b\"}\n"
+      "300 line {\"type\":\"error\",\"code\":\"engine\",\"message\":\"c\"}\n");
+  ASSERT_TRUE(session()->Start());
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !session()->listening(); }));
+  EXPECT_NE(tts_.AllSpoken().find(
+                "Speech recognition stopped working: it reported an error"),
+            std::string::npos)
+      << tts_.AllSpoken();
 }
 
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)

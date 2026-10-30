@@ -14,12 +14,14 @@
 //     ParseHelperLine() (known types and fields only, valid UTF-8, capped,
 //     text through SpeechSafeText()), then HelperEventSequence (the
 //     protocol's order of events). Anything else ends the helper; it is
-//     then restarted like a crash.
+//     then restarted like a crash. So does an `error` line, once passed
+//     on: the helper exits after one.
 //   - Restarts: after a crash, a protocol error, a limit or a stall, the
 //     helper starts again after kRestartDelays (1 s, then 4 s, then 16 s).
-//     After kMaxFailures failures in a row (a helper that ran
-//     kStableRunTime resets the count) it gives up and says so; so does a
-//     helper whose sandbox can't be set up, or that is missing.
+//     After kMaxFailures failures in a row it gives up and says so; so
+//     does a helper whose sandbox can't be set up, or that is missing. A
+//     helper that ran kStableRunTime after its `ready`, however it ended,
+//     starts the count afresh (HelperFailureCount).
 //   - Watchdog: no `ready` within kReadyTimeout, its memory or CPU past the
 //     limits (checked every second), or its stdin backed up for
 //     kStallTimeout (it stopped reading), end it.
@@ -68,7 +70,7 @@ class VoiceListener {
  public:
   // Why the helper went away.
   enum class StopReason {
-    kExited,         // it exited, or crashed
+    kExited,         // it exited, crashed or wrote an `error`
     kStartFailed,    // it couldn't be started confined
     kProtocolError,  // it wrote something that isn't the protocol
     kOverLimit,      // its memory or CPU
@@ -115,8 +117,9 @@ class VoiceListener {
 
   static constexpr std::array<base::TimeDelta, 3> kRestartDelays = {
       base::Seconds(1), base::Seconds(4), base::Seconds(16)};
-  static constexpr int kMaxFailures = 3;
-  static constexpr base::TimeDelta kStableRunTime = base::Seconds(60);
+  static constexpr int kMaxFailures = HelperFailureCount::kMaxFailures;
+  static constexpr base::TimeDelta kStableRunTime =
+      base::Milliseconds(HelperFailureCount::kStableRunMs);
   static constexpr base::TimeDelta kReadyTimeout = base::Seconds(30);
   static constexpr base::TimeDelta kStallTimeout = base::Seconds(3);
   static constexpr base::TimeDelta kShutdownGrace = base::Milliseconds(500);
@@ -174,14 +177,13 @@ class VoiceListener {
   bool started_ = false;
   bool ready_ = false;
   int generation_ = 0;
-  int failures_ = 0;
+  HelperFailureCount failures_;
   // RESET frames sent to the current helper: its events from before the
   // last one (a lower "epoch") are dropped.
   int64_t resets_sent_ = 0;
   // The current helper's events so far.
   HelperEventSequence sequence_;
   base::TimeTicks launched_at_;
-  base::TimeTicks ready_at_;
   base::TimeTicks stalled_since_;
   std::string confinement_;
   base::RepeatingTimer watchdog_;
