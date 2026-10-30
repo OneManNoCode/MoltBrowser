@@ -1156,6 +1156,24 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page reading aloud is never cut off by voice mode, and what it says
   isn't taken as a command. It never listens in MoltNet windows. How:
   `docs/VOICE_COMMANDS.md`.
+- **The AI agent sees and acts on pages as voice mode does, and voice mode
+  takes open-ended requests.** Outside MoltNet windows the web agent reads
+  a page through its accessibility tree (numbered items, lists of results,
+  fields with password, card and code fields marked) and clicks, types,
+  chooses options and scrolls through accessibility actions, which pages
+  treat as your own interaction, so a video it starts plays with sound.
+  Before each action it checks the element is still there and still the
+  same, and reads the page again if not; it never types into password,
+  card or code fields there, and asks you before leaving the site or
+  sending a form as before. Pages without a usable accessibility tree, and
+  MoltNet windows, keep the agent's previous way of reading pages. In
+  voice mode, what the commands don't cover ("find me a train from Paris
+  to Lyon tomorrow") goes to the agent's on-device planner: each step is
+  said before it runs, anything that needs your approval waits for a
+  spoken "yes", and "stop" ends it; without a model installed, the browser
+  says so and what you can say instead. Runs that acted this way can't yet
+  be saved as workflows. The agent's use of the accessibility tree can be
+  turned off at `chrome://flags/#molt-agent-page-map`.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an
