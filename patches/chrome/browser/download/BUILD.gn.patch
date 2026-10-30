@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/download/BUILD.gn b/chrome/browser/download/BUILD.gn
-index fb1b41b07ca5296f6e62bf69dda53b5431947c0e..e1c4a2140327bbc294642037f5932cb8d444e925 100644
+index fb1b41b07ca5296f6e62bf69dda53b5431947c0e..47ded808e1dc32577efc95cb1208532e27cb2690 100644
 --- a/chrome/browser/download/BUILD.gn
 +++ b/chrome/browser/download/BUILD.gn
 @@ -50,10 +50,17 @@ source_set("download") {
@@ -26,3 +26,13 @@ index fb1b41b07ca5296f6e62bf69dda53b5431947c0e..e1c4a2140327bbc294642037f5932cb8
      "//chrome/browser/profiles",
      "//components/content_settings/core/browser",
      "//components/download/content/public",
+@@ -196,6 +203,9 @@ source_set("impl") {
+     "//chrome/browser/devtools",
+     "//chrome/browser/enterprise",
+     "//chrome/browser/history",
++
++    # MoltBrowser: what the activation guard's hook calls.
++    "//chrome/browser/molt_ai/security:activation_guard",
+     "//chrome/browser/net",
+     "//chrome/browser/notifications",
+     "//chrome/browser/offline_items_collection",

@@ -1,0 +1,33 @@
+MoltBrowser patch for chrome/browser/download/chrome_download_manager_delegate.cc
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
+Generated from src/chrome/browser/download/chrome_download_manager_delegate.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrome/browser/download/chrome_download_manager_delegate.cc
+index 0cfc34d1e08df4ff399991e85fb87d0e9725a164..553099cb1d97c026f36f22b9eafe14675ef0e2cb 100644
+--- a/chrome/browser/download/chrome_download_manager_delegate.cc
++++ b/chrome/browser/download/chrome_download_manager_delegate.cc
+@@ -49,6 +49,7 @@
+ #include "chrome/browser/download/save_package_file_picker.h"
+ #include "chrome/browser/enterprise/connectors/common.h"
+ #include "chrome/browser/history/history_service_factory.h"
++#include "chrome/browser/molt_ai/security/activation_guard.h"  // MoltBrowser
+ #include "chrome/browser/platform_util.h"
+ #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -2490,6 +2491,14 @@ void ChromeDownloadManagerDelegate::CheckDownloadAllowed(
+   }
+ #endif
+ 
++  // MoltBrowser: a download the page starts with the user activation an
++  // agent's or voice mode's accessibility action gave it waits, once the
++  // checks below allow it, for the user's answer
++  // (molt_ai/security/activation_guard.h).
++  check_download_allowed_cb = molt_ai::ActivationGuard::GuardDownload(
++      web_contents, url, request_initiator,
++      std::move(check_download_allowed_cb));
++
+   CanDownloadCallback cb = base::BindOnce(
+       &ChromeDownloadManagerDelegate::OnCheckDownloadAllowedComplete,
+       weak_ptr_factory_.GetWeakPtr(), std::move(check_download_allowed_cb));
