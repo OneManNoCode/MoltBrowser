@@ -20,6 +20,7 @@
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
 #include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/agents/frame_tools.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/profiles/profile.h"

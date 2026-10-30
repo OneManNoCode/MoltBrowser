@@ -133,8 +133,8 @@
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
-#include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
+#include "chrome/browser/molt_ai/security/page_request_asker.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "url/origin.h"
@@ -155,7 +155,7 @@ class VoicePageController;
 // WebAgent — ReAct-based autonomous browsing agent
 // ============================================================
 class WebAgent : public content::WebContentsObserver,
-                 public ActivationGuard::Asker {
+                 public activation::PageRequestAsker {
  public:
   // Where an observation came from: the accessibility page map
   // (agent_page_map.h) or the element snapshot (agent_actions.h).
@@ -320,7 +320,7 @@ class WebAgent : public content::WebContentsObserver,
   // content::WebContentsObserver:
   void DidStopLoading() override;
 
-  // ActivationGuard::Asker:
+  // activation::PageRequestAsker (the tab's ActivationGuard asks):
   bool AskAboutPageRequest(int id,
                            const activation::Question& question) override;
   void TellAboutPageRequest(const std::string& text) override;

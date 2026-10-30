@@ -25,6 +25,9 @@ source_set("activation_policy") {
   sources = [
     "activation_policy.cc",
     "activation_policy.h",
+
+    # Who asks (voice mode, the web agent): an interface, header-only.
+    "page_request_asker.h",
   ]
 }
 
@@ -50,8 +53,11 @@ source_set("activation_guard") {
     "//url",
   ]
 
-  # blink::kActivationLifespan, the input events.
-  deps = [ "//third_party/blink/public/common:headers" ]
+  # blink::kActivationLifespan, the input events and their key codes.
+  deps = [
+    "//third_party/blink/public/common:headers",
+    "//ui/events:events_base",
+  ]
 }
 
 # The guard on a page that uses the activation of whatever clicks it

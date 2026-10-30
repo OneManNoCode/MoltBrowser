@@ -14,6 +14,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
@@ -746,7 +747,9 @@ void VoiceController::RunTurn(VoiceTurn turn) {
   if (!turn.status.empty()) {
     status_ = std::move(turn.status);
   }
-  interrupt_next_speech_ = true;
+  // The activation guard's question, asked while a page loaded, is heard to
+  // its end: what follows is said after it.
+  interrupt_next_speech_ = page_request_question_ == 0;
   for (VoiceStep& step : turn.steps) {
     pending_.push_back(std::move(step));
   }

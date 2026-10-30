@@ -82,7 +82,7 @@
 #include "base/observer_list_types.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/molt_ai/security/activation_guard.h"
+#include "chrome/browser/molt_ai/security/page_request_asker.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
@@ -110,7 +110,7 @@ enum class VoiceActivity {
 };
 
 class VoiceController : public VoicePlanner::Delegate,
-                        public ActivationGuard::Asker {
+                        public activation::PageRequestAsker {
  public:
   DECLARE_USER_DATA(VoiceController);
 
@@ -304,7 +304,7 @@ class VoiceController : public VoicePlanner::Delegate,
   // the planner's run unless |keep_planner|.
   void CancelRun(bool keep_planner = false);
 
-  // ActivationGuard::Asker:
+  // activation::PageRequestAsker (the tab's ActivationGuard asks):
   bool AskAboutPageRequest(int id,
                            const activation::Question& question) override;
   void TellAboutPageRequest(const std::string& text) override;

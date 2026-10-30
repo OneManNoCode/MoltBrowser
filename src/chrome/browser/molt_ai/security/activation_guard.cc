@@ -21,6 +21,7 @@
 #include "third_party/blink/public/common/frame/user_activation_state.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/input/web_keyboard_event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace molt_ai {
 
@@ -138,15 +139,25 @@ int64_t ActivationGuard::NowMs() const {
 }
 
 void ActivationGuard::DidGetUserInteraction(const blink::WebInputEvent& event) {
-  // The Enter voice mode sent (VoicePageController::Submit()) comes back
-  // here as the tab's input: it is the action's own, not the user's.
-  if (own_key_code_ != 0 &&
-      event.GetType() == blink::WebInputEvent::Type::kRawKeyDown &&
-      Now() < own_key_until_ &&
-      static_cast<const blink::WebKeyboardEvent&>(event).windows_key_code ==
-          own_key_code_) {
-    own_key_code_ = 0;
+  // Only input that gives the page activation of its own ends the state
+  // (HTML's activation-triggering events: a key other than Esc, a mouse
+  // button, a touch). A scroll or Esc gives none, so the page would still
+  // be using the action's.
+  if (event.GetType() == blink::WebInputEvent::Type::kGestureScrollBegin) {
     return;
+  }
+  if (event.GetType() == blink::WebInputEvent::Type::kRawKeyDown) {
+    const int key =
+        static_cast<const blink::WebKeyboardEvent&>(event).windows_key_code;
+    if (key == ui::VKEY_ESCAPE) {
+      return;
+    }
+    // The Enter voice mode sent (VoicePageController::Submit()) comes back
+    // here as the tab's input: it is the action's own, not the user's.
+    if (own_key_code_ != 0 && key == own_key_code_ && Now() < own_key_until_) {
+      own_key_code_ = 0;
+      return;
+    }
   }
   activation::NoteUserInput(record_);
 }

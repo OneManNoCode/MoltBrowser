@@ -341,8 +341,9 @@ source_set("voice_controller") {
     ":voice_planner",
     "//base",
 
-    # Voice mode asks the activation guard's questions on its tab.
-    "//chrome/browser/molt_ai/security:activation_guard",
+    # Voice mode asks the activation guard's questions on its tab
+    # (page_request_asker.h).
+    "//chrome/browser/molt_ai/security:activation_policy",
     "//ui/base/unowned_user_data",
   ]
 
@@ -350,6 +351,9 @@ source_set("voice_controller") {
     ":features",
     ":voice_page",
     "//chrome/app:command_ids",
+
+    # The tab's activation guard, which voice mode answers.
+    "//chrome/browser/molt_ai/security:activation_guard",
 
     # The planner fallback: the web agent's on-device planner
     # (agents/voice_agent_planner.h).

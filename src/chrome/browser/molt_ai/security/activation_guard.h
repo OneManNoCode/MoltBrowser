@@ -61,6 +61,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/security/activation_policy.h"
+#include "chrome/browser/molt_ai/security/page_request_asker.h"
 #include "components/blocked_content/url_list_manager.h"
 #include "components/permissions/permission_request_manager.h"
 #include "content/public/browser/download_manager_delegate.h"
@@ -92,20 +93,8 @@ class ActivationGuard
   static constexpr size_t kMaxWithheldWindows = 8;
   static constexpr base::TimeDelta kWithheldWindow = base::Seconds(2);
 
-  // Who asks the user.
-  class Asker {
-   public:
-    virtual ~Asker() = default;
-    // Ask |question| (Answer(|id|, ...) answers it). False if it can't now:
-    // the request is refused then.
-    virtual bool AskAboutPageRequest(int id,
-                                     const activation::Question& question) = 0;
-    // Say what the guard refused (the browser's words, cleaned).
-    virtual void TellAboutPageRequest(const std::string& text) = 0;
-    // Question |id| no longer waits for an answer: it timed out, or the page
-    // it was about is gone (what it asked about is refused).
-    virtual void PageRequestQuestionWithdrawn(int id) {}
-  };
+  // Who asks the user (page_request_asker.h).
+  using Asker = activation::PageRequestAsker;
 
   ActivationGuard(const ActivationGuard&) = delete;
   ActivationGuard& operator=(const ActivationGuard&) = delete;
