@@ -251,6 +251,10 @@ source_set("browser_tests") {
     "//base/test:test_support",
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+
+    # Routines with the planner's steps, as stored (planner-routines).
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/molt_ai/voice:features",
     "//chrome/browser/molt_ai/voice:page_map",
     "//chrome/browser/molt_ai/voice:voice_controller",
