@@ -13,7 +13,9 @@
 //            muted, bit 6 full screen, bit 7 the page changes after each
 //            turn
 //   byte 1   bits 0-1 the active tab (of up to four), bit 2 a question
-//            expires before the next utterance
+//            expires before the next utterance, bits 3-4 reading aloud
+//            (none, reading, stopped), bit 5 a site skill names parts (the
+//            first items of each kind, whatever they are)
 //   lines    "> utterance"; "? words" (the planner asks the user to
 //            confirm them, voice_planner.h); "T title"; "H text" (a heading); "L label" (a
 //            new list); "E title\tchannel\tduration\tdate\tcount\ttext" (an
@@ -348,6 +350,15 @@ void CheckTurn(const VoiceTurn& turn,
       case VoiceStepKind::kToPlanner:
         CheckSpeakable(step.preface, kMaxSpokenChars);
         break;
+      case VoiceStepKind::kRead:
+        // Only a section has words: the user's, cleaned.
+        if (step.read == molt_ai::voice::ReadOp::kSection) {
+          CHECK(!step.text.empty());
+          CheckSpeakable(step.text, kMaxSpokenChars);
+        } else {
+          CHECK(step.text.empty());
+        }
+        break;
       default:
         break;
     }
@@ -451,6 +462,29 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                        : static_cast<int>((more_bits & 0x03) % env.tabs.size());
   env.page_id = 1;
   env.now_ms = 1000;
+  using Reading = molt_ai::voice::VoiceEnvironment::Reading;
+  env.reading = (more_bits & 0x18) == 0x08   ? Reading::kReading
+                : (more_bits & 0x18) == 0x10 ? Reading::kStopped
+                                             : Reading::kNone;
+  if (more_bits & 0x20) {
+    // A skill's parts name the page's first items, of any kind: the loop
+    // must use each only as the item it is.
+    molt_ai::voice::SiteParts& site = page.map.site;
+    site.source = "fuzz@1";
+    const std::vector<PageItem>& items = page.map.items;
+    auto nth = [&](size_t n) {
+      return items.empty() ? molt_ai::voice::PageNodeHandle()
+                           : items[n % items.size()].handle;
+    };
+    site.search_field = nth(0);
+    site.search_submit = nth(1);
+    site.media = nth(2);
+    site.skip_ad = nth(3);
+    site.captions = nth(4);
+    site.fullscreen = nth(5);
+    site.next_page = nth(6);
+    site.next_page_scrolls = more_bits & 0x40;
+  }
 
   ConversationState state;
   int question = 0;

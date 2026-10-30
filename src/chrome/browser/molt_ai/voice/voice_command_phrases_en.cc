@@ -217,7 +217,10 @@ constexpr CommandPattern kPatterns[] = {
     // --- Media --------------------------------------------------------------
     {K::kPause,
      "(pause|hold on) [it|this|that|the video|the music|the song|playback|"
-     "the movie|the audio]"},
+     "the movie|the audio|reading|the reading]"},
+    {K::kSkipAd,
+     "skip [the|this|these] (ad|ads|advert|adverts|advertisement|"
+     "advertisements|commercial)"},
     {K::kResume,
      "(resume|unpause|continue|keep playing|continue playing|carry on) "
      "[it|playback|the video|the music|the song|playing]"},
@@ -312,19 +315,29 @@ constexpr CommandPattern kPatterns[] = {
      "can you see|describe [the|this] (screen|page|view)|(whats|what is) "
      "here)"},
     {K::kNextHeading,
-     "[go to|jump to|move to|read] [the] next (heading|section|header)"},
+     "[go to|jump to|skip to|move to|read] [the] next (heading|section|"
+     "header)"},
     {K::kPreviousHeading,
-     "[go to|jump to|move to|read] [the] previous (heading|section|header)"},
+     "[go to|jump to|skip to|move to|read] [the] previous (heading|section|"
+     "header)"},
     {K::kNextLink, "[go to|jump to|move to|read] [the] next link"},
     {K::kPreviousLink, "[go to|jump to|move to|read] [the] previous link"},
+    {K::kNextParagraph, "[go to|jump to|move to|read] [the] next paragraph"},
+    {K::kPreviousParagraph,
+     "[go to|jump to|move to|read] [the] previous paragraph"},
     {K::kNextItem,
-     "[go to|jump to|move to|read] [the] next (item|result|entry|"
-     "paragraph|element)"},
+     "[go to|jump to|move to|read] [the] next (item|result|entry|element)"},
     {K::kNextItem, "next"},
     {K::kPreviousItem,
      "[go to|jump to|move to|read] [the] previous (item|result|entry|"
-     "paragraph|element)"},
+     "element)"},
     {K::kPreviousItem, "previous"},
+    {K::kReadSection,
+     "(read|read me|go to|jump to|skip to|move to) [the] (section|part) (on|"
+     "about|called|named|titled) {query}"},
+    {K::kReadSection,
+     "(read|read me|go to|jump to|skip to|move to) [the] {query} (section|"
+     "part)"},
 
     // --- Choosing -----------------------------------------------------------
     {K::kShowNumbers,
@@ -446,6 +459,8 @@ constexpr CommandInfo kInfos[] = {
     {K::kSpeedUp, "Media", "Play faster.", "speed up"},
     {K::kSlowDown, "Media", "Play slower.", "slow down"},
     {K::kNormalSpeed, "Media", "Back to normal speed.", "normal speed"},
+    {K::kSkipAd, "Media", "Skip the ad, once the player lets you.",
+     "skip the ad"},
     // Reading.
     {K::kReadPage, "Reading", "Read the page aloud.", "read the page"},
     {K::kReadFromHere, "Reading", "Read on from where you are.",
@@ -469,6 +484,13 @@ constexpr CommandInfo kInfos[] = {
      "next item"},
     {K::kPreviousItem, "Reading", "Move to the previous item.",
      "previous item"},
+    {K::kNextParagraph, "Reading", "Read the next paragraph.",
+     "next paragraph"},
+    {K::kPreviousParagraph, "Reading", "Read the paragraph before.",
+     "previous paragraph"},
+    {K::kReadSection, "Reading",
+     "Read one section of the page, by its heading.",
+     "read the section on history"},
     // Choosing.
     {K::kChoose, "Choosing",
      "Choose from what is on screen: by number, by position, or by name, "

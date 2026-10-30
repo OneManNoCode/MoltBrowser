@@ -512,6 +512,7 @@ source_set("voice_loop_unit_tests") {
     "page_reading_unittest.cc",
     "site_skills_unittest.cc",
     "voice_candidates_unittest.cc",
+    "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",

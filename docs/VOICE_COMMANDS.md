@@ -283,7 +283,7 @@ said.
 **Pause.** For example: "pause".
 
 - `stop (the video | the music | the song | playback | playing | the movie | the audio)`
-- `(pause | hold on) [it | this | that | the video | the music | the song | playback | the movie | the audio]`
+- `(pause | hold on) [it | this | that | the video | the music | the song | playback | the movie | the audio | reading | the reading]`
 
 **Carry on playing.** For example: "resume".
 
@@ -371,6 +371,10 @@ said.
 
 - `((normal | regular | default | usual) [playback] speed | reset [the] [playback] speed | speed (normal | to normal | back to normal) | play at normal speed)`
 
+**Skip the ad, once the player lets you.** For example: "skip the ad".
+
+- `skip [the | this | these] (ad | ads | advert | adverts | advertisement | advertisements | commercial)`
+
 ## Reading
 
 **Read the page aloud.** For example: "read the page".
@@ -412,11 +416,11 @@ said.
 
 **Move to the next heading.** For example: "next heading".
 
-- `[go to | jump to | move to | read] [the] next (heading | section | header)`
+- `[go to | jump to | skip to | move to | read] [the] next (heading | section | header)`
 
 **Move to the previous heading.** For example: "previous heading".
 
-- `[go to | jump to | move to | read] [the] previous (heading | section | header)`
+- `[go to | jump to | skip to | move to | read] [the] previous (heading | section | header)`
 
 **Move to the next link.** For example: "next link".
 
@@ -428,13 +432,26 @@ said.
 
 **Move to the next item of the list.** For example: "next item".
 
-- `[go to | jump to | move to | read] [the] next (item | result | entry | paragraph | element)`
+- `[go to | jump to | move to | read] [the] next (item | result | entry | element)`
 - `next`
 
 **Move to the previous item.** For example: "previous item".
 
-- `[go to | jump to | move to | read] [the] previous (item | result | entry | paragraph | element)`
+- `[go to | jump to | move to | read] [the] previous (item | result | entry | element)`
 - `previous`
+
+**Read the next paragraph.** For example: "next paragraph".
+
+- `[go to | jump to | move to | read] [the] next paragraph`
+
+**Read the paragraph before.** For example: "previous paragraph".
+
+- `[go to | jump to | move to | read] [the] previous paragraph`
+
+**Read one section of the page, by its heading.** For example: "read the section on history".
+
+- `(read | read me | go to | jump to | skip to | move to) [the] (section | part) (on | about | called | named | titled) {query}`
+- `(read | read me | go to | jump to | skip to | move to) [the] {query} (section | part)`
 
 ## Choosing
 

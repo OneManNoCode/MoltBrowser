@@ -41,6 +41,18 @@
 // PlanPlannerQuestion() holds a kPlannerAnswer step for "yes", and "no"
 // answers it with one too.
 //
+// Site skills (site_skills.h, TOUCHLESS_BROWSING.md §6.7): the parts a
+// site's skill named on the page (PageMap::site) come before the map's own
+// guesses: its search box and submit, its results as the main list, its
+// player's skip-ad, captions and full-screen buttons, its next page.
+//
+// Reading aloud (page_reading.h, voice_reader.h): "read the page", "read
+// from here", "read the selection", "read the section on history", "next
+// heading" and "next paragraph" become a kRead step the reader carries out
+// with the voice; "pause", "stop", "continue reading", "faster" and
+// "slower" while it reads keep or resume its place (VoiceEnvironment::
+// reading).
+//
 // The activation guard (molt_ai/security/activation_guard.h,
 // TOUCHLESS_BROWSING.md §7.5) asks the same way when a page tries to use
 // the activation voice mode's actions gave it (a new window, a download,
@@ -117,6 +129,22 @@ enum class VoiceStepKind : uint8_t {
   // The answer to the activation guard's question |index| (a page's new
   // window, download or app): |flag| yes (true) or no.
   kPageRequestAnswer,
+  // Reading aloud (voice_reader.h): |read|, with |text| the section's name
+  // for ReadOp::kSection.
+  kRead,
+};
+
+// What a kRead step asks of the reader.
+enum class ReadOp : uint8_t {
+  kPage,      // the page's text from its start
+  kFromHere,  // from the focused item, else where reading stopped
+  kResume,    // where reading stopped
+  kSelection,
+  kSection,  // the section |text| names, to its end
+  kNextHeading,
+  kPreviousHeading,
+  kNextParagraph,
+  kPreviousParagraph,
 };
 
 enum class BrowserCommand : uint8_t {
@@ -180,6 +208,8 @@ struct VoiceStep {
   // playing a video): the page may go full screen then
   // (activation_policy.h).
   activation::Intent intent = activation::Intent::kNone;
+  // kRead.
+  ReadOp read = ReadOp::kPage;
   int count = 1;
   int index = 0;
   int seconds = 0;
@@ -255,6 +285,11 @@ struct VoiceEnvironment {
   // The browser listens to the microphone (voice_session.h); false while
   // commands are only typed.
   bool listening = false;
+  // Reading aloud (voice_reader.h): it was reading when this was said (the
+  // new command stopped it, keeping its place), or it stopped earlier on
+  // this page and can go on.
+  enum class Reading : uint8_t { kNone, kReading, kStopped };
+  Reading reading = Reading::kNone;
   std::vector<TabInfo> tabs;
   int active_tab = 0;
   // A monotonic clock, in milliseconds.
@@ -408,10 +443,16 @@ bool NeedsConfirmation(std::string_view label,
                        std::string_view url,
                        const PageMap& map);
 
-// The page's search field: a writable text field of the top-level document
-// (never of a frame it embeds) the map marks as a search field, on screen
-// first; null if there is none.
+// The page's search field: the site skill's (PageMap::site), else a
+// writable text field of the top-level document (never of a frame it
+// embeds) the map marks as a search field, on screen first; null if there
+// is none.
 const PageItem* FindSearchField(const PageMap& map);
+
+// The item a site part names (PageMap::site), if it is an item of the
+// top-level document that can be pressed now (not disabled): null
+// otherwise.
+const PageItem* SitePart(const PageMap& map, const PageNodeHandle& part);
 
 }  // namespace voice
 }  // namespace molt_ai
