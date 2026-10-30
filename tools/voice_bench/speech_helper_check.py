@@ -347,6 +347,10 @@ def step_protocol(args):
             status = h.proc.wait(10)
         except subprocess.TimeoutExpired:
             h.proc.kill()
+        try:
+            h.proc.stdin.close()  # what it holds can't reach the helper now
+        except BrokenPipeError:
+            pass
         took = time.monotonic() - t0
         ok = status == 3
         r["reader stops reading"] = {"ok": ok, "status": status, "seconds": round(took, 1)}
@@ -585,6 +589,7 @@ def step_wake(args):
 
 def step_latency(args):
     rows = load_set(args.dir, "asr-clean-a")[:40]
+    utts = {u["id"]: u for u in vbl.load_testset()}
     out = {}
     for threads in (1, 2):
         h = Helper(args, env_threads=threads)
@@ -612,8 +617,13 @@ def step_latency(args):
                 vad_end.append(end_ms[-1] - rec["audio_start_ms"] - 1000 * speech_end)
             if part:
                 first_partial.append(1000 * (part[0] - t0 - speech_start))
+        # In real time the transcripts should be the ones fed fast give.
+        scores, transcripts = score_rows(recs, utts)
+        agg = vbl.aggregate(scores) if scores else {}
         out["threads_%d" % threads] = {
             "clips": len(recs),
+            "wer": agg.get("wer"), "command_acc": agg.get("command_acc"),
+            "transcripts": transcripts,
             "end_of_speech_to_final_ms_median": round(vbl.median(to_final), 1),
             "end_of_speech_to_final_ms_p90": round(vbl.percentile(to_final, 90), 1),
             "end_of_speech_to_speech_end_ms_median": round(vbl.median(to_end), 1),
@@ -623,7 +633,8 @@ def step_latency(args):
                 [a - b for a, b in zip(to_final, to_end)]), 1),
             "first_partial_ms_median": round(vbl.median(first_partial), 1),
             "peak_rss_kb": rss, "exit": status}
-        print("latency, %d thread(s):" % threads, out["threads_%d" % threads])
+        print("latency, %d thread(s):" % threads,
+              {k: v for k, v in out["threads_%d" % threads].items() if k != "transcripts"})
     return out
 
 
