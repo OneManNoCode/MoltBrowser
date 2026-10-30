@@ -536,6 +536,17 @@ ReadingDocument BuildReadingDocument(const PageTree& tree,
   return document;
 }
 
+ReadingDocument TextDocument(std::string_view text) {
+  ReadingDocument document;
+  ReadingBlock block;
+  block.text = SpeechSafeText(text, kMaxReadingBlockChars);
+  if (!block.text.empty()) {
+    block.sentences = SentenceStarts(block.text);
+    document.blocks.push_back(std::move(block));
+  }
+  return document;
+}
+
 std::optional<std::string> SelectedText(const PageTree& tree,
                                         size_t max_chars,
                                         const ReadingLimits& limits) {
@@ -805,6 +816,12 @@ void ReadingQueue::Start(ReadingDocument document,
                          size_t end_block) {
   document_ = std::move(document);
   loaded_ = true;
+  end_block_ = std::min(end_block, document_.blocks.size());
+  next_ = from;
+  handed_.clear();
+}
+
+void ReadingQueue::Restart(ReadingPosition from, size_t end_block) {
   end_block_ = std::min(end_block, document_.blocks.size());
   next_ = from;
   handed_.clear();

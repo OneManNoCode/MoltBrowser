@@ -12,6 +12,7 @@
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"
@@ -19,7 +20,10 @@
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/site_skills.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
+#include "chrome/browser/molt_ai/voice/voice_reader.h"
+#include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech.h"
 #include "chrome/browser/profiles/profile.h"
@@ -187,6 +191,60 @@ class VoiceController::TabWatcher : public content::WebContentsObserver {
   raw_ptr<VoiceController> controller_;
 };
 
+// The reader's side in the browser (voice_reader.h): the voice, the
+// caption, the active tab's page.
+class VoiceController::ReaderHost : public VoiceReader::Host {
+ public:
+  explicit ReaderHost(VoiceController* controller) : controller_(controller) {}
+  ReaderHost(const ReaderHost&) = delete;
+  ReaderHost& operator=(const ReaderHost&) = delete;
+  ~ReaderHost() override = default;
+
+  // VoiceReader::Host:
+  uint64_t Speak(const std::string& text, double rate) override {
+    return controller_->speech_
+               ? controller_->speech_->Speak(text, rate, /*interrupt=*/false)
+               : 0;
+  }
+  void Said(const std::string& text) override {
+    for (Observer& observer : controller_->observers_) {
+      observer.OnVoiceSpeech(text);
+    }
+  }
+  void Status(const std::string& status) override {
+    controller_->SetStatus(status);
+  }
+  void ScrollTo(const PageNodeHandle& node) override {
+    if (VoicePageController* page = controller_->ActivePage()) {
+      // A node gone since is left alone: reading goes on.
+      page->ScrollIntoView(node);
+    }
+  }
+  PageTree Tree() override {
+    VoicePageController* page = controller_->ActivePage();
+    content::WebContents* contents = controller_->ActiveContents();
+    // Only http(s) pages are read (as every action is only taken there).
+    if (!page || !page->active() || !contents ||
+        !agent_safety::IsAllowedNavigationURL(
+            contents->GetLastCommittedURL())) {
+      return PageTree();
+    }
+    return page->BuildTree(VoicePageController::kMaxReadingStringBytes);
+  }
+  const SiteSkill* Skill() override {
+    content::WebContents* contents = controller_->ActiveContents();
+    if (!contents) {
+      return nullptr;
+    }
+    const GURL& url = contents->GetLastCommittedURL();
+    return url.SchemeIsHTTPOrHTTPS() ? BuiltInSkillForHost(url.host())
+                                     : nullptr;
+  }
+
+ private:
+  raw_ptr<VoiceController> controller_;
+};
+
 struct VoiceController::PageWait {
   VoiceStep step;
   base::TimeTicks started;
@@ -233,6 +291,26 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
   speech_ = std::make_unique<VoiceSpeech>(browser->GetProfile());
   speech_->SetSpeakingChangedCallback(base::BindRepeating(
       &VoiceController::OnSpeakingChanged, weak_factory_.GetWeakPtr()));
+  reader_host_ = std::make_unique<ReaderHost>(this);
+  reader_ = std::make_unique<VoiceReader>(reader_host_.get());
+  speech_->SetUtteranceDoneCallback(base::BindRepeating(
+      [](base::WeakPtr<VoiceController> self, uint64_t id, bool spoken) {
+        if (self) {
+          self->reader_->OnUtteranceDone(id, spoken);
+        }
+      },
+      weak_factory_.GetWeakPtr()));
+  // The speech rate the user set (a setting).
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ReadVoiceSpeechRate),
+      base::BindOnce(
+          [](base::WeakPtr<VoiceController> self, double rate) {
+            if (self) {
+              self->state_.speech_rate = rate;
+            }
+          },
+          weak_factory_.GetWeakPtr()));
   // The web agent's on-device planner, for what the grammar can't do.
   planner_ = CreateVoiceAgentPlanner();
 }
@@ -285,6 +363,7 @@ bool VoiceController::Start() {
 
 void VoiceController::Stop() {
   CancelRun();
+  reader_->Clear();
   stop_when_quiet_ = false;
   refresh_numbers_timer_.Stop();
   DetachFromTab();
@@ -357,6 +436,8 @@ void VoiceController::CancelRun(bool keep_planner) {
   }
   ++run_;
   run_weak_factory_.InvalidateWeakPtrs();
+  // Reading stops too, keeping its place (before the voice stops).
+  reader_->Interrupt();
   pending_.clear();
   wait_.reset();
   quiet_timer_.Stop();
@@ -426,6 +507,7 @@ void VoiceController::DetachFromTab() {
 
 void VoiceController::OnActiveTabChanged(BrowserWindowInterface* browser) {
   ++page_id_;
+  reader_->PageChanged(page_id_);
   if (active_) {
     AttachToActiveTab();
   }
@@ -661,6 +743,7 @@ VoiceEnvironment VoiceController::Environment() {
   env.moltnet = IsMoltNet();
   env.listening = listening_.listening;
   env.page_id = page_id_;
+  env.reading = reader_->StateFor(page_id_);
   env.now_ms = (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
   if (!browser_) {
     return env;
@@ -754,6 +837,15 @@ void VoiceController::HandleUtterance(const std::string& text) {
 }
 
 void VoiceController::RunTurn(VoiceTurn turn) {
+  // A new speech rate is kept as a setting.
+  if (turn.state.speech_rate != state_.speech_rate) {
+    base::ThreadPool::PostTask(
+        FROM_HERE,
+        {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
+        base::BindOnce(base::IgnoreResult(&WriteVoiceSpeechRate),
+                       turn.state.speech_rate));
+  }
   state_ = std::move(turn.state);
   if (!turn.status.empty()) {
     status_ = std::move(turn.status);
@@ -1079,6 +1171,11 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       return true;
     }
 
+    case VoiceStepKind::kRead:
+      // The reader says what it reads and does (voice_reader.h).
+      reader_->Run(step.read, step.text, page_id_, state_.speech_rate);
+      return true;
+
     case VoiceStepKind::kPageRequestAnswer:
       // Only the guard's question pending now, on the tab it was about.
       if (page_request_question_ != 0 &&
@@ -1368,6 +1465,7 @@ void VoiceController::OnNavigationCommitted() {
   // Another page: lists, fields and questions of the last one are gone
   // (same-document navigations included: the page the user sees changed).
   ++page_id_;
+  reader_->PageChanged(page_id_);
   ++commits_;
   last_commit_ = base::TimeTicks::Now();
   if (wait_) {

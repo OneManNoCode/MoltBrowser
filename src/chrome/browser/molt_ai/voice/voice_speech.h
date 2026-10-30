@@ -21,6 +21,10 @@
 //   - Interruptible: Speak() with |interrupt| stops what voice mode is
 //     saying before it starts (the user just asked for something); Stop()
 //     silences voice mode. A new command, barge-in and "stop" use them.
+//   - Each utterance has an id (Speak()'s result), and the utterance-done
+//     callback says when each one was said to its end or dropped
+//     unfinished: reading a page aloud (voice_reader.h) keeps its place and
+//     hands over the next chunk with it.
 //   - Only voice mode's own speech. TtsController has one queue for the
 //     whole browser: pages' speechSynthesis, extensions and voice mode.
 //     Voice mode never clears it (no SetShouldClearQueue(true), no
@@ -98,8 +102,9 @@ class VoiceSpeech : public BundledVoice::Delegate {
 
   // Says |text| at |rate| (1 is the voice's normal rate, clamped to
   // 0.1-10; the bundled voice takes 0.5-2.5), after what voice mode is
-  // saying, or instead of it with |interrupt|.
-  void Speak(const std::string& text, double rate, bool interrupt);
+  // saying, or instead of it with |interrupt|. Returns the utterance's id
+  // (never 0), or 0 when nothing is to be said.
+  uint64_t Speak(const std::string& text, double rate, bool interrupt);
 
   // Stops voice mode's speech: what it is saying and what waits. Other
   // speech is left alone.
@@ -124,6 +129,13 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // Runs (posted) when voice mode starts or stops speaking.
   void SetSpeakingChangedCallback(base::RepeatingCallback<void(bool)> callback);
 
+  // Runs (posted) for each utterance Speak() took, once: |spoken| when it
+  // was said to its end (or the voice reported it over), false when it was
+  // stopped or dropped before that.
+  using UtteranceDoneCallback =
+      base::RepeatingCallback<void(uint64_t id, bool spoken)>;
+  void SetUtteranceDoneCallback(UtteranceDoneCallback callback);
+
   // BundledVoice::Delegate:
   void OnBundledVoiceReady() override;
   void OnBundledVoiceFinished(uint32_t id) override;
@@ -142,6 +154,8 @@ class VoiceSpeech : public BundledVoice::Delegate {
     double rate = 1.0;
     // The bundled voice's id, once handed to it.
     uint32_t bundled_id = 0;
+    // Speak()'s id.
+    uint64_t id = 0;
   };
 
   void OnBundledFound(std::optional<BundledVoice::Paths> paths);
@@ -152,6 +166,8 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // |delegate|'s utterance ended, was stopped or was dropped.
   void OnGone(Delegate* delegate);
   void UpdateSpeaking();
+  // Tells the utterance-done callback (posted).
+  void Done(uint64_t id, bool spoken);
 
   raw_ptr<content::BrowserContext> context_;
   // Not yet handed to either voice.
@@ -163,6 +179,9 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // when it was handed over (it then waits in TtsController's queue).
   raw_ptr<Delegate> in_flight_ = nullptr;
   bool in_flight_behind_others_ = false;
+  // Its utterance's id.
+  uint64_t in_flight_id_ = 0;
+  uint64_t next_id_ = 1;
   bool was_speaking_ = false;
 
   std::unique_ptr<BundledVoice> bundled_;
@@ -175,6 +194,7 @@ class VoiceSpeech : public BundledVoice::Delegate {
   base::OneShotTimer ready_wait_timer_;
 
   base::RepeatingCallback<void(bool)> speaking_changed_;
+  UtteranceDoneCallback utterance_done_;
   base::WeakPtrFactory<VoiceSpeech> weak_factory_{this};
 };
 

@@ -351,6 +351,8 @@ source_set("voice_loop") {
     "voice_candidates.h",
     "voice_controller_logic.cc",
     "voice_controller_logic.h",
+    "voice_reader.cc",
+    "voice_reader.h",
     "voice_sites.cc",
     "voice_sites.h",
     "voice_speech_text.cc",
@@ -359,6 +361,9 @@ source_set("voice_loop") {
 
   public_deps = [
     ":page_map",
+
+    # Reading aloud (voice_reader.h reads page_reading.h's documents).
+    ":page_reading",
     ":spoken_choice",
     ":voice_command",
 
@@ -366,8 +371,13 @@ source_set("voice_loop") {
     "//chrome/browser/molt_ai/security:activation_policy",
   ]
 
-  # MOLT_RAW_PTR_EXCLUSION (header-only).
-  deps = [ "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion" ]
+  deps = [
+    # The site's skill names where a page's text is (voice_reader.cc).
+    ":site_skills",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
 }
 
 # What voice mode hands open-ended requests to (the planner fallback,
@@ -422,6 +432,8 @@ source_set("voice_controller") {
   sources = [
     "voice_controller.cc",
     "voice_controller.h",
+    "voice_reading_settings.cc",
+    "voice_reading_settings.h",
     "voice_speech.cc",
     "voice_speech.h",
     "voice_speech_bundled.cc",
@@ -442,6 +454,9 @@ source_set("voice_controller") {
 
   deps = [
     ":features",
+
+    # The reader takes the site's skill for the page (site_skills.h).
+    ":site_skills",
     ":voice_page",
 
     # The voice helper: the bundled copy only, under the resident sandbox.
@@ -514,6 +529,7 @@ source_set("voice_loop_unit_tests") {
     "voice_candidates_unittest.cc",
     "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
+    "voice_reader_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
     "voice_speech_text_unittest.cc",

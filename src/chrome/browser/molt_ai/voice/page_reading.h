@@ -140,6 +140,10 @@ ReadingDocument BuildReadingDocument(const PageTree& tree,
                                      const ReadingOptions& options,
                                      const ReadingLimits& limits);
 
+// A document of |text| alone (the selection, read as one paragraph):
+// cleaned, capped at kMaxReadingBlockChars, split into sentences.
+ReadingDocument TextDocument(std::string_view text);
+
 // The selected text (PageTree::selection), speech-safe, at most
 // |max_chars|; nullopt when nothing is selected, the selection's ends
 // aren't in the tree, or it is in a credential field.
@@ -238,6 +242,8 @@ class ReadingQueue {
   // Reads |document| from |from| up to |end_block| (exclusive; past the
   // last block for "to the end").
   void Start(ReadingDocument document, ReadingPosition from, size_t end_block);
+  // The same document again, from |from| to |end_block|.
+  void Restart(ReadingPosition from, size_t end_block);
   // The next chunk to hand to the voice, while fewer than kReadingAhead + 1
   // are with it and there is more; null otherwise. The chunk counts as
   // handed.
