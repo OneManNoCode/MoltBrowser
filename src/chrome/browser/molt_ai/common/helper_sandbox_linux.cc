@@ -178,6 +178,11 @@ constexpr uint32_t kMapTypeMask = 0x0f;   // MAP_TYPE
 constexpr uint32_t kMapPrivate = 0x02;    // MAP_PRIVATE
 constexpr uint32_t kMapAnonymous = 0x20;  // MAP_ANONYMOUS
 
+// socket() and socketpair(): the type's bits in their second argument;
+// the rest are SOCK_NONBLOCK and SOCK_CLOEXEC (the kernel's
+// SOCK_TYPE_MASK).
+constexpr uint32_t kSocketTypeMask = 0x0f;
+
 // BPF instructions.
 sock_filter Statement(uint16_t code, uint32_t k) {
   return {code, 0, 0, k};
@@ -385,11 +390,18 @@ std::vector<sock_filter> BuildSeccompProgram() {
   // that probe fail gracefully. connect() fails too, which also keeps the
   // helper away from named UNIX-socket services (the session bus and
   // through it systemd, X11, ssh-agent, docker); socketpair() still works.
+  // A datagram socket reaches a named one without connect() (sendto() to
+  // the system log or the journal), so AF_UNIX sockets are stream or
+  // seqpacket only (SOCK_RAW is a datagram socket there too).
   const std::vector<sock_filter> unix_only = {
       LoadWord(ArgLow(0)),
-      Jump(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 0, 1),
-      Return(SECCOMP_RET_ALLOW),
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 0, 4),
+      LoadWord(ArgLow(1)),
+      Statement(BPF_ALU | BPF_AND | BPF_K, kSocketTypeMask),
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, SOCK_STREAM, 2, 0),
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, SOCK_SEQPACKET, 1, 0),
       Return(ReturnErrno(EACCES)),
+      Return(SECCOMP_RET_ALLOW),
   };
   OnSyscall(__NR_socket, unix_only, &program);
   OnSyscall(__NR_socketpair, unix_only, &program);

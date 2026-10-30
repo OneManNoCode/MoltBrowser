@@ -37,6 +37,8 @@
 //   read PATH            reads PATH: "READ <bytes>" or "DENIED <errno>"
 //   connect PORT         TCP to 127.0.0.1:PORT: "CONNECTED" or
 //                        "DENIED <errno>"
+//   dgram PATH           a datagram to the UNIX socket at PATH, without
+//                        connect(): "SENT" or "DENIED <errno>"
 //   relay                copies stdin to stdout until end of file, then
 //                        prints "EOF" and exits 0
 //   then ACTION...       ACTION, then relay (the helper stays resident)
@@ -62,6 +64,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
@@ -311,6 +314,30 @@ int Connect(unsigned long port) {
   return Result(result, "CONNECTED\n");
 }
 
+// A datagram to the named UNIX socket at |path|, as a logger sends one to
+// the system log: socket() and sendto(), no connect().
+int Datagram(const char* path) {
+  sockaddr_un address = {};
+  address.sun_family = AF_UNIX;
+  const size_t length = strlen(path);
+  if (length >= sizeof(address.sun_path)) {
+    Print("FAILED path too long\n");
+    return 0;
+  }
+  memcpy(address.sun_path, path, length + 1);
+  const int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    PrintErrno("DENIED");
+    return 0;
+  }
+  const char message[] = "molt";
+  const ssize_t sent =
+      sendto(fd, message, sizeof(message), 0,
+             reinterpret_cast<sockaddr*>(&address), sizeof(address));
+  close(fd);
+  return Result(sent < 0 ? -1 : 0, "SENT\n");
+}
+
 // Copies stdin to stdout until end of file.
 int Relay() {
   char buffer[4096];
@@ -447,13 +474,16 @@ int Act(int argc, char* argv[]) {
   if (argc == 3 && strcmp(argv[1], "connect") == 0) {
     return Connect(strtoul(argv[2], nullptr, 10));
   }
+  if (argc == 3 && strcmp(argv[1], "dgram") == 0) {
+    return Datagram(argv[2]);
+  }
   if (argc == 2 && strcmp(argv[1], "relay") == 0) {
     return Relay();
   }
   Print(
       "usage: echo|write|spread|files|delete|rename|link|symlink|mkdir|"
       "fork|preallocate|xattr|tmpfile|memfd|shm|shared|alloc|reserve|rsrc|"
-      "lock|limits|spin|read|connect|relay|then ...\n");
+      "lock|limits|spin|read|connect|dgram|relay|then ...\n");
   return 2;
 }
 
