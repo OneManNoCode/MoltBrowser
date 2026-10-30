@@ -606,10 +606,12 @@ said.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
   "Hey Molt" for now. If the browser keeps missing your "Hey Molt", turn on
   "Always listening" in settings.
-- **Interrupting the browser mid-sentence with a new command** works with
-  "Hey Molt" (or "stop"); a command without "Hey Molt" while it speaks is
-  not heard, because the system voices it speaks with can't be cancelled
-  from the microphone yet.
+- **Interrupting the browser mid-sentence with a new command** works
+  without "Hey Molt" when the browser speaks with its own voice and the
+  microphone has echo cancellation (its own voice is then removed from
+  what the microphone hears). With the system's voices, which the browser
+  uses when its own isn't installed, start with "Hey Molt" (or say
+  "stop").
 - **Still to come in voice mode:** the on-device AI for anything these
   commands don't cover, routines, setting the volume to a level, the
   playback speed, reading the page's text and the selection, undo, and
