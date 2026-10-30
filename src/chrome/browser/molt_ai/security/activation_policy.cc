@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "chrome/browser/molt_ai/security/page_request_asker.h"
+
 namespace molt_ai {
 namespace activation {
 
@@ -43,6 +45,7 @@ void NoteAction(TabRecord& tab, int64_t now_ms, Intent intent) {
   tab.activation_ms = -1;
   tab.user_input = false;
   tab.asked = false;
+  tab.history_entries = 0;
 }
 
 bool MayAsk(const TabRecord& tab) {
@@ -74,10 +77,24 @@ bool IsActing(const TabRecord& tab, int64_t now_ms) {
   return now_ms <= from || now_ms - from < tab.window_ms;
 }
 
+bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms) {
+  // The page's activation is the user's own (or there was none).
+  if (tab.action_ms < 0 || tab.user_input) {
+    return false;
+  }
+  const bool acting = IsActing(tab, now_ms);
+  if (tab.history_entries < 1000) {
+    ++tab.history_entries;
+  }
+  // The page the action led to is what the user asked for.
+  return !(acting && tab.history_entries == 1);
+}
+
 Ruling Decide(const TabRecord& tab,
               int64_t now_ms,
               Request request,
-              Asker asker) {
+              Asker asker,
+              bool prompts_by_voice) {
   if (!IsActing(tab, now_ms)) {
     return kProceed;
   }
@@ -95,11 +112,17 @@ Ruling Decide(const TabRecord& tab,
     case Request::kExternalApp:
       return ask_or_refuse;
     case Request::kPermissionPrompt:
-      // Voice mode can't take a spoken answer to a prompt yet (the voice
-      // gesture, TOUCHLESS_BROWSING.md §7.3); a prompt the user can't see
-      // or answer is refused and said. Shown as usual otherwise: the user
-      // answers it, never the agent.
-      return voice ? Ruling{Decision::kRefuse, true} : kProceed;
+      // The activation only let the page ask; the answer is the user's.
+      // Voice mode that reads prompts asks it by voice, and allowing takes
+      // the prompt's confirmation word (the voice gesture,
+      // TOUCHLESS_BROWSING.md §7.3). One that can't (only typed text) has
+      // it refused and said: the user may not see it. Shown as usual
+      // otherwise: the user answers it, never the agent.
+      if (voice) {
+        return prompts_by_voice ? Ruling{Decision::kAsk, false}
+                                : Ruling{Decision::kRefuse, true};
+      }
+      return kProceed;
     case Request::kFullScreen:
       if (tab.intent == Intent::kFullScreen ||
           tab.intent == Intent::kPlayMedia) {
@@ -113,6 +136,10 @@ Ruling Decide(const TabRecord& tab,
       return Ruling{Decision::kRefuse, voice};
   }
   return Ruling{Decision::kRefuse, false};
+}
+
+bool PageRequestAsker::TakesPromptsByVoice() const {
+  return false;
 }
 
 std::string_view RequestName(Request request) {
@@ -216,8 +243,8 @@ std::string RefusalNotice(Request request, std::string_view what) {
           clean.empty() ? std::string("The page asked for a permission.")
                         : "The page asked for " + clean + " permission.";
       return asked +
-             " I can't take an answer to that by voice yet, so I turned it "
-             "down.";
+             " I can't take an answer to that by voice right now, so I "
+             "turned it down.";
     }
     case Request::kFullScreen:
       return "The page tried to go full screen. I stopped it. Say full "

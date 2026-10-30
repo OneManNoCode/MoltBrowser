@@ -68,6 +68,15 @@
 // another app): PlanPageRequestQuestion() holds a kPageRequestAnswer step.
 // The presses voice mode makes for full screen and to play carry that
 // intent (VoiceStep::intent), so the page may then go full screen.
+//
+// The browser's own prompts and a page's dialogs (voice_prompts.h,
+// TOUCHLESS_BROWSING.md §7.3): PlanBrowserPrompt() reads one and holds it in
+// the state (ConversationState::prompt) until PlanBrowserPromptGone(). While
+// it waits, an utterance that is one of its answers answers it (before the
+// grammar), with a kPromptAnswer step; anything else is a command as usual.
+// The prompt's confirmation word (the voice gesture) is checked by the
+// browser, which knows how it was heard: its kAllow and kWrongWord steps
+// leave the prompt waiting until the browser says it is gone.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
@@ -84,6 +93,7 @@
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_hints.h"
+#include "chrome/browser/molt_ai/voice/voice_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 
 namespace molt_ai {
@@ -147,6 +157,11 @@ enum class VoiceStepKind : uint8_t {
   // |text| the routine's name or the word; the glue does it
   // (voice_learning_loop.h).
   kLearning,
+  // The answer to the browser's prompt |index| (voice_prompts.h):
+  // |prompt_answer|; |text| what was heard (kAllow, kWrongWord: the browser
+  // checks the word again, with how it was heard) or the answer to send
+  // (prompt()'s kAccept).
+  kPromptAnswer,
 };
 
 // What a kRead step asks of the reader.
@@ -225,6 +240,8 @@ struct VoiceStep {
   activation::Intent intent = activation::Intent::kNone;
   // kRead.
   ReadOp read = ReadOp::kPage;
+  // kPromptAnswer.
+  PromptAnswer prompt_answer = PromptAnswer::kNone;
   int count = 1;
   int index = 0;
   int seconds = 0;
@@ -372,6 +389,11 @@ struct ConversationState {
   double speech_rate = 1.0;
   // What the browser said last, for "repeat", as it was spoken.
   std::vector<std::string> last_spoken;
+
+  // The browser's prompt or the page's dialog read out and waiting for its
+  // answer (voice_prompts.h); id 0 for none. It belongs to the tab, not to
+  // a page: the browser ends it (PlanBrowserPromptGone()).
+  PendingPrompt prompt;
 };
 
 // One turn of the conversation.
@@ -452,6 +474,35 @@ VoiceTurn PlanPageRequestQuestion(int question,
 
 // The activation guard's question |state| holds for its "yes", or 0.
 int PageRequestQuestionHeld(const ConversationState& state);
+
+// The browser reads |prompt| (a permission prompt, a page's dialog, a
+// dangerous download, saving a password; voice_prompts.h) and waits for its
+// answer: PromptSpeech(|prompt|, |word|), with |word| the voice gesture's
+// word when allowing needs one and the gesture is on. It takes the floor: a
+// confirmation the loop was waiting for is dropped (its "no"). It waits
+// PromptWindowMs() as prompt |id|. Nothing in a MoltNet window.
+VoiceTurn PlanBrowserPrompt(int id,
+                            const BrowserPrompt& prompt,
+                            std::string_view word,
+                            const VoiceEnvironment& env,
+                            const ConversationState& state);
+
+// The browser's prompt |id| is gone (answered, closed, timed out): |said|,
+// the browser's words, is said if not empty, and the state forgets it.
+VoiceTurn PlanBrowserPromptGone(int id,
+                                std::string_view said,
+                                const VoiceEnvironment& env,
+                                const ConversationState& state);
+
+// The browser's prompt |state| holds and that waits at |now_ms|, or 0.
+int BrowserPromptHeld(const ConversationState& state, int64_t now_ms);
+
+// Whether |command| is an answer to the browser's prompt |state| holds.
+// While the loop waits for a "yes" to a question it asked after the
+// prompt, a plain yes or no is that question's.
+bool AnswersBrowserPrompt(const VoiceCommand& command,
+                          const VoiceEnvironment& env,
+                          const ConversationState& state);
 
 // Whether pressing an item named |label| (linking to |url|, raw page data)
 // on |map| needs a spoken "yes" first: its words buy, purchase, pay,

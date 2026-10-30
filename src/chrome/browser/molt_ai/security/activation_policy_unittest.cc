@@ -178,9 +178,19 @@ TEST(ActivationPolicyTest, ANewTabTheUserAskedForProceeds) {
 
 TEST(ActivationPolicyTest, PermissionPromptsAreNeverAnsweredForTheUser) {
   const TabRecord tab = ActedAt(0);
-  // Voice mode can't take a spoken answer yet: refused, and said.
+  // Voice mode that can't take a spoken answer (only typed text): refused,
+  // and said.
   EXPECT_EQ(Decide(tab, 100, Request::kPermissionPrompt, Asker::kVoiceMode),
             kRefuseAndTell);
+  // Voice mode that reads prompts: asked by voice (the confirmation word
+  // allows it, voice_gesture.h).
+  EXPECT_EQ(Decide(tab, 100, Request::kPermissionPrompt, Asker::kVoiceMode,
+                   /*prompts_by_voice=*/true),
+            kAsk);
+  // The agent's run without voice mode: shown as usual whatever it says.
+  EXPECT_EQ(Decide(tab, 100, Request::kPermissionPrompt, Asker::kWebAgent,
+                   /*prompts_by_voice=*/true),
+            kProceed);
   // Otherwise the prompt is shown as usual: the user answers it.
   EXPECT_EQ(Decide(tab, 100, Request::kPermissionPrompt, Asker::kWebAgent),
             kProceed);
@@ -314,13 +324,13 @@ TEST(ActivationPolicyTest, TheQuestions) {
 TEST(ActivationPolicyTest, TheNotices) {
   EXPECT_EQ(RefusalNotice(Request::kPermissionPrompt, "camera"),
             "The page asked for camera permission. I can't take an answer to "
-            "that by voice yet, so I turned it down.");
+            "that by voice right now, so I turned it down.");
   EXPECT_EQ(RefusalNotice(Request::kPermissionPrompt, ""),
             "The page asked for a permission. I can't take an answer to that "
-            "by voice yet, so I turned it down.");
+            "by voice right now, so I turned it down.");
   EXPECT_EQ(RefusalNotice(Request::kPermissionPrompt, "mic.\n<b>"),
             "The page asked for micb permission. I can't take an answer to "
-            "that by voice yet, so I turned it down.");
+            "that by voice right now, so I turned it down.");
   EXPECT_EQ(RefusalNotice(Request::kFullScreen, ""),
             "The page tried to go full screen. I stopped it. Say full screen "
             "if you want it.");
@@ -329,6 +339,43 @@ TEST(ActivationPolicyTest, TheNotices) {
   for (Request request : kAllRequests) {
     EXPECT_FALSE(RefusalNotice(request, "x").empty());
   }
+}
+
+TEST(ActivationPolicyTest, HistoryEntriesAfterAnAction) {
+  TabRecord tab;
+  // No action: the page's activation, if any, is the user's own.
+  EXPECT_FALSE(NoteHistoryEntry(tab, 0));
+
+  NoteAction(tab, 1000, Intent::kNone);
+  // The page the action led to (a link, a video in a single-page app).
+  EXPECT_FALSE(NoteHistoryEntry(tab, 1500));
+  // More in the same window: the page adding entries of its own.
+  EXPECT_TRUE(NoteHistoryEntry(tab, 2000));
+  EXPECT_TRUE(NoteHistoryEntry(tab, 2100));
+  // After the window, with the action's sticky activation still there.
+  EXPECT_TRUE(NoteHistoryEntry(tab, 1000 + kActingWindowMs + 60000));
+
+  // The next action starts again.
+  NoteAction(tab, 100000, Intent::kPlayMedia);
+  EXPECT_FALSE(NoteHistoryEntry(tab, 100100));
+  EXPECT_TRUE(NoteHistoryEntry(tab, 100200));
+
+  // An entry first added after the window was never the action's page.
+  NoteAction(tab, 200000, Intent::kNone);
+  EXPECT_TRUE(NoteHistoryEntry(tab, 200000 + kActingWindowMs));
+
+  // The user's own input: their activation now; nothing is skipped.
+  NoteAction(tab, 300000, Intent::kNone);
+  NoteUserInput(tab);
+  EXPECT_FALSE(NoteHistoryEntry(tab, 300100));
+  EXPECT_FALSE(NoteHistoryEntry(tab, 300200));
+
+  // Bounded.
+  NoteAction(tab, 400000, Intent::kNone);
+  for (int i = 0; i < 5000; ++i) {
+    NoteHistoryEntry(tab, 400000 + i);
+  }
+  EXPECT_LE(tab.history_entries, 1000);
 }
 
 TEST(ActivationPolicyTest, Names) {

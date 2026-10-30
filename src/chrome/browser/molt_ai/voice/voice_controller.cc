@@ -474,6 +474,11 @@ void VoiceController::AttachToActiveTab() {
   // What the page tries with the activation voice mode's actions give it is
   // asked about, or said, here (activation_guard.h).
   ActivationGuard::SetAsker(contents, activation::Asker::kVoiceMode, this);
+  // The browser's prompts and the page's dialogs, read and answered.
+  if (!prompts_) {
+    prompts_ = std::make_unique<VoiceBrowserPrompts>(this);
+  }
+  prompts_->Attach(contents);
   watcher_ = std::make_unique<TabWatcher>(this, contents);
   // The numbers and the ring follow the page; when they hide by
   // themselves, they are shown again from a new map.
@@ -496,6 +501,11 @@ void VoiceController::AttachToActiveTab() {
 void VoiceController::DetachFromTab() {
   watcher_.reset();
   refresh_numbers_timer_.Stop();
+  // The tab's prompt is no longer read here.
+  if (prompts_) {
+    prompts_->Detach();
+  }
+  state_.prompt = PendingPrompt();
   if (attached_) {
     // Its question, if any, is answered "no" by the guard.
     page_request_timer_.Stop();
@@ -817,7 +827,15 @@ VoiceEnvironment VoiceController::Environment() {
 
 // ---- Running --------------------------------------------------------------
 
+void VoiceController::HandleHeardUtterance(const std::string& text,
+                                           bool heard_cleanly) {
+  next_evidence_ = HeardEvidence{/*from_microphone=*/true, heard_cleanly};
+  HandleUtterance(text);
+}
+
 void VoiceController::HandleUtterance(const std::string& text) {
+  // Typed, unless HandleHeardUtterance() said otherwise just now.
+  heard_evidence_ = std::exchange(next_evidence_, HeardEvidence());
   if (!browser_ || !VoiceModeEnabled()) {
     return;
   }
@@ -846,9 +864,10 @@ void VoiceController::HandleUtterance(const std::string& text) {
   }
   command = std::move(*learned);
   // The guard's question, asked during a planner run, is answered without
-  // ending the run.
+  // ending the run; so is the browser's prompt (voice_browser_prompts.h).
   if (!AnswersPlannerQuestion(command, map, env) &&
-      !AnswersPageRequestQuestion(command, map, env)) {
+      !AnswersPageRequestQuestion(command, map, env) &&
+      !AnswersBrowserPrompt(command, env, state_)) {
     CancelPlanner();
   }
   if (!NumberStillOnScreen(command, map)) {
@@ -1077,6 +1096,15 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       return true;
 
     case VoiceStepKind::kBrowserCommand: {
+      // "Go back" skips the entries a page added with an action's sticky
+      // activation (activation_guard.h).
+      if (step.command == BrowserCommand::kBack && contents) {
+        const int offset = ActivationGuard::VoiceBackOffset(contents);
+        if (offset < -1 && contents->GetController().CanGoToOffset(offset)) {
+          contents->GetController().GoToOffset(offset);
+          return true;
+        }
+      }
       const std::optional<int> id = CommandId(step.command);
       if (!id || !chrome::ExecuteCommand(browser_, *id)) {
         Fail(StepFailure::kUnavailable);
@@ -1221,6 +1249,14 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       learning_->RunStep(step);
       return true;
 
+    case VoiceStepKind::kPromptAnswer:
+      // The browser's prompt: the word is checked with how the utterance
+      // was heard, once.
+      if (prompts_) {
+        prompts_->Answer(step, std::exchange(heard_evidence_, HeardEvidence()));
+      }
+      return true;
+
     case VoiceStepKind::kPlannerAnswer:
       // Only the question pending now; an older one's answer is dropped.
       if (planner_ && planner_running_ && planner_question_ != 0 &&
@@ -1343,6 +1379,78 @@ void VoiceController::DropPageRequestQuestionIfGone() {
       PageRequestQuestionHeld(state_) != page_request_question_) {
     AnswerPageRequest(false);
   }
+}
+
+// ---- The browser's prompts --------------------------------------------------
+
+bool VoiceController::ConfirmDraftSitesByVoice(
+    const std::string& workflow_id,
+    const std::vector<std::string>& sites,
+    base::OnceCallback<void(bool)> done) {
+  return prompts_ &&
+         prompts_->ConfirmDraftSites(workflow_id, sites, std::move(done));
+}
+
+bool VoiceController::TakesPromptsByVoice() const {
+  return prompts_ && prompts_->TakesPromptsByVoice();
+}
+
+bool VoiceController::ListensForPrompts() {
+  // The microphone, not only typed text: the user may not see the prompt,
+  // and the confirmation word comes only from the listening session.
+  return active_ && speech_ && listening_.listening && !listening_.starting &&
+         !IsMoltNet();
+}
+
+bool VoiceController::ReadBrowserPrompt(int id,
+                                        const BrowserPrompt& prompt,
+                                        const std::string& word) {
+  if (!ListensForPrompts() || id <= 0) {
+    return false;
+  }
+  const VoiceEnvironment env = Environment();
+  VoiceTurn turn = PlanBrowserPrompt(id, prompt, word, env, state_);
+  if (BrowserPromptHeld(turn.state, env.now_ms) != id) {
+    return false;
+  }
+  // It takes the floor: the loop's own question is dropped, with its "no".
+  if (planner_question_ != 0) {
+    CancelPlanner();
+  }
+  state_ = std::move(turn.state);
+  DropPageRequestQuestionIfGone();
+  if (!turn.status.empty()) {
+    status_ = std::move(turn.status);
+  }
+  // Said after what is being said now; not through the steps, which may be
+  // waiting for a page.
+  interrupt_next_speech_ = false;
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == VoiceStepKind::kSpeak) {
+      Say(step.text);
+    }
+  }
+  NotifyCaption();
+  return true;
+}
+
+void VoiceController::EndBrowserPrompt(int id, const std::string& said) {
+  VoiceTurn turn = PlanBrowserPromptGone(id, said, Environment(), state_);
+  state_ = std::move(turn.state);
+  if (!active_ || !speech_) {
+    return;
+  }
+  interrupt_next_speech_ = false;
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == VoiceStepKind::kSpeak) {
+      Say(step.text);
+    }
+  }
+  NotifyCaption();
+}
+
+void VoiceController::SayAboutBrowserPrompt(const std::string& text) {
+  TellAboutPageRequest(text);
 }
 
 // ---- The planner ------------------------------------------------------------

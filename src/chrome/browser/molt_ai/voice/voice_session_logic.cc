@@ -318,6 +318,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   }
   if (take) {
     actions.utterance = std::string(text);
+    actions.heard_cleanly = HeardCleanly(utterance, confidence);
     actions.earcon = EarconKind::kThinking;
     follow_up_until_ms_ = 0;
     // Until the controller says what it does with it.
@@ -510,6 +511,27 @@ bool VoiceSessionLogic::OtherSpeechSince(int64_t since_ms) const {
 bool VoiceSessionLogic::Counts(const Utterance& utterance) const {
   return utterance.woke || (utterance.open && (!utterance.during_speech ||
                                                utterance.echo_cancelled));
+}
+
+bool VoiceSessionLogic::HeardCleanly(const Utterance& utterance,
+                                     double confidence) const {
+  if (utterance.during_speech || activity_ == BrowserActivity::kSpeaking) {
+    return false;
+  }
+  // The browser's last words, their echo and the helper's lag.
+  if (speaking_ended_ms_ >= 0 &&
+      utterance.begun_ms - speaking_ended_ms_ < kGestureQuietMs) {
+    return false;
+  }
+  // Another source, or a tab's sound with no echo canceller.
+  if (OtherSpeechSince(utterance.begun_ms)) {
+    return false;
+  }
+  const bool audible =
+      page_audible_ ||
+      (page_audible_ms_ >= 0 &&
+       page_audible_ms_ + kOtherSpeechTailMs >= utterance.begun_ms);
+  return !audible || confidence >= kMinConfidenceWithoutWake;
 }
 
 bool VoiceSessionLogic::BargeInOpen() const {

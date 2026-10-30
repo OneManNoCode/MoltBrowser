@@ -254,6 +254,34 @@ def page_readout(page, start=0, count=5):
     return " ".join(parts)
 
 
+GESTURE_CONDITIONS = ["clean", "pink10"]
+
+
+def make_gesture_set(data, driver, threads, voices):
+    """work/sets/gesture-words.tsv: each confirmation word of the voice
+    gesture (voice_gesture.cc), said alone by each of |voices|, clean and
+    at 10 dB of pink noise (TOUCHLESS_BROWSING.md §7.3). Rows: clip id,
+    word, path, condition, voice."""
+    words = vbl.gesture_words()
+    miss = prepare_lexicons(data, words)
+    for lex in ("vits", "kokoro"):
+        if miss[lex]:
+            raise SystemExit("words missing from the %s lexicon: %s" % (lex, miss[lex]))
+    jobs = [(v, "gesture-" + w, w, True) for v in voices for w in words]
+    paths = render(data, driver, jobs, threads)
+    rows = []
+    for v in voices:
+        for w in words:
+            speech, _ = audio.read_wav(paths[(v, "gesture-" + w)])
+            for cond in GESTURE_CONDITIONS:
+                cid = "gesture-%s-%s-%s" % (v, w, cond)
+                path, _, _ = make_clip(data, "gesture-words", cid, speech, cond, {},
+                                       -26.0, ("gesture", v, w, cond))
+                rows.append((cid, w, path, cond, v))
+    write_set(data, "gesture-words", rows)
+    print("gesture-words: %d clips (%d words, %d voices)" % (len(rows), len(words), len(voices)))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--dir", default=fetch.default_dir())
@@ -261,11 +289,16 @@ def main(argv=None):
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--quick", action="store_true")
     p.add_argument("--work", default="", help="output directory (default <dir>/work)")
+    p.add_argument("--gesture", action="store_true",
+                   help="only the voice gesture's confirmation words")
     args = p.parse_args(argv)
     data = os.path.abspath(args.dir)
     global WORK
     WORK = os.path.abspath(args.work or os.path.join(data, "work"))
     driver = args.driver or default_driver(data)
+    if args.gesture:
+        make_gesture_set(data, driver, args.threads, [v[0] for v in catalog.VOICES])
+        return 0
     pages = vbl.load_pages()
     utts = vbl.load_testset(pages=pages)
     if args.quick:

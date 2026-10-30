@@ -477,6 +477,7 @@ group("molt_fuzzers") {
     "//chrome/browser/molt_ai/voice:molt_voice_controller_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_voice_learning_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_voice_listener_fuzzer",
+    "//chrome/browser/molt_ai/voice:molt_voice_prompts_fuzzer",
     "//chrome/browser/molt_ai/voice/speech_helper:molt_speech_protocol_fuzzer",
     "//chrome/services/molt_ai/inference/fuzzers",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_farbling_fuzzer",

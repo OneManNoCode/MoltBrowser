@@ -94,6 +94,24 @@ bool ConfirmationValid(const ConversationState& state,
          env.now_ms < state.confirm_expires_ms;
 }
 
+// |command|'s answer to the browser's prompt |state| holds (kNone when it
+// isn't one). A question the loop asked since the prompt was read (the
+// prompt dropped any before it) is newer: a plain yes or no is its.
+PromptReply PromptReplyFor(const VoiceCommand& command,
+                           const VoiceEnvironment& env,
+                           const ConversationState& state) {
+  if (ConfirmationValid(state, env)) {
+    ParseContext answering;
+    answering.expecting_yes_no = true;
+    const VoiceCommandKind kind =
+        ParseVoiceCommand(command.heard, answering).kind;
+    if (kind == VoiceCommandKind::kYes || kind == VoiceCommandKind::kNo) {
+      return PromptReply();
+    }
+  }
+  return ParsePromptReply(state.prompt, command.heard);
+}
+
 const PageItem* FieldInFocus(const ConversationState& state,
                              const PageMap& map,
                              const VoiceEnvironment& env) {
@@ -268,6 +286,10 @@ class Planner {
     if (env_.moltnet) {
       Status("Voice mode is off in MoltNet windows");
       Say("Voice mode is off in MoltNet windows.");
+      return;
+    }
+    // The browser's prompt hears its answers first.
+    if (depth == 0 && AnswerBrowserPrompt(command)) {
       return;
     }
     const bool confirming = ConfirmationValid(state(), env_);
@@ -732,6 +754,89 @@ class Planner {
     steps.push_back(std::move(yes));
     AskToConfirm(std::move(steps),
                  what.empty() ? std::string("allow it") : what);
+  }
+
+  // ---- The browser's prompts --------------------------------------------
+
+  void ReadPrompt(int id,
+                  const voice::BrowserPrompt& prompt,
+                  std::string_view word) {
+    turn_.kind = K::kUnknown;
+    if (env_.moltnet || id <= 0) {
+      return;
+    }
+    // It takes the floor: what the loop asked is dropped.
+    ClearConfirmation();
+    const bool gesture = NeedsGesture(prompt.kind) && !prompt.malicious;
+    PendingPrompt& pending = state().prompt;
+    pending = PendingPrompt();
+    pending.id = id;
+    pending.kind = prompt.kind;
+    pending.word = gesture ? std::string(word) : std::string();
+    pending.malicious = prompt.malicious;
+    pending.expires_ms = env_.now_ms + PromptWindowMs(prompt.kind);
+    Status(prompt.kind == PromptKind::kPermission ? "Permission request"
+                                                  : "Waiting for your answer");
+    Say(PromptSpeech(prompt, pending.word));
+  }
+
+  void PromptGone(int id, std::string_view said) {
+    turn_.kind = K::kUnknown;
+    if (state().prompt.id != 0 && state().prompt.id == id) {
+      state().prompt = PendingPrompt();
+    }
+    if (!said.empty()) {
+      Say(said);
+    }
+  }
+
+  // Whether |command| answered the browser's waiting prompt.
+  bool AnswerBrowserPrompt(const VoiceCommand& command) {
+    PendingPrompt& prompt = state().prompt;
+    if (!PromptWaits(prompt, env_.now_ms)) {
+      if (prompt.id != 0) {
+        prompt = PendingPrompt();
+      }
+      return false;
+    }
+    const PromptReply reply = PromptReplyFor(command, env_, state());
+    if (reply.answer == PromptAnswer::kNone) {
+      return false;
+    }
+    VoiceStep step = Step(VoiceStepKind::kPromptAnswer);
+    step.index = prompt.id;
+    step.prompt_answer = reply.answer;
+    switch (reply.answer) {
+      case PromptAnswer::kNone:
+        return false;
+      case PromptAnswer::kDictate:
+        prompt.answer_text = reply.text;
+        Say(ReplySpeech(prompt, reply));
+        return true;
+      case PromptAnswer::kNeedWord:
+      case PromptAnswer::kCantAllow:
+        Say(ReplySpeech(prompt, reply));
+        return true;
+      case PromptAnswer::kAllow:
+      case PromptAnswer::kWrongWord:
+        // The browser checks the word, with how it was heard, and says
+        // what came of it.
+        step.text = command.heard;
+        Status("Checking the word");
+        Add(std::move(step));
+        return true;
+      case PromptAnswer::kRefuse:
+      case PromptAnswer::kAccept:
+      case PromptAnswer::kDecline:
+        step.text = prompt.kind == PromptKind::kTextPrompt ? prompt.answer_text
+                                                           : std::string();
+        Status(ReplySpeech(prompt, reply));
+        Add(std::move(step));
+        Say(ReplySpeech(prompt, reply));
+        prompt = PendingPrompt();
+        return true;
+    }
+    return false;
   }
 
   // ---- Follow-ups --------------------------------------------------------
@@ -2395,6 +2500,38 @@ VoiceTurn PlanPageRequestQuestion(int question,
   Planner planner(no_map, env, state);
   planner.PageRequestQuestion(question, said, verb);
   return planner.Finish();
+}
+
+VoiceTurn PlanBrowserPrompt(int id,
+                            const BrowserPrompt& prompt,
+                            std::string_view word,
+                            const VoiceEnvironment& env,
+                            const ConversationState& state) {
+  const PageMap no_map;
+  Planner planner(no_map, env, state);
+  planner.ReadPrompt(id, prompt, word);
+  return planner.Finish();
+}
+
+VoiceTurn PlanBrowserPromptGone(int id,
+                                std::string_view said,
+                                const VoiceEnvironment& env,
+                                const ConversationState& state) {
+  const PageMap no_map;
+  Planner planner(no_map, env, state);
+  planner.PromptGone(id, said);
+  return planner.Finish();
+}
+
+int BrowserPromptHeld(const ConversationState& state, int64_t now_ms) {
+  return PromptWaits(state.prompt, now_ms) ? state.prompt.id : 0;
+}
+
+bool AnswersBrowserPrompt(const VoiceCommand& command,
+                          const VoiceEnvironment& env,
+                          const ConversationState& state) {
+  return !env.moltnet && PromptWaits(state.prompt, env.now_ms) &&
+         PromptReplyFor(command, env, state).answer != PromptAnswer::kNone;
 }
 
 int PageRequestQuestionHeld(const ConversationState& state) {

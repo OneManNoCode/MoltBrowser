@@ -53,6 +53,13 @@
 // keeping its place (VoiceEnvironment::reading). The speech rate is kept
 // as a setting (voice_reading_settings.h).
 //
+// The browser's prompts and a page's dialogs (voice_browser_prompts.h,
+// TOUCHLESS_BROWSING.md §7.3): while the window listens, permission
+// prompts, alert(), confirm(), prompt(), beforeunload, dangerous downloads
+// and the password bubble on the attached tab are read and answered by
+// voice; allowing a permission or keeping a dangerous file takes the
+// prompt's confirmation word, heard cleanly (HandleHeardUtterance()).
+//
 // The window owns nothing of it: the controller is created on first use
 // and deletes itself when the window closes. The agent side panel's voice
 // field and the window's listening (voice_session.h) listen through
@@ -85,6 +92,7 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/callback_list.h"
 #include "base/functional/callback.h"
@@ -96,6 +104,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/security/page_request_asker.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
+#include "chrome/browser/molt_ai/voice/voice_browser_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
@@ -124,7 +133,8 @@ enum class VoiceActivity {
 };
 
 class VoiceController : public VoicePlanner::Delegate,
-                        public activation::PageRequestAsker {
+                        public activation::PageRequestAsker,
+                        public VoiceBrowserPrompts::Delegate {
  public:
   DECLARE_USER_DATA(VoiceController);
 
@@ -200,6 +210,18 @@ class VoiceController : public VoicePlanner::Delegate,
   // off (except in MoltNet windows), stops whatever runs, then plans and
   // runs the new one. Does nothing while #molt-voice-mode is off.
   void HandleUtterance(const std::string& text);
+  // One utterance the listening session heard (voice_session.h), and
+  // whether it heard it cleanly enough for the voice gesture
+  // (SessionActions::heard_cleanly). Only this can answer a prompt with its
+  // confirmation word; typed text (HandleUtterance()) never does.
+  void HandleHeardUtterance(const std::string& text, bool heard_cleanly);
+
+  // The learning workstream's "confirm these sites" seam
+  // (VoiceBrowserPrompts::ConfirmDraftSites()): false when the window
+  // doesn't listen.
+  bool ConfirmDraftSitesByVoice(const std::string& workflow_id,
+                                const std::vector<std::string>& sites,
+                                base::OnceCallback<void(bool)> done);
 
   // Stops the speech and whatever runs, as "stop" does, staying on.
   void StopActivity();
@@ -234,6 +256,9 @@ class VoiceController : public VoicePlanner::Delegate,
   void SetPlannerForTesting(std::unique_ptr<VoicePlanner> planner);
   // A planner run is in progress (it may be waiting for an answer).
   bool planner_running() const { return planner_running_; }
+  // The browser's prompts on the attached tab (null before voice mode first
+  // attaches to one), for tests.
+  VoiceBrowserPrompts* browser_prompts_for_testing() { return prompts_.get(); }
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
@@ -339,6 +364,17 @@ class VoiceController : public VoicePlanner::Delegate,
   void OnPageRequestTimeout();
   void DropPageRequestQuestionIfGone();
 
+  // activation::PageRequestAsker:
+  bool TakesPromptsByVoice() const override;
+
+  // VoiceBrowserPrompts::Delegate:
+  bool ListensForPrompts() override;
+  bool ReadBrowserPrompt(int id,
+                         const BrowserPrompt& prompt,
+                         const std::string& word) override;
+  void EndBrowserPrompt(int id, const std::string& said) override;
+  void SayAboutBrowserPrompt(const std::string& text) override;
+
   // VoicePlanner::Delegate:
   void PlannerSays(const std::string& text) override;
   void PlannerAsks(int question, const std::string& what) override;
@@ -413,6 +449,11 @@ class VoiceController : public VoicePlanner::Delegate,
   int page_request_question_ = 0;
   base::WeakPtr<content::WebContents> page_request_tab_;
   base::OneShotTimer page_request_timer_;
+  // The browser's prompts on the attached tab, and how the utterance being
+  // carried out was heard (for the confirmation word).
+  std::unique_ptr<VoiceBrowserPrompts> prompts_;
+  HeardEvidence heard_evidence_;
+  HeardEvidence next_evidence_;
   base::ObserverList<Observer> observers_;
   // Routines, personal words and site hints (voice_learning_loop.h).
   std::unique_ptr<VoiceLearningLoop> learning_;

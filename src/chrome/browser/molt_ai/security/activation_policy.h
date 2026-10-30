@@ -26,9 +26,11 @@
 //                       a new tab
 //   download            asked about (held until the answer)
 //   another app         asked about (refused now, launched on "yes")
-//   permission prompt   voice mode: refused, and said (a prompt can't be
-//                       answered by voice yet); otherwise shown as usual,
-//                       for the user to answer: never answered for them
+//   permission prompt   voice mode: asked by voice (the voice gesture,
+//                       TOUCHLESS_BROWSING.md §7.3) when it takes prompts
+//                       by voice, else refused, and said; otherwise shown
+//                       as usual, for the user to answer: never answered
+//                       for them
 //   full screen         refused, unless the user asked for full screen or
 //                       for media to play
 //   clipboard write     refused, unless the user asked for a copy
@@ -36,6 +38,15 @@
 // With no one to ask (no voice mode on the tab, no agent run), what would be
 // asked about is refused. Outside that state everything is decided as for a
 // person's click. Plain clicks by a person never start it.
+//
+// The page keeps sticky activation from an action for as long as it shows
+// the same document, which is what lets it add session history entries
+// that "go back" doesn't skip (Chromium's history manipulation
+// intervention skips only entries a document added without it). While the
+// page's activation comes only from actions (no input of the user's
+// since), the entries it adds count as skippable for voice mode's "go
+// back", except the first one an action leads to within its window (the
+// page the user asked for): NoteHistoryEntry().
 //
 // Std-only, so molt_ai_unittests and a standalone harness build the same
 // code. The browser's side (the tab's record, the hooks, the questions) is
@@ -95,6 +106,8 @@ struct TabRecord {
   int64_t window_ms = kActingWindowMs;
   // The page's requests were asked about once since the action.
   bool asked = false;
+  // Session history entries the page added since the action.
+  int history_entries = 0;
 };
 
 // An action was sent to the page (it starts the state afresh).
@@ -106,6 +119,10 @@ void NoteActivation(TabRecord& tab, int64_t now_ms);
 // The user's own input on the page: the state ends.
 void NoteUserInput(TabRecord& tab);
 bool IsActing(const TabRecord& tab, int64_t now_ms);
+// The page added a session history entry (not a replacement, not a move
+// back or forward) at |now_ms|. Returns whether the entry it was added from
+// counts as skippable for voice mode's "go back" (above).
+bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms);
 
 // One question per action: once the user was asked about one of the page's
 // requests, the page's next requests until the next action are refused
@@ -140,10 +157,14 @@ struct Ruling {
   friend bool operator==(const Ruling&, const Ruling&) = default;
 };
 
+// |prompts_by_voice|: voice mode, the asker, reads permission prompts and
+// takes a spoken answer (the voice gesture): a prompt raised while acting
+// is asked about (kAsk) instead of refused.
 Ruling Decide(const TabRecord& tab,
               int64_t now_ms,
               Request request,
-              Asker asker);
+              Asker asker,
+              bool prompts_by_voice = false);
 
 std::string_view RequestName(Request request);
 std::string_view DecisionName(Decision decision);

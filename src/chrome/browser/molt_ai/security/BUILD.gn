@@ -26,7 +26,8 @@ source_set("activation_policy") {
     "activation_policy.cc",
     "activation_policy.h",
 
-    # Who asks (voice mode, the web agent): an interface, header-only.
+    # Who asks (voice mode, the web agent): an interface (its one default
+    # is in activation_policy.cc).
     "page_request_asker.h",
   ]
 }

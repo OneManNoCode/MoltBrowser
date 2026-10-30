@@ -310,6 +310,19 @@ FUZZERS = {
         max_len=16384,
         smoke_runs=20000,
     ),
+    # --- The browser: prompts and dialogs by voice (page text, utterances) -
+    "molt_voice_prompts_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map_text", "voice_gesture", "voice_prompts")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/activation_policy.cc"],
+        tier="std",
+        dict="dicts/voice_prompts.dict",
+        max_len=8192,
+        smoke_runs=20000,
+    ),
     # --- The browser: the voice loop (page maps and utterances) -----------
     "molt_voice_controller_fuzzer": dict(
         dir=VOICE,
@@ -317,9 +330,10 @@ FUZZERS = {
             f"{VOICE}/{name}.cc" for name in (
                 "page_map", "page_map_text", "voice_sites",
                 "voice_candidates", "voice_speech_text",
-                "voice_controller_logic", "voice_hints",
-                "voice_routines_logic", "voice_vocabulary")
-        ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
+                "voice_controller_logic", "voice_gesture", "voice_hints",
+                "voice_prompts", "voice_routines_logic", "voice_vocabulary")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/activation_policy.cc"],
         tier="std",
         dict="dicts/voice_command.dict",
         max_len=16384,
