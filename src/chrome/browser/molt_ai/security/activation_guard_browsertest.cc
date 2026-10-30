@@ -42,7 +42,7 @@
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -252,9 +252,9 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
     InProcessBrowserTest::TearDownOnMainThread();
   }
 
- protected:
+ public:
   content::WebContents* active_tab() {
-    return browser()->tab_strip_model()->GetActiveWebContents();
+    return browser()->GetTabStripModel()->GetActiveWebContents();
   }
 
   // Opens the fixture page in the active tab, which the test then keeps to
@@ -387,7 +387,7 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
              std::vector<std::string>* questions, int* tabs_when_asked,
              const WebAgent::ConfirmRequest& request) {
             questions->push_back(request.action + ": " + request.message);
-            *tabs_when_asked = self->browser()->tab_strip_model()->count();
+            *tabs_when_asked = self->browser()->GetTabStripModel()->count();
             // "Allow", as the chip's button.
             base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
                 FROM_HERE, base::BindOnce(
@@ -411,9 +411,9 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   EXPECT_EQ(tabs_when_asked, 1);
   // "Allow" opened it, from the popup blocker's list.
   ASSERT_TRUE(base::test::RunUntil(
-      [&]() { return browser()->tab_strip_model()->count() == 2; }));
+      [&]() { return browser()->GetTabStripModel()->count() == 2; }));
   content::WebContents* opened =
-      browser()->tab_strip_model()->GetWebContentsAt(1);
+      browser()->GetTabStripModel()->GetWebContentsAt(1);
   EXPECT_TRUE(content::WaitForLoadStop(opened));
   EXPECT_EQ(opened->GetLastCommittedURL().host(), "ads.test");
 }
@@ -423,7 +423,7 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
 IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
                        VoiceModesDownloadClickIsAsked) {
   OpenPage();
-  DownloadCounter downloads(browser()->profile()->GetDownloadManager());
+  DownloadCounter downloads(browser()->GetProfile()->GetDownloadManager());
   ASSERT_TRUE(voice()->Start());
   ASSERT_TRUE(base::test::RunUntil([&]() {
     auto* controller = voice::VoicePageController::FromWebContents(page_);
@@ -467,7 +467,7 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   content::SimulateMouseClickOrTapElementWithId(page_, "offer");
   EXPECT_TRUE(WaitForLog("open:window"));
   ASSERT_TRUE(base::test::RunUntil(
-      [&]() { return browser()->tab_strip_model()->count() == 2; }));
+      [&]() { return browser()->GetTabStripModel()->count() == 2; }));
   EXPECT_FALSE(guard->IsActing());
   EXPECT_TRUE(asker_.asked.empty());
 }
@@ -500,7 +500,7 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   // Dismissed, not denied: the site may ask again another time.
   const GURL url = page_->GetLastCommittedURL();
   HostContentSettingsMap* settings =
-      HostContentSettingsMapFactory::GetForProfile(browser()->profile());
+      HostContentSettingsMapFactory::GetForProfile(browser()->GetProfile());
   EXPECT_EQ(settings->GetContentSetting(url, url,
                                         ContentSettingsType::GEOLOCATION),
             CONTENT_SETTING_ASK);
