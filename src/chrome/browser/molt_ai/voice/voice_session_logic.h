@@ -29,14 +29,17 @@
 //     canceller has no reference for them and a recognizer transcribes
 //     the browser's own voice (VOICE_BENCH.md §3.2): what it hears then may
 //     be the browser itself. A wake phrase while the browser's own words
-//     held one is ignored too.
+//     held one (or a word that sounds like its name, "mold", or one that
+//     begins with the name after "hey": "Hey Moltbrowser") is ignored too.
 //   - While it speaks with its own voice (voice_speech.h: browser output,
 //     in the echo canceller's reference; OnOwnSpeechInReference()), the
 //     user can interrupt it with a command, no wake phrase needed: an
 //     utterance begun then counts if it has kMinConfidenceWithoutWake and
 //     isn't the browser's own words heard back (all its words among what
-//     the browser said in the last kSpokenMemoryMs, which is what an echo
-//     the canceller missed would be). It stops the browser's speech.
+//     the browser said in the last kSpokenMemoryMs, as written or as its
+//     voice says them, voice_said_aloud.h: "example dot com" for
+//     "example.com"; that is what an echo the canceller missed would be).
+//     It stops the browser's speech.
 //   - While the speech engine speaks for someone else (a page's
 //     speechSynthesis; OnOtherSpeech()), and kOtherSpeechTailMs after,
 //     only the commands that always count do: no wake phrase, no command
@@ -48,6 +51,15 @@
 //     tab's sound reaches the recognizer as it is: while a tab plays
 //     sound, and kOtherSpeechTailMs after, it is taken as another source's
 //     speech, so only the commands that always count do.
+//
+// The voice gesture (voice_gesture.h, TOUCHLESS_BROWSING.md §7.3): an
+// utterance that counts is also marked heard_cleanly when it can stand in
+// for a click: it began kGestureQuietMs or more after the browser last
+// spoke (with either voice: the platform's isn't in the echo canceller's
+// reference, and the helper reports the start of speech a little late), the
+// browser didn't speak while it was said, no other source spoke since it
+// began (nor, without an echo canceller, did a tab play sound), and with a
+// tab playing sound it had kMinConfidenceWithoutWake.
 //
 // Barge-in: the wake phrase (and "stop") while the browser speaks stops its
 // speech at once; the command follows. With the browser's own voice, a
@@ -97,6 +109,9 @@ inline constexpr double kMinConfidenceWithoutWake = 0.5;
 // still be it (the room, the spotter's and the recognizer's lag, and the
 // time between two looks at the speech engine).
 inline constexpr int64_t kOtherSpeechTailMs = 1000;
+// An utterance heard cleanly (the voice gesture) began at least this long
+// after the browser last spoke.
+inline constexpr int64_t kGestureQuietMs = 1200;
 
 enum class SessionState : uint8_t {
   kOff,
@@ -150,6 +165,8 @@ struct SessionActions {
 
   // The voice loop gets this, as if typed.
   std::optional<std::string> utterance;
+  // |utterance| was heard cleanly enough for the voice gesture (above).
+  bool heard_cleanly = false;
   // What is being said, live, for the caption; empty clears it.
   std::optional<std::string> partial;
   // Stop the browser's speech now (barge-in).
@@ -252,6 +269,9 @@ class VoiceSessionLogic {
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
   // A command may interrupt the browser's own voice now.
   bool BargeInOpen() const;
+  // Whether |utterance|, taken with |confidence|, was heard cleanly (the
+  // voice gesture).
+  bool HeardCleanly(const Utterance& utterance, double confidence) const;
   Utterance NewUtterance(bool woke, int64_t now_ms) const;
   SessionState ComputeState(int64_t now_ms) const;
   // Fills in what changed (state, wake_required, ducking) and the earcon

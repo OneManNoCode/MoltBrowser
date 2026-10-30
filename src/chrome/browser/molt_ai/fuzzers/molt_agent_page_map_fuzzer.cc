@@ -249,6 +249,14 @@ void CheckObservation(const PageMap& map,
     CHECK(e.selector.empty());
     CHECK_EQ(e.label.find('"'), std::string::npos);
     CHECK_EQ(e.label.find('\n'), std::string::npos);
+    // The page's label in a click's question stays in its quotes.
+    const std::string quoted =
+        molt_ai::agent_page_map::QuotedLabel(item->label);
+    CHECK_GE(quoted.size(), 2u);
+    CHECK_EQ(std::count(quoted.begin(), quoted.end(), '"'), 2);
+    CHECK_EQ(quoted.front(), '"');
+    CHECK_EQ(quoted.back(), '"');
+    CHECK_EQ(quoted.find("\xE2\x80\x94"), std::string::npos);
     CHECK_LE(molt_ai::voice::CountCodePoints(e.label),
              molt_ai::agent_actions::kMaxElementLabelChars);
     if (e.typeable) {
@@ -343,7 +351,23 @@ void CheckProbe(const PageTree& tree, int form_index, uint8_t start) {
     }
     CHECK(from_link);
   }
-  CHECK(!probe.submits_form || form_index > 0);
+  // A submit inside its form, or a submit input outside any form (tied to
+  // one with form="id", which the tree doesn't show).
+  if (probe.submits_form && form_index <= 0) {
+    CHECK_LT(form_index, 0);
+    bool input = false;
+    for (const PageNode& node : chain) {
+      std::string tag = node.html_tag;
+      for (char& c : tag) {
+        c = c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+      }
+      if (tag == "button" || tag == "input") {
+        input = tag == "input";
+        break;
+      }
+    }
+    CHECK(input);
+  }
   CHECK_LE(molt_ai::voice::CountCodePoints(probe.label), 60u);
   const std::vector<url::Origin> allowed = {
       url::Origin::Create(GURL("https://www.example.test/"))};

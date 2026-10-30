@@ -695,8 +695,8 @@ void WebAgent::OnClickProbed(std::vector<ElementProbe> probes) {
     ClickNow();
     return;
   }
-  std::string what =
-      p.label.empty() ? pending_step_.target : "\"" + p.label + "\"";
+  std::string what = p.label.empty() ? pending_step_.target
+                                     : agent_page_map::QuotedLabel(p.label);
   RequestConfirmation(
       "CLICK",
       "Click " + what + " — it " + base::JoinString(question.effects, " and "),
@@ -1825,9 +1825,10 @@ void WebAgent::DoPageMapClick(const agent_actions::ObservedElement& element) {
     PressNow();
     return;
   }
-  const std::string what = target.probe.label.empty()
-                               ? pending_step_.target
-                               : "\"" + target.probe.label + "\"";
+  const std::string what =
+      target.probe.label.empty()
+          ? pending_step_.target
+          : agent_page_map::QuotedLabel(target.probe.label);
   RequestConfirmation(
       "CLICK",
       "Click " + what + " — it " + base::JoinString(question.effects, " and "),

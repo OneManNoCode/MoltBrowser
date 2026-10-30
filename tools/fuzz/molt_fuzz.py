@@ -310,6 +310,19 @@ FUZZERS = {
         max_len=16384,
         smoke_runs=20000,
     ),
+    # --- The browser: prompts and dialogs by voice (page text, utterances) -
+    "molt_voice_prompts_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map_text", "voice_gesture", "voice_prompts")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/activation_policy.cc"],
+        tier="std",
+        dict="dicts/voice_prompts.dict",
+        max_len=8192,
+        smoke_runs=20000,
+    ),
     # --- The browser: the voice loop (page maps and utterances) -----------
     "molt_voice_controller_fuzzer": dict(
         dir=VOICE,
@@ -317,12 +330,35 @@ FUZZERS = {
             f"{VOICE}/{name}.cc" for name in (
                 "page_map", "page_map_text", "voice_sites",
                 "voice_candidates", "voice_speech_text",
-                "voice_controller_logic")
-        ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
+                "voice_controller_logic", "voice_gesture", "voice_hints",
+                "voice_prompts", "voice_routines_logic", "voice_vocabulary")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/activation_policy.cc"],
         tier="std",
         dict="dicts/voice_command.dict",
         max_len=16384,
         smoke_runs=20000,
+    ),
+    # --- The browser: what voice mode learned (its files) ----------------
+    "molt_voice_learning_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "voice_sites",
+                "voice_candidates", "voice_speech_text",
+                "voice_controller_logic", "voice_gesture", "voice_hints",
+                "voice_prompts", "voice_routines_logic", "voice_vocabulary",
+                "voice_routines", "voice_learning_store")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/activation_policy.cc",
+             f"{MOLT_AI}/automation/agent_run_draft.cc",
+             f"{MOLT_AI}/automation/automation_script.cc",
+             f"{MOLT_AI}/automation/automation_locators.cc",
+             f"{MOLT_AI}/automation/automation_security.cc",
+             f"{MOLT_AI}/security/agent_safety.cc"],
+        tier="stand_ins",
+        dict="dicts/voice_learning.dict",
+        max_len=65536,
     ),
     # --- The browser: voice mode's listening (the speech helper's lines) ---
     "molt_voice_listener_fuzzer": dict(
@@ -330,8 +366,9 @@ FUZZERS = {
         sources=VOICE_INTENT_SOURCES + [
             f"{VOICE}/{name}.cc" for name in (
                 "page_map", "page_map_text", "voice_listener_protocol",
-                "voice_session_logic")
-        ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
+                "voice_said_aloud", "voice_session_logic")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{VOICE_HELPER}/voice_text.cc"],
         tier="std",
         dict="dicts/voice_listener.dict",
         max_len=16384,
@@ -367,6 +404,19 @@ FUZZERS = {
         smoke_runs=20000,
     ),
     # --- The browser: the page map (voice mode) ----------------------------
+    "molt_page_reading_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "page_reading", "site_skills",
+                "site_skills_data", "html_fixture_tree")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{ENGINE}/bounded_json.cc"],
+        tier="std",
+        dict="dicts/page_reading.dict",
+        max_len=65536,
+        smoke_runs=1000,
+    ),
     "molt_page_map_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/voice/page_map.cc",

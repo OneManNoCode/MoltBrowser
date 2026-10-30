@@ -41,6 +41,23 @@ inline constexpr int64_t kMaxRequestAudioMs = 361000;
 // percent, within the protocol's 50 to 250.
 int VoiceRatePercent(double rate);
 
+// How long the helper may send nothing while a request it was sent waits
+// for its audio or its DONE and the browser has nothing left to play. The
+// helper paces itself only while audio waits to be played, and synthesizes
+// a unit in well under a second (VOICE_HELPER_PROTOCOL.md §4.3, §8.4).
+inline constexpr int64_t kMaxAnswerGapMs = 20000;
+
+// Whether the helper has stopped answering: |outstanding| requests it
+// hasn't answered with a DONE, everything handed to the player played
+// (|played_samples| >= |pushed_samples|), and nothing from it for
+// kMaxAnswerGapMs (|since_progress_ms|: since the oldest outstanding
+// request was sent, or its last AUDIO or DONE). Such a helper would keep
+// voice mode speaking for good: it is ended.
+bool StoppedAnswering(size_t outstanding,
+                      uint64_t pushed_samples,
+                      uint64_t played_samples,
+                      int64_t since_progress_ms);
+
 enum class VoiceEventType {
   kReady,
   kAudio,

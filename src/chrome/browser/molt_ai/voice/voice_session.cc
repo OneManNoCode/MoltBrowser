@@ -18,7 +18,9 @@
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_listener_protocol.h"
+#include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
@@ -88,6 +90,43 @@ FoundHelper FindHelper() {
   FoundHelper found;
   found.paths = VoiceListener::FindBundled(&found.why);
   return found;
+}
+
+// The page's names, then the personal vocabulary's (TOUCHLESS_BROWSING.md
+// §6.8): at most kMaxPersonalHotwords of CONFIG's kMaxHotwords, while
+// learning is on. Neither holds an answer to a question.
+std::vector<std::string> HotwordsFor(const PageMap& map, Profile* profile) {
+  std::vector<std::string> personal;
+  VoiceLearning* learning = VoiceLearning::Get(profile);
+  if (learning && learning->enabled()) {
+    for (const std::string& phrase :
+         learning->vocabulary().HotwordPhrases(kMaxPersonalHotwords)) {
+      std::string reduced = ReduceSpeechPhrase(phrase);
+      if (!reduced.empty()) {
+        personal.push_back(std::move(reduced));
+      }
+    }
+  }
+  std::vector<std::string> hotwords =
+      HotwordsFromPageMap(map, kMaxHotwords - personal.size());
+  auto lower = [](std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](char c) {
+      return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+    });
+    return text;
+  };
+  std::vector<std::string> seen;
+  for (const std::string& phrase : hotwords) {
+    seen.push_back(lower(phrase));
+  }
+  for (std::string& phrase : personal) {
+    std::string key = lower(phrase);
+    if (std::find(seen.begin(), seen.end(), key) == seen.end()) {
+      seen.push_back(std::move(key));
+      hotwords.push_back(std::move(phrase));
+    }
+  }
+  return hotwords;
 }
 
 }  // namespace
@@ -456,8 +495,9 @@ void VoiceSession::OnVoiceCaption(VoiceActivity activity,
   const int64_t now = NowMs();
   Apply(logic_.OnBrowserActivity(ToBrowserActivity(activity), now));
   const ConversationState& state = controller_->state();
-  Apply(
-      logic_.OnAwaitingAnswer(state.confirming || state.expecting_choice, now));
+  // The browser's prompt waits for its answer too (voice_prompts.h).
+  Apply(logic_.OnAwaitingAnswer(
+      state.confirming || state.expecting_choice || state.prompt.id != 0, now));
 }
 
 void VoiceSession::OnVoiceSpeech(const std::string& text) {
@@ -479,7 +519,8 @@ void VoiceSession::OnVoicePageMapped(const PageMap& map) {
   if (!logic_.running()) {
     return;
   }
-  std::vector<std::string> hotwords = HotwordsFromPageMap(map);
+  std::vector<std::string> hotwords =
+      HotwordsFor(map, browser_ ? browser_->GetProfile() : nullptr);
   if (hotwords != hotwords_) {
     hotwords_ = std::move(hotwords);
     SendConfig();
@@ -531,7 +572,8 @@ void VoiceSession::Apply(SessionActions actions) {
   if (actions.utterance && controller_) {
     // As if typed. The controller's caption calls report what it does.
     base::WeakPtr<VoiceSession> self = weak_factory_.GetWeakPtr();
-    controller_->HandleUtterance(*actions.utterance);
+    controller_->HandleHeardUtterance(*actions.utterance,
+                                      actions.heard_cleanly);
     if (!self) {
       return;
     }

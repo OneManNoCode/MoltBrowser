@@ -5,18 +5,31 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
-index 3bc40bcc9139a11d399caf6f51f281d80c4cfa78..ad2e98acb7bb3839f7cd30ba0416ba90810da4aa 100644
+index 3bc40bcc9139a11d399caf6f51f281d80c4cfa78..6e73214f84931326511c58b4ce6282205f9d47ad 100644
 --- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
 +++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
-@@ -20,6 +20,7 @@
+@@ -20,6 +20,8 @@
  #include "chrome/browser/file_select_helper.h"
  #include "chrome/browser/headless/headless_mode_util.h"
  #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 +#include "chrome/browser/molt_ai/security/activation_guard.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/voice/voice_dialog_manager.h"  // MoltBrowser
  #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
  #include "chrome/browser/preloading/preloading_prefs.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -532,9 +533,15 @@ bool BrowserWebContentsDelegate::ShouldShowStaleContentOnEviction(
+@@ -300,6 +302,11 @@ BrowserWebContentsDelegate::~BrowserWebContentsDelegate() = default;
+ content::PictureInPictureResult
+ BrowserWebContentsDelegate::EnterPictureInPicture(
+     content::WebContents* web_contents) {
++  // MoltBrowser: not with the user activation an agent's or voice mode's
++  // accessibility action gave the page (molt_ai/security/activation_guard.h).
++  if (!molt_ai::ActivationGuard::MayEnterPictureInPicture(web_contents)) {
++    return content::PictureInPictureResult::kNotSupported;
++  }
+   return PictureInPictureWindowManager::GetInstance()
+       ->EnterVideoPictureInPicture(web_contents);
+ }
+@@ -532,9 +539,15 @@ bool BrowserWebContentsDelegate::ShouldShowStaleContentOnEviction(
  
  content::WebContents* BrowserWebContentsDelegate::OpenURLFromTab(
      content::WebContents* source,
@@ -33,7 +46,20 @@ index 3bc40bcc9139a11d399caf6f51f281d80c4cfa78..ad2e98acb7bb3839f7cd30ba0416ba90
    TRACE_EVENT1("navigation", "BrowserWebContentsDelegate::OpenURLFromTab",
                 "source", source);
  #if DCHECK_IS_ON()
-@@ -1191,6 +1198,13 @@ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
+@@ -1113,7 +1126,11 @@ void BrowserWebContentsDelegate::RendererResponsive(
+ content::JavaScriptDialogManager*
+ BrowserWebContentsDelegate::GetJavaScriptDialogManager(
+     content::WebContents* source) {
+-  return javascript_dialogs::TabModalDialogManager::FromWebContents(source);
++  // MoltBrowser: voice mode is told about the page's dialogs, to read and
++  // answer them (molt_ai/voice/voice_dialog_manager.h); they show as before.
++  return molt_ai::voice::VoiceDialogManager::For(
++      source,
++      javascript_dialogs::TabModalDialogManager::FromWebContents(source));
+ }
+ 
+ bool BrowserWebContentsDelegate::GuestSaveFrame(
+@@ -1191,6 +1208,13 @@ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
      return false;
    }
  

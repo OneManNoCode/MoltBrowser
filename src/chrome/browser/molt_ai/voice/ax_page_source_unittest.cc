@@ -484,6 +484,39 @@ TEST(AXPageSourceTest, TakesTheFocusOfTheFocusedFrame) {
   EXPECT_EQ(map.focused_item, 1);
 }
 
+TEST(AXPageSourceTest, TakesIdsClassesAndTheSelection) {
+  ui::AXTreeUpdate main;
+  main.has_tree_data = true;
+  main.tree_data.tree_id = ui::AXTreeID::CreateNewAXTreeID();
+  main.tree_data.sel_anchor_object_id = 3;
+  main.tree_data.sel_anchor_offset = 4;
+  main.tree_data.sel_focus_object_id = 4;
+  main.tree_data.sel_focus_offset = 2;
+  main.tree_data.sel_is_backward = true;
+  main.root_id = 1;
+  ui::AXNodeData link = Node(2, Role::kLink, "Title", {3});
+  link.AddStringAttribute(StringAttribute::kHtmlId, "video-title");
+  link.AddStringAttribute(StringAttribute::kClassName,
+                          "yt-simple-endpoint " + std::string(400, 'x'));
+  main.nodes = {Node(1, Role::kRootWebArea, "", {2, 4}), link,
+                Node(3, Role::kStaticText, "Title"),
+                Node(4, Role::kStaticText, "More")};
+  ui::AXTree tree(main);
+  const PageTree page = BuildPageTree(
+      AXFrameTree{5, &tree}, [](const ui::AXTreeID&) { return AXFrameTree(); });
+  ASSERT_EQ(page.nodes.size(), 4u);
+  EXPECT_EQ(page.nodes[1].html_id, "video-title");
+  // Capped.
+  EXPECT_EQ(page.nodes[1].class_name.size(), 256u);
+  EXPECT_EQ(page.nodes[1].class_name.substr(0, 19), "yt-simple-endpoint ");
+  EXPECT_TRUE(page.selection.valid());
+  EXPECT_EQ(page.selection.anchor, (PageNodeHandle{5, 3}));
+  EXPECT_EQ(page.selection.anchor_offset, 4);
+  EXPECT_EQ(page.selection.focus, (PageNodeHandle{5, 4}));
+  EXPECT_EQ(page.selection.focus_offset, 2);
+  EXPECT_TRUE(page.selection.backward);
+}
+
 TEST(AXPageSourceTest, AnEmptyTreeTakesOnlyAWholeTree) {
   ui::AXTreeUpdate whole;
   whole.root_id = 1;

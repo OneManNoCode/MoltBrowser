@@ -73,6 +73,15 @@ and the bar only.
   search engine. Then it reads the results: how many, the first five with
   their channel or site and length, and "Say a number or a name". "Be brief"
   reads only how many; "tell me everything" reads all of them.
+- **On YouTube, Google, DuckDuckGo, Bing and Wikipedia** the browser knows
+  where the search box, the results, the player's buttons and the next page
+  are, so "search YouTube for ..." (while you are on YouTube) types into
+  YouTube's own box, the results are read as the site shows them ("1: Queen
+  – Bohemian Rhapsody, Queen Official, 6 minutes"), "skip the ad" presses
+  the player's skip button once it shows, and "next page" goes to the next
+  page of results (on YouTube, which loads more as you scroll, it scrolls).
+  If one of these sites changes so that the browser can't find a part any
+  more, it finds it the way it does on any other site.
 - **Choosing:** "the fourth one", "number four", "four" right after a list,
   "the live one by Queen". If several fit, the browser reads them back
   numbered ("Did you mean 1: ..., 2: ...?") and you answer with a number or
@@ -87,17 +96,62 @@ and the bar only.
   window to example.com. Say yes to open it, or no to cancel." It happens
   only if your next words are "yes". A page that tries to go full screen
   (unless you said "full screen" or "play") or to change your clipboard is
-  stopped; a permission it asks for, such as your location, is turned down,
-  because voice mode can't answer permission questions yet. The browser
-  tells you each time.
+  stopped. The browser tells you each time. A permission it asks for, such
+  as your location, is read to you like any other (below).
+- **Questions from the browser and from pages** are read to you and
+  answered by voice:
+  - a permission ("example.com wants to use your camera. To allow it, say
+    harbor. To block it, say no.");
+  - a page's message, question or request for text ("example.com asks:
+    Empty the cart? Say yes or no.");
+  - leaving a page with unsaved changes ("Say leave or stay");
+  - a downloaded file that may be harmful ("To keep it, say harbor. To
+    delete it, say discard.");
+  - saving a password ("Say save, never, or not now"). Your password is
+    never read out.
+
+  To allow a permission or keep a risky file, say the word the browser
+  gives you. It is a new word each time, so a recording or a sound from a
+  page can't say it for you; say it once it has finished speaking, in a
+  quiet moment. A different word turns the request down. "No" always
+  refuses. When a page wants text, say "answer" and your answer, then
+  "yes".
 - **Typing:** choose a field ("click the search box"), then "type ...",
   "delete the last word", "clear the field", "read it back", "submit".
   Password, card and code fields are never typed into or read out.
 - **Media:** "play", "pause", "resume", "louder" and "quieter" (with the
   player's volume control), "mute", "skip ahead one minute", "full screen",
-  "turn on captions".
-- **Reading:** the title, the headings, the links, the results, "next
-  heading", "next link", "next item", "where am I", "what's on the screen".
+  "turn on captions", "skip the ad".
+- **Reading aloud:** "read the page" reads the page's text, not its menus:
+  the article, from its title on, without the navigation, the search box,
+  forms, tables or ads in frames. "Read the section on history" reads that
+  section; "read the selection" what you selected; "read from here" from
+  the item you are on. "Next heading" and "previous heading" say the
+  heading, "next paragraph" reads the next paragraph; while the browser
+  reads, they jump there and go on reading. "Stop", "pause" or any new
+  command stops it where it is, and "continue reading" goes on from there.
+  "Faster" and "slower" while it reads change its speed, which it keeps.
+  The bar under the page shows the sentence being read, and the page
+  scrolls along.
+- **Reading lists:** the title, the headings, the links, the results, "next
+  link", "next item", "where am I", "what's on the screen".
+- **Routines:** do something by voice ("open YouTube", "search for news",
+  "play the first one"), then say "remember this as my news". The
+  browser reads back what it will keep and saves it on your "yes". Later,
+  "run my news", or just "my news", does it again, saying each step; it
+  still asks before anything that can't be undone, and "stop" ends it.
+  A choice made by position ("the first one") picks the same position
+  next time; one made by name picks by name. A text that looks like a
+  password or a code isn't kept: the browser asks for it at each run.
+  "What are my routines?" lists them; "forget my news" deletes one after
+  your "yes". Routines are listed in Agent mode too, which can't run them.
+- **Learning your words:** names you say often, and your corrections
+  ("no, I said Queen" after the browser heard "Green"), help it hear you
+  next time. Nothing is learned in MoltNet or private windows, from what
+  you dictate into a field, or while the browser reads a page aloud.
+  Settings, "What voice mode learned", lists everything and deletes it;
+  "Learn from what I say" turns it off. By voice: "forget the word
+  Queen", "forget everything you learned".
 - **"Stop"** stops the browser speaking and whatever it was doing; a new
   command does too. "Repeat" says the last answer again.
 
@@ -120,7 +174,10 @@ and the bar only.
   shown on the page, say a number ("four"), a position ("the last one") or
   what the item says ("the live one by Queen"). If two items fit, the
   browser asks which one you meant.
-- **If it heard you wrong**, say "no, I said ..." and what you meant.
+- **If it heard you wrong**, say "no, I said ..." and what you meant:
+  the whole command ("no, I said open YouTube") or only the words it
+  misheard ("no, I said Queen"). It does what you meant and, when the two
+  sound alike, remembers the correction for next time.
   "Cancel", "stop" and "go back" always work.
 - **"What can I say?"** lists what fits the page you are on.
 
@@ -137,7 +194,7 @@ Each command shows a few ways to say it:
 - `{site}`: a site's name or spoken address. `{address}`: a spoken address
   only ("example dot com").
 - `{query}`, `{text}`, `{name}`: your own words (a search, text to type, a
-  routine's name).
+  routine's name, a section's name).
 - `{seconds}`: a length of time; `{seconds?}` may be left out.
 - `{level}`: a volume, from 0 to 10, as a percentage, or "half" or "max".
 - `{pages?}`: how far to scroll ("a bit", "half a page", "a page", "3
@@ -283,7 +340,7 @@ said.
 **Pause.** For example: "pause".
 
 - `stop (the video | the music | the song | playback | playing | the movie | the audio)`
-- `(pause | hold on) [it | this | that | the video | the music | the song | playback | the movie | the audio]`
+- `(pause | hold on) [it | this | that | the video | the music | the song | playback | the movie | the audio | reading | the reading]`
 
 **Carry on playing.** For example: "resume".
 
@@ -371,6 +428,10 @@ said.
 
 - `((normal | regular | default | usual) [playback] speed | reset [the] [playback] speed | speed (normal | to normal | back to normal) | play at normal speed)`
 
+**Skip the ad, once the player lets you.** For example: "skip the ad".
+
+- `skip [the | this | these] (ad | ads | advert | adverts | advertisement | advertisements | commercial)`
+
 ## Reading
 
 **Read the page aloud.** For example: "read the page".
@@ -412,11 +473,11 @@ said.
 
 **Move to the next heading.** For example: "next heading".
 
-- `[go to | jump to | move to | read] [the] next (heading | section | header)`
+- `[go to | jump to | skip to | move to | read] [the] next (heading | section | header)`
 
 **Move to the previous heading.** For example: "previous heading".
 
-- `[go to | jump to | move to | read] [the] previous (heading | section | header)`
+- `[go to | jump to | skip to | move to | read] [the] previous (heading | section | header)`
 
 **Move to the next link.** For example: "next link".
 
@@ -428,13 +489,26 @@ said.
 
 **Move to the next item of the list.** For example: "next item".
 
-- `[go to | jump to | move to | read] [the] next (item | result | entry | paragraph | element)`
+- `[go to | jump to | move to | read] [the] next (item | result | entry | element)`
 - `next`
 
 **Move to the previous item.** For example: "previous item".
 
-- `[go to | jump to | move to | read] [the] previous (item | result | entry | paragraph | element)`
+- `[go to | jump to | move to | read] [the] previous (item | result | entry | element)`
 - `previous`
+
+**Read the next paragraph.** For example: "next paragraph".
+
+- `[go to | jump to | move to | read] [the] next paragraph`
+
+**Read the paragraph before.** For example: "previous paragraph".
+
+- `[go to | jump to | move to | read] [the] previous paragraph`
+
+**Read one section of the page, by its heading.** For example: "read the section on history".
+
+- `(read | read me | go to | jump to | skip to | move to) [the] (section | part) (on | about | called | named | titled) {query}`
+- `(read | read me | go to | jump to | skip to | move to) [the] {query} (section | part)`
 
 ## Choosing
 
@@ -573,6 +647,23 @@ said.
 - `(forget | delete | remove) [the | my] routine [called | named] {name}`
 - `forget {name}`
 
+**Hear your routines.** For example: "what are my routines".
+
+- `(what | which) (are | is) my routines`
+- `(what | which) routines (do i have | are there | have i got | have i saved)`
+- `(list | read | tell me | say) [all] [the | my] routines`
+- `(my routines | routines)`
+
+**Forget a word or a correction the browser learned from you.** For example: "forget the word Queen".
+
+- `(forget | delete | remove) the (word | name | phrase | correction) {name}`
+
+**Forget everything the browser learned from you: routines, words, corrections and site hints.** For example: "forget everything you learned".
+
+- `(forget | delete | erase) (everything | all) [that] you (learned | learnt | know) [about me | from me]`
+- `(forget | delete | erase) (everything | all) [that] youve (learned | learnt) [about me | from me]`
+- `(forget | delete | erase) (everything | all) [that] you have (learned | learnt) [about me | from me]`
+
 ## Voice mode
 
 **Start listening (typed in the Agent mode panel).** For example: "turn on voice mode".
@@ -601,8 +692,10 @@ said.
   punctuation itself.
 - **A site's name on its own** ("YouTube" alone) doesn't open it: say "open
   YouTube". A spoken address on its own ("example dot com") does.
-- **A routine's name on its own** ("my news") is looked up among your
-  routines before the AI is asked; "run my news" always runs it.
+- **Routines with the AI's steps:** a routine is made of the commands you
+  said; what the on-device AI did for a request isn't kept in one yet.
+- **Telling your voice from others':** anyone who hears a confirmation
+  word ("say harbor") can say it. Recognizing your own voice is planned.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
   "Hey Molt" for now. If the browser keeps missing your "Hey Molt", turn on
   "Always listening" in settings.
@@ -612,8 +705,11 @@ said.
   what the microphone hears). With the system's voices, which the browser
   uses when its own isn't installed, start with "Hey Molt" (or say
   "stop").
+- **While reading aloud,** the sentence being read is shown in the bar
+  under the page, but not highlighted on the page itself.
+- **"Faster" and "slower"** change the reading speed while the browser
+  reads; otherwise they are the video's playback speed, which comes later.
 - **Still to come in voice mode:** the on-device AI for anything these
-  commands don't cover, routines, setting the volume to a level, the
-  playback speed, reading the page's text and the selection, undo, and
-  questions about the page. Until then the browser says so when you ask
-  for them.
+  commands don't cover, setting the volume to a level, the playback speed,
+  undo, and questions about the page ("what is this page about?"). Until
+  then the browser says so when you ask for them.

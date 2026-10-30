@@ -56,6 +56,8 @@ class VoiceSpeech::Delegate : public content::UtteranceEventDelegate {
   // Whether TtsController is speaking the utterance (it started and hasn't
   // ended: an ended one is deleted with this).
   bool started() const { return started_; }
+  // The platform reported it over (said to its end, or it failed).
+  bool ended() const { return ended_; }
   // Stopped before it started: it is stopped as it starts.
   bool cancelled() const { return cancelled_; }
   void Cancel() { cancelled_ = true; }
@@ -72,6 +74,10 @@ class VoiceSpeech::Delegate : public content::UtteranceEventDelegate {
                   int char_index,
                   int length,
                   const std::string& error_message) override {
+    if (event_type == content::TTS_EVENT_END ||
+        event_type == content::TTS_EVENT_ERROR) {
+      ended_ = true;
+    }
     if (event_type != content::TTS_EVENT_START) {
       return;
     }
@@ -87,6 +93,7 @@ class VoiceSpeech::Delegate : public content::UtteranceEventDelegate {
  private:
   base::WeakPtr<VoiceSpeech> owner_;
   bool started_ = false;
+  bool ended_ = false;
   bool cancelled_ = false;
   base::WeakPtrFactory<Delegate> weak_factory_{this};
 };
@@ -107,6 +114,26 @@ VoiceSpeech::~VoiceSpeech() {
 void VoiceSpeech::SetSpeakingChangedCallback(
     base::RepeatingCallback<void(bool)> callback) {
   speaking_changed_ = std::move(callback);
+}
+
+void VoiceSpeech::SetUtteranceDoneCallback(UtteranceDoneCallback callback) {
+  utterance_done_ = std::move(callback);
+}
+
+void VoiceSpeech::Done(uint64_t id, bool spoken) {
+  if (!id || !utterance_done_) {
+    return;
+  }
+  // Posted: this may run inside TtsController's own calls.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(
+                     [](base::WeakPtr<VoiceSpeech> self, uint64_t id,
+                        bool spoken) {
+                       if (self && self->utterance_done_) {
+                         self->utterance_done_.Run(id, spoken);
+                       }
+                     },
+                     weak_factory_.GetWeakPtr(), id, spoken));
 }
 
 bool VoiceSpeech::speaking() const {
@@ -168,9 +195,11 @@ void VoiceSpeech::OnBundledFound(std::optional<BundledVoice::Paths> paths) {
   }
 }
 
-void VoiceSpeech::Speak(const std::string& text, double rate, bool interrupt) {
+uint64_t VoiceSpeech::Speak(const std::string& text,
+                            double rate,
+                            bool interrupt) {
   if (text.empty() || !context_) {
-    return;
+    return 0;
   }
   if (interrupt) {
     Stop();
@@ -178,12 +207,21 @@ void VoiceSpeech::Speak(const std::string& text, double rate, bool interrupt) {
   Pending pending;
   pending.text = text;
   pending.rate = std::clamp(rate, kMinTtsRate, kMaxTtsRate);
+  pending.id = next_id_++;
+  const uint64_t id = pending.id;
   waiting_.push_back(std::move(pending));
   SpeakNext();
   UpdateSpeaking();
+  return id;
 }
 
 void VoiceSpeech::Stop() {
+  for (const Pending& pending : bundled_in_flight_) {
+    Done(pending.id, false);
+  }
+  for (const Pending& pending : waiting_) {
+    Done(pending.id, false);
+  }
   waiting_.clear();
   bundled_in_flight_.clear();
   ready_wait_timer_.Stop();
@@ -267,6 +305,7 @@ void VoiceSpeech::SpeakWithPlatform() {
   utterance->SetEventDelegate(std::move(delegate));
   content::TtsController* controller = content::TtsController::GetInstance();
   in_flight_behind_others_ = controller->IsSpeaking();
+  in_flight_id_ = next.id;
   // May end it at once (no voice): OnGone() then runs inside.
   controller->SpeakOrEnqueue(std::move(utterance));
 }
@@ -280,6 +319,7 @@ void VoiceSpeech::OnBundledVoiceFinished(uint32_t id) {
   // Finished in order; an id not at the front was dropped by Stop().
   if (!bundled_in_flight_.empty() &&
       bundled_in_flight_.front().bundled_id == id) {
+    Done(bundled_in_flight_.front().id, true);
     bundled_in_flight_.pop_front();
   }
   SpeakNext();
@@ -301,6 +341,9 @@ void VoiceSpeech::OnBundledVoiceLost(std::vector<uint32_t> unfinished,
         unfinished.end()) {
       pending.bundled_id = 0;
       again.push_back(std::move(pending));
+    } else {
+      // Not said again: over, as far as voice mode knows.
+      Done(pending.id, true);
     }
   }
   bundled_in_flight_.clear();
@@ -319,8 +362,11 @@ void VoiceSpeech::OnGone(Delegate* delegate) {
   if (delegate != in_flight_) {
     return;
   }
+  // Said to its end unless voice mode stopped it.
+  Done(in_flight_id_, delegate->ended() && !delegate->cancelled());
   in_flight_ = nullptr;
   in_flight_behind_others_ = false;
+  in_flight_id_ = 0;
   // Posted: this runs inside TtsController's own calls.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,

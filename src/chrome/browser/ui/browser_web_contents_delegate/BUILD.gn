@@ -24,8 +24,10 @@ if (!is_android) {
       "//chrome/browser/devtools",
       "//chrome/browser/headless",
 
-      # MoltBrowser: what the activation guard's hooks call.
+      # MoltBrowser: what the activation guard's hooks call, and the hook that
+      # tells voice mode about a page's dialogs.
       "//chrome/browser/molt_ai/security:activation_guard",
+      "//chrome/browser/molt_ai/voice:voice_dialog_manager",
       "//chrome/browser/picture_in_picture",
       "//chrome/browser/preloading:prefs",
       "//chrome/browser/search",

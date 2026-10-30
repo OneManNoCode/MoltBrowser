@@ -1,0 +1,188 @@
+{
+   "ai_model": "tinyllama-1.1b",
+   "created_at_unix": 1800000000.0,
+   "default_variables": {
+      "text": ""
+   },
+   "enabled": true,
+   "id": "voice_2",
+   "name": "everything",
+   "security": {
+      "max_navigations": 20,
+      "max_network_bytes": 209715200.0,
+      "max_runtime_seconds": 300,
+      "require_approval_for": [
+         "form_submit",
+         "payment",
+         "login"
+      ],
+      "sites_unconfirmed": true,
+      "trust": "casual"
+   },
+   "stats": {
+      "last_run_duration_ms": 0,
+      "last_run_unix": 0.0,
+      "runs": 0,
+      "successes": 0
+   },
+   "steps": [
+      {
+         "description": "Open example dot com in a new tab",
+         "extra": {
+            "voice": {
+               "address": true,
+               "command": "open_site",
+               "new_tab": true,
+               "site": "example.com",
+               "words": "example dot com"
+            }
+         },
+         "type": "navigate"
+      },
+      {
+         "description": "Search YouTube for cats",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "address": false,
+               "command": "search",
+               "query": "cats",
+               "scope": "named",
+               "site": "youtube",
+               "words": "YouTube"
+            }
+         },
+         "type": "type"
+      },
+      {
+         "description": "Search the web for trains",
+         "extra": {
+            "host": "a.example",
+            "voice": {
+               "command": "search",
+               "query": "trains",
+               "scope": "web"
+            }
+         },
+         "type": "type"
+      },
+      {
+         "description": "Play the live one by queen",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "by": "name",
+               "by_words": [
+                  "queen"
+               ],
+               "command": "choose",
+               "planned": true,
+               "verb": "play",
+               "words": [
+                  "live"
+               ]
+            }
+         },
+         "type": "click"
+      },
+      {
+         "description": "Choose the second to last one",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "by": "position",
+               "command": "choose",
+               "from_end": true,
+               "ordinal": 2,
+               "verb": "default"
+            }
+         },
+         "type": "click"
+      },
+      {
+         "description": "Click the sign in one",
+         "extra": {
+            "host": "a.example",
+            "voice": {
+               "by": "name",
+               "command": "choose",
+               "verb": "click",
+               "words": [
+                  "sign",
+                  "in"
+               ]
+            }
+         },
+         "type": "click"
+      },
+      {
+         "description": "Type what you tell me",
+         "extra": {
+            "host": "a.example",
+            "voice": {
+               "command": "type",
+               "variable": "text"
+            }
+         },
+         "type": "type",
+         "value": "{{text}}"
+      },
+      {
+         "description": "Scroll down 3 pages",
+         "extra": {
+            "host": "a.example",
+            "voice": {
+               "amount": "page",
+               "command": "scroll_down",
+               "count": 3
+            }
+         },
+         "type": "scroll"
+      },
+      {
+         "description": "Skip ahead 30 seconds",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "command": "skip_forward",
+               "seconds": 30
+            }
+         },
+         "type": "unknown"
+      },
+      {
+         "description": "Turn on captions",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "command": "captions_on"
+            }
+         },
+         "type": "unknown"
+      },
+      {
+         "description": "Read the results",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "command": "read_results"
+            }
+         },
+         "type": "unknown"
+      },
+      {
+         "description": "Go back",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "command": "back"
+            }
+         },
+         "type": "unknown"
+      }
+   ],
+   "trigger": {
+      "type": "manual"
+   },
+   "version": 1
+}

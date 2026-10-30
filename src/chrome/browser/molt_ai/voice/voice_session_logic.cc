@@ -9,8 +9,10 @@
 #include <string_view>
 #include <utility>
 
+#include "chrome/browser/molt_ai/voice/phonetic_key.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
+#include "chrome/browser/molt_ai/voice/voice_said_aloud.h"
 
 namespace molt_ai {
 namespace voice {
@@ -19,6 +21,70 @@ namespace {
 
 // What the browser said is folded from at most this many bytes.
 constexpr size_t kMaxSaidBytes = 4096;
+
+// What the browser said, as folded words: as written, and as its voice
+// says them (voice_said_aloud.h: "example dot com", "two", "molt
+// browser"), which is how an echo the canceller missed is heard.
+std::string SaidWords(std::string_view text) {
+  text = text.substr(0, kMaxSaidBytes);
+  std::string words = FoldForComparison(text);
+  const std::string aloud =
+      FoldForComparison(SaidAloudWords(text, kMaxSaidBytes));
+  if (!aloud.empty()) {
+    if (!words.empty()) {
+      words.push_back(' ');
+    }
+    words.append(aloud);
+  }
+  return words;
+}
+
+// Whether the folded words |haystack| hold a sound-alike of the folded
+// wake phrase |phrase|: a word that sounds like its last word, the name
+// ("mold" and "moult" for "molt": one phonetic key), or one that begins
+// with the name right after the phrase's word before it ("hey
+// moltbrowser", "hay molts"). Only for names of four letters or more,
+// whose keys are specific enough.
+bool SaysSoundAlike(std::string_view haystack, std::string_view phrase) {
+  const size_t space = phrase.rfind(' ');
+  const std::string_view name =
+      space == std::string_view::npos ? phrase : phrase.substr(space + 1);
+  const std::string_view before =
+      space == std::string_view::npos ? std::string_view()
+                                      : phrase.substr(0, space);
+  const std::string_view first = before.substr(before.rfind(' ') + 1);
+  const std::string key = PhoneticKey(name);
+  if (name.size() < 4 || key.size() < 3) {
+    return false;
+  }
+  const std::string first_key = PhoneticKey(first);
+  std::string_view previous;
+  size_t start = 0;
+  while (start < haystack.size()) {
+    size_t end = haystack.find(' ', start);
+    if (end == std::string_view::npos) {
+      end = haystack.size();
+    }
+    const std::string_view word = haystack.substr(start, end - start);
+    // A sound-alike is about as long as the name ("mold", "mould").
+    const bool near_length =
+        word.size() + 1 >= name.size() && word.size() <= name.size() + 2;
+    if (near_length && PhoneticKey(word) == key) {
+      return true;
+    }
+    const bool after_first =
+        !first.empty() && !previous.empty() &&
+        (previous == first ||
+         (!first_key.empty() && PhoneticKey(previous) == first_key));
+    if (after_first && word.size() > name.size() &&
+        word.substr(0, name.size()) == name) {
+      return true;
+    }
+    previous = word;
+    start = end + 1;
+  }
+  return false;
+}
 
 // Whether the folded words |haystack| hold the folded words |needle| as
 // whole words.
@@ -252,6 +318,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   }
   if (take) {
     actions.utterance = std::string(text);
+    actions.heard_cleanly = HeardCleanly(utterance, confidence);
     actions.earcon = EarconKind::kThinking;
     follow_up_until_ms_ = 0;
     // Until the controller says what it does with it.
@@ -299,7 +366,7 @@ SessionActions VoiceSessionLogic::OnBrowserActivity(BrowserActivity activity,
 
 SessionActions VoiceSessionLogic::OnBrowserSaid(std::string_view text,
                                                 int64_t now_ms) {
-  said_.emplace_back(now_ms, FoldForComparison(text.substr(0, kMaxSaidBytes)));
+  said_.emplace_back(now_ms, SaidWords(text));
   while (said_.size() > kMaxSpokenTexts ||
          (!said_.empty() && now_ms - said_.front().first > kSpokenMemoryMs)) {
     said_.pop_front();
@@ -446,6 +513,27 @@ bool VoiceSessionLogic::Counts(const Utterance& utterance) const {
                                                utterance.echo_cancelled));
 }
 
+bool VoiceSessionLogic::HeardCleanly(const Utterance& utterance,
+                                     double confidence) const {
+  if (utterance.during_speech || activity_ == BrowserActivity::kSpeaking) {
+    return false;
+  }
+  // The browser's last words, their echo and the helper's lag.
+  if (speaking_ended_ms_ >= 0 &&
+      utterance.begun_ms - speaking_ended_ms_ < kGestureQuietMs) {
+    return false;
+  }
+  // Another source, or a tab's sound with no echo canceller.
+  if (OtherSpeechSince(utterance.begun_ms)) {
+    return false;
+  }
+  const bool audible =
+      page_audible_ ||
+      (page_audible_ms_ >= 0 &&
+       page_audible_ms_ + kOtherSpeechTailMs >= utterance.begun_ms);
+  return !audible || confidence >= kMinConfidenceWithoutWake;
+}
+
 bool VoiceSessionLogic::BargeInOpen() const {
   return own_speech_in_reference_ && activity_ == BrowserActivity::kSpeaking;
 }
@@ -491,7 +579,8 @@ bool VoiceSessionLogic::SaidWakePhrase(int64_t now_ms) const {
           space == std::string::npos
               ? std::string_view(folded)
               : std::string_view(folded).substr(space + 1);
-      if (HasWords(words, folded) || HasWords(words, name)) {
+      if (HasWords(words, folded) || HasWords(words, name) ||
+          SaysSoundAlike(words, folded)) {
         return true;
       }
     }

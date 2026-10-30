@@ -502,8 +502,29 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   an occasional failure once it has run a minute, is built with the same
   compiler hardening throughout, and reloads its wake-phrase model only
   when the wake phrase changes.
+- Hardening (security review of round 40, `docs/SECURITY_REVIEWS.md`): on
+  Linux the OCR, voice and speech helpers can change only their own CPU
+  and I/O priority and CPU affinity; voice mode (preview) recognizes its
+  own voice heard back as it speaks ("example dot com" for "example.com")
+  and its own reading of a sound-alike of "Hey Molt", ends its voice's
+  helper if it stops answering, and asks about at most one of a page's
+  requests per click it makes; a video's picture-in-picture window isn't
+  opened from a voice or agent click; the AI agent's click questions keep the
+  page's label in its quotes, name where a form goes when it is another
+  site, and ask about a submit input tied to a form from outside it; the
+  bundled voice ships CMUdict's licence notice.
 
 ### Privacy
+- **Voice mode learns from use, on this device** (round 41, learning;
+  `docs/design/TOUCHLESS_BROWSING.md` §6.8): "remember this as my news"
+  saves what you just did by voice as a routine (an Agent-mode workflow,
+  Approved on its own sites; secret-looking text asked for at each run),
+  "run my news" or "my news" replays it through voice mode's own checks,
+  saying each step; names you say often and your corrections ("no, I said
+  Queen") bias the recognizer and fix what it mishears; the search box,
+  results and player that worked on a site are remembered for it. Never
+  in MoltNet or private windows, never synced; settings lists and deletes
+  everything, and "Learn from what I say" turns it off.
 - **MoltNet in its own window.** Tor browsing opens in a separate,
   throwaway profile that never shares cookies or storage with your regular
   browsing and never falls back to a direct connection. Per-site Tor
@@ -1198,6 +1219,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   remain the fallback when it isn't installed or stops working, and Linux
   no longer needs speech-dispatcher for voice mode to speak. Details:
   `docs/design/VOICE_HELPER_PROTOCOL.md`.
+- **Touchless browsing: the browser's questions and a page's dialogs
+  answered by voice, with a spoken word in place of a click** (preview,
+  behind `chrome://flags/#molt-voice-mode`). While voice mode listens,
+  permission requests, a page's messages, questions and requests for text,
+  "leave this page?", downloads that may be harmful and the offer to save
+  a password are read with the site they come from and answered by voice.
+  Allowing a permission or keeping a risky file takes a word the browser
+  picks at random for that request and says ("To allow it, say harbor"),
+  heard after it has finished speaking with no other sound in the way; it
+  counts once, for that request, within seconds, an earlier request's word
+  never answers a later one, and a wrong word turns the request down. A page's dialogs are read as the site's words, one that shows
+  dialog after dialog is cut short, and passwords are never said. Voice
+  mode's clicks are also better contained: a page can't use them to put
+  another window in full screen, or to fill your history so that "go
+  back" stays on it. Details: `docs/design/TOUCHLESS_BROWSING.md` §7.3.
 - **The AI agent sees and acts on pages as voice mode does, and voice mode
   takes open-ended requests.** Outside MoltNet windows the web agent reads
   a page through its accessibility tree (numbered items, lists of results,
@@ -1217,6 +1253,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   be saved as workflows. The chat agent's use of the accessibility tree is
   off until `chrome://flags/#molt-agent-page-map` is turned on; voice
   mode's runs always use it.
+- **Touchless browsing: voice mode knows the big sites and reads pages
+  aloud** (preview, behind `chrome://flags/#molt-voice-mode`). On YouTube,
+  Google, DuckDuckGo, Bing and Wikipedia, built-in site skills (data
+  compiled into the browser, checked against stored copies of the sites'
+  pages) say where the search box, the results, the player's buttons and
+  the next page are: "search YouTube for ..." types into YouTube's own
+  box, results are read as the site shows them, and "skip the ad" and
+  "next page" work; a site that changes falls back to the usual guessing.
+  "Read the page" reads the article, not its menus or ads; "read the
+  section on history", "read the selection", "next heading" and "next
+  paragraph" work too, "stop" or any command stops it where it is,
+  "continue reading" goes on, and "faster" or "slower" set a reading speed
+  that is kept. Page text read aloud is never taken as a command. Details:
+  `docs/design/VOICE_SKILLS.md`.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

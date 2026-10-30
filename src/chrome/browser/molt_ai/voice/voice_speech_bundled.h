@@ -27,7 +27,9 @@
 //     when Cancel() drops it (a CANCEL goes to the helper, the player's
 //     buffer is flushed, late audio for it is dropped).
 //   - Failures: no READY within kReadyTimeout, a crash, a protocol error,
-//     a limit, or audio that stops playing (the output device failed):
+//     a limit, audio that stops playing (the output device failed), or a
+//     helper that stops answering a request (voice_speech_protocol.h's
+//     StoppedAnswering(); voice mode would otherwise speak for good):
 //     the helper ends, the unfinished requests go back to VoiceSpeech for
 //     the platform's voices, and the helper is started again after
 //     kRestartDelay, at most kMaxFailures times in a row.
@@ -169,6 +171,9 @@ class BundledVoice {
   uint64_t pushed_ = 0;
   uint64_t last_played_ = 0;
   base::TimeTicks played_moved_at_;
+  // When the oldest request the helper hasn't answered was sent, or the
+  // helper last wrote AUDIO or DONE (StoppedAnswering()).
+  base::TimeTicks answered_at_;
   base::TimeTicks launched_at_;
   base::TimeTicks ready_at_;
   std::string confinement_;

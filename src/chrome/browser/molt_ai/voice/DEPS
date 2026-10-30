@@ -2,6 +2,8 @@ include_rules = [
   # MOLT_RAW_PTR_EXCLUSION, on the page map builder's pointer to its input
   # (page_map.cc is std-only).
   "+chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h",
+  # The site skills' JSON, read as untrusted (site_skills.cc is std-only).
+  "+chrome/services/molt_ai/inference/engine/bounded_json.h",
 ]
 
 specific_include_rules = {
@@ -16,6 +18,15 @@ specific_include_rules = {
   ],
   # The browser tests install a fake TTS platform to hear what is said.
   r"voice_controller_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  r"voice_browser_prompts_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  r"voice_learning_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  r"voice_skills_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
   r"voice_session_browsertest\.cc": [

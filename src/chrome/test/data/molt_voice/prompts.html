@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Account - Shop</title>
+</head>
+<body>
+<!-- A page that asks for a permission and shows dialogs, answered by voice
+     (chrome/browser/molt_ai/voice/voice_browser_prompts_browsertest.cc). -->
+<h1>Account</h1>
+<main>
+  <label>Notes <textarea id="notes"></textarea></label>
+  <p id="status">Ready</p>
+</main>
+<script>
+  // What the page asked, and what it was answered.
+  window.moltLog = [];
+  const log = (entry) => {
+    moltLog.push(entry);
+    document.getElementById('status').textContent = entry;
+  };
+  window.askNotifications = () => {
+    Notification.requestPermission().then((result) => log('notify:' + result));
+  };
+  // Shown from a task, so the test's script returns first.
+  window.askConfirm = (text) => {
+    setTimeout(() => log('confirm:' + confirm(text)), 0);
+  };
+  window.askPrompt = (text) => {
+    setTimeout(() => log('prompt:' + prompt(text, 'default name')), 0);
+  };
+  // Unsaved changes: leaving asks first.
+  window.keepChanges = () => {
+    window.addEventListener('beforeunload', (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    });
+    log('changes:kept');
+  };
+</script>
+</body>
+</html>

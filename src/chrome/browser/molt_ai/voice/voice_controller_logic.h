@@ -34,12 +34,33 @@
 //   - In a MoltNet window voice mode is off (§7.4): nothing is done, and
 //     the browser says so.
 //
-// The planner (voice_planner.h): anything the grammar leaves kUnknown, and
-// routines, get a kToPlanner step, where the web agent's on-device planner
+// Learning (§6.8, voice_routines_logic.h): "remember this as my news" reads
+// back what it would save (VoiceEnvironment::learning) and holds a kLearning
+// step for the "yes"; "run my news" (or the name alone) and "what are my
+// routines" answer from the routines' names; "forget my news", "forget the
+// word X" and "forget everything you learned" wait for a "yes". The site's
+// search field, results list and player are found through
+// LocateSitePart() (a site skill, then a learned hint, then the generic
+// map), and each turn says which it used (VoiceTurn::site_parts).
+//
+// The planner (voice_planner.h): anything the grammar leaves kUnknown gets
+// a kToPlanner step, where the web agent's on-device planner
 // takes the utterance and the map (without a planner the browser says it
 // can't do that yet). Its questions go through the same confirmation:
 // PlanPlannerQuestion() holds a kPlannerAnswer step for "yes", and "no"
 // answers it with one too.
+//
+// Site skills (site_skills.h, TOUCHLESS_BROWSING.md §6.7): the parts a
+// site's skill named on the page (PageMap::site) come before the map's own
+// guesses: its search box and submit, its results as the main list, its
+// player's skip-ad, captions and full-screen buttons, its next page.
+//
+// Reading aloud (page_reading.h, voice_reader.h): "read the page", "read
+// from here", "read the selection", "read the section on history", "next
+// heading" and "next paragraph" become a kRead step the reader carries out
+// with the voice; "pause", "stop", "continue reading", "faster" and
+// "slower" while it reads keep or resume its place (VoiceEnvironment::
+// reading).
 //
 // The activation guard (molt_ai/security/activation_guard.h,
 // TOUCHLESS_BROWSING.md §7.5) asks the same way when a page tries to use
@@ -47,6 +68,15 @@
 // another app): PlanPageRequestQuestion() holds a kPageRequestAnswer step.
 // The presses voice mode makes for full screen and to play carry that
 // intent (VoiceStep::intent), so the page may then go full screen.
+//
+// The browser's own prompts and a page's dialogs (voice_prompts.h,
+// TOUCHLESS_BROWSING.md §7.3): PlanBrowserPrompt() reads one and holds it in
+// the state (ConversationState::prompt) until PlanBrowserPromptGone(). While
+// it waits, an utterance that is one of its answers answers it (before the
+// grammar), with a kPromptAnswer step; anything else is a command as usual.
+// The prompt's confirmation word (the voice gesture) is checked by the
+// browser, which knows how it was heard: its kAllow and kWrongWord steps
+// leave the prompt waiting until the browser says it is gone.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
@@ -62,6 +92,9 @@
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
+#include "chrome/browser/molt_ai/voice/voice_hints.h"
+#include "chrome/browser/molt_ai/voice/voice_prompts.h"
+#include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 
 namespace molt_ai {
 namespace voice {
@@ -117,6 +150,31 @@ enum class VoiceStepKind : uint8_t {
   // The answer to the activation guard's question |index| (a page's new
   // window, download or app): |flag| yes (true) or no.
   kPageRequestAnswer,
+  // Reading aloud (voice_reader.h): |read|, with |text| the section's name
+  // for ReadOp::kSection.
+  kRead,
+  // Learning (§6.8): |index| is a LearningOp (voice_routines_logic.h),
+  // |text| the routine's name or the word; the glue does it
+  // (voice_learning_loop.h).
+  kLearning,
+  // The answer to the browser's prompt |index| (voice_prompts.h):
+  // |prompt_answer|; |text| what was heard (kAllow, kWrongWord: the browser
+  // checks the word again, with how it was heard) or the answer to send
+  // (prompt()'s kAccept).
+  kPromptAnswer,
+};
+
+// What a kRead step asks of the reader.
+enum class ReadOp : uint8_t {
+  kPage,      // the page's text from its start
+  kFromHere,  // from the focused item, else where reading stopped
+  kResume,    // where reading stopped
+  kSelection,
+  kSection,  // the section |text| names, to its end
+  kNextHeading,
+  kPreviousHeading,
+  kNextParagraph,
+  kPreviousParagraph,
 };
 
 enum class BrowserCommand : uint8_t {
@@ -180,6 +238,10 @@ struct VoiceStep {
   // playing a video): the page may go full screen then
   // (activation_policy.h).
   activation::Intent intent = activation::Intent::kNone;
+  // kRead.
+  ReadOp read = ReadOp::kPage;
+  // kPromptAnswer.
+  PromptAnswer prompt_answer = PromptAnswer::kNone;
   int count = 1;
   int index = 0;
   int seconds = 0;
@@ -255,10 +317,18 @@ struct VoiceEnvironment {
   // The browser listens to the microphone (voice_session.h); false while
   // commands are only typed.
   bool listening = false;
+  // Reading aloud (voice_reader.h): it was reading when this was said (the
+  // new command stopped it, keeping its place), or it stopped earlier on
+  // this page and can go on.
+  enum class Reading : uint8_t { kNone, kReading, kStopped };
+  Reading reading = Reading::kNone;
   std::vector<TabInfo> tabs;
   int active_tab = 0;
   // A monotonic clock, in milliseconds.
   int64_t now_ms = 0;
+  // Learning (§6.8): the routines, what "remember this" would save, the
+  // learned words and the site's hint. Empty in MoltNet windows.
+  LearningEnvironment learning;
 };
 
 // What the user and the browser said so far that matters for what comes
@@ -319,6 +389,11 @@ struct ConversationState {
   double speech_rate = 1.0;
   // What the browser said last, for "repeat", as it was spoken.
   std::vector<std::string> last_spoken;
+
+  // The browser's prompt or the page's dialog read out and waiting for its
+  // answer (voice_prompts.h); id 0 for none. It belongs to the tab, not to
+  // a page: the browser ends it (PlanBrowserPromptGone()).
+  PendingPrompt prompt;
 };
 
 // One turn of the conversation.
@@ -339,6 +414,9 @@ struct VoiceTurn {
   std::vector<VoiceStep> steps;
   // The state after this turn.
   ConversationState state;
+  // The site's parts the steps use (the search field, the list chosen
+  // from, the player), for site hints (voice_hints.h).
+  std::vector<SitePartUse> site_parts;
 };
 
 // The grammar's context for the next utterance: a yes/no question pending
@@ -397,6 +475,35 @@ VoiceTurn PlanPageRequestQuestion(int question,
 // The activation guard's question |state| holds for its "yes", or 0.
 int PageRequestQuestionHeld(const ConversationState& state);
 
+// The browser reads |prompt| (a permission prompt, a page's dialog, a
+// dangerous download, saving a password; voice_prompts.h) and waits for its
+// answer: PromptSpeech(|prompt|, |word|), with |word| the voice gesture's
+// word when allowing needs one and the gesture is on. It takes the floor: a
+// confirmation the loop was waiting for is dropped (its "no"). It waits
+// PromptWindowMs() as prompt |id|. Nothing in a MoltNet window.
+VoiceTurn PlanBrowserPrompt(int id,
+                            const BrowserPrompt& prompt,
+                            std::string_view word,
+                            const VoiceEnvironment& env,
+                            const ConversationState& state);
+
+// The browser's prompt |id| is gone (answered, closed, timed out): |said|,
+// the browser's words, is said if not empty, and the state forgets it.
+VoiceTurn PlanBrowserPromptGone(int id,
+                                std::string_view said,
+                                const VoiceEnvironment& env,
+                                const ConversationState& state);
+
+// The browser's prompt |state| holds and that waits at |now_ms|, or 0.
+int BrowserPromptHeld(const ConversationState& state, int64_t now_ms);
+
+// Whether |command| is an answer to the browser's prompt |state| holds.
+// While the loop waits for a "yes" to a question it asked after the
+// prompt, a plain yes or no is that question's.
+bool AnswersBrowserPrompt(const VoiceCommand& command,
+                          const VoiceEnvironment& env,
+                          const ConversationState& state);
+
 // Whether pressing an item named |label| (linking to |url|, raw page data)
 // on |map| needs a spoken "yes" first: its words buy, purchase, pay,
 // order, checkout, delete, remove, erase, discard, trash, send, post,
@@ -408,10 +515,16 @@ bool NeedsConfirmation(std::string_view label,
                        std::string_view url,
                        const PageMap& map);
 
-// The page's search field: a writable text field of the top-level document
-// (never of a frame it embeds) the map marks as a search field, on screen
-// first; null if there is none.
+// The page's search field: the site skill's (PageMap::site), else a
+// writable text field of the top-level document (never of a frame it
+// embeds) the map marks as a search field, on screen first; null if there
+// is none.
 const PageItem* FindSearchField(const PageMap& map);
+
+// The item a site part names (PageMap::site), if it is an item of the
+// top-level document that can be pressed now (not disabled): null
+// otherwise.
+const PageItem* SiteItem(const PageMap& map, const PageNodeHandle& part);
 
 }  // namespace voice
 }  // namespace molt_ai

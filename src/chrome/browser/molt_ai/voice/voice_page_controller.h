@@ -17,7 +17,9 @@
 //     top-level document's tree is always kept; the child frames' trees are
 //     capped in number and in nodes together.
 //   - Map: BuildMap() joins the frames' trees (ax_page_source.h) and maps
-//     them (page_map.h). A PageNodeHandle names a frame by an index this
+//     them (page_map.h), with the site's skill when it has one
+//     (site_skills.h); a skill that finds nothing it expects on a page is
+//     logged once for that page. A PageNodeHandle names a frame by an index this
 //     controller gives each tree once per voice session, never reused, and
 //     a node by its id in that tree.
 //   - Actions: press (the default action), focus, scroll into view, set
@@ -162,8 +164,18 @@ class VoicePageController
   // Whether the top-level document's tree is here (the map is empty until
   // it is).
   bool HasPageTree();
-  // The page map of the trees held now.
+  // The page map of the trees held now, with the site's skill
+  // (site_skills.h) when the top-level document is an http(s) page of a site
+  // that has one.
   PageMap BuildMap(const PageMapLimits& limits = PageMapLimits());
+
+  // The trees held now as one page (ax_page_source.h), with strings of up
+  // to |max_string_bytes| (reading aloud takes longer text runs than the
+  // map's labels); empty when there is no page tree. With the URL of the
+  // top-level document, whose host picks the site's skill.
+  PageTree BuildTree(size_t max_string_bytes);
+  // A text run reading takes, at most, in bytes.
+  static constexpr size_t kMaxReadingStringBytes = 16384;
 
   // What an action on |target| would touch now, read from the tree its
   // frame has now (the web agent's checks before it acts,
@@ -319,6 +331,12 @@ class VoicePageController
   void PrimaryPageChanged(content::Page& page) override;
   void WebContentsDestroyed() override;
 
+  // The top-level document's tree and the frames' joined (BuildMap(),
+  // BuildTree()).
+  PageTree JoinedTree(size_t max_nodes,
+                      size_t max_depth,
+                      size_t max_string_bytes);
+
   // This tab's frame of the primary page with |tree_id|, or null.
   content::RenderFrameHost* FrameFor(const ui::AXTreeID& tree_id);
   // The nodes held of the child frames' trees, together.
@@ -350,6 +368,8 @@ class VoicePageController
   size_t max_trees_ = kMaxTrees;
   size_t max_frame_tree_nodes_ = kMaxFrameTreeNodes;
   Stats stats_;
+  // What the site's skill missed on this document, once logged.
+  uint32_t skill_missing_logged_ = 0;
   std::optional<PendingSubmit> pending_submit_;
   base::OneShotTimer submit_timer_;
   base::RepeatingClosure trees_updated_for_testing_;

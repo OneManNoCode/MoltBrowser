@@ -1,0 +1,63 @@
+!<!DOCTYPE html>
+<!-- YouTube's home page (desktop, 2026): the masthead's search form, the guide and a grid of recommended videos.
+     A reduced copy that keeps the structure the browser reads (roles,
+     names, ids, classes, link targets); every text but titles and names is
+     a stand-in. See docs/design/VOICE_SKILLS.md, "Refreshing a site's test
+     pages". -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YouTube</title>
+</head>
+<body>
+<ytd-app>
+<div id="masthead-container">
+<ytd-masthead id="masthead">
+  <a id="logo" href="youtube_home.html" title="YouTube Home" aria-label="YouTube Home"><span>YouTube</span></a>
+  <yt-searchbox>
+    <form id="search-form" action="youtube_results.html" role="search">
+      <input id="search" name="search_query" type="text" role="combobox" aria-label="Search" placeholder="Search" autocomplete="off">
+      <button id="search-icon-legacy" aria-label="Search"><yt-icon></yt-icon></button>
+    </form>
+  </yt-searchbox>
+  <button id="voice-search-button" aria-label="Search with your voice"><yt-icon></yt-icon></button>
+  <a id="sign-in" href="#signin" aria-label="Sign in">Sign in</a>
+</ytd-masthead>
+</div>
+<tp-yt-app-drawer id="guide">
+  <nav aria-label="Guide">
+    <a href="youtube_home.html" title="Home">Home</a>
+    <a href="#shorts" title="Shorts">Shorts</a>
+    <a href="#subscriptions" title="Subscriptions">Subscriptions</a>
+    <a href="#history" title="History">History</a>
+  </nav>
+</tp-yt-app-drawer>
+<ytd-page-manager id="page-manager"><ytd-browse><ytd-rich-grid-renderer><div id="contents">
+<ytd-rich-item-renderer><div id="content"><ytd-rich-grid-media><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v201" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">5:59</div></a></ytd-thumbnail>
+  <div id="details"><div id="meta"><h3><a id="video-title-link" href="youtube_watch.html?v=v201" title="Queen – Bohemian Rhapsody (Official Video Remastered)" aria-label="Queen – Bohemian Rhapsody (Official Video Remastered) by Queen Official 2.1B views 15 years ago"><yt-formatted-string id="video-title">Queen – Bohemian Rhapsody (Official Video Remastered)</yt-formatted-string></a></h3>
+  <ytd-channel-name><a href="/@QueenOfficial">Queen Official</a></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">2.1B views</span><span class="inline-metadata-item">15 years ago</span></div></div></div>
+</div></ytd-rich-grid-media></div></ytd-rich-item-renderer>
+<ytd-rich-item-renderer><div id="content"><ytd-rich-grid-media><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v202" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">5:55</div></a></ytd-thumbnail>
+  <div id="details"><div id="meta"><h3><a id="video-title-link" href="youtube_watch.html?v=v202" title="Bohemian Rhapsody (Remastered 2011)" aria-label="Bohemian Rhapsody (Remastered 2011) by Queen - Topic 310M views 9 years ago"><yt-formatted-string id="video-title">Bohemian Rhapsody (Remastered 2011)</yt-formatted-string></a></h3>
+  <ytd-channel-name><a href="/channel/UCq">Queen - Topic</a></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">310M views</span><span class="inline-metadata-item">9 years ago</span></div></div></div>
+</div></ytd-rich-grid-media></div></ytd-rich-item-renderer>
+<ytd-rich-item-renderer><div id="content"><ytd-rich-grid-media><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v203" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">6:07</div></a></ytd-thumbnail>
+  <div id="details"><div id="meta"><h3><a id="video-title-link" href="youtube_watch.html?v=v203" title="Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)" aria-label="Queen - Bohemian Rhapsody (Live at Rock Montreal 1981) by Queen Official 48M views 6 years ago"><yt-formatted-string id="video-title">Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)</yt-formatted-string></a></h3>
+  <ytd-channel-name><a href="/@QueenOfficial">Queen Official</a></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">48M views</span><span class="inline-metadata-item">6 years ago</span></div></div></div>
+</div></ytd-rich-grid-media></div></ytd-rich-item-renderer>
+<ytd-rich-item-renderer><div id="content"><ytd-rich-grid-media><div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" href="youtube_watch.html?v=v204" tabindex="-1"><img alt=""><div class="badge-shape-wiz__text">2:31</div></a></ytd-thumbnail>
+  <div id="details"><div id="meta"><h3><a id="video-title-link" href="youtube_watch.html?v=v204" title="Queen - Bohemian Rhapsody (Live Aid 1985)" aria-label="Queen - Bohemian Rhapsody (Live Aid 1985) by Queen Official 95M views 5 years ago"><yt-formatted-string id="video-title">Queen - Bohemian Rhapsody (Live Aid 1985)</yt-formatted-string></a></h3>
+  <ytd-channel-name><a href="/@QueenOfficial">Queen Official</a></ytd-channel-name>
+  <div id="metadata-line"><span class="inline-metadata-item">95M views</span><span class="inline-metadata-item">5 years ago</span></div></div></div>
+</div></ytd-rich-grid-media></div></ytd-rich-item-renderer>
+</div></ytd-rich-grid-renderer></ytd-browse></ytd-page-manager>
+</ytd-app>
+</body>
+</html>

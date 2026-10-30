@@ -466,9 +466,14 @@ agent_safety::ElementProbe ProbeNode(const std::vector<voice::PageNode>& chain,
     }
     // As the snapshot's el.closest('button,input'): the nearest decides.
     const std::string type = TrimAscii(LowerAscii(chain[i].input_type, 16));
-    const bool submit = tag == "button" || type == "submit" || type == "image";
+    const bool submit_input =
+        tag == "input" && (type == "submit" || type == "image");
+    const bool submit = tag == "button" || submit_input;
+    // Outside any form, a submit input can only submit one it is tied to
+    // with form="id", which the tree doesn't show.
     probe.submits_form =
-        submit && form_index >= 0 && static_cast<size_t>(form_index) > i;
+        submit && ((form_index >= 0 && static_cast<size_t>(form_index) > i) ||
+                   (submit_input && form_index < 0));
     break;
   }
   probe.label = voice::SpeechSafeText(node.name, kMaxProbeLabelChars);
@@ -496,10 +501,57 @@ ClickQuestion CheckClick(const agent_safety::ElementProbe& probe,
     }
   }
   if (probe.submits_form) {
-    question.effects.push_back("submits a form on " +
-                               std::string(current_origin_text));
+    // Where the form's data goes, when the probe knows it (the element
+    // snapshot's reads the form's action) and it is another origin.
+    const std::string to = agent_safety::IsAllowedNavigationURL(dest)
+                               ? url::Origin::Create(dest).Serialize()
+                               : std::string();
+    question.effects.push_back(
+        !to.empty() && to != current_origin_text
+            ? "submits a form to " + to
+            : "submits a form on " + std::string(current_origin_text));
   }
   return question;
+}
+
+std::string QuotedLabel(std::string_view label) {
+  // Quote and dash characters (ASCII and UTF-8) as the plain ones that
+  // can't end the quote or start the browser's " — it ...".
+  static constexpr std::pair<std::string_view, std::string_view> kSwaps[] = {
+      {"\"", "'"},
+      {"\xE2\x80\x9C", "'"},  // U+201C
+      {"\xE2\x80\x9D", "'"},  // U+201D
+      {"\xE2\x80\x9E", "'"},  // U+201E
+      {"\xE2\x80\x9F", "'"},  // U+201F
+      {"\xE2\x80\xB3", "'"},  // U+2033 double prime
+      {"\xC2\xAB", "'"},      // U+00AB
+      {"\xC2\xBB", "'"},      // U+00BB
+      {"\xEF\xBC\x82", "'"},  // U+FF02 fullwidth quotation mark
+      {"\xE2\x80\x92", "-"},  // U+2012 figure dash
+      {"\xE2\x80\x93", "-"},  // U+2013 en dash
+      {"\xE2\x80\x94", "-"},  // U+2014 em dash
+      {"\xE2\x80\x95", "-"},  // U+2015 horizontal bar
+      {"\xE2\x88\x92", "-"},  // U+2212 minus sign
+  };
+  std::string out = "\"";
+  size_t i = 0;
+  while (i < label.size()) {
+    bool swapped = false;
+    for (const auto& [from, to] : kSwaps) {
+      if (label.substr(i, from.size()) == from) {
+        out.append(to);
+        i += from.size();
+        swapped = true;
+        break;
+      }
+    }
+    if (!swapped) {
+      out.push_back(label[i]);
+      ++i;
+    }
+  }
+  out.push_back('"');
+  return out;
 }
 
 FrameCheck CheckFrameOrigin(std::string_view observed,

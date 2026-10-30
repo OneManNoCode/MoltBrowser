@@ -41,6 +41,8 @@ source_set("molt_ai") {
     "molt_net_ui.h",
     "molt_vault_handler.cc",
     "molt_vault_handler.h",
+    "molt_voice_learning_handler.cc",
+    "molt_voice_learning_handler.h",
     "molt_voice_settings_handler.cc",
     "molt_voice_settings_handler.h",
     "molt_web_ai_sites_handler.cc",

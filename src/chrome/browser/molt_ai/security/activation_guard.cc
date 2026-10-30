@@ -9,18 +9,24 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/no_destructor.h"
 #include "base/task/sequenced_task_runner.h"
 #include "components/blocked_content/popup_blocker.h"
 #include "components/blocked_content/popup_blocker_tab_helper.h"
 #include "components/permissions/permission_request.h"
 #include "components/permissions/request_type.h"
 #include "components/permissions/resolvers/permission_prompt_options.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/blink/public/common/frame/user_activation_state.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/input/web_keyboard_event.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace molt_ai {
@@ -68,6 +74,26 @@ std::string PermissionWord(permissions::RequestType type) {
   }
 }
 
+// Whether |navigation| is of the page the tab shows (its main frame or one
+// of its frames; not a page being prerendered, nor a fenced frame).
+bool InPrimaryPage(content::NavigationHandle* navigation) {
+  if (navigation->IsInPrimaryMainFrame()) {
+    return true;
+  }
+  if (navigation->IsInMainFrame()) {
+    return false;
+  }
+  content::RenderFrameHost* parent = navigation->GetParentFrame();
+  return parent && parent->GetPage().IsPrimary();
+}
+
+// Every tab's guard (UI thread), for what one page can hand to another
+// window (MayEnterFullscreen()).
+std::vector<raw_ptr<ActivationGuard>>& AllGuards() {
+  static base::NoDestructor<std::vector<raw_ptr<ActivationGuard>>> guards;
+  return *guards;
+}
+
 // Runs the download's callback later, as the browser's own refusals do
 // (ChromeDownloadManagerDelegate::CheckDownloadAllowed()).
 void PostDownloadAnswer(content::CheckDownloadAllowedCallback done,
@@ -93,10 +119,16 @@ ActivationGuard::ActivationGuard(content::WebContents* contents)
   // constant), plus the requests still on their way.
   record_.window_ms = blink::kActivationLifespan.InMilliseconds() +
                       activation::kInFlightMs;
+  if (content::NavigationEntry* entry =
+          contents->GetController().GetLastCommittedEntry()) {
+    last_entry_id_ = entry->GetUniqueID();
+  }
+  AllGuards().push_back(this);
   ObserveTabHelpers();
 }
 
 ActivationGuard::~ActivationGuard() {
+  std::erase(AllGuards(), this);
   StopObservingTabHelpers();
   // A held download is answered: nothing is left waiting on this tab.
   Resolve(false);
@@ -169,6 +201,7 @@ void ActivationGuard::FrameReceivedUserActivation(
 
 void ActivationGuard::DidFinishNavigation(
     content::NavigationHandle* navigation) {
+  NoteHistoryEntry(navigation);
   if (!navigation->IsInPrimaryMainFrame() || !navigation->HasCommitted() ||
       navigation->IsSameDocument()) {
     return;
@@ -185,6 +218,55 @@ void ActivationGuard::DidFinishNavigation(
 void ActivationGuard::WebContentsDestroyed() {
   StopObservingTabHelpers();
   Resolve(false);
+}
+
+void ActivationGuard::NoteHistoryEntry(content::NavigationHandle* navigation) {
+  if (!navigation->HasCommitted() || !InPrimaryPage(navigation)) {
+    return;
+  }
+  content::NavigationEntry* entry =
+      web_contents()->GetController().GetLastCommittedEntry();
+  const int entry_id = entry ? entry->GetUniqueID() : 0;
+  const int from_id = last_entry_id_;
+  last_entry_id_ = entry_id;
+  // A new entry the page added: not the browser's (an address, voice mode's
+  // own "go back"), not a replacement, not a move through history.
+  if (entry_id == 0 || entry_id == from_id ||
+      !navigation->IsRendererInitiated() || navigation->DidReplaceEntry() ||
+      (navigation->GetPageTransition() & ui::PAGE_TRANSITION_FORWARD_BACK)) {
+    return;
+  }
+  if (!activation::NoteHistoryEntry(record_, NowMs()) || from_id == 0) {
+    return;
+  }
+  if (skippable_entries_.size() >= kMaxSkippableEntries) {
+    skippable_entries_.erase(skippable_entries_.begin());
+  }
+  skippable_entries_.push_back(from_id);
+}
+
+// static
+int ActivationGuard::VoiceBackOffset(content::WebContents* contents) {
+  ActivationGuard* guard =
+      contents ? ActivationGuard::FromWebContents(contents) : nullptr;
+  if (!guard || guard->skippable_entries_.empty()) {
+    return -1;
+  }
+  content::NavigationController& controller = contents->GetController();
+  const int current = controller.GetLastCommittedEntryIndex();
+  int offset = -1;
+  while (current + offset > 0) {
+    content::NavigationEntry* entry =
+        controller.GetEntryAtIndex(current + offset);
+    if (!entry ||
+        std::find(guard->skippable_entries_.begin(),
+                  guard->skippable_entries_.end(),
+                  entry->GetUniqueID()) == guard->skippable_entries_.end()) {
+      break;
+    }
+    --offset;
+  }
+  return offset;
 }
 
 // ---- The askers -------------------------------------------------------------
@@ -243,8 +325,13 @@ ActivationGuard::Asker* ActivationGuard::CurrentAsker() const {
   return agent_askers_.empty() ? nullptr : agent_askers_.back().get();
 }
 
+bool ActivationGuard::PromptsByVoice() const {
+  return voice_asker_ && voice_asker_->TakesPromptsByVoice();
+}
+
 Ruling ActivationGuard::Decide(Request request) const {
-  return activation::Decide(record_, NowMs(), request, CurrentAskerKind());
+  return activation::Decide(record_, NowMs(), request, CurrentAskerKind(),
+                            PromptsByVoice());
 }
 
 bool ActivationGuard::Ask(const activation::Question& question,
@@ -252,6 +339,12 @@ bool ActivationGuard::Ask(const activation::Question& question,
   Asker* asker = CurrentAsker();
   if (!asker || pending_) {
     // One question at a time; with no one to ask, it is a "no".
+    std::move(resolve).Run(false);
+    return false;
+  }
+  if (!activation::MayAsk(record_)) {
+    // One question per action (activation_policy.h): refused, and said.
+    Tell(question.request, std::string());
     std::move(resolve).Run(false);
     return false;
   }
@@ -270,6 +363,7 @@ bool ActivationGuard::Ask(const activation::Question& question,
     }
     return false;
   }
+  activation::NoteAsked(record_);
   return true;
 }
 
@@ -502,17 +596,42 @@ bool ActivationGuard::MayEnterFullscreen(
           : nullptr;
   ActivationGuard* guard =
       contents ? ActivationGuard::FromWebContents(contents) : nullptr;
-  if (!guard) {
+  if (guard) {
+    const Ruling ruling = guard->Decide(Request::kFullScreen);
+    if (ruling.decision != Decision::kProceed) {
+      if (ruling.tell) {
+        guard->Tell(Request::kFullScreen, std::string());
+      }
+      return false;
+    }
+  }
+  // A page can hand full screen to another window it can reach
+  // (postMessage(..., {delegate: "fullscreen"}) with its activation): any
+  // window of its browsing context group, which an opener and the windows
+  // it opened share. While a tab acts, no other window of its group goes
+  // full screen: the user asked the action for that tab, if for full screen
+  // at all.
+  content::SiteInstance* requesting =
+      requesting_frame ? requesting_frame->GetSiteInstance() : nullptr;
+  if (!requesting) {
     return true;
   }
-  const Ruling ruling = guard->Decide(Request::kFullScreen);
-  if (ruling.decision == Decision::kProceed) {
-    return true;
+  for (ActivationGuard* other : AllGuards()) {
+    content::WebContents* other_contents = other->web_contents();
+    if (other == guard || !other_contents || other_contents == contents ||
+        !other->IsActing()) {
+      continue;
+    }
+    content::SiteInstance* acting =
+        other_contents->GetPrimaryMainFrame()->GetSiteInstance();
+    if (acting && requesting->IsRelatedSiteInstance(acting)) {
+      if (other->CurrentAskerKind() == activation::Asker::kVoiceMode) {
+        other->Tell(Request::kFullScreen, std::string());
+      }
+      return false;
+    }
   }
-  if (ruling.tell) {
-    guard->Tell(Request::kFullScreen, std::string());
-  }
-  return false;
+  return true;
 }
 
 // static
@@ -530,6 +649,23 @@ bool ActivationGuard::RefusesClipboardWrite(content::WebContents* contents) {
     guard->Tell(Request::kClipboardWrite, std::string());
   }
   return true;
+}
+
+// static
+bool ActivationGuard::MayEnterPictureInPicture(content::WebContents* contents) {
+  ActivationGuard* guard =
+      contents ? ActivationGuard::FromWebContents(contents) : nullptr;
+  if (!guard) {
+    return true;
+  }
+  const Ruling ruling = guard->Decide(Request::kPictureInPicture);
+  if (ruling.decision == Decision::kProceed) {
+    return true;
+  }
+  if (ruling.tell) {
+    guard->Tell(Request::kPictureInPicture, std::string());
+  }
+  return false;
 }
 
 // ---- Permission prompts -----------------------------------------------------
@@ -565,10 +701,11 @@ void ActivationGuard::OnPromptAdded() {
   if (!prompts_ || prompts_->Requests().empty()) {
     return;
   }
-  // Never accepted for the user. In voice mode, whose user may not see the
-  // prompt and can't answer it by voice yet, it is dismissed (not denied:
-  // nothing is remembered for the site) and said. Not from inside the
-  // manager's own notification.
+  // Never accepted by the guard. Voice mode that reads prompts aloud asks
+  // (voice_browser_prompts.h: the confirmation word allows it). One that
+  // doesn't, whose user may not see the prompt, has it dismissed (not
+  // denied: nothing is remembered for the site) and said. Not from inside
+  // the manager's own notification.
   if (Decide(Request::kPermissionPrompt).decision != Decision::kRefuse) {
     return;
   }

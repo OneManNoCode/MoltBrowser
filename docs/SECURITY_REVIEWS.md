@@ -4,6 +4,138 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-30: round 40 (October 2026)
+
+**Scope.** The code of round 40, which only its authors had reviewed:
+
+1. Voice mode's own voice, the `molt-voice` helper (`voice/voice_helper/`,
+   `scripts/bundle-speech.sh`'s voice parts): the text front end on page
+   text (bounds, quadratic paths, UTF-8, numbers of any length, the
+   lexicon loader and its caps, the units and the short first unit), the
+   frame reader and writer, the helper's limits and exit rules, and the
+   supply chain (the voice's and lexicon's pins, the licences shipped,
+   nothing fetched at build or run time).
+2. The browser's side of that voice (`voice_speech*`): the helper's output
+   read as hostile (`VoiceStreamChecker`: audio caps, ids, order), what a
+   helper a hostile input took over could make the browser play or keep
+   doing, the reader and writer threads, restarts and giving up, playback
+   through the audio service, and MoltNet windows.
+3. Interrupting that voice without the wake phrase
+   (`voice_session_logic.*`): who can speak such a command (a page's
+   audio, with Chrome-wide echo cancellation, the platform's or none; a
+   bystander), the filter for the browser's own words heard back against
+   text a page writes to be heard differently from how it reads, and its
+   interplay with the rules for other speakers and missing echo
+   cancellation.
+4. The activation guard (`security/activation_*` and its hooks in
+   `chrome_content_browser_client.cc`, `browser_web_contents_delegate.cc`
+   and `chrome_download_manager_delegate.cc`): the features of Chromium
+   156 that use or check user activation and which of them it covers, the
+   window and what ends it, the decisions with no one to ask, a page
+   racing its requests against one question, and each hook's place in
+   156's code.
+5. The helper sandbox's signal rules and the review's later fixes
+   (`common/helper_sandbox_linux.*`, the restarts, the error lines, the
+   hardening flags, the wake model's reload), on the real kernel.
+6. Questions the agent's page-map path asks about forms, and how the
+   planner's questions are spoken.
+
+**Method.** Each candidate traced from its attacker (a web page or a frame
+it embeds, page text read aloud by the browser, a page's audio, a helper
+that a hostile input took over) through MoltBrowser's code and the
+upstream Chromium 156 code at the pinned revision (the popup blocker's
+dispositions, the download manager's checks, the external protocol
+handler's flood gate, the browser delegate's picture-in-picture, pointer
+lock and protocol handler paths) and ONNX Runtime 1.28.2's thread
+affinity. The echo filter was checked by feeding the voice's own words
+for page-like text, as its text front end says them, back to the session
+logic. On Linux the sandbox was exercised against the real kernel
+(Landlock ABI 7 and seccomp-bpf, and the seccomp filter alone) as an
+unprivileged user: the helper sandbox's tests, a confined program
+changing another process's scheduling, and the bundled `molt-speech` (21
+of 21 protocol checks) and `molt-voice` (16 of 16, and its speaking
+checks) under the resident sandbox after the fixes. Fixes tested with
+the std-only unit tests built standalone (system gtest, ASan and UBSan),
+the agent page map's unit tests on the `//url` stand-ins, the voice
+listener fuzzer (four minutes) and the agent page map fuzzer, which now
+checks the quoted labels (two minutes), `molt_fuzz.py check`; the changed C++ was
+compiled against Chromium 156's headers; the browser tests run on the
+build machine.
+
+**Findings.** 17: 8 low and 9 informational (wording, defence in depth,
+licence notices, or what later phases of the design cover). Fixed: seven
+of the low and four of the informational (one in part); the others are
+tracked privately.
+
+**Fixed.**
+
+- On Linux a helper changes only its own scheduling: `setpriority()` and
+  `ioprio_set()` of another process or group, or of all the user's
+  processes, and `sched_setaffinity()`, `sched_setscheduler()`,
+  `sched_setparam()`, `sched_setattr()`, `migrate_pages()` and
+  `move_pages()` of another process are refused by the seccomp filter on
+  every kernel (Landlock has no rule for them). A process may otherwise
+  lower its user's other processes' priority, make them `SCHED_IDLE` or
+  pin them to one CPU, which an unprivileged one can't undo
+  (`common/helper_sandbox_linux.cc`).
+- While voice mode's own voice speaks, what the browser said is compared
+  with what the recognizer heard both as written and as the voice says
+  it (`voice/voice_said_aloud.h`, the voice helper's own text front end:
+  "example dot com" for "example.com", "second" for "2nd", camel case
+  apart), so its own words heard back, however a page wrote them, aren't
+  taken for a command (`voice/voice_session_logic.cc`).
+- The browser's own reading of a sound-alike of the wake phrase ("Hey
+  Mold", "HeyMolt", "Hey Moltbrowser") is recognized as its own, like the
+  wake phrase itself: a word with the wake name's phonetic key, or one
+  beginning with the name right after "hey" (`voice_session_logic.cc`).
+- The voice helper is ended, and restarted with the usual fallback, when
+  it sends nothing for 20 s for a request while nothing is left to play,
+  so voice mode never stays speaking (`voice/voice_speech_bundled.cc`,
+  `StoppedAnswering()` in `voice_speech_protocol.cc`).
+- The activation guard asks about at most one of a page's requests per
+  agent or voice action: what the page tries after that, until the next
+  action, is refused and said, so a question can't be swapped for another
+  just as the user answers (`security/activation_policy.cc`,
+  `activation_guard.cc`).
+- A video's picture-in-picture window, which stays over every app, is
+  refused from an agent's or voice mode's action and said, whatever the
+  action was for (`BrowserWebContentsDelegate::EnterPictureInPicture()`,
+  `ActivationGuard::MayEnterPictureInPicture()`); a document's was already
+  asked about as a new window.
+- The web agent's click questions put the page's label between quotes
+  with its own quotes and dashes made plain, so it can't close them and
+  continue in the browser's words (`agents/agent_page_map.cc`'s
+  `QuotedLabel()`, `web_agent.cc`); spoken, the label is "the one labelled
+  ..." in one phrase (`agents/voice_agent_speech.cc`).
+- A form whose action the element snapshot reads and that goes to
+  another origin is asked about as "submits a form to <origin>"; on the
+  page map's path a submit input outside any form (tied to one with
+  `form=`) is asked about as a form submission (`agent_page_map.cc`).
+- The bundled voice ships CMUdict's licence notice for its lexicon
+  (`voice/voice_helper/LICENSES.md`).
+
+**Tests added.**
+
+- `helper_sandbox_unittest.cc`: the seccomp filter's verdicts for the
+  scheduling calls; on the real kernel, a confined child can't change
+  another process's priority, policy or affinity and still changes its
+  own.
+- `voice_said_aloud_unittest.cc`; `voice_session_logic_unittest.cc`: the
+  browser's own words heard back as spoken, sound-alikes of the wake
+  phrase read out, and words that only share sounds with it. The voice
+  listener fuzzer builds the new code.
+- `voice_speech_protocol_unittest.cc`: `StoppedAnswering()`.
+  `voice_speech_browsertest.cc`: a stand-in helper that never answers is
+  ended and the platform's voice speaks.
+- `activation_policy_unittest.cc`: one question per action, and a
+  video's picture-in-picture refused. `activation_guard_browsertest.cc`: a
+  page's download after its asked-about new window is refused and said; a
+  video popped out after a voice press is refused and said, one popped out
+  with the page's own gesture isn't.
+- `agent_page_map_unittest.cc`: quoted labels, a cross-origin form's
+  question, submit inputs outside a form; `voice_agent_speech_unittest.cc`:
+  the spoken label.
+
 ## 2026-10-30: rounds 38 and 39 (October 2026)
 
 **Scope.** The code of rounds 38 and 39 (touchless browsing's listening,

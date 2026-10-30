@@ -25,14 +25,14 @@ the repository, never from inside the data directory.
 | `testset/pages.json` | 12 simulated screens of 20 results each (titles and channels), for biasing and choosing. |
 | `testset/lexicon-extra.txt` | Pronunciations the TTS lexicons lack for the test set's words. |
 | `testset/page_prose.txt` | 400 sentences of MoltBrowser's own docs, read over music as "page audio" for the false wake-up test. |
-| `gen_audio.py`, `audio.py` | Renders the test audio: 14 voices (speeds 0.75–1.1, pitch shifts), noise, babble, music and the browser's own speech; wake-phrase clips; page audio; real speech sets. |
+| `gen_audio.py`, `audio.py` | Renders the test audio: 14 voices (speeds 0.75–1.1, pitch shifts), noise, babble, music and the browser's own speech; wake-phrase clips; page audio; real speech sets. `--gesture` renders only the voice gesture's confirmation words (read from `voice_gesture.cc`), clean and at 10 dB of pink noise. |
 | `catalog.py` | The engines and models measured, and the test voices. |
 | `run_bench.py` | Builds the driver and runs every measurement, one at a time under an optional lock file, three runs for timings. |
 | `report.py` | Markdown tables (and a JSON summary) from the results. |
 | `build_whisper_cpp.sh` | whisper.cpp at the commit `scripts/bundle-whisper.sh` pins, for the `whisper-cpp` step. |
 | `voice_bench_lib.py` | Test set loading and checks, normalization, WER, command and entity accuracy, hotwords, SentencePiece and ONNX readers. |
 | `voice_bench_test.py` | Offline tests of the above. |
-| `speech_helper_check.py` | Checks a built `molt-speech` (`scripts/bundle-speech.sh`, `docs/design/SPEECH_HELPER_PROTOCOL.md`) over its stdin and stdout: the protocol's error and edge cases, then accuracy, the wake phrase, latency and listening cost on this kit's audio. |
+| `speech_helper_check.py` | Checks a built `molt-speech` (`scripts/bundle-speech.sh`, `docs/design/SPEECH_HELPER_PROTOCOL.md`) over its stdin and stdout: the protocol's error and edge cases, then accuracy, the wake phrase, latency and listening cost on this kit's audio; `gesture`: the voice gesture's confirmation words (`gen_audio.py --gesture`), with and without the word as a hotword (docs/design/TOUCHLESS_BROWSING.md §7.3). |
 | `voice_helper_check.py` | Checks a built `molt-voice` (`scripts/bundle-speech.sh --parts voice`, `docs/design/VOICE_HELPER_PROTOCOL.md`) the same way: the protocol's error and edge cases, page-like sentences (first audio, real-time factor), the cost of a long reading, and `molt-speech`'s recognizer on the voice's output (WER). |
 
 ## Running it

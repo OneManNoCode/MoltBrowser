@@ -1,0 +1,1 @@
+{"id":"x","steps":[{"type":"navigate","target":"javascript:1","extra":{"voice":{"command":"open_site","site":"a","address":true}}},{"type":"unknown","extra":{"voice":{"command":"voice_mode_off"}}}]}

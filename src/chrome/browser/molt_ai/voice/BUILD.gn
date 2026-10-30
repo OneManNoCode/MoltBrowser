@@ -41,6 +41,9 @@ source_set("unit_tests") {
   deps = [
     ":recorded_wav",
     ":voice_intent_unit_tests",
+
+    # The voice gesture, and the browser's prompts by voice.
+    ":voice_prompts_unit_tests",
     "//testing/gtest",
   ]
 }
@@ -81,6 +84,56 @@ source_set("voice_command") {
     "voice_command_phrases_en.cc",
   ]
   public_deps = [ ":spoken_choice" ]
+}
+
+# The voice gesture (docs/design/TOUCHLESS_BROWSING.md §7.3): the
+# confirmation words, the prompts that wait for one and the one-time
+# capability a word heard cleanly mints; and what voice mode says and
+# hears for the browser's prompts and a page's dialogs. Std-only:
+# molt_ai_unittests, a standalone harness and molt_voice_prompts_fuzzer
+# build the same code.
+source_set("voice_prompts") {
+  sources = [
+    "voice_gesture.cc",
+    "voice_gesture.h",
+    "voice_prompts.cc",
+    "voice_prompts.h",
+  ]
+  public_deps = [ ":spoken_choice" ]
+  deps = [
+    # SpeechSafeText() for the page's text.
+    ":page_map",
+
+    # SiteForSpeech() for the site's name.
+    "//chrome/browser/molt_ai/security:activation_policy",
+  ]
+}
+
+source_set("voice_prompts_unit_tests") {
+  testonly = true
+  sources = [
+    "voice_gesture_unittest.cc",
+    "voice_prompts_unittest.cc",
+  ]
+  deps = [
+    ":spoken_choice",
+    ":voice_prompts",
+    "//testing/gtest",
+  ]
+}
+
+# A dialog's text and a file's name (page text), and what voice mode hears
+# while a prompt waits. See docs/FUZZING.md.
+fuzzer_test("molt_voice_prompts_fuzzer") {
+  sources = [ "molt_voice_prompts_fuzzer.cc" ]
+  deps = [
+    ":spoken_choice",
+    ":voice_prompts",
+    "//base",
+  ]
+  dict = "dicts/voice_prompts.dict"
+  seed_corpus = "corpus/molt_voice_prompts_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
 }
 
 source_set("voice_intent_unit_tests") {
@@ -147,12 +200,85 @@ source_set("page_map") {
   ]
 }
 
-# Hand-built page trees for the page map's tests (std-only).
+# Site skills (docs/design/VOICE_SKILLS.md, TOUCHLESS_BROWSING.md §6.7):
+# declarative data naming the parts of big sites' pages (search box,
+# results, player, next page, reading), compiled in as JSON and parsed as
+# untrusted with caps; the page map with them. Std-only, so
+# molt_ai_unittests, a standalone harness and molt_page_reading_fuzzer build
+# the same code.
+source_set("site_skills") {
+  sources = [
+    "site_skills.cc",
+    "site_skills.h",
+    "site_skills_data.cc",
+  ]
+
+  public_deps = [ ":page_map" ]
+
+  deps = [
+    # FoldForComparison(), as names are compared everywhere in voice mode.
+    ":spoken_choice",
+
+    # The strict, capped JSON reader (bounded_json.h; std-only).
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
+}
+
+# Reading a page aloud (TOUCHLESS_BROWSING.md §5.4, §6.6): the page's text
+# as blocks and sentences from the accessibility tree, chunks sized for the
+# speech rate, the reading position and its moves, the selection. Std-only:
+# molt_ai_unittests, a standalone harness and molt_page_reading_fuzzer build
+# the same code.
+source_set("page_reading") {
+  sources = [
+    "page_reading.cc",
+    "page_reading.h",
+  ]
+
+  public_deps = [ ":page_map" ]
+
+  deps = [
+    # Sections named as spoken names are matched (spoken_choice.h).
+    ":spoken_choice",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
+}
+
+# Site skills and reading aloud over hostile pages (a renderer that may be
+# compromised) and skill files. See docs/FUZZING.md.
+fuzzer_test("molt_page_reading_fuzzer") {
+  sources = [ "molt_page_reading_fuzzer.cc" ]
+  deps = [
+    ":page_map_test_support",
+    ":page_reading",
+    ":site_skills",
+    "//base",
+  ]
+  dict = "dicts/page_reading.dict"
+  seed_corpus = "corpus/molt_page_reading_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
+# Hand-built page trees for the page map's tests, and the stored copies of
+# sites' pages (chrome/test/data/molt_voice/skills/) read as Blink's tree
+# (std-only).
 source_set("page_map_test_support") {
   testonly = true
   sources = [
+    "html_fixture_tree.cc",
+    "html_fixture_tree.h",
     "page_map_test_trees.cc",
     "page_map_test_trees.h",
+  ]
+
+  deps = [
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
   ]
 
   public_deps = [ ":page_map" ]
@@ -197,6 +323,9 @@ source_set("voice_page") {
 
   deps = [
     ":ax_page_source",
+
+    # The map with the site's skill (site_skills.h).
+    ":site_skills",
 
     # Every action is noted with the tab's activation guard.
     "//chrome/browser/molt_ai/security:activation_guard",
@@ -258,6 +387,12 @@ source_set("browser_tests") {
     # Speaking: the bundled voice with a stand-in helper.
     ":voice_speech_browser_tests",
 
+    # Learning: routines by voice, corrections, nothing in MoltNet.
+    ":voice_learning_browser_tests",
+
+    # The browser's prompts and a page's dialogs answered by voice.
+    ":voice_prompts_browser_tests",
+
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
 
@@ -290,23 +425,44 @@ source_set("voice_loop") {
     "voice_candidates.h",
     "voice_controller_logic.cc",
     "voice_controller_logic.h",
+    "voice_reader.cc",
+    "voice_reader.h",
+
+    # Learning (§6.8): site hints, routines' steps, personal words.
+    "voice_hints.cc",
+    "voice_hints.h",
+    "voice_routines_logic.cc",
+    "voice_routines_logic.h",
     "voice_sites.cc",
     "voice_sites.h",
     "voice_speech_text.cc",
     "voice_speech_text.h",
+    "voice_vocabulary.cc",
+    "voice_vocabulary.h",
   ]
 
   public_deps = [
     ":page_map",
+
+    # Reading aloud (voice_reader.h reads page_reading.h's documents).
+    ":page_reading",
     ":spoken_choice",
     ":voice_command",
+
+    # The browser's prompts in the conversation (std-only).
+    ":voice_prompts",
 
     # activation::Intent in VoiceStep (std-only).
     "//chrome/browser/molt_ai/security:activation_policy",
   ]
 
-  # MOLT_RAW_PTR_EXCLUSION (header-only).
-  deps = [ "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion" ]
+  deps = [
+    # The site's skill names where a page's text is (voice_reader.cc).
+    ":site_skills",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
 }
 
 # What voice mode hands open-ended requests to (the planner fallback,
@@ -353,14 +509,45 @@ fuzzer_test("molt_voice_speech_fuzzer") {
   libfuzzer_options = [ "max_len=65536" ]
 }
 
+# A page's dialogs in a tab voice mode listens on: the tab's own dialog
+# manager, with voice mode told when one shows and closes
+# (voice_dialog_manager.h). Small, so the browser's WebContentsDelegate
+# (its GetJavaScriptDialogManager() hook) can depend on it.
+source_set("voice_dialog_manager") {
+  sources = [
+    "voice_dialog_manager.cc",
+    "voice_dialog_manager.h",
+  ]
+
+  public_deps = [
+    ":voice_prompts",
+    "//base",
+    "//content/public/browser",
+    "//url",
+  ]
+}
+
 # Voice mode in a browser window: runs the loop's steps on the active tab
 # (VoicePageController), the browser's commands, the media session and the
 # tab's mute, and speaks through its own voice (the molt-voice helper,
 # played through the audio service) or TtsController.
 source_set("voice_controller") {
   sources = [
+    "voice_browser_prompts.cc",
+    "voice_browser_prompts.h",
     "voice_controller.cc",
     "voice_controller.h",
+    "voice_reading_settings.cc",
+    "voice_reading_settings.h",
+
+    # Learning (§6.8): the profile's, the window's, and the seam for
+    # confirming a routine's sites by voice.
+    "voice_learning.cc",
+    "voice_learning.h",
+    "voice_learning_loop.cc",
+    "voice_learning_loop.h",
+    "voice_routine_sites.cc",
+    "voice_routine_sites.h",
     "voice_speech.cc",
     "voice_speech.h",
     "voice_speech_bundled.cc",
@@ -368,19 +555,30 @@ source_set("voice_controller") {
   ]
 
   public_deps = [
+    ":voice_dialog_manager",
+    ":voice_learning_store",
     ":voice_loop",
     ":voice_planner",
+    ":voice_prompts",
     ":voice_speaking",
     "//base",
 
     # Voice mode asks the activation guard's questions on its tab
     # (page_request_asker.h).
     "//chrome/browser/molt_ai/security:activation_policy",
+
+    # The browser's prompts read and answered by voice
+    # (voice_browser_prompts.h): permission prompts, downloads.
+    "//components/download/content/public",
+    "//components/permissions",
     "//ui/base/unowned_user_data",
   ]
 
   deps = [
     ":features",
+
+    # The reader takes the site's skill for the page (site_skills.h).
+    ":site_skills",
     ":voice_page",
 
     # The voice helper: the bundled copy only, under the resident sandbox.
@@ -396,6 +594,19 @@ source_set("voice_controller") {
 
     # The tab's activation guard, which voice mode answers.
     "//chrome/browser/molt_ai/security:activation_guard",
+
+    # Routines taught by voice are kept with the other workflows
+    # (AutomationStorage) under their trust policy.
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+
+    # A dangerous download kept or discarded as the download bubble does,
+    # and the password manager's save bubble answered as its buttons do.
+    "//chrome/browser/download",
+    "//chrome/browser/ui/passwords",
+    "//components/download/public/common:public",
+    "//components/password_manager/core/browser",
+    "//components/password_manager/core/common",
 
     # The planner fallback: the web agent's on-device planner
     # (agents/voice_agent_planner.h).
@@ -444,23 +655,113 @@ fuzzer_test("molt_voice_controller_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# What voice mode learned, as files (docs/design/TOUCHLESS_BROWSING.md §6.8):
+# routines as Agent-mode workflows (voice_routines) and the personal words
+# and site hints (voice_learning_store), both read back as untrusted.
+# base::Value and GURL only: molt_ai_unittests links it; fuzzed by
+# molt_voice_learning_fuzzer.
+source_set("voice_learning_store") {
+  sources = [
+    "voice_learning_store.cc",
+    "voice_learning_store.h",
+    "voice_routines.cc",
+    "voice_routines.h",
+  ]
+
+  public_deps = [
+    ":voice_loop",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+  ]
+
+  deps = [
+    # Secret-looking values and addresses (agent_draft::TextLooksSecret()).
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+    "//url",
+  ]
+}
+
+# The learning file and a routine's .molt as anything on the machine may
+# have written them, and corrections applied to any utterance. See
+# docs/FUZZING.md.
+fuzzer_test("molt_voice_learning_fuzzer") {
+  sources = [ "molt_voice_learning_fuzzer.cc" ]
+  deps = [
+    ":voice_learning_store",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+  ]
+  dict = "dicts/voice_learning.dict"
+  seed_corpus = "corpus/molt_voice_learning_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("voice_loop_unit_tests") {
   testonly = true
   sources = [
+    "page_reading_unittest.cc",
+    "site_skills_unittest.cc",
     "voice_candidates_unittest.cc",
+    "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
+    "voice_hints_unittest.cc",
+    "voice_learning_store_unittest.cc",
+    "voice_reader_unittest.cc",
+    "voice_routines_logic_unittest.cc",
+    "voice_routines_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
     "voice_speech_text_unittest.cc",
+    "voice_vocabulary_unittest.cc",
   ]
+
+  # The sites' stored pages the skills are tested on.
+  data = [ "//chrome/test/data/molt_voice/skills/" ]
 
   deps = [
     ":page_map_test_support",
+    ":page_reading",
+    ":site_skills",
+    ":voice_learning_store",
     ":voice_loop",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+
+    # The stored pages, read from the source tree.
+    "//base",
 
     # Every URL the loop builds passes agent_safety's navigation check.
     "//chrome/browser/molt_ai/security:agent_safety",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+# A permission prompt allowed by its confirmation word and refused by "no";
+# the word typed, unclean, replayed or late refused; confirm(), prompt() and
+# beforeunload answered by voice (chrome/test/data/molt_voice/prompts.html).
+# Picked up by :browser_tests.
+source_set("voice_prompts_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_browser_prompts_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_prompts",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/permissions",
+    "//components/permissions:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
     "//testing/gtest",
     "//url",
   ]
@@ -473,10 +774,17 @@ source_set("voice_loop_unit_tests") {
 source_set("voice_loop_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "voice_controller_browsertest.cc" ]
+  sources = [
+    "voice_controller_browsertest.cc",
+
+    # Site skills and reading aloud on the sites' stored pages
+    # (chrome/test/data/molt_voice/skills/).
+    "voice_skills_browsertest.cc",
+  ]
 
   deps = [
     ":features",
+    ":site_skills",
     ":voice_controller",
     ":voice_loop",
     ":voice_page",
@@ -513,6 +821,8 @@ source_set("voice_listening") {
     "voice_audio_samples.h",
     "voice_listener_protocol.cc",
     "voice_listener_protocol.h",
+    "voice_said_aloud.cc",
+    "voice_said_aloud.h",
     "voice_session_logic.cc",
     "voice_session_logic.h",
   ]
@@ -521,6 +831,10 @@ source_set("voice_listening") {
     ":page_map",
     ":voice_command",
   ]
+
+  # What the browser's own voice says for a text (voice_said_aloud.h): the
+  # voice helper's text front end.
+  deps = [ "//chrome/browser/molt_ai/voice/voice_helper:core" ]
 }
 
 # The speech helper's stdout, as a helper a hostile input took over may
@@ -597,6 +911,7 @@ source_set("voice_listening_unit_tests") {
   sources = [
     "voice_audio_samples_unittest.cc",
     "voice_listener_protocol_unittest.cc",
+    "voice_said_aloud_unittest.cc",
     "voice_session_logic_unittest.cc",
     "voice_speech_protocol_unittest.cc",
   ]
@@ -660,6 +975,42 @@ source_set("voice_speech_browser_tests") {
 # Listening end to end but for the recognizer: Chromium's fake audio
 # capture, the real listener and resident sandbox, the stand-in helper.
 # Picked up by :browser_tests.
+# Learning from use (§6.8): a routine taught by voice on the fixture video
+# site and run again, a correction through the stand-in speech helper, and
+# nothing learned in a MoltNet window. Picked up by :browser_tests.
+source_set("voice_learning_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_learning_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_loop",
+    ":voice_session",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+
+  data_deps = [ ":molt_fake_speech_helper" ]
+}
+
 source_set("voice_session_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]

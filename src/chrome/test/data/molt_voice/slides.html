@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slides</title>
+</head>
+<body>
+<!-- A window that goes full screen when its opener hands it full screen
+     (chrome/browser/molt_ai/security/activation_guard_browsertest.cc). -->
+<h1>Slides</h1>
+<script>
+  window.moltLog = [];
+  window.addEventListener('message', () => {
+    document.documentElement.requestFullscreen().then(
+        () => moltLog.push('fullscreen:yes'),
+        () => moltLog.push('fullscreen:no'));
+  });
+</script>
+</body>
+</html>

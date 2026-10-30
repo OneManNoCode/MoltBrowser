@@ -40,6 +40,7 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
@@ -165,6 +166,10 @@ base::DictValue WorkflowSummary(const Script& s) {
   // the card offers "Review" instead of Run, trust and schedule.
   if (s.security.sites_unconfirmed) {
     d.Set("draft", true);
+  }
+  // A routine taught by voice: voice mode runs it ("run" and its name).
+  if (molt_ai::automation::HasVoiceSteps(s)) {
+    d.Set("voice", true);
   }
   // A run waiting for the user's answer.
   if (std::optional<base::DictValue> q = QuestionDict(s.id)) {
@@ -496,6 +501,13 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           ResolveDict(args, std::move(out));
           return;
         }
+        // Nor here a routine taught by voice: voice mode runs it.
+        if (loaded && molt_ai::automation::HasVoiceSteps(*loaded)) {
+          out.Set("ok", false);
+          out.Set("error", molt_ai::automation::kVoiceRoutineMessage);
+          ResolveDict(args, std::move(out));
+          return;
+        }
         if (auto s = std::move(loaded)) {
           std::map<std::string, std::string> overrides;
           if (args.size() >= 3 && args[2].is_dict()) {
@@ -692,6 +704,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         // An unconfirmed draft is never scheduled.
         if (loaded && loaded->security.sites_unconfirmed) {
           out.Set("error", molt_ai::automation::kDraftNeedsReviewMessage);
+          ResolveDict(args, std::move(out));
+          return;
+        }
+        // Nor a routine taught by voice.
+        if (loaded && molt_ai::automation::HasVoiceSteps(*loaded)) {
+          out.Set("error", molt_ai::automation::kVoiceRoutineMessage);
           ResolveDict(args, std::move(out));
           return;
         }
@@ -1013,6 +1031,7 @@ var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your save
    honoured only on a real click, for exactly the sites shown). It is then
    an ordinary untrusted workflow. */
 var DRAFT_EXPLAIN='Made by the AI agent from one of your runs. Check its steps and confirm its sites before it can run.';
+var VOICE_EXPLAIN='Taught by voice. Voice mode runs it: say “run” and its name.';
 /* ---- a run's question (the runner waits for the user) ----
    The text is the browser's (page text in it already cleaned); shown as
    text. Allowing must be a real click: the browser checks for it. */
@@ -1339,6 +1358,10 @@ function buildCard(wf){
     : isTrusted(wf.trust)
     ? h('span',{'class':'tbadge on',title:TRUST_EXPLAIN},'✓ trusted')
     : h('span',{'class':'tbadge',title:'Can’t submit forms until you trust it'},'not trusted'));
+  if(wf.voice===true){
+    sub.appendChild(h('span',{'class':'dotsep'},'·'));
+    sub.appendChild(h('span',{'class':'tbadge voice',title:VOICE_EXPLAIN},'voice routine'));
+  }
   sub.appendChild(h('span',{'class':'dotsep'},'·'));
   if(!wf.lastRun){
     sub.appendChild(h('span',{'class':'stat never'},'never run'));
@@ -1378,6 +1401,10 @@ function buildCard(wf){
     // A draft from an AI agent run: reviewed (and its sites confirmed)
     // before it can run or be scheduled.
     actions.appendChild(h('button',{'class':'mini run grow','aria-label':'Review '+wfName,onClick:function(){openEditor(wf.id);}},['\u{1F50D}',' Review']));
+  }else if(wf.voice===true){
+    // Taught by voice: voice mode runs it, and it is never scheduled.
+    actions.appendChild(h('span',{'class':'voice-say grow'},'Say “run '+wfName+'” in voice mode'));
+    actions.appendChild(h('button',{'class':'mini','aria-label':'Edit '+wfName,onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
   }else{
     actions.appendChild(h('button',{'class':'mini run grow','aria-label':'Run '+wfName,onClick:function(){runWorkflowFlow(wf.id);}},['▶',' Run']));
     actions.appendChild(h('button',{'class':'mini','aria-label':'Edit '+wfName,onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
@@ -2720,6 +2747,8 @@ button,input,textarea,select{font-family:inherit}
 .trust-act .btn{flex:1;font-size:.75rem;padding:8px 10px}
 /* drafts saved from an AI agent run: badge, review panel, step notes */
 .tbadge.draft{color:var(--warn)}
+.tbadge.voice{color:var(--violet)}
+.voice-say{font-size:.75rem;color:var(--faint);align-self:center}
 .draft-sites{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .draft-site{font-size:.6875rem;padding:2px 8px;border-radius:999px;background:var(--bg);
   border:1px solid var(--border);color:var(--text);word-break:break-all}

@@ -143,6 +143,28 @@ std::string ActionSpeech(std::string_view action,
 
 std::string QuestionWhat(std::string_view message) {
   std::string what = voice::SpeechSafeText(message, kMaxSpokenChars);
+  // A click's question names the page's label between quotes
+  // (agent_page_map::QuotedLabel()), which aren't heard: it is said as "the
+  // one labelled ...", as one phrase, so its own punctuation can't make a
+  // clause that sounds like the browser's ("Cancel, or no to cancel").
+  constexpr std::string_view kClickQuote = "Click \"";
+  if (what.rfind(kClickQuote, 0) == 0) {
+    const size_t close = what.find('"', kClickQuote.size());
+    if (close != std::string::npos) {
+      std::string label =
+          what.substr(kClickQuote.size(), close - kClickQuote.size());
+      for (char& c : label) {
+        if (c == '.' || c == ',' || c == ';' || c == ':' || c == '!' ||
+            c == '?') {
+          c = ' ';
+        }
+      }
+      label = voice::SpeechSafeText(label, kMaxSpokenChars);
+      what = (label.empty() ? std::string("Click")
+                            : "Click the one labelled " + label) +
+             what.substr(close + 1);
+    }
+  }
   ReplaceAll(&what, "https://", "");
   ReplaceAll(&what, "http://", "");
   ReplaceAll(&what, " \xE2\x80\x94 ", ", ");

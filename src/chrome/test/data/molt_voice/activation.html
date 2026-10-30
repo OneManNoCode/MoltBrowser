@@ -15,6 +15,10 @@
   <button id="copy" type="button">Copy code</button>
   <button id="locate" type="button">Find stores</button>
   <a id="mail" href="mailto:sales@example.com">Email sales</a>
+  <button id="present" type="button">Present slides</button>
+  <video id="clip" src="/media/bigbuck.webm" preload="auto" muted
+         width="320" height="180"></video>
+  <button id="popout" type="button">Pop out video</button>
   <p id="status">Ready</p>
 </main>
 <script>
@@ -39,6 +43,22 @@
   document.getElementById('copy').addEventListener('click', () => {
     navigator.clipboard.writeText('text from the page').then(
         () => log('copy:done'), () => log('copy:refused'));
+  });
+  // Hands full screen to the window it opened earlier (capability
+  // delegation): the test opens window.moltSlides first.
+  document.getElementById('present').addEventListener('click', () => {
+    if (!window.moltSlides) {
+      log('present:no window');
+      return;
+    }
+    window.moltSlides.postMessage('go', {targetOrigin: '*',
+                                         delegate: 'fullscreen'});
+    log('present:delegated');
+  });
+  // Puts its video in a window over every app.
+  document.getElementById('popout').addEventListener('click', () => {
+    document.getElementById('clip').requestPictureInPicture().then(
+        () => log('pip:yes'), () => log('pip:no'));
   });
   document.getElementById('locate').addEventListener('click', () => {
     navigator.geolocation.getCurrentPosition(

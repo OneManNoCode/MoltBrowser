@@ -69,6 +69,7 @@ constexpr std::array<std::string_view, kVoiceCommandKindCount> kKindNames = {
     "speed_up",
     "slow_down",
     "normal_speed",
+    "skip_ad",
     "read_page",
     "read_from_here",
     "read_headings",
@@ -83,6 +84,9 @@ constexpr std::array<std::string_view, kVoiceCommandKindCount> kKindNames = {
     "previous_link",
     "next_item",
     "previous_item",
+    "next_paragraph",
+    "previous_paragraph",
+    "read_section",
     "choose",
     "show_numbers",
     "hide_numbers",
@@ -108,6 +112,9 @@ constexpr std::array<std::string_view, kVoiceCommandKindCount> kKindNames = {
     "remember_routine",
     "forget_routine",
     "run_routine",
+    "list_routines",
+    "forget_word",
+    "forget_learning",
     "voice_mode_on",
     "voice_mode_off",
 };
@@ -911,7 +918,8 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
       command.text = SpanText(u, captures.text->first, text_end);
       const size_t cap = (pattern.kind == VoiceCommandKind::kRememberRoutine ||
                           pattern.kind == VoiceCommandKind::kForgetRoutine ||
-                          pattern.kind == VoiceCommandKind::kRunRoutine)
+                          pattern.kind == VoiceCommandKind::kRunRoutine ||
+                          pattern.kind == VoiceCommandKind::kForgetWord)
                              ? kMaxRoutineNameBytes
                              : kMaxCommandTextBytes;
       if (command.text.empty() || command.text.size() > cap) {
