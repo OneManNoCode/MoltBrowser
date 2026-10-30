@@ -67,6 +67,10 @@ test("molt_ai_unittests") {
 
     # Touchless browsing: the speech helper's std-only parts.
     "//chrome/browser/molt_ai/voice/speech_helper:unit_tests",
+
+    # Touchless browsing: the voice helper's std-only parts (the text front
+    # end, its frames, the work for one request).
+    "//chrome/browser/molt_ai/voice/voice_helper:unit_tests",
     "//chrome/browser/ui/webui/molt_ai:unit_tests",
     "//chrome/services/molt_ai/inference/engine:unit_tests",
 
