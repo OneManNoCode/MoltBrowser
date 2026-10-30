@@ -914,6 +914,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 
 | `agents/web_agent.cc` (the page map path: `VoicePageController::CreateForWebContents()` and its `Start(Holder)`/`Stop(Holder)`, `AddTreesUpdatedCallback()`, `base::OneShotTimer`, `RenderFrameHost::GetLastCommittedURL()`; the testing model), `agents/voice_agent_planner.cc` (`base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `SequencedTaskRunner::DeleteSoon` of a `std::unique_ptr<WebAgent>`, `web_ai::PickWebModel`), `voice/voice_page_controller.cc` (`Inspect()`: `ui::AXNode::parent()`, `GetRole()`; `SelectOption()`: `kDoDefault` on an option), `voice/voice_controller.cc` (it is now a `VoicePlanner::Delegate`), `ui/webui/molt_ai/molt_ai_chat_handler.cc` (`observed_with`), `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-agent-page-map`); the new GN edges `//chrome/browser/molt_ai/voice:voice_controller` → `//chrome/browser/molt_ai:molt_ai_agents`, `molt_ai_agents` → `voice:voice_page`, `voice:voice_planner`, `voice:page_map`, `web_ai:logic`, `agents:agent_page_map`, `agents:voice_agent_speech`, and `voice:browser_tests` → `agents:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges above in `gn gen` (no cycle through `//chrome/browser/profiles` or the overlay), and §5.1's browser tests | agent-pagemap |
 | `security/activation_guard.cc` (new: a `WebContentsUserData` that is a `WebContentsObserver` (`DidGetUserInteraction()`, `FrameReceivedUserActivation()`), a `blocked_content::UrlListManager::Observer` and a `permissions::PermissionRequestManager::Observer`; `PopupBlockerTabHelper::ShowBlockedPopup()`, `PermissionRequestManager::Dismiss(PromptOptions(std::monostate()))`, `blink::kActivationLifespan`, `blink::WebKeyboardEvent`); the hooks in `chrome_content_browser_client.cc` (`CanCreateWindow()`; `HandleExternalProtocol()`: `base::BindOnce(&LaunchURL, ...)` with a typed null `out_factory`; `IsClipboardCopyAllowedByPolicy()`: `ClipboardEndpoint::web_contents()`), `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (imported: `OpenURLFromTab()` copies its `OpenURLParams`, `CanEnterFullscreenModeForTab()`) and `download/chrome_download_manager_delegate.cc` (imported: `CheckDownloadAllowed()` wraps its callback); `voice/voice_page_controller.cc` (`Press(handle, intent)`), `voice/voice_controller.cc` and `agents/web_agent.cc` (now `ActivationGuard::Asker`s); the new GN edges `//chrome/browser/molt_ai:core_hooks`, `//chrome/browser/ui/browser_web_contents_delegate`, `//chrome/browser/download:impl`, `voice:voice_page`, `voice:voice_controller` and `molt_ai_agents` → `security:activation_guard` (→ `//components/blocked_content`, `//components/permissions`), `voice:voice_loop` → `security:activation_policy`, and `voice:browser_tests` → `security:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen` (no cycle from `//chrome/browser/ui` or `//chrome/browser/download` through the guard), and §5.1's browser tests | activation-guard |
+| `voice/voice_browser_prompts.cc` (new: a `WebContentsObserver`, `permissions::PermissionRequestManager::Observer` (`Accept()`, `AcceptThisTime()`, `Deny()`, `Dismiss()` with `PromptOptions(std::monostate())`, `Requests()`, `GetRequestingOrigin()`, `PermissionRequest::request_type()`/`GetContentSettingsType()`, `PermissionUtil::DoesSupportTemporaryGrants()`), `download::AllDownloadItemNotifier::Observer` (`DownloadItemModel`, `DownloadUIModel::GetDangerUiPattern()`/`MightBeMalicious()`, `DownloadCommands(model->GetWeakPtr()).ExecuteCommand(KEEP / DISCARD)`, `content::DownloadItemUtils::GetWebContents()`) and the password bubble (`ManagePasswordsUIController::FromWebContents()`, `GetState()`, `GetPendingPassword()`, `SavePassword(username_value, password_value)`, `NeverSavePassword()`, `OnNotNowClicked()`)); `voice/voice_dialog_manager.cc` (new: a `content::JavaScriptDialogManager` and `WebContentsUserData`; `HandleJavaScriptDialog()` always with the text); the hook in `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (`GetJavaScriptDialogManager()`); `security/activation_guard.cc` (the guards' list in a `base::NoDestructor`, `SiteInstance::IsRelatedSiteInstance()`, `NavigationHandle::DidReplaceEntry()`/`GetParentFrame()->GetPage().IsPrimary()`, `NavigationController::GetEntryAtIndex()`); `voice/voice_controller.cc` (`GoToOffset()`); the new GN edges `voice:voice_controller` → `//chrome/browser/download`, `//chrome/browser/ui/passwords`, `//components/download/content/public`, `//components/password_manager/core/{browser,common}`, and `//chrome/browser/ui/browser_web_contents_delegate` → `voice:voice_dialog_manager` | type-checked against 156's headers here (Linux and Windows); the GN graph checked statically; what only the build shows: no cycle in `gn gen` from `//chrome/browser/ui` or `//chrome/browser/download` through `voice:voice_controller`, and §5.1's browser tests | voice-gesture |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1240,6 +1241,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `SpeechFrameReaderTest.*`, `SpeechConfigTest.*`, `SpeechTextTest.*`, `SpeechEventsTest.*`, `SpeechListenerTest.*` (std only, built standalone here under ASan and UBSan: the speech helper's frames, CONFIG's strict JSON, hotword cleaning and the wake phrase's word pieces, the event lines, and the listening states against fake engines) | speech-helper |
   | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
   | `ActivationPolicyTest.*` (when a tab acts for voice mode or the agent, and every decision: new windows, downloads, other apps, permission prompts, full screen, clipboard writes; the words said), `VoiceControllerLogicTest.ThePagesRequestsWaitForASpokenYes` and the intents of the "full screen" and play presses; all built standalone here (ASan and UBSan) | activation-guard |
+  | `VoiceGestureWordsTest.*` (no two confirmation words the phonetic key confuses, none like an answer word or a number), `VoiceGestureBindingTest.*`, `GestureBookTest.*` (the word heard cleanly mints a gesture bound to its prompt, used once, for its binding, within 10 s; one try; the lockout; fresh words), `VoicePromptsTest.*` (what is said for each prompt and dialog, the answers, page text cleaned and capped, the dialog flood limit), the `VoiceSessionLogicTest` cases `AWord*` and `TypedTextIsNeverHeardCleanly`, the `VoiceControllerLogicTest` cases `APermissionPrompt*`, `APromptTakesTheFloorFromTheLoopsQuestion`, `APagesDialogsByVoice`, `ADialogsTextIsPageText`, `DownloadsAndPasswordsByVoice`, and `ActivationPolicyTest.HistoryEntriesAfterAnAction`; all built standalone here (ASan and UBSan) | voice-gesture |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1478,6 +1480,33 @@ extension enablement and `MediaRouterEnabled()`).
     says "Speech recognition stopped working: ...".
   - `NeverListensInMoltNetWindows`: no helper looked for, no microphone,
     "Voice mode is off in MoltNet windows.".
+- [ ] The browser's prompts and a page's dialogs by voice (voice-gesture):
+  `chrome/test/data/molt_voice/prompts.html` (new) with a fake TTS
+  platform; the test plays the listening session's part
+  (`VoiceController::HandleHeardUtterance()`). In the same
+  `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceBrowserPromptsBrowserTest.*:ActivationGuardBrowserTest.FullScreenHandedToAnotherWindowIsRefused' \
+    2>&1 | tee ~/molt-v0.3.0/voice-gesture-browser-tests.log
+  ```
+  *Expected:* all 7 pass, on macOS and Linux:
+  - `APermissionPromptAllowedByItsWord`: "localhost wants to show
+    notifications. To allow it, say <word>." is said; "yes" only repeats
+    the word; the word grants it.
+  - `APermissionPromptRefusedByNo`: "no" denies it.
+  - `TheWordTypedUncleanReplayedOrLateIsRefused`: the word typed, heard
+    over other speech, after the prompt's window, or said again for the
+    next prompt grants nothing.
+  - `ConfirmAnsweredByVoice`, `PromptAnsweredByDictation`,
+    `BeforeUnloadAnsweredByVoice`: `confirm()` gets true and false,
+    `prompt()` the dictated answer, `beforeunload` stays, then leaves.
+  - `ActivationGuardBrowserTest.FullScreenHandedToAnotherWindowIsRefused`:
+    the window the page opened doesn't go full screen when the page hands
+    it full screen after voice mode's press.
+  If a dialog test hangs: the tab-modal dialog may not have shown (check
+  the log for "suppressed"), or `beforeunload`'s app-modal dialog may need
+  the window active (`ui_test_utils::BringBrowserWindowToFront()`).
 - [ ] Voice mode's own voice's browser tests (bundled-voice): the real
   `BundledVoice` starts the stand-in helper `molt_fake_voice_helper`
   (built next to `browser_tests`) under the real resident sandbox and
@@ -2053,6 +2082,8 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   `molt_voice_controller_fuzzer`)
   (bundled-voice adds `molt_voice_helper_fuzzer` and
   `molt_voice_speech_fuzzer`)
+  (voice-gesture adds `molt_voice_prompts_fuzzer`, and the browser's
+  prompts to `molt_voice_controller_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2554,6 +2585,46 @@ each with a real microphone: a laptop's built-in one and a USB headset.
   `molt-voice` process shows about 10% of one core and under 400 MB, and
   nothing between answers; `NoNewPrivs: 1` and `Seccomp: 2` on Linux; it
   goes away when voice mode is turned off.
+
+**The browser's prompts and a page's dialogs by voice** (from
+voice-gesture; TOUCHLESS_BROWSING.md §7.3). With `molt-speech` bundled, on
+macOS and Linux, with a real microphone and the computer's speakers (not
+headphones), once with voice mode's own voice and once without it (the
+system's voices):
+
+- [ ] A permission by its word (voice-gesture): on a site that asks for
+  the camera or location ("Hey Molt, open" a map site, "find my
+  location"), wait for "... To allow it, say <word>." *Expected:* the word
+  is shown in the prompt you see and said; "yes" only repeats it; the word
+  said after the browser has finished allows it ("Allowed for this
+  visit."); "no" on another visit blocks it. Note how often the word isn't
+  recognized the first time, per word.
+- [ ] What must not allow it (voice-gesture), each on a new prompt:
+  - the word said over the browser while it reads the prompt: "I couldn't
+    be sure that was you", and nothing is allowed;
+  - a recording of yourself saying the previous prompt's word, played on
+    a phone near the microphone: "That wasn't the word, so I turned it
+    down.";
+  - a video playing a voice that says list words, with the microphone's
+    echo cancellation on and then off (in `chrome://flags` or the OS):
+    nothing is allowed; with it off, the word said by you while the video
+    plays isn't taken either;
+  - with the system's voice (bundled voice removed), stay silent after the
+    prompt: the browser doesn't allow it from hearing itself;
+  - two wrong words within ten minutes: the gesture is off ("allow things
+    with the mouse or keyboard") and prompts say so.
+- [ ] A page's dialogs (voice-gesture): `alert()`, `confirm()`,
+  `prompt()` and leaving a page with unsaved changes on a test page (or a
+  web mail draft). *Expected:* each is read with the site's name and
+  answered as TOUCHLESS_BROWSING.md §7.3 says; a page that loops `alert()`
+  has its text read three times, then "shows another message"; "close
+  the tab" ends it.
+- [ ] Downloads and passwords (voice-gesture): download a file Chrome
+  warns about (an `.exe` from a test server, or Safe Browsing's test
+  files): "may be harmful. To keep it, say <word>"; the word keeps it,
+  "discard" deletes it, a file shown in red is only deleted by voice. Sign
+  in to a test site: "Save your password for ...? Say save, never, or not
+  now."; nothing of the password or user name is said.
 
 **The web agent on the page map, and voice mode's planner** (from
 agent-pagemap; `docs/design/AGENT_ACTIONS.md` §2.10,

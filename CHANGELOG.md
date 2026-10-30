@@ -1190,6 +1190,22 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   remain the fallback when it isn't installed or stops working, and Linux
   no longer needs speech-dispatcher for voice mode to speak. Details:
   `docs/design/VOICE_HELPER_PROTOCOL.md`.
+- **Touchless browsing: the browser's questions and a page's dialogs
+  answered by voice, with a spoken word in place of a click** (preview,
+  behind `chrome://flags/#molt-voice-mode`). While voice mode listens,
+  permission requests, a page's messages, questions and requests for text,
+  "leave this page?", downloads that may be harmful and the offer to save
+  a password are read with the site they come from and answered by voice.
+  Allowing a permission or keeping a risky file takes a word the browser
+  picks at random for that request and says ("To allow it, say harbor"),
+  heard after it has finished speaking with no other sound in the way; it
+  counts once, for that request, within seconds, so a recording or a
+  page's audio can't answer for you, and a wrong word turns the request
+  down. A page's dialogs are read as the site's words, one that shows
+  dialog after dialog is cut short, and passwords are never said. Voice
+  mode's clicks are also better contained: a page can't use them to put
+  another window in full screen, or to fill your history so that "go
+  back" stays on it. Details: `docs/design/TOUCHLESS_BROWSING.md` §7.3.
 - **The AI agent sees and acts on pages as voice mode does, and voice mode
   takes open-ended requests.** Outside MoltNet windows the web agent reads
   a page through its accessibility tree (numbered items, lists of results,

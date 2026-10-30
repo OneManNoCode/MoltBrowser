@@ -87,9 +87,26 @@ and the bar only.
   window to example.com. Say yes to open it, or no to cancel." It happens
   only if your next words are "yes". A page that tries to go full screen
   (unless you said "full screen" or "play") or to change your clipboard is
-  stopped; a permission it asks for, such as your location, is turned down,
-  because voice mode can't answer permission questions yet. The browser
-  tells you each time.
+  stopped. The browser tells you each time. A permission it asks for, such
+  as your location, is read to you like any other (below).
+- **Questions from the browser and from pages** are read to you and
+  answered by voice:
+  - a permission ("example.com wants to use your camera. To allow it, say
+    harbor. To block it, say no.");
+  - a page's message, question or request for text ("example.com asks:
+    Empty the cart? Say yes or no.");
+  - leaving a page with unsaved changes ("Say leave or stay");
+  - a downloaded file that may be harmful ("To keep it, say harbor. To
+    delete it, say discard.");
+  - saving a password ("Say save, never, or not now"). Your password is
+    never read out.
+
+  To allow a permission or keep a risky file, say the word the browser
+  gives you. It is a new word each time, so a recording or a sound from a
+  page can't say it for you; say it once it has finished speaking, in a
+  quiet moment. A different word turns the request down. "No" always
+  refuses. When a page wants text, say "answer" and your answer, then
+  "yes".
 - **Typing:** choose a field ("click the search box"), then "type ...",
   "delete the last word", "clear the field", "read it back", "submit".
   Password, card and code fields are never typed into or read out.
@@ -603,6 +620,8 @@ said.
   YouTube". A spoken address on its own ("example dot com") does.
 - **A routine's name on its own** ("my news") is looked up among your
   routines before the AI is asked; "run my news" always runs it.
+- **Telling your voice from others':** anyone who hears a confirmation
+  word ("say harbor") can say it. Recognizing your own voice is planned.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
   "Hey Molt" for now. If the browser keeps missing your "Hey Molt", turn on
   "Always listening" in settings.
