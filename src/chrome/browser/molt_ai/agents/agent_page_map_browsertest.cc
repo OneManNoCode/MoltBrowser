@@ -736,9 +736,8 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
   tts_.TakeSpoken();
   Say("run live aid");
   EXPECT_TRUE(
-      Heard("live aid has steps the AI planned, so the sites it uses "
-            "need your confirmation. Confirm it in the Agent studio "
-            "for now."));
+      Heard("Before live aid runs, its sites need your confirmation. "
+            "Confirm it in the Agent studio for now."));
   EXPECT_EQ(web_contents()->GetLastCommittedURL(), GURL("about:blank"));
   // The studio's "Confirm these sites", on exactly the sites its steps use.
   ChangeStored(id, [](automation::Script& script) {
@@ -825,9 +824,7 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
   });
   tts_.TakeSpoken();
   Say("run live aid");
-  EXPECT_TRUE(
-      Heard("live aid has steps the AI planned, so the sites it uses "
-            "need your confirmation."));
+  EXPECT_TRUE(Heard("Before live aid runs, its sites need your confirmation."));
   std::optional<automation::Script> script = Stored(id);
   ASSERT_TRUE(script);
   EXPECT_TRUE(script->security.sites_unconfirmed);

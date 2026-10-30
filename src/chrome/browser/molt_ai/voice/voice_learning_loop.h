@@ -167,7 +167,9 @@ class VoiceLearningLoop {
   void CommitSiteParts();
 
   void SaveRoutine(const std::string& name, int version);
-  void RunRoutine(const std::string& name);
+  // The routine called |name|, or the one with id |id| when that isn't
+  // empty (|name| is then only said).
+  void RunRoutine(const std::string& name, const std::string& id);
   void OnRoutineLoaded(std::string name, std::optional<RoutineToRun> routine);
   void StartRoutine(RoutineToRun routine);
   void ScheduleNextStep();

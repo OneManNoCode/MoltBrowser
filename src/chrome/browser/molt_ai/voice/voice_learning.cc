@@ -167,11 +167,12 @@ SaveResult SaveRoutineBlocking(const base::FilePath& root,
 }
 
 std::optional<RoutineToRun> LoadRoutineBlocking(const base::FilePath& root,
-                                                const std::string& name) {
+                                                const std::string& name,
+                                                const std::string& id) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
   std::unique_ptr<AutomationStorage> storage = Storage(root);
   std::vector<Script> routines = VoiceRoutines(*storage);
-  const Script* found = FindRoutine(routines, name, std::string());
+  const Script* found = FindRoutine(routines, name, id);
   Script* script = nullptr;
   for (Script& routine : routines) {
     if (&routine == found) {
@@ -431,10 +432,12 @@ void VoiceLearning::SaveRoutine(std::string name,
 
 void VoiceLearning::LoadRoutine(
     std::string name,
+    std::string id,
     base::OnceCallback<void(std::optional<RoutineToRun>)> done) {
   task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&LoadRoutineBlocking, automations_root_, std::move(name)),
+      base::BindOnce(&LoadRoutineBlocking, automations_root_, std::move(name),
+                     std::move(id)),
       std::move(done));
 }
 

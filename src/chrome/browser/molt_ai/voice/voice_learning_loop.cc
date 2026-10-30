@@ -602,7 +602,7 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
       SaveRoutine(step.text, step.count);
       return;
     case LearningOp::kRunRoutine:
-      RunRoutine(step.text);
+      RunRoutine(step.text, std::string());
       return;
     case LearningOp::kForgetRoutine:
       learning->DeleteRoutine(
@@ -676,15 +676,18 @@ void VoiceLearningLoop::SaveRoutine(const std::string& name, int version) {
           weak_factory_.GetWeakPtr(), name));
 }
 
-void VoiceLearningLoop::RunRoutine(const std::string& name) {
+void VoiceLearningLoop::RunRoutine(const std::string& name,
+                                   const std::string& id) {
   VoiceLearning* learning = Learning();
   if (!learning) {
     return;
   }
   StopRoutine(std::string());
-  learning->LoadRoutine(
-      name, base::BindOnce(&VoiceLearningLoop::OnRoutineLoaded,
-                           weak_factory_.GetWeakPtr(), name));
+  // By its id when it has one (the routine whose sites were just
+  // confirmed): another routine of the same name can't stand in for it.
+  learning->LoadRoutine(id.empty() ? name : std::string(), id,
+                        base::BindOnce(&VoiceLearningLoop::OnRoutineLoaded,
+                                       weak_factory_.GetWeakPtr(), name));
 }
 
 void VoiceLearningLoop::OnRoutineLoaded(std::string name,
@@ -702,8 +705,8 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
     StartRoutine(std::move(*routine));
     return;
   }
-  // The planner's steps: its sites need the user's confirmation first
-  // (voice_routine_sites.h).
+  // The planner's steps, or a routine brought in from elsewhere: its sites
+  // need the user's confirmation first (voice_routine_sites.h).
   const std::string id = routine->id;
   const std::vector<std::string> sites = routine->sites;
   auto [by_voice, by_confirmer] = base::SplitOnceCallback(base::BindOnce(
@@ -719,10 +722,8 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
           return;
         }
         if (!confirmed) {
-          self->Say(spoken +
-                        " has steps the AI planned, so the sites it uses "
-                        "need your confirmation. " +
-                        said,
+          self->Say("Before " + spoken +
+                        " runs, its sites need your confirmation. " + said,
                     /*interrupt=*/false);
           return;
         }
@@ -734,18 +735,19 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
             id, sites,
             base::BindOnce(
                 [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
-                   bool ok) {
+                   std::string id, bool ok) {
                   if (!self) {
                     return;
                   }
                   if (ok) {
-                    self->RunRoutine(name);
+                    // The workflow confirmed, by its id.
+                    self->RunRoutine(name, id);
                   } else {
                     self->Say("I couldn't confirm its sites.",
                               /*interrupt=*/false);
                   }
                 },
-                self, name));
+                self, name, id));
       },
       weak_factory_.GetWeakPtr(), routine->name, id, sites));
   // By voice, with the voice gesture, while the window listens
