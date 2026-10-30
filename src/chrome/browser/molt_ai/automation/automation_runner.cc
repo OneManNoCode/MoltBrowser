@@ -24,6 +24,7 @@
 #include "base/unguessable_token.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/frame_tools.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -486,6 +487,14 @@ void AutomationRunner::Run(Script script,
     if (storage_)
       storage_->AppendAudit(script_.id, "run_refused", "draft_unconfirmed");
     Finish(false, kDraftNeedsReviewMessage);
+    return;
+  }
+  // A routine taught by voice runs in voice mode, through its own loop
+  // (automation_voice_steps.h): its steps have no selectors to act on.
+  if (HasVoiceSteps(script_)) {
+    if (storage_)
+      storage_->AppendAudit(script_.id, "run_refused", "voice_routine");
+    Finish(false, kVoiceRoutineMessage);
     return;
   }
 

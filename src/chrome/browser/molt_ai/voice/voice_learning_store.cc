@@ -17,6 +17,7 @@ namespace voice {
 namespace {
 
 constexpr char kVersion[] = "version";
+constexpr char kLearn[] = "learn";
 constexpr char kWords[] = "words";
 constexpr char kCorrections[] = "corrections";
 constexpr char kHints[] = "hints";
@@ -75,6 +76,7 @@ LearnedData& LearnedData::operator=(LearnedData&&) = default;
 std::string SerializeLearning(const LearnedData& data) {
   base::DictValue root;
   root.Set(kVersion, kLearningFormatVersion);
+  root.Set(kLearn, data.learn);
   base::ListValue words;
   base::ListValue corrections;
   for (const VocabularyEntry& entry : data.vocabulary.entries()) {
@@ -123,6 +125,7 @@ LearnedData ParseLearning(std::string_view json, int64_t now_unix) {
   if (root.FindInt(kVersion) != kLearningFormatVersion) {
     return data;
   }
+  data.learn = root.FindBool(kLearn).value_or(true);
   auto each = [&root](const char* key, auto&& take) {
     const base::ListValue* list = root.FindList(key);
     if (!list) {

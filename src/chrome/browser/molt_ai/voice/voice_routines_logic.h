@@ -186,6 +186,8 @@ class RoutineRecorder {
   // A step carried out. A task start begins anew; past kMaxThisSteps the
   // oldest goes.
   void Add(RoutineStep step);
+  // The step added last didn't work after all.
+  void DropLast();
   void Clear();
 
   const std::vector<RoutineStep>& steps() const { return steps_; }

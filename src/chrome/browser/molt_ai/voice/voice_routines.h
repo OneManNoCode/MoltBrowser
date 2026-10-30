@@ -78,7 +78,8 @@ struct BuiltRoutine {
 };
 
 // The workflow for |steps|, named |name| (RoutineDisplayName()), with id
-// |id|, made at |now_unix|.
+// |id|, made at |now_unix|. When the first step doesn't open a site, the
+// workflow first opens the site it was said on, as a recording does.
 BuiltRoutine BuildRoutine(std::string_view id,
                           std::string_view name,
                           const std::vector<RoutineStep>& steps,

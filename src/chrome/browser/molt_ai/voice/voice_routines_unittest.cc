@@ -115,11 +115,31 @@ TEST(VoiceRoutinesTest, EveryKindRoundTrips) {
     ASSERT_TRUE(loaded) << said;
     ReadRoutineResult read = ReadRoutine(*loaded);
     ASSERT_TRUE(read.ok) << said << ": " << read.why;
-    ASSERT_EQ(read.steps.size(), 1u);
-    EXPECT_EQ(read.steps[0].command.kind, step.command.kind) << said;
-    EXPECT_EQ(DescribeRoutineStep(read.steps[0]), DescribeRoutineStep(step))
+    ASSERT_FALSE(read.steps.empty());
+    EXPECT_EQ(read.steps.back().command.kind, step.command.kind) << said;
+    EXPECT_EQ(DescribeRoutineStep(read.steps.back()),
+              DescribeRoutineStep(step))
         << said;
   }
+}
+
+TEST(VoiceRoutinesTest, StartsOnTheSiteItWasSaidOn) {
+  BuiltRoutine built = BuildRoutine(
+      "voice_6", "news", {Said("search for news"), Said("pause")}, kNow);
+  ASSERT_TRUE(built.script) << built.refusal;
+  ASSERT_EQ(built.script->steps.size(), 3u);
+  EXPECT_EQ(built.script->steps[0].type, StepType::NAVIGATE);
+  EXPECT_EQ(built.script->steps[0].target, "https://www.youtube.com/");
+  EXPECT_EQ(built.script->steps[0].description, "Open www.youtube.com");
+  ReadRoutineResult read = ReadRoutine(*built.script);
+  ASSERT_TRUE(read.ok) << read.why;
+  EXPECT_EQ(read.steps[0].command.kind, VoiceCommandKind::kOpenSite);
+  EXPECT_EQ(read.steps[0].command.site, "www.youtube.com");
+  EXPECT_TRUE(read.steps[0].command.site_is_address);
+  // A step said on no web page: nothing to open first.
+  built = BuildRoutine("voice_7", "news", {Said("pause", "")}, kNow);
+  ASSERT_TRUE(built.script);
+  EXPECT_EQ(built.script->steps.size(), 1u);
 }
 
 TEST(VoiceRoutinesTest, SecretsAreAskedForAtEachRun) {

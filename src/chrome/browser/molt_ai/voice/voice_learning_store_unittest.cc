@@ -37,7 +37,13 @@ TEST(VoiceLearningStoreTest, RoundTrip) {
   EXPECT_EQ(hint->search_field, "Search");
   EXPECT_EQ(hint->player, "Video player");
   EXPECT_EQ(hint->last_used, kNow + 4);
+  EXPECT_TRUE(read.learn);
   EXPECT_EQ(SerializeLearning(read), json);
+  // The switch is kept too.
+  LearnedData off;
+  off.learn = false;
+  EXPECT_FALSE(ParseLearning(SerializeLearning(off), kNow).learn);
+  EXPECT_TRUE(ParseLearning("{\"version\":1,\"learn\":7}", kNow).learn);
   // Aged as it is read.
   EXPECT_TRUE(
       ParseLearning(json, kNow + kVocabularyLifetimeSeconds + 100).empty());

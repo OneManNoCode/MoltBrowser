@@ -369,6 +369,15 @@ source_set("voice_controller") {
   sources = [
     "voice_controller.cc",
     "voice_controller.h",
+
+    # Learning (§6.8): the profile's, the window's, and the seam for
+    # confirming a routine's sites by voice.
+    "voice_learning.cc",
+    "voice_learning.h",
+    "voice_learning_loop.cc",
+    "voice_learning_loop.h",
+    "voice_routine_sites.cc",
+    "voice_routine_sites.h",
     "voice_speech.cc",
     "voice_speech.h",
     "voice_speech_bundled.cc",
@@ -376,6 +385,7 @@ source_set("voice_controller") {
   ]
 
   public_deps = [
+    ":voice_learning_store",
     ":voice_loop",
     ":voice_planner",
     ":voice_speaking",
@@ -404,6 +414,11 @@ source_set("voice_controller") {
 
     # The tab's activation guard, which voice mode answers.
     "//chrome/browser/molt_ai/security:activation_guard",
+
+    # Routines taught by voice are kept with the other workflows
+    # (AutomationStorage) under their trust policy.
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:automation_policy",
 
     # The planner fallback: the web agent's on-device planner
     # (agents/voice_agent_planner.h).

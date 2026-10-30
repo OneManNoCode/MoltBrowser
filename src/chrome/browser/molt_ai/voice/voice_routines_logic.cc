@@ -526,6 +526,13 @@ void RoutineRecorder::Add(RoutineStep step) {
   ++version_;
 }
 
+void RoutineRecorder::DropLast() {
+  if (!steps_.empty()) {
+    steps_.pop_back();
+    ++version_;
+  }
+}
+
 void RoutineRecorder::Clear() {
   steps_.clear();
   ++version_;

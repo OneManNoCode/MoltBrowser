@@ -6,7 +6,7 @@
 // and the site hints (voice_hints.h), as one small JSON file in the profile
 // (voice_learning.h names it), never synced:
 //
-//   {"version": 1,
+//   {"version": 1, "learn": true,
 //    "words": [{"phrase": "Queen", "uses": 3, "last": 1800000000}],
 //    "corrections": [{"heard": "green", "meant": "Queen", "uses": 1,
 //                     "last": 1800000000}],
@@ -48,6 +48,8 @@ struct LearnedData {
 
   PersonalVocabulary vocabulary;
   SiteHints hints;
+  // "Learn from what I say" (voice_learning.h); on unless turned off.
+  bool learn = true;
 
   bool empty() const { return vocabulary.empty() && hints.empty(); }
 };

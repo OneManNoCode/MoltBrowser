@@ -529,13 +529,26 @@ BuiltRoutine BuildRoutine(std::string_view id,
     out.refusal = "Choose another name for it.";
     return out;
   }
+  // A routine said on a site starts there, as a recording does.
+  std::vector<RoutineStep> all;
+  if (!IsTaskStart(steps.front()) && !steps.front().host.empty() &&
+      steps.size() < kMaxRoutineSteps) {
+    RoutineStep open;
+    open.command.kind = K::kOpenSite;
+    open.command.site = steps.front().host;
+    open.command.site_is_address = true;
+    open.url = "https://" + steps.front().host + "/";
+    open.planned = steps.front().planned;
+    all.push_back(std::move(open));
+  }
+  all.insert(all.end(), steps.begin(), steps.end());
   Script script;
   script.id = std::string(id);
   script.name = display;
   script.created_at_unix = now_unix;
   std::set<std::string> taken;
   bool planned = false;
-  for (const RoutineStep& said : steps) {
+  for (const RoutineStep& said : all) {
     RoutineStep step = said;
     VoiceCommand& c = step.command;
     planned = planned || step.planned;
