@@ -42,6 +42,15 @@ void NoteAction(TabRecord& tab, int64_t now_ms, Intent intent) {
   tab.intent = intent;
   tab.activation_ms = -1;
   tab.user_input = false;
+  tab.asked = false;
+}
+
+bool MayAsk(const TabRecord& tab) {
+  return !tab.asked;
+}
+
+void NoteAsked(TabRecord& tab) {
+  tab.asked = true;
 }
 
 void NoteActivation(TabRecord& tab, int64_t now_ms) {

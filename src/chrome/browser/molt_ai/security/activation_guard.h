@@ -45,6 +45,8 @@
 //     asks when it is on the tab (its user hears; an agent run in voice
 //     mode's tab included), else the latest agent run (a chip in its run).
 //     One question at a time: what comes while one is pending is refused.
+//     And one per action (activation::MayAsk()): once one was asked, the
+//     page's next requests are refused, and said, until the next action.
 //     A question unanswered within kQuestionTimeout, or whose asker goes,
 //     counts as "no".
 

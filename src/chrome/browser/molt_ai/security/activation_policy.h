@@ -93,6 +93,8 @@ struct TabRecord {
   // How long the state lasts after the later of the action and its
   // activation (the browser sets it from blink::kActivationLifespan).
   int64_t window_ms = kActingWindowMs;
+  // The page's requests were asked about once since the action.
+  bool asked = false;
 };
 
 // An action was sent to the page (it starts the state afresh).
@@ -104,6 +106,14 @@ void NoteActivation(TabRecord& tab, int64_t now_ms);
 // The user's own input on the page: the state ends.
 void NoteUserInput(TabRecord& tab);
 bool IsActing(const TabRecord& tab, int64_t now_ms);
+
+// One question per action: once the user was asked about one of the page's
+// requests, the page's next requests until the next action are refused
+// instead of asked. Otherwise a page could withdraw its question (by
+// navigating) and put another in its place just as the user answers the
+// first ("yes" answers whichever is asked).
+bool MayAsk(const TabRecord& tab);
+void NoteAsked(TabRecord& tab);
 
 // What the page asks for.
 enum class Request : uint8_t {
