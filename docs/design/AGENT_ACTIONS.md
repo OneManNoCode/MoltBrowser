@@ -1762,7 +1762,9 @@ e40 media "Video player"
   first), its items on screen, its media, its other buttons, its other
   items, then the items of frames of the page's own origin. Items of
   another site's frames (ads, widgets) are never listed, as the snapshot
-  lists no frame; disabled items aren't either.
+  lists no frame, nor those of a frame of the page's origin inside
+  another site's frame (that site chose which of the page's URLs it
+  shows); disabled items aren't either.
 - **Budget:** the text is at most 7,000 characters (about what the
   snapshot's observation takes): the elements up to 4,500, then the lists
   (3 of 10 entries), headings (12) and the page's text (1,500). Every
@@ -1820,7 +1822,7 @@ Every rule of the snapshot's path applies at the same point:
 | Rule | On the page map path |
 |---|---|
 | http(s) only | `DispatchAction` checks the page's committed origin as before; the controller acts only in http(s) documents (`Resolve()`); NAVIGATE and SEARCH are unchanged |
-| Origins per frame | only the page's own frame and frames of its origin are listed; at action time the element's frame must still have that origin, in the run's scope (`FindLiveTarget()`) |
+| Origins per frame | only the page's own frame and frames of its origin are listed, and of those only frames that only frames of that origin embed (`VoicePageController::FramedByItsOwnOrigin()`); at action time the element's frame must still have that origin, in the run's scope, and so must every frame above it (`FindLiveTarget()`, `CheckFrameOrigin()`) |
 | Leaving the run's sites | a click whose node or nearest link ancestor links to another origin asks "Click X — it opens <origin>" (`CheckClick()`, the same function the snapshot's path now uses); a page that moved asks CONTINUE as before |
 | Form submits | a `<button>` (whose type the tree doesn't say: taken as a submit, the HTML default) or `<input type=submit|image>` inside a form asks "— it submits a form on <origin>". The question can't name the form's action (the tree doesn't have it); the page it loads is checked as any other |
 | Password fields | never typed into, by grammar, parser, the agent's check of the live node, and the controller |
@@ -2830,7 +2832,7 @@ the draft is built to be harmless until a person has looked at it:
 - **Frames and shadow DOM.** The snapshot lists the main document only, as
   the old selectors did. The page map's path lists frames of the page's
   own origin and shadow DOM (the accessibility tree has both), never
-  another site's frame (§2.10.1).
+  another site's frame or what it embeds (§2.10.1).
 - **A studio editor for extract schemas.** Only `.molt` files carry them.
 - **Screenshots (§2.6):**
   - *Measured benefit.* Whether tags help a 2B vision model more than they

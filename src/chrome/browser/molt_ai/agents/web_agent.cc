@@ -1640,7 +1640,8 @@ void WebAgent::FinishPageMapObservation(const StructuredPage& page,
   input.url = main->GetLastCommittedURL().spec();
   input.origin = current.Serialize();
   // The trees the map holds, and of those the frames of the page's own
-  // origin: only their items are listed (another site's frame never is).
+  // origin that no other site's frame embeds: only their items are listed
+  // (another site's frame never is, nor what it embeds).
   std::vector<int32_t> trees;
   auto note_tree = [&](int32_t tree) {
     if (tree >= 0 && std::find(trees.begin(), trees.end(), tree) == trees.end())
@@ -1655,7 +1656,8 @@ void WebAgent::FinishPageMapObservation(const StructuredPage& page,
     note_tree(heading.handle.tree);
   for (int32_t tree : trees) {
     const std::optional<url::Origin> origin = controller->OriginOfTree(tree);
-    if (origin && IsWebOrigin(*origin) && origin->IsSameOriginWith(current))
+    if (origin && IsWebOrigin(*origin) && origin->IsSameOriginWith(current) &&
+        controller->FramedByItsOwnOrigin(tree))
       input.same_origin_trees.push_back(tree);
   }
   // The options of its selects, read from the live tree.
@@ -1719,11 +1721,12 @@ WebAgent::LiveResult WebAgent::FindLiveTarget(
                                                   : LiveResult::kStale;
   }
   // Origins per frame: its frame still has the origin it was observed
-  // with, which is the page's, a web origin in the run's scope.
+  // with, which is the page's, a web origin in the run's scope, and so has
+  // every frame above it.
   switch (agent_page_map::CheckFrameOrigin(
       element.frame_origin, facts->origin,
       contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(),
-      allowed_origins_)) {
+      allowed_origins_, facts->framed_by_own_origin)) {
     case agent_page_map::FrameCheck::kOk:
       break;
     case agent_page_map::FrameCheck::kStale:

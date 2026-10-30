@@ -12,6 +12,8 @@
 //   - on a page whose accessibility tree has nothing to act on, it falls
 //     back to the element snapshot;
 //   - in a MoltNet window it never takes the accessibility mode;
+//   - a frame of the page's origin that another site's frame embeds isn't
+//     listed;
 //   - voice mode hands what the grammar can't do to the planner (a stub
 //     here) and speaks its steps; its question waits for "yes", "stop"
 //     ends it;
@@ -26,6 +28,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
@@ -356,6 +359,42 @@ IN_PROC_BROWSER_TEST_F(AgentPageMapBrowserTest, FallsBackToTheSnapshot) {
   EXPECT_EQ(1, Js("window.went"));
   EXPECT_EQ(agent_->observation_counts().page_map, 0);
   EXPECT_GE(agent_->observation_counts().element_snapshot, 1);
+}
+
+// A frame of the page's own origin is listed; one inside another site's
+// frame (which chose which of the page's URLs it shows) is not.
+IN_PROC_BROWSER_TEST_F(AgentPageMapBrowserTest,
+                       LeavesOutWhatAnotherSitesFrameEmbeds) {
+  const GURL widget = Url("a.test", "/molt_voice/frame_widget.html");
+  auto host = [&](std::string_view site, const GURL& frame) {
+    return Url(site, base::StrCat({"/molt_voice/frame_host.html?frame=",
+                                   base::EscapeQueryParamValue(
+                                       frame.spec(), /*use_plus=*/true)}));
+  };
+  std::string seen;
+  WebAgent::SetModelForTesting(base::BindRepeating(
+      [](std::string* seen, const std::string& prompt,
+         const PromptOptions& options) {
+        *seen = CurrentPage(prompt);
+        return Reply(Done("Looked"));
+      },
+      &seen));
+
+  // a.test embeds a.test's widget: its Like button is listed.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), host("a.test", widget)));
+  RunAgent(web_contents(), "like the widget");
+  EXPECT_GE(agent_->observation_counts().page_map, 1);
+  EXPECT_NE(seen.find("\"After frame\""), std::string::npos) << seen;
+  EXPECT_NE(seen.find("\"Like\""), std::string::npos) << seen;
+
+  // a.test embeds b.test, which embeds the same widget of a.test's.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), host("a.test", host("b.test", widget))));
+  RunAgent(web_contents(), "like the widget");
+  EXPECT_GE(agent_->observation_counts().page_map, 1);
+  EXPECT_NE(seen.find("\"After frame\""), std::string::npos) << seen;
+  EXPECT_EQ(seen.find("\"Like\""), std::string::npos) << seen;
+  EXPECT_EQ(seen.find("\"Share\""), std::string::npos) << seen;
 }
 
 // MoltNet: no accessibility mode, the element snapshot only.
