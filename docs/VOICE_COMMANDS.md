@@ -44,9 +44,12 @@ doesn't command it; while the browser itself is speaking, only "Hey Molt"
 and "stop" are heard. A page reading aloud with the system's voices is
 another matter: the browser can't cancel that voice, so while a page reads
 aloud (and a second after) only "stop", "cancel" and "turn off voice mode"
-are heard. Voice mode never cuts a page's reading short: its own answer
-waits until the page has finished, and "stop" stops only voice mode's
-speech. Each state has a short sound: a rising tone when it
+are heard. The same goes for any tab's sound where the microphone has no
+echo cancellation at all (the browser's turned off and the device has
+none): while a tab plays sound, only those three are heard, so pause the
+video yourself before you speak. Voice mode never cuts a page's reading
+short: its own answer waits until the page has finished, and "stop" stops
+only voice mode's speech. Each state has a short sound: a rising tone when it
 heard "Hey Molt", a tick when it took a command, a falling tone when it
 goes back to waiting for "Hey Molt".
 
