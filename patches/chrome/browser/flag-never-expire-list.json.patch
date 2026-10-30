@@ -5,13 +5,14 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-never-expire-list.json b/chrome/browser/flag-never-expire-list.json
-index 61e17350935055ade6be2f7473a7d47a626cc468..b69733b08906295d29c4e94f136f3a3845a58110 100644
+index 61e17350935055ade6be2f7473a7d47a626cc468..69d2512897d1ff0705ab65f2e71764a5d1200ca0 100644
 --- a/chrome/browser/flag-never-expire-list.json
 +++ b/chrome/browser/flag-never-expire-list.json
-@@ -100,6 +100,18 @@
+@@ -100,6 +100,19 @@
    "isolate-origins",
    "iwa-key-distribution-component-exp-cohort",
    "media-router-cast-allow-all-ips",
++  "molt-agent-page-map",
 +  "molt-agent-planner",
 +  "molt-agent-screenshots",
 +  "molt-agent-site-tools",
