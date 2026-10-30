@@ -173,6 +173,8 @@ class VoiceSession : public VoiceController::Observer,
   BrowserActivity ControllerActivity() const;
   // Whether the speech engine speaks for someone else (voice_speech.h).
   bool OthersSpeaking() const;
+  // Whether a tab of any window plays sound.
+  bool AnyTabAudible() const;
 
   raw_ptr<BrowserWindowInterface> browser_;
   ui::ScopedUnownedUserData<VoiceSession> scoped_data_holder_;

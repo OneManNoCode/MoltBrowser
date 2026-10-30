@@ -35,6 +35,11 @@
 //     after one, nothing in the follow-up window or in always-listening
 //     mode. That voice plays outside Chromium's audio service too, and a
 //     page chooses what it says ("Hey Molt, ...").
+//   - Without an echo canceller (OnEchoCancellation(false): the microphone
+//     has neither Chrome-wide echo cancellation nor the platform's), a
+//     tab's sound reaches the recognizer as it is: while a tab plays
+//     sound, and kOtherSpeechTailMs after, it is taken as another source's
+//     speech, so only the commands that always count do.
 //
 // Barge-in: the wake phrase (and "stop") while the browser speaks stops its
 // speech at once; the command follows.
@@ -186,6 +191,10 @@ class VoiceSessionLogic {
   // speechSynthesis, an extension): looked at often, and at each of the
   // helper's events.
   SessionActions OnOtherSpeech(bool speaking, int64_t now_ms);
+  // Whether the microphone has an echo canceller whose reference holds what
+  // tabs play (VoiceAudio's EchoCancellation other than kNone). Until told
+  // otherwise, it does.
+  SessionActions OnEchoCancellation(bool cancelled, int64_t now_ms);
   SessionActions OnSettingsChanged(ListeningSettings settings, int64_t now_ms);
 
   // Timers: call at NextDeadline() (or any time).
@@ -218,7 +227,8 @@ class VoiceSessionLogic {
   bool FollowUpOpen(int64_t now_ms) const;
   bool SpeakingOrTail(int64_t now_ms) const;
   // Whether another source's speech was heard since |since_ms| (or
-  // kOtherSpeechTailMs before).
+  // kOtherSpeechTailMs before): the speech engine speaking for someone
+  // else, or, without an echo canceller, a tab playing sound.
   bool OtherSpeechSince(int64_t since_ms) const;
   bool Counts(const Utterance& utterance) const;
   // Whether what the browser said lately holds a wake phrase.
@@ -239,6 +249,9 @@ class VoiceSessionLogic {
   int64_t follow_up_until_ms_ = 0;
   bool awaiting_answer_ = false;
   bool page_audible_ = false;
+  // When a tab was last seen playing sound; -1 never.
+  int64_t page_audible_ms_ = -1;
+  bool echo_cancelled_ = true;
   bool other_speaking_ = false;
   // When another source's speech was last seen; -1 never.
   int64_t other_speech_ms_ = -1;

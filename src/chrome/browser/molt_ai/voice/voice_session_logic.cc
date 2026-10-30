@@ -310,6 +310,10 @@ SessionActions VoiceSessionLogic::OnAwaitingAnswer(bool awaiting,
 }
 
 SessionActions VoiceSessionLogic::OnPageAudible(bool audible, int64_t now_ms) {
+  // When it goes quiet, the last time it was heard is now.
+  if (audible || page_audible_) {
+    page_audible_ms_ = now_ms;
+  }
   page_audible_ = audible;
   return Finish(SessionActions(), now_ms);
 }
@@ -320,6 +324,12 @@ SessionActions VoiceSessionLogic::OnOtherSpeech(bool speaking, int64_t now_ms) {
     other_speech_ms_ = now_ms;
   }
   other_speaking_ = speaking;
+  return Finish(SessionActions(), now_ms);
+}
+
+SessionActions VoiceSessionLogic::OnEchoCancellation(bool cancelled,
+                                                     int64_t now_ms) {
+  echo_cancelled_ = cancelled;
   return Finish(SessionActions(), now_ms);
 }
 
@@ -405,8 +415,15 @@ bool VoiceSessionLogic::SpeakingOrTail(int64_t now_ms) const {
 }
 
 bool VoiceSessionLogic::OtherSpeechSince(int64_t since_ms) const {
-  return other_speaking_ || (other_speech_ms_ >= 0 &&
-                             other_speech_ms_ + kOtherSpeechTailMs >= since_ms);
+  if (other_speaking_ || (other_speech_ms_ >= 0 &&
+                          other_speech_ms_ + kOtherSpeechTailMs >= since_ms)) {
+    return true;
+  }
+  // Without an echo canceller, a tab's sound is heard as it is: a video
+  // that says "Hey Molt, ..." would be taken for the user.
+  return !echo_cancelled_ &&
+         (page_audible_ || (page_audible_ms_ >= 0 &&
+                            page_audible_ms_ + kOtherSpeechTailMs >= since_ms));
 }
 
 bool VoiceSessionLogic::Counts(const Utterance& utterance) const {

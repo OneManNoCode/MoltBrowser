@@ -27,9 +27,10 @@
 //     echo canceller when the device offers one
 //     (AudioParameters::ECHO_CANCELLER: macOS Voice Processing I/O, the
 //     Windows voice capture DSP), whose reference is the system's output.
-//   - Otherwise none; the log says so. Voice mode still runs: the wake
-//     phrase and the rules of voice_session_logic.h keep page audio and the
-//     browser's own voice from commanding it, but recognition suffers.
+//   - Otherwise none; the log says so. Voice mode still runs, but a tab's
+//     sound then reaches the recognizer as it is: while a tab plays sound,
+//     only the commands that always count do (voice_session_logic.h,
+//     OnEchoCancellation()), and recognition suffers.
 //   Not in any reference: the platform's text-to-speech voices, which play
 //   outside the audio service (VoiceSessionLogic handles that).
 //
