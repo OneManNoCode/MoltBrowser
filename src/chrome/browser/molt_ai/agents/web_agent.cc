@@ -1637,7 +1637,6 @@ void WebAgent::FinishPageMapObservation(const StructuredPage& page,
 
   const voice::PageMap map = controller->BuildMap();
   agent_page_map::PageMapInput input;
-  input.map = &map;
   input.url = main->GetLastCommittedURL().spec();
   input.origin = current.Serialize();
   // The trees the map holds, and of those the frames of the page's own
@@ -1676,7 +1675,7 @@ void WebAgent::FinishPageMapObservation(const StructuredPage& page,
   input.page_text = page.main_content;
 
   agent_page_map::PageMapObservation observed =
-      agent_page_map::BuildObservation(input);
+      agent_page_map::BuildObservation(map, input);
   if (!observed.usable) {
     // Nothing on the map the agent could use: a canvas page, unlabelled
     // controls, a tree that isn't complete yet.

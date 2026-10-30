@@ -223,9 +223,9 @@ void CheckLines(const std::string& text) {
   CHECK(elements);
 }
 
-void CheckObservation(const PageMapInput& input,
+void CheckObservation(const PageMap& map,
+                      const PageMapInput& input,
                       const PageMapObservation& out) {
-  const PageMap& map = *input.map;
   const auto& elements = out.observation.elements;
   CHECK(out.observation.from_page_map);
   CHECK_LE(molt_ai::voice::CountCodePoints(out.text),
@@ -292,6 +292,8 @@ void CheckReply(std::string_view reply,
     return;
   }
   const auto& a = *parsed.action;
+  // Neither is offered without tools or a plan.
+  CHECK(a.type != ActionType::kCallTool && a.type != ActionType::kReplan);
   switch (a.type) {
     case ActionType::kClick:
       CHECK(observation.Find(a.ref));
@@ -314,9 +316,6 @@ void CheckReply(std::string_view reply,
             e->options.end());
       break;
     }
-    case ActionType::kCallTool:
-    case ActionType::kReplan:
-      NOTREACHED() << "not offered";
     default:
       break;
   }
@@ -384,13 +383,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   const PageTree tree = ReadTree(in);
   const PageMap map = molt_ai::voice::BuildPageMap(tree);
-  input.map = &map;
 
   const PageMapObservation out =
-      molt_ai::agent_page_map::BuildObservation(input);
-  CheckObservation(input, out);
+      molt_ai::agent_page_map::BuildObservation(map, input);
+  CheckObservation(map, input, out);
   const PageMapObservation again =
-      molt_ai::agent_page_map::BuildObservation(input);
+      molt_ai::agent_page_map::BuildObservation(map, input);
   CHECK_EQ(out.text, again.text);
   CHECK_EQ(out.usable, again.usable);
   CHECK_EQ(out.observation.elements.size(), again.observation.elements.size());

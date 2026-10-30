@@ -83,9 +83,6 @@ struct PageMapInput {
   PageMapInput(const PageMapInput&);
   PageMapInput& operator=(const PageMapInput&);
 
-  // The map of the tab's primary page (voice::BuildPageMap(), through
-  // VoicePageController::BuildMap()). Not owned; outlives the call.
-  const voice::PageMap* map = nullptr;
   // The top-level document's committed URL and origin (url::Origin::
   // Serialize()).
   std::string url;
@@ -122,14 +119,17 @@ struct PageMapObservation {
   bool usable = false;
 };
 
-// The observation of |input|. Elements are chosen in this order until
+// The observation of |map|, the map of the tab's primary page
+// (voice::BuildPageMap(), through VoicePageController::BuildMap()), read
+// with |input|. Elements are chosen in this order until
 // kMaxObservedElements are, or their lines reach kMaxElementsChars, and
 // listed by number: the page's own text fields and selects, the primary
 // actions of the first entries of its first lists (as the map ranks them),
 // its items on screen, its media, its other buttons, its other items, then
 // its same-origin frames' items (on screen first). Disabled items are left
 // out.
-PageMapObservation BuildObservation(const PageMapInput& input);
+PageMapObservation BuildObservation(const voice::PageMap& map,
+                                    const PageMapInput& input);
 
 // The element snapshot's kind word for a map item ("link", "button",
 // "input", "select", "checkbox", ...).

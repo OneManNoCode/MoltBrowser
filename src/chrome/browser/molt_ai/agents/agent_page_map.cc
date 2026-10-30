@@ -277,13 +277,10 @@ agent_safety::FieldKind FieldKindOf(voice::CredentialKind kind) {
   return agent_safety::FieldKind::kPassword;
 }
 
-PageMapObservation BuildObservation(const PageMapInput& input) {
+PageMapObservation BuildObservation(const PageMap& map,
+                                    const PageMapInput& input) {
   PageMapObservation out;
   out.observation.from_page_map = true;
-  if (!input.map) {
-    return out;
-  }
-  const PageMap& map = *input.map;
   // Nothing of a map whose page isn't among the trees of its origin.
   const bool page_listed =
       map.page_tree >= 0 && InTrees(input.same_origin_trees, map.page_tree);
