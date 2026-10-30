@@ -145,6 +145,19 @@ TEST(VoiceSpeechProtocolTest, AudioLimitPerRequest) {
   EXPECT_EQ(0u, checker.outstanding());
 }
 
+// A helper that never answers would keep voice mode speaking for good.
+TEST(VoiceSpeechProtocolTest, AHelperThatStopsAnswering) {
+  // Requests waiting, everything played, nothing for the whole gap.
+  EXPECT_TRUE(StoppedAnswering(1, 1000, 1000, kMaxAnswerGapMs));
+  EXPECT_TRUE(StoppedAnswering(2, 0, 0, kMaxAnswerGapMs + 5000));
+  // Not yet.
+  EXPECT_FALSE(StoppedAnswering(1, 1000, 1000, kMaxAnswerGapMs - 1));
+  // Audio still playing: the helper paces itself meanwhile.
+  EXPECT_FALSE(StoppedAnswering(1, 1000, 999, kMaxAnswerGapMs * 10));
+  // Nothing asked of it.
+  EXPECT_FALSE(StoppedAnswering(0, 1000, 1000, kMaxAnswerGapMs * 10));
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai

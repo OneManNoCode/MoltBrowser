@@ -530,5 +530,35 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   EXPECT_TRUE(WaitForLog("fullscreen:yes"));
 }
 
+// One question per action: once the page's new window was asked about, its
+// next request before the next action (a download it starts itself) is
+// refused and said, not asked in the first one's place.
+IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest, OneQuestionPerAction) {
+  OpenPage();
+  DownloadCounter downloads(browser()->GetProfile()->GetDownloadManager());
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kWebAgent);
+  const std::optional<voice::PageItem> offer =
+      WaitForItem(controller, voice::ItemKind::kButton, "Open offer");
+  ASSERT_TRUE(offer);
+  ASSERT_EQ(controller->Press(offer->handle), ActionResult::kDone);
+  ASSERT_TRUE(
+      base::test::RunUntil([&]() { return asker_.asked.size() == 1u; }));
+  ActivationGuard* guard = ActivationGuard::FromWebContents(page_);
+  ASSERT_TRUE(guard);
+  guard->Answer(asker_.last_id, false);
+  ASSERT_TRUE(guard->IsActing());
+
+  ASSERT_TRUE(content::ExecJs(page_,
+                              "document.getElementById('report').click()",
+                              content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !asker_.told.empty(); }));
+  EXPECT_EQ(asker_.told[0],
+            "The page tried to download a file. I stopped it.");
+  EXPECT_EQ(asker_.asked.size(), 1u);
+  EXPECT_EQ(guard->pending_question(), 0);
+  EXPECT_EQ(downloads.created(), 0);
+}
+
 }  // namespace
 }  // namespace molt_ai

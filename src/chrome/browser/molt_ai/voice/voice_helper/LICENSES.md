@@ -37,11 +37,52 @@ isn't used and doesn't ship.
 **The lexicon: `lexicon-en-us.txt`.** sherpa-onnx's English pronunciation
 lexicon (release `tts-models` of https://github.com/k2-fsa/sherpa-onnx),
 unmodified. Its header says it was built from CMUdict (BSD-2-Clause,
-Carnegie Mellon University) and espeak-ng's English word list
-(https://github.com/espeak-ng/espeak-ng, GPL-3.0-or-later); it is used here
-under the GPL, version 3, like MoltBrowser.
+Carnegie Mellon University; its notice is below) and espeak-ng's English
+word list (https://github.com/espeak-ng/espeak-ng, GPL-3.0-or-later); it is
+used here under the GPL, version 3, like MoltBrowser.
 
 **The letter-to-sound rules** for words the lexicon lacks are MoltBrowser's
 own code (`voice_lts.cc`), written in the style of the Naval Research
 Laboratory's rules (Elovitz, Johnson, McHugh and Shore, NRL Report 7948,
 1976, a work of the US government).
+
+## CMUdict's notice
+
+The lexicon's CMUdict entries come with this notice
+(https://github.com/cmusphinx/cmudict, `LICENSE`):
+
+```
+Copyright (C) 1993-2015 Carnegie Mellon University. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+   The contents of this file are deemed to be source code.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in
+   the documentation and/or other materials provided with the
+   distribution.
+
+This work was supported in part by funding from the Defense Advanced
+Research Projects Agency, the Office of Naval Research and the National
+Science Foundation of the United States of America, and by member
+companies of the Carnegie Mellon Sphinx Speech Consortium. We acknowledge
+the contributions of many volunteers to the expansion and improvement of
+this dictionary.
+
+THIS SOFTWARE IS PROVIDED BY CARNEGIE MELLON UNIVERSITY ``AS IS'' AND
+ANY EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY
+NOR ITS EMPLOYEES BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```

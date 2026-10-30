@@ -138,6 +138,23 @@ TEST(ActivationPolicyTest, NewWindowsDownloadsAndAppsAreAskedAbout) {
   }
 }
 
+// A page that asked once can't withdraw its question (by navigating) and
+// put another in its place for the answer meant for the first.
+TEST(ActivationPolicyTest, OneQuestionPerAction) {
+  TabRecord tab = ActedAt(0);
+  EXPECT_TRUE(MayAsk(tab));
+  NoteAsked(tab);
+  EXPECT_FALSE(MayAsk(tab));
+  // The page's activation and the time passing don't change that.
+  NoteActivation(tab, 1000);
+  EXPECT_FALSE(MayAsk(tab));
+  // The next action does.
+  NoteAction(tab, 2000, Intent::kNone);
+  EXPECT_TRUE(MayAsk(tab));
+  // A tab that was never acted on hasn't asked.
+  EXPECT_TRUE(MayAsk(TabRecord()));
+}
+
 TEST(ActivationPolicyTest, ANewTabTheUserAskedForProceeds) {
   const TabRecord tab = ActedAt(0, Intent::kOpenInNewTab);
   for (Asker asker : kAllAskers) {

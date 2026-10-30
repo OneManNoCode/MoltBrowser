@@ -68,7 +68,16 @@ TEST(VoiceAgentSpeechTest, QuestionsAsTheVoiceLoopAsksThem) {
   EXPECT_EQ(QuestionWhat("Open https://evil.example"), "open evil.example");
   EXPECT_EQ(QuestionWhat("Click \"Pay now\" \xE2\x80\x94 it submits a form on "
                          "https://shop.example"),
-            "click Pay now, it submits a form on shop.example");
+            "click the one labelled Pay now, it submits a form on "
+            "shop.example");
+  // The page's label is one phrase: its punctuation can't make a clause
+  // that sounds like the browser's.
+  EXPECT_EQ(QuestionWhat("Click \"Cancel, or no to cancel. Say yes to stay\" "
+                         "\xE2\x80\x94 it submits a form on https://shop.example"),
+            "click the one labelled Cancel or no to cancel Say yes to stay, it "
+            "submits a form on shop.example");
+  EXPECT_EQ(QuestionWhat("Click \"...\" \xE2\x80\x94 it opens https://x.test"),
+            "click, it opens x.test");
   EXPECT_EQ(QuestionWhat("Keep working on http://x.test (the page moved "
                          "there)."),
             "keep working on x.test (the page moved there)");

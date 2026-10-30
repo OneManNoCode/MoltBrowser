@@ -255,6 +255,12 @@ bool ActivationGuard::Ask(const activation::Question& question,
     std::move(resolve).Run(false);
     return false;
   }
+  if (!activation::MayAsk(record_)) {
+    // One question per action (activation_policy.h): refused, and said.
+    Tell(question.request, std::string());
+    std::move(resolve).Run(false);
+    return false;
+  }
   const int id = ++next_question_id_;
   pending_.emplace();
   pending_->id = id;
@@ -270,6 +276,7 @@ bool ActivationGuard::Ask(const activation::Question& question,
     }
     return false;
   }
+  activation::NoteAsked(record_);
   return true;
 }
 

@@ -31,7 +31,8 @@
 //     EACCES, so libraries that probe for the network fail gracefully
 //     instead of being killed. Signals go to the helper itself only (its
 //     threads and its process group): on every kernel, as Landlock's
-//     scoping does from ABI 6. It also keeps
+//     scoping does from ABI 6; so do priority, affinity and scheduling
+//     changes. It also keeps
 //     what the helper writes in files the launcher can measure, and its
 //     memory where RLIMIT_DATA counts it.
 // A layer the kernel lacks (Landlock before 5.13, or disabled at boot) is
@@ -167,6 +168,12 @@ uint64_t HandledFsAccess(int abi);
 //     another process (RLIMIT_CPU would have the kernel kill it): EPERM.
 //     These compare with the helper's own process ID, which only the child
 //     knows: SetSeccompOwnPid() puts it in;
+//   scheduling and memory placement of anything but the helper (Landlock
+//     has no rule for these): setpriority() and ioprio_set() of another
+//     process or group or of the user's processes, sched_setaffinity(),
+//     sched_setscheduler(), sched_setparam(), sched_setattr(),
+//     migrate_pages() and move_pages() of another process (or of a thread
+//     named by its ID: it can't be told from a process): EPERM;
 //   bpf, perf_event_open, userfaultfd: EPERM (kernel attack surface);
 //   keyctl, add_key, request_key: EPERM (the user's kernel keyrings);
 //   unshare, setns, clone() with namespace flags, mount and the new mount

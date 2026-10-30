@@ -502,6 +502,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   an occasional failure once it has run a minute, is built with the same
   compiler hardening throughout, and reloads its wake-phrase model only
   when the wake phrase changes.
+- Hardening (security review of round 40, `docs/SECURITY_REVIEWS.md`): on
+  Linux the OCR, voice and speech helpers can change only their own CPU
+  and I/O priority and CPU affinity; voice mode (preview) recognizes its
+  own voice heard back as it speaks ("example dot com" for "example.com")
+  and its own reading of a sound-alike of "Hey Molt", ends its voice's
+  helper if it stops answering, and asks about at most one of a page's
+  requests per click it makes; the AI agent's click questions keep the
+  page's label in its quotes, name where a form goes when it is another
+  site, and ask about a submit input tied to a form from outside it; the
+  bundled voice ships CMUdict's licence notice.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

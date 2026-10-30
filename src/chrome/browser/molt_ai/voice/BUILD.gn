@@ -623,6 +623,8 @@ source_set("voice_listening") {
     "voice_audio_samples.h",
     "voice_listener_protocol.cc",
     "voice_listener_protocol.h",
+    "voice_said_aloud.cc",
+    "voice_said_aloud.h",
     "voice_session_logic.cc",
     "voice_session_logic.h",
   ]
@@ -631,6 +633,10 @@ source_set("voice_listening") {
     ":page_map",
     ":voice_command",
   ]
+
+  # What the browser's own voice says for a text (voice_said_aloud.h): the
+  # voice helper's text front end.
+  deps = [ "//chrome/browser/molt_ai/voice/voice_helper:core" ]
 }
 
 # The speech helper's stdout, as a helper a hostile input took over may
@@ -707,6 +713,7 @@ source_set("voice_listening_unit_tests") {
   sources = [
     "voice_audio_samples_unittest.cc",
     "voice_listener_protocol_unittest.cc",
+    "voice_said_aloud_unittest.cc",
     "voice_session_logic_unittest.cc",
     "voice_speech_protocol_unittest.cc",
   ]

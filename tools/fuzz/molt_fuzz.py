@@ -330,8 +330,9 @@ FUZZERS = {
         sources=VOICE_INTENT_SOURCES + [
             f"{VOICE}/{name}.cc" for name in (
                 "page_map", "page_map_text", "voice_listener_protocol",
-                "voice_session_logic")
-        ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
+                "voice_said_aloud", "voice_session_logic")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{VOICE_HELPER}/voice_text.cc"],
         tier="std",
         dict="dicts/voice_listener.dict",
         max_len=16384,

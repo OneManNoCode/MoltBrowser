@@ -260,6 +260,22 @@ std::vector<sock_filter> OnlyWhenArgIs(uint32_t index,
   return body;
 }
 
+// setpriority(which, who, ...) and ioprio_set(which, who, ...): allowed
+// when |which| (argument 0) is below |first_refused_which| (a process or a
+// process group, not a user's processes) and |who| (argument 1) is the
+// helper itself (0, or its own ID: it leads its own process group).
+std::vector<sock_filter> OnlyForItself(uint32_t first_refused_which) {
+  std::vector<sock_filter> body = {
+      LoadWord(ArgLow(0)),
+      Jump(BPF_JMP | BPF_JGE | BPF_K, first_refused_which, 0, 1),
+      Return(ReturnErrno(EPERM)),
+  };
+  const std::vector<sock_filter> who =
+      OnlyWhenArgIs(1, {0, kSeccompOwnPidSlot});
+  body.insert(body.end(), who.begin(), who.end());
+  return body;
+}
+
 // An open() or openat() with O_TMPFILE in its flags (argument
 // |flags_index|): EOPNOTSUPP.
 std::vector<sock_filter> NoTmpfile(uint32_t flags_index) {
@@ -496,6 +512,23 @@ std::vector<sock_filter> BuildSeccompProgram() {
   // RLIMIT_CPU, lowered below the time it has used, has the kernel kill it.
   OnSyscall(__NR_prlimit64, OnlyWhenArgIs(0, {0, kSeccompOwnPidSlot}),
             &program);
+  // Its own scheduling only. Any process may lower the CPU and I/O
+  // priority of its user's other processes (the browser's, or every one of
+  // them with PRIO_USER), make them SCHED_IDLE or pin them to one CPU, and
+  // an unprivileged process can't undo that; Landlock has no rule for it.
+  // 0 is the caller; another thread's ID can't be told from another
+  // process's, so it is refused too (the helpers don't set their threads'
+  // affinity or priority: ONNX Runtime only does with its default thread
+  // count, which they never use, and goes on without).
+  const std::vector<sock_filter> self_only =
+      OnlyWhenArgIs(0, {0, kSeccompOwnPidSlot});
+  for (long nr : {__NR_sched_setaffinity, __NR_sched_setscheduler,
+                  __NR_sched_setparam, __NR_sched_setattr, __NR_migrate_pages,
+                  __NR_move_pages}) {
+    OnSyscall(nr, self_only, &program);
+  }
+  OnSyscall(__NR_setpriority, OnlyForItself(2), &program);  // PRIO_USER
+  OnSyscall(__NR_ioprio_set, OnlyForItself(3), &program);   // IOPRIO_WHO_USER
 
   // Kernel attack surface no OCR or speech helper needs.
   Deny(__NR_bpf, EPERM, &program);

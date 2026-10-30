@@ -504,6 +504,9 @@ uint32_t BundledVoice::Speak(const std::string& text, int rate_percent) {
     return id;
   }
   Send(molt_voice::EncodeSpeak(id, rate_percent, text));
+  if (checker_.outstanding() == 0) {
+    answered_at_ = base::TimeTicks::Now();
+  }
   checker_.Sent(id);
   Request request;
   request.id = id;
@@ -541,6 +544,10 @@ void BundledVoice::OnFrame(int generation, molt_voice::Frame frame) {
   if (!checker_.Accept(frame, &event, &why)) {
     Fail(why);
     return;
+  }
+  if (event.type == VoiceEventType::kAudio ||
+      event.type == VoiceEventType::kDone) {
+    answered_at_ = base::TimeTicks::Now();
   }
   switch (event.type) {
     case VoiceEventType::kReady: {
@@ -643,6 +650,14 @@ void BundledVoice::OnWatchdog() {
   if (!ready_ && base::TimeTicks::Now() - launched_at_ >= kReadyTimeout) {
     Fail("it didn't get ready in " + std::to_string(kReadyTimeout.InSeconds()) +
          " s");
+    return;
+  }
+  // A request it stopped answering, with nothing left to play.
+  const int64_t since_answer =
+      (base::TimeTicks::Now() - answered_at_).InMilliseconds();
+  if (ready_ && StoppedAnswering(checker_.outstanding(), pushed_,
+                                 played_->value(), since_answer)) {
+    Fail("it stopped answering");
     return;
   }
   connection_->writer()->PostTask(
