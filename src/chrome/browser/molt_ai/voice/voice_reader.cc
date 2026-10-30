@@ -119,6 +119,22 @@ void VoiceReader::Run(ReadOp op,
   }
 }
 
+void VoiceReader::ReadText(std::string_view text,
+                           int64_t page_id,
+                           double rate) {
+  rate_ = rate;
+  shown_page_id_ = page_id;
+  was_reading_ = false;
+  ReadingDocument document = TextDocument(text);
+  if (document.blocks.empty()) {
+    return;
+  }
+  queue_.Start(std::move(document), {0, 0}, 1);
+  page_id_ = page_id;
+  // As the selection is read: nothing to scroll to, nothing said after it.
+  ReadFrom({0, 0}, 1, What::kSelection);
+}
+
 bool VoiceReader::Load(int64_t page_id,
                        const PageNodeHandle& locate,
                        bool reuse) {

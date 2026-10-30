@@ -226,6 +226,11 @@ bool UrlLooksSecret(std::string_view url);
 // with "…").
 std::string CleanDisplayText(std::string_view text, size_t max_chars);
 
+// |text| without control and hidden characters or invalid bytes: what the
+// draft's checks of a label or a value also read, so "pass" U+200B "word"
+// is still "password" (shared with voice routines, voice_routines.h).
+std::string WithoutHiddenChars(std::string_view text);
+
 // A {{variable}} name for a value withheld from a field labelled |label|:
 // [a-z0-9_], at most kMaxVariableNameChars, starting with a letter, not in
 // |taken| ("value" when the label gives nothing).

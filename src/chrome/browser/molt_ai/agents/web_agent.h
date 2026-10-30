@@ -307,6 +307,16 @@ class WebAgent : public content::WebContentsObserver,
   // voice mode already reads through it. Set before Start().
   void SetUsePageMap(bool use) { use_page_map_ = use; }
 
+  // A step a run carried out before, replayed without the model (a voice
+  // routine's, agents/voice_agent_replay.h): before each action |pick| is
+  // given the observation and returns the reply the model would have
+  // written, which is checked as any reply (agent_actions::InterpretReply())
+  // and carried out with every check above. No plan is written and no
+  // screenshot taken. Set before Start().
+  using ReplayPicker = base::RepeatingCallback<std::string(
+      const agent_actions::Observation& observation)>;
+  void SetReplayPicker(ReplayPicker pick) { replay_pick_ = std::move(pick); }
+
   // How this run has observed pages so far.
   const ObservationCounts& observation_counts() const {
     return observation_counts_;
@@ -542,6 +552,8 @@ class WebAgent : public content::WebContentsObserver,
   // being made (waiting for the tree), and the current observation's text.
   bool page_map_on_ = false;
   bool use_page_map_ = false;
+  // SetReplayPicker()'s: the run replays a step instead of asking a model.
+  ReplayPicker replay_pick_;
   bool holds_page_ = false;
   struct PendingMap {
     PendingMap();

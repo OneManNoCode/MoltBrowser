@@ -102,8 +102,12 @@ base::TaskTraits HelperThreadTraits() {
           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN};
 }
 
+int64_t ToMs(base::TimeTicks ticks) {
+  return (ticks - base::TimeTicks()).InMilliseconds();
+}
+
 int64_t NowMs() {
-  return (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
+  return ToMs(base::TimeTicks::Now());
 }
 
 }  // namespace
@@ -287,7 +291,8 @@ class VoiceListener::Sink : public VoiceListener::AudioSink {
  public:
   Sink() = default;
 
-  void Push(const std::vector<int16_t>& samples) override {
+  void Push(const std::vector<int16_t>& samples,
+            base::TimeTicks end_captured) override {
     std::string frame = EncodeAudioFrame(samples);
     if (frame.empty()) {
       return;
@@ -301,6 +306,8 @@ class VoiceListener::Sink : public VoiceListener::AudioSink {
     if (connection_->queued() + frame.size() > kMaxQueuedAudioBytes) {
       return;
     }
+    // In the order the writer sends them.
+    clock_.OnSent(samples.size(), ToMs(end_captured));
     connection_->AddQueued(frame.size());
     connection_->writer()->PostTask(
         FROM_HERE, base::BindOnce(&Connection::Write, connection_,
@@ -310,6 +317,14 @@ class VoiceListener::Sink : public VoiceListener::AudioSink {
   void Attach(scoped_refptr<Connection> connection) {
     base::AutoLock lock(lock_);
     connection_ = std::move(connection);
+    // A helper's clock starts at its first sample.
+    clock_.Reset();
+  }
+
+  // HelperAudioClock::LagMs() for the attached helper.
+  std::optional<int64_t> LagMs(int64_t audio_ms, int64_t now_ms) {
+    base::AutoLock lock(lock_);
+    return clock_.LagMs(audio_ms, now_ms);
   }
 
   size_t queued() {
@@ -322,6 +337,8 @@ class VoiceListener::Sink : public VoiceListener::AudioSink {
 
   base::Lock lock_;
   scoped_refptr<Connection> connection_ GUARDED_BY(lock_);
+  // What went to that helper, and when it was captured.
+  HelperAudioClock clock_ GUARDED_BY(lock_);
 };
 
 // static
@@ -463,6 +480,9 @@ void VoiceListener::OnLine(int generation, HelperEvent event) {
   if (event.epoch >= 0 && event.epoch < resets_sent_) {
     return;
   }
+  // Where its audio_ms falls in what it was sent, by the microphone's clock.
+  event.lag_ms = event.audio_ms >= 0 ? sink_->LagMs(event.audio_ms, NowMs())
+                                     : std::nullopt;
   const bool error = event.type == HelperEventType::kError;
   base::WeakPtr<VoiceListener> self = weak_factory_.GetWeakPtr();
   delegate_->OnListenerEvent(event);

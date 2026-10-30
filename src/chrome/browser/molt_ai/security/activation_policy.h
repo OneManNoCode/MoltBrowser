@@ -46,7 +46,13 @@
 // page's activation comes only from actions (no input of the user's
 // since), the entries it adds count as skippable for voice mode's "go
 // back", except the first one an action leads to within its window (the
-// page the user asked for): NoteHistoryEntry().
+// page the user asked for): NoteHistoryEntry(). An action whose intent
+// never navigates the tab (full screen, a copy, a link opened in a new
+// tab) leads to no such page: every entry the page adds after it is
+// skippable. Otherwise, at 156, the browser can't tell the page the action
+// led to from an entry the page adds for itself in the same click (both
+// are the page's script, with the action's activation; see
+// TOUCHLESS_BROWSING.md §7.5), so the first one is taken as the user's.
 //
 // Std-only, so molt_ai_unittests and a standalone harness build the same
 // code. The browser's side (the tab's record, the hooks, the questions) is
@@ -120,8 +126,10 @@ void NoteActivation(TabRecord& tab, int64_t now_ms);
 void NoteUserInput(TabRecord& tab);
 bool IsActing(const TabRecord& tab, int64_t now_ms);
 // The page added a session history entry (not a replacement, not a move
-// back or forward) at |now_ms|. Returns whether the entry it was added from
-// counts as skippable for voice mode's "go back" (above).
+// back or forward) by a navigation that began at |now_ms| (it may commit
+// later: a server that answers late doesn't make the page an action led to
+// one the page added on its own). Returns whether the entry it was added
+// from counts as skippable for voice mode's "go back" (above).
 bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms);
 
 // One question per action: once the user was asked about one of the page's
@@ -176,7 +184,9 @@ std::string_view DecisionName(Decision decision);
 
 // A host as the browser says and shows it: lower-case ASCII letters,
 // digits, dots and dashes only (anything else, and a leading "www.", is
-// dropped; IDNs stay in their xn-- form), at most kMaxSiteChars.
+// dropped; IDNs stay in their xn-- form), at most kMaxSiteChars. A longer
+// host is said from its end, whole labels where it can, so the registrable
+// domain that says whose site it is is always said.
 inline constexpr size_t kMaxSiteChars = 80;
 std::string SiteForSpeech(std::string_view host);
 

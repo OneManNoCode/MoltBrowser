@@ -76,24 +76,49 @@ std::vector<std::string> SplitFolded(std::string_view heard) {
   return words;
 }
 
-// The confirmation word |key| (a phonetic key) sounds like: exactly one
-// within its bound.
-std::optional<size_t> SoundsLike(const std::string& key) {
+HeardWord Word(size_t index) {
+  HeardWord word;
+  word.kind = HeardWord::Kind::kWord;
+  word.index = index;
+  return word;
+}
+
+HeardWord Unsure() {
+  HeardWord word;
+  word.kind = HeardWord::Kind::kUnsure;
+  return word;
+}
+
+// The confirmation word |key| (a phonetic key) sounds like: one within its
+// bound, for sure when no other is within the bound plus
+// kSureSoundAlikeMargin ("pardon" is garden's, but almost falcon's too:
+// unsure). The test looks at every word of the list alike, whichever the
+// prompt's is.
+HeardWord SoundsLike(const std::string& key) {
   if (key.empty()) {
-    return std::nullopt;
+    return HeardWord();
   }
   std::optional<size_t> found;
+  int near = 0;
   for (size_t i = 0; i < kWords.size(); ++i) {
     const std::string word_key = PhoneticKey(kWords[i]);
     const int bound = PhoneticBound(std::max(key.size(), word_key.size()));
-    if (PhoneticDistance(key, word_key, bound) <= bound) {
+    const int distance =
+        PhoneticDistance(key, word_key, bound + kSureSoundAlikeMargin);
+    if (distance <= bound + kSureSoundAlikeMargin) {
+      ++near;
+    }
+    if (distance <= bound) {
       if (found) {
-        return std::nullopt;  // two of them: neither
+        return Unsure();  // two of them
       }
       found = i;
     }
   }
-  return found;
+  if (!found) {
+    return HeardWord();
+  }
+  return near == 1 ? Word(*found) : Unsure();
 }
 
 std::optional<size_t> Exactly(std::string_view word) {
@@ -130,9 +155,17 @@ bool WordsConfusable(std::string_view a, std::string_view b, int margin) {
 }
 
 std::optional<size_t> MatchConfirmationWord(std::string_view heard) {
+  const HeardWord word = HearConfirmationWord(heard);
+  if (word.kind != HeardWord::Kind::kWord) {
+    return std::nullopt;
+  }
+  return word.index;
+}
+
+HeardWord HearConfirmationWord(std::string_view heard) {
   std::vector<std::string> words = SplitFolded(heard);
   if (words.empty() || words.size() > kMaxHeardWords) {
-    return std::nullopt;
+    return HeardWord();
   }
   size_t first = 0;
   while (first < words.size() && first < 2 && words.size() - first > 1 &&
@@ -145,19 +178,19 @@ std::optional<size_t> MatchConfirmationWord(std::string_view heard) {
   }
   if (last - first == 1) {
     if (std::optional<size_t> exact = Exactly(words[first])) {
-      return exact;
+      return Word(*exact);
     }
     // A recognizer's plural ("eagles").
     const std::string& word = words[first];
     if (word.size() > 3 && word.back() == 's') {
       if (std::optional<size_t> exact =
               Exactly(std::string_view(word).substr(0, word.size() - 1))) {
-        return exact;
+        return Word(*exact);
       }
     }
     // An answer word is never a confirmation word ("no" is no).
     if (OneOf(kAnswerWords, words[first])) {
-      return std::nullopt;
+      return HeardWord();
     }
     return SoundsLike(PhoneticKey(words[first]));
   }
@@ -165,11 +198,11 @@ std::optional<size_t> MatchConfirmationWord(std::string_view heard) {
     // A recognizer that split the word in two ("sail boat").
     if (std::optional<size_t> exact =
             Exactly(words[first] + words[first + 1])) {
-      return exact;
+      return Word(*exact);
     }
     if (OneOf(kAnswerWords, words[first]) ||
         OneOf(kAnswerWords, words[first + 1])) {
-      return std::nullopt;
+      return HeardWord();
     }
     const std::string a = PhoneticKey(words[first]);
     const std::string b = PhoneticKey(words[first + 1]);
@@ -177,7 +210,7 @@ std::optional<size_t> MatchConfirmationWord(std::string_view heard) {
       return SoundsLike(JoinPhoneticKeys(a, b));
     }
   }
-  return std::nullopt;
+  return HeardWord();
 }
 
 std::string_view GestureActionName(GestureAction action) {
@@ -200,6 +233,8 @@ std::string_view HearResultName(HearResult result) {
       return "not clean";
     case HearResult::kWrongWord:
       return "wrong word";
+    case HearResult::kUnsure:
+      return "unsure";
     case HearResult::kNotAWord:
       return "not a word";
     case HearResult::kNoPrompt:
@@ -330,16 +365,22 @@ HearResult GestureBook::Hear(int id,
     prompts_.erase(it);
     return HearResult::kLockedOut;
   }
-  const std::optional<size_t> match = MatchConfirmationWord(heard);
-  if (!match) {
+  const HeardWord word = HearConfirmationWord(heard);
+  if (word.kind == HeardWord::Kind::kNone) {
     return HearResult::kNotAWord;
   }
+  // Like a word of the list, but not for sure which: neither the word nor a
+  // miss. Asked again, within the prompt's window.
+  if (word.kind == HeardWord::Kind::kUnsure) {
+    return HearResult::kUnsure;
+  }
+  const size_t match = word.index;
   // Only what the microphone heard cleanly answers (or refuses) a prompt:
   // typed text, or what may have been another source, changes nothing.
   if (!evidence.from_microphone || !evidence.clean) {
     return HearResult::kNotClean;
   }
-  if (kWords[*match] != it->word) {
+  if (kWords[match] != it->word) {
     prompts_.erase(it);
     wrong_ms_.push_back(now_ms);
     if (wrong_ms_.size() >= static_cast<size_t>(kMaxWrongWords)) {

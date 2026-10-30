@@ -1856,6 +1856,17 @@ it ("a step the draft can't replay faithfully", §2.9), as it refuses any
 step it can't replay. Not yet: locators from the accessibility tree (role,
 name, landmark) for Agent mode.
 
+Voice routines keep such steps another way (round 42,
+TOUCHLESS_BROWSING.md §6.8, "The planner's steps"): a step voice mode's
+planner carried out is kept by its element's kind and name as the
+observation showed them (`agents/voice_agent_replay.h`), and replayed by
+the web agent itself, not the runner: `WebAgent::SetReplayPicker()` stands
+the recorded step in for the model's reply, which `InterpretReply()`
+checks and the run carries out with every check above (the live target,
+the click's questions, the activation guard). An element no longer on the
+page, or one whose kind and name another element shares, stops the
+routine there.
+
 #### 2.10.6 The switch
 
 `chrome://flags/#molt-agent-page-map` (`--enable-features=MoltAgentPageMap`),

@@ -3,13 +3,16 @@
 
 #include "chrome/browser/molt_ai/voice/voice_routines.h"
 
+#include <algorithm>
 #include <set>
 #include <utility>
 
 #include "chrome/browser/molt_ai/automation/agent_run_draft.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/security/activation_policy.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
+#include "chrome/browser/molt_ai/voice/voice_prompts.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -266,6 +269,186 @@ bool TakesText(K kind) {
   return kind == K::kSearch || kind == K::kType || kind == K::kFindInPage;
 }
 
+// ---- The planner's steps ----------------------------------------------------
+
+using A = PlannerStep::Action;
+
+// extra["voice"]'s keys for the planner's step (with kText, kQuery,
+// kVariable and kPlanned).
+constexpr char kAgent[] = "agent";
+constexpr char kKind[] = "kind";
+constexpr char kLabel[] = "label";
+constexpr char kOption[] = "option";
+constexpr char kDirection[] = "direction";
+
+constexpr std::pair<A, std::string_view> kAgentActions[] = {
+    {A::kNavigate, "navigate"}, {A::kSearch, "search"}, {A::kClick, "click"},
+    {A::kType, "type"},         {A::kSelect, "select"}, {A::kScroll, "scroll"},
+};
+
+// The kinds the agent's observation gives an element: the element
+// snapshot's and the page map's (agent_actions.h, agent_page_map.h).
+constexpr std::string_view kElementKinds[] = {
+    "link",     "button",   "input",  "textarea",  "select",   "checkbox",
+    "radio",    "editable", "switch", "option",    "menuitem", "tab",
+    "treeitem", "slider",   "media",  "clickable",
+};
+
+// What the browser says when a step of the planner's can't be kept.
+constexpr char kUnkeptSecretAddress[] =
+    "a page the AI opened looks like it holds a password or a code.";
+constexpr char kUnkeptSecretSearch[] =
+    "a search the AI made looks like it holds a password or a code.";
+constexpr char kUnkeptCredentialField[] =
+    "the AI typed into a password, card or code field, which I never keep.";
+constexpr char kUnkeptNoName[] =
+    "the AI used something on the page without a name, which I couldn't "
+    "find again.";
+constexpr char kUnkeptStep[] = "one of the AI's steps can't be repeated.";
+
+StepType StepTypeForAgent(A action) {
+  switch (action) {
+    case A::kNavigate:
+    case A::kSearch:
+      return StepType::NAVIGATE;
+    case A::kClick:
+    case A::kSelect:
+      return StepType::CLICK;
+    case A::kType:
+      return StepType::TYPE;
+    case A::kScroll:
+      return StepType::SCROLL;
+    case A::kNone:
+    case A::kUnkept:
+      break;
+  }
+  return StepType::UNKNOWN;
+}
+
+bool ElementAction(A action) {
+  return action == A::kClick || action == A::kType || action == A::kSelect;
+}
+
+size_t CodePoints(std::string_view text) {
+  return static_cast<size_t>(std::count_if(
+      text.begin(), text.end(),
+      [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }));
+}
+
+// Page text or the model's, as the planner's step keeps it: valid UTF-8,
+// at most |max_chars| code points, no control character (|breaks|: but a
+// line break or a tab), nothing a workflow would read as a variable.
+bool PlannerText(std::string_view text,
+                 size_t max_chars,
+                 bool allow_empty,
+                 bool breaks) {
+  if (text.empty()) {
+    return allow_empty;
+  }
+  if (!IsValidUtf8(text) || CodePoints(text) > max_chars || HasTemplate(text)) {
+    return false;
+  }
+  for (char ch : text) {
+    const unsigned char c = static_cast<unsigned char>(ch);
+    if ((c < 0x20 || c == 0x7F) && !(breaks && (c == '\n' || c == '\t'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool KnownElementKind(std::string_view kind) {
+  return std::find(std::begin(kElementKinds), std::end(kElementKinds), kind) !=
+         std::end(kElementKinds);
+}
+
+// The planner's address: http(s), within the agent's cap.
+bool ValidPlannerUrl(const std::string& url) {
+  return url.size() <= kMaxPlannerUrlBytes && ValidRoutineUrl(url);
+}
+
+std::string HostOfUrl(const std::string& url) {
+  return HintHost(GURL(url).host());
+}
+
+// The draft's quotes (agent_run_draft.cc): “...”, the text's own double
+// quotes as single ones.
+std::string Quoted(std::string_view shown) {
+  std::string q(shown);
+  std::replace(q.begin(), q.end(), '"', '\'');
+  return "\xE2\x80\x9C" + q + "\xE2\x80\x9D";
+}
+
+// The studio's description of the planner's step, as a draft's.
+std::string PlannerDescription(const RoutineStep& step) {
+  const PlannerStep& a = step.agent;
+  const std::string label = Quoted(automation::agent_draft::CleanDisplayText(
+      a.label, kMaxPlannerLabelChars));
+  switch (a.action) {
+    case A::kNavigate:
+      return "Open " + step.host;
+    case A::kSearch:
+      return "Search the web for " +
+             Quoted(automation::agent_draft::CleanDisplayText(a.query, 40));
+    case A::kClick:
+      return "Click " + label;
+    case A::kType:
+      return step.variable.empty()
+                 ? "Type " +
+                       Quoted(automation::agent_draft::CleanDisplayText(a.text,
+                                                                        40)) +
+                       " in " + label
+                 : "Type your " + label + " (asked at each run)";
+    case A::kSelect:
+      return "Choose " +
+             Quoted(automation::agent_draft::CleanDisplayText(
+                 a.option, kMaxPlannerOptionChars)) +
+             " in " + label;
+    case A::kScroll:
+      return a.direction == "up" ? "Scroll up" : "Scroll down";
+    case A::kNone:
+    case A::kUnkept:
+      break;
+  }
+  return std::string();
+}
+
+// The planner's step as extra["voice"] holds it.
+base::DictValue AgentStepToDict(const RoutineStep& step) {
+  const PlannerStep& a = step.agent;
+  base::DictValue d;
+  d.Set(kAgent, NameOf(kAgentActions, a.action));
+  switch (a.action) {
+    case A::kSearch:
+      d.Set(kQuery, a.query);
+      break;
+    case A::kClick:
+    case A::kType:
+    case A::kSelect:
+      d.Set(kKind, a.kind);
+      d.Set(kLabel, a.label);
+      if (a.action == A::kSelect) {
+        d.Set(kOption, a.option);
+      } else if (a.action == A::kType) {
+        if (step.variable.empty()) {
+          d.Set(kText, a.text);
+        } else {
+          d.Set(kVariable, step.variable);
+        }
+      }
+      break;
+    case A::kScroll:
+      d.Set(kDirection, a.direction == "up" ? "up" : "down");
+      break;
+    case A::kNavigate:
+    case A::kNone:
+    case A::kUnkept:
+      break;
+  }
+  d.Set(kPlanned, true);
+  return d;
+}
+
 }  // namespace
 
 BuiltRoutine::BuiltRoutine() = default;
@@ -510,6 +693,285 @@ std::optional<RoutineStep> VoiceCommandFromDict(const base::DictValue& d) {
   return step;
 }
 
+automation::Step PlannerStepToWorkflowStep(const RoutineStep& step) {
+  Step st;
+  st.type = StepTypeForAgent(step.agent.action);
+  if (step.agent.action == A::kNavigate || step.agent.action == A::kSearch) {
+    st.target = step.url;
+  }
+  if (!step.variable.empty()) {
+    st.value = "{{" + step.variable + "}}";
+  } else if (step.agent.action == A::kScroll) {
+    st.value = step.agent.direction == "up" ? "up" : "down";
+  }
+  st.description = PlannerDescription(step);
+  base::DictValue extra;
+  extra.Set(automation::kVoiceStepKey, AgentStepToDict(step));
+  if (ElementAction(step.agent.action) || step.agent.action == A::kScroll) {
+    if (!step.host.empty()) {
+      extra.Set(automation::kStepHostKey, step.host);
+    }
+  }
+  st.extra = base::Value(std::move(extra));
+  return st;
+}
+
+std::optional<RoutineStep> PlannerStepFromWorkflowStep(
+    const automation::Step& st) {
+  const base::DictValue* extra = st.extra.GetIfDict();
+  const base::DictValue* d =
+      extra ? extra->FindDict(automation::kVoiceStepKey) : nullptr;
+  if (!d) {
+    return std::nullopt;
+  }
+  const std::optional<A> action = ValueOf(kAgentActions, d->FindString(kAgent));
+  // Only the planner's: "planned" must say so.
+  if (!action || d->FindBool(kPlanned) != std::optional<bool>(true) ||
+      StepTypeForAgent(*action) != st.type) {
+    return std::nullopt;
+  }
+  RoutineStep step;
+  step.planned = true;
+  PlannerStep& a = step.agent;
+  a.action = *action;
+  // The page acted on, for an element or a scroll; a navigation's is the
+  // page it opens.
+  if (const std::string* host = extra->FindString(automation::kStepHostKey)) {
+    step.host = HintHost(*host);
+    if (step.host.empty()) {
+      return std::nullopt;
+    }
+  }
+  auto text = [&](const char* key, size_t cap, bool allow_empty, bool breaks,
+                  std::string* out) {
+    const std::string* value = d->FindString(key);
+    if (!value || !PlannerText(*value, cap, allow_empty, breaks)) {
+      return false;
+    }
+    *out = *value;
+    return true;
+  };
+  switch (a.action) {
+    case A::kNavigate:
+    case A::kSearch:
+      if (!ValidPlannerUrl(st.target)) {
+        return std::nullopt;
+      }
+      step.url = st.target;
+      step.host = HostOfUrl(st.target);
+      if (step.host.empty() ||
+          (a.action == A::kSearch &&
+           !text(kQuery, kMaxPlannerQueryChars, false, false, &a.query))) {
+        return std::nullopt;
+      }
+      break;
+    case A::kClick:
+    case A::kType:
+    case A::kSelect: {
+      const std::string* kind = d->FindString(kKind);
+      if (!kind || !KnownElementKind(*kind) || step.host.empty() ||
+          !text(kLabel, kMaxPlannerLabelChars, false, false, &a.label)) {
+        return std::nullopt;
+      }
+      a.kind = *kind;
+      if (a.action == A::kSelect &&
+          !text(kOption, kMaxPlannerOptionChars, false, false, &a.option)) {
+        return std::nullopt;
+      }
+      if (a.action == A::kType) {
+        const std::string* variable = d->FindString(kVariable);
+        if (variable) {
+          if (!ValidVariable(*variable) || d->Find(kText)) {
+            return std::nullopt;
+          }
+          step.variable = *variable;
+        } else if (!text(kText, kMaxPlannerTextChars, true, true, &a.text)) {
+          return std::nullopt;
+        }
+      }
+      break;
+    }
+    case A::kScroll: {
+      const std::string* direction = d->FindString(kDirection);
+      if (!direction || (*direction != "down" && *direction != "up")) {
+        return std::nullopt;
+      }
+      a.direction = *direction;
+      break;
+    }
+    case A::kNone:
+    case A::kUnkept:
+      return std::nullopt;
+  }
+  return step;
+}
+
+RoutineStep UnkeptPlannerStep(std::string why) {
+  RoutineStep step;
+  step.planned = true;
+  step.agent.action = A::kUnkept;
+  step.agent.why = why.empty() ? std::string(kUnkeptStep) : std::move(why);
+  return step;
+}
+
+RoutineStep RoutineStepForPlanner(const PlannerStep& in,
+                                  std::string_view goal,
+                                  std::string_view page_host) {
+  namespace draft = automation::agent_draft;
+  if (in.action == A::kUnkept) {
+    return UnkeptPlannerStep(in.why);
+  }
+  RoutineStep step;
+  step.planned = true;
+  PlannerStep& a = step.agent;
+  a.action = in.action;
+  // The secrets the user's request gave ("my PIN is 4321"), as a draft
+  // reads its goal; a request too long to scan withholds every value.
+  const std::vector<std::string> goal_secrets = draft::GoalSecretTokens(goal);
+  const bool goal_unscanned = goal.size() > 4096 || goal_secrets.size() > 64;
+  auto holds_goal_secret = [&](std::string_view text) {
+    return std::any_of(goal_secrets.begin(), goal_secrets.end(),
+                       [&](const std::string& secret) {
+                         return text.find(secret) != std::string_view::npos;
+                       });
+  };
+  auto looks_secret = [&](std::string_view text) {
+    return draft::TextLooksSecret(text) ||
+           draft::TextLooksSecret(draft::WithoutHiddenChars(text)) ||
+           holds_goal_secret(text);
+  };
+  switch (in.action) {
+    case A::kNavigate:
+    case A::kSearch: {
+      // The address as the browser writes it (ASCII), as a draft keeps
+      // it: what the file holds reads back the same.
+      const GURL url(in.url);
+      const std::string spec = url.is_valid() ? url.spec() : std::string();
+      if (!IsValidUtf8(in.url) || HasTemplate(in.url) ||
+          !ValidPlannerUrl(spec)) {
+        return UnkeptPlannerStep(kUnkeptStep);
+      }
+      if (draft::UrlLooksSecret(in.url) || draft::UrlLooksSecret(spec)) {
+        return UnkeptPlannerStep(kUnkeptSecretAddress);
+      }
+      step.url = spec;
+      step.host = HostOfUrl(spec);
+      if (step.host.empty()) {
+        return UnkeptPlannerStep(kUnkeptStep);
+      }
+      if (in.action == A::kSearch) {
+        if (!PlannerText(in.query, kMaxPlannerQueryChars, false, false)) {
+          return UnkeptPlannerStep(kUnkeptStep);
+        }
+        if (goal_unscanned || looks_secret(in.query)) {
+          return UnkeptPlannerStep(kUnkeptSecretSearch);
+        }
+        a.query = in.query;
+      }
+      return step;
+    }
+    case A::kClick:
+    case A::kType:
+    case A::kSelect: {
+      step.host = HintHost(in.host.empty() ? page_host : in.host);
+      if (step.host.empty() || !KnownElementKind(in.kind)) {
+        return UnkeptPlannerStep(kUnkeptStep);
+      }
+      if (in.label.empty()) {
+        return UnkeptPlannerStep(kUnkeptNoName);
+      }
+      if (!PlannerText(in.label, kMaxPlannerLabelChars, false, false)) {
+        return UnkeptPlannerStep(kUnkeptStep);
+      }
+      a.kind = in.kind;
+      a.label = in.label;
+      if (in.action == A::kSelect) {
+        if (!PlannerText(in.option, kMaxPlannerOptionChars, false, false)) {
+          return UnkeptPlannerStep(kUnkeptStep);
+        }
+        if (looks_secret(in.option)) {
+          return UnkeptPlannerStep(kUnkeptSecretSearch);
+        }
+        a.option = in.option;
+        return step;
+      }
+      if (in.action == A::kType) {
+        std::string type;
+        for (char c : in.input_type) {
+          type.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a')
+                                              : c);
+        }
+        if (in.credential_field || type == "password") {
+          return UnkeptPlannerStep(kUnkeptCredentialField);
+        }
+        if (!PlannerText(in.text, kMaxPlannerTextChars, true, true)) {
+          return UnkeptPlannerStep(kUnkeptStep);
+        }
+        // Withheld, as a draft withholds it: asked for at each run.
+        const std::string plain_label = draft::WithoutHiddenChars(in.label);
+        if (goal_unscanned || draft::LabelSuggestsSecret(in.label) ||
+            draft::LabelSuggestsSecret(plain_label) || looks_secret(in.text)) {
+          step.variable = draft::VariableNameFor(plain_label, {});
+        } else {
+          a.text = in.text;
+        }
+      }
+      return step;
+    }
+    case A::kScroll:
+      step.host = HintHost(in.host.empty() ? page_host : in.host);
+      a.direction = in.direction == "up" ? "up" : "down";
+      if (in.direction != "up" && in.direction != "down") {
+        return UnkeptPlannerStep(kUnkeptStep);
+      }
+      return step;
+    case A::kNone:
+    case A::kUnkept:
+      break;
+  }
+  return UnkeptPlannerStep(kUnkeptStep);
+}
+
+bool RoutineSitesConfirmed(const automation::Script& script) {
+  if (script.security.sites_unconfirmed) {
+    return false;
+  }
+  const bool planned =
+      std::any_of(script.steps.begin(), script.steps.end(), [](const Step& st) {
+        const base::DictValue* extra = st.extra.GetIfDict();
+        const base::DictValue* voice =
+            extra ? extra->FindDict(automation::kVoiceStepKey) : nullptr;
+        return voice && voice->FindBool(kPlanned).value_or(false);
+      });
+  if (!planned) {
+    return true;
+  }
+  std::vector<std::string> used =
+      automation::AutomationSecurity::HostsReferencedBy(script.steps);
+  std::vector<std::string> confirmed = script.security.domain_whitelist;
+  for (std::string& host : confirmed) {
+    std::transform(host.begin(), host.end(), host.begin(), [](char c) {
+      return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+    });
+  }
+  for (auto* list : {&used, &confirmed}) {
+    std::sort(list->begin(), list->end());
+    list->erase(std::unique(list->begin(), list->end()), list->end());
+  }
+  return !used.empty() && used == confirmed;
+}
+
+bool UnconfirmChangedRoutine(automation::Script& script) {
+  if (script.security.sites_unconfirmed || RoutineSitesConfirmed(script)) {
+    return false;
+  }
+  // A draft's rules again (agent_run_draft.h).
+  script.security.sites_unconfirmed = true;
+  script.security.domain_whitelist.clear();
+  script.security.trust = automation::TrustLevel::CASUAL;
+  return true;
+}
+
 BuiltRoutine BuildRoutine(std::string_view id,
                           std::string_view name,
                           const std::vector<RoutineStep>& steps,
@@ -529,16 +991,39 @@ BuiltRoutine BuildRoutine(std::string_view id,
     out.refusal = "Choose another name for it.";
     return out;
   }
-  // A routine said on a site starts there, as a recording does.
+  // A step of the planner's that can't be repeated: nothing is kept.
+  for (const RoutineStep& step : steps) {
+    if (IsUnkeptStep(step)) {
+      out.refusal =
+          "I can't remember this: " +
+          (step.agent.why.empty() ? std::string(kUnkeptStep) : step.agent.why);
+      return out;
+    }
+  }
+  // A routine said on a site starts there, as a recording does; one the
+  // planner's run began on a page starts on that page, as a draft does.
   std::vector<RoutineStep> all;
-  if (!IsTaskStart(steps.front()) && !steps.front().host.empty() &&
+  const RoutineStep& front = steps.front();
+  const bool opens =
+      IsAgentStep(front) &&
+      (front.agent.action == A::kNavigate || front.agent.action == A::kSearch);
+  if (!IsTaskStart(front) && !opens && !front.host.empty() &&
       steps.size() < kMaxRoutineSteps) {
     RoutineStep open;
-    open.command.kind = K::kOpenSite;
-    open.command.site = steps.front().host;
-    open.command.site_is_address = true;
-    open.url = "https://" + steps.front().host + "/";
-    open.planned = steps.front().planned;
+    if (IsAgentStep(front) && ValidPlannerUrl(front.url) &&
+        !automation::agent_draft::UrlLooksSecret(front.url) &&
+        !HostOfUrl(front.url).empty()) {
+      open.planned = true;
+      open.agent.action = A::kNavigate;
+      open.url = front.url;
+      open.host = HostOfUrl(front.url);
+    } else {
+      open.command.kind = K::kOpenSite;
+      open.command.site = front.host;
+      open.command.site_is_address = true;
+      open.url = "https://" + front.host + "/";
+      open.planned = front.planned;
+    }
     all.push_back(std::move(open));
   }
   all.insert(all.end(), steps.begin(), steps.end());
@@ -552,6 +1037,27 @@ BuiltRoutine BuildRoutine(std::string_view id,
     RoutineStep step = said;
     VoiceCommand& c = step.command;
     planned = planned || step.planned;
+    if (IsAgentStep(step)) {
+      // The planner's step, as RoutineStepForPlanner() kept it: its
+      // withheld text gets a name of its own; it must read back as it is.
+      if (!step.variable.empty()) {
+        if (taken.count(step.variable)) {
+          step.variable =
+              automation::agent_draft::VariableNameFor(step.variable, taken);
+        }
+        step.agent.text.clear();
+        taken.insert(step.variable);
+        script.default_variables[step.variable] = std::string();
+        ++out.withheld;
+      }
+      Step st = PlannerStepToWorkflowStep(step);
+      if (!PlannerStepFromWorkflowStep(st)) {
+        out.refusal = "One of the steps can't be kept.";
+        return out;
+      }
+      script.steps.push_back(std::move(st));
+      continue;
+    }
     if (HasTemplate(c.text) || HasTemplate(c.whole_query) ||
         HasTemplate(c.site_words) || HasTemplate(step.url)) {
       out.refusal = "One of the steps holds text I can't keep.";
@@ -656,6 +1162,17 @@ ReadRoutineResult ReadRoutine(const automation::Script& script) {
     const base::DictValue* extra = st.extra.GetIfDict();
     const base::DictValue* voice =
         extra ? extra->FindDict(automation::kVoiceStepKey) : nullptr;
+    // The planner's step, as the web agent carried it out.
+    if (voice && voice->Find(kAgent)) {
+      std::optional<RoutineStep> agent = PlannerStepFromWorkflowStep(st);
+      if (!agent) {
+        result.steps.clear();
+        result.why = why;
+        return result;
+      }
+      result.steps.push_back(std::move(*agent));
+      continue;
+    }
     std::optional<RoutineStep> step =
         voice ? VoiceCommandFromDict(*voice) : std::nullopt;
     if (!step || StepTypeFor(step->command.kind) != st.type) {
@@ -677,9 +1194,33 @@ ReadRoutineResult ReadRoutine(const automation::Script& script) {
     }
     result.steps.push_back(std::move(*step));
   }
-  result.needs_sites_confirmed = script.security.sites_unconfirmed;
+  // Its sites confirmed, and still the sites its steps use.
+  result.needs_sites_confirmed = !RoutineSitesConfirmed(script);
   result.ok = true;
   return result;
+}
+
+bool RoutineSitesSayable(const std::vector<std::string>& sites) {
+  if (sites.empty()) {
+    return false;
+  }
+  // As VoiceBrowserPrompts::ConfirmDraftSites() joins them: "a, b and c".
+  size_t chars = 0;
+  for (size_t i = 0; i < sites.size(); ++i) {
+    std::string_view site = sites[i];
+    if (site.rfind("www.", 0) == 0) {
+      site.remove_prefix(4);
+    }
+    const std::string said = activation::SiteForSpeech(site);
+    if (said.empty() || said != site) {
+      return false;
+    }
+    chars += said.size() + (i == 0 ? 0 : i + 1 == sites.size() ? 5 : 2);
+    if (chars > kMaxDialogSpokenChars) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace voice

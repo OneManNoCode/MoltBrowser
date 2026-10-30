@@ -499,3 +499,9 @@ Stored in `~/.moltbrowser/settings.json`:
   "system_prompt": ""
 }
 ```
+
+Every writer (molt://ai-settings, voice mode's switches and speech rate, the
+built-in AI APIs' switch) goes through `molt_ai/common/molt_settings_file.h`:
+a read-modify-write of named keys on one sequence, written atomically (a
+temporary file, then a rename). A file over 1 MiB, or one that isn't a JSON
+object, is left alone for the user to fix, and the change reports failure.

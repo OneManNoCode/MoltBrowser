@@ -16,6 +16,7 @@
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_reader.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_sites.h"
+#include "chrome/browser/molt_ai/voice/voice_routines.h"
 #include "chrome/browser/molt_ai/voice/voice_speech.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
@@ -34,10 +35,21 @@ using K = VoiceCommandKind;
 // What the loop says, in code points.
 constexpr size_t kMaxSaidChars = 400;
 
+// Why the planner's steps can't be kept while learning is off.
+constexpr char kLearningOff[] =
+    "the AI's steps aren't kept while Learn from what I say is off.";
+
+// Whether |step| is the planner's step that opens a page.
+bool OpensPage(const RoutineStep& step) {
+  return IsAgentStep(step) &&
+         (step.agent.action == PlannerStep::Action::kNavigate ||
+          step.agent.action == PlannerStep::Action::kSearch);
+}
+
+// Any reading of the page's text, "continue reading" included: a barge-in
+// stops the reader before it is planned, so the reader can't tell then.
 bool IsReadingKind(K kind) {
-  return kind == K::kReadPage || kind == K::kReadFromHere ||
-         kind == K::kReadSelection || kind == K::kReadSection ||
-         kind == K::kNextParagraph || kind == K::kPreviousParagraph;
+  return ReadsPageText(kind);
 }
 
 // Whether |turn| did what a command of |kind| asks: a step that acts, a
@@ -177,6 +189,7 @@ LearningEnvironment VoiceLearningLoop::Environment(
     env.this_steps.push_back(DescribeRoutineStep(step));
   }
   env.this_planned = recorder_.planned();
+  env.this_refusal = recorder_.refusal();
   env.this_version = recorder_.version();
   for (const VocabularyEntry& entry : learning->vocabulary().entries()) {
     env.words.push_back(FoldForComparison(entry.phrase));
@@ -214,7 +227,11 @@ std::optional<VoiceCommand> VoiceLearningLoop::BeforePlanning(
       ScheduleNextStep();
       return std::nullopt;
     }
-    const bool answers = p.waiting_answer && context.expecting_yes_no &&
+    // The routine's own question, or the planner's while it replays a
+    // step.
+    const bool asked = p.waiting_answer ||
+                       (p.replaying && controller_->planner_question_ != 0);
+    const bool answers = asked && context.expecting_yes_no &&
                          (command.kind == K::kYes || command.kind == K::kNo);
     if (!answers) {
       StopRoutine(std::string());
@@ -252,8 +269,9 @@ std::optional<VoiceCommand> VoiceLearningLoop::BeforePlanning(
   }
 
   // The corrections learned, applied; never to an answer, nor while one
-  // is asked for.
-  if (learn && !context.expecting_yes_no && command.kind != K::kYes &&
+  // is asked for (the loop's question, or a browser prompt's).
+  if (learn && !context.expecting_yes_no &&
+      controller_->state_.prompt.id == 0 && command.kind != K::kYes &&
       command.kind != K::kNo) {
     std::vector<std::string> used;
     if (std::optional<std::string> applied =
@@ -388,6 +406,16 @@ void VoiceLearningLoop::OnPlanned(const VoiceCommand& command,
     // An answer to the routine's question isn't a step of a new one.
     return;
   }
+  // A request for the planner: its steps join "this" as they run.
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == VoiceStepKind::kToPlanner) {
+      planner_goal_ = step.text;
+      content::WebContents* contents = controller_->ActiveContents();
+      planner_start_url_ =
+          contents ? contents->GetLastCommittedURL().spec() : std::string();
+      planner_first_ = true;
+    }
+  }
   // "This": what the user carried out. A step that asked first counts once
   // its "yes" carried it out.
   if (command.kind == K::kYes && pending_) {
@@ -411,6 +439,65 @@ void VoiceLearningLoop::OnPlanned(const VoiceCommand& command,
     }
   }
   NoteNames(command, turn);
+}
+
+void VoiceLearningLoop::OnPlannerCarriedOut(const PlannerStep& carried) {
+  VoiceLearning* learning = Learning();
+  // Nothing in MoltNet or private windows (no learning there), nor from a
+  // routine that runs.
+  if (!learning || controller_->IsMoltNet() || playing_) {
+    return;
+  }
+  const bool first = std::exchange(planner_first_, false);
+  content::WebContents* contents = controller_->ActiveContents();
+  const GURL page = contents ? contents->GetLastCommittedURL() : GURL();
+  RoutineStep step = learning->enabled()
+                         ? RoutineStepForPlanner(carried, planner_goal_,
+                                                 page.SchemeIsHTTPOrHTTPS()
+                                                     ? std::string(page.host())
+                                                     : std::string())
+                         : UnkeptPlannerStep(kLearningOff);
+  if (first && OpensPage(step)) {
+    // A request the planner began by opening a page is a new task.
+    recorder_.Clear();
+  } else if (first && IsAgentStep(step) && !IsUnkeptStep(step)) {
+    // Else it began on the page it was asked on: a routine that starts
+    // with it opens that page first (BuildRoutine()).
+    step.url = planner_start_url_;
+  }
+  pending_.reset();
+  recorder_.Add(std::move(step));
+  last_added_ = false;
+}
+
+void VoiceLearningLoop::OnPlannerReplayed(PlannerReplay outcome) {
+  if (!playing_ || !playing_->replaying) {
+    return;
+  }
+  Playing& p = *playing_;
+  p.replaying = false;
+  const RoutineStep* step =
+      p.next >= 1 && p.next <= p.steps.size() ? &p.steps[p.next - 1] : nullptr;
+  const std::string element =
+      step && !step->agent.label.empty() ? step->agent.label : "it";
+  switch (outcome) {
+    case PlannerReplay::kDone:
+      return;
+    case PlannerReplay::kDeclined:
+      // "Okay, I won't." was said for the "no".
+      p.stop_after = true;
+      return;
+    case PlannerReplay::kNotFound:
+      p.why = "I couldn't find " + element + " on this page.";
+      break;
+    case PlannerReplay::kAmbiguous:
+      p.why = "I found more than one " + element + " on this page.";
+      break;
+    case PlannerReplay::kFailed:
+      p.why = "That step didn't work.";
+      break;
+  }
+  p.failed = true;
 }
 
 void VoiceLearningLoop::OnFollowUp(const VoiceTurn& turn) {
@@ -454,9 +541,18 @@ void VoiceLearningLoop::OnIdle() {
     return;
   }
   Playing& p = *playing_;
+  if (p.replaying) {
+    // The planner replays the step, or asks before it does.
+    if (controller_->planner_running()) {
+      return;
+    }
+    // Its run ended unanswered (the loop said so): the routine ends too.
+    StopRoutine(std::string());
+    return;
+  }
   if (p.failed) {
-    StopRoutine("I stopped " + p.name + " at step " + std::to_string(p.next) +
-                ".");
+    StopRoutine((p.why.empty() ? std::string() : p.why + " ") + "I stopped " +
+                p.name + " at step " + std::to_string(p.next) + ".");
     return;
   }
   if (p.stop_after) {
@@ -489,6 +585,7 @@ void VoiceLearningLoop::Stop() {
   playing_.reset();
   pending_.reset();
   reading_ = false;
+  planner_first_ = false;
 }
 
 // ---- kLearning steps ---------------------------------------------------------
@@ -506,7 +603,7 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
       SaveRoutine(step.text, step.count);
       return;
     case LearningOp::kRunRoutine:
-      RunRoutine(step.text);
+      RunRoutine(step.text, std::string());
       return;
     case LearningOp::kForgetRoutine:
       learning->DeleteRoutine(
@@ -553,12 +650,11 @@ void VoiceLearningLoop::SaveRoutine(const std::string& name, int version) {
         /*interrupt=*/false);
     return;
   }
-  const bool planned = recorder_.planned();
   learning->SaveRoutine(
       name, recorder_.steps(),
       base::BindOnce(
           [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
-             bool planned, bool saved, std::string said) {
+             bool saved, std::string said, std::vector<std::string> sites) {
             if (!self) {
               return;
             }
@@ -568,25 +664,31 @@ void VoiceLearningLoop::SaveRoutine(const std::string& name, int version) {
             }
             self->recorder_.Clear();
             const std::string spoken = PageText(name);
-            self->Say(planned ? "Saved " + spoken +
-                                    ". Some of its steps are the AI's, so "
-                                    "you'll confirm its sites before it runs."
-                              : "Saved. Say run " + spoken +
-                                    " to do it again.",
+            // The planner's steps: the sites it uses, which the user
+            // confirms the first time it runs.
+            self->Say(sites.empty()
+                          ? "Saved. Say run " + spoken + " to do it again."
+                          : "Saved " + spoken + ". It uses " +
+                                JoinSpokenList(sites) +
+                                ". Its sites need your confirmation the "
+                                "first time you run it.",
                       /*interrupt=*/false);
           },
-          weak_factory_.GetWeakPtr(), name, planned));
+          weak_factory_.GetWeakPtr(), name));
 }
 
-void VoiceLearningLoop::RunRoutine(const std::string& name) {
+void VoiceLearningLoop::RunRoutine(const std::string& name,
+                                   const std::string& id) {
   VoiceLearning* learning = Learning();
   if (!learning) {
     return;
   }
   StopRoutine(std::string());
-  learning->LoadRoutine(
-      name, base::BindOnce(&VoiceLearningLoop::OnRoutineLoaded,
-                           weak_factory_.GetWeakPtr(), name));
+  // By its id when it has one (the routine whose sites were just
+  // confirmed): another routine of the same name can't stand in for it.
+  learning->LoadRoutine(id.empty() ? name : std::string(), id,
+                        base::BindOnce(&VoiceLearningLoop::OnRoutineLoaded,
+                                       weak_factory_.GetWeakPtr(), name));
 }
 
 void VoiceLearningLoop::OnRoutineLoaded(std::string name,
@@ -604,8 +706,8 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
     StartRoutine(std::move(*routine));
     return;
   }
-  // The planner's steps: its sites need the user's confirmation first
-  // (voice_routine_sites.h).
+  // The planner's steps, or a routine brought in from elsewhere: its sites
+  // need the user's confirmation first (voice_routine_sites.h).
   const std::string id = routine->id;
   const std::vector<std::string> sites = routine->sites;
   auto [by_voice, by_confirmer] = base::SplitOnceCallback(base::BindOnce(
@@ -621,10 +723,8 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
           return;
         }
         if (!confirmed) {
-          self->Say(spoken +
-                        " has steps the AI planned, so the sites it uses "
-                        "need your confirmation. " +
-                        said,
+          self->Say("Before " + spoken +
+                        " runs, its sites need your confirmation. " + said,
                     /*interrupt=*/false);
           return;
         }
@@ -636,25 +736,28 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
             id, sites,
             base::BindOnce(
                 [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
-                   bool ok) {
+                   std::string id, bool ok) {
                   if (!self) {
                     return;
                   }
                   if (ok) {
-                    self->RunRoutine(name);
+                    // The workflow confirmed, by its id.
+                    self->RunRoutine(name, id);
                   } else {
                     self->Say("I couldn't confirm its sites.",
                               /*interrupt=*/false);
                   }
                 },
-                self, name));
+                self, name, id));
       },
       weak_factory_.GetWeakPtr(), routine->name, id, sites));
   // By voice, with the voice gesture, while the window listens
   // (VoiceBrowserPrompts::ConfirmDraftSites(): the sites said and shown, a
   // confirmation word heard cleanly, bound to exactly this workflow and
-  // these sites); else the confirmer says what to do instead.
-  if (controller_->ConfirmDraftSitesByVoice(
+  // these sites); else the confirmer says what to do instead. Only sites
+  // the prompt can say in full: the word confirms every one.
+  if (RoutineSitesSayable(sites) &&
+      controller_->ConfirmDraftSitesByVoice(
           id, sites,
           base::BindOnce(
               [](RoutineSiteConfirmer::Done done, bool confirmed) {
@@ -720,6 +823,10 @@ void VoiceLearningLoop::NextStep() {
     StartAnswerTimer();
     return;
   }
+  if (IsAgentStep(step)) {
+    ReplayStep(index, said);
+    return;
+  }
   const VoiceCommand command = CommandForStep(
       step, step.variable.empty() ? std::string() : p.values[step.variable]);
   // Only on the routine's own sites.
@@ -766,6 +873,43 @@ void VoiceLearningLoop::NextStep() {
   }
   controller_->heard_ = SpeechSafeText(command.heard, kMaxSaidChars);
   controller_->RunTurn(std::move(turn));
+}
+
+void VoiceLearningLoop::ReplayStep(size_t index, const std::string& said) {
+  Playing& p = *playing_;
+  const RoutineStep& step = p.steps[index];
+  // Only on the routine's own sites: the page it opens, or the page it
+  // acts on.
+  const bool opens = OpensPage(step);
+  automation::AutomationSecurity security;
+  content::WebContents* contents = controller_->ActiveContents();
+  const GURL page = contents ? contents->GetLastCommittedURL() : GURL();
+  const GURL target = opens ? GURL(step.url) : page;
+  if (!security.AllowNavigation(p.policy, target.spec())) {
+    StopRoutine("I stopped " + p.name + ": step " + std::to_string(index + 1) +
+                (opens ? " would open " : " would act on ") +
+                PageText(target.host()) + ", which isn't one of its sites.");
+    return;
+  }
+  PlannerStep replay = step.agent;
+  replay.url = step.url;
+  replay.host = step.host;
+  if (!step.variable.empty()) {
+    replay.text = p.values[step.variable];
+  }
+  p.next = index + 1;
+  p.waiting_answer = false;
+  p.failed = false;
+  p.why.clear();
+  p.replaying = true;
+  const std::string name = p.name;
+  Say(said, /*interrupt=*/index == 0);
+  controller_->heard_ =
+      SpeechSafeText(DescribeRoutineStep(step), kMaxSaidChars);
+  // The planner may answer at once: |p| isn't used after this.
+  if (!controller_->ReplayPlannerStep(replay)) {
+    StopRoutine("I can't run the AI's steps here, so I stopped " + name + ".");
+  }
 }
 
 void VoiceLearningLoop::StopRoutine(const std::string& said) {

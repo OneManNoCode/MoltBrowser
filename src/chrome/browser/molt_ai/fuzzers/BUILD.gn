@@ -471,6 +471,7 @@ group("molt_fuzzers") {
   deps = [
     ":fuzzers",
     "//chrome/services/molt_ai/document_parser/fuzzers",
+    "//chrome/browser/molt_ai/voice:molt_page_questions_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_page_reading_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_spoken_choice_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_voice_command_fuzzer",

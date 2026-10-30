@@ -693,8 +693,11 @@ TEST(VoiceCommandTest, UnknownGoesToThePlanner) {
   Check({
       {"find a train from Paris to Lyon tomorrow morning", "unknown"},
       {"reply to the last email from Ana saying I'll be late", "unknown"},
-      {"what does this page say about prices", "unknown"},
-      {"summarize this article", "unknown"},
+      {"who won the game last night", "unknown"},
+      // Questions about the page have a command of their own
+      // (page_questions_unittest.cc has the rest).
+      {"what does this page say about prices", "ask_page", "text=prices"},
+      {"summarize this article", "ask_page", "text=summarize this article"},
       {"hello", "unknown"},
       {"", "unknown"},
       {"um uh", "unknown"},

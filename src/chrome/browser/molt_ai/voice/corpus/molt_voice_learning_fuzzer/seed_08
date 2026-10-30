@@ -1,0 +1,126 @@
+{
+   "ai_model": "tinyllama-1.1b",
+   "created_at_unix": 1800000000.0,
+   "default_variables": {
+      "pin": ""
+   },
+   "enabled": true,
+   "id": "voice_seed",
+   "name": "my trains",
+   "security": {
+      "max_navigations": 20,
+      "max_network_bytes": 209715200.0,
+      "max_runtime_seconds": 300,
+      "require_approval_for": [
+         "form_submit",
+         "payment",
+         "login"
+      ],
+      "sites_unconfirmed": true,
+      "trust": "casual"
+   },
+   "stats": {
+      "last_run_duration_ms": 0,
+      "last_run_unix": 0.0,
+      "runs": 0,
+      "successes": 0
+   },
+   "steps": [
+      {
+         "description": "Search the web for “trains to lyon”",
+         "extra": {
+            "voice": {
+               "agent": "search",
+               "planned": true,
+               "query": "trains to lyon"
+            }
+         },
+         "target": "https://search.brave.com/search?q=trains+to+lyon",
+         "type": "navigate"
+      },
+      {
+         "description": "Open trains.example",
+         "extra": {
+            "voice": {
+               "agent": "navigate",
+               "planned": true
+            }
+         },
+         "target": "https://trains.example/book",
+         "type": "navigate"
+      },
+      {
+         "description": "Type “Lyon” in “To”",
+         "extra": {
+            "host": "trains.example",
+            "voice": {
+               "agent": "type",
+               "kind": "input",
+               "label": "To",
+               "planned": true,
+               "text": "Lyon"
+            }
+         },
+         "type": "type"
+      },
+      {
+         "description": "Type your “PIN” (asked at each run)",
+         "extra": {
+            "host": "trains.example",
+            "voice": {
+               "agent": "type",
+               "kind": "input",
+               "label": "PIN",
+               "planned": true,
+               "variable": "pin"
+            }
+         },
+         "type": "type",
+         "value": "{{pin}}"
+      },
+      {
+         "description": "Choose “First class” in “Class”",
+         "extra": {
+            "host": "trains.example",
+            "voice": {
+               "agent": "select",
+               "kind": "select",
+               "label": "Class",
+               "option": "First class",
+               "planned": true
+            }
+         },
+         "type": "click"
+      },
+      {
+         "description": "Click “Search”",
+         "extra": {
+            "host": "trains.example",
+            "voice": {
+               "agent": "click",
+               "kind": "button",
+               "label": "Search",
+               "planned": true
+            }
+         },
+         "type": "click"
+      },
+      {
+         "description": "Scroll down",
+         "extra": {
+            "host": "trains.example",
+            "voice": {
+               "agent": "scroll",
+               "direction": "down",
+               "planned": true
+            }
+         },
+         "type": "scroll",
+         "value": "down"
+      }
+   ],
+   "trigger": {
+      "type": "manual"
+   },
+   "version": 1
+}

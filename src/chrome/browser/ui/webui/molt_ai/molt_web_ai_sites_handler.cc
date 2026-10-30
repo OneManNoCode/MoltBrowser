@@ -9,7 +9,8 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/thread_pool.h"
+#include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/web_ai/runtime_web_ai_backend.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions.h"
@@ -28,10 +29,6 @@ using molt_ai::chat_handler_helpers::BoundedStringArg;
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
 using molt_ai::web_ai::SiteListEntry;
 using molt_ai::web_ai::WebAISitePermissions;
-
-constexpr base::TaskTraits kFileTraits = {
-    base::MayBlock(), base::TaskPriority::USER_VISIBLE,
-    base::TaskShutdownBehavior::BLOCK_SHUTDOWN};
 
 const char* KindName(SiteListEntry::Kind kind) {
   switch (kind) {
@@ -149,9 +146,9 @@ base::DictValue MoltWebAISitesHandler::BuildState(bool enabled) {
 void MoltWebAISitesHandler::ResolveWithState(
     std::string callback_id,
     std::optional<std::string> error) {
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kFileTraits,
-      base::BindOnce(&molt_ai::web_ai::ReadWebAIApisSwitch),
+  // On settings.json's own sequence: after any change posted before.
+  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&molt_ai::web_ai::ReadWebAIApisSwitch),
       base::BindOnce(&MoltWebAISitesHandler::OnSwitchRead,
                      weak_factory_.GetWeakPtr(), std::move(callback_id),
                      std::move(error)));
@@ -216,8 +213,9 @@ void MoltWebAISitesHandler::HandleSetEnabled(const base::ListValue& args) {
     ResolveWithState(std::move(callback_id), std::nullopt);
     return;
   }
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kFileTraits,
+  // settings.json's one writer (common/molt_settings_file.h).
+  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&molt_ai::web_ai::WriteWebAIApisSwitch, *enabled),
       base::BindOnce(
           &ApplySwitchWrite, *enabled,

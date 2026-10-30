@@ -513,6 +513,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page's label in its quotes, name where a form goes when it is another
   site, and ask about a submit input tied to a form from outside it; the
   bundled voice ships CMUdict's licence notice.
+- Hardening (security review of round 41, `docs/SECURITY_REVIEWS.md`): voice
+  mode (preview) says a long site name from its end, so the site's own
+  domain is always said; a voice routine brought in by an import or a copy
+  runs only once its sites are confirmed, and sites are confirmed by voice
+  only when the question says all of them; reading aloud sizes its pieces
+  by how long they take to say (numbers, symbols, spelled-out words); and
+  "go back" after a voice click returns to the user's page when the next
+  page's server answers slowly.
 
 ### Privacy
 - **Voice mode learns from use, on this device** (round 41, learning;
@@ -525,6 +533,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   results and player that worked on a site are remembered for it. Never
   in MoltNet or private windows, never synced; settings lists and deletes
   everything, and "Learn from what I say" turns it off.
+- **Voice routines keep what the on-device AI did** (round 42,
+  planner-routines; `docs/design/TOUCHLESS_BROWSING.md` §6.8): after the
+  AI carried out a request, "remember this" keeps its steps too (the pages
+  it opened, what it clicked, typed or chose; secret-looking text asked for
+  at each run), as a draft that names its sites, which you confirm by
+  voice or in Agent mode the first time it runs, and again whenever its
+  steps use other sites. Running it repeats the AI's steps exactly through
+  the web agent's checks, without asking the AI again, and stops at a step
+  it can't find. Nothing is kept in MoltNet or private windows, or while
+  "Learn from what I say" is off.
 - **MoltNet in its own window.** Tor browsing opens in a separate,
   throwaway profile that never shares cookies or storage with your regular
   browsing and never falls back to a direct connection. Per-site Tor
@@ -1267,6 +1285,30 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   "continue reading" goes on, and "faster" or "slower" set a reading speed
   that is kept. Page text read aloud is never taken as a command. Details:
   `docs/design/VOICE_SKILLS.md`.
+- **Touchless browsing: listening and the spoken word hardened** (preview,
+  behind `chrome://flags/#molt-voice-mode`). When something was said is
+  now judged by when the microphone captured it, not when the speech
+  engine reported it, and the spoken word in place of a click counts only
+  when the engine kept up. Where the microphone has no echo cancellation,
+  voice mode's own voice is treated like any other sound: while it speaks,
+  "stop" interrupts it and the command follows (voice mode says so). A
+  word heard as possibly one of two is asked again instead of turning the
+  request down. A risky file is kept by voice exactly as the downloads
+  button's warning keeps it, and the offer to save a password is read
+  whenever it appears. `~/.moltbrowser/settings.json` has one writer, so
+  settings changed at the same time all stay and a crash can't leave half a
+  file. Details: `docs/design/TOUCHLESS_BROWSING.md` §5.1, §7.3 and §7.5.
+- **Touchless browsing: ask voice mode about the page** (preview, behind
+  `chrome://flags/#molt-voice-mode`). "What is this page about?", "read me
+  the main points", "what does it say about the battery?", "who wrote
+  this?", "what's the price?" and "tell me more" are answered by the
+  on-device AI from the page's text, in a few sentences that start with
+  "The page says", and the browser says when the page doesn't say. The
+  page's text goes to the model marked as data, the answer is checked and
+  only ever said (it never clicks, opens or asks anything), an answer
+  holding "Hey Molt" isn't said at all, "stop" ends it, and nothing is
+  kept; never in MoltNet windows. Without a model, the browser says how to
+  get one. Details: `docs/design/TOUCHLESS_BROWSING.md` §5.4.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

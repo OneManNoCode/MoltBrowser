@@ -47,7 +47,10 @@ aloud (and a second after) only "stop", "cancel" and "turn off voice mode"
 are heard. The same goes for any tab's sound where the microphone has no
 echo cancellation at all (the browser's turned off and the device has
 none): while a tab plays sound, only those three are heard, so pause the
-video yourself before you speak. Voice mode never cuts a page's reading
+video yourself before you speak. On such a microphone the browser's own
+voice is heard as it is too, so while it speaks, and a second after, only
+those three are heard, "Hey Molt" included: say "stop", then what you want,
+or wait until it has finished. Voice mode tells you so when it starts. Voice mode never cuts a page's reading
 short: its own answer waits until the page has finished, and "stop" stops
 only voice mode's speech. Each state has a short sound: a rising tone when it
 heard "Hey Molt", a tick when it took a command, a falling tone when it
@@ -113,8 +116,10 @@ and the bar only.
   To allow a permission or keep a risky file, say the word the browser
   gives you. It is a new word each time, so a recording or a sound from a
   page can't say it for you; say it once it has finished speaking, in a
-  quiet moment. A different word turns the request down. "No" always
-  refuses. When a page wants text, say "answer" and your answer, then
+  quiet moment. A different word turns the request down. If what it heard
+  could be one of two words, it says "I didn't catch that. Say the word
+  again." and keeps waiting. "No" always refuses. A risky file is kept
+  just as the downloads button's warning keeps it. When a page wants text, say "answer" and your answer, then
   "yes".
 - **Typing:** choose a field ("click the search box"), then "type ...",
   "delete the last word", "clear the field", "read it back", "submit".
@@ -135,6 +140,20 @@ and the bar only.
   scrolls along.
 - **Reading lists:** the title, the headings, the links, the results, "next
   link", "next item", "where am I", "what's on the screen".
+- **Questions about the page:** "what is this page about?", "read me the
+  main points", "what does it say about the battery?", "who wrote this?",
+  "what's the price?". The on-device AI answers from the page's text (the
+  same text "read the page" reads), in a few sentences, starting with "The
+  page says". If the page doesn't say, the browser tells you so. "Tell me
+  more" goes on with the next part of the page. It needs an on-device AI
+  model: without one, the browser says so and where to download one
+  (settings). Answering can take a few seconds on a slower computer; the
+  browser says "Let me look at the page" and, if it takes longer, "Still
+  working on it". "Stop", or anything else you say, stops it. The answer
+  is only said: nothing on the page is clicked or opened because of it, and
+  if a page's text tries to make the AI say a voice command, the browser
+  doesn't say the answer and tells you why. Nothing is kept, and it never
+  happens in MoltNet windows.
 - **Routines:** do something by voice ("open YouTube", "search for news",
   "play the first one"), then say "remember this as my news". The
   browser reads back what it will keep and saves it on your "yes". Later,
@@ -145,6 +164,18 @@ and the bar only.
   password or a code isn't kept: the browser asks for it at each run.
   "What are my routines?" lists them; "forget my news" deletes one after
   your "yes". Routines are listed in Agent mode too, which can't run them.
+- **Routines with the AI's steps:** when you asked the on-device AI to do
+  something ("find me a train to Lyon"), what it did is part of "this" too:
+  the pages it opened, what it clicked, typed or chose. Saving such a
+  routine says which sites it uses, and the first time you run it, you
+  confirm them: say the word the browser shows ("say harbor"), or confirm
+  them in Agent mode. Running it again repeats the AI's steps exactly, on
+  those sites only, without asking the AI again; it asks before anything
+  that can't be undone, and stops at a step it can't find ("I couldn't
+  find Search on this page."). Text the AI typed that looks like a
+  password or a code isn't kept; some steps can't be kept at all (a site's
+  own tool, a card number), and then "remember this" says so. While
+  "Learn from what I say" is off, the AI's steps aren't kept.
 - **Learning your words:** names you say often, and your corrections
   ("no, I said Queen" after the browser heard "Green"), help it hear you
   next time. Nothing is learned in MoltNet or private windows, from what
@@ -510,6 +541,35 @@ said.
 - `(read | read me | go to | jump to | skip to | move to) [the] (section | part) (on | about | called | named | titled) {query}`
 - `(read | read me | go to | jump to | skip to | move to) [the] {query} (section | part)`
 
+## Questions about the page
+
+**Ask about the page you are on: what it is about, its main points, what it says about something, who wrote it, the price. The on-device AI answers from the page's text, briefly, and says when the page doesn't say. "Tell me more" goes on with the next passages.** For example: "what is this page about".
+
+- `(tell me more | what else does (it | the page | this page | the article | this article) say)`
+- `(read | tell | give | list | say) [me | us] the (main | key | important | most important) (points | ideas | facts | takeaways | things)`
+- `(what are | whats | what is) the (main | key | important | most important) (points | ideas | facts | takeaways | point | idea)`
+- `(main points | key points | key takeaways | takeaways)`
+- `what (does | do | did) (it | this | that | they | the page | this page | the article | this article | the story | this story | the post | this post | the text | the site | this site) (say | tell me | tell us | mention | write) (about | on | regarding) {query}`
+- `(does | do | did) (it | this | the page | this page | the article | this article | the story | this story | the post | this post | the text) (say | mention | tell me) (anything | something) (about | on | regarding) {query}`
+- `(does | do) (it | the page | this page | the article | this article | the text) (mention | talk about | cover | discuss) {query}`
+- `(tell me | read me) what (it | this | the page | this page | the article | this article) says (about | on | regarding) {query}`
+- `(what is | whats) (this | the | this whole | the whole) (page | article | story | post | site | website | text | document | video | piece | essay | thread) about`
+- `(what is | whats) (it | this | that) [all] about`
+- `what (does | do) (it | this | the page | this page | the article | this article | the story | this story | the post | this post | the text) say`
+- `(summarize | summarise | sum up | recap) [it | this | that | the (page | article | story | post | text | document | video) | this (page | article | story | post | text | document | video)]`
+- `(give me | read me | tell me) [a | the] (summary | short summary | quick summary | gist | overview) [of (it | this | that | the (page | article | story | post | text) | this (page | article | story | post | text))]`
+- `(whats | what is) the (gist | summary) [of (it | this | that | the (page | article | story | post | text) | this (page | article | story | post | text))]`
+- `(summary | tldr | tl dr)`
+- `who (wrote | authored | published | posted) (this | it | that | the (page | article | story | post | piece) | this (page | article | story | post | piece))`
+- `(who is | whos) the (author | writer | publisher) [of (this | it | the (page | article | story | post | piece) | this (page | article | story | post | piece))]`
+- `who is (this | it) (by | from | written by)`
+- `(what is | whats) the (price | cost) [of (it | this | this one | that | that one | the (product | item | thing) | this (product | item | thing))]`
+- `how much (is | does | do) (it | this | this one | that | that one | the (product | item) | this (product | item)) [cost | costs]`
+- `what does (it | this | that) cost`
+- `when was (this | it | that | the (page | article | story | post | piece) | this (page | article | story | post | piece)) (written | published | posted | updated | last updated | released)`
+- `(ask the page | ask this page | ask the article | ask this article) {query}`
+- `according to (this | the) (page | article | story | post | site) {query}`
+
 ## Choosing
 
 **Choose from what is on screen: by number, by position, or by name, with what to do (open, play, click, select, read, describe).** For example: "play the fourth one".
@@ -692,8 +752,10 @@ said.
   punctuation itself.
 - **A site's name on its own** ("YouTube" alone) doesn't open it: say "open
   YouTube". A spoken address on its own ("example dot com") does.
-- **Routines with the AI's steps:** a routine is made of the commands you
-  said; what the on-device AI did for a request isn't kept in one yet.
+- **Routines with a site's own tool:** when the on-device AI used a tool a
+  site offers, that step can't be kept in a routine yet. Nor can a step
+  whose button or link has the same name as another on the page when the
+  routine runs: the routine stops there rather than guess.
 - **Telling your voice from others':** anyone who hears a confirmation
   word ("say harbor") can say it. Recognizing your own voice is planned.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
@@ -704,12 +766,17 @@ said.
   microphone has echo cancellation (its own voice is then removed from
   what the microphone hears). With the system's voices, which the browser
   uses when its own isn't installed, start with "Hey Molt" (or say
-  "stop").
+  "stop"). With its own voice and no echo cancellation, say "stop" first.
 - **While reading aloud,** the sentence being read is shown in the bar
   under the page, but not highlighted on the page itself.
 - **"Faster" and "slower"** change the reading speed while the browser
   reads; otherwise they are the video's playback speed, which comes later.
+- **Questions about the page** use only the page's text: not its
+  pictures, videos, tables or the parts in frames. A question about a
+  picture ("what's in this picture?") comes later, and so does a
+  conversation about the answer: each question stands on its own, apart
+  from "tell me more". Answers start once they are complete, not word by
+  word.
 - **Still to come in voice mode:** the on-device AI for anything these
-  commands don't cover, setting the volume to a level, the playback speed,
-  undo, and questions about the page ("what is this page about?"). Until
-  then the browser says so when you ask for them.
+  commands don't cover, setting the volume to a level, the playback speed
+  and undo. Until then the browser says so when you ask for them.

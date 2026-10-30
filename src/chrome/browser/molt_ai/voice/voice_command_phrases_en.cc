@@ -359,6 +359,100 @@ constexpr CommandPattern kPatterns[] = {
      "(read|read me|go to|jump to|skip to|move to) [the] {query} (section|"
      "part)"},
 
+    // --- Questions about the page (page_questions.h) ----------------------
+    // Before choosing, which would take "what is <a description>". The
+    // questions that are commands ("what's on the screen", "where am I",
+    // "what's the title") are above and stay commands; a question none of
+    // these takes still goes to the planner.
+    {K::kAskPage,
+     "(tell me more|what else does (it|the page|this page|the "
+     "article|this article) say)",
+     C::kAlways, V::kAskMore},
+    {K::kAskPage,
+     "(read|tell|give|list|say) [me|us] the (main|key|important|most "
+     "important) (points|ideas|facts|takeaways|things)",
+     C::kAlways, V::kAskMainPoints},
+    {K::kAskPage,
+     "(what are|whats|what is) the (main|key|important|most important) "
+     "(points|ideas|facts|takeaways|point|idea)",
+     C::kAlways, V::kAskMainPoints},
+    {K::kAskPage, "(main points|key points|key takeaways|takeaways)",
+     C::kAlways, V::kAskMainPoints},
+    {K::kAskPage,
+     "what (does|do|did) (it|this|that|they|the page|this page|the article|"
+     "this article|the story|this story|the post|this post|the text|the "
+     "site|this site) (say|tell me|tell us|mention|write) (about|on|"
+     "regarding) {query}",
+     C::kAlways, V::kAskTopic},
+    {K::kAskPage,
+     "(does|do|did) (it|this|the page|this page|the article|this article|the "
+     "story|this story|the post|this post|the text) (say|mention|tell me) "
+     "(anything|something) (about|on|regarding) {query}",
+     C::kAlways, V::kAskTopic},
+    {K::kAskPage,
+     "(does|do) (it|the page|this page|the article|this article|the text) "
+     "(mention|talk about|cover|discuss) {query}",
+     C::kAlways, V::kAskTopic},
+    {K::kAskPage,
+     "(tell me|read me) what (it|this|the page|this page|the article|this "
+     "article) says (about|on|regarding) {query}",
+     C::kAlways, V::kAskTopic},
+    {K::kAskPage,
+     "(what is|whats) (this|the|this whole|the whole) (page|article|story|"
+     "post|site|website|text|document|video|piece|essay|thread) about",
+     C::kAlways, V::kAskAbout},
+    {K::kAskPage, "(what is|whats) (it|this|that) [all] about", C::kAlways,
+     V::kAskAbout},
+    {K::kAskPage,
+     "what (does|do) (it|this|the page|this page|the article|this article|"
+     "the story|this story|the post|this post|the text) say",
+     C::kAlways, V::kAskAbout},
+    {K::kAskPage,
+     "(summarize|summarise|sum up|recap) [it|this|that|the (page|article|"
+     "story|post|text|document|video)|this (page|article|story|post|text|"
+     "document|video)]",
+     C::kAlways, V::kAskAbout},
+    {K::kAskPage,
+     "(give me|read me|tell me) [a|the] (summary|short summary|quick "
+     "summary|gist|overview) [of (it|this|that|the (page|article|story|"
+     "post|text)|this (page|article|story|post|text))]",
+     C::kAlways, V::kAskAbout},
+    {K::kAskPage,
+     "(whats|what is) the (gist|summary) [of (it|this|that|the (page|"
+     "article|story|post|text)|this (page|article|story|post|text))]",
+     C::kAlways, V::kAskAbout},
+    {K::kAskPage, "(summary|tldr|tl dr)", C::kAlways, V::kAskAbout},
+    {K::kAskPage,
+     "who (wrote|authored|published|posted) (this|it|that|the (page|article|"
+     "story|post|piece)|this (page|article|story|post|piece))",
+     C::kAlways, V::kAskQuestion},
+    {K::kAskPage,
+     "(who is|whos) the (author|writer|publisher) [of (this|it|the (page|"
+     "article|story|post|piece)|this (page|article|story|post|piece))]",
+     C::kAlways, V::kAskQuestion},
+    {K::kAskPage, "who is (this|it) (by|from|written by)", C::kAlways,
+     V::kAskQuestion},
+    {K::kAskPage,
+     "(what is|whats) the (price|cost) [of (it|this|this one|that|that one|"
+     "the (product|item|thing)|this (product|item|thing))]",
+     C::kAlways, V::kAskQuestion},
+    {K::kAskPage,
+     "how much (is|does|do) (it|this|this one|that|that one|the (product|"
+     "item)|this (product|item)) [cost|costs]",
+     C::kAlways, V::kAskQuestion},
+    {K::kAskPage, "what does (it|this|that) cost", C::kAlways, V::kAskQuestion},
+    {K::kAskPage,
+     "when was (this|it|that|the (page|article|story|post|piece)|this (page|"
+     "article|story|post|piece)) (written|published|posted|updated|last "
+     "updated|released)",
+     C::kAlways, V::kAskQuestion},
+    {K::kAskPage,
+     "(ask the page|ask this page|ask the article|ask this article) {query}",
+     C::kAlways, V::kAskQuestion},
+    {K::kAskPage,
+     "according to (this|the) (page|article|story|post|site) {query}",
+     C::kAlways, V::kAskQuestion},
+
     // --- Choosing -----------------------------------------------------------
     {K::kShowNumbers,
      "(show [me] [the] (numbers|labels|number labels)|(numbers|labels) on|"
@@ -511,6 +605,13 @@ constexpr CommandInfo kInfos[] = {
     {K::kReadSection, "Reading",
      "Read one section of the page, by its heading.",
      "read the section on history"},
+    // Questions about the page.
+    {K::kAskPage, "Questions about the page",
+     "Ask about the page you are on: what it is about, its main points, "
+     "what it says about something, who wrote it, the price. The on-device "
+     "AI answers from the page's text, briefly, and says when the page "
+     "doesn't say. \"Tell me more\" goes on with the next passages.",
+     "what is this page about"},
     // Choosing.
     {K::kChoose, "Choosing",
      "Choose from what is on screen: by number, by position, or by name, "

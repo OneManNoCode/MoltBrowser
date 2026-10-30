@@ -331,7 +331,8 @@ FUZZERS = {
                 "page_map", "page_map_text", "voice_sites",
                 "voice_candidates", "voice_speech_text",
                 "voice_controller_logic", "voice_gesture", "voice_hints",
-                "voice_prompts", "voice_routines_logic", "voice_vocabulary")
+                "voice_prompts", "voice_routines_logic", "voice_vocabulary",
+                "voice_planner")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
              f"{MOLT_AI}/security/activation_policy.cc"],
         tier="std",
@@ -348,7 +349,7 @@ FUZZERS = {
                 "voice_candidates", "voice_speech_text",
                 "voice_controller_logic", "voice_gesture", "voice_hints",
                 "voice_prompts", "voice_routines_logic", "voice_vocabulary",
-                "voice_routines", "voice_learning_store")
+                "voice_routines", "voice_learning_store", "voice_planner")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
              f"{MOLT_AI}/security/activation_policy.cc",
              f"{MOLT_AI}/automation/agent_run_draft.cc",
@@ -416,6 +417,19 @@ FUZZERS = {
         dict="dicts/page_reading.dict",
         max_len=65536,
         smoke_runs=1000,
+    ),
+    "molt_page_questions_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "page_reading", "page_questions",
+                "site_skills", "site_skills_data", "html_fixture_tree")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/agent_safety.cc",
+             f"{ENGINE}/bounded_json.cc"],
+        tier="stand_ins",
+        dict="dicts/page_questions.dict",
+        max_len=65536,
     ),
     "molt_page_map_fuzzer": dict(
         dir=BROWSER,

@@ -1030,7 +1030,7 @@ var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your save
    reviewed it and confirmed the sites it may use ('confirmDraftSites',
    honoured only on a real click, for exactly the sites shown). It is then
    an ordinary untrusted workflow. */
-var DRAFT_EXPLAIN='Made by the AI agent from one of your runs. Check its steps and confirm its sites before it can run.';
+var DRAFT_EXPLAIN='Made by the AI agent, or brought in from elsewhere. Check its steps and confirm its sites before it can run.';
 var VOICE_EXPLAIN='Taught by voice. Voice mode runs it: say “run” and its name.';
 /* ---- a run's question (the runner waits for the user) ----
    The text is the browser's (page text in it already cleaned); shown as

@@ -16,6 +16,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
@@ -43,6 +44,11 @@ constexpr char kWakePhrase[] = "hey molt";
 // How often the session looks at the tabs' sound and the speech engine
 // (well within kOtherSpeechTailMs).
 constexpr base::TimeDelta kPollInterval = base::Milliseconds(250);
+
+// Where the microphone has no echo canceller, nothing said over the
+// browser's speech gives a command but "stop" (voice_session_logic.h).
+constexpr char kStopFirstHint[] =
+    "To interrupt me, say stop, then what you want.";
 
 ListeningSettings ToListening(const VoiceModeSettings& settings) {
   ListeningSettings listening;
@@ -163,9 +169,9 @@ void VoiceSession::OnWindowReady(BrowserWindowInterface* browser) {
     return;
   }
   checked = true;
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ReadVoiceModeSettings),
+  // On settings.json's own sequence (common/molt_settings_file.h).
+  MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadVoiceModeSettings),
       base::BindOnce(
           [](base::WeakPtr<VoiceSession> self,
              const VoiceModeSettings& settings) {
@@ -276,9 +282,8 @@ bool VoiceSession::Start() {
   }
   Apply(logic_.Start(NowMs()));
   Apply(logic_.OnBrowserActivity(ControllerActivity(), NowMs()));
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-      base::BindOnce(&ReadVoiceModeSettings),
+  MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadVoiceModeSettings),
       base::BindOnce(&VoiceSession::OnSettingsRead,
                      weak_factory_.GetWeakPtr()));
   for (Observer& observer : observers_) {
@@ -378,6 +383,7 @@ void VoiceSession::StopListening() {
   }
   SetDucking(false);
   partial_.clear();
+  speaking_hint_.clear();
   hotwords_.clear();
   microphone_on_ = false;
   echo_ = EchoCancellation::kNone;
@@ -410,10 +416,15 @@ void VoiceSession::OnListenerReady(const HelperEvent& ready) {
   problem_.clear();
   Apply(logic_.OnHelperReady(NowMs()));
   if (first && controller_) {
-    controller_->SayNotice(
+    std::string notice =
         settings_.always_listening
             ? "Voice mode is on. I'm listening."
-            : "Voice mode is on. Say Hey Molt, then what you want.");
+            : "Voice mode is on. Say Hey Molt, then what you want.";
+    if (microphone_on_ && echo_ == EchoCancellation::kNone) {
+      // Without an echo canceller, only "stop" interrupts the browser.
+      notice += " " + std::string(kStopFirstHint);
+    }
+    controller_->SayNotice(notice);
   }
 }
 
@@ -426,22 +437,25 @@ void VoiceSession::OnListenerEvent(const HelperEvent& event) {
     Apply(logic_.OnOtherSpeech(OthersSpeaking(), now));
     Apply(logic_.OnPageAudible(AnyTabAudible(), now));
     Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), now));
+    Apply(logic_.OnOwnVoiceUnfiltered(OwnVoiceUnfiltered(), now));
   }
+  // The event's lag behind the microphone (the listener's audio clock).
+  const std::optional<int64_t> lag = event.lag_ms;
   switch (event.type) {
     case HelperEventType::kWake:
-      Apply(logic_.OnWake(now));
+      Apply(logic_.OnWake(now, lag));
       return;
     case HelperEventType::kSpeechStart:
-      Apply(logic_.OnSpeechStart(now));
+      Apply(logic_.OnSpeechStart(now, lag));
       return;
     case HelperEventType::kPartial:
-      Apply(logic_.OnPartial(event.text, now));
+      Apply(logic_.OnPartial(event.text, now, lag));
       return;
     case HelperEventType::kFinal:
-      Apply(logic_.OnFinal(event.text, event.confidence, now));
+      Apply(logic_.OnFinal(event.text, event.confidence, now, lag));
       return;
     case HelperEventType::kSpeechEnd:
-      Apply(logic_.OnSpeechEnd(now));
+      Apply(logic_.OnSpeechEnd(now, lag));
       return;
     case HelperEventType::kError:
       LOG(WARNING) << "[MoltVoice] speech helper: " << event.code << ": "
@@ -493,7 +507,14 @@ void VoiceSession::OnVoiceCaption(VoiceActivity activity,
     return;
   }
   const int64_t now = NowMs();
+  // Whether voice mode's own voice plays unfiltered changes with what it
+  // does: looked at before the activity, so its end is seen at once.
+  Apply(logic_.OnOwnVoiceUnfiltered(OwnVoiceUnfiltered(), now));
   Apply(logic_.OnBrowserActivity(ToBrowserActivity(activity), now));
+  if (activity != VoiceActivity::kSpeaking && !speaking_hint_.empty()) {
+    speaking_hint_.clear();
+    UpdateCaption();
+  }
   const ConversationState& state = controller_->state();
   // The browser's prompt waits for its answer too (voice_prompts.h).
   Apply(logic_.OnAwaitingAnswer(
@@ -553,6 +574,13 @@ void VoiceSession::Apply(SessionActions actions) {
     controller_->StopSpeaking();
   }
   bool caption = actions.state.has_value();
+  if (actions.said_over_voice && speaking_hint_.empty() &&
+      ControllerActivity() == BrowserActivity::kSpeaking) {
+    // Said over voice mode's own voice with no echo canceller: the user
+    // says stop first, or waits.
+    speaking_hint_ = kStopFirstHint;
+    caption = true;
+  }
   if (actions.partial) {
     partial_ = *actions.partial;
     caption = true;
@@ -642,6 +670,7 @@ void VoiceSession::UpdateCaption() {
   caption.starting = logic_.state() == SessionState::kStarting;
   caption.heard_live = partial_;
   caption.problem = problem_;
+  caption.speaking_hint = speaking_hint_;
   controller_->SetListening(std::move(caption));
 }
 
@@ -671,6 +700,15 @@ bool VoiceSession::OwnSpeechInReference() const {
          controller_->SpeechInEchoReference();
 }
 
+bool VoiceSession::OwnVoiceUnfiltered() const {
+  // SpeechInEchoReference(): voice mode speaks with its own voice, the
+  // audio its helper sends; with no echo canceller the microphone hears it
+  // as it is.
+  return microphone_on_ && echo_ == EchoCancellation::kNone && controller_ &&
+         controller_->activity() == VoiceActivity::kSpeaking &&
+         controller_->SpeechInEchoReference();
+}
+
 bool VoiceSession::AnyTabAudible() const {
   for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
     TabStripModel* tabs = window->GetTabStripModel();
@@ -687,6 +725,7 @@ bool VoiceSession::AnyTabAudible() const {
 void VoiceSession::OnPoll() {
   Apply(logic_.OnOtherSpeech(OthersSpeaking(), NowMs()));
   Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), NowMs()));
+  Apply(logic_.OnOwnVoiceUnfiltered(OwnVoiceUnfiltered(), NowMs()));
   Apply(logic_.OnPageAudible(AnyTabAudible(), NowMs()));
 }
 

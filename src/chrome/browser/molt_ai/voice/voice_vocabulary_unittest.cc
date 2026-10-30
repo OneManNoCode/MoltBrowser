@@ -158,6 +158,24 @@ TEST(VoiceVocabularyTest, ForgetTakesEitherSide) {
   EXPECT_TRUE(v.empty());
 }
 
+TEST(VoiceVocabularyTest, EveryReadingOfThePageCounts) {
+  using K = VoiceCommandKind;
+  // The page's text read out, however the reading began or went on: what
+  // is heard then may be the page, so nothing of it is learned.
+  for (K kind :
+       {K::kReadPage, K::kReadFromHere, K::kReadSelection, K::kReadSection,
+        K::kNextParagraph, K::kPreviousParagraph, K::kResume, K::kNextHeading,
+        K::kPreviousHeading, K::kReadResults, K::kReadLinks, K::kReadHeadings,
+        K::kReadTitle, K::kDescribeScreen, K::kNextItem, K::kPreviousItem,
+        K::kRepeat, K::kAskPage}) {
+    EXPECT_TRUE(ReadsPageText(kind)) << VoiceCommandKindName(kind);
+  }
+  for (K kind : {K::kSearch, K::kOpenSite, K::kChoose, K::kType, K::kYes,
+                 K::kCorrection, K::kRunRoutine}) {
+    EXPECT_FALSE(ReadsPageText(kind)) << VoiceCommandKindName(kind);
+  }
+}
+
 TEST(VoiceVocabularyTest, AlignsACorrectionWithWhatItCorrects) {
   // The words meant: the span that sounds most like them.
   std::optional<AlignedCorrection> c =

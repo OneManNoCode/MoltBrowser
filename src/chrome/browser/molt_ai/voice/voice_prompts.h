@@ -176,6 +176,7 @@ enum class PromptAnswer : uint8_t {
   kDecline,    // confirm's no, prompt()'s cancel, stay, password: not now
   kDictate,    // prompt(): |text| becomes the answer
   kNeedWord,   // "yes" or "allow" where only the word allows: say so
+  kSayAgain,   // like a confirmation word, not for sure which: asked again
   kCantAllow,  // "yes", "keep" where voice can't allow it: say so
 };
 

@@ -195,6 +195,64 @@ TEST(VoiceRoutinesLogicTest, ThisIsTheTaskSoFar) {
   EXPECT_EQ(JoinSpokenList({"a", "b"}), "a and b");
 }
 
+// The planner's steps in "this": in order with the user's, never a task's
+// start, said as the browser says them; a gap stops "this" from being
+// saved until a new task begins.
+TEST(VoiceRoutinesLogicTest, ThisKeepsThePlannersSteps) {
+  RoutineRecorder recorder;
+  recorder.Add(*StepFor("open YouTube"));
+  RoutineStep click;
+  click.planned = true;
+  click.host = "www.youtube.com";
+  click.agent.action = PlannerStep::Action::kClick;
+  click.agent.kind = "link";
+  click.agent.label = "Live Aid \u2013 Queen";
+  recorder.Add(click);
+  RoutineStep typed = click;
+  typed.agent.action = PlannerStep::Action::kType;
+  typed.agent.kind = "input";
+  typed.agent.label = "Comment";
+  typed.agent.text = "great";
+  recorder.Add(typed);
+  typed.variable = "comment";
+  typed.agent.text.clear();
+  recorder.Add(typed);
+  RoutineStep scroll = click;
+  scroll.agent.action = PlannerStep::Action::kScroll;
+  scroll.agent.direction = "down";
+  recorder.Add(scroll);
+  recorder.Add(*StepFor("pause"));
+  ASSERT_EQ(recorder.steps().size(), 6u);
+  EXPECT_TRUE(recorder.planned());
+  EXPECT_EQ(recorder.refusal(), "");
+  std::vector<std::string> said;
+  for (const RoutineStep& step : recorder.steps()) {
+    EXPECT_EQ(IsAgentStep(step), step.planned);
+    said.push_back(DescribeRoutineStep(step));
+  }
+  EXPECT_EQ(JoinSpokenList(said),
+            "open YouTube, click Live Aid \u2013 Queen, type great in Comment, "
+            "type what you tell me in Comment, scroll down and pause");
+  // A gap: "this" can't be saved, until a new task begins.
+  RoutineStep gap;
+  gap.planned = true;
+  gap.agent.action = PlannerStep::Action::kUnkept;
+  gap.agent.why = "the AI used a site's own tool.";
+  recorder.Add(gap);
+  EXPECT_TRUE(IsUnkeptStep(recorder.steps().back()));
+  EXPECT_EQ(recorder.refusal(), "the AI used a site's own tool.");
+  EXPECT_EQ(DescribeRoutineStep(gap), "a step the AI took that I can't repeat");
+  recorder.Add(*StepFor("open YouTube"));
+  EXPECT_EQ(recorder.refusal(), "");
+  EXPECT_FALSE(recorder.planned());
+  // A voice command the planner chose (round 41's format) isn't an agent
+  // step.
+  RoutineStep command = *StepFor("pause");
+  command.planned = true;
+  EXPECT_FALSE(IsAgentStep(command));
+  EXPECT_EQ(DescribeRoutineStep(command), "pause");
+}
+
 TEST(VoiceRoutinesLogicTest, Names) {
   EXPECT_EQ(RoutineDisplayName(" my  news "), "my news");
   EXPECT_EQ(RoutineDisplayName("yes"), "");
@@ -247,6 +305,15 @@ TEST(VoiceRoutinesLogicTest, RememberThisReadsBackAndWaitsForYes) {
                        ConversationState());
   EXPECT_NE(Said(turn).find("Some of these steps are the AI's"),
             std::string::npos);
+
+  // A step of the AI's that a routine can't repeat: nothing to save.
+  env.learning.this_refusal = "the AI used a site's own tool.";
+  turn =
+      PlanUtterance("remember this as trains", map, env, ConversationState());
+  EXPECT_EQ(Said(turn),
+            "I can't remember this: the AI used a site's own tool.");
+  EXPECT_FALSE(turn.state.confirming);
+  env.learning.this_refusal.clear();
 
   // Nothing yet; a name in use; a name that isn't one; nowhere to keep it.
   env.learning.this_steps.clear();

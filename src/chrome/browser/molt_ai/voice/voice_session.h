@@ -24,7 +24,13 @@
 //     canceller's reach) is looked for every kPollInterval and at each of
 //     the helper's events: while it plays, and shortly after, only "stop",
 //     "cancel" and "turn off voice mode" count
-//     (VoiceSessionLogic::OnOtherSpeech()).
+//     (VoiceSessionLogic::OnOtherSpeech()). So for voice mode's own voice
+//     where the microphone has no echo canceller (OnOwnVoiceUnfiltered()):
+//     its helper chooses the audio, which needn't be the text it was
+//     given. The caption then says to say stop first.
+//   - Each of the helper's events comes with its lag behind the microphone
+//     (HelperEvent::lag_ms, from the listener's audio clock), which the
+//     logic uses to place the utterance's start.
 //   - The caption bar shows the state, and what is being said as it is said
 //     (VoiceController::SetListening()).
 //   - Hotwords: the page map each utterance was planned on gives the
@@ -183,6 +189,9 @@ class VoiceSession : public VoiceController::Observer,
   // cancellation (Chrome-wide, whose reference is the browser's output, or
   // the platform's, the system's whole output).
   bool OwnSpeechInReference() const;
+  // Whether voice mode speaks with its own voice while the microphone has
+  // no echo canceller: the microphone hears the audio its helper chose.
+  bool OwnVoiceUnfiltered() const;
 
   raw_ptr<BrowserWindowInterface> browser_;
   ui::ScopedUnownedUserData<VoiceSession> scoped_data_holder_;
@@ -197,6 +206,9 @@ class VoiceSession : public VoiceController::Observer,
   std::vector<std::string> hotwords_;
   std::string partial_;
   std::string problem_;
+  // While the browser speaks: how to interrupt it, once something said over
+  // its own voice with no echo canceller was dropped.
+  std::string speaking_hint_;
   // The microphone runs, with this echo cancellation.
   bool microphone_on_ = false;
   EchoCancellation echo_ = EchoCancellation::kNone;

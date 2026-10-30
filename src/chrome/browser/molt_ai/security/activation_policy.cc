@@ -86,8 +86,13 @@ bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms) {
   if (tab.history_entries < 1000) {
     ++tab.history_entries;
   }
+  // Pressing full screen, copying, or opening a link in a new tab doesn't
+  // navigate the tab: no entry is the page the user asked for.
+  const bool may_navigate = tab.intent != Intent::kFullScreen &&
+                            tab.intent != Intent::kCopy &&
+                            tab.intent != Intent::kOpenInNewTab;
   // The page the action led to is what the user asked for.
-  return !(acting && tab.history_entries == 1);
+  return !(acting && may_navigate && tab.history_entries == 1);
 }
 
 Ruling Decide(const TabRecord& tab,
@@ -181,12 +186,29 @@ std::string_view DecisionName(Decision decision) {
 std::string SiteForSpeech(std::string_view host) {
   // GURL's hosts are canonical already; the browser cleans them again, so
   // a host is never more than letters, digits, dots and dashes when said.
-  std::string site = Keep(host, ".-", kMaxSiteChars + 4);
+  // A host is at most 253 bytes: only the end of a longer text is read.
+  constexpr size_t kMaxHostScanBytes = 1024;
+  if (host.size() > kMaxHostScanBytes) {
+    host.remove_prefix(host.size() - kMaxHostScanBytes);
+  }
+  std::string site = Keep(host, ".-", kMaxHostScanBytes);
   if (site.rfind("www.", 0) == 0) {
     site.erase(0, 4);
   }
   if (site.size() > kMaxSiteChars) {
-    site.resize(kMaxSiteChars);
+    // Too long to say: its end is said, which names whose site it is (the
+    // registrable domain), in whole labels ("login.evil.example" for
+    // "accounts.google.com.<...>.login.evil.example", never
+    // "accounts.google.com..."; never part of a label, which could read as
+    // another name).
+    size_t cut = site.size() - kMaxSiteChars;
+    if (site[cut - 1] != '.') {
+      const size_t dot = site.find('.', cut);
+      if (dot != std::string::npos && dot + 1 < site.size()) {
+        cut = dot + 1;
+      }
+    }
+    site.erase(0, cut);
   }
   // No leading or trailing punctuation ("." alone says nothing).
   const size_t first = site.find_first_not_of(".-");

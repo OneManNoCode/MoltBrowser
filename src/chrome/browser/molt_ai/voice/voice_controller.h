@@ -53,6 +53,12 @@
 // keeping its place (VoiceEnvironment::reading). The speech rate is kept
 // as a setting (voice_reading_settings.h).
 //
+// Questions about the page (voice_page_questions.h): a kAskPage step asks
+// the on-device model about the active tab's text; the answer, page-derived,
+// is read by the reader as page text is (each chunk said to observers as it
+// starts), and nothing in it is ever run. A new utterance or "stop" ends
+// the question; so does a page change.
+//
 // The browser's prompts and a page's dialogs (voice_browser_prompts.h,
 // TOUCHLESS_BROWSING.md §7.3): while the window listens, permission
 // prompts, alert(), confirm(), prompt(), beforeunload, dangerous downloads
@@ -121,6 +127,7 @@ namespace voice {
 
 class VoiceLearningLoop;
 class VoicePageController;
+class VoicePageQuestions;
 class VoiceReader;
 class VoiceSpeech;
 
@@ -173,6 +180,9 @@ class VoiceController : public VoicePlanner::Delegate,
     std::string heard_live;
     // Why it can't listen ("Microphone access is off"), shown while idle.
     std::string problem;
+    // How to interrupt the browser ("say stop"), shown before what it says
+    // while it speaks.
+    std::string speaking_hint;
 
     friend bool operator==(const ListeningCaption&,
                            const ListeningCaption&) = default;
@@ -379,6 +389,14 @@ class VoiceController : public VoicePlanner::Delegate,
   void PlannerSays(const std::string& text) override;
   void PlannerAsks(int question, const std::string& what) override;
   void PlannerFinished() override;
+  // Routines (planner-routines): the steps the planner carried out go to
+  // "this", and a routine's replayed step reports how it went.
+  void PlannerCarriedOut(const PlannerStep& step) override;
+  void PlannerReplayed(PlannerReplay outcome) override;
+  // A routine's step the planner carried out before, replayed by the
+  // planner in the active tab (voice_learning_loop.h). False when there is
+  // no planner or no tab.
+  bool ReplayPlannerStep(const PlannerStep& step);
   // Ends the planner's run, if one is in progress.
   void CancelPlanner();
   // The planner's question went unanswered.
@@ -388,6 +406,13 @@ class VoiceController : public VoicePlanner::Delegate,
   bool AnswersPlannerQuestion(const VoiceCommand& command,
                               const PageMap& map,
                               const VoiceEnvironment& env) const;
+
+  // Questions about the page (voice_page_questions.h): a kAskPage step is
+  // asked of the on-device model; its answer is read as page text is.
+  void AskAboutPage(const VoiceStep& step);
+  void OnPageQuestionProgress(const std::string& text);
+  void OnPageAnswer(int64_t page_id, std::string text, bool from_page);
+
   void Idle();
   void NotifyCaption();
   void SetStatus(std::string status);
@@ -457,6 +482,8 @@ class VoiceController : public VoicePlanner::Delegate,
   base::ObserverList<Observer> observers_;
   // Routines, personal words and site hints (voice_learning_loop.h).
   std::unique_ptr<VoiceLearningLoop> learning_;
+  // Questions about the page (voice_page_questions.h).
+  std::unique_ptr<VoicePageQuestions> page_questions_;
   base::RepeatingClosure idle_for_testing_;
   base::WeakPtrFactory<VoiceController> run_weak_factory_{this};
   base::WeakPtrFactory<VoiceController> weak_factory_{this};

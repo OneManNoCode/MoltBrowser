@@ -32,12 +32,14 @@ struct VoiceModeSettings {
 };
 
 // Blocking (file I/O). The defaults when settings.json is missing or isn't
-// a JSON object.
+// a JSON object. Best on MoltSettingsFileTaskRunner()
+// (common/molt_settings_file.h), which sees every change posted before.
 VoiceModeSettings ReadVoiceModeSettings();
 
-// Blocking (file I/O). Sets both keys and keeps every other one. False, and
-// nothing written, if settings.json exists but isn't a JSON object (it is
-// left for the user to fix), or if it can't be written.
+// Blocking (file I/O), on MoltSettingsFileTaskRunner() only. Sets both keys
+// and keeps every other one, atomically. False, and nothing written, if
+// settings.json exists but isn't a JSON object (it is left for the user to
+// fix), or if it can't be written.
 bool WriteVoiceModeSettings(const VoiceModeSettings& settings);
 
 }  // namespace voice

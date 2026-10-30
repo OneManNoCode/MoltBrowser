@@ -75,6 +75,10 @@ TEST(VoicePromptsTest, PermissionAnswers) {
   EXPECT_EQ(Answer(prompt, "allow"), PromptAnswer::kNeedWord);
   EXPECT_EQ(ReplySpeech(prompt, ParsePromptReply(prompt, "yes")),
             "To allow it, say harbor.");
+  // Like a word of the list, but not for sure which: asked again.
+  EXPECT_EQ(Answer(prompt, "pardon"), PromptAnswer::kSayAgain);
+  EXPECT_EQ(ReplySpeech(prompt, ParsePromptReply(prompt, "pardon")),
+            "I didn't catch that. Say the word again.");
   // Anything else is a command.
   EXPECT_EQ(Answer(prompt, "open YouTube"), PromptAnswer::kNone);
   EXPECT_EQ(Answer(prompt, ""), PromptAnswer::kNone);

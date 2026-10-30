@@ -70,6 +70,7 @@
 #define CHROME_BROWSER_MOLT_AI_SECURITY_ACTIVATION_GUARD_H_
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -191,6 +192,8 @@ class ActivationGuard
   static int VoiceBackOffset(content::WebContents* contents);
   // The most entries remembered as skippable per tab.
   static constexpr size_t kMaxSkippableEntries = 64;
+  // The most navigations in flight remembered per tab.
+  static constexpr size_t kMaxNavigationsInFlight = 64;
 
   // For tests: the clock, and the record.
   void SetClockForTesting(base::RepeatingCallback<base::TimeTicks()> clock);
@@ -261,6 +264,7 @@ class ActivationGuard
   void DidGetUserInteraction(const blink::WebInputEvent& event) override;
   void FrameReceivedUserActivation(
       content::RenderFrameHost* render_frame_host) override;
+  void DidStartNavigation(content::NavigationHandle* navigation) override;
   void DidFinishNavigation(content::NavigationHandle* navigation) override;
   void WebContentsDestroyed() override;
 
@@ -291,6 +295,10 @@ class ActivationGuard
   // "go back" skips (their unique ids, oldest first).
   int last_entry_id_ = 0;
   std::vector<int> skippable_entries_;
+  // When each of the page's navigations in flight began (NowMs(), by
+  // navigation id): the page an action led to is the one whose navigation
+  // began in the action's window, however late it commits.
+  std::map<int64_t, int64_t> navigation_started_ms_;
 
   int own_key_code_ = 0;
   base::TimeTicks own_key_until_;

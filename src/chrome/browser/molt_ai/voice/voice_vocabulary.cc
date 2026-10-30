@@ -440,6 +440,39 @@ bool PersonalVocabulary::Restore(VocabularyEntry entry) {
   return true;
 }
 
+bool ReadsPageText(VoiceCommandKind kind) {
+  using K = VoiceCommandKind;
+  switch (kind) {
+    case K::kReadPage:
+    case K::kReadFromHere:
+    case K::kReadHeadings:
+    case K::kReadLinks:
+    case K::kReadResults:
+    case K::kReadTitle:
+    case K::kReadSelection:
+    case K::kReadSection:
+    case K::kDescribeScreen:
+    case K::kNextHeading:
+    case K::kPreviousHeading:
+    case K::kNextLink:
+    case K::kPreviousLink:
+    case K::kNextItem:
+    case K::kPreviousItem:
+    case K::kNextParagraph:
+    case K::kPreviousParagraph:
+    case K::kReadBack:
+    case K::kWhereAmI:
+    case K::kRepeat:
+    // "Continue reading" (and "continue" after "pause").
+    case K::kResume:
+    // A question about the page: the answer is made from its text.
+    case K::kAskPage:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::optional<AlignedCorrection> AlignCorrection(std::string_view previous,
                                                  std::string_view said) {
   if (previous.size() > kMaxUtteranceBytes || said.size() > kMaxUtteranceBytes) {
