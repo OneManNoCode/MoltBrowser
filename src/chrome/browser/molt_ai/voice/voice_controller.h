@@ -173,6 +173,9 @@ class VoiceController : public VoicePlanner::Delegate,
     std::string heard_live;
     // Why it can't listen ("Microphone access is off"), shown while idle.
     std::string problem;
+    // How to interrupt the browser ("say stop"), shown before what it says
+    // while it speaks.
+    std::string speaking_hint;
 
     friend bool operator==(const ListeningCaption&,
                            const ListeningCaption&) = default;

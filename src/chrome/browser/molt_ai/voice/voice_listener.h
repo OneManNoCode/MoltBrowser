@@ -25,6 +25,10 @@
 //   - Watchdog: no `ready` within kReadyTimeout, its memory or CPU past the
 //     limits (checked every second), or its stdin backed up for
 //     kStallTimeout (it stopped reading), end it.
+//   - Its clock: the audio sent to the helper and when it was captured
+//     (HelperAudioClock) map each event's audio_ms back to the
+//     microphone's time; the event goes on with its lag behind it
+//     (HelperEvent::lag_ms), for voice_session_logic.h.
 //   - Threads: the helper is started on, and read from, a dedicated thread
 //     that lives as long as it (some Linux kernels tie it to that thread);
 //     writes go through a second dedicated thread. Audio may be
@@ -106,9 +110,12 @@ class VoiceListener {
   // Takes the frames the microphone gives, from any thread.
   class AudioSink : public base::RefCountedThreadSafe<AudioSink> {
    public:
-    // 16 kHz mono samples, at most kMaxFramePayloadBytes / 2. Dropped
-    // while no helper is ready, and while its input is backed up.
-    virtual void Push(const std::vector<int16_t>& samples) = 0;
+    // 16 kHz mono samples, at most kMaxFramePayloadBytes / 2, the last of
+    // them captured just before |end_captured| (the microphone's
+    // timestamp). Dropped while no helper is ready, and while its input is
+    // backed up.
+    virtual void Push(const std::vector<int16_t>& samples,
+                      base::TimeTicks end_captured) = 0;
 
    protected:
     friend class base::RefCountedThreadSafe<AudioSink>;

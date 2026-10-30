@@ -616,10 +616,15 @@ void VoiceController::NotifyCaption() {
   }
   const std::string& heard =
       listening_.heard_live.empty() ? heard_ : listening_.heard_live;
-  const std::string& status =
+  std::string status =
       now == VoiceActivity::kListening && !listening_.problem.empty()
           ? listening_.problem
           : status_;
+  if (now == VoiceActivity::kSpeaking && !listening_.speaking_hint.empty()) {
+    // First, so the caption's cap keeps it.
+    status = status.empty() ? listening_.speaking_hint
+                            : listening_.speaking_hint + " " + status;
+  }
   VoiceOverlay::SetCaptionForWindow(browser_, state, heard, status);
 }
 

@@ -51,15 +51,34 @@
 //     tab's sound reaches the recognizer as it is: while a tab plays
 //     sound, and kOtherSpeechTailMs after, it is taken as another source's
 //     speech, so only the commands that always count do.
+//   - So is voice mode's own voice then (OnOwnVoiceUnfiltered()): its
+//     helper chooses the audio the browser plays, which needn't be the
+//     text it was given, so what the browser said can't tell its words
+//     from the user's. While it plays with no echo canceller, and
+//     kOtherSpeechTailMs after, nothing heard gives a command, the wake
+//     phrase included: only the commands that always count ("stop"), and
+//     the user says the command once the speech stopped
+//     (SessionActions::said_over_voice).
+//
+// When it was said: each of the helper's events reports its place in the
+// audio it was sent (audio_ms), which the listener maps back to when that
+// audio was captured (HelperAudioClock). The event's lag behind the
+// microphone moves the utterance's start earlier for the browser's echo
+// tail, other speech and the voice gesture's quiet period; the helper says
+// it, so it never moves it later, and a lag past kMaxHeardLagMs (or an
+// audio_ms that doesn't fit what was sent) keeps it from being heard
+// cleanly.
 //
 // The voice gesture (voice_gesture.h, TOUCHLESS_BROWSING.md §7.3): an
 // utterance that counts is also marked heard_cleanly when it can stand in
-// for a click: it began kGestureQuietMs or more after the browser last
-// spoke (with either voice: the platform's isn't in the echo canceller's
-// reference, and the helper reports the start of speech a little late), the
-// browser didn't speak while it was said, no other source spoke since it
-// began (nor, without an echo canceller, did a tab play sound), and with a
-// tab playing sound it had kMinConfidenceWithoutWake.
+// for a click: its audio began kGestureQuietMs or more after the browser
+// last spoke (with either voice: the platform's isn't in the echo
+// canceller's reference, and the helper reports the start of speech a
+// little late), the browser didn't speak while it was said, no other source
+// spoke since it began (nor, without an echo canceller, did a tab play
+// sound or voice mode's own voice), with a tab playing sound it had
+// kMinConfidenceWithoutWake, and every event of it came within
+// kMaxHeardLagMs of its audio.
 //
 // Barge-in: the wake phrase (and "stop") while the browser speaks stops its
 // speech at once; the command follows. With the browser's own voice, a
@@ -112,6 +131,12 @@ inline constexpr int64_t kOtherSpeechTailMs = 1000;
 // An utterance heard cleanly (the voice gesture) began at least this long
 // after the browser last spoke.
 inline constexpr int64_t kGestureQuietMs = 1200;
+// The most an event of an utterance heard cleanly may lag behind its audio
+// (it arrived this long after that audio was captured). The helper is fed
+// as the microphone captures and normally answers within a few hundred
+// milliseconds; one further behind may have heard the browser's last words
+// as if they came after them.
+inline constexpr int64_t kMaxHeardLagMs = 1000;
 
 enum class SessionState : uint8_t {
   kOff,
@@ -167,6 +192,10 @@ struct SessionActions {
   std::optional<std::string> utterance;
   // |utterance| was heard cleanly enough for the voice gesture (above).
   bool heard_cleanly = false;
+  // Something said while voice mode's own voice played with no echo
+  // canceller was dropped (OnOwnVoiceUnfiltered()): the caption tells the
+  // user to say stop first, or wait.
+  bool said_over_voice = false;
   // What is being said, live, for the caption; empty clears it.
   std::optional<std::string> partial;
   // Stop the browser's speech now (barge-in).
@@ -197,14 +226,22 @@ class VoiceSessionLogic {
   SessionActions OnHelperReady(int64_t now_ms);
   SessionActions OnHelperLost(int64_t now_ms);
 
-  // The helper's events (text already through SpeechSafeText()).
-  SessionActions OnWake(int64_t now_ms);
-  SessionActions OnSpeechStart(int64_t now_ms);
-  SessionActions OnPartial(std::string_view text, int64_t now_ms);
+  // The helper's events (text already through SpeechSafeText()). |lag_ms|
+  // is how far the event is behind the microphone: |now_ms| less when the
+  // audio at its audio_ms was captured (HelperAudioClock::LagMs()), or
+  // nullopt when its audio_ms doesn't fit the audio the helper was sent.
+  // The helper says it, so it only makes decisions stricter (above).
+  SessionActions OnWake(int64_t now_ms, std::optional<int64_t> lag_ms = 0);
+  SessionActions OnSpeechStart(int64_t now_ms,
+                               std::optional<int64_t> lag_ms = 0);
+  SessionActions OnPartial(std::string_view text,
+                           int64_t now_ms,
+                           std::optional<int64_t> lag_ms = 0);
   SessionActions OnFinal(std::string_view text,
                          double confidence,
-                         int64_t now_ms);
-  SessionActions OnSpeechEnd(int64_t now_ms);
+                         int64_t now_ms,
+                         std::optional<int64_t> lag_ms = 0);
+  SessionActions OnSpeechEnd(int64_t now_ms, std::optional<int64_t> lag_ms = 0);
 
   // The browser: what the voice controller does, what it says, whether it
   // waits for an answer (a yes or no, or a choice), whether a tab plays
@@ -224,6 +261,11 @@ class VoiceSessionLogic {
   // Whether the browser's speech is in the echo canceller's reference: its
   // own voice speaks and the microphone has echo cancellation.
   SessionActions OnOwnSpeechInReference(bool in_reference, int64_t now_ms);
+  // Whether voice mode's own voice (the bundled one, voice_speech_bundled.h)
+  // plays while the microphone has no echo canceller: its audio, which its
+  // helper chooses, reaches the recognizer as it is. Looked at often, and
+  // at each of the helper's events.
+  SessionActions OnOwnVoiceUnfiltered(bool playing, int64_t now_ms);
   SessionActions OnSettingsChanged(ListeningSettings settings, int64_t now_ms);
 
   // Timers: call at NextDeadline() (or any time).
@@ -248,19 +290,29 @@ class VoiceSessionLogic {
     bool echo_cancelled = false;
     bool started = false;
     int64_t started_ms = 0;
-    // Its first event (the wake phrase, or the start of speech).
+    // When the audio of its first event (the wake phrase, or the start of
+    // speech) was captured, as far as the helper's audio_ms tells: never
+    // later than the event arrived.
     int64_t begun_ms = 0;
+    // One of its events lagged past kMaxHeardLagMs, or reported audio that
+    // doesn't fit what the helper was sent.
+    bool lagged = false;
     int64_t ended_ms = -1;
     bool partial_shown = false;
   };
 
   bool Listening() const { return running_ && ready_; }
   bool FollowUpOpen(int64_t now_ms) const;
-  bool SpeakingOrTail(int64_t now_ms) const;
+  // Whether the browser spoke at |at_ms| or within kEchoTailMs before
+  // (looked at now: it counts if the browser speaks now).
+  bool SpeakingOrTail(int64_t at_ms) const;
   // Whether another source's speech was heard since |since_ms| (or
   // kOtherSpeechTailMs before): the speech engine speaking for someone
-  // else, or, without an echo canceller, a tab playing sound.
+  // else, or, without an echo canceller, a tab playing sound or voice
+  // mode's own voice.
   bool OtherSpeechSince(int64_t since_ms) const;
+  // The last of those: voice mode's own voice with no echo canceller.
+  bool OwnVoiceUnfilteredSince(int64_t since_ms) const;
   bool Counts(const Utterance& utterance) const;
   // Whether what the browser said lately holds a wake phrase.
   bool SaidWakePhrase(int64_t now_ms) const;
@@ -272,7 +324,14 @@ class VoiceSessionLogic {
   // Whether |utterance|, taken with |confidence|, was heard cleanly (the
   // voice gesture).
   bool HeardCleanly(const Utterance& utterance, double confidence) const;
-  Utterance NewUtterance(bool woke, int64_t now_ms) const;
+  // When the audio of an event that came at |now_ms| with |lag_ms| was
+  // captured: |now_ms| less the lag (clamped to 0..kMaxUtteranceMs, and
+  // kMaxHeardLagMs when it doesn't fit).
+  static int64_t HeardAt(int64_t now_ms, std::optional<int64_t> lag_ms);
+  static bool Lagged(std::optional<int64_t> lag_ms);
+  Utterance NewUtterance(bool woke,
+                         int64_t now_ms,
+                         std::optional<int64_t> lag_ms) const;
   SessionState ComputeState(int64_t now_ms) const;
   // Fills in what changed (state, wake_required, ducking) and the earcon
   // of a return to waiting.
@@ -295,6 +354,10 @@ class VoiceSessionLogic {
   bool own_speech_in_reference_ = false;
   // When another source's speech was last seen; -1 never.
   int64_t other_speech_ms_ = -1;
+  // Voice mode's own voice plays with no echo canceller; when it last
+  // did (-1 never).
+  bool own_voice_unfiltered_ = false;
+  int64_t own_voice_unfiltered_ms_ = -1;
   std::optional<Utterance> utterance_;
   // After the wake phrase, until speech starts.
   int64_t wake_until_ms_ = 0;

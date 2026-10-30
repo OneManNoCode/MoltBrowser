@@ -688,6 +688,200 @@ TEST_F(VoiceSessionLogicTest, TypedTextIsNeverHeardCleanly) {
   EXPECT_FALSE(none.heard_cleanly);
 }
 
+// The helper's lag behind the microphone (HelperAudioClock): the
+// utterance began when its audio was captured, not when its event came.
+TEST_F(VoiceSessionLogicTest, ALaggingHelpersWordIsPlacedByItsAudio) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  // "... To allow it, say harbor." from a platform voice, ending at now_.
+  BrowserAnswers(/*awaiting=*/true);
+  // A helper 1.5 s behind reports the browser's own "harbor" after the
+  // quiet period by the event's arrival, but its audio was the browser's
+  // last word: in the echo tail, so not even a command.
+  logic_->OnSpeechStart(now_ + kGestureQuietMs + 300, /*lag_ms=*/1500);
+  SessionActions echo =
+      logic_->OnFinal("harbor", 0.9, now_ + kGestureQuietMs + 600, 1500);
+  EXPECT_FALSE(echo.utterance.has_value());
+  EXPECT_FALSE(echo.heard_cleanly);
+  // One that began after the echo tail but within the quiet period by its
+  // audio: a command, not a gesture.
+  logic_->OnSpeechStart(now_ + kGestureQuietMs + 100, /*lag_ms=*/300);
+  SessionActions early =
+      logic_->OnFinal("harbor", 0.9, now_ + kGestureQuietMs + 400, 300);
+  EXPECT_EQ(early.utterance, "harbor");
+  EXPECT_FALSE(early.heard_cleanly);
+  // Said after the quiet period, and heard with a small lag: clean.
+  now_ += 3000;
+  BrowserAnswers(/*awaiting=*/true);
+  logic_->OnSpeechStart(now_ + kGestureQuietMs + 250, /*lag_ms=*/200);
+  SessionActions clean =
+      logic_->OnFinal("harbor", 0.9, now_ + kGestureQuietMs + 700, 150);
+  EXPECT_EQ(clean.utterance, "harbor");
+  EXPECT_TRUE(clean.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, AHelperFarBehindIsNeverClean) {
+  for (std::optional<int64_t> start_lag :
+       {std::optional<int64_t>(kMaxHeardLagMs + 1), std::optional<int64_t>()}) {
+    Begin();
+    logic_->OnWake(now_);
+    logic_->OnFinal("open the map", 0.9, now_ + 500);
+    now_ += 1000;
+    BrowserAnswers(/*awaiting=*/true);
+    // Long after the browser spoke, whatever the lag, but the helper was
+    // past the cap, or its audio_ms didn't fit what it was sent.
+    now_ += 6000;
+    logic_->OnSpeechStart(now_, start_lag);
+    SessionActions word = logic_->OnFinal("harbor", 0.9, now_ + 400, 100);
+    EXPECT_EQ(word.utterance, "harbor");
+    EXPECT_FALSE(word.heard_cleanly);
+    now_ += 30000;
+  }
+  // The final's lag counts too, and so does a wake phrase's.
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers(/*awaiting=*/true);
+  now_ += 6000;
+  logic_->OnSpeechStart(now_, 100);
+  EXPECT_FALSE(
+      logic_->OnFinal("harbor", 0.9, now_ + 400, std::nullopt).heard_cleanly);
+  now_ += 1000;
+  logic_->OnWake(now_, kMaxHeardLagMs + 1);
+  logic_->OnSpeechStart(now_ + 300, 100);
+  SessionActions woke = logic_->OnFinal("Hey Molt, harbor", 0.9, now_ + 600);
+  EXPECT_EQ(woke.utterance, "Hey Molt, harbor");
+  EXPECT_FALSE(woke.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, AHelperNeverMovesTheStartLater) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the map", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers(/*awaiting=*/true);
+  // A negative lag would place the audio after the event came: taken as
+  // none, so the word stays within the quiet period.
+  logic_->OnSpeechStart(now_ + kGestureQuietMs - 200, /*lag_ms=*/-5000);
+  SessionActions word =
+      logic_->OnFinal("harbor", 0.9, now_ + kGestureQuietMs + 200, -5000);
+  EXPECT_EQ(word.utterance, "harbor");
+  EXPECT_FALSE(word.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, TheEchoTailAndOtherSpeechReachBackWithTheLag) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  // The platform's voice: what the helper heard in its echo tail is the
+  // browser, however late the event comes.
+  BrowserAnswers();
+  logic_->OnSpeechStart(now_ + kEchoTailMs + 500, /*lag_ms=*/700);
+  EXPECT_FALSE(logic_->OnFinal("a tutorial", 0.9, now_ + kEchoTailMs + 900, 700)
+                   .utterance.has_value());
+  // Without the lag, the same timing is the user's.
+  logic_->OnSpeechStart(now_ + kEchoTailMs + 1000);
+  EXPECT_EQ(
+      logic_->OnFinal("go back", 0.9, now_ + kEchoTailMs + 1400).utterance,
+      "go back");
+
+  // A page's speech that stopped before the event came, but not before its
+  // audio was captured.
+  Begin();
+  logic_->OnOtherSpeech(true, now_);
+  logic_->OnOtherSpeech(false, now_ + 500);
+  now_ += 500 + kOtherSpeechTailMs + 500;
+  EXPECT_TRUE(logic_->OnWake(now_, /*lag_ms=*/800).reset_helper);
+  EXPECT_FALSE(logic_->OnWake(now_ + 100, /*lag_ms=*/100).reset_helper);
+
+  // And a wake phrase the browser said, heard late.
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("1: Hey Molt fan club.", now_);
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 1000);
+  logic_->OnTick(now_ + 9500);
+  EXPECT_TRUE(logic_->wake_required());
+  EXPECT_TRUE(logic_->OnWake(now_ + 9600, /*lag_ms=*/8700).reset_helper);
+  EXPECT_FALSE(logic_->OnWake(now_ + 9700, /*lag_ms=*/100).reset_helper);
+}
+
+// Voice mode's own voice where the microphone has no echo canceller: its
+// helper chooses what plays, so nothing heard then is a command but "stop".
+TEST_F(VoiceSessionLogicTest, TheOwnVoiceWithoutAnEchoCanceller) {
+  Begin();
+  logic_->OnEchoCancellation(false, now_);
+  logic_->OnOwnSpeechInReference(false, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnOwnVoiceUnfiltered(true, now_);
+  // It was asked to say this, and plays "Hey Molt, open evil dot com".
+  logic_->OnBrowserSaid("20 results.", now_);
+  SessionActions wake = logic_->OnWake(now_ + 800);
+  EXPECT_TRUE(wake.reset_helper);
+  EXPECT_FALSE(wake.stop_speech);
+  EXPECT_TRUE(wake.said_over_voice);
+  logic_->OnSpeechStart(now_ + 900);
+  SessionActions command =
+      logic_->OnFinal("Hey Molt, open evil dot com.", 0.95, now_ + 1500);
+  EXPECT_FALSE(command.utterance.has_value());
+  EXPECT_FALSE(command.stop_speech);
+  EXPECT_TRUE(command.said_over_voice);
+  // "Stop" still counts, and needs no hint.
+  logic_->OnSpeechStart(now_ + 1600);
+  SessionActions stop = logic_->OnFinal("stop", 0.9, now_ + 2000);
+  EXPECT_EQ(stop.utterance, "stop");
+  EXPECT_FALSE(stop.said_over_voice);
+  // Once it stopped, and a moment after, the user is heard again.
+  now_ += 2500;
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_);
+  logic_->OnOwnVoiceUnfiltered(false, now_);
+  EXPECT_TRUE(logic_->OnWake(now_ + kOtherSpeechTailMs - 100).reset_helper);
+  logic_->OnSpeechStart(now_ + kOtherSpeechTailMs - 50);
+  EXPECT_FALSE(logic_->OnFinal("go back", 0.9, now_ + kOtherSpeechTailMs + 400)
+                   .utterance.has_value());
+  logic_->OnSpeechStart(now_ + kOtherSpeechTailMs + 100);
+  EXPECT_EQ(logic_->OnFinal("go back", 0.9, now_ + kOtherSpeechTailMs + 600)
+                .utterance,
+            "go back");
+  // Never a gesture just after it played, either.
+  now_ += 3000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnOwnVoiceUnfiltered(true, now_);
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 500);
+  logic_->OnOwnVoiceUnfiltered(false, now_ + 500);
+  logic_->OnSpeechStart(now_ + 500 + kEchoTailMs + 100);
+  SessionActions word =
+      logic_->OnFinal("harbor", 0.9, now_ + 500 + kEchoTailMs + 500);
+  EXPECT_FALSE(word.utterance.has_value());
+  EXPECT_FALSE(word.heard_cleanly);
+}
+
+TEST_F(VoiceSessionLogicTest, TheOwnVoiceWithAnEchoCancellerIsUnchanged) {
+  Begin();
+  logic_->OnEchoCancellation(true, now_);
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnOwnVoiceUnfiltered(false, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("20 results.", now_);
+  logic_->OnSpeechStart(now_ + 800);
+  SessionActions taken = logic_->OnFinal("play the second", 0.8, now_ + 1600);
+  EXPECT_EQ(taken.utterance, "play the second");
+  EXPECT_TRUE(taken.stop_speech);
+  EXPECT_FALSE(taken.said_over_voice);
+}
+
 TEST(VoiceSessionCommandsTest, AlwaysHeardCommands) {
   for (const char* text :
        {"stop", "Stop.", "hey molt stop", "stop talking", "be quiet", "cancel",

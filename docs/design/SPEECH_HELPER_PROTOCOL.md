@@ -151,7 +151,11 @@ fields are well-formed UTF-8 of at most 1,000 bytes, with no control
 characters (white space is one space). Every object has `"type"`; every
 event but `ready` and `error` also has `"epoch"` (§2.3) and `"audio_ms"`:
 how much audio the helper had received when it wrote the event (its own
-clock: 0 at the first AUDIO sample, in milliseconds of audio).
+clock: 0 at the first AUDIO sample, in milliseconds of audio, rounded
+down). The browser maps it back to when that audio was captured, from
+what it sent and the microphone's timestamps, to judge when an utterance
+was said (TOUCHLESS_BROWSING.md §5.1, "When it was said"); a value past
+the audio sent maps to nothing, and only ever makes the browser stricter.
 
 **The browser treats every line as untrusted.** A hijacked helper can
 write anything: the browser checks the line length, that it parses as one

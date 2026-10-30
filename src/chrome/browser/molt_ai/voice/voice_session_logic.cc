@@ -210,34 +210,58 @@ SessionActions VoiceSessionLogic::OnHelperLost(int64_t now_ms) {
 
 // ---- The helper's events ---------------------------------------------------
 
+// static
+int64_t VoiceSessionLogic::HeardAt(int64_t now_ms,
+                                   std::optional<int64_t> lag_ms) {
+  // Never later than it arrived; and audio the helper wasn't sent is taken
+  // to be at least as late as the most an utterance heard cleanly may lag.
+  const int64_t lag = lag_ms ? std::clamp<int64_t>(*lag_ms, 0, kMaxUtteranceMs)
+                             : kMaxHeardLagMs;
+  return now_ms - lag;
+}
+
+// static
+bool VoiceSessionLogic::Lagged(std::optional<int64_t> lag_ms) {
+  return !lag_ms || *lag_ms > kMaxHeardLagMs;
+}
+
 VoiceSessionLogic::Utterance VoiceSessionLogic::NewUtterance(
     bool woke,
-    int64_t now_ms) const {
+    int64_t now_ms,
+    std::optional<int64_t> lag_ms) const {
+  const int64_t heard_ms = HeardAt(now_ms, lag_ms);
   Utterance utterance;
   utterance.woke = woke;
   utterance.open = !woke && (settings_.always_listening ||
                              FollowUpOpen(now_ms) || BargeInOpen());
-  utterance.during_speech = SpeakingOrTail(now_ms);
+  // When its audio was captured: the browser's echo tail reaches back
+  // that far for a helper that runs behind.
+  utterance.during_speech = SpeakingOrTail(heard_ms);
   utterance.echo_cancelled = own_speech_in_reference_;
   utterance.started_ms = now_ms;
-  utterance.begun_ms = now_ms;
+  utterance.begun_ms = heard_ms;
+  utterance.lagged = Lagged(lag_ms);
   return utterance;
 }
 
-SessionActions VoiceSessionLogic::OnWake(int64_t now_ms) {
+SessionActions VoiceSessionLogic::OnWake(int64_t now_ms,
+                                         std::optional<int64_t> lag_ms) {
   SessionActions actions;
   if (!Listening()) {
     return actions;
   }
   // The browser's own voice saying the wake phrase (a page's title read
-  // out), or another source's speech (a page saying it): not the user.
-  if ((SpeakingOrTail(now_ms) && SaidWakePhrase(now_ms)) ||
-      OtherSpeechSince(now_ms)) {
+  // out), or another source's speech (a page saying it, or voice mode's
+  // own voice with no echo canceller): not the user.
+  const int64_t heard_ms = HeardAt(now_ms, lag_ms);
+  if ((SpeakingOrTail(heard_ms) && SaidWakePhrase(heard_ms)) ||
+      OtherSpeechSince(heard_ms)) {
     actions.reset_helper = true;
+    actions.said_over_voice = OwnVoiceUnfilteredSince(heard_ms);
     return Finish(std::move(actions), now_ms);
   }
   EndUtterance(&actions);
-  utterance_ = NewUtterance(/*woke=*/true, now_ms);
+  utterance_ = NewUtterance(/*woke=*/true, now_ms, lag_ms);
   wake_until_ms_ = now_ms + kWakeTimeoutMs;
   if (activity_ == BrowserActivity::kSpeaking) {
     actions.stop_speech = true;
@@ -246,7 +270,8 @@ SessionActions VoiceSessionLogic::OnWake(int64_t now_ms) {
   return Finish(std::move(actions), now_ms);
 }
 
-SessionActions VoiceSessionLogic::OnSpeechStart(int64_t now_ms) {
+SessionActions VoiceSessionLogic::OnSpeechStart(int64_t now_ms,
+                                                std::optional<int64_t> lag_ms) {
   SessionActions actions;
   if (!Listening()) {
     return actions;
@@ -254,24 +279,27 @@ SessionActions VoiceSessionLogic::OnSpeechStart(int64_t now_ms) {
   if (utterance_ && utterance_->woke && !utterance_->started) {
     utterance_->started = true;
     utterance_->started_ms = now_ms;
+    utterance_->lagged = utterance_->lagged || Lagged(lag_ms);
     wake_until_ms_ = 0;
     return Finish(std::move(actions), now_ms);
   }
   EndUtterance(&actions);
-  utterance_ = NewUtterance(/*woke=*/false, now_ms);
+  utterance_ = NewUtterance(/*woke=*/false, now_ms, lag_ms);
   utterance_->started = true;
   return Finish(std::move(actions), now_ms);
 }
 
 SessionActions VoiceSessionLogic::OnPartial(std::string_view text,
-                                            int64_t now_ms) {
+                                            int64_t now_ms,
+                                            std::optional<int64_t> lag_ms) {
   SessionActions actions;
   if (!Listening()) {
     return actions;
   }
   if (!utterance_) {
-    utterance_ = NewUtterance(/*woke=*/false, now_ms);
+    utterance_ = NewUtterance(/*woke=*/false, now_ms, lag_ms);
   }
+  utterance_->lagged = utterance_->lagged || Lagged(lag_ms);
   if (!utterance_->started) {
     utterance_->started = true;
     utterance_->started_ms = now_ms;
@@ -286,13 +314,15 @@ SessionActions VoiceSessionLogic::OnPartial(std::string_view text,
 
 SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
                                           double confidence,
-                                          int64_t now_ms) {
+                                          int64_t now_ms,
+                                          std::optional<int64_t> lag_ms) {
   SessionActions actions;
   if (!Listening()) {
     return actions;
   }
-  const Utterance utterance =
-      utterance_ ? *utterance_ : NewUtterance(/*woke=*/false, now_ms);
+  Utterance utterance =
+      utterance_ ? *utterance_ : NewUtterance(/*woke=*/false, now_ms, lag_ms);
+  utterance.lagged = utterance.lagged || Lagged(lag_ms);
   EndUtterance(&actions);
   wake_until_ms_ = 0;
   bool take = false;
@@ -302,6 +332,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
     } else if (OtherSpeechSince(utterance.begun_ms)) {
       // Another source spoke while this was said: it may be what was heard.
       take = false;
+      actions.said_over_voice = OwnVoiceUnfilteredSince(utterance.begun_ms);
     } else if (utterance.woke) {
       take = true;
     } else if (utterance.open && !utterance.during_speech) {
@@ -310,7 +341,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       // Said over the browser's own voice: a command unless it is that
       // voice heard back.
       take = confidence >= kMinConfidenceWithoutWake &&
-             !EchoOfBrowser(text, now_ms);
+             !EchoOfBrowser(text, utterance.begun_ms);
       if (take && activity_ == BrowserActivity::kSpeaking) {
         actions.stop_speech = true;
       }
@@ -330,13 +361,15 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   return Finish(std::move(actions), now_ms);
 }
 
-SessionActions VoiceSessionLogic::OnSpeechEnd(int64_t now_ms) {
+SessionActions VoiceSessionLogic::OnSpeechEnd(int64_t now_ms,
+                                              std::optional<int64_t> lag_ms) {
   SessionActions actions;
   if (!Listening()) {
     return actions;
   }
   if (utterance_ && utterance_->ended_ms < 0) {
     utterance_->ended_ms = now_ms;
+    utterance_->lagged = utterance_->lagged || Lagged(lag_ms);
   }
   return Finish(std::move(actions), now_ms);
 }
@@ -412,6 +445,16 @@ SessionActions VoiceSessionLogic::OnEchoCancellation(bool cancelled,
 SessionActions VoiceSessionLogic::OnOwnSpeechInReference(bool in_reference,
                                                          int64_t now_ms) {
   own_speech_in_reference_ = in_reference;
+  return Finish(SessionActions(), now_ms);
+}
+
+SessionActions VoiceSessionLogic::OnOwnVoiceUnfiltered(bool playing,
+                                                       int64_t now_ms) {
+  // When it stops, the last time it was seen playing is now.
+  if (playing || own_voice_unfiltered_) {
+    own_voice_unfiltered_ms_ = now_ms;
+  }
+  own_voice_unfiltered_ = playing;
   return Finish(SessionActions(), now_ms);
 }
 
@@ -491,14 +534,25 @@ bool VoiceSessionLogic::FollowUpOpen(int64_t now_ms) const {
          (utterance_ && utterance_->open && utterance_->ended_ms < 0);
 }
 
-bool VoiceSessionLogic::SpeakingOrTail(int64_t now_ms) const {
+bool VoiceSessionLogic::SpeakingOrTail(int64_t at_ms) const {
   return activity_ == BrowserActivity::kSpeaking ||
-         (speaking_ended_ms_ >= 0 && now_ms - speaking_ended_ms_ < kEchoTailMs);
+         (speaking_ended_ms_ >= 0 && at_ms - speaking_ended_ms_ < kEchoTailMs);
+}
+
+bool VoiceSessionLogic::OwnVoiceUnfilteredSince(int64_t since_ms) const {
+  return own_voice_unfiltered_ ||
+         (own_voice_unfiltered_ms_ >= 0 &&
+          own_voice_unfiltered_ms_ + kOtherSpeechTailMs >= since_ms);
 }
 
 bool VoiceSessionLogic::OtherSpeechSince(int64_t since_ms) const {
   if (other_speaking_ || (other_speech_ms_ >= 0 &&
                           other_speech_ms_ + kOtherSpeechTailMs >= since_ms)) {
+    return true;
+  }
+  // Voice mode's own voice with no echo canceller: its helper chooses what
+  // the microphone hears ("Hey Molt, open ...").
+  if (OwnVoiceUnfilteredSince(since_ms)) {
     return true;
   }
   // Without an echo canceller, a tab's sound is heard as it is: a video
@@ -516,6 +570,12 @@ bool VoiceSessionLogic::Counts(const Utterance& utterance) const {
 bool VoiceSessionLogic::HeardCleanly(const Utterance& utterance,
                                      double confidence) const {
   if (utterance.during_speech || activity_ == BrowserActivity::kSpeaking) {
+    return false;
+  }
+  // A helper far behind the microphone may have heard the browser's last
+  // words as if after them; one whose audio_ms doesn't fit what it was
+  // sent can't be placed at all.
+  if (utterance.lagged) {
     return false;
   }
   // The browser's last words, their echo and the helper's lag.

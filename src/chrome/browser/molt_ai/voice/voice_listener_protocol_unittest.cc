@@ -679,6 +679,67 @@ TEST(VoiceListenerProtocolTest, OnlyTheCurrentHelpersReadyCounts) {
   EXPECT_TRUE(count.exhausted());
 }
 
+// The helper's audio_ms, mapped back to when that audio was captured.
+TEST(VoiceListenerProtocolTest, AudioClockMapsTheHelpersTime) {
+  HelperAudioClock clock;
+  EXPECT_FALSE(clock.CapturedAt(0).has_value());
+  // Two 50 ms frames, captured back to back, then one after a gap (frames
+  // dropped while the helper's input was backed up).
+  clock.OnSent(800, 1050);
+  clock.OnSent(800, 1100);
+  clock.OnSent(800, 2000);
+  EXPECT_EQ(clock.sent_samples(), 2400);
+  EXPECT_EQ(clock.CapturedAt(0), 1000);
+  EXPECT_EQ(clock.CapturedAt(25), 1025);
+  EXPECT_EQ(clock.CapturedAt(50), 1050);
+  EXPECT_EQ(clock.CapturedAt(75), 1075);
+  EXPECT_EQ(clock.CapturedAt(100), 1100);
+  EXPECT_EQ(clock.CapturedAt(125), 1975);
+  EXPECT_EQ(clock.CapturedAt(150), 2000);
+  // Past what was sent, or negative: nothing.
+  EXPECT_FALSE(clock.CapturedAt(151).has_value());
+  EXPECT_FALSE(clock.CapturedAt(-1).has_value());
+  EXPECT_FALSE(clock.CapturedAt(int64_t{1} << 53).has_value());
+  // The lag of an event that came at a time, never below 0.
+  EXPECT_EQ(clock.LagMs(50, 1300), 250);
+  EXPECT_EQ(clock.LagMs(150, 1900), 0);
+  EXPECT_FALSE(clock.LagMs(151, 5000).has_value());
+}
+
+TEST(VoiceListenerProtocolTest, AudioClockRoundsTowardTheEarlier) {
+  HelperAudioClock clock;
+  // 815 samples: the helper says 50 ms (rounded down), never 51.
+  clock.OnSent(815, 2000);
+  EXPECT_FALSE(clock.CapturedAt(51).has_value());
+  // 15 samples (0.9375 ms) before the end, taken as a whole millisecond.
+  EXPECT_EQ(clock.CapturedAt(50), 1999);
+  // Empty or oversized frames aren't audio the helper got.
+  clock.OnSent(0, 3000);
+  clock.OnSent(kMaxFramePayloadBytes / 2 + 1, 3000);
+  EXPECT_EQ(clock.sent_samples(), 815);
+}
+
+TEST(VoiceListenerProtocolTest, AudioClockForgetsAndResets) {
+  HelperAudioClock clock;
+  for (size_t i = 0; i < HelperAudioClock::kMaxSpans + 10; ++i) {
+    clock.OnSent(800, 1000 + 50 * static_cast<int64_t>(i + 1));
+  }
+  // The oldest frames are forgotten: their audio maps to nothing.
+  EXPECT_FALSE(clock.CapturedAt(0).has_value());
+  EXPECT_FALSE(clock.CapturedAt(499).has_value());
+  EXPECT_EQ(clock.CapturedAt(500), 1500);
+  const int64_t last_ms =
+      clock.sent_samples() / HelperAudioClock::kSamplesPerMs;
+  EXPECT_EQ(clock.CapturedAt(last_ms), 1000 + last_ms);
+  // A new helper's clock starts again at 0.
+  clock.Reset();
+  EXPECT_EQ(clock.sent_samples(), 0);
+  EXPECT_FALSE(clock.CapturedAt(0).has_value());
+  clock.OnSent(800, 90050);
+  EXPECT_EQ(clock.CapturedAt(0), 90000);
+  EXPECT_FALSE(clock.CapturedAt(51).has_value());
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai

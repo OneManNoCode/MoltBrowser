@@ -344,8 +344,13 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
   }
   std::vector<std::vector<int16_t>> frames;
   chunker_.Add(audio_source->channel(0), &frames);
+  // |audio_capture_time| is the first sample's: a frame completed here ends
+  // at the latest with this buffer (the helper's clock, voice_listener.h).
+  const base::TimeTicks end_captured =
+      audio_capture_time + base::Microseconds(int64_t{audio_source->frames()} *
+                                              1000000 / kHelperSampleRate);
   for (const std::vector<int16_t>& frame : frames) {
-    sink_->Push(frame);
+    sink_->Push(frame, end_captured);
   }
 }
 
