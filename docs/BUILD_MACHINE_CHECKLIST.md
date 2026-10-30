@@ -421,6 +421,32 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 - [ ] Merge the pins-and-version PR; `git pull --ff-only`; `./scripts/setup.sh`
   copies the overlay again (from CLAUDE.md "Git Workflow").
 
+### 2.7 The speech helper's sources (speech-helper)
+
+`scripts/bundle-speech.sh` pins every source tarball (sherpa-onnx, ONNX
+Runtime and their dependencies) and every model file by SHA-256. The
+tarball pins were set where github.com's `/archive/` downloads were
+blocked: each was reproduced from its pinned commit with
+`git archive | gzip -n`, which gives GitHub's bytes (it matched every
+upstream pin there is: sherpa-onnx's own seven, GitLab's Eigen tarball and
+ONNX Runtime's pin of KleidiAI's tarball). Confirm them with real downloads
+once, before the first bundled build:
+
+- [ ] On a trusted machine (from speech-helper):
+  ```bash
+  scripts/bundle-speech.sh --build-only --fetch download --cache /tmp/speech-pins 2>&1 | tee ~/molt-v0.3.0/speech-pins.log
+  grep -nE 'FATAL|mismatch' ~/molt-v0.3.0/speech-pins.log
+  ```
+  *Expected:* no match: every download matches its pin (then it builds,
+  §3.4; stop it with Ctrl-C if the pins were all you wanted). A mismatch
+  means GitHub serves other bytes for the same commit: check the commit
+  the tarball holds (`gunzip -c FILE | git get-tar-commit-id` must print the
+  commit pinned next to it) and, if it is the pinned one, replace that
+  SHA-256 with the download's in `scripts/bundle-speech.sh` and say so in
+  the PR. Never move a commit pin without reading the upstream change.
+  *Recorded in* `scripts/bundle-speech.sh` (`SOURCES`, `SHERPA_DEPS`,
+  `SHERPA_SOURCE_DIRS`, `ORT_DEPS`, `MODEL_ARCHIVES`, `MODEL_FILES`).
+
 ## 3. Configure and build
 
 The first time, follow the order of "First build" at the top: the static
@@ -506,6 +532,65 @@ dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
   (implied). If the runner's RAM can't take the ThinLTO link, try
   `use_thin_lto = false` first and record what `gn gen` says, then the link
   time and peak memory here.
+
+### 3.4 The speech helper (speech-helper)
+
+`molt-speech` (`docs/design/SPEECH_HELPER_PROTOCOL.md`), touchless
+browsing's resident speech helper, is built outside GN by
+`scripts/bundle-speech.sh`, like whisper-cli: ONNX Runtime 1.28.2 (CPU,
+static), sherpa-onnx 2.0.1 (static, no TTS) and the helper, linked into one
+executable, plus three models (about 80 MB). The first run builds ONNX
+Runtime (40 minutes at `--jobs 2` on a 4-core server; allow an hour) and
+sherpa-onnx (5 minutes), and needs about 2 GB of disk for its cache; later
+runs relink in a minute. Bundling is
+opt-in until voice listening ships (`MOLT_BUNDLE_SPEECH=1`, §11).
+
+- [ ] macOS arm64 (from speech-helper; verify the command, not run on a
+  Mac yet): needs CMake 3.28 or later, Xcode's clang, `python3`, `git`,
+  `patch` and preferably `ninja` (Homebrew's are fine: nothing of them
+  ships).
+  ```bash
+  MOLT_BUNDLE_SPEECH=1 ./scripts/build.sh 2>&1 | tee ~/molt-v0.3.0/build-speech-mac.log
+  # or, after a build: scripts/bundle-speech.sh --app chromium/src/out/MoltBrowser/MoltBrowser.app
+  otool -L chromium/src/out/MoltBrowser/MoltBrowser.app/Contents/Resources/speech/molt-speech
+  scripts/bundle-speech.sh --verify chromium/src/out/MoltBrowser/MoltBrowser.app/Contents/Resources
+  ```
+  *Expected:* "[bundle-speech] molt-speech ... MB, SHA-256 ...";
+  `otool -L` lists only `/usr/lib/` and `/System/Library/` libraries; the
+  verify step says "OK: 13 model files match their pins". On Linux x64 the
+  stripped helper is 27 MB.
+- [ ] macOS signing (from speech-helper, CLAUDE.md "Packaging gotchas"):
+  `scripts/release.sh`, `scripts/sign-app.sh` and `scripts/dev-install-mac.sh`
+  sign `Contents/Resources/speech/molt-speech` explicitly with the
+  hardened runtime (`codesign --deep` skips `Resources/`). *Expected:*
+  `codesign -dvv Contents/Resources/speech/molt-speech` shows the Developer
+  ID, `flags=0x10000(runtime)` and a timestamp, and notarization accepts
+  the app. It needs no entitlement (ONNX Runtime doesn't generate code).
+- [ ] Linux x64 (from speech-helper): in the build image (CMake 3.28 or
+  later; Ubuntu 24.04's is), `MOLT_BUNDLE_SPEECH=1 ./scripts/package-linux.sh`
+  puts it in `opt/moltbrowser/speech/`. *Expected:* `ldd .../speech/molt-speech`
+  lists only glibc's libraries (the C++ runtime is linked in), and the
+  checks below pass. This is the one platform it was built and run on.
+- [ ] Windows x64 (from speech-helper; deferred): from Git Bash inside a
+  "x64 Native Tools" prompt with CMake 3.28 or later, Ninja and Python 3,
+  `scripts/bundle-speech.sh --dest <staging>` gives `<staging>/speech/molt-speech.exe`
+  with the static CRT. Never run: expect to fix paths. The installer must
+  grant the helpers' capability on `speech\` as on `ocr\` and `whisper\`
+  (§7.5) once the voice session runs it in the AppContainer.
+- [ ] On each OS, the helper's own checks (from speech-helper):
+  ```bash
+  S=<the speech/ folder>
+  python3 -I tools/voice_bench/speech_helper_check.py --helper $S/molt-speech --models $S/models protocol
+  ```
+  *Expected:* every check "ok" (no audio needed). With the bench's audio
+  (`tools/voice_bench/gen_audio.py`, `--dir` its data directory), the steps
+  `accuracy bias wake latency listen` give numbers to compare with
+  `docs/design/SPEECH_HELPER_PROTOCOL.md` §8 (a slower machine: slower,
+  but the same transcripts).
+- [ ] Record the helper's SHA-256 per OS (printed, and in
+  `speech/.build-info`) with the release. It differs from machine to
+  machine (compilers), so it is recorded, not pinned; the sources and models
+  are pinned (§2.7).
 
 ## 4. Compile-risk hot spots
 
@@ -1091,6 +1176,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `PageMapTest.*`, `PageMapTextTest.*`, `PageMapAgentSafetyTest.*` (built standalone here), `AXPageSourceTest.*` (needs the build: real `ui::AXTree`s from `AXTreeUpdate`s, frames joined through child tree ids, the caps, the focused frame) | page-map |
   | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
   | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
+  | `SpeechFrameReaderTest.*`, `SpeechConfigTest.*`, `SpeechTextTest.*`, `SpeechEventsTest.*`, `SpeechListenerTest.*` (std only, built standalone here under ASan and UBSan: the speech helper's frames, CONFIG's strict JSON, hotword cleaning and the wake phrase's word pieces, the event lines, and the listening states against fake engines) | speech-helper |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1786,6 +1872,7 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   (fonts adds `molt_moltnet_font_set_fuzzer`)
   (helpers-win adds `molt_ocr_image_fuzzer` and `molt_recorded_wav_fuzzer`)
   (page-map adds `molt_page_map_fuzzer`)
+  (speech-helper adds `molt_speech_protocol_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -3565,6 +3652,15 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   memory limits (item 4), pre-warming after idle unload (5), keeping prompts
   out of crash dumps (9), whether the agent and automation reload a model
   after an idle unload (12), the macOS `sysctl` denial noise (14) (from #15).
+- [ ] **The speech helper in releases** (from speech-helper): bundle it
+  by default (`MOLT_BUNDLE_SPEECH=1` in the release scripts and workflows)
+  once voice listening ships, about 80 MB of models and a 27 MB
+  helper per platform (§3.4). And the wake-phrase model's training data:
+  the GigaSpeech spotter's model card says Apache-2.0, but GigaSpeech's own
+  terms of use couldn't be read (they sit behind a request form). Confirm
+  with its authors, or spot the wake phrase in Kroko's own transcript
+  instead (no second model; a little more CPU while waiting)
+  (`docs/design/SPEECH_HELPER_PROTOCOL.md` §7.3).
 - [ ] **Who builds the macOS release** (§10.1): `release.yml`'s macOS job
   now runs the same scripts as §10.2 (the metallib, helper bundling,
   `Libraries/` signing and DMG name it lacked when this runbook was
