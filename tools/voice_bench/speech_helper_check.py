@@ -87,6 +87,7 @@ class Helper:
                                      stderr=subprocess.PIPE)
         self.lines = []
         self.bad = []
+        self.samples = 0  # audio sent so far, which events' audio_ms count
         self.cond = threading.Condition()
         self.stderr = b""
         threading.Thread(target=self._err, daemon=True).start()
@@ -404,7 +405,9 @@ def run_clips(h, rows, realtime=False, pad=1.0, reset_after=False, wait=20.0,
         recs = h.lines[n:]
         if reset_after:
             h.send(frame(RESET))
-        out.append({"id": clip_id, "row": row, "t_start": t_start, "events": recs})
+        out.append({"id": clip_id, "row": row, "t_start": t_start, "events": recs,
+                    "audio_start_ms": h.samples * 1000 / SR})
+        h.samples += len(pcm) // 2
     return out
 
 
@@ -590,7 +593,7 @@ def step_latency(args):
         recs = run_clips(h, rows, realtime=True, pad=1.5)
         rss = h.peak_rss_kb()
         status = h.close()
-        to_final, to_end, first_partial = [], [], []
+        to_final, to_end, first_partial, vad_end = [], [], [], []
         for rec in recs:
             speech_end = float(rec["row"][4])
             speech_start = float(rec["row"][3])
@@ -602,6 +605,11 @@ def step_latency(args):
                 to_final.append(1000 * (fin[-1] - t0 - speech_end))
             if end:
                 to_end.append(1000 * (end[-1] - t0 - speech_end))
+            # Where in the audio the VAD closed the utterance: no machine's
+            # speed in it, so it should match the bench's "VAD end".
+            end_ms = [e["audio_ms"] for _, e in rec["events"] if e.get("type") == "speech_end"]
+            if end_ms:
+                vad_end.append(end_ms[-1] - rec["audio_start_ms"] - 1000 * speech_end)
             if part:
                 first_partial.append(1000 * (part[0] - t0 - speech_start))
         out["threads_%d" % threads] = {
@@ -609,6 +617,8 @@ def step_latency(args):
             "end_of_speech_to_final_ms_median": round(vbl.median(to_final), 1),
             "end_of_speech_to_final_ms_p90": round(vbl.percentile(to_final, 90), 1),
             "end_of_speech_to_speech_end_ms_median": round(vbl.median(to_end), 1),
+            "vad_end_in_audio_ms_median": round(vbl.median(vad_end), 1),
+            "vad_end_in_audio_ms_max": round(max(vad_end), 1) if vad_end else None,
             "speech_end_to_final_ms_median": round(vbl.median(
                 [a - b for a, b in zip(to_final, to_end)]), 1),
             "first_partial_ms_median": round(vbl.median(first_partial), 1),
