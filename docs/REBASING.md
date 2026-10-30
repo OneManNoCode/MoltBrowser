@@ -551,3 +551,85 @@ Still to do on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`,
 "from the .74 respin"): `./scripts/setup.sh --resync` (ten subprojects
 move, so expect a near-full rebuild), then the build and tests as for 156.
 No Rust crate changed, so gnrt needs no extra run.
+
+
+## 156.0.8078.80 (2026-10-30)
+
+The 156 branch's second security respin. Chrome 156.0.8078.79 (Linux) and
+156.0.8078.80 (Windows and macOS) went to Stable on 2026-10-29, and
+Extended Stable started moving to .80 the same day (25% of Windows and
+macOS); the two tags differ only in `chrome/VERSION`. Chrome Releases was
+not reachable from the machine that ran this, so what the respin fixes was
+read from the merge commits between the tags.
+
+`tools/chromium/rebase.py 156.0.8078.80 --apply` from 156.0.8078.74:
+
+| | Files |
+|---|---|
+| Patched upstream files | 650: 4 clean 3-way merges, 646 left alone upstream, no conflict, none deleted or moved |
+| Identical copies | none |
+| First-party paths now upstream | 0 |
+| Removed upstream symbols our code uses | 0 (896 headers scanned, 3 changed) |
+| DEPS whole files | 66; 32 in a subproject that moved: 29 unchanged in it, 3 our own |
+
+What upstream changed in the files we patch (all merged cleanly; none
+touches a MoltBrowser line, and the nearest is 9 lines away):
+
+- **Quota database** (`storage/browser/quota/quota_database.{cc,h}`): the
+  M103 migration from the profile's root (`MoveLegacyDatabase()`) is gone,
+  and a bucket deletion that fails still clears the doomed directories.
+  MoltNet's one-key listing
+  (`MoltGetBucketsForStorageKeyModifiedBetween()`) reads the same table
+  after the same `EnsureOpened()`.
+- **Mouse events** (`mouse_event.cc`): before dispatch, a `relatedTarget`
+  from another origin is checked (`ClearCrossOriginRelatedTarget`, on by
+  default; pointer boundary events no longer carry one across origins).
+  MoltNet's `screenX`/`screenY` hook is in another function.
+- **Video tracks** (`media_stream_video_track.cc`): stopping a track
+  returns safely when the source's `ended` events delete the track. The
+  MoltNet camera hook in `GetSettings()` is untouched.
+
+The rest of the respin is in files we don't patch: Blink (element names
+and ids, highlights, error events, `<area>` focus rings, audio tracks),
+the HTTP cache (a range response must match its own `Content-Range`),
+Cache Storage, the quota's storage directory and the file system's
+directory database, File System Access's sensitive paths, autofill's
+one-time codes, the context menu's translate items
+(`docs/design/PAGE_TRANSLATION.md`) and Graphite readback.
+
+**DEPS subprojects.** Four move: V8 (15.6.75.25 to 15.6.75.27: Turboshaft
+bounds a function's stack frame, cppgc's write barrier), Skia
+(`chrome/m156`: SkSL's parser, Ganesh's BGRA uploads), Dawn (asynchronous
+pipeline creation) and PDFium (zero-size text). `src/` keeps whole files
+in two of them: Skia 26 (23 upstream, 3 ours) and V8 6. None of the 29
+upstream ones changed between the two subproject commits, so
+`whole_files.txt` only records the new commits. WebRTC, ICU and the
+search engine definitions don't move. V8 and Skia came from their GitHub
+mirrors; Dawn and PDFium hold no whole files, and the two release
+tarballs show one changed source file in each.
+
+Also: the .80 source tarball's SHA-256 is pinned (from its `.hashes`
+file, whose MD5 the bucket's own agrees with; the whole stream matched it
+in both tools that read it), and the MoltNet locale tables are unchanged
+but for the version they name.
+
+Checks here: `verify_patches.py` OK (650 patches, no identical copies, 66
+whole files at the pin's subproject commits); the compile check at .80,
+every changed file on every platform: 1684 rows, 1630 checked against the
+real headers, 52 partly on stand-ins and 2 not checked (an iOS file, and
+on the Mac `helper_sandbox_test_helper_posix.cc`, whose `sys/xattr.h` the
+Mac stand-ins lack), 0 errors and 0 plugin findings. The work dir moved by
+itself (one tarball stream); of 1683 compiles the result cache served 618
+(Linux 556 of 1009, Windows 25 of 612) and 1065 compiled again. The static
+GN check at .80: 0 errors in its six configurations (one warning, the
+adblock crate the build machine vendors), `checkdeps` (1367 files) and
+`blink-audit` (275 files) clean. The patch tools', compile check's and
+static GN check's own tests, `molt_fuzz.py check`, the leak kit's tests,
+`voice_commands_doc.py` and the WebUI checks pass.
+
+Still to do on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`,
+"from the .80 respin"): `./scripts/setup.sh --resync` (four subprojects
+and 76 Chromium files move; V8's and Skia's headers reach most targets,
+so expect most of the build to recompile), then the build and tests as
+for 156, with the upstream suites of the merged files. No Rust crate
+changed.
