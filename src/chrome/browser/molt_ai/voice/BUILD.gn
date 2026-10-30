@@ -603,9 +603,12 @@ source_set("voice_controller") {
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/automation:automation_policy",
 
-    # A dangerous download kept or discarded as the download bubble does,
-    # and the password manager's save bubble answered as its buttons do.
+    # A dangerous download kept or discarded as the download bubble does
+    # (through its own DownloadBubbleUIController, which records the
+    # warning's actions), and the password manager's save bubble answered as
+    # its buttons do.
     "//chrome/browser/download",
+    "//chrome/browser/download/bubble",
     "//chrome/browser/ui/passwords",
     "//components/download/public/common:public",
     "//components/password_manager/core/browser",
@@ -742,7 +745,8 @@ source_set("voice_loop_unit_tests") {
 
 # A permission prompt allowed by its confirmation word and refused by "no";
 # the word typed, unclean, replayed or late refused; confirm(), prompt() and
-# beforeunload answered by voice (chrome/test/data/molt_voice/prompts.html).
+# beforeunload answered by voice (chrome/test/data/molt_voice/prompts.html);
+# a dangerous download kept and discarded as the bubble does.
 # Picked up by :browser_tests.
 source_set("voice_prompts_browser_tests") {
   testonly = true
@@ -755,13 +759,18 @@ source_set("voice_prompts_browser_tests") {
     ":voice_prompts",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/download",
+    "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/test:test_support",
     "//chrome/test:test_support_ui",
+    "//components/download/public/common:public",
     "//components/permissions",
     "//components/permissions:test_support",
+    "//components/prefs",
+    "//components/safe_browsing/core/common:safe_browsing_prefs",
     "//content/public/browser",
     "//content/test:test_support",
     "//net:test_support",

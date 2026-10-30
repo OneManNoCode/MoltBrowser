@@ -24,22 +24,30 @@
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
+#include "chrome/browser/download/download_item_warning_data.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/download/public/common/download_danger_type.h"
+#include "components/download/public/common/download_item.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/permissions/test/mock_permission_prompt_factory.h"
+#include "components/prefs/pref_service.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+#include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_platform.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/download_test_observer.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -111,11 +119,11 @@ class SpeechLog : public VoiceController::Observer {
     return false;
   }
   // The confirmation word the last prompt said ("... say harbor. ...").
-  std::string LastWord() const {
+  std::string LastWord(std::string_view before = "To allow it, say ") const {
     for (auto it = said_.rbegin(); it != said_.rend(); ++it) {
-      const size_t at = it->find("To allow it, say ");
+      const size_t at = it->find(before);
       if (at != std::string::npos) {
-        const size_t start = at + 17;
+        const size_t start = at + before.size();
         return it->substr(start, it->find('.', start) - start);
       }
     }
@@ -194,6 +202,24 @@ class VoiceBrowserPromptsBrowserTest : public InProcessBrowserTest {
              speech_.Heard("localhost wants to show notifications.");
     }));
     return speech_.LastWord();
+  }
+
+  // A file dangerous for its type (.swf, on every platform) downloaded in
+  // the tab; the download system decides its danger (no Safe Browsing).
+  download::DownloadItem* DownloadDangerousFile() {
+    browser()->GetProfile()->GetPrefs()->SetBoolean(prefs::kSafeBrowsingEnabled,
+                                                    false);
+    content::DownloadManager* manager =
+        browser()->GetProfile()->GetDownloadManager();
+    content::DownloadTestObserverTerminal dangerous(
+        manager, 1, content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_QUIT);
+    EXPECT_TRUE(content::ExecJs(
+        tab(), "location.href = '/downloads/dangerous/dangerous.swf';"));
+    dangerous.WaitForFinished();
+    std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> downloads;
+    manager->GetAllDownloads(&downloads);
+    EXPECT_EQ(downloads.size(), 1u);
+    return downloads.empty() ? nullptr : downloads[0].get();
   }
 
   FakeTtsPlatform tts_;
@@ -332,6 +358,49 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
   voice->HandleHeardUtterance("leave", /*heard_cleanly=*/false);
   EXPECT_TRUE(base::test::RunUntil(
       [&]() { return tab()->GetLastCommittedURL() == away; }));
+}
+
+// A file the bubble warns about for its type ("Download unverified file"):
+// kept by its word as the bubble's warning keeps it, one word for its one
+// click, with the warning's actions recorded as the bubble records them.
+IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
+                       ADangerousDownloadKeptAsTheBubbleKeepsIt) {
+  VoiceController* voice = Start();
+  download::DownloadItem* item = DownloadDangerousFile();
+  ASSERT_TRUE(item);
+  ASSERT_EQ(item->GetDangerType(),
+            download::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE);
+
+  ASSERT_TRUE(WaitForSpeech("may be harmful. To keep it, say "));
+  const std::string word = speech_.LastWord("To keep it, say ");
+  ASSERT_TRUE(MatchConfirmationWord(word)) << word;
+  EXPECT_FALSE(DownloadItemWarningData::WarningFirstShownTime(item).is_null());
+  voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return item->GetDangerType() ==
+           download::DOWNLOAD_DANGER_TYPE_USER_VALIDATED;
+  }));
+  bool proceeded = false;
+  for (const DownloadItemWarningData::WarningActionEvent& event :
+       DownloadItemWarningData::GetWarningActionEvents(item)) {
+    proceeded =
+        proceeded ||
+        (event.surface ==
+             DownloadItemWarningData::WarningSurface::BUBBLE_SUBPAGE &&
+         event.action == DownloadItemWarningData::WarningAction::PROCEED);
+  }
+  EXPECT_TRUE(proceeded);
+}
+
+IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
+                       ADangerousDownloadDiscardedByVoice) {
+  VoiceController* voice = Start();
+  download::DownloadItem* item = DownloadDangerousFile();
+  ASSERT_TRUE(item);
+  ASSERT_TRUE(WaitForSpeech("may be harmful."));
+  voice->HandleHeardUtterance("discard", /*heard_cleanly=*/false);
+  EXPECT_TRUE(base::test::RunUntil(
+      [&]() { return item->GetState() == download::DownloadItem::CANCELLED; }));
 }
 
 }  // namespace

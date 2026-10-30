@@ -13,11 +13,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/download/bubble/download_bubble_ui_controller.h"
 #include "chrome/browser/download/download_commands.h"
 #include "chrome/browser/download/download_item_model.h"
+#include "chrome/browser/download/download_item_warning_data.h"
 #include "chrome/browser/download/download_ui_model.h"
 #include "chrome/browser/molt_ai/security/activation_policy.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
+#include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/download_item.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/common/password_manager_ui.h"
@@ -43,6 +46,56 @@ GestureBinding KeepBinding(download::DownloadItem* item) {
   return GestureBinding{
       GestureAction::kKeepDangerousDownload,
       base::NumberToString(item->GetId()) + " " + item->GetURL().spec()};
+}
+
+// A download that is still being scanned, or that the bubble offers to scan
+// rather than to keep or delete: left to the bubble, not read.
+bool IsScanning(download::DownloadDangerType danger) {
+  switch (danger) {
+    case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_SCANNING:
+    case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_LOCAL_PASSWORD_SCANNING:
+    case download::DOWNLOAD_DANGER_TYPE_ASYNC_SCANNING:
+    case download::DOWNLOAD_DANGER_TYPE_ASYNC_LOCAL_PASSWORD_SCANNING:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// What may be kept by voice: what the bubble shows in yellow and keeps with
+// one click on its warning ("Download suspicious file", "Download
+// unverified file": DownloadBubbleSecurityViewInfo::PopulateForSuspiciousUi()
+// at 156; the downloads page keeps these without its second prompt too).
+// That is a file type's warning; everything else that might be malicious
+// is deleted by voice only.
+bool KeepableByVoice(const DownloadItemModel& model) {
+  return model.GetDangerUiPattern() ==
+             DownloadUIModel::DangerUiPattern::kSuspicious &&
+         !model.MightBeMalicious() &&
+         model.GetDangerType() == download::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE;
+}
+
+// Keeps or deletes |model|'s download as the bubble's warning does when its
+// button is clicked: DownloadBubbleUIController::ProcessDownloadButtonPress()
+// records the action on the warning (DownloadItemWarningData) and runs what
+// the bubble runs for it, then DownloadCommands sends the download report
+// and validates or deletes the file. Without a bubble for the download, the
+// same record and command.
+void ProcessAsTheBubbleDoes(download::DownloadItem* item,
+                            DownloadItemModel* model,
+                            DownloadCommands::Command command) {
+  if (DownloadBubbleUIController* bubble =
+          DownloadBubbleUIController::GetForDownload(item)) {
+    bubble->ProcessDownloadButtonPress(model->GetWeakPtr(), command,
+                                       /*is_main_view=*/false);
+    return;
+  }
+  DownloadItemWarningData::AddWarningActionEvent(
+      item, DownloadItemWarningData::WarningSurface::BUBBLE_SUBPAGE,
+      command == DownloadCommands::KEEP
+          ? DownloadItemWarningData::WarningAction::PROCEED
+          : DownloadItemWarningData::WarningAction::DISCARD);
+  DownloadCommands(model->GetWeakPtr()).ExecuteCommand(command);
 }
 
 std::string Reply(PromptKind kind, PromptAnswer answer) {
@@ -593,8 +646,9 @@ void VoiceBrowserPrompts::MaybeReadDownload(download::DownloadItem* item) {
   }
   DownloadItemModel model(item);
   const DownloadUIModel::DangerUiPattern pattern = model.GetDangerUiPattern();
-  if (pattern != DownloadUIModel::DangerUiPattern::kDangerous &&
-      pattern != DownloadUIModel::DangerUiPattern::kSuspicious) {
+  if ((pattern != DownloadUIModel::DangerUiPattern::kDangerous &&
+       pattern != DownloadUIModel::DangerUiPattern::kSuspicious) ||
+      IsScanning(model.GetDangerType())) {
     return;  // still being scanned, or an error
   }
   if (downloads_read_.size() >= 1000) {
@@ -611,13 +665,18 @@ void VoiceBrowserPrompts::MaybeReadDownload(download::DownloadItem* item) {
   prompt.malicious = pattern == DownloadUIModel::DangerUiPattern::kDangerous ||
                      model.MightBeMalicious();
   std::optional<GestureBinding> binding;
-  if (!prompt.malicious) {
+  if (!prompt.malicious && KeepableByVoice(model)) {
     binding = KeepBinding(item);
   }
   const uint32_t id = item->GetId();
   if (Begin(Source::kDownload, std::move(prompt), std::move(binding)) &&
       current_) {
     current_->download_id = id;
+    // Said and shown: the warning was shown, as the bubble records it when
+    // it shows one (the first time only).
+    DownloadItemWarningData::AddWarningActionEvent(
+        item, DownloadItemWarningData::WarningSurface::BUBBLE_SUBPAGE,
+        DownloadItemWarningData::WarningAction::SHOWN);
   }
 }
 
@@ -634,20 +693,18 @@ std::string VoiceBrowserPrompts::AnswerDownload(const Current& prompt,
     return std::string();
   }
   auto model = std::make_unique<DownloadItemModel>(item);
-  DownloadCommands commands(model->GetWeakPtr());
   switch (answer) {
     case PromptAnswer::kAllow:
-      // Never a file the bubble shows in red, whatever was minted.
-      if (!gesture || model->MightBeMalicious() ||
-          model->GetDangerUiPattern() !=
-              DownloadUIModel::DangerUiPattern::kSuspicious ||
+      // Never a file the bubble shows in red, nor one it doesn't keep with
+      // one click, whatever was minted.
+      if (!gesture || !KeepableByVoice(*model) ||
           !gestures_.Consume(*gesture, KeepBinding(item), NowMs())) {
         return "I couldn't keep it. You can decide on the downloads page.";
       }
-      commands.ExecuteCommand(DownloadCommands::KEEP);
+      ProcessAsTheBubbleDoes(item, model.get(), DownloadCommands::KEEP);
       return Reply(PromptKind::kDangerousDownload, PromptAnswer::kAllow);
     case PromptAnswer::kRefuse:
-      commands.ExecuteCommand(DownloadCommands::DISCARD);
+      ProcessAsTheBubbleDoes(item, model.get(), DownloadCommands::DISCARD);
       return std::string();
     case PromptAnswer::kNone:
     case PromptAnswer::kWrongWord:

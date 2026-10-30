@@ -165,6 +165,10 @@ rebase to it.
 3. Resolve (see below), until `grep -rn '^<<<<<<< ' src/` is empty.
 4. Handle the report's other sections: deleted/moved files, identical copies,
    collisions, the DEPS whole files, and the API changes in first-party code.
+   Re-check what the activation guard assumes of Chromium
+   (TOUCHLESS_BROWSING.md §7.5): that `postMessage` reaches only windows of
+   the page's browsing context group, with no COOP group across
+   BrowsingInstances.
 5. `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`,
    then `tools/moltnet_locale/generate_tables.py`: MoltNet's en-US strings
    and default fonts are generated from Chromium's `.grd` files. If it
