@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc
-Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
 Generated from src/third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc b/third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc
-index 5c23f18d5202032e8059d659576888496b9a567a..6d48e9958aa24c2e62bd8cbbc33854e2cb074845 100644
+index 371521a98baab6476e85e6fdfaf252a8a2c4a2a7..f3212e86f2c5bc70bf9b1f701200d06f7d3de9d5 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc
 @@ -25,6 +25,7 @@
@@ -16,7 +16,7 @@ index 5c23f18d5202032e8059d659576888496b9a567a..6d48e9958aa24c2e62bd8cbbc33854e2
  #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
  #include "third_party/blink/renderer/platform/mediastream/media_stream_component_impl.h"
  #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
-@@ -1154,6 +1155,10 @@ void MediaStreamVideoTrack::GetSettings(
+@@ -1171,6 +1172,10 @@ void MediaStreamVideoTrack::GetSettings(
    settings.resize_mode = WebString::FromAscii(std::string(
        adapter_settings().target_size() ? WebMediaStreamTrack::kResizeModeRescale
                                         : WebMediaStreamTrack::kResizeModeNone));

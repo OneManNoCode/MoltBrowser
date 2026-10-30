@@ -32,6 +32,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   The upstream files MoltBrowser keeps whole inside V8, Skia and WebRTC
   are now merged with every security release too, and the built-in search
   engine list is Chromium 156's (DuckDuckGo stays the default).
+- **Chromium 156.0.8078.80**, with Chrome's security fixes of 2026-10-29.
 - MoltBrowser's encrypted stores (API keys, password vault, form-filler
   profile, chat history, AI memory) moved from the synchronous OSCrypt,
   which Chromium 152 removed, to `os_crypt_async`. Existing files open

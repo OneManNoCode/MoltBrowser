@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/events/mouse_event.cc
-Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
 Generated from src/third_party/blink/renderer/core/events/mouse_event.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/events/mouse_event.cc b/third_party/blink/renderer/core/events/mouse_event.cc
-index 19f0f66095b4373fc111f912de9120ef167d1786..95beb57847b0a4f71347f1e3258f79a2c6c68085 100644
+index 7f9b51bb4d34ef6a16f5ee77954057e4d958d269..e45602f6ba26b77c9c33c3a75ef02d9d426ceede 100644
 --- a/third_party/blink/renderer/core/events/mouse_event.cc
 +++ b/third_party/blink/renderer/core/events/mouse_event.cc
-@@ -37,6 +37,7 @@
+@@ -39,6 +39,7 @@
  #include "third_party/blink/renderer/core/input/input_device_capabilities.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
  #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -16,7 +16,7 @@ index 19f0f66095b4373fc111f912de9120ef167d1786..95beb57847b0a4f71347f1e3258f79a2
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/page/pointer_lock_controller.h"
  #include "third_party/blink/renderer/core/paint/paint_layer.h"
-@@ -217,6 +218,13 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
+@@ -218,6 +219,13 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
      inverse_zoom_factor = 1.0f / frame->LayoutZoomFactor();
      client_point = gfx::ScalePoint(frame_point, inverse_zoom_factor);
    }

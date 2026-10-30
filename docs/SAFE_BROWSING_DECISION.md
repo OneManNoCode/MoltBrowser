@@ -6,7 +6,8 @@
 ## Where we are
 
 All of this was read in Chromium source at 156.0.8078.48 (the 156.0.8078.74
-respin changed none of it); file references are in NETWORK_TRAFFIC.md and in
+and .80 respins changed none of it); file references are in
+NETWORK_TRAFFIC.md and in
 [What changed at Chromium 156](#what-changed-at-chromium-156) below.
 
 - The macOS arm64, Linux and Windows configs build the full desktop Safe
@@ -40,7 +41,7 @@ respin changed none of it); file references are in NETWORK_TRAFFIC.md and in
 ## What changed at Chromium 156
 
 Facts only; the decision stays the owner's. Paths are relative to the
-Chromium tree at 156.0.8078.48 (unchanged at 156.0.8078.74).
+Chromium tree at 156.0.8078.48 (unchanged at 156.0.8078.80).
 
 **Hosts and requests a default MoltBrowser window makes.**
 

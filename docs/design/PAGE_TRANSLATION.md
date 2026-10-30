@@ -141,8 +141,13 @@ translate, `PartialTranslateManager`) sends the selected text to Google's
 contextual-search endpoint. On the default menu it is shown only when
 `CanManuallyTranslate()` and Google is the default search engine
 (`render_view_context_menu.cc:1401-1418`), so today never; the simplified
-menu (`kMenuSimplification`, off by default) asks only
-`TranslateManager::CanPartiallyTranslateTargetLanguage()`.
+menu (`kMenuSimplification`, off by default) asked only
+`TranslateManager::CanPartiallyTranslateTargetLanguage()` until
+156.0.8078.80, which gives its selection and text field items the same
+two checks (`AppendTranslateOrPartialTranslateItem()`). So with that flag
+on, a selection or a text field offers neither *Translate selection* nor
+*Translate to X* while Google isn't the default search engine; the page's
+own *Translate to X* still shows.
 
 ### 1.7 What MoltBrowser already has
 

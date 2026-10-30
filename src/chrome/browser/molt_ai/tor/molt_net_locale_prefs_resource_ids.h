@@ -5,7 +5,7 @@
 // chrome/app/resources/locale_settings_{win,mac,linux}.grd,
 // components/components_locale_settings.grd and
 // src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.cc
-// at Chromium 156.0.8078.74. Do not edit; change the script and rerun it with
+// at Chromium 156.0.8078.80. Do not edit; change the script and rerun it with
 // --write. Test only: the resources Chromium registers the defaults of
 // molt_net_locale_prefs_table.h from, so molt_net_locale_prefs_unittest.cc can
 // compare the table's en-US column with the paks grit builds for this platform.

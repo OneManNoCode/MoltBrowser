@@ -8,8 +8,9 @@ manual checks, the MoltNet leak kit, packaging and the offline signing.
 Windows is still at v0.2.1). Since then the October v0.3 work landed: the
 workstream merges and pull requests #2 to #55, including the rebase onto
 Chromium 152 (#11), and then the rebase onto Chromium 156.0.8078.48 (#64),
-when Chrome's Extended Stable channel moved to M156, and its first
-security respin, 156.0.8078.74 (round 31; "(from the .74 respin)" below).
+when Chrome's Extended Stable channel moved to M156, and its security
+respins 156.0.8078.74 (round 31; "(from the .74 respin)" below) and
+156.0.8078.80 (round 39; "(from the .80 respin)").
 **None of it has been compiled against Chromium 156.**
 Each PR body and design doc lists what it still needs; this page collects
 those lists in the order you do them. (#31 changed only CI, and #42 is an
@@ -199,7 +200,7 @@ what to send back.
   ```bash
   ./scripts/setup.sh --resync --target-os mac,linux 2>&1 | tee ~/molt-v0.3.0/setup.log
   ```
-  *Expected:* `chromium/src @ 156.0.8078.74 (d331de35ca8ab1358c7a17e4bd41627d55eaef51)`,
+  *Expected:* `chromium/src @ 156.0.8078.80 (fb096c0011f9d50f0a264a9376420cdea9c421e3)`,
   then `gclient sync`, hooks and `Overlay applied.` It resets `chromium/src`
   (`reset --hard`, `clean -fd`; the gitignored `out/` survives), so the
   first run from an older pin means a full rebuild. A checkout already at
@@ -207,7 +208,12 @@ what to send back.
   V8 (15.6.75.25), Skia, WebRTC, ANGLE, Dawn, devtools-frontend, ICU,
   libaom, libvpx and PDFium, so `gclient sync` fetches all of them and
   most of the build recompiles. No Rust crate changed: gnrt needs no rerun
-  for it.
+  for it. A checkout already at 156.0.8078.74 needs it again (from the .80
+  respin): that respin moves V8 (15.6.75.27), Skia, Dawn and PDFium and
+  76 Chromium files (Blink's events and DOM, storage and quota, the
+  HTTP cache, Cache Storage, File System Access), and V8's and Skia's
+  headers reach most targets, so expect most of the build to recompile
+  again. No Rust crate changed in it either.
 - [ ] The checkout is at the pin (from #11, `chromium_version.txt`):
   ```bash
   [ "$(git -C chromium/src rev-parse HEAD)" = "$(tools/chromium/pin.sh revision)" ] && echo pin-ok
@@ -238,7 +244,7 @@ what to send back.
   *Expected:* `engines-ok`. If not, regenerate with `-o <that src/ path>`
   instead of `--check`, commit it in a PR, and copy it into `chromium/src`.
   Our copy was rebuilt from 156's `search_engines_data`
-  (`5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c`, which 156.0.8078.74 still
+  (`5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c`, which 156.0.8078.80 still
   pins; `git -C chromium/src/third_party/search_engines_data/resources
   rev-parse HEAD`) from the release's source tarball (from the .74
   respin), so expect `engines-ok`; before, it was the 148-era list.
@@ -1408,9 +1414,9 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests`, `media_unittests`, `services_unittests` | `AudioProcessingPropertiesToAudioProcessingSettingsTest.*:MediaStreamAudioProcessor*:ProcessedLocalAudioSource*`; `CreateWebRtcAudioProcessingModuleTest.*:AudioProcessor*`; `AudioProcessorHandler*:InputController*:*InputStream*` (outside MoltNet the module is built and runs as before; `MoltNetAsksForCpuIndependentProcessing` is the new case) | fp-probes2 |
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `UserMediaClientTest.*:*EchoCancellationMode*:MediaStreamAudioProcessingLayout*:MediaStreamConstraintsUtilAudioTest.*:MediaStreamConstraintsRemoteAPMTest.*:MediaDevicesTest.*`; `AudioServiceAudioProcessorProxyTest.*:MediaStreamAudioTest.*`; `MoltPortableMediaTest.*:SincResampler*:VectorMath*:AudioConverter*`; `OutputDeviceMixerImplTest*:OutputDeviceMixerManagerTest.*:MixingGraphImpl.*:MixingGraphInputTest.*:AudioProcessorHandlerTest.*` (outside MoltNet the effects, the echo canceller's choice and the mixing are as before; the new cases are `UserMediaClientTest.MoltNetMicrophoneHasNoPlatformEffects`, `EchoCancellationModeTest.MoltNetUsesWebRtcEchoCancellation`, `MoltPortableMediaTest.NoCaptureEffectsInPortableMode`, `PortableAudioThreadScope`, `PortableAudioThreadMixesWithTheCCode` and `OutputDeviceMixerImplTest.MixesPortablyWhileCpuIndependentListens`) | fp-mic2 |
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `MoltNetSubnormalsTest.*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:UserMediaClientTest.*:MediaDevicesTest.*:MediaStreamConstraintsUtilAudioTest.*:*WebAudio*:*AudioWorklet*:*Biquad*:*DynamicsCompressor*:*AVIF*`; `DenormalDisablerTest.*`; `MoltPortableMediaTest.*:MoltPulseCaptureSourceTest.*:SincResampler*:AudioRendererAlgorithm*:AudioProcessorTest*:*Pulse*`; `MixingGraphImpl.*:MixingGraphInputTest.*:OutputDeviceMixerImplTest*:AudioProcessorHandlerTest.*:InputController*` (outside MoltNet the flush modes, the format, the names and the device a stream opens are as before; the new cases are `MoltNetSubnormalsTest.*`, `MoltNetMediaDevicesTest.TracksGetTheSameNames` and `GenericNamesAndGroups`, `UserMediaClientTest.MoltNetMicrophoneHasUniformFormatAndNames`, `MoltPortableMediaTest.FlushTinyPortableSamplesKeepsTheFloor`, `ScopedPortableSubnormalsComputesSubnormals`, `PortableResamplerFlushesItsKernelAndInput`, `PortableCaptureParametersAreTheSameForAll`, `CommunicationsCategoryOnlyWithRawMode`, `PortableCaptureStreamEffects`, `PortableCaptureOutputFormat` and `MoltPulseCaptureSourceTest.*`, the last on Linux) | fp-mic3 |
-
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `content_unittests` | `MoltNetCameraValuesTest.*:MoltNetCameraTest.*:UserMediaClientTest.*:VideoTrackAdapter*:MediaStreamVideoTrack*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaStreamVideoSource*:MediaDevicesTest.*:InputDeviceInfo*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:MoltNetSubnormalsTest.*:*IIRFilter*:*AudioContext*:*HTMLMediaElementAudioOutputDevice*:MediaStreamConstraintsUtilAudio*`; `*IIR*`; `MoltPortableMediaTest.*:ChannelMixer*:AudioProcessor*`; `RenderFrameAudioInputStreamFactory*:ForwardingAudioStreamFactory*:AudioInputStreamBroker*` (outside MoltNet cameras, channels, outputs, `IIRFilterNode`, a device's layout and a stream's processing are as before; the new cases are `MoltNetCameraTest.*`, `UserMediaClientTest.MoltNetCameraTrackReportsTheMenu`, `MoltNetApplyConstraintsKeepsTheCameraOpen` and `MoltNetChannelCountFollowsTheRequest`, `VideoTrackAdapterTest.MoltNetCameraDesiredSizeIsTheTarget`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesHaveTheTrackSize` and `MoltNetCameraDropsFramesItCannotRead` (since fp-camera2 `MoltNetCameraReadsBackFramesItCannotRead`), `MoltNetMediaDevicesTest.CommunicationsOutputIsRefused`, `MoltNetSubnormalsTest.MoltNetFloorsTheIirFiltersHistory` and `IirTailTimeKeepsItsValue`, `MoltPortableMediaTest.FlushTinyPortableSampleFloorsDoubles`, `PortableCaptureNeedsDownmix` and `DownmixGoldenDigests`) | fp-media4 |
 | `blink_unittests`, `media_unittests` | `MoltNetCameraTest.*:MoltNetCameraValuesTest.*:UserMediaClientTest.*:VideoTrackAdapter*:ImageCapture*:MoltNetImageCaptureTest.*:MediaStreamVideoTrack*:MediaStreamVideoSource*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaDevicesTest.*:InputDeviceInfo*`; `MoltPortableColorTest.*:MoltPortableMediaTest.*:VideoFrameConverter*` (outside MoltNet a camera's frames, timing, colour, `ImageCapture` and pan-tilt-zoom permission are as before; the new cases are `MoltNetCameraTest.NoPanTiltZoom`, `ImageCaptureTest.MoltNetCameraImageCaptureService` and `MoltNetCameraHasNoPanTiltZoomPermission`, `MoltNetImageCaptureTest.*`, `VideoTrackAdapterTest.MoltNetCameraFramesHaveOneColorSpace` and `MoltNetCameraFramesKeepOnlyTheMenusMetadata`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesReachTheGrid`, `MoltNetCameraRepeatsTheNewestFrame`, `MoltNetCameraLowerRateKeepsGridTicks`, `MoltNetCameraHidesTheCamerasDrops`, `MoltNetCameraGridTicksOnItsOwn`, `MoltNetCameraReadsBackFramesItCannotRead`, `MoltNetCameraReadsBackTheNewestFrame` and `MoltNetCameraTurnsBlackWhenItCannotRead`, `MoltPortableColorTest.*`, `MoltPortableMediaTest.PortableCameraEncoding` and `UsePortableCameraColor`; the earlier MoltNet camera cases now run on the grid's ticks, which the tests run by hand) | fp-camera2 |
+| `storage_unittests`, `blink_unittests` | `*QuotaDatabaseTest.*:StorageDirectoryTest.*`; `MouseEvent*:PointerEvent*:FocusEvent*:*BoundaryEvent*:MediaStreamVideoTrack*` (upstream's tests of the respin's changes in files that carry MoltBrowser hooks: the one-key bucket listing, MoltNet's `screenX`/`screenY`, a MoltNet camera's settings; outside MoltNet nothing differs from Chromium) | .80 respin |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -3598,7 +3604,7 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
     --key /Volumes/MOLTKEY/molt-update-signing.key --assets-dir release-v0.3.0
   ```
   *Expected:* `sign` lists every asset and, per build, its commit, Chromium
-  156.0.8078.74, builder label and build times, and refuses unless the
+  156.0.8078.80, builder label and build times, and refuses unless the
   macOS and Linux statements cover every installer, SBOM and checksum file
   with the manifest's hashes and agree on the commit and Chromium.
 - [ ] Step 7: copy back `molt-release-manifest.json`, `.sig`,
