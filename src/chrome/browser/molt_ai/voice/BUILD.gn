@@ -561,10 +561,17 @@ source_set("voice_loop_unit_tests") {
 source_set("voice_loop_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "voice_controller_browsertest.cc" ]
+  sources = [
+    "voice_controller_browsertest.cc",
+
+    # Site skills and reading aloud on the sites' stored pages
+    # (chrome/test/data/molt_voice/skills/).
+    "voice_skills_browsertest.cc",
+  ]
 
   deps = [
     ":features",
+    ":site_skills",
     ":voice_controller",
     ":voice_loop",
     ":voice_page",
