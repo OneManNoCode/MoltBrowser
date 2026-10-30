@@ -37,11 +37,11 @@ rebase's mechanical changes, in this order of priority:
    `voice_agent_planner*`, `voice_agent_speech*`, `voice_page_controller.cc`'s
    `Inspect()`, `OptionsOf()`, `SelectOption()` and holders): every
    agent_safety rule on the new path (origins per frame and the frames
-   between them, credential fields,
-   the fence, the questions before a click), page-controlled names, a target
-   that changes between the check and the action, an option's default
-   action, holders that never release the accessibility mode, and the
-   planner's questions and results read aloud.
+   between them, credential fields, the fence, the questions before a
+   click), page-controlled names, a target that changes between the check
+   and the action, an option's default action, holders that never release
+   the accessibility mode, and the planner's questions and results read
+   aloud.
 5. The rebase's merges of `quota_database.{cc,h}`, `mouse_event.cc` and
    `media_stream_video_track.cc`: MoltBrowser's hooks still in place and
    still correct after upstream's changes.
@@ -60,14 +60,15 @@ named socket outside its paths, and the bundled speech helper itself
 under the resident sandbox (the protocol checks of
 `speech_helper_check.py`, 21 of 21). Fixes tested with the std-only unit
 tests built standalone (system gtest, ASan and UBSan), the helper
-sandbox's tests on the real kernel, the voice listener fuzzer (four
-minutes after the fixes), `molt_fuzz.py check`; the changed C++ was
+sandbox's tests on the real kernel, the agent page map's unit tests
+built standalone on the `//url` stand-ins, the voice listener fuzzer
+(four minutes after the fixes), `molt_fuzz.py check`; the changed C++ was
 compiled against Chromium 156's headers; the tests that need Chromium run
 on the build machine.
 
-**Findings.** 13: 9 low and 4 informational (wording, or what later
-phases of the design cover). Fixed: four of the low; the others are
-tracked privately.
+**Findings.** 16: 9 low and 7 informational (wording, defence in depth,
+performance, or what later phases of the design cover). Fixed: four of
+the low; the others are tracked privately.
 
 **Fixed.**
 
