@@ -139,21 +139,26 @@ bool Spelled(std::string_view word) {
 size_t SpokenPrefix(std::string_view s, size_t max_weight, size_t* weight) {
   size_t total = 0;
   size_t i = 0;
-  while (i < s.size()) {
+  // Everything weighs 1 at least: nothing fits once |max_weight| is reached
+  // (or passed by the first code point, which is always taken).
+  while (i < s.size() && (i == 0 || total < max_weight)) {
     const char c = s[i];
     if (IsAsciiLetter(c) || IsAsciiDigit(c)) {
       const bool letters = IsAsciiLetter(c);
+      // Each weighs 1 at least: a run longer than what is left can't fit,
+      // and isn't read further.
+      const size_t left = max_weight - total;
       size_t end = i;
-      while (end < s.size() &&
+      while (end < s.size() && end - i <= left &&
              (letters ? IsAsciiLetter(s[end]) : IsAsciiDigit(s[end]))) {
         ++end;
       }
       const bool spelled = letters && Spelled(s.substr(i, end - i));
       size_t w = 0;
-      for (size_t k = i; k < end; ++k) {
+      for (size_t k = i; k < end && w <= left; ++k) {
         w += letters ? LetterWeight(s[k], spelled) : kDigitWeight;
       }
-      if (total + w <= max_weight) {
+      if (w <= left) {
         total += w;
         i = end;
         continue;
@@ -823,12 +828,20 @@ std::optional<ReadingChunk> ChunkAt(const ReadingDocument& document,
                                  block.sentences.end(),
                                  static_cast<uint32_t>(at.offset));
   size_t end = at.offset;
+  // What the sentences taken take to say, each measured once.
+  size_t spoken = 0;
   for (auto it = starts; it != block.sentences.end() || end < text.size();) {
     const size_t next = it != block.sentences.end() ? *it : text.size();
-    if (end > at.offset &&
-        SpokenLength(text.substr(at.offset, next - at.offset)) > max_chars) {
+    // Read only as far as it could fit.
+    const std::string_view sentence = text.substr(end, next - end);
+    size_t more = 0;
+    if (SpokenPrefix(sentence, max_chars, &more) < sentence.size()) {
+      more = max_chars + 1;
+    }
+    if (end > at.offset && spoken + more > max_chars) {
       break;
     }
+    spoken += more;
     end = next;
     if (it == block.sentences.end()) {
       break;
@@ -836,7 +849,7 @@ std::optional<ReadingChunk> ChunkAt(const ReadingDocument& document,
     ++it;
   }
   // One sentence too long: cut at a word.
-  if (SpokenLength(text.substr(at.offset, end - at.offset)) > max_chars) {
+  if (spoken > max_chars) {
     const size_t limit =
         at.offset + SpokenPrefix(text.substr(at.offset, end - at.offset),
                                  max_chars, nullptr);

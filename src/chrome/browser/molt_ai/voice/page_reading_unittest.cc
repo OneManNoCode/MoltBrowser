@@ -13,6 +13,7 @@
 #include "base/path_service.h"
 #include "chrome/browser/molt_ai/voice/html_fixture_tree.h"
 #include "chrome/browser/molt_ai/voice/page_map_test_trees.h"
+#include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -321,6 +322,24 @@ TEST(PageReadingTest, ChunksAreMeasuredAsTheyAreSaid) {
   ASSERT_TRUE(first);
   EXPECT_EQ(first->text, std::string(7, '7'));
   EXPECT_EQ(first->next, (ReadingPosition{0, 7}));
+  // The smallest size takes one character at a time, whatever it weighs.
+  TreeBuilder d("S");
+  const uint32_t mixed = d.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);
+  const std::string text_mixed =
+      "\xF0\x9F\x98\x80"
+      "abc 12 x.";
+  d.Text(d.Add(mixed, PageRole::kParagraph), text_mixed);
+  const ReadingDocument small = Read(d.Take());
+  std::string joined;
+  at = ReadingPosition();
+  while (std::optional<ReadingChunk> next = ChunkAt(small, at, 1, 99)) {
+    EXPECT_EQ(CountCodePoints(next->text), 1u) << next->text;
+    joined += next->text;
+    at = next->next;
+  }
+  EXPECT_EQ(joined,
+            "\xF0\x9F\x98\x80"
+            "abc12x.");
 }
 
 TEST(PageReadingTest, MovesAndSections) {
