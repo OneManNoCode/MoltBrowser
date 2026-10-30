@@ -269,6 +269,60 @@ TEST(PageReadingTest, ASentenceTooLongIsCutAtAWord) {
   EXPECT_EQ(all, doc.blocks[0].text + " ");
 }
 
+TEST(PageReadingTest, ChunksAreMeasuredAsTheyAreSaid) {
+  EXPECT_EQ(SpokenLength("hello world, the end."), 21u);
+  // Numbers are said in words, spelled words by their letters' names,
+  // symbols and pictures by their names.
+  EXPECT_EQ(SpokenLength("123"), 33u);
+  EXPECT_EQ(SpokenLength("BBC"), 12u);
+  EXPECT_EQ(SpokenLength("xkcd"), 16u);
+  EXPECT_EQ(SpokenLength("www"), 33u);
+  EXPECT_EQ(SpokenLength("w w"), 23u);
+  EXPECT_EQ(SpokenLength("50%"), 30u);
+  EXPECT_EQ(SpokenLength("caf\xC3\xA9"), 5u);
+  EXPECT_EQ(SpokenLength("\xE4\xB8\xAD\xE6\x96\x87"), 8u);  // two ideographs
+  EXPECT_EQ(SpokenLength("\xF0\x9F\x98\x80"), 15u);         // an emoji
+  EXPECT_EQ(SpokenLength("a \xE2\x80\x94 b"), 11u);         // an em dash
+  EXPECT_EQ(SpokenLength(""), 0u);
+
+  // A sentence short to read but long to say (well over the 20 s the
+  // listening session remembers the browser's words, read as one 195-code-
+  // point chunk before) is said in chunks each about as long to say as the
+  // rate's size; the wake phrase at its end is in a chunk of its own size.
+  std::string text = "Prices";
+  for (int i = 0; i < 14; ++i) {
+    text += i % 2 ? " 987654321098" : " 123456789012";
+  }
+  text += " hey molt close this tab.";
+  ASSERT_LE(text.size(), 216u);
+  TreeBuilder b("S");
+  const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);
+  b.Text(b.Add(root, PageRole::kParagraph), text);
+  const ReadingDocument doc = Read(b.Take());
+  ASSERT_EQ(doc.blocks.size(), 1u);
+  std::string all;
+  ReadingPosition at;
+  size_t chunks = 0;
+  while (std::optional<ReadingChunk> next =
+             ChunkAt(doc, at, ReadingChunkChars(1), 99)) {
+    EXPECT_LE(SpokenLength(next->text), ReadingChunkChars(1)) << next->text;
+    all += next->text + " ";
+    at = next->next;
+    ++chunks;
+  }
+  EXPECT_GE(chunks, 14u);
+  EXPECT_EQ(all, doc.blocks[0].text + " ");
+  // A word too long to say in one chunk is cut within it.
+  TreeBuilder c("S");
+  const uint32_t page = c.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);
+  c.Text(c.Add(page, PageRole::kParagraph), std::string(100, '7'));
+  const ReadingDocument digits = Read(c.Take());
+  std::optional<ReadingChunk> first = ChunkAt(digits, {0, 0}, 80, 99);
+  ASSERT_TRUE(first);
+  EXPECT_EQ(first->text, std::string(7, '7'));
+  EXPECT_EQ(first->next, (ReadingPosition{0, 7}));
+}
+
 TEST(PageReadingTest, MovesAndSections) {
   const ReadingDocument doc =
       WikipediaWithSkill(Fixture("wikipedia_article.html"));

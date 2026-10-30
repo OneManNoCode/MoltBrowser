@@ -181,19 +181,28 @@ struct ReadingChunk {
   ReadingPosition next;
 };
 
+// How long |text| takes to say, in the code points of plain words said in
+// the same time: a word is its letters, but a number is said in words
+// (each digit counts as kDigitWeight letters, page_reading.cc), a word
+// voices spell out (one letter, no vowel, capitals only) by its letters'
+// names, a symbol or a picture by its name, an ideograph as a syllable.
+// So a chunk that is short to read but long to say ("123456789012 ...")
+// isn't taken for a short one. An estimate, kept on the long side.
+size_t SpokenLength(std::string_view text);
+
 // The longest chunk at speech rate |rate| (1 is the voice's normal pace),
-// in code points: about 13 seconds of speech, at least 80 code points (a
-// sentence is cut past that) and at most 300. The session forgets what
+// as SpokenLength() measures it: about 13 seconds of speech, at least 80
+// (a sentence is cut past that) and at most 300. The session forgets what
 // the browser said after kSpokenMemoryMs (voice_session_logic.h, 20 s); a
 // chunk is noted as it starts, so one said within that time is still
 // known if it comes back through the microphone.
 size_t ReadingChunkChars(double rate);
 
 // The chunk starting at |at|: as many whole sentences of its block as fit
-// in |max_chars| (one sentence longer than that is cut at a word), and
-// where the next one starts. A heading or list item ends with a full stop
-// so voices pause after it. nullopt at the end of the document or past
-// |end_block|.
+// in |max_chars| as SpokenLength() measures them (one sentence longer than
+// that is cut at a word), and where the next one starts. A heading or list
+// item ends with a full stop so voices pause after it. nullopt at the end
+// of the document or past |end_block|.
 std::optional<ReadingChunk> ChunkAt(const ReadingDocument& document,
                                     ReadingPosition at,
                                     size_t max_chars,
