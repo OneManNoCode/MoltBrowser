@@ -23,6 +23,7 @@
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_learning_loop.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
+#include "chrome/browser/molt_ai/voice/voice_page_questions.h"
 #include "chrome/browser/molt_ai/voice/voice_reader.h"
 #include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
@@ -317,6 +318,7 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
   // The web agent's on-device planner, for what the grammar can't do.
   planner_ = CreateVoiceAgentPlanner();
   learning_ = std::make_unique<VoiceLearningLoop>(this);
+  page_questions_ = std::make_unique<VoicePageQuestions>();
 }
 
 VoiceController::~VoiceController() {
@@ -371,6 +373,7 @@ void VoiceController::Stop() {
   }
   CancelRun();
   reader_->Clear();
+  page_questions_->Clear();
   stop_when_quiet_ = false;
   refresh_numbers_timer_.Stop();
   DetachFromTab();
@@ -448,6 +451,10 @@ void VoiceController::CancelRun(bool keep_planner) {
   run_weak_factory_.InvalidateWeakPtrs();
   // Reading stops too, keeping its place (before the voice stops).
   reader_->Interrupt();
+  // A question about the page ends, its request cancelled.
+  if (page_questions_) {
+    page_questions_->Cancel();
+  }
   pending_.clear();
   wait_.reset();
   quiet_timer_.Stop();
@@ -528,6 +535,7 @@ void VoiceController::DetachFromTab() {
 void VoiceController::OnActiveTabChanged(BrowserWindowInterface* browser) {
   ++page_id_;
   reader_->PageChanged(page_id_);
+  page_questions_->PageChanged(page_id_);
   if (active_) {
     AttachToActiveTab();
   }
@@ -561,7 +569,8 @@ void VoiceController::SetIdleCallbackForTesting(
 
 bool VoiceController::busy() const {
   return !pending_.empty() || wait_ || submitting_ ||
-         (planner_running_ && planner_question_ == 0);
+         (planner_running_ && planner_question_ == 0) ||
+         (page_questions_ && page_questions_->running());
 }
 
 VoiceActivity VoiceController::activity() const {
@@ -1266,8 +1275,72 @@ bool VoiceController::RunStep(const VoiceStep& step) {
         planner_->Answer(step.index, step.flag);
       }
       return true;
+
+    case VoiceStepKind::kAskPage:
+      // The steps go on (there are none after it); the answer comes later.
+      AskAboutPage(step);
+      return true;
   }
   return true;
+}
+
+// ---- Questions about the page -----------------------------------------------
+
+void VoiceController::AskAboutPage(const VoiceStep& step) {
+  // Voice mode is off in MoltNet windows: no step gets here, and nothing of
+  // a MoltNet page ever reaches the model.
+  if (IsMoltNet() || step.index < 0 ||
+      step.index > static_cast<int>(PageQuestionKind::kMore)) {
+    return;
+  }
+  // The page's text as reading takes it (the reader's host checks it is an
+  // http(s) page of the active tab).
+  const PageTree tree = reader_host_->Tree();
+  page_questions_->Ask(
+      static_cast<PageQuestionKind>(step.index), step.text, page_id_, tree,
+      reader_host_->Skill(),
+      base::BindRepeating(&VoiceController::OnPageQuestionProgress,
+                          run_weak_factory_.GetWeakPtr()),
+      base::BindOnce(
+          [](base::WeakPtr<VoiceController> self, int64_t page_id,
+             VoicePageQuestions::Outcome outcome) {
+            if (self) {
+              self->OnPageAnswer(page_id, std::move(outcome.text),
+                                 outcome.from_page);
+            }
+          },
+          run_weak_factory_.GetWeakPtr(), page_id_));
+}
+
+void VoiceController::OnPageQuestionProgress(const std::string& text) {
+  if (!active_ || !speech_) {
+    return;
+  }
+  Say(text);
+  SetStatus(text);
+}
+
+void VoiceController::OnPageAnswer(int64_t page_id,
+                                   std::string text,
+                                   bool from_page) {
+  // An answer about another page than the one shown is dropped.
+  if (active_ && speech_ && !text.empty() &&
+      (!from_page || page_id == page_id_)) {
+    if (from_page) {
+      // Page-derived: read as page text is, a chunk at a time, each said
+      // to the observers (the listening session) as it starts; never a
+      // command.
+      reader_->ReadText(text, page_id_, state_.speech_rate);
+    } else {
+      Say(text);
+      SetStatus(text);
+    }
+    // "Repeat" says it again.
+    state_.last_spoken = {std::move(text)};
+  }
+  if (!busy()) {
+    Idle();
+  }
 }
 
 // ---- The activation guard ---------------------------------------------------
@@ -1611,6 +1684,7 @@ void VoiceController::OnNavigationCommitted() {
   // (same-document navigations included: the page the user sees changed).
   ++page_id_;
   reader_->PageChanged(page_id_);
+  page_questions_->PageChanged(page_id_);
   ++commits_;
   last_commit_ = base::TimeTicks::Now();
   if (wait_) {

@@ -538,6 +538,9 @@ class Planner {
       case K::kReadSection:
         Read(ReadOp::kSection, PageText(command.text));
         break;
+      case K::kAskPage:
+        AskPage(command);
+        break;
       case K::kDescribeScreen:
         Describe();
         break;
@@ -1710,6 +1713,24 @@ class Planner {
         break;
     }
     Add(std::move(read));
+  }
+
+  // A question about the page ("what is this page about?"): a kAskPage
+  // step, which the browser answers with the on-device model from the
+  // page's text (voice_page_questions.h). The answer is only said: no step
+  // here acts on the page.
+  void AskPage(const VoiceCommand& command) {
+    if (!env_.web_page) {
+      Say("I can only answer questions about web pages.");
+      return;
+    }
+    VoiceStep ask = Step(VoiceStepKind::kAskPage);
+    ask.text = SpeechSafeText(command.text, kMaxCommandTextBytes);
+    ask.index = static_cast<int>(command.page_question);
+    Status(command.page_question == PageQuestionKind::kMore
+               ? "Looking for more on the page"
+               : "Looking at the page");
+    Add(std::move(ask));
   }
 
   // "Speak faster" and "slower", and "faster" and "slower" while reading:

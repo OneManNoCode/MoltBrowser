@@ -135,6 +135,11 @@ enum class VoiceCommandKind : uint8_t {
   kNextParagraph,
   kPreviousParagraph,
   kReadSection,  // |text|: the section's name ("history")
+  // A question about the page, answered by the on-device model from the
+  // page's text (page_questions.h): |page_question| says what kind, |text|
+  // is the question as heard ("who wrote this"), or the topic for kTopic
+  // ("the battery").
+  kAskPage,
 
   // --- Choosing -----------------------------------------------------------
   kChoose,  // |verb|, |choice|
@@ -210,6 +215,15 @@ enum class ScrollAmount : uint8_t {
   kHalfPage,  // "a bit", "half a page"
 };
 
+// What kAskPage asks (page_questions.h picks the page's text for each).
+enum class PageQuestionKind : uint8_t {
+  kAbout,       // "what is this page about?", "summarize this page"
+  kMainPoints,  // "read me the main points"
+  kTopic,       // "what does it say about the battery?"
+  kQuestion,    // "who wrote this?", "what's the price?"
+  kMore,        // "tell me more": the next passages for the last question
+};
+
 enum class Verbosity : uint8_t {
   kBrief,
   kNormal,
@@ -261,7 +275,7 @@ struct VoiceCommand {
   // query (kSearch, kFindInPage), the text (kType), the correction
   // (kCorrection), the routine's name (kRememberRoutine, kForgetRoutine,
   // kRunRoutine), the section's name (kReadSection), the word to forget
-  // (kForgetWord).
+  // (kForgetWord), the question or its topic (kAskPage).
   std::string text;
   // kOpenSite, and kSearch with kNamedSite: the site as host-like text,
   // lower case: "youtube", "new york times" -> "newyorktimes",
@@ -293,6 +307,8 @@ struct VoiceCommand {
   int count = 1;
   // kVerbosity.
   Verbosity verbosity = Verbosity::kNormal;
+  // kAskPage.
+  PageQuestionKind page_question = PageQuestionKind::kAbout;
   // kRefused.
   RefusalReason refusal = RefusalReason::kNone;
 };

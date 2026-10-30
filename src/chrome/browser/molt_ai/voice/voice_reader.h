@@ -81,6 +81,12 @@ class VoiceReader {
   // A kRead step on the page |page_id|, at speech rate |rate|.
   void Run(ReadOp op, std::string_view section, int64_t page_id, double rate);
 
+  // Reads |text|, page-derived words the browser says about page |page_id|
+  // (an answer to a question about the page, voice_page_questions.h), as
+  // it reads the selection: in chunks, each said to the Host as it starts,
+  // stopped and resumed like a reading. It takes the reading's place.
+  void ReadText(std::string_view text, int64_t page_id, double rate);
+
   // The voice said utterance |id| to its end, or dropped it.
   void OnUtteranceDone(uint64_t id, bool spoken);
 
