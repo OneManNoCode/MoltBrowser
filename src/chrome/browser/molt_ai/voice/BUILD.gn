@@ -174,6 +174,28 @@ source_set("site_skills") {
   ]
 }
 
+# Reading a page aloud (TOUCHLESS_BROWSING.md §5.4, §6.6): the page's text
+# as blocks and sentences from the accessibility tree, chunks sized for the
+# speech rate, the reading position and its moves, the selection. Std-only:
+# molt_ai_unittests, a standalone harness and molt_page_reading_fuzzer build
+# the same code.
+source_set("page_reading") {
+  sources = [
+    "page_reading.cc",
+    "page_reading.h",
+  ]
+
+  public_deps = [ ":page_map" ]
+
+  deps = [
+    # Sections named as spoken names are matched (spoken_choice.h).
+    ":spoken_choice",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
+}
+
 # Hand-built page trees for the page map's tests, and the stored copies of
 # sites' pages (chrome/test/data/molt_voice/skills/) read as Blink's tree
 # (std-only).
@@ -487,6 +509,7 @@ fuzzer_test("molt_voice_controller_fuzzer") {
 source_set("voice_loop_unit_tests") {
   testonly = true
   sources = [
+    "page_reading_unittest.cc",
     "site_skills_unittest.cc",
     "voice_candidates_unittest.cc",
     "voice_controller_logic_unittest.cc",
@@ -500,6 +523,7 @@ source_set("voice_loop_unit_tests") {
 
   deps = [
     ":page_map_test_support",
+    ":page_reading",
     ":site_skills",
     ":voice_loop",
 

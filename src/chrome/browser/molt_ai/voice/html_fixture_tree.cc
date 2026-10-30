@@ -445,15 +445,27 @@ class Converter {
     return PageRole::kGeneric;
   }
 
+  // Whether a block's children are all inline (text and inline elements)
+  // and there is some: LayoutBlockFlow::ChildrenInline(), which Blink
+  // includes the block for. A block with a block child wraps its inline
+  // runs in anonymous blocks, and is ignored.
   bool HoldsTextDirectly(const DomNode& n) const {
+    bool any = false;
     for (size_t child : n.children) {
       const DomNode& c = dom_[child];
-      if (c.text ? !Collapse(c.data).empty()
-                 : (IsInline(c.tag) && !Hidden(c))) {
-        return true;
+      if (c.text) {
+        any = any || !Collapse(c.data).empty();
+        continue;
       }
+      if (Hidden(c)) {
+        continue;
+      }
+      if (!IsInline(c.tag)) {
+        return false;
+      }
+      any = true;
     }
-    return false;
+    return any;
   }
 
   static bool NamedFromContents(PageRole role) {

@@ -14,9 +14,10 @@
 //     else is a generic container;
 //   - ignored nodes: a generic container is ignored unless it is a custom
 //     element (a '-' in its tag), focusable (tabindex), has a role, or is a
-//     block that holds text directly; a span or other inline element is
-//     ignored. Ignored nodes keep no tag, id or class, as Blink sends none
-//     for them, so a skill can't lean on them here either;
+//     block whose children are all inline (text, links, spans); a span or
+//     other inline element is ignored. Ignored nodes keep no tag, id or
+//     class, as Blink sends none for them, so a skill can't lean on them
+//     here either;
 //   - hidden: hidden, aria-hidden="true", style="display:none" and the
 //     content of script, style, template and head (but the title) are
 //     left out;
