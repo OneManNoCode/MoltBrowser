@@ -449,6 +449,48 @@ TEST_F(SpeechListenerTest, ChangesWakePhrases) {
             Listener::ConfigResult::kEngineError);
 }
 
+TEST_F(SpeechListenerTest, KeepsTheSpotterWhenTheWakePhrasesDontChange) {
+  // Every CONFIG the browser sends carries the wake phrases (the follow-up
+  // window opens and closes): the spotter is built at start only.
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(listener_->ApplyConfig(
+                  Config(i % 2 ? R"({"wake_phrases":["hey molt"],)"
+                                 R"("wake_required":true})"
+                               : R"({"wake_phrases":["Hey  Molt"],)"
+                                 R"("wake_required":false})"),
+                  nullptr),
+              Listener::ConfigResult::kOk);
+  }
+  EXPECT_EQ(log_->keyword_sets.size(), 1u);
+  // A wake phrase heard across such a CONFIG still wakes it.
+  scene_->speech = {{Ms(1000), Ms(1600)}};
+  scene_->wakes = {Ms(1500)};
+  FeedUntil(Ms(1200));
+  EXPECT_EQ(listener_->ApplyConfig(Config(R"({"wake_phrases":["hey molt"]})"),
+                                   nullptr),
+            Listener::ConfigResult::kOk);
+  FeedUntil(Ms(3000));
+  ASSERT_FALSE(Types().empty());
+  EXPECT_EQ(Types().front(), "wake");
+  EXPECT_EQ(log_->keyword_sets.size(), 1u);
+  // New phrases rebuild it; the same ones again don't.
+  listener_->ApplyConfig(Config(R"({"wake_phrases":["hello molt"]})"),
+                         nullptr);
+  listener_->ApplyConfig(Config(R"({"wake_phrases":["hello molt"]})"),
+                         nullptr);
+  EXPECT_EQ(log_->keyword_sets.size(), 2u);
+  // After a failed rebuild, the next CONFIG tries again.
+  log_->fail_keywords = true;
+  EXPECT_EQ(listener_->ApplyConfig(Config(R"({"wake_phrases":["hey molt"]})"),
+                                   nullptr),
+            Listener::ConfigResult::kEngineError);
+  log_->fail_keywords = false;
+  EXPECT_EQ(listener_->ApplyConfig(Config(R"({"wake_phrases":["hey molt"]})"),
+                                   nullptr),
+            Listener::ConfigResult::kOk);
+  EXPECT_EQ(log_->keyword_sets.size(), 4u);
+}
+
 TEST_F(SpeechListenerTest, EndsAnUtteranceAtTwentySeconds) {
   listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
   scene_->speech = {{Ms(1000), Ms(30000)}};
