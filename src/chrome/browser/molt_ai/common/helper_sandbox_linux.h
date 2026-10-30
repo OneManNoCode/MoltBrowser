@@ -29,7 +29,9 @@
 //     short deny list (BuildSeccompProgram()). socket() for anything but
 //     an AF_UNIX stream or seqpacket socket, and connect(), fail with
 //     EACCES, so libraries that probe for the network fail gracefully
-//     instead of being killed. It also keeps
+//     instead of being killed. Signals go to the helper itself only (its
+//     threads and its process group): on every kernel, as Landlock's
+//     scoping does from ABI 6. It also keeps
 //     what the helper writes in files the launcher can measure, and its
 //     memory where RLIMIT_DATA counts it.
 // A layer the kernel lacks (Landlock before 5.13, or disabled at boot) is
@@ -153,6 +155,18 @@ uint64_t HandledFsAccess(int abi);
 //   setsid, setpgid: EPERM (what the helper starts stays in its process
 //     group, which the launcher kills);
 //   ptrace, process_vm_readv/writev, pidfd_getfd: EPERM (other processes);
+//   signals to anything but the helper (Landlock scopes them only from
+//     ABI 6, Linux 6.12): kill() of anything but its own process ID or its
+//     own process group (0, or minus its ID: the child leads a session of
+//     its own), tgkill() and rt_tgsigqueueinfo() outside its own thread
+//     group, rt_sigqueueinfo() to another process, tkill() and
+//     pidfd_send_signal() (they can't be checked; glibc's raise(),
+//     abort() and pthread_kill() use tgkill()), fcntl(F_SETOWN) of another
+//     process or group and F_SETOWN_EX, ioctl(FIOSETOWN, SIOCSPGRP) (whom
+//     the kernel signals when a file is ready), and prlimit64() of
+//     another process (RLIMIT_CPU would have the kernel kill it): EPERM.
+//     These compare with the helper's own process ID, which only the child
+//     knows: SetSeccompOwnPid() puts it in;
 //   bpf, perf_event_open, userfaultfd: EPERM (kernel attack surface);
 //   keyctl, add_key, request_key: EPERM (the user's kernel keyrings);
 //   unshare, setns, clone() with namespace flags, mount and the new mount
@@ -174,6 +188,19 @@ uint64_t HandledFsAccess(int abi);
 //     doesn't count; SysV objects also outlive the process).
 // Everything else is allowed.
 std::vector<sock_filter> BuildSeccompProgram();
+
+// What BuildSeccompProgram() compares a process ID with where it means the
+// helper's own, and minus its own (its process group), until
+// SetSeccompOwnPid() puts the real one in: values no process ID can have
+// (PID_MAX_LIMIT is 2^22), so until then those comparisons match nothing.
+inline constexpr uint32_t kSeccompOwnPidSlot = 0x7fffffffU;
+inline constexpr uint32_t kSeccompOwnGroupSlot = 0x80000001U;  // -0x7fffffff
+
+// Puts |pid|, the helper's own process ID, into |program|'s comparisons
+// with it (kSeccompOwnPidSlot, kSeccompOwnGroupSlot). Called in the child
+// on its own copy of the program, before the filter is installed.
+// Async-signal-safe: it only writes to the program in place.
+void SetSeccompOwnPid(int32_t pid, std::vector<sock_filter>* program);
 
 // "x86_64", "aarch64", or empty if BuildSeccompProgram() has no filter for
 // this architecture.
@@ -243,11 +270,12 @@ bool Prepare(const Policy& policy, Prepared* prepared, std::string* error);
 // kChildRulesetFd: new session, the resource limits (the prepared file
 // size and data limits, no core dump, kMaxHelperOpenFiles; each soft and
 // hard, never above the hard limit the browser already has),
-// no_new_privs, Landlock (adding /proc/self), seccomp. Async-signal-safe:
-// raw system calls only, no allocation. If a step fails it writes
-// kSetupFailedMarker + the step to stderr and calls
+// no_new_privs, Landlock (adding /proc/self), seccomp (with the child's own
+// process ID put into |prepared|'s program: the child's copy, after
+// fork()). Async-signal-safe: raw system calls only, no allocation. If a
+// step fails it writes kSetupFailedMarker + the step to stderr and calls
 // _exit(kSetupFailedExitCode).
-void ApplyInChild(const Prepared& prepared);
+void ApplyInChild(Prepared& prepared);
 
 }  // namespace helper_sandbox_linux
 }  // namespace molt_ai
