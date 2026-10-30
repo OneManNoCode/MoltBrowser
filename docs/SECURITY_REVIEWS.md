@@ -36,7 +36,8 @@ rebase's mechanical changes, in this order of priority:
 4. The agent on the page map (`agents/agent_page_map*`, `web_agent.cc`,
    `voice_agent_planner*`, `voice_agent_speech*`, `voice_page_controller.cc`'s
    `Inspect()`, `OptionsOf()`, `SelectOption()` and holders): every
-   agent_safety rule on the new path (origins per frame, credential fields,
+   agent_safety rule on the new path (origins per frame and the frames
+   between them, credential fields,
    the fence, the questions before a click), page-controlled names, a target
    that changes between the check and the action, an option's default
    action, holders that never release the accessibility mode, and the
@@ -64,8 +65,8 @@ minutes after the fixes), `molt_fuzz.py check`; the changed C++ was
 compiled against Chromium 156's headers; the tests that need Chromium run
 on the build machine.
 
-**Findings.** 12: 8 low and 4 informational (wording, or what later
-phases of the design cover). Fixed: three of the low; the others are
+**Findings.** 13: 9 low and 4 informational (wording, or what later
+phases of the design cover). Fixed: four of the low; the others are
 tracked privately.
 
 **Fixed.**
@@ -86,6 +87,12 @@ tracked privately.
   the grammar reads as a yes ("Yes", "OK", "Sure, go ahead"), so page
   text never biases the answer that confirms an action
   (`voice/voice_listener_protocol.cc`).
+- The web agent's page map lists, and acts in, the page's own frame and
+  frames of its origin that only frames of that origin embed: a frame of
+  the page's origin inside another site's frame (an ad that embeds one of
+  the page's URLs of its choosing, with its buttons) is left out like the
+  frame around it, and refused at action time (`agents/web_agent.cc`,
+  `agent_page_map.cc`, `voice/voice_page_controller.cc`).
 
 **Tests added.**
 
@@ -102,6 +109,10 @@ tracked privately.
   sound without one.
 - `voice_listener_protocol_unittest.cc`: yes-phrases left out of a page's
   hotwords, other names kept.
+- `agent_page_map_unittest.cc`: a frame of the page's origin inside
+  another site's frame is refused at action time.
+  `agent_page_map_browsertest.cc`: the same widget listed when the page
+  embeds it, and left out when another site's frame does.
 
 ## 2026-10-29: PR #80 (October 2026)
 
