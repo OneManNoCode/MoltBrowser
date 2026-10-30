@@ -345,6 +345,10 @@ std::string CutToBytes(std::string_view text, size_t max_bytes) {
   if (space != std::string_view::npos && space > end - end / 4) {
     end = space;
   }
+  // No space at the end (the text stays as SpeechSafeText() makes it).
+  while (end > 0 && text[end - 1] == ' ') {
+    --end;
+  }
   return std::string(text.substr(0, end));
 }
 
@@ -813,6 +817,8 @@ std::string CleanAnswerText(std::string_view text) {
        {std::string_view("the page says"), std::string_view("the page said"),
         std::string_view("according to the page")}) {
     if (clean.size() > preface.size() &&
+        (clean[preface.size()] == ':' || clean[preface.size()] == ',' ||
+         clean[preface.size()] == ' ') &&
         FoldForComparison(clean.substr(0, preface.size())) ==
             FoldForComparison(preface)) {
       size_t at = preface.size();

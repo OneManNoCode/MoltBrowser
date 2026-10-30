@@ -336,6 +336,21 @@ TEST(PageQuestionsTextTest, HostilePagesStayWithinTheCaps) {
   EXPECT_TRUE(empty.parts.empty());
 }
 
+TEST(PageQuestionsTextTest, APassageCutToFitStaysSpeechSafe) {
+  ReadingDocument doc;
+  for (int i = 0; i < 6; ++i) {
+    doc.blocks.push_back(Para("abc def ghi jkl mno pqr stu vwx yz " +
+                              std::to_string(i) + std::string(120, 'q')));
+  }
+  for (size_t max_bytes = 90; max_bytes < 400; max_bytes += 7) {
+    PageTextBudget budget;
+    budget.max_bytes = max_bytes;
+    const PageExcerpt excerpt = SelectPageText(
+        doc, MakePageQuestion(Kind::kAbout, ""), budget, nullptr, false);
+    ExpectWithinBudget(excerpt, budget, doc.blocks.size());
+  }
+}
+
 TEST(PageQuestionsTextTest, TheBudgetFollowsTheModelsWindow) {
   EXPECT_EQ(PageTextBudgetFor(0).max_bytes, PageTextBudget().max_bytes);
   EXPECT_EQ(PageTextBudgetFor(32768).max_bytes, PageTextBudget().max_bytes);

@@ -127,6 +127,9 @@ class VoicePageQuestions {
   void OnTimeLimit(int run);
   // The question is done: |done| hears |text|.
   void Finish(std::string text, bool from_page);
+  // The question is done without the model (the browser's own |text|),
+  // from a task of its own.
+  void FinishSoon(const char* text);
   // Cancels the inference request, if one is out.
   void CancelRequest();
 
@@ -137,6 +140,8 @@ class VoicePageQuestions {
   int next_run_ = 0;
   int64_t page_id_ = -1;
   uint64_t request_id_ = 0;
+  // A worker generates with |request_id_| (and releases it).
+  bool generating_ = false;
   PageQuestion question_;
   ProgressCallback progress_;
   DoneCallback done_;

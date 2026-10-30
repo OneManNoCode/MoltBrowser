@@ -141,9 +141,13 @@ void VoicePageQuestions::Ask(PageQuestionKind kind,
   if (last_ && last_->page_id != page_id) {
     last_.reset();
   }
+  question_ = PageQuestion();
+  page_id_ = page_id;
+  done_ = std::move(done);
+  run_ = ++next_run_;
   const bool more = kind == PageQuestionKind::kMore;
   if (more && !last_) {
-    std::move(done).Run({kAskFirst, false});
+    FinishSoon(kAskFirst);
     return;
   }
   if (!more) {
@@ -153,7 +157,7 @@ void VoicePageQuestions::Ask(PageQuestionKind kind,
     followed->document = QuestionDocument(tree, skill);
     last_.reset();
     if (followed->document.blocks.empty()) {
-      std::move(done).Run({kNoText, false});
+      FinishSoon(kNoText);
       return;
     }
     last_ = std::move(followed);
@@ -170,8 +174,7 @@ void VoicePageQuestions::Ask(PageQuestionKind kind,
   if (excerpt.parts.empty()) {
     const bool topic = last_->question.kind == PageQuestionKind::kTopic ||
                        last_->question.kind == PageQuestionKind::kQuestion;
-    std::move(done).Run(
-        {more ? (topic ? kNoMoreTopic : kNoMorePage) : kNoText, false});
+    FinishSoon(more ? (topic ? kNoMoreTopic : kNoMorePage) : kNoText);
     return;
   }
   const PageQuestionPrompt prompt =
@@ -181,10 +184,7 @@ void VoicePageQuestions::Ask(PageQuestionKind kind,
            << (excerpt.capped ? ", capped" : "");
 
   question_ = last_->question;
-  page_id_ = page_id;
   progress_ = std::move(progress);
-  done_ = std::move(done);
-  run_ = ++next_run_;
   if (progress_) {
     progress_.Run(more ? kStartMore : kStart);
   }
@@ -268,6 +268,8 @@ void VoicePageQuestions::Generate(int run,
                        std::move(options)));
     return;
   }
+  // From here the worker holds the request id, and releases it.
+  generating_ = true;
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
@@ -292,7 +294,9 @@ void VoicePageQuestions::OnReply(int run, GenerationResult result) {
   if (run != run_ || !done_) {
     return;
   }
+  // The worker released the request.
   request_id_ = 0;
+  generating_ = false;
   // Counts only, never text.
   DVLOG(1) << "[MoltVoice] page question answered: " << result.tokens_prompt
            << " prompt and " << result.tokens_generated
@@ -324,7 +328,8 @@ void VoicePageQuestions::Finish(std::string text, bool from_page) {
   still_working_timer_.Stop();
   time_limit_timer_.Stop();
   run_ = 0;
-  request_id_ = 0;
+  // A request no worker got (no model) is released.
+  CancelRequest();
   progress_.Reset();
   DoneCallback done = std::move(done_);
   if (done) {
@@ -333,11 +338,33 @@ void VoicePageQuestions::Finish(std::string text, bool from_page) {
   }
 }
 
+void VoicePageQuestions::FinishSoon(const char* text) {
+  // Never inside Ask(): its caller hears the outcome as it hears an
+  // answer, and "stop" before then drops it.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(
+                     [](base::WeakPtr<VoicePageQuestions> self, int run,
+                        std::string said) {
+                       if (self && run == self->run_ && self->done_) {
+                         self->Finish(std::move(said), /*from_page=*/false);
+                       }
+                     },
+                     weak_factory_.GetWeakPtr(), run_, std::string(text)));
+}
+
 void VoicePageQuestions::CancelRequest() {
-  if (request_id_ != 0) {
-    BrowserAIRuntime::GetInstance().CancelRequest(request_id_);
-    request_id_ = 0;
+  if (request_id_ == 0) {
+    return;
   }
+  BrowserAIRuntime& runtime = BrowserAIRuntime::GetInstance();
+  runtime.CancelRequest(request_id_);
+  // The worker generating it releases it; one no worker holds (the model
+  // still loading, or none) is released here.
+  if (!generating_) {
+    runtime.FinishRequest(request_id_);
+  }
+  request_id_ = 0;
+  generating_ = false;
 }
 
 void VoicePageQuestions::Cancel() {
