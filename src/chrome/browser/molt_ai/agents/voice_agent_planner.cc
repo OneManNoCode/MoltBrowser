@@ -216,8 +216,15 @@ void VoiceAgentPlanner::Replay(content::WebContents* contents,
   agent_ =
       std::make_unique<WebAgent>(contents, &BrowserAIRuntime::GetInstance());
   agent_->SetUsePageMap(true);
-  agent_->SetReplayPicker(base::BindRepeating(&VoiceAgentPlanner::PickReplay,
-                                              weak_factory_.GetWeakPtr()));
+  // A method that returns a value can't be bound to a WeakPtr: a planner
+  // gone meanwhile ends the replay.
+  agent_->SetReplayPicker(base::BindRepeating(
+      [](base::WeakPtr<VoiceAgentPlanner> self,
+         const agent_actions::Observation& observation) {
+        return self ? self->PickReplay(observation)
+                    : voice_agent::EndReplayReply(/*done=*/false);
+      },
+      weak_factory_.GetWeakPtr()));
   // The page a step opens is the run's to open (an address in the goal is
   // in its scope, as one the user said); any other step acts on the page
   // the tab is on, which the run starts on.
