@@ -841,14 +841,19 @@ RoutineStep RoutineStepForPlanner(const PlannerStep& in,
   switch (in.action) {
     case A::kNavigate:
     case A::kSearch: {
-      if (!ValidPlannerUrl(in.url)) {
+      // The address as the browser writes it (ASCII), as a draft keeps
+      // it: what the file holds reads back the same.
+      const GURL url(in.url);
+      const std::string spec = url.is_valid() ? url.spec() : std::string();
+      if (!IsValidUtf8(in.url) || HasTemplate(in.url) ||
+          !ValidPlannerUrl(spec)) {
         return UnkeptPlannerStep(kUnkeptStep);
       }
-      if (draft::UrlLooksSecret(in.url)) {
+      if (draft::UrlLooksSecret(in.url) || draft::UrlLooksSecret(spec)) {
         return UnkeptPlannerStep(kUnkeptSecretAddress);
       }
-      step.url = in.url;
-      step.host = HostOfUrl(in.url);
+      step.url = spec;
+      step.host = HostOfUrl(spec);
       if (step.host.empty()) {
         return UnkeptPlannerStep(kUnkeptStep);
       }

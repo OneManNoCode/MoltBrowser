@@ -493,6 +493,8 @@ TEST(VoiceRoutinesTest, ThePlannersStepsAreCheckedAsADraftChecksThem) {
       {Element(Action::kClick, "button", "Go", "not a host!"),
        "can't be repeated"},
       {Navigate("javascript:alert(1)"), "can't be repeated"},
+      {Navigate("https://trains.example/r\xC3"), "can't be repeated"},
+      {Navigate("https://trains.example/{{pin}}"), "can't be repeated"},
       {Navigate("https://trains.example/" + std::string(1100, 'a')),
        "can't be repeated"},
       {Navigate("https://trains.example/reset?token=abcdef0123456789abcdef"),
