@@ -20,27 +20,31 @@ namespace {
 // of each other, none within its bound of an answer word) and measured with
 // the speech helper's recognizer on the voice bench's synthetic voices
 // (TOUCHLESS_BROWSING.md §7.3).
-constexpr std::array<std::string_view, 40> kWords = {
-    "harbor",  "maple",    "tiger",   "lemon",    "rocket",    "garden",
-    "basket",  "dragon",   "planet",  "ladder",   "magnet",    "parrot",
-    "pepper",  "cactus",   "falcon",  "hammer",   "kettle",    "napkin",
-    "orange",  "tomato",   "umbrella", "wizard",  "bamboo",    "helmet",
-    "turtle",  "banjo",    "kayak",   "mango",    "compass",   "mitten",
-    "pretzel", "canyon",   "cupcake", "sailboat", "butterfly", "gorilla",
-    "ketchup", "macaroni", "octopus", "sandwich",
-};
+constexpr auto kWords = std::to_array<std::string_view>({
+    "harbor",   "maple",    "tiger",      "lemon",     "rocket",  "garden",
+    "basket",   "dragon",   "planet",     "magnet",    "parrot",  "pepper",
+    "cactus",   "falcon",   "hammer",     "lantern",   "napkin",  "orange",
+    "umbrella", "bamboo",   "cobalt",     "eagle",     "helmet",  "turtle",
+    "banjo",    "fossil",   "kayak",      "lobster",   "mango",   "yogurt",
+    "compass",  "guitar",   "lettuce",    "whistle",   "mitten",  "oatmeal",
+    "canyon",   "cupcake",  "teapot",     "butterfly", "gorilla", "ketchup",
+    "macaroni", "sandwich", "strawberry", "tornado",
+});
 
 // The answers voice mode takes to its own prompts and dialogs, the words
 // around them, and the numbers a list is chosen from.
-constexpr std::array<std::string_view, 49> kAnswerWords = {
-    "yes",   "no",     "ok",      "okay",   "stop",   "cancel", "block",
-    "allow", "deny",   "leave",   "stay",   "keep",   "discard", "save",
-    "never", "repeat", "help",    "molt",   "hey",    "one",    "two",
-    "three", "four",   "five",    "six",    "seven",  "eight",  "nine",
-    "ten",   "eleven", "twelve",  "next",   "back",   "answer", "send",
-    "yeah",  "yep",    "nope",    "sure",   "play",   "pause",  "open",
-    "close", "reload", "please",  "again",  "what",   "sorry",  "wait",
-};
+constexpr auto kAnswerWords = std::to_array<std::string_view>({
+    "yes",    "no",     "ok",      "okay",     "stop",   "cancel",  "block",
+    "allow",  "deny",   "leave",   "stay",     "keep",   "discard", "save",
+    "never",  "repeat", "help",    "molt",     "hey",    "one",     "two",
+    "three",  "four",   "five",    "six",      "seven",  "eight",   "nine",
+    "ten",    "eleven", "twelve",  "next",     "back",   "answer",  "send",
+    "yeah",   "yep",    "nope",    "sure",     "play",   "pause",   "open",
+    "close",  "reload", "please",  "again",    "what",   "sorry",   "wait",
+    "delete", "remove", "dismiss", "later",    "ignore", "confirm", "fine",
+    "thanks", "thank",  "not",     "now",      "type",   "dont",    "reply",
+    "page",   "here",   "got",     "password", "it",     "is",      "my",
+});
 
 // Said around the word: "yes, harbor", "say harbor", "harbor please".
 constexpr std::array<std::string_view, 5> kLeading = {"yes", "ok", "okay",
@@ -54,8 +58,8 @@ bool OneOf(const std::array<std::string_view, N>& words,
 }
 
 std::vector<std::string> SplitFolded(std::string_view heard) {
-  const std::string folded =
-      FoldForComparison(heard.substr(0, std::min(heard.size(), kMaxHeardBytes)));
+  const std::string folded = FoldForComparison(
+      heard.substr(0, std::min(heard.size(), kMaxHeardBytes)));
   std::vector<std::string> words;
   size_t start = 0;
   while (start < folded.size() && words.size() <= kMaxHeardWords) {
@@ -150,8 +154,13 @@ std::optional<size_t> MatchConfirmationWord(std::string_view heard) {
   }
   if (last - first == 2) {
     // A recognizer that split the word in two ("sail boat").
-    if (std::optional<size_t> exact = Exactly(words[first] + words[first + 1])) {
+    if (std::optional<size_t> exact =
+            Exactly(words[first] + words[first + 1])) {
       return exact;
+    }
+    if (OneOf(kAnswerWords, words[first]) ||
+        OneOf(kAnswerWords, words[first + 1])) {
+      return std::nullopt;
     }
     const std::string a = PhoneticKey(words[first]);
     const std::string b = PhoneticKey(words[first + 1]);

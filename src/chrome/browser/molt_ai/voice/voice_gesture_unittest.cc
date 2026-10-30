@@ -96,9 +96,9 @@ TEST(VoiceGestureWordsTest, WhatIsSaidAroundTheWord) {
   EXPECT_EQ(MatchConfirmationWord("harbour"), harbor);
   EXPECT_EQ(MatchConfirmationWord("harber"), harbor);
   // A word split in two.
-  const std::optional<size_t> sailboat = MatchConfirmationWord("sailboat");
-  ASSERT_TRUE(sailboat);
-  EXPECT_EQ(MatchConfirmationWord("sail boat"), sailboat);
+  const std::optional<size_t> butterfly = MatchConfirmationWord("butterfly");
+  ASSERT_TRUE(butterfly);
+  EXPECT_EQ(MatchConfirmationWord("butter fly"), butterfly);
 }
 
 TEST(VoiceGestureWordsTest, NotAWord) {
@@ -136,9 +136,9 @@ TEST(GestureBookTest, MintsOnTheWordHeardCleanly) {
   EXPECT_EQ(prompt->expires_ms, 1000 + kGesturePromptWindowMs);
 
   VoiceGesture gesture;
-  EXPECT_EQ(book.Hear(prompt->id, "yes " + prompt->word, kClean, 2000,
-                      &gesture),
-            HearResult::kMinted);
+  EXPECT_EQ(
+      book.Hear(prompt->id, "yes " + prompt->word, kClean, 2000, &gesture),
+      HearResult::kMinted);
   EXPECT_EQ(gesture.prompt_id, prompt->id);
   EXPECT_EQ(gesture.binding, Camera());
   EXPECT_EQ(gesture.minted_ms, 2000);
@@ -164,8 +164,8 @@ TEST(GestureBookTest, UsedOnceForItsBindingWithinItsLifetime) {
   ASSERT_TRUE(prompt);
   ASSERT_EQ(book.Hear(prompt->id, prompt->word, kClean, 1100, &gesture),
             HearResult::kMinted);
-  EXPECT_FALSE(book.Consume(gesture, Camera("https://other.example camera"),
-                            1200));
+  EXPECT_FALSE(
+      book.Consume(gesture, Camera("https://other.example camera"), 1200));
   EXPECT_FALSE(book.Consume(gesture, Camera(), 1300));
 
   // A caller's copy changed after minting doesn't change what it allows.
@@ -183,8 +183,7 @@ TEST(GestureBookTest, UsedOnceForItsBindingWithinItsLifetime) {
   ASSERT_TRUE(prompt);
   ASSERT_EQ(book.Hear(prompt->id, prompt->word, kClean, 3100, &gesture),
             HearResult::kMinted);
-  EXPECT_FALSE(
-      book.Consume(gesture, Camera(), 3100 + kGestureLifetimeMs + 1));
+  EXPECT_FALSE(book.Consume(gesture, Camera(), 3100 + kGestureLifetimeMs + 1));
 
   // Never minted.
   EXPECT_FALSE(book.Consume(VoiceGesture(), Camera(), 4000));
@@ -195,8 +194,8 @@ TEST(GestureBookTest, TheWordExpiresWithThePrompt) {
   const std::optional<GesturePrompt> prompt = book.Begin(Camera(), 0);
   ASSERT_TRUE(prompt);
   VoiceGesture gesture;
-  EXPECT_EQ(book.Hear(prompt->id, prompt->word, kClean,
-                      kGesturePromptWindowMs, &gesture),
+  EXPECT_EQ(book.Hear(prompt->id, prompt->word, kClean, kGesturePromptWindowMs,
+                      &gesture),
             HearResult::kNoPrompt);
 }
 
@@ -210,9 +209,9 @@ TEST(GestureBookTest, OnlyACleanHearingFromTheMicrophone) {
   EXPECT_EQ(book.Hear(prompt->id, prompt->word, kNotClean, 200, &gesture),
             HearResult::kNotClean);
   // Nor does another source's wrong word refuse the prompt.
-  EXPECT_EQ(book.Hear(prompt->id, OtherWord(prompt->word), kNotClean, 300,
-                      &gesture),
-            HearResult::kNotClean);
+  EXPECT_EQ(
+      book.Hear(prompt->id, OtherWord(prompt->word), kNotClean, 300, &gesture),
+      HearResult::kNotClean);
   // It still waits.
   EXPECT_EQ(book.Hear(prompt->id, prompt->word, kClean, 400, &gesture),
             HearResult::kMinted);
@@ -235,9 +234,9 @@ TEST(GestureBookTest, AWrongWordRefusesThePromptAndTwoLockItOut) {
   std::optional<GesturePrompt> prompt = book.Begin(Camera(), 0);
   ASSERT_TRUE(prompt);
   VoiceGesture gesture;
-  EXPECT_EQ(book.Hear(prompt->id, OtherWord(prompt->word), kClean, 100,
-                      &gesture),
-            HearResult::kWrongWord);
+  EXPECT_EQ(
+      book.Hear(prompt->id, OtherWord(prompt->word), kClean, 100, &gesture),
+      HearResult::kWrongWord);
   // One try: the right word no longer answers it.
   EXPECT_EQ(book.Hear(prompt->id, prompt->word, kClean, 200, &gesture),
             HearResult::kNoPrompt);
@@ -245,9 +244,9 @@ TEST(GestureBookTest, AWrongWordRefusesThePromptAndTwoLockItOut) {
 
   prompt = book.Begin(Camera(), 1000);
   ASSERT_TRUE(prompt);
-  EXPECT_EQ(book.Hear(prompt->id, OtherWord(prompt->word), kClean, 1100,
-                      &gesture),
-            HearResult::kWrongWord);
+  EXPECT_EQ(
+      book.Hear(prompt->id, OtherWord(prompt->word), kClean, 1100, &gesture),
+      HearResult::kWrongWord);
   EXPECT_TRUE(book.LockedOut(1100));
   EXPECT_FALSE(book.Begin(Camera(), 1200));
   EXPECT_FALSE(book.Begin(Camera(), 1100 + kLockoutMs - 1));
@@ -261,9 +260,9 @@ TEST(GestureBookTest, WrongWordsFarApartDontLockOut) {
     std::optional<GesturePrompt> prompt = book.Begin(Camera(), now);
     ASSERT_TRUE(prompt);
     VoiceGesture gesture;
-    EXPECT_EQ(book.Hear(prompt->id, OtherWord(prompt->word), kClean, now,
-                        &gesture),
-              HearResult::kWrongWord);
+    EXPECT_EQ(
+        book.Hear(prompt->id, OtherWord(prompt->word), kClean, now, &gesture),
+        HearResult::kWrongWord);
     now += kWrongWordWindowMs;
   }
   EXPECT_FALSE(book.LockedOut(now));
@@ -329,16 +328,15 @@ TEST(GestureBookTest, ANewPromptForTheSameBindingReplacesTheOld) {
 TEST(GestureBookTest, AGestureMintedForOnePromptIsNotAnother) {
   GestureBook book{Counter(11)};
   const std::optional<GesturePrompt> camera = book.Begin(Camera(), 0);
-  const std::optional<GesturePrompt> download = book.Begin(
-      GestureBinding{GestureAction::kKeepDangerousDownload, "7"}, 0);
+  const std::optional<GesturePrompt> download =
+      book.Begin(GestureBinding{GestureAction::kKeepDangerousDownload, "7"}, 0);
   ASSERT_TRUE(camera);
   ASSERT_TRUE(download);
   VoiceGesture gesture;
   ASSERT_EQ(book.Hear(camera->id, camera->word, kClean, 10, &gesture),
             HearResult::kMinted);
   EXPECT_FALSE(book.Consume(
-      gesture, GestureBinding{GestureAction::kKeepDangerousDownload, "7"},
-      20));
+      gesture, GestureBinding{GestureAction::kKeepDangerousDownload, "7"}, 20));
 }
 
 }  // namespace

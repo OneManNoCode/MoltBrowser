@@ -88,24 +88,52 @@ source_set("voice_command") {
 
 # The voice gesture (docs/design/TOUCHLESS_BROWSING.md §7.3): the
 # confirmation words, the prompts that wait for one and the one-time
-# capability a word heard cleanly mints. Std-only: molt_ai_unittests and a
-# standalone harness build the same code.
+# capability a word heard cleanly mints; and what voice mode says and
+# hears for the browser's prompts and a page's dialogs. Std-only:
+# molt_ai_unittests, a standalone harness and molt_voice_prompts_fuzzer
+# build the same code.
 source_set("voice_prompts") {
   sources = [
     "voice_gesture.cc",
     "voice_gesture.h",
+    "voice_prompts.cc",
+    "voice_prompts.h",
   ]
   public_deps = [ ":spoken_choice" ]
+  deps = [
+    # SpeechSafeText() for the page's text.
+    ":page_map",
+
+    # SiteForSpeech() for the site's name.
+    "//chrome/browser/molt_ai/security:activation_policy",
+  ]
 }
 
 source_set("voice_prompts_unit_tests") {
   testonly = true
-  sources = [ "voice_gesture_unittest.cc" ]
+  sources = [
+    "voice_gesture_unittest.cc",
+    "voice_prompts_unittest.cc",
+  ]
   deps = [
     ":spoken_choice",
     ":voice_prompts",
     "//testing/gtest",
   ]
+}
+
+# A dialog's text and a file's name (page text), and what voice mode hears
+# while a prompt waits. See docs/FUZZING.md.
+fuzzer_test("molt_voice_prompts_fuzzer") {
+  sources = [ "molt_voice_prompts_fuzzer.cc" ]
+  deps = [
+    ":spoken_choice",
+    ":voice_prompts",
+    "//base",
+  ]
+  dict = "dicts/voice_prompts.dict"
+  seed_corpus = "corpus/molt_voice_prompts_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
 }
 
 source_set("voice_intent_unit_tests") {

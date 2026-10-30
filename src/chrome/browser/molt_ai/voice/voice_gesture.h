@@ -152,12 +152,12 @@ struct VoiceGesture {
 };
 
 enum class HearResult : uint8_t {
-  kMinted,      // the prompt's word, heard cleanly
-  kNotClean,    // the prompt's word, but not heard cleanly: say it again
-  kWrongWord,   // another confirmation word: the prompt is refused
-  kNotAWord,    // no confirmation word: the prompt still waits
-  kNoPrompt,    // no such prompt waits (answered, expired, cancelled)
-  kLockedOut,   // the gesture is off for now
+  kMinted,     // the prompt's word, heard cleanly
+  kNotClean,   // the prompt's word, but not heard cleanly: say it again
+  kWrongWord,  // another confirmation word: the prompt is refused
+  kNotAWord,   // no confirmation word: the prompt still waits
+  kNoPrompt,   // no such prompt waits (answered, expired, cancelled)
+  kLockedOut,  // the gesture is off for now
 };
 
 std::string_view HearResultName(HearResult result);
