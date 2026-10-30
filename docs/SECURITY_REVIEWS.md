@@ -57,7 +57,8 @@ of 21 protocol checks) and `molt-voice` (16 of 16, and its speaking
 checks) under the resident sandbox after the fixes. Fixes tested with
 the std-only unit tests built standalone (system gtest, ASan and UBSan),
 the agent page map's unit tests on the `//url` stand-ins, the voice
-listener fuzzer (four minutes), `molt_fuzz.py check`; the changed C++ was
+listener fuzzer (four minutes) and the agent page map fuzzer, which now
+checks the quoted labels (two minutes), `molt_fuzz.py check`; the changed C++ was
 compiled against Chromium 156's headers; the browser tests run on the
 build machine.
 
