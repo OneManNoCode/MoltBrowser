@@ -94,6 +94,24 @@ bool ConfirmationValid(const ConversationState& state,
          env.now_ms < state.confirm_expires_ms;
 }
 
+// |command|'s answer to the browser's prompt |state| holds (kNone when it
+// isn't one). A question the loop asked since the prompt was read (the
+// prompt dropped any before it) is newer: a plain yes or no is its.
+PromptReply PromptReplyFor(const VoiceCommand& command,
+                           const VoiceEnvironment& env,
+                           const ConversationState& state) {
+  if (ConfirmationValid(state, env)) {
+    ParseContext answering;
+    answering.expecting_yes_no = true;
+    const VoiceCommandKind kind =
+        ParseVoiceCommand(command.heard, answering).kind;
+    if (kind == VoiceCommandKind::kYes || kind == VoiceCommandKind::kNo) {
+      return PromptReply();
+    }
+  }
+  return ParsePromptReply(state.prompt, command.heard);
+}
+
 const PageItem* FieldInFocus(const ConversationState& state,
                              const PageMap& map,
                              const VoiceEnvironment& env) {
@@ -748,7 +766,7 @@ class Planner {
       }
       return false;
     }
-    const PromptReply reply = ParsePromptReply(prompt, command.heard);
+    const PromptReply reply = PromptReplyFor(command, env_, state());
     if (reply.answer == PromptAnswer::kNone) {
       return false;
     }
@@ -2178,6 +2196,13 @@ VoiceTurn PlanBrowserPromptGone(int id,
 
 int BrowserPromptHeld(const ConversationState& state, int64_t now_ms) {
   return PromptWaits(state.prompt, now_ms) ? state.prompt.id : 0;
+}
+
+bool AnswersBrowserPrompt(const VoiceCommand& command,
+                          const VoiceEnvironment& env,
+                          const ConversationState& state) {
+  return !env.moltnet && PromptWaits(state.prompt, env.now_ms) &&
+         PromptReplyFor(command, env, state).answer != PromptAnswer::kNone;
 }
 
 int PageRequestQuestionHeld(const ConversationState& state) {

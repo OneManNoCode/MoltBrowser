@@ -1465,6 +1465,30 @@ TEST(VoiceControllerLogicTest, APromptTakesTheFloorFromTheLoopsQuestion) {
   EXPECT_EQ(Find(turn, K::kPromptAnswer)->index, 16);
 }
 
+TEST(VoiceControllerLogicTest, ALoopQuestionAfterThePromptHearsYesAndNo) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  c.state() =
+      PlanBrowserPrompt(17, Permission(), "harbor", c.env(), c.state()).state;
+  // The loop asks its own question while the prompt waits.
+  c.state() = PlanPageRequestQuestion(4, "The page tried to open a new window.",
+                                      "open it", c.env(), c.state())
+                  .state;
+  VoiceCommand yes;
+  yes.kind = VoiceCommandKind::kYes;
+  yes.heard = "yes";
+  EXPECT_FALSE(AnswersBrowserPrompt(yes, c.env(), c.state()));
+  // "Yes" is the newer question's.
+  VoiceTurn turn = c.Say("yes");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPageRequestAnswer}));
+  // The prompt's own answers still reach it.
+  EXPECT_EQ(BrowserPromptHeld(c.state(), c.env().now_ms), 17);
+  VoiceCommand word;
+  word.heard = "harbor";
+  EXPECT_TRUE(AnswersBrowserPrompt(word, c.env(), c.state()));
+  turn = c.Say("harbor");
+  EXPECT_EQ(Find(turn, K::kPromptAnswer)->prompt_answer, PromptAnswer::kAllow);
+}
+
 TEST(VoiceControllerLogicTest, APagesDialogsByVoice) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   // alert(): read, closed on OK.

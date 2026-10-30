@@ -755,9 +755,10 @@ void VoiceController::HandleUtterance(const std::string& text) {
   const VoiceCommand command =
       ParseVoiceCommand(utterance, ContextFor(state_, map, env));
   // The guard's question, asked during a planner run, is answered without
-  // ending the run.
+  // ending the run; so is the browser's prompt (voice_browser_prompts.h).
   if (!AnswersPlannerQuestion(command, map, env) &&
-      !AnswersPageRequestQuestion(command, map, env)) {
+      !AnswersPageRequestQuestion(command, map, env) &&
+      !AnswersBrowserPrompt(command, env, state_)) {
     CancelPlanner();
   }
   if (!NumberStillOnScreen(command, map)) {

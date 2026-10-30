@@ -441,6 +441,13 @@ VoiceTurn PlanBrowserPromptGone(int id,
 // The browser's prompt |state| holds and that waits at |now_ms|, or 0.
 int BrowserPromptHeld(const ConversationState& state, int64_t now_ms);
 
+// Whether |command| is an answer to the browser's prompt |state| holds.
+// While the loop waits for a "yes" to a question it asked after the
+// prompt, a plain yes or no is that question's.
+bool AnswersBrowserPrompt(const VoiceCommand& command,
+                          const VoiceEnvironment& env,
+                          const ConversationState& state);
+
 // Whether pressing an item named |label| (linking to |url|, raw page data)
 // on |map| needs a spoken "yes" first: its words buy, purchase, pay,
 // order, checkout, delete, remove, erase, discard, trash, send, post,

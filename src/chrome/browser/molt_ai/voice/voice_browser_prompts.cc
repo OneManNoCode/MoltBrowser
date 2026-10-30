@@ -129,8 +129,7 @@ int64_t VoiceBrowserPrompts::NowMs() const {
   return (now - base::TimeTicks()).InMilliseconds();
 }
 
-// ---- The tab
-// -----------------------------------------------------------------
+// ---- The tab ----------------------------------------------------------------
 
 void VoiceBrowserPrompts::Attach(content::WebContents* contents) {
   if (contents == web_contents()) {
@@ -187,8 +186,7 @@ bool VoiceBrowserPrompts::TakesPromptsByVoice() {
   return web_contents() && delegate_->ListensForPrompts();
 }
 
-// ---- One prompt at a time
-// ----------------------------------------------------
+// ---- One prompt at a time ---------------------------------------------------
 
 int VoiceBrowserPrompts::Begin(Source source,
                                BrowserPrompt prompt,
@@ -382,8 +380,7 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
   }
 }
 
-// ---- Permission prompts
-// ------------------------------------------------------
+// ---- Permission prompts -----------------------------------------------------
 
 void VoiceBrowserPrompts::OnPromptAdded() {
   // Not from inside the manager's own notification.
@@ -513,8 +510,7 @@ std::string VoiceBrowserPrompts::AnswerPermission(const Current& prompt,
   return std::string();
 }
 
-// ---- A page's dialogs
-// --------------------------------------------------------
+// ---- A page's dialogs -------------------------------------------------------
 
 void VoiceBrowserPrompts::AnswerDialog(const Current& prompt,
                                        PromptAnswer answer,
@@ -572,8 +568,7 @@ void VoiceBrowserPrompts::OnDialogClosed(content::WebContents* contents) {
   }
 }
 
-// ---- Dangerous downloads
-// -----------------------------------------------------
+// ---- Dangerous downloads ----------------------------------------------------
 
 void VoiceBrowserPrompts::OnDownloadUpdated(content::DownloadManager* manager,
                                             download::DownloadItem* item) {
@@ -666,8 +661,7 @@ std::string VoiceBrowserPrompts::AnswerDownload(const Current& prompt,
   return std::string();
 }
 
-// ---- The password bubble
-// -----------------------------------------------------
+// ---- The password bubble ----------------------------------------------------
 
 void VoiceBrowserPrompts::DidFinishNavigation(
     content::NavigationHandle* navigation) {
