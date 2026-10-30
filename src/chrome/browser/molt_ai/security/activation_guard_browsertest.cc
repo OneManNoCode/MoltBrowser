@@ -17,6 +17,7 @@
 //     for is not.
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -231,36 +232,47 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
     agent_.reset();
     if (voice::VoiceController* voice =
             voice::VoiceController::FromBrowser(browser())) {
-      voice->RemoveObserver(&speech_);
+      if (observing_) {
+        voice->RemoveObserver(&speech_);
+      }
       voice->Stop();
     }
-    if (holds_page_ && web_contents()) {
-      if (auto* page =
-              voice::VoicePageController::FromWebContents(web_contents())) {
-        page->Stop(voice::VoicePageController::Holder::kWebAgent);
+    if (page_) {
+      ActivationGuard::RemoveAsker(page_, &asker_);
+      if (holds_page_) {
+        if (auto* controller =
+                voice::VoicePageController::FromWebContents(page_)) {
+          controller->Stop(voice::VoicePageController::Holder::kWebAgent);
+        }
       }
     }
+    page_ = nullptr;
     content::TtsController::GetInstance()->SetTtsPlatform(
         content::TtsPlatform::GetInstance());
     InProcessBrowserTest::TearDownOnMainThread();
   }
 
  protected:
-  content::WebContents* web_contents() {
+  content::WebContents* active_tab() {
     return browser()->tab_strip_model()->GetActiveWebContents();
   }
 
-  // A secure context (geolocation needs one) on the test server.
-  GURL PageUrl() {
-    return embedded_test_server()->GetURL("localhost",
-                                          "/molt_voice/activation.html");
+  // Opens the fixture page in the active tab, which the test then keeps to
+  // (a tab the page opens becomes the active one). On the test server's
+  // "localhost": a secure context, as geolocation needs.
+  void OpenPage() {
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(
+        browser(), embedded_test_server()->GetURL(
+                       "localhost", "/molt_voice/activation.html")));
+    page_ = active_tab();
   }
 
   content::EvalJsResult Js(std::string_view script) {
-    return content::EvalJs(web_contents(), script,
+    return content::EvalJs(page_.get(), script,
                            content::EXECUTE_SCRIPT_NO_USER_GESTURE);
   }
 
+  // Waits until the page's log has |entry|.
   bool WaitForLog(std::string_view entry) {
     return base::test::RunUntil([&]() {
       return Js("moltLog.join(' ')").ExtractString().find(entry) !=
@@ -268,35 +280,37 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
     });
   }
 
-  // The page's controller, held as an agent run holds it, and the map once
-  // |ready| finds what it needs.
+  // The page's controller, held as an agent run holds it.
   voice::VoicePageController* HoldPage() {
-    voice::VoicePageController::CreateForWebContents(web_contents());
-    auto* page = voice::VoicePageController::FromWebContents(web_contents());
-    page->Start(voice::VoicePageController::Holder::kWebAgent);
+    voice::VoicePageController::CreateForWebContents(page_);
+    auto* controller = voice::VoicePageController::FromWebContents(page_);
+    controller->Start(voice::VoicePageController::Holder::kWebAgent);
     holds_page_ = true;
-    return page;
+    return controller;
   }
 
-  const voice::PageItem* WaitForItem(voice::VoicePageController* page,
-                                     voice::ItemKind kind,
-                                     std::string_view label,
-                                     voice::PageMap* map) {
+  // The recording asker answers for |who| on the page's tab.
+  void UseAsker(activation::Asker who) {
+    ActivationGuard::SetAsker(page_, who, &asker_);
+  }
+
+  // The item of |kind| named |label|, once the map has it.
+  std::optional<voice::PageItem> WaitForItem(
+      voice::VoicePageController* controller,
+      voice::ItemKind kind,
+      std::string_view label) {
+    std::optional<voice::PageItem> found;
     EXPECT_TRUE(base::test::RunUntil([&]() {
-      *map = page->BuildMap();
-      for (const voice::PageItem& item : map->items) {
+      const voice::PageMap map = controller->BuildMap();
+      for (const voice::PageItem& item : map.items) {
         if (item.kind == kind && item.label == label) {
+          found = item;
           return true;
         }
       }
       return false;
     })) << "no " << label;
-    for (const voice::PageItem& item : map->items) {
-      if (item.kind == kind && item.label == label) {
-        return &item;
-      }
-    }
-    return nullptr;
+    return found;
   }
 
   voice::VoiceController* voice() {
@@ -323,6 +337,8 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
 
   FakeTtsPlatform tts_;
   SpeechLog speech_;
+  RecordingAsker asker_;
+  raw_ptr<content::WebContents> page_ = nullptr;
   bool observing_ = false;
   bool holds_page_ = false;
   std::unique_ptr<WebAgent> agent_;
@@ -336,7 +352,7 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
 // "Allow" opens it.
 IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
                        AnAgentsClickOpensNoOtherSiteUnasked) {
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), PageUrl()));
+  OpenPage();
   int replies = 0;
   WebAgent::SetModelForTesting(base::BindRepeating(
       [](int* replies, const std::string& prompt,
@@ -357,7 +373,7 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   bool done = false;
   bool success = false;
   agent_ =
-      std::make_unique<WebAgent>(web_contents(), &BrowserAIRuntime::GetInstance());
+      std::make_unique<WebAgent>(page_, &BrowserAIRuntime::GetInstance());
   agent_->Start(
       "open the offer", WebAgent::StepCallback(),
       base::BindOnce(
@@ -406,12 +422,12 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
 // "yes", and starts only then.
 IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
                        VoiceModesDownloadClickIsAsked) {
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), PageUrl()));
+  OpenPage();
   DownloadCounter downloads(browser()->profile()->GetDownloadManager());
   ASSERT_TRUE(voice()->Start());
   ASSERT_TRUE(base::test::RunUntil([&]() {
-    auto* page = voice::VoicePageController::FromWebContents(web_contents());
-    return page && page->HasPageTree();
+    auto* controller = voice::VoicePageController::FromWebContents(page_);
+    return controller && controller->HasPageTree();
   }));
 
   Say("click download report");
@@ -422,7 +438,7 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   })) << speech_.all();
   // Held: nothing was downloaded.
   EXPECT_EQ(downloads.created(), 0);
-  ActivationGuard* guard = ActivationGuard::FromWebContents(web_contents());
+  ActivationGuard* guard = ActivationGuard::FromWebContents(page_);
   ASSERT_TRUE(guard);
   EXPECT_NE(guard->pending_question(), 0);
 
@@ -435,95 +451,83 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
 // opens its tab as it always would.
 IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
                        APersonsOwnClickIsUnchanged) {
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), PageUrl()));
-  voice::VoicePageController* page = HoldPage();
-  RecordingAsker asker;
-  ActivationGuard::SetAsker(web_contents(), activation::Asker::kWebAgent,
-                            &asker);
-  voice::PageMap map;
-  const voice::PageItem* locate =
-      WaitForItem(page, voice::ItemKind::kButton, "Find stores", &map);
+  OpenPage();
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kWebAgent);
+  const std::optional<voice::PageItem> locate =
+      WaitForItem(controller, voice::ItemKind::kButton, "Find stores");
   ASSERT_TRUE(locate);
   // An action: the tab acts for the agent.
-  ASSERT_EQ(page->Focus(locate->handle), ActionResult::kDone);
-  ActivationGuard* guard = ActivationGuard::FromWebContents(web_contents());
+  ASSERT_EQ(controller->Focus(locate->handle), ActionResult::kDone);
+  ActivationGuard* guard = ActivationGuard::FromWebContents(page_);
   ASSERT_TRUE(guard);
   EXPECT_TRUE(guard->IsActing());
 
   // The person clicks "Open offer" themselves.
-  content::SimulateMouseClickOrTapElementWithId(web_contents(), "offer");
+  content::SimulateMouseClickOrTapElementWithId(page_, "offer");
   EXPECT_TRUE(WaitForLog("open:window"));
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return browser()->tab_strip_model()->count() == 2; }));
   EXPECT_FALSE(guard->IsActing());
-  EXPECT_TRUE(asker.asked.empty());
-  ActivationGuard::RemoveAsker(web_contents(), &asker);
+  EXPECT_TRUE(asker_.asked.empty());
 }
 
 // A permission prompt after voice mode's click: shown, then dismissed and
 // said, never granted; nothing is remembered for the site.
 IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
                        APromptAfterAVoiceClickIsNotGrantedSilently) {
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), PageUrl()));
-  auto* prompts =
-      permissions::PermissionRequestManager::FromWebContents(web_contents());
+  OpenPage();
+  auto* prompts = permissions::PermissionRequestManager::FromWebContents(page_);
   ASSERT_TRUE(prompts);
   // A prompt that stays until it is answered.
   permissions::MockPermissionPromptFactory prompt_factory(prompts);
 
-  voice::VoicePageController* page = HoldPage();
-  RecordingAsker asker;
-  ActivationGuard::SetAsker(web_contents(), activation::Asker::kVoiceMode,
-                            &asker);
-  voice::PageMap map;
-  const voice::PageItem* locate =
-      WaitForItem(page, voice::ItemKind::kButton, "Find stores", &map);
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kVoiceMode);
+  const std::optional<voice::PageItem> locate =
+      WaitForItem(controller, voice::ItemKind::kButton, "Find stores");
   ASSERT_TRUE(locate);
-  ASSERT_EQ(page->Press(locate->handle), ActionResult::kDone);
+  ASSERT_EQ(controller->Press(locate->handle), ActionResult::kDone);
 
   EXPECT_TRUE(WaitForLog("location:denied"));
   EXPECT_EQ(false, Js("moltLog.includes('location:granted')"));
   EXPECT_GE(prompt_factory.show_count(), 1);
   EXPECT_FALSE(prompts->IsRequestInProgress());
-  ASSERT_EQ(asker.told.size(), 1u);
-  EXPECT_EQ(asker.told[0],
+  ASSERT_EQ(asker_.told.size(), 1u);
+  EXPECT_EQ(asker_.told[0],
             "The page asked for location permission. I can't take an answer "
             "to that by voice yet, so I turned it down.");
   // Dismissed, not denied: the site may ask again another time.
+  const GURL url = page_->GetLastCommittedURL();
   HostContentSettingsMap* settings =
       HostContentSettingsMapFactory::GetForProfile(browser()->profile());
-  EXPECT_EQ(settings->GetContentSetting(PageUrl(), PageUrl(),
+  EXPECT_EQ(settings->GetContentSetting(url, url,
                                         ContentSettingsType::GEOLOCATION),
             CONTENT_SETTING_ASK);
-  ActivationGuard::RemoveAsker(web_contents(), &asker);
 }
 
-// Full screen nobody asked for is refused (and voice mode says so); the
-// "full screen" press may.
+// Full screen nobody asked for is refused (and voice mode says so); after a
+// press for "full screen" it isn't.
 IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
                        FullScreenOnlyWhenAskedFor) {
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), PageUrl()));
-  voice::VoicePageController* page = HoldPage();
-  RecordingAsker asker;
-  ActivationGuard::SetAsker(web_contents(), activation::Asker::kVoiceMode,
-                            &asker);
-  voice::PageMap map;
-  const voice::PageItem* big =
-      WaitForItem(page, voice::ItemKind::kButton, "Show big", &map);
+  OpenPage();
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kVoiceMode);
+  const std::optional<voice::PageItem> big =
+      WaitForItem(controller, voice::ItemKind::kButton, "Show big");
   ASSERT_TRUE(big);
 
-  ASSERT_EQ(page->Press(big->handle), ActionResult::kDone);
+  ASSERT_EQ(controller->Press(big->handle), ActionResult::kDone);
   EXPECT_TRUE(WaitForLog("fullscreen:no"));
-  EXPECT_FALSE(web_contents()->IsFullscreen());
-  ASSERT_EQ(asker.told.size(), 1u);
-  EXPECT_EQ(asker.told[0],
+  EXPECT_FALSE(page_->IsFullscreen());
+  ASSERT_EQ(asker_.told.size(), 1u);
+  EXPECT_EQ(asker_.told[0],
             "The page tried to go full screen. I stopped it. Say full screen "
             "if you want it.");
 
-  ASSERT_EQ(page->Press(big->handle, activation::Intent::kFullScreen),
+  ASSERT_EQ(controller->Press(big->handle, activation::Intent::kFullScreen),
             ActionResult::kDone);
   EXPECT_TRUE(WaitForLog("fullscreen:yes"));
-  ActivationGuard::RemoveAsker(web_contents(), &asker);
 }
 
 }  // namespace
