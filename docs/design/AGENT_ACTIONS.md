@@ -1861,7 +1861,7 @@ observes and acts through the element snapshot and its scripts only.
 
 #### 2.10.7 Tests
 
-- **In `molt_ai_unittests`:** `agents/agent_page_map_unittest.cc` (14
+- **In `molt_ai_unittests`:** `agents/agent_page_map_unittest.cc` (15
   tests): the observation of the YouTube-like results (the list's entries
   with their fields, the first ten primary actions, the search box a text
   field), the ids as the map's numbers (parsed back to the item's node;
@@ -1874,9 +1874,26 @@ observes and acts through the element snapshot and its scripts only.
   rule only with a select), finding the live item (moved, renamed, another
   kind, disabled, gone), the probe (links, an image's address, submits,
   field kinds, the label cap), the click's question as the snapshot's
-  path asks it, and the typing check.
+  path asks it, the frame's origin at action time (the page's own, still
+  the one observed, in scope; never another site's or a non-web
+  document), and the typing check. `agents/voice_agent_speech_unittest.cc`
+  (5) and `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`
+  cover the planner fallback (TOUCHLESS_BROWSING.md §6.2).
 - **Fuzzer:** `molt_agent_page_map_fuzzer` (stand-ins tier): hostile
   trees, options, URLs, page text and model replies.
+- **Run outside the repo:** these 20 tests, the agents' earlier suites
+  (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`,
+  `ChatActionsTest`: 126, unchanged by SELECT) and
+  `VoiceControllerLogicTest` (36) with clang, under ASan and UBSan, and
+  with g++, against the `//base` and `//url` stand-ins;
+  `molt_agent_page_map_fuzzer`: 144,492 runs in 10 minutes from its 10
+  seeds and 32,680 more in 2 after the last change, nothing found; the
+  fuzzers SELECT and the planner's question touch,
+  `molt_voice_controller_fuzzer` (61,792 runs in 5 minutes),
+  `molt_agent_actions_fuzzer` (152,872 in 3) and `molt_agent_tools_fuzzer`
+  (12,558 in 2), nothing found; the real-header compile check
+  (`tools/compile_check/`) of every changed C++ file, for Linux and
+  Windows.
 - **Browser tests** (`agents/agent_page_map_browsertest.cc`, build
   machine): `AgentPageMapBrowserTest.SearchesChoosesAndPlays` (the fixture
   video site searched, the Live Aid video chosen and played with sound,
