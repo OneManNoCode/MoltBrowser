@@ -40,6 +40,13 @@ struct PageMap;
 // |query| the model's. Std-only; voice_routines.h checks and keeps it
 // (RoutineStepForPlanner()), and reads it back as untrusted.
 struct PlannerStep {
+  PlannerStep();
+  ~PlannerStep();
+  PlannerStep(const PlannerStep&);
+  PlannerStep& operator=(const PlannerStep&);
+  PlannerStep(PlannerStep&&);
+  PlannerStep& operator=(PlannerStep&&);
+
   enum class Action {
     kNone,
     kNavigate,  // |url|: the page it opened

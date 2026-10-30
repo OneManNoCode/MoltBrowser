@@ -472,9 +472,12 @@ source_set("voice_loop") {
 # docs/design/TOUCHLESS_BROWSING.md §6.2): the interface the web agent's
 # planner implements (//chrome/browser/molt_ai:molt_ai_agents,
 # agents/voice_agent_planner.h), and the steps it reports and replays for
-# routines (PlannerStep, §6.8). Header-only, std-only.
+# routines (PlannerStep, §6.8). Std-only.
 source_set("voice_planner") {
-  sources = [ "voice_planner.h" ]
+  sources = [
+    "voice_planner.cc",
+    "voice_planner.h",
+  ]
 }
 
 # chrome://flags/#molt-voice-mode (about_flags.cc includes
