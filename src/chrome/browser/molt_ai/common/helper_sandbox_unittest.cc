@@ -56,6 +56,7 @@
 #include <linux/audit.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
@@ -647,13 +648,14 @@ TEST(HelperSandboxLinuxTest, SeccompOwnPidSlots) {
     });
   };
   // kill, tgkill, rt_sigqueueinfo, rt_tgsigqueueinfo, fcntl(F_SETOWN),
-  // prlimit64; kill and fcntl(F_SETOWN) also take the process group.
-  EXPECT_EQ(count(hsl::kSeccompOwnPidSlot), 6);
+  // prlimit64; the six scheduling and memory placement calls, setpriority
+  // and ioprio_set; kill and fcntl(F_SETOWN) also take the process group.
+  EXPECT_EQ(count(hsl::kSeccompOwnPidSlot), 14);
   EXPECT_EQ(count(hsl::kSeccompOwnGroupSlot), 2);
   hsl::SetSeccompOwnPid(4242, &program);
   EXPECT_EQ(count(hsl::kSeccompOwnPidSlot), 0);
   EXPECT_EQ(count(hsl::kSeccompOwnGroupSlot), 0);
-  EXPECT_EQ(count(4242), 6);
+  EXPECT_EQ(count(4242), 14);
   EXPECT_EQ(count(static_cast<uint32_t>(-4242)), 2);
 }
 
@@ -750,6 +752,139 @@ TEST(HelperSandboxLinuxTest, SeccompKeepsSignalsToTheHelper) {
             SECCOMP_RET_ALLOW);
   EXPECT_EQ(RunFilter(program, Call(__NR_prlimit64, kOther)), Errno(EPERM));
   EXPECT_EQ(RunFilter(program, Call(__NR_getpid)), SECCOMP_RET_ALLOW);
+}
+
+TEST(HelperSandboxLinuxTest, SeccompKeepsSchedulingToTheHelper) {
+  std::vector<sock_filter> program = hsl::BuildSeccompProgram();
+  if (program.empty()) {
+    GTEST_SKIP() << "no seccomp filter for this architecture";
+  }
+  constexpr int32_t kSelf = 4242;
+  constexpr int32_t kOther = 4243;
+  hsl::SetSeccompOwnPid(kSelf, &program);
+  // Its own affinity, policy and memory placement (0 is itself); not
+  // another process's, nor a thread's named by its ID.
+  for (int nr : {__NR_sched_setaffinity, __NR_sched_setscheduler,
+                 __NR_sched_setparam, __NR_sched_setattr, __NR_migrate_pages,
+                 __NR_move_pages}) {
+    EXPECT_EQ(RunFilter(program, Call(nr, 0)), SECCOMP_RET_ALLOW) << nr;
+    EXPECT_EQ(RunFilter(program, Call(nr, kSelf)), SECCOMP_RET_ALLOW) << nr;
+    EXPECT_EQ(RunFilter(program, Call(nr, kOther)), Errno(EPERM)) << nr;
+    EXPECT_EQ(RunFilter(program, Call(nr, 1)), Errno(EPERM)) << nr;
+  }
+  // Its own nice value and I/O priority, or its process group's; not
+  // another process's or group's, nor every process of the user's.
+  constexpr uint64_t kPrioProcess = 0;
+  constexpr uint64_t kPrioGroup = 1;
+  constexpr uint64_t kPrioUser = 2;
+  for (uint64_t which : {kPrioProcess, kPrioGroup}) {
+    for (uint64_t who : {uint64_t{0}, uint64_t{kSelf}}) {
+      EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_setpriority, which, who,
+                                                19)),
+                SECCOMP_RET_ALLOW)
+          << which << " " << who;
+    }
+    EXPECT_EQ(
+        RunFilter(program, CallWithArgs(__NR_setpriority, which, kOther, 19)),
+        Errno(EPERM))
+        << which;
+  }
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_setpriority, kPrioUser, 0,
+                                            19)),
+            Errno(EPERM));
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_setpriority, kPrioUser, 1000,
+                                            19)),
+            Errno(EPERM));
+  constexpr uint64_t kIoprioProcess = 1;
+  constexpr uint64_t kIoprioGroup = 2;
+  constexpr uint64_t kIoprioUser = 3;
+  constexpr uint64_t kIdle = uint64_t{3} << 13;
+  for (uint64_t which : {kIoprioProcess, kIoprioGroup}) {
+    EXPECT_EQ(
+        RunFilter(program, CallWithArgs(__NR_ioprio_set, which, 0, kIdle)),
+        SECCOMP_RET_ALLOW)
+        << which;
+    EXPECT_EQ(
+        RunFilter(program, CallWithArgs(__NR_ioprio_set, which, kOther, kIdle)),
+        Errno(EPERM))
+        << which;
+  }
+  EXPECT_EQ(
+      RunFilter(program, CallWithArgs(__NR_ioprio_set, kIoprioUser, 0, kIdle)),
+      Errno(EPERM));
+  // Reading them stays allowed.
+  for (int nr : {__NR_getpriority, __NR_sched_getaffinity,
+                 __NR_sched_getscheduler, __NR_ioprio_get}) {
+    EXPECT_EQ(RunFilter(program, Call(nr, kOther)), SECCOMP_RET_ALLOW) << nr;
+  }
+}
+
+// On the real kernel: a confined child can't lower another process's CPU
+// or I/O priority, change its policy or pin it to a CPU (Landlock has no
+// rule for these, so the seccomp filter alone decides), and still changes
+// its own.
+TEST(HelperSandboxLinuxTest, ConfinedHelperKeepsSchedulingToItself) {
+  hsl::Policy policy;
+  policy.resident = true;
+  policy.max_data_bytes = uint64_t{1} << 30;
+  hsl::Prepared prepared;
+  std::string error;
+  ASSERT_TRUE(hsl::Prepare(policy, &prepared, &error)) << error;
+  if (prepared.seccomp.empty()) {
+    GTEST_SKIP() << "no seccomp filter here";
+  }
+  // Another process of the same user, outside the sandbox.
+  const pid_t other = fork();
+  ASSERT_GE(other, 0);
+  if (other == 0) {
+    pause();
+    _exit(0);
+  }
+  int fds[2];
+  ASSERT_EQ(pipe(fds), 0);
+  const pid_t child = fork();
+  ASSERT_GE(child, 0);
+  if (child == 0) {
+    close(fds[0]);
+    hsl::ApplyInChild(prepared);
+    uint32_t bits = 0;
+    bits |= setpriority(PRIO_PROCESS, other, 19) == 0 ? 1u : 0u;
+    // A user without processes, so that nothing is changed if the filter
+    // lets it through: the kernel would say ESRCH, the filter says EPERM.
+    constexpr id_t kNoSuchUser = 0x7ffffff0;
+    bits |= setpriority(PRIO_USER, kNoSuchUser, 19) == -1 && errno == EPERM
+                ? 0u
+                : 2u;
+    cpu_set_t cpus;
+    CPU_ZERO(&cpus);
+    CPU_SET(0, &cpus);
+    bits |= sched_setaffinity(other, sizeof(cpus), &cpus) == 0 ? 4u : 0u;
+    sched_param param = {};
+    bits |= sched_setscheduler(other, SCHED_IDLE, &param) == 0 ? 8u : 0u;
+    // IOPRIO_WHO_PROCESS, IOPRIO_CLASS_IDLE.
+    bits |= syscall(__NR_ioprio_set, 1, other, 3 << 13) == 0 ? 16u : 0u;
+    // Its own, which it may change.
+    bits |= setpriority(PRIO_PROCESS, 0, 1) == 0 ? 0u : 32u;
+    bits |= sched_getaffinity(0, sizeof(cpus), &cpus) == 0 &&
+                    sched_setaffinity(0, sizeof(cpus), &cpus) == 0
+                ? 0u
+                : 64u;
+    [[maybe_unused]] const ssize_t written = write(fds[1], &bits, sizeof(bits));
+    _exit(0);
+  }
+  close(fds[1]);
+  uint32_t bits = ~0u;
+  EXPECT_EQ(read(fds[0], &bits, sizeof(bits)),
+            static_cast<ssize_t>(sizeof(bits)));
+  close(fds[0]);
+  int status = 0;
+  ASSERT_EQ(waitpid(child, &status, 0), child);
+  EXPECT_EQ(bits, 0u) << std::hex << bits;
+  errno = 0;
+  EXPECT_EQ(getpriority(PRIO_PROCESS, other), getpriority(PRIO_PROCESS, 0));
+  EXPECT_EQ(sched_getscheduler(other), SCHED_OTHER);
+  kill(other, SIGKILL);
+  ASSERT_EQ(waitpid(other, &status, 0), other);
 }
 
 // What a confined child could do with signals, as bits: kSignalled* ways
