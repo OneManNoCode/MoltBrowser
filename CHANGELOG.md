@@ -1298,6 +1298,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   whenever it appears. `~/.moltbrowser/settings.json` has one writer, so
   settings changed at the same time all stay and a crash can't leave half a
   file. Details: `docs/design/TOUCHLESS_BROWSING.md` §5.1, §7.3 and §7.5.
+- **Touchless browsing: ask voice mode about the page** (preview, behind
+  `chrome://flags/#molt-voice-mode`). "What is this page about?", "read me
+  the main points", "what does it say about the battery?", "who wrote
+  this?", "what's the price?" and "tell me more" are answered by the
+  on-device AI from the page's text, in a few sentences that start with
+  "The page says", and the browser says when the page doesn't say. The
+  page's text goes to the model marked as data, the answer is checked and
+  only ever said (it never clicks, opens or asks anything), an answer
+  holding "Hey Molt" isn't said at all, "stop" ends it, and nothing is
+  kept; never in MoltNet windows. Without a model, the browser says how to
+  get one. Details: `docs/design/TOUCHLESS_BROWSING.md` §5.4.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

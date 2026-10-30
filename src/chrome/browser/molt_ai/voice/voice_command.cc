@@ -87,6 +87,7 @@ constexpr std::array<std::string_view, kVoiceCommandKindCount> kKindNames = {
     "next_paragraph",
     "previous_paragraph",
     "read_section",
+    "ask_page",
     "choose",
     "show_numbers",
     "hide_numbers",
@@ -769,6 +770,37 @@ size_t WakePhraseLength(const WordList& words,
   return at + name.size();
 }
 
+// kAskPage: which question, and its words. A topic ("what does it say
+// about the battery") is the {query} the pattern took, as is the question
+// after "ask the page"; any other question is the words the pattern
+// matched, as heard ("who wrote this"), so the model is asked what the
+// user asked.
+void SetPageQuestion(PatternVariant variant,
+                     const Utterance& u,
+                     VoiceCommand& command) {
+  switch (variant) {
+    case PatternVariant::kAskMainPoints:
+      command.page_question = PageQuestionKind::kMainPoints;
+      break;
+    case PatternVariant::kAskTopic:
+      command.page_question = PageQuestionKind::kTopic;
+      break;
+    case PatternVariant::kAskQuestion:
+      command.page_question = PageQuestionKind::kQuestion;
+      break;
+    case PatternVariant::kAskMore:
+      command.page_question = PageQuestionKind::kMore;
+      break;
+    default:
+      command.page_question = PageQuestionKind::kAbout;
+      break;
+  }
+  if (command.text.empty()) {
+    command.text =
+        CleanSpokenText(SpanText(u, 0, u.words.size()), kMaxCommandTextBytes);
+  }
+}
+
 }  // namespace
 
 VoiceCommand::VoiceCommand() = default;
@@ -1013,6 +1045,13 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
         break;
       case PatternVariant::kLess:
         command.verbosity = Verbosity::kLess;
+        break;
+      case PatternVariant::kAskAbout:
+      case PatternVariant::kAskMainPoints:
+      case PatternVariant::kAskTopic:
+      case PatternVariant::kAskQuestion:
+      case PatternVariant::kAskMore:
+        SetPageQuestion(pattern.variant, u, command);
         break;
     }
     return command;

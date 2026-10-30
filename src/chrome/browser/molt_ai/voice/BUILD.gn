@@ -42,6 +42,9 @@ source_set("unit_tests") {
     ":recorded_wav",
     ":voice_intent_unit_tests",
 
+    # Questions about the page.
+    ":page_questions_unit_tests",
+
     # The voice gesture, and the browser's prompts by voice.
     ":voice_prompts_unit_tests",
     "//testing/gtest",
@@ -249,6 +252,132 @@ source_set("page_reading") {
   ]
 }
 
+# Questions about the page (TOUCHLESS_BROWSING.md §5.4): the page's text
+# picked for a question and the model's budget, the prompt with that text
+# inside the untrusted fence, and the model's answer read as hostile.
+# base::Value (the reply) and std types: molt_ai_unittests and
+# molt_page_questions_fuzzer build the same code.
+source_set("page_questions") {
+  sources = [
+    "page_questions.cc",
+    "page_questions.h",
+  ]
+
+  public_deps = [
+    ":page_map",
+    ":page_reading",
+    ":voice_command",
+  ]
+
+  deps = [
+    # The site skill's content root and skips (site_skills.h).
+    ":site_skills",
+
+    # Words folded and compared as voice mode does; the wake phrase.
+    ":spoken_choice",
+    "//base",
+
+    # The untrusted fence (FenceUntrustedText()).
+    "//chrome/browser/molt_ai/security:agent_safety",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
+}
+
+# The browser's side: the on-device model through BrowserAIRuntime (as the
+# planner fallback calls it), one question at a time, with a time limit.
+source_set("voice_page_questions") {
+  sources = [
+    "voice_page_questions.cc",
+    "voice_page_questions.h",
+  ]
+
+  public_deps = [
+    ":page_map",
+    ":page_questions",
+    ":page_reading",
+    "//base",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+  ]
+
+  # Which model to load: the one pages get (web_ai_policy.h).
+  deps = [ "//chrome/browser/molt_ai/web_ai:logic" ]
+}
+
+# The grammar's questions, the text picked (caps, hostile pages), the fence,
+# the answer's cleaning, the loop's step, the reader reading an answer, and
+# the listening session taking an answer for the browser's own words.
+# Picked up by :unit_tests.
+source_set("page_questions_unit_tests") {
+  testonly = true
+  sources = [ "page_questions_unittest.cc" ]
+
+  deps = [
+    ":page_map_test_support",
+    ":page_questions",
+    ":page_reading",
+    ":voice_command",
+    ":voice_listening",
+    ":voice_loop",
+    "//chrome/browser/molt_ai/security:agent_safety",
+
+    # The answer's schema is one the inference service's converter takes.
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//testing/gtest",
+  ]
+}
+
+# Questions about the page through the whole loop, with a scripted model
+# and a fake TTS platform (chrome/test/data/molt_voice/article.html and
+# injection.html): the fenced prompt, the answer said, a page that tells the
+# model to say a voice command, "stop", MoltNet. Picked up by
+# :browser_tests.
+source_set("voice_page_questions_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_page_questions_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":page_questions",
+    ":voice_controller",
+    ":voice_page",
+    ":voice_page_questions",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+# Hostile pages and hostile model replies for questions about the page. See
+# docs/FUZZING.md.
+fuzzer_test("molt_page_questions_fuzzer") {
+  sources = [ "molt_page_questions_fuzzer.cc" ]
+  deps = [
+    ":page_map_test_support",
+    ":page_questions",
+    ":page_reading",
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+  dict = "dicts/page_questions.dict"
+  seed_corpus = "corpus/molt_page_questions_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # Site skills and reading aloud over hostile pages (a renderer that may be
 # compromised) and skill files. See docs/FUZZING.md.
 fuzzer_test("molt_page_reading_fuzzer") {
@@ -392,6 +521,9 @@ source_set("browser_tests") {
 
     # The browser's prompts and a page's dialogs answered by voice.
     ":voice_prompts_browser_tests",
+
+    # Questions about the page, with a scripted model.
+    ":voice_page_questions_browser_tests",
 
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
@@ -587,6 +719,9 @@ source_set("voice_controller") {
     # The reader takes the site's skill for the page (site_skills.h).
     ":site_skills",
     ":voice_page",
+
+    # Questions about the page, answered by the on-device model.
+    ":voice_page_questions",
 
     # The voice helper: the bundled copy only, under the resident sandbox.
     "//chrome/browser/molt_ai/common:helper_binary",

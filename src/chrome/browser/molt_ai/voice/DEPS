@@ -35,4 +35,12 @@ specific_include_rules = {
   r"voice_speech_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
+  r"voice_page_questions_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  # The answer's schema is one the inference service's converter takes
+  # (std-only).
+  r"page_questions_unittest\.cc": [
+    "+chrome/services/molt_ai/inference/engine/json_schema_grammar.h",
+  ],
 }

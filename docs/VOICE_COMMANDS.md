@@ -140,6 +140,20 @@ and the bar only.
   scrolls along.
 - **Reading lists:** the title, the headings, the links, the results, "next
   link", "next item", "where am I", "what's on the screen".
+- **Questions about the page:** "what is this page about?", "read me the
+  main points", "what does it say about the battery?", "who wrote this?",
+  "what's the price?". The on-device AI answers from the page's text (the
+  same text "read the page" reads), in a few sentences, starting with "The
+  page says". If the page doesn't say, the browser tells you so. "Tell me
+  more" goes on with the next part of the page. It needs an on-device AI
+  model: without one, the browser says so and where to download one
+  (settings). Answering can take a few seconds on a slower computer; the
+  browser says "Let me look at the page" and, if it takes longer, "Still
+  working on it". "Stop", or anything else you say, stops it. The answer
+  is only said: nothing on the page is clicked or opened because of it, and
+  if a page's text tries to make the AI say a voice command, the browser
+  doesn't say the answer and tells you why. Nothing is kept, and it never
+  happens in MoltNet windows.
 - **Routines:** do something by voice ("open YouTube", "search for news",
   "play the first one"), then say "remember this as my news". The
   browser reads back what it will keep and saves it on your "yes". Later,
@@ -527,6 +541,35 @@ said.
 - `(read | read me | go to | jump to | skip to | move to) [the] (section | part) (on | about | called | named | titled) {query}`
 - `(read | read me | go to | jump to | skip to | move to) [the] {query} (section | part)`
 
+## Questions about the page
+
+**Ask about the page you are on: what it is about, its main points, what it says about something, who wrote it, the price. The on-device AI answers from the page's text, briefly, and says when the page doesn't say. "Tell me more" goes on with the next passages.** For example: "what is this page about".
+
+- `(tell me more | what else does (it | the page | this page | the article | this article) say)`
+- `(read | tell | give | list | say) [me | us] the (main | key | important | most important) (points | ideas | facts | takeaways | things)`
+- `(what are | whats | what is) the (main | key | important | most important) (points | ideas | facts | takeaways | point | idea)`
+- `(main points | key points | key takeaways | takeaways)`
+- `what (does | do | did) (it | this | that | they | the page | this page | the article | this article | the story | this story | the post | this post | the text | the site | this site) (say | tell me | tell us | mention | write) (about | on | regarding) {query}`
+- `(does | do | did) (it | this | the page | this page | the article | this article | the story | this story | the post | this post | the text) (say | mention | tell me) (anything | something) (about | on | regarding) {query}`
+- `(does | do) (it | the page | this page | the article | this article | the text) (mention | talk about | cover | discuss) {query}`
+- `(tell me | read me) what (it | this | the page | this page | the article | this article) says (about | on | regarding) {query}`
+- `(what is | whats) (this | the | this whole | the whole) (page | article | story | post | site | website | text | document | video | piece | essay | thread) about`
+- `(what is | whats) (it | this | that) [all] about`
+- `what (does | do) (it | this | the page | this page | the article | this article | the story | this story | the post | this post | the text) say`
+- `(summarize | summarise | sum up | recap) [it | this | that | the (page | article | story | post | text | document | video) | this (page | article | story | post | text | document | video)]`
+- `(give me | read me | tell me) [a | the] (summary | short summary | quick summary | gist | overview) [of (it | this | that | the (page | article | story | post | text) | this (page | article | story | post | text))]`
+- `(whats | what is) the (gist | summary) [of (it | this | that | the (page | article | story | post | text) | this (page | article | story | post | text))]`
+- `(summary | tldr | tl dr)`
+- `who (wrote | authored | published | posted) (this | it | that | the (page | article | story | post | piece) | this (page | article | story | post | piece))`
+- `(who is | whos) the (author | writer | publisher) [of (this | it | the (page | article | story | post | piece) | this (page | article | story | post | piece))]`
+- `who is (this | it) (by | from | written by)`
+- `(what is | whats) the (price | cost) [of (it | this | this one | that | that one | the (product | item | thing) | this (product | item | thing))]`
+- `how much (is | does | do) (it | this | this one | that | that one | the (product | item) | this (product | item)) [cost | costs]`
+- `what does (it | this | that) cost`
+- `when was (this | it | that | the (page | article | story | post | piece) | this (page | article | story | post | piece)) (written | published | posted | updated | last updated | released)`
+- `(ask the page | ask this page | ask the article | ask this article) {query}`
+- `according to (this | the) (page | article | story | post | site) {query}`
+
 ## Choosing
 
 **Choose from what is on screen: by number, by position, or by name, with what to do (open, play, click, select, read, describe).** For example: "play the fourth one".
@@ -728,7 +771,12 @@ said.
   under the page, but not highlighted on the page itself.
 - **"Faster" and "slower"** change the reading speed while the browser
   reads; otherwise they are the video's playback speed, which comes later.
+- **Questions about the page** use only the page's text: not its
+  pictures, videos, tables or the parts in frames. A question about a
+  picture ("what's in this picture?") comes later, and so does a
+  conversation about the answer: each question stands on its own, apart
+  from "tell me more". Answers start once they are complete, not word by
+  word.
 - **Still to come in voice mode:** the on-device AI for anything these
-  commands don't cover, setting the volume to a level, the playback speed,
-  undo, and questions about the page ("what is this page about?"). Until
-  then the browser says so when you ask for them.
+  commands don't cover, setting the volume to a level, the playback speed
+  and undo. Until then the browser says so when you ask for them.

@@ -62,6 +62,11 @@
 // "slower" while it reads keep or resume its place (VoiceEnvironment::
 // reading).
 //
+// Questions about the page (page_questions.h, voice_page_questions.h):
+// "what is this page about?", "what does it say about the battery?" and
+// "tell me more" become a kAskPage step; the browser asks the on-device
+// model and reads its answer as page text. No step comes from the answer.
+//
 // The activation guard (molt_ai/security/activation_guard.h,
 // TOUCHLESS_BROWSING.md §7.5) asks the same way when a page tries to use
 // the activation voice mode's actions gave it (a new window, a download,
@@ -162,6 +167,11 @@ enum class VoiceStepKind : uint8_t {
   // checks the word again, with how it was heard) or the answer to send
   // (prompt()'s kAccept).
   kPromptAnswer,
+  // A question about the page (page_questions.h): the browser asks the
+  // on-device model and reads its answer (voice_page_questions.h). |text|
+  // is the question as heard, or its topic; |index| its PageQuestionKind.
+  // Nothing on the page is acted on.
+  kAskPage,
 };
 
 // What a kRead step asks of the reader.

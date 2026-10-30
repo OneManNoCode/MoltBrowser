@@ -84,6 +84,12 @@ enum class PatternVariant : uint8_t {
   kFull,
   kMore,
   kLess,
+  // kAskPage's question (PageQuestionKind).
+  kAskAbout,
+  kAskMainPoints,
+  kAskTopic,
+  kAskQuestion,
+  kAskMore,
 };
 
 struct CommandPattern {
