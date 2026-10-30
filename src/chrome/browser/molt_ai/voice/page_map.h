@@ -173,10 +173,35 @@ struct PageNode {
   // An <input>'s type attribute, and its autocomplete attribute.
   std::string input_type;
   std::string autocomplete;
+  // The element's id and class attributes (as written; capped), which a
+  // site skill can name (site_skills.h). Blink sends them for nodes the
+  // tree doesn't mark ignored, and the class only with kExtendedProperties.
+  std::string html_id;
+  std::string class_name;
   // Indices of the children in PageTree::nodes, in order.
   std::vector<uint32_t> children;
 
   bool Has(uint32_t state) const { return (states & state) != 0; }
+};
+
+// The page's text selection, as Blink reports it in the focused frame's tree
+// data: where it starts (the anchor) and ends (the focus), each a node and
+// an offset. For a static text node the offset counts UTF-16 code units of
+// its text; for any other node it is a child index (a text field's
+// selection is the field itself with offsets into its value). Untrusted:
+// the nodes may be missing and the offsets out of range.
+struct PageSelection {
+  PageNodeHandle anchor;
+  int32_t anchor_offset = -1;
+  PageNodeHandle focus;
+  int32_t focus_offset = -1;
+  // The focus comes before the anchor (selected from right to left).
+  bool backward = false;
+
+  bool valid() const {
+    return anchor.valid() && focus.valid() && anchor_offset >= 0 &&
+           focus_offset >= 0;
+  }
 };
 
 struct PageTree {
@@ -194,6 +219,8 @@ struct PageTree {
   std::string title;
   // The focused node, if any.
   PageNodeHandle focus;
+  // The text selection, if any.
+  PageSelection selection;
 };
 
 // ---------------------------------------------------------------------------
@@ -351,6 +378,9 @@ struct PageList {
   double prominence = 0;
   bool in_main = false;
   bool in_navigation = false;  // navigation, banner, footer, aside or menu
+  // The site's results as its skill names them (PageMapHints): first of
+  // all lists, whatever its prominence.
+  bool from_site = false;
 };
 
 struct PageHeading {
@@ -386,6 +416,37 @@ struct PageMedia {
   int number = 0;  // its item number
   PageRect bounds;
   bool on_screen = true;
+};
+
+// The parts of a page a site skill (site_skills.h) or a learned site hint
+// named (docs/design/TOUCHLESS_BROWSING.md §6.7, §6.8): the voice loop uses
+// them before it guesses from the map. Each is a node of an item of the
+// top-level document's of the kind the part needs (a writable text field,
+// a button, a link, media), or invalid when nothing named it there.
+struct SiteParts {
+  SiteParts();
+  ~SiteParts();
+  SiteParts(const SiteParts&);
+  SiteParts& operator=(const SiteParts&);
+  SiteParts(SiteParts&&);
+  SiteParts& operator=(SiteParts&&);
+
+  // What named them, for logs: "youtube@1" for a built-in skill; empty for
+  // the generic map.
+  std::string source;
+  PageNodeHandle search_field;
+  PageNodeHandle search_submit;
+  // PageMap::lists[0] is the site's results (PageList::from_site).
+  bool results = false;
+  // The player and its controls.
+  PageNodeHandle media;
+  PageNodeHandle skip_ad;
+  PageNodeHandle captions;
+  PageNodeHandle fullscreen;
+  // The next page of results: a link or button, or, for a site that loads
+  // more as the page scrolls, |next_page_scrolls|.
+  PageNodeHandle next_page;
+  bool next_page_scrolls = false;
 };
 
 struct PageMapStats {
@@ -425,6 +486,9 @@ struct PageMap {
   int focused_item = 0;
   // A credential field is on the page.
   bool has_credential_fields = false;
+  // What the site's skill (or a learned hint) found; empty otherwise
+  // (site_skills.h fills it after BuildPageMap()).
+  SiteParts site;
   PageMapStats stats;
 
   // The item numbered |number|, or null.
@@ -493,6 +557,24 @@ inline constexpr size_t kMaxLinkUrlBytes = 2048;
 // another site's) can't take the place of the page's own results.
 PageMap BuildPageMap(const PageTree& tree,
                      const PageMapLimits& limits = PageMapLimits());
+
+// What a site skill found in the tree before the map is made
+// (site_skills.h): the entries of the site's results, as indices into
+// PageTree::nodes in reading order. BuildPageMap() reads them with the same
+// entry reader as every list (title, channel, duration, date, counts), as
+// one list placed first (PageList::from_site, never navigation), and leaves
+// out any list it found itself whose entries are among them. Indices that
+// name no node the walk reached, or a node inside an earlier entry, are
+// skipped; fewer than two entries make no list.
+struct PageMapHints {
+  std::vector<uint32_t> result_entries;
+  // The list's label ("Search results").
+  std::string results_label;
+};
+
+PageMap BuildPageMap(const PageTree& tree,
+                     const PageMapLimits& limits,
+                     const PageMapHints& hints);
 
 }  // namespace voice
 }  // namespace molt_ai

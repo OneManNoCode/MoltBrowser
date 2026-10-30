@@ -55,6 +55,9 @@ float Finite(float v) {
 
 constexpr uint32_t kNoParent = 0xFFFFFFFFu;
 
+// An element's id and class attributes are cut to this many bytes.
+constexpr size_t kMaxIdClassBytes = 256;
+
 // AXTree::GetTreeBounds() measures a node from its offset container, that
 // container from its own, and so on (the root stands in for an id that
 // names no node) until a node is its own container
@@ -316,6 +319,11 @@ PageNode PageNodeFromData(const ui::AXNodeData& data,
       CappedString(data, StringAttribute::kInputType, max_string_bytes);
   node.autocomplete =
       CappedString(data, StringAttribute::kAutoComplete, max_string_bytes);
+  // What a site skill may name (site_skills.h); short.
+  const size_t attribute_bytes = std::min(max_string_bytes, kMaxIdClassBytes);
+  node.html_id = CappedString(data, StringAttribute::kHtmlId, attribute_bytes);
+  node.class_name =
+      CappedString(data, StringAttribute::kClassName, attribute_bytes);
   if (node.role == PageRole::kHeading) {
     node.heading_level =
         data.GetIntAttribute(ax::mojom::IntAttribute::kHierarchicalLevel);
@@ -346,6 +354,21 @@ PageTree BuildPageTree(const AXFrameTree& main,
     }
   }
   const ui::AXNodeID focus_id = focus_frame.tree->data().focus_id;
+
+  // The selection: the focused frame's, else the top-level document's.
+  for (const AXFrameTree* frame : {&focus_frame, &main}) {
+    const ui::AXTreeData& data = frame->tree->data();
+    if (data.sel_anchor_object_id == ui::kInvalidAXNodeID ||
+        data.sel_focus_object_id == ui::kInvalidAXNodeID) {
+      continue;
+    }
+    page.selection.anchor = {frame->index, data.sel_anchor_object_id};
+    page.selection.anchor_offset = data.sel_anchor_offset;
+    page.selection.focus = {frame->index, data.sel_focus_object_id};
+    page.selection.focus_offset = data.sel_focus_offset;
+    page.selection.backward = data.sel_is_backward;
+    break;
+  }
 
   // Each tree's offset containers, checked as its nodes are measured.
   std::map<int32_t, OffsetChains> chains;
