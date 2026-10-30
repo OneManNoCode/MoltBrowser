@@ -525,6 +525,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   results and player that worked on a site are remembered for it. Never
   in MoltNet or private windows, never synced; settings lists and deletes
   everything, and "Learn from what I say" turns it off.
+- **Voice routines keep what the on-device AI did** (round 42,
+  planner-routines; `docs/design/TOUCHLESS_BROWSING.md` §6.8): after the
+  AI carried out a request, "remember this" keeps its steps too (the pages
+  it opened, what it clicked, typed or chose; secret-looking text asked for
+  at each run), as a draft that names its sites, which you confirm by
+  voice or in Agent mode the first time it runs, and again whenever its
+  steps use other sites. Running it repeats the AI's steps exactly through
+  the web agent's checks, without asking the AI again, and stops at a step
+  it can't find. Nothing is kept in MoltNet or private windows, or while
+  "Learn from what I say" is off.
 - **MoltNet in its own window.** Tor browsing opens in a separate,
   throwaway profile that never shares cookies or storage with your regular
   browsing and never falls back to a direct connection. Per-site Tor
