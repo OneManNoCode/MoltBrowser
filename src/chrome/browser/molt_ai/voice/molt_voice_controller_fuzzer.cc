@@ -354,6 +354,9 @@ void CheckTurn(const VoiceTurn& turn,
     if (IsPageAction(step.kind)) {
       CHECK(page.handles.count({step.target.tree, step.target.node}));
     }
+    // Only a press says what it was for (the activation guard's intent).
+    CHECK(step.intent == molt_ai::activation::Intent::kNone ||
+          step.kind == VoiceStepKind::kPress);
   }
   const ConversationState& state = turn.state;
   CHECK_LE(state.offered.size(), molt_ai::voice::kMaxCloseChoices);
@@ -363,11 +366,13 @@ void CheckTurn(const VoiceTurn& turn,
           held.kind == VoiceStepKind::kWaitForPage ||
           held.kind == VoiceStepKind::kSetCurrentItem ||
           (held.kind == VoiceStepKind::kSetVoiceMode && !held.flag) ||
-          (held.kind == VoiceStepKind::kPlannerAnswer && held.flag &&
-           held.index > 0));
+          ((held.kind == VoiceStepKind::kPlannerAnswer ||
+            held.kind == VoiceStepKind::kPageRequestAnswer) &&
+           held.flag && held.index > 0));
   }
   for (const VoiceStep& step : turn.steps) {
-    if (step.kind == VoiceStepKind::kPlannerAnswer) {
+    if (step.kind == VoiceStepKind::kPlannerAnswer ||
+        step.kind == VoiceStepKind::kPageRequestAnswer) {
       CHECK_GT(step.index, 0);
       CHECK(!env.moltnet);
     }
@@ -423,8 +428,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       }
       continue;
     }
-    // The planner's question keeps its "? " (handled in turn below).
-    if (line.size() >= 2 && line[0] == '?' && line[1] == ' ') {
+    // The planner's question keeps its "? ", the activation guard's its
+    // "! " (handled in turn below).
+    if (line.size() >= 2 && (line[0] == '?' || line[0] == '!') &&
+        line[1] == ' ') {
       if (utterances.size() < kMaxUtterances) {
         utterances.push_back(line);
       }
@@ -455,6 +462,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       CheckTurn(asked, page, env);
       CHECK(env.moltnet ||
             molt_ai::voice::PlannerQuestionHeld(asked.state) == question);
+      state = asked.state;
+      continue;
+    }
+    if (utterance.size() >= 2 && utterance[0] == '!' && utterance[1] == ' ') {
+      // The activation guard asks: the browser's words, with a page's site
+      // in them; "yes" opens it.
+      const VoiceTurn asked = molt_ai::voice::PlanPageRequestQuestion(
+          ++question, utterance.substr(2), "open it", env, state);
+      CheckTurn(asked, page, env);
+      CHECK(env.moltnet ||
+            molt_ai::voice::PageRequestQuestionHeld(asked.state) == question);
       state = asked.state;
       continue;
     }
