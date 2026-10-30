@@ -93,7 +93,8 @@ class VoiceLearning : public base::SupportsUserData::Data {
   VoiceLearning& operator=(const VoiceLearning&) = delete;
   ~VoiceLearning() override;
 
-  // The file has been read (until then nothing is learned or used).
+  // The file has been read and the routines listed (until then nothing is
+  // learned or used).
   bool loaded() const { return loaded_; }
   // Runs |done| once loaded (at once if it is).
   void WhenLoaded(base::OnceClosure done);
@@ -156,7 +157,11 @@ class VoiceLearning : public base::SupportsUserData::Data {
   explicit VoiceLearning(Profile* profile);
 
   void OnRead(LearnedData data, bool enabled);
-  void OnRoutines(std::vector<RoutineSummary> routines);
+  void OnLoaded();
+  // Lists the routines again, then runs |done|.
+  void RefreshRoutinesThen(base::OnceClosure done);
+  void OnRoutines(base::OnceClosure done,
+                  std::vector<RoutineSummary> routines);
   // Something learned or forgotten: written soon.
   void Changed();
   void Write();

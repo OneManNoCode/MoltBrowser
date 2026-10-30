@@ -48,6 +48,7 @@
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_gpu_inference_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_voice_learning_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_voice_settings_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_web_ai_sites_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
@@ -2423,7 +2424,8 @@ class MoltAISettingsDataSource : public content::URLDataSource {
           std::string(molt_webui::kMoltTrustedHtmlJs) +
           molt_webui::kMoltActionsJs + kSettingsPageJs +
           molt_ai::shield::kMoltShieldSettingsJs + kWebAISitesSettingsJs +
-          kGpuInferenceSettingsJs + kVoiceSettingsJs));
+          kGpuInferenceSettingsJs + kVoiceSettingsJs +
+          kVoiceLearningSettingsJs));
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
@@ -2718,6 +2720,42 @@ h2[tabindex="-1"]:focus{outline:none !important}
     </div>
   </div>
 
+  <div class="section" id="voiceLearningSection" hidden>
+    <h2><span class="icon" aria-hidden="true">&#128218;</span> What voice mode learned</h2>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="voiceLearningEnabled" data-on-change="voiceLearningSetEnabled">
+        <span class="track"></span>
+        <span class="label">Learn from what I say</span>
+      </label>
+      <div class="desc">Voice mode remembers names you say often and your corrections (&ldquo;no, I said Queen&rdquo;), so it hears them better next time, and the search box, results and player that worked on a site. Everything stays on this device, in this profile, and is never synced. Nothing is learned in MoltNet or private windows, from text you dictate into a field, or while the browser reads a page aloud. Turned off, nothing more is learned and what was learned isn&rsquo;t used; routines you saved still work.</div>
+    </div>
+    <div class="field">
+      <h3 class="lbl">Routines</h3>
+      <div class="desc">Say &ldquo;run&rdquo; and a routine&rsquo;s name, or just its name. Agent mode lists them too.</div>
+      <div id="voiceLearningRoutines"></div>
+    </div>
+    <div class="field">
+      <h3 class="lbl">Words</h3>
+      <div id="voiceLearningWords"></div>
+    </div>
+    <div class="field">
+      <h3 class="lbl">Corrections</h3>
+      <div id="voiceLearningCorrections"></div>
+    </div>
+    <div class="field">
+      <h3 class="lbl">Site hints</h3>
+      <div id="voiceLearningHints"></div>
+    </div>
+    <div class="field">
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+        <button class="btn secondary" id="voiceLearningForgetAllBtn" type="button" data-on-click="voiceLearningForgetAll" style="font-size:.75rem;padding:6px 16px">Forget everything</button>
+        <span class="desc" id="voiceLearningStatus" role="status"></span>
+      </div>
+      <div class="desc">By voice: &ldquo;forget the word &hellip;&rdquo;, &ldquo;forget my news&rdquo;, &ldquo;forget everything you learned&rdquo;. The browser asks first.</div>
+    </div>
+  </div>
+
   <div class="section" id="providersSection">
     <h2><span class="icon" aria-hidden="true">&#9729;</span> Connect AI Providers</h2>
     <div class="field">
@@ -2889,6 +2927,8 @@ MoltAISettingsUI::MoltAISettingsUI(content::WebUI* web_ui)
   // "Voice mode" (id="voiceSection"; shown only with
   // chrome://flags/#molt-voice-mode).
   web_ui->AddMessageHandler(std::make_unique<MoltVoiceSettingsHandler>());
+  // "What voice mode learned" (id="voiceLearningSection"; with voice mode's).
+  web_ui->AddMessageHandler(std::make_unique<MoltVoiceLearningHandler>());
 }
 
 MoltAISettingsUI::~MoltAISettingsUI() = default;

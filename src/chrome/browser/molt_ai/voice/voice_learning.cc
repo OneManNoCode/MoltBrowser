@@ -258,7 +258,6 @@ VoiceLearning::VoiceLearning(Profile* profile)
             }
           },
           weak_factory_.GetWeakPtr()));
-  RefreshRoutines();
 }
 
 VoiceLearning::~VoiceLearning() {
@@ -275,6 +274,12 @@ void VoiceLearning::OnRead(LearnedData data, bool enabled) {
   // rest is queued with WhenLoaded()).
   data_ = std::move(data);
   enabled_ = enabled;
+  // Loaded once the routines are listed too.
+  RefreshRoutinesThen(base::BindOnce(&VoiceLearning::OnLoaded,
+                                     weak_factory_.GetWeakPtr()));
+}
+
+void VoiceLearning::OnLoaded() {
   loaded_ = true;
   std::vector<base::OnceClosure> waiting;
   waiting.swap(when_loaded_);
@@ -370,14 +375,8 @@ void VoiceLearning::ForgetEverything(base::OnceClosure done) {
   Changed();
   task_runner_->PostTaskAndReply(
       FROM_HERE, base::BindOnce(&DeleteAllRoutinesBlocking, automations_root_),
-      base::BindOnce(
-          [](base::WeakPtr<VoiceLearning> self, base::OnceClosure done) {
-            if (self) {
-              self->RefreshRoutines();
-            }
-            std::move(done).Run();
-          },
-          weak_factory_.GetWeakPtr(), std::move(done)));
+      base::BindOnce(&VoiceLearning::RefreshRoutinesThen,
+                     weak_factory_.GetWeakPtr(), std::move(done)));
 }
 
 void VoiceLearning::SaveRoutine(std::string name,
@@ -393,9 +392,9 @@ void VoiceLearning::SaveRoutine(std::string name,
           [](base::WeakPtr<VoiceLearning> self, SavedCallback done,
              std::pair<bool, std::string> result) {
             if (self) {
-              self->RefreshRoutines();
+              self->RefreshRoutinesThen(base::BindOnce(
+                  std::move(done), result.first, std::move(result.second)));
             }
-            std::move(done).Run(result.first, std::move(result.second));
           },
           weak_factory_.GetWeakPtr(), std::move(done)));
 }
@@ -420,9 +419,9 @@ void VoiceLearning::DeleteRoutine(std::string name,
           [](base::WeakPtr<VoiceLearning> self,
              base::OnceCallback<void(bool)> done, bool deleted) {
             if (self) {
-              self->RefreshRoutines();
+              self->RefreshRoutinesThen(
+                  base::BindOnce(std::move(done), deleted));
             }
-            std::move(done).Run(deleted);
           },
           weak_factory_.GetWeakPtr(), std::move(done)));
 }
@@ -438,22 +437,29 @@ void VoiceLearning::ConfirmRoutineSites(std::string id,
           [](base::WeakPtr<VoiceLearning> self,
              base::OnceCallback<void(bool)> done, bool confirmed) {
             if (self) {
-              self->RefreshRoutines();
+              self->RefreshRoutinesThen(
+                  base::BindOnce(std::move(done), confirmed));
             }
-            std::move(done).Run(confirmed);
           },
           weak_factory_.GetWeakPtr(), std::move(done)));
 }
 
 void VoiceLearning::RefreshRoutines() {
-  task_runner_->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(&ListVoiceRoutines, automations_root_),
-      base::BindOnce(&VoiceLearning::OnRoutines, weak_factory_.GetWeakPtr()));
+  RefreshRoutinesThen(base::DoNothing());
 }
 
-void VoiceLearning::OnRoutines(std::vector<RoutineSummary> routines) {
+void VoiceLearning::RefreshRoutinesThen(base::OnceClosure done) {
+  task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ListVoiceRoutines, automations_root_),
+      base::BindOnce(&VoiceLearning::OnRoutines, weak_factory_.GetWeakPtr(),
+                     std::move(done)));
+}
+
+void VoiceLearning::OnRoutines(base::OnceClosure done,
+                               std::vector<RoutineSummary> routines) {
   routines_ = std::move(routines);
   changed_callbacks_.Notify();
+  std::move(done).Run();
 }
 
 base::CallbackListSubscription VoiceLearning::AddChangedCallback(

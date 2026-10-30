@@ -2748,7 +2748,7 @@ button,input,textarea,select{font-family:inherit}
 /* drafts saved from an AI agent run: badge, review panel, step notes */
 .tbadge.draft{color:var(--warn)}
 .tbadge.voice{color:var(--violet)}
-.voice-say{font-size:12px;color:var(--faint);align-self:center}
+.voice-say{font-size:.75rem;color:var(--faint);align-self:center}
 .draft-sites{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .draft-site{font-size:.6875rem;padding:2px 8px;border-radius:999px;background:var(--bg);
   border:1px solid var(--border);color:var(--text);word-break:break-all}
