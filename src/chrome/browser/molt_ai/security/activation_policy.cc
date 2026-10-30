@@ -205,7 +205,7 @@ std::string RefusalNotice(Request request, std::string_view what) {
       const std::string clean = Keep(what, " -", 40);
       const std::string asked =
           clean.empty() ? std::string("The page asked for a permission.")
-                        : "The page asked to use your " + clean + ".";
+                        : "The page asked for " + clean + " permission.";
       return asked +
              " I can't take an answer to that by voice yet, so I turned it "
              "down.";

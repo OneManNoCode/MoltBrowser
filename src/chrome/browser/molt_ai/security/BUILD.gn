@@ -28,6 +28,32 @@ source_set("activation_policy") {
   ]
 }
 
+# The browser's side: the tab's record (from VoicePageController's
+# actions), the functions the upstream hooks call (CanCreateWindow,
+# OpenURLFromTab, CheckDownloadAllowed, HandleExternalProtocol,
+# CanEnterFullscreenModeForTab, IsClipboardCopyAllowedByPolicy), the popup
+# blocker's and the permission prompts' observers, and the questions.
+# Nothing here depends on voice mode or the agents: they register as askers.
+source_set("activation_guard") {
+  sources = [
+    "activation_guard.cc",
+    "activation_guard.h",
+  ]
+
+  public_deps = [
+    ":activation_policy",
+    "//base",
+    "//components/blocked_content",
+    "//components/permissions",
+    "//content/public/browser",
+    "//ui/base",
+    "//url",
+  ]
+
+  # blink::kActivationLifespan, the input events.
+  deps = [ "//third_party/blink/public/common:headers" ]
+}
+
 # Who may open chrome:// / molt:// pages (S19). Pure logic, unit-tested.
 source_set("webui_navigation_policy") {
   sources = [

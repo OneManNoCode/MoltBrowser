@@ -165,7 +165,8 @@ Question QuestionFor(Request request,
                      std::string_view scheme);
 
 // What voice mode says when it refused |request| (a permission prompt
-// names |what|: "camera", "location"; cleaned here).
+// names |what|: "camera", "location", as in "camera permission"; cleaned
+// here).
 std::string RefusalNotice(Request request, std::string_view what);
 
 }  // namespace activation

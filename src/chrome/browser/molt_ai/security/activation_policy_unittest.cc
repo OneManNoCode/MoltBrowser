@@ -296,14 +296,14 @@ TEST(ActivationPolicyTest, TheQuestions) {
 
 TEST(ActivationPolicyTest, TheNotices) {
   EXPECT_EQ(RefusalNotice(Request::kPermissionPrompt, "camera"),
-            "The page asked to use your camera. I can't take an answer to "
+            "The page asked for camera permission. I can't take an answer to "
             "that by voice yet, so I turned it down.");
   EXPECT_EQ(RefusalNotice(Request::kPermissionPrompt, ""),
             "The page asked for a permission. I can't take an answer to that "
             "by voice yet, so I turned it down.");
   EXPECT_EQ(RefusalNotice(Request::kPermissionPrompt, "mic.\n<b>"),
-            "The page asked to use your micb. I can't take an answer to that "
-            "by voice yet, so I turned it down.");
+            "The page asked for micb permission. I can't take an answer to "
+            "that by voice yet, so I turned it down.");
   EXPECT_EQ(RefusalNotice(Request::kFullScreen, ""),
             "The page tried to go full screen. I stopped it. Say full screen "
             "if you want it.");
