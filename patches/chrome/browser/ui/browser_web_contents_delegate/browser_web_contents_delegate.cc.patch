@@ -1,0 +1,49 @@
+MoltBrowser patch for chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
+Generated from src/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+index 3bc40bcc9139a11d399caf6f51f281d80c4cfa78..ad2e98acb7bb3839f7cd30ba0416ba90810da4aa 100644
+--- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
++++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/file_select_helper.h"
+ #include "chrome/browser/headless/headless_mode_util.h"
+ #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
++#include "chrome/browser/molt_ai/security/activation_guard.h"  // MoltBrowser
+ #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
+ #include "chrome/browser/preloading/preloading_prefs.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -532,9 +533,15 @@ bool BrowserWebContentsDelegate::ShouldShowStaleContentOnEviction(
+ 
+ content::WebContents* BrowserWebContentsDelegate::OpenURLFromTab(
+     content::WebContents* source,
+-    const content::OpenURLParams& params,
++    const content::OpenURLParams& original_params,  // MoltBrowser: renamed
+     base::OnceCallback<void(content::NavigationHandle&)>
+         navigation_handle_callback) {
++  // MoltBrowser: a new tab or window the page asks for with the user
++  // activation an agent's or voice mode's accessibility action gave it goes
++  // to the popup blocker as one without a gesture; the user is asked
++  // (molt_ai/security/activation_guard.h).
++  const content::OpenURLParams params =
++      molt_ai::ActivationGuard::ParamsForNewTab(source, original_params);
+   TRACE_EVENT1("navigation", "BrowserWebContentsDelegate::OpenURLFromTab",
+                "source", source);
+ #if DCHECK_IS_ON()
+@@ -1191,6 +1198,13 @@ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
+     return false;
+   }
+ 
++  // MoltBrowser: not with the user activation an agent's or voice mode's
++  // accessibility action gave the page, unless the user asked for full
++  // screen or for media to play (molt_ai/security/activation_guard.h).
++  if (!molt_ai::ActivationGuard::MayEnterFullscreen(requesting_frame)) {
++    return false;
++  }
++
+   return exclusive_access_manager_->fullscreen_controller()
+       ->CanEnterFullscreenModeForTab(requesting_frame);
+ }

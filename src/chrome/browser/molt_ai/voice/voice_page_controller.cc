@@ -10,6 +10,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/voice/ax_page_source.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
@@ -67,6 +68,20 @@ namespace molt_ai {
 namespace voice {
 
 namespace {
+
+// Whether every frame above |frame|, up to the top-level document (through
+// a fenced frame's outer document), has |frame|'s origin.
+bool AncestorsHaveOrigin(const content::RenderFrameHost& frame) {
+  const url::Origin& origin = frame.GetLastCommittedOrigin();
+  for (const content::RenderFrameHost* parent =
+           frame.GetParentOrOuterDocument();
+       parent; parent = parent->GetParentOrOuterDocument()) {
+    if (!parent->GetLastCommittedOrigin().IsSameOriginWith(origin)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 // How long Submit() waits for the field to report the focus.
 constexpr base::TimeDelta kSubmitFocusTimeout = base::Seconds(3);
@@ -513,9 +528,15 @@ std::optional<VoicePageController::Target> VoicePageController::Resolve(
 
 VoicePageController::ActionResult VoicePageController::Perform(
     const Target& target,
-    ui::AXActionData data) {
+    ui::AXActionData data,
+    activation::Intent intent) {
   data.target_tree_id = target.tree_id;
   data.target_node_id = target.node->id();
+  // Before the action reaches the page: what its activation unlocks is the
+  // guard's to decide from now (activation_policy.h). Every action is
+  // noted, also those Blink gives no activation for at 156 (set value,
+  // scrolls), so a change there is still covered.
+  ActivationGuard::NoteAction(web_contents(), intent);
   target.frame->AccessibilityPerformAction(data);
   return ActionResult::kDone;
 }
@@ -550,6 +571,7 @@ std::optional<VoicePageController::TargetFacts> VoicePageController::Inspect(
   }
   facts.origin = found->frame->GetLastCommittedOrigin();
   facts.main_frame = found->frame->IsInPrimaryMainFrame();
+  facts.framed_by_own_origin = AncestorsHaveOrigin(*found->frame);
   return facts;
 }
 
@@ -564,6 +586,15 @@ std::optional<url::Origin> VoicePageController::OriginOfTree(
     return std::nullopt;
   }
   return frame->GetLastCommittedOrigin();
+}
+
+bool VoicePageController::FramedByItsOwnOrigin(int32_t tree_index) {
+  auto id = tree_ids_.find(tree_index);
+  if (id == tree_ids_.end()) {
+    return false;
+  }
+  content::RenderFrameHost* frame = FrameFor(id->second);
+  return frame && AncestorsHaveOrigin(*frame);
 }
 
 namespace {
@@ -654,7 +685,8 @@ VoicePageController::ActionResult VoicePageController::SelectOption(
 }
 
 VoicePageController::ActionResult VoicePageController::Press(
-    const PageNodeHandle& target) {
+    const PageNodeHandle& target,
+    activation::Intent intent) {
   ActionResult error;
   std::optional<Target> found = Resolve(target, &error);
   if (!found) {
@@ -669,7 +701,7 @@ VoicePageController::ActionResult VoicePageController::Press(
   // assistive technology.
   ui::AXActionData data;
   data.action = ax::mojom::Action::kDoDefault;
-  return Perform(*found, data);
+  return Perform(*found, data, intent);
 }
 
 VoicePageController::ActionResult VoicePageController::Focus(
@@ -809,6 +841,13 @@ void VoicePageController::SendEnter(content::RenderFrameHost* frame) {
   if (!widget) {
     return;
   }
+  // A key press gives the page user activation as an action does. It comes
+  // back as the tab's input, which is the browser's here, not the user's.
+  ActivationGuard::NoteAction(web_contents(), activation::Intent::kNone);
+  if (ActivationGuard* guard =
+          ActivationGuard::FromWebContents(web_contents())) {
+    guard->ExpectOwnKeyDown(ui::VKEY_RETURN);
+  }
   for (blink::WebInputEvent::Type type :
        {blink::WebInputEvent::Type::kRawKeyDown,
         blink::WebInputEvent::Type::kChar,
@@ -842,7 +881,8 @@ VoicePageController::ActionResult VoicePageController::PlayMedia(
   }
   ui::AXActionData data;
   data.action = ax::mojom::Action::kDoDefault;
-  return Perform(*found, data);
+  // The user asked for it to play: the player may go full screen.
+  return Perform(*found, data, activation::Intent::kPlayMedia);
 }
 
 VoicePageController::ActionResult VoicePageController::PauseMedia() {

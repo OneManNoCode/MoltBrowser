@@ -181,6 +181,9 @@ class Listener {
   EmitFunction emit_;
 
   SpeechConfig config_;
+  // The keyword lines (WakeKeywordLine(): the wake phrases and their
+  // threshold) the spotter was last built with; empty before.
+  std::vector<std::string> keyword_lines_;
   // The hotwords argument for the next utterance.
   std::string hotwords_;
   // An end-of-speech silence waiting for the end of an utterance; 0 if

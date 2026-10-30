@@ -203,6 +203,9 @@ source_set("impl") {
     "//chrome/browser/devtools",
     "//chrome/browser/enterprise",
     "//chrome/browser/history",
+
+    # MoltBrowser: what the activation guard's hook calls.
+    "//chrome/browser/molt_ai/security:activation_guard",
     "//chrome/browser/net",
     "//chrome/browser/notifications",
     "//chrome/browser/offline_items_collection",

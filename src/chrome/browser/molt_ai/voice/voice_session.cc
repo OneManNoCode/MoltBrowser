@@ -340,6 +340,8 @@ void VoiceSession::StopListening() {
   SetDucking(false);
   partial_.clear();
   hotwords_.clear();
+  microphone_on_ = false;
+  echo_ = EchoCancellation::kNone;
 }
 
 void VoiceSession::Fail(const std::string& message) {
@@ -378,11 +380,13 @@ void VoiceSession::OnListenerReady(const HelperEvent& ready) {
 
 void VoiceSession::OnListenerEvent(const HelperEvent& event) {
   const int64_t now = NowMs();
-  // What the helper heard may be another source's speech: look now too,
-  // not only at the next poll.
+  // What the helper heard may be another source's speech, or a tab's
+  // sound: look now too, not only at the next poll.
   if (event.type != HelperEventType::kError &&
       event.type != HelperEventType::kReady) {
     Apply(logic_.OnOtherSpeech(OthersSpeaking(), now));
+    Apply(logic_.OnPageAudible(AnyTabAudible(), now));
+    Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), now));
   }
   switch (event.type) {
     case HelperEventType::kWake:
@@ -425,10 +429,16 @@ void VoiceSession::OnListenerGaveUp(const std::string& why) {
 // ---- The microphone ---------------------------------------------------------
 
 void VoiceSession::OnMicrophoneStarted(EchoCancellation echo) {
+  microphone_on_ = true;
+  echo_ = echo;
+  Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), NowMs()));
   LOG(INFO) << "[MoltVoice] microphone on, echo cancellation: "
             << (echo == EchoCancellation::kChromeWide ? "Chrome-wide"
                 : echo == EchoCancellation::kPlatform ? "the platform's"
                                                       : "none");
+  // Without one, a tab's sound reaches the recognizer as it is: while a tab
+  // plays sound, only the commands that always count do.
+  Apply(logic_.OnEchoCancellation(echo != EchoCancellation::kNone, NowMs()));
 }
 
 void VoiceSession::OnMicrophoneProblem(VoiceAudio::Problem problem) {
@@ -614,17 +624,28 @@ bool VoiceSession::OthersSpeaking() const {
   return controller_ && controller_->OthersSpeaking();
 }
 
-void VoiceSession::OnPoll() {
-  Apply(logic_.OnOtherSpeech(OthersSpeaking(), NowMs()));
-  bool audible = false;
+bool VoiceSession::OwnSpeechInReference() const {
+  return microphone_on_ && echo_ != EchoCancellation::kNone && controller_ &&
+         controller_->SpeechInEchoReference();
+}
+
+bool VoiceSession::AnyTabAudible() const {
   for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
     TabStripModel* tabs = window->GetTabStripModel();
-    for (int i = 0; tabs && i < tabs->count() && !audible; ++i) {
+    for (int i = 0; tabs && i < tabs->count(); ++i) {
       content::WebContents* contents = tabs->GetWebContentsAt(i);
-      audible = contents && contents->IsCurrentlyAudible();
+      if (contents && contents->IsCurrentlyAudible()) {
+        return true;
+      }
     }
   }
-  Apply(logic_.OnPageAudible(audible, NowMs()));
+  return false;
+}
+
+void VoiceSession::OnPoll() {
+  Apply(logic_.OnOtherSpeech(OthersSpeaking(), NowMs()));
+  Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), NowMs()));
+  Apply(logic_.OnPageAudible(AnyTabAudible(), NowMs()));
 }
 
 }  // namespace voice

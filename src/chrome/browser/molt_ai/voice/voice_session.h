@@ -17,11 +17,14 @@
 //     out (earcons through VoiceEarcons, ducking through every tab's media
 //     session, barge-in through VoiceController::StopSpeaking()).
 //   - Barge-in and "stop" stop voice mode's own speech only, never a page's
-//     (voice_speech.h). A page's speech (speechSynthesis, which plays
-//     outside the echo canceller's reach) is looked for every
-//     kPollInterval and at each of the helper's events: while it plays,
-//     and shortly after, only "stop", "cancel" and "turn off voice mode"
-//     count (VoiceSessionLogic::OnOtherSpeech()).
+//     (voice_speech.h). While voice mode speaks with its own voice and the
+//     microphone has echo cancellation, a command said over it interrupts
+//     it too (OnOwnSpeechInReference(), voice_session_logic.h).
+//   - A page's speech (speechSynthesis, which plays outside the echo
+//     canceller's reach) is looked for every kPollInterval and at each of
+//     the helper's events: while it plays, and shortly after, only "stop",
+//     "cancel" and "turn off voice mode" count
+//     (VoiceSessionLogic::OnOtherSpeech()).
 //   - The caption bar shows the state, and what is being said as it is said
 //     (VoiceController::SetListening()).
 //   - Hotwords: the page map each utterance was planned on gives the
@@ -173,6 +176,13 @@ class VoiceSession : public VoiceController::Observer,
   BrowserActivity ControllerActivity() const;
   // Whether the speech engine speaks for someone else (voice_speech.h).
   bool OthersSpeaking() const;
+  // Whether a tab of any window plays sound.
+  bool AnyTabAudible() const;
+  // Whether voice mode's speech is in the microphone's echo canceller's
+  // reference: its own voice speaks, and the microphone has echo
+  // cancellation (Chrome-wide, whose reference is the browser's output, or
+  // the platform's, the system's whole output).
+  bool OwnSpeechInReference() const;
 
   raw_ptr<BrowserWindowInterface> browser_;
   ui::ScopedUnownedUserData<VoiceSession> scoped_data_holder_;
@@ -187,6 +197,9 @@ class VoiceSession : public VoiceController::Observer,
   std::vector<std::string> hotwords_;
   std::string partial_;
   std::string problem_;
+  // The microphone runs, with this echo cancellation.
+  bool microphone_on_ = false;
+  EchoCancellation echo_ = EchoCancellation::kNone;
   // The tabs whose media is ducked.
   std::vector<base::WeakPtr<content::WebContents>> ducked_;
   // "Voice mode is on" was said in this session.

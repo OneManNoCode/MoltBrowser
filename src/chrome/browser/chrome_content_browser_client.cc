@@ -132,6 +132,7 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"
 #include "chrome/browser/molt_ai/runtime/gpu_inference_prefs.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
@@ -4725,6 +4726,13 @@ bool ChromeContentBrowserClient::CanCreateWindow(
   }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+  // MoltBrowser: a window the page opens with the user activation an
+  // agent's or voice mode's accessibility action gave it goes to the popup
+  // blocker as one without a gesture; the user is asked
+  // (molt_ai/security/activation_guard.h).
+  user_gesture = molt_ai::ActivationGuard::GestureForNewWindow(
+      opener, target_url, disposition, user_gesture);
+
   BlockedWindowParams blocked_params(
       target_url, source_origin, opener->GetSiteInstance(), referrer,
       frame_name, disposition, features, user_gesture, opener_suppressed);
@@ -7865,6 +7873,21 @@ bool ChromeContentBrowserClient::HandleExternalProtocol(
                                      ? initiator_document->GetWeakDocumentPtr()
                                      : content::WeakDocumentPtr();
 
+  // MoltBrowser: an app the page opens with the user activation an agent's
+  // or voice mode's accessibility action gave it is asked about first, and
+  // launched as below on "yes" (molt_ai/security/activation_guard.h).
+  if (molt_ai::ActivationGuard::HoldsExternalProtocol(
+          web_contents_getter.Run(), url, initiating_origin,
+          base::BindOnce(
+              &LaunchURL, weak_factory_.GetWeakPtr(), url,
+              web_contents_getter, page_transition, is_primary_main_frame,
+              is_in_fenced_frame_tree, sandbox_flags, has_user_gesture,
+              initiating_origin, weak_initiator_document,
+              static_cast<mojo::PendingRemote<
+                  network::mojom::URLLoaderFactory>*>(nullptr)))) {
+    return false;
+  }
+
   // On Android, populate the `out_factory` param.
   LaunchURL(weak_factory_.GetWeakPtr(), url, std::move(web_contents_getter),
             page_transition, is_primary_main_frame, is_in_fenced_frame_tree,
@@ -8532,6 +8555,14 @@ void ChromeContentBrowserClient::IsClipboardCopyAllowedByPolicy(
     const ui::ClipboardMetadata& metadata,
     const ClipboardPasteData& data,
     IsClipboardCopyAllowedCallback callback) {
+  // MoltBrowser: a page's clipboard write with the user activation an
+  // agent's or voice mode's accessibility action gave it is refused (none
+  // of the page's data is written) unless the user asked for a copy
+  // (molt_ai/security/activation_guard.h).
+  if (molt_ai::ActivationGuard::RefusesClipboardWrite(source.web_contents())) {
+    std::move(callback).Run(metadata.format_type, data, std::u16string());
+    return;
+  }
   glic::OnBeforeClipboardCopy(source);
 
 #if BUILDFLAG(ENTERPRISE_DATA_CONTROLS)

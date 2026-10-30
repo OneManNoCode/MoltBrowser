@@ -4,6 +4,167 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-30: rounds 38 and 39 (October 2026)
+
+**Scope.** The code of rounds 38 and 39 (touchless browsing's listening,
+the web agent on the accessibility page map and voice mode's planner
+fallback), which only its authors had reviewed, without the Chromium
+rebase's mechanical changes, in this order of priority:
+
+1. The speech helper (`voice/speech_helper/`, `scripts/bundle-speech.sh`):
+   the frame reader and the CONFIG parser (bounds, integer overflow,
+   partial reads), the hotwords' cleaning against sherpa-onnx's hotword
+   syntax and spelling, the output caps and the stall rules, and the
+   supply chain (the pins, the `git archive` fallback, extraction, and the
+   checks that CMake fetches nothing).
+2. The helper sandbox's resident mode (`common/helper_resident*`, and the
+   resident parts of `helper_sandbox_linux.*`, `seatbelt_profile.*` and
+   `helper_sandbox_win_policy.*`): whether a helper a hostile input took
+   over can write anything, reach the network or a local service, start a
+   process, read outside its models, outlive the browser or pass its memory
+   and CPU caps; the restarts and their backoff.
+3. The listening session (`voice_session*`, `voice_listener*`,
+   `voice_audio*`, `voice_listener_protocol*`): the helper's output (caps,
+   UTF-8, the order of events, RESET epochs, and what a hijacked helper's
+   text is to the browser); page audio and page speech against voice mode
+   (with echo cancellation and without, `speechSynthesis`, the wake phrase,
+   the follow-up window, and "stop", "cancel" and "turn off voice mode"
+   said by a page or by the browser reading a page); the hotwords taken
+   from page text; when the microphone opens and closes (MoltNet windows,
+   stopping, closing the window); the settings handler, the toolbar
+   button and the real-click rule.
+4. The agent on the page map (`agents/agent_page_map*`, `web_agent.cc`,
+   `voice_agent_planner*`, `voice_agent_speech*`, `voice_page_controller.cc`'s
+   `Inspect()`, `OptionsOf()`, `SelectOption()` and holders): every
+   agent_safety rule on the new path (origins per frame and the frames
+   between them, credential fields, the fence, the questions before a
+   click), page-controlled names, a target that changes between the check
+   and the action, an option's default action, holders that never release
+   the accessibility mode, and the planner's questions and results read
+   aloud.
+5. The rebase's merges of `quota_database.{cc,h}`, `mouse_event.cc` and
+   `media_stream_video_track.cc`: MoltBrowser's hooks still in place and
+   still correct after upstream's changes.
+
+**Method.** Each candidate traced from its attacker (a web page or a frame
+it embeds, page audio and page speech, the page text the browser reads
+aloud, a helper that a hostile input took over, a compromised renderer)
+through MoltBrowser's code, sherpa-onnx 2.0.1's hotword encoder and
+keyword parser (`EncodeHotwords()`, `EncodeBase()`), ONNX Runtime 1.28.2's
+dependency fetching, and the upstream Chromium 156 code at the pinned
+revision (Blink's accessibility serialization of forms, buttons and input
+types, `HTMLOptionElement`'s default action). On Linux the helper sandbox
+was exercised against the real kernel (Landlock ABI 7 and seccomp-bpf):
+the resident mode's tests, a confined program sending a datagram to a
+named socket outside its paths, and the bundled speech helper itself
+under the resident sandbox (the protocol checks of
+`speech_helper_check.py`, 21 of 21). Fixes tested with the std-only unit
+tests built standalone (system gtest, ASan and UBSan), the helper
+sandbox's tests on the real kernel, the agent page map's unit tests
+built standalone on the `//url` stand-ins, the voice listener fuzzer
+(four minutes after the fixes), `molt_fuzz.py check`; the changed C++ was
+compiled against Chromium 156's headers; the tests that need Chromium run
+on the build machine. The fixes made later in the round were tested the
+same way, and also with the seccomp filter alone (as on a kernel whose
+Landlock doesn't scope signals): the helper sandbox's tests in a child
+confined by it, and the speech helper's 21 protocol checks under it; the
+speech helper's own unit tests and fuzzer, and its Linux build checked
+with `readelf`.
+
+**Findings.** 16: 9 low and 7 informational (wording, defence in depth,
+performance, or what later phases of the design cover). Fixed: six of
+the low and three of the informational; the others are tracked
+privately.
+
+**Fixed.**
+
+- On Linux a helper's UNIX sockets are stream or seqpacket sockets only:
+  connect() was already refused, but a datagram socket reaches a named
+  socket without it, as a logger reaches the system log. This holds for
+  the OCR and voice helpers and the resident speech helper alike
+  (`common/helper_sandbox_linux.cc`).
+- Where the microphone has no echo canceller (Chrome-wide echo
+  cancellation turned off, and a device without its own), a tab's sound
+  reaches the recognizer as it is. A tab playing sound then counts as
+  another source's speech, as a page's `speechSynthesis` does: only
+  "stop", "cancel" and "turn off voice mode" count while it plays and a
+  second after. The session also looks at the tabs' sound at each of the
+  helper's events (`voice/voice_session_logic.cc`, `voice_session.cc`).
+- The page's names that bias recognition (hotwords) leave out any phrase
+  the grammar reads as a yes ("Yes", "OK", "Sure, go ahead"), so page
+  text never biases the answer that confirms an action
+  (`voice/voice_listener_protocol.cc`).
+- The web agent's page map lists, and acts in, the page's own frame and
+  frames of its origin that only frames of that origin embed: a frame of
+  the page's origin inside another site's frame (an ad that embeds one of
+  the page's URLs of its choosing, with its buttons) is left out like the
+  frame around it, and refused at action time (`agents/web_agent.cc`,
+  `agent_page_map.cc`, `voice/voice_page_controller.cc`).
+- On Linux the helpers' seccomp filter keeps their signals to the helper
+  itself, its threads and its process group on every kernel, as Landlock
+  does from ABI 6 (Linux 6.12): `kill()`, `tgkill()` and the `sigqueue`
+  calls name the helper's own process ID, which the child writes into its
+  copy of the filter after `fork()`; `tkill()` and `pidfd_send_signal()`
+  are refused (glibc's `raise()`, `abort()` and `pthread_kill()` use
+  `tgkill()`); a file's owner for `SIGIO` and `SIGURG` can only be the
+  helper; and `prlimit64()` changes only its own limits
+  (`common/helper_sandbox_linux.cc`).
+- The voice listener counts a speech helper that ran a minute after it was
+  ready as a fresh start however it ended (a limit, a protocol error, a
+  stall), not only when it exited, so failures hours apart don't add up
+  to giving up (`voice/voice_listener.cc`, `HelperFailureCount` in
+  `voice_listener_protocol.cc`).
+- The speech helper exits after an `error` line (SPEECH_HELPER_PROTOCOL.md
+  §3.7): the browser now ends it at the first, passed on once to the log,
+  and refuses any line after one, so a helper that writes errors and
+  carries on is restarted with the backoff like a crash
+  (`voice/voice_listener.cc`, `voice_listener_protocol.cc`).
+- The speech helper's frame reader and CONFIG parser are built with the
+  program's hardening (stack protector, `_FORTIFY_SOURCE`, stack clash
+  protection where the compiler has it, a position-independent
+  executable; Control Flow Guard on Windows), whatever the toolchain's
+  defaults (`voice/speech_helper/CMakeLists.txt`).
+- The speech helper rebuilds its wake-phrase spotter only when the wake
+  phrases change, not at every CONFIG, which carries them each time the
+  follow-up window opens or closes: such a CONFIG took 0.8 s here, during
+  which the helper read no audio, and now takes 0.1 ms
+  (`voice/speech_helper/listener.cc`).
+
+**Tests added.**
+
+- `helper_sandbox_unittest.cc`: the seccomp filter's verdicts for each
+  socket type and flag; a confined short-lived helper can't send a
+  datagram to a named socket outside its scratch directory.
+  `helper_resident_unittest.cc`: the same for a resident helper. The
+  stand-in helper (`helper_sandbox_test_helper_posix.cc`) has a `dgram`
+  action for them.
+- `voice_session_logic_unittest.cc`: a video's wake phrase and command,
+  and an answer in the follow-up window, without an echo canceller; the
+  same with one. The voice listener fuzzer drives the new input and checks
+  that only the commands that always count are taken while a tab plays
+  sound without one.
+- `voice_listener_protocol_unittest.cc`: yes-phrases left out of a page's
+  hotwords, other names kept.
+- `agent_page_map_unittest.cc`: a frame of the page's origin inside
+  another site's frame is refused at action time.
+  `agent_page_map_browsertest.cc`: the same widget listed when the page
+  embeds it, and left out when another site's frame does.
+- `helper_sandbox_unittest.cc`: the seccomp filter's verdicts for each
+  signal call and owner command, its own-ID slots; a child confined by the
+  seccomp filter alone (as on a kernel without Landlock's signal scoping)
+  can't signal its parent in any of those ways, still signals itself and
+  still ends with `SIGABRT` on `abort()`; the stand-in helper (new
+  `signals` and `abort` actions) under the short-lived sandbox.
+  `helper_resident_unittest.cc`: the same under the resident one.
+- `voice_listener_protocol_unittest.cc`: nothing after an `error`; the
+  failure count, its fresh start after a stable run and its giving up.
+  The voice listener fuzzer checks that nothing follows an accepted
+  `error`. `voice_session_browsertest.cc`: a helper that writes `error`
+  lines and carries on is ended three times, then voice mode gives up.
+- `speech_helper/listener_unittest.cc`: CONFIGs with the same wake phrases
+  keep the spotter (a wake phrase heard across one still wakes it); new
+  ones rebuild it.
+
 ## 2026-10-29: PR #80 (October 2026)
 
 **Scope.** The code merged in pull request #80 (rounds 36 and 37, touchless

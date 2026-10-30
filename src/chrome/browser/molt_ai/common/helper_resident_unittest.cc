@@ -10,6 +10,8 @@
 
 #include <stdint.h>
 
+#include <algorithm>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -34,6 +36,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -191,12 +194,51 @@ TEST_F(ResidentHelperTest, HasNoNetwork) {
   EXPECT_TRUE(output.starts_with("DENIED")) << output;
 }
 
+// A datagram reaches a named UNIX socket without connect(), as a logger
+// reaches the system log or the journal: refused too.
+TEST_F(ResidentHelperTest, SendsNoDatagramToANamedSocket) {
+  const std::string path = elsewhere_.GetPath().AppendASCII("log").value();
+  sockaddr_un address = {};
+  address.sun_family = AF_UNIX;
+  if (path.size() >= sizeof(address.sun_path)) {
+    GTEST_SKIP() << "the temporary directory is too deep for a socket's name";
+  }
+  std::ranges::copy(path, std::begin(address.sun_path));
+  const int listener = socket(AF_UNIX, SOCK_DGRAM, 0);
+  ASSERT_GE(listener, 0);
+  ASSERT_EQ(
+      bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)),
+      0);
+  const std::string output = Output({"dgram", path});
+  char received[16] = {};
+  const ssize_t got =
+      recv(listener, received, sizeof(received), MSG_DONTWAIT);
+  close(listener);
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+  EXPECT_LT(got, 0);
+}
+
 TEST_F(ResidentHelperTest, StartsNoOtherProcess) {
   const std::string output = Output({"fork"});
   EXPECT_TRUE(output.starts_with("DENIED")) << output;
 }
 
 #if BUILDFLAG(IS_LINUX)
+// Signals go to the helper itself only, on every kernel (the seccomp
+// filter; Landlock's scoping too from ABI 6), and abort() still works.
+TEST_F(ResidentHelperTest, SignalsOnlyItself) {
+  const std::string output = Output({"signals"});
+  EXPECT_TRUE(output.starts_with("SELF 5 5\n")) << output;
+  for (std::string_view way :
+       {"kill", "everyone", "tgkill", "tkill", "sigqueue", "tgsigqueue",
+        "pidfd", "owner", "limits"}) {
+    EXPECT_NE(output.find(std::string(way) + " DENIED "), std::string::npos)
+        << way << ": " << output;
+  }
+  EXPECT_EQ(output.find("SENT"), std::string::npos) << output;
+  EXPECT_EQ(Output({"abort"}), "ABORTED\n");
+}
+
 TEST_F(ResidentHelperTest, ResourceLimits) {
   policy_.max_memory_bytes = uint64_t{512} << 20;
   const std::string output = Output({"limits"});

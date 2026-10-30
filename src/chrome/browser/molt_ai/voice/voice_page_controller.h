@@ -27,6 +27,11 @@
 //     frame has now; a stale handle is refused (map again). Text is never
 //     written into a protected or credential field or a field that isn't
 //     editable.
+//   - Activation: Blink takes these actions (and Submit's Enter key) as the
+//     user's own interaction, so the page gets user activation from them.
+//     Every action is noted with the tab's ActivationGuard
+//     (molt_ai/security/activation_guard.h), which keeps what the page
+//     does with that activation to what the user asked for, or asks first.
 //   - Holders: voice mode and the web agent (agents/web_agent.h) each hold
 //     the controller (Start(Holder)); the mode stays while either does, so
 //     an agent run on a tab in voice mode leaves the page as voice mode
@@ -56,6 +61,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/security/activation_policy.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -181,6 +187,9 @@ class VoicePageController
     // document's.
     url::Origin origin;
     bool main_frame = false;
+    // Whether every frame above it, up to the top-level document, has its
+    // origin (FramedByItsOwnOrigin()).
+    bool framed_by_own_origin = false;
   };
   // As every action does, the target is found again first: a stale handle
   // (*|error| kStale) or a frame that isn't an http(s) document
@@ -191,6 +200,11 @@ class VoicePageController
   // The committed origin of the frame whose tree has |tree_index|
   // (PageNodeHandle::tree), if it is one of this tab's primary page's.
   std::optional<url::Origin> OriginOfTree(int32_t tree_index);
+  // Whether that frame is one of this tab's primary page's and every frame
+  // above it, up to the top-level document (through a fenced frame's outer
+  // document), has its origin: false for a frame of the page's origin that
+  // another site's frame embeds, which chose what it shows.
+  bool FramedByItsOwnOrigin(int32_t tree_index);
 
   // The names of a select's options (a collapsed <select>, whose options
   // the map doesn't number, or a list box), in order: at most kMaxOptions,
@@ -206,8 +220,11 @@ class VoicePageController
   ActionResult SelectOption(const PageNodeHandle& select,
                             std::string_view option);
 
-  // Accessibility actions on a node of the last map.
-  ActionResult Press(const PageNodeHandle& target);
+  // Accessibility actions on a node of the last map. |intent| is what the
+  // user asked the press for, when it was full screen or playing media (the
+  // activation guard lets the page go full screen then).
+  ActionResult Press(const PageNodeHandle& target,
+                     activation::Intent intent = activation::Intent::kNone);
   ActionResult Focus(const PageNodeHandle& target);
   ActionResult ScrollIntoView(const PageNodeHandle& target);
   ActionResult SetText(const PageNodeHandle& field, std::string_view text);
@@ -310,7 +327,11 @@ class VoicePageController
   void DropTreesNotInPrimaryPage();
   std::optional<Target> Resolve(const PageNodeHandle& handle,
                                 ActionResult* error);
-  ActionResult Perform(const Target& target, ui::AXActionData data);
+  // Sends |data| to |target|'s frame, noted with the tab's activation
+  // guard first.
+  ActionResult Perform(const Target& target,
+                       ui::AXActionData data,
+                       activation::Intent intent = activation::Intent::kNone);
   // Increment() and Decrement().
   ActionResult Step(const PageNodeHandle& target, ax::mojom::Action action);
   void FinishSubmit(ActionResult result);

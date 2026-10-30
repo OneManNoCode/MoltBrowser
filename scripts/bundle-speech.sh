@@ -2,13 +2,16 @@
 # MoltBrowser speech helper bundler
 # Copyright 2026 GenEye AI Labs Inc. Licensed under GPLv3.
 #
-# Builds molt-speech, touchless browsing's resident speech helper
-# (docs/design/SPEECH_HELPER_PROTOCOL.md), from pinned sources, and installs
-# it with its three models where the browser looks for it:
+# Builds touchless browsing's two resident helpers from pinned sources and
+# installs them with their models where the browser looks for them:
+#   - molt-speech, the ears (docs/design/SPEECH_HELPER_PROTOCOL.md): part
+#     "speech", in speech/;
+#   - molt-voice, voice mode's own voice (docs/design/
+#     VOICE_HELPER_PROTOCOL.md): part "voice", in voice/.
 #
-#   macOS:   MoltBrowser.app/Contents/Resources/speech/    (--app)
-#   Linux:   <staging>/opt/moltbrowser/speech/              (--dest <staging>/opt/moltbrowser)
-#   Windows: <staging>/speech/                             (--dest <staging>, next to MoltBrowser.exe)
+#   macOS:   MoltBrowser.app/Contents/Resources/{speech,voice}/  (--app)
+#   Linux:   <staging>/opt/moltbrowser/{speech,voice}/            (--dest <staging>/opt/moltbrowser)
+#   Windows: <staging>/{speech,voice}/                           (--dest <staging>, next to MoltBrowser.exe)
 #
 #   speech/molt-speech[.exe]          the helper (one static executable)
 #   speech/models/kws/...             wake phrase: GigaSpeech Zipformer KWS 3.3M
@@ -16,6 +19,11 @@
 #   speech/models/asr/...             recognition: Kroko EN (2025-08-06)
 #   speech/LICENSES/...               the licences and attribution that ship
 #   speech/.build-info                versions, pins and the helper's SHA-256
+#   voice/molt-voice[.exe]            the voice helper (one static executable)
+#   voice/models/...                  the Piper (VITS) en_US ljspeech voice and
+#                                     sherpa-onnx's English lexicon
+#   voice/LICENSES/...                its licences
+#   voice/.build-info                 versions, pins and the helper's SHA-256
 #
 # What it builds, each from a source tarball pinned by SHA-256:
 #   ONNX Runtime 1.28.2, CPU only, static, with the dependencies its own
@@ -23,10 +31,12 @@
 #   copies); built for client workloads, so its thread pools don't
 #   spin-wait (onnxruntime_CLIENT_PACKAGE_BUILD); no ML, generation or
 #   float8/float4 operators; then sherpa-onnx 2.0.1, static, with its C API
-#   and without TTS, speaker diarization, Python, binaries or other
-#   execution providers; then molt-speech (its sources are
-#   src/chrome/browser/molt_ai/voice/speech_helper/, built outside GN like
-#   whisper-cli), linked statically against both, so one executable ships.
+#   and its TTS code, without speaker diarization, Python, binaries or other
+#   execution providers (compiled with function sections, so molt-speech
+#   links none of the TTS code); then molt-speech and molt-voice (their
+#   sources are src/chrome/browser/molt_ai/voice/speech_helper/ and
+#   voice_helper/, built outside GN like whisper-cli), each linked
+#   statically against both, so one executable ships per helper.
 #
 # Sources: each tarball is GitHub's (or GitLab's) /archive/ download for a
 # pinned commit. If that download fails, it is reproduced from the pinned
@@ -42,6 +52,9 @@
 #   scripts/bundle-speech.sh --build-only      # build into the cache only
 #   scripts/bundle-speech.sh --verify DIR      # check DIR/speech's models
 # Options:
+#   --parts LIST   speech (the default), voice, or speech,voice: which
+#                  helpers to build, install or verify. Callers bundle the
+#                  voice with MOLT_BUNDLE_VOICE=1.
 #   --cache DIR    work directory (default <repo>/.molt-speech-cache, ~6 GB
 #                  during the ONNX Runtime build)
 #   --jobs N       parallel compile jobs (default 2; ONNX Runtime needs
@@ -76,6 +89,7 @@ APP_PATH=""
 DEST_PARENT=""
 VERIFY_DIR=""
 BUILD_ONLY=0
+PARTS="speech"
 
 # ---------------------------------------------------------------- pins
 # Source tarballs: name|url|sha256|git repository|commit|archive prefix.
@@ -158,6 +172,26 @@ MODEL_FILES=(
 )
 # The KWS model's bpe.model, read only to generate kws/pieces.vocab.
 KWS_BPE_MODEL="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/bpe.model|c8a2a0129c4ab8e463164c142f82d25649661b122c8cd0b7aab5c9e80b90ad24"
+# The voice (part "voice"): the Piper en_US ljspeech (medium) voice, the
+# only English Piper voice the bench cleared for shipping (trained from
+# scratch on the public-domain LJ Speech; docs/VOICE_BENCH.md §4), and
+# sherpa-onnx's English lexicon, both from sherpa-onnx's GitHub releases
+# with the pins of tools/voice_bench/artifacts.json: name|url|sha256.
+VOICE_ARCHIVES=(
+  "piper|https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium.tar.bz2|3dfb4b759d8be032a4903a9538d128b0fda2a06ab1de6cbc2d93a97e2dd83dba"
+  "lexicon|https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt|8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a"
+)
+# Every file that ships under voice/models/: path|sha256|archive member.
+# The archive's espeak-ng-data/ isn't used (sherpa-onnx 2.x has no
+# espeak-ng) and doesn't ship.
+VOICE_FILES=(
+  "en_US-ljspeech-medium.onnx|8ceba58a4b540d4e7e7e24ad079cf0d92762a4fd334e059f12940787c6c37b3d|vits-piper-en_US-ljspeech-medium/en_US-ljspeech-medium.onnx"
+  "en_US-ljspeech-medium.onnx.json|141d612cc0a95ed7efc1ca936b845c2364967f2e9217c5dbfcf69fc4d6c65860|vits-piper-en_US-ljspeech-medium/en_US-ljspeech-medium.onnx.json"
+  "tokens.txt|ef3a7e4a8d1af0c9d4dc45aaae1a6242ebe24a7ed6f3d025a49eb29682784c6d|vits-piper-en_US-ljspeech-medium/tokens.txt"
+  "MODEL_CARD|fbee1529c89d36b3fe76d7e9f3f832dce17f44900a52d76a9bda735654766b4d|vits-piper-en_US-ljspeech-medium/MODEL_CARD"
+  "lexicon-en-us.txt|8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a|lexicon-en-us.txt"
+)
+VOICE_SRC="$ROOT_DIR/src/chrome/browser/molt_ai/voice/voice_helper"
 
 # ---------------------------------------------------------------- options
 while [[ $# -gt 0 ]]; do
@@ -169,7 +203,8 @@ while [[ $# -gt 0 ]]; do
     --cache) CACHE_DIR="$2"; shift 2 ;;
     --jobs) JOBS="$2"; shift 2 ;;
     --fetch) FETCH_MODE="$2"; shift 2 ;;
-    -h|--help) sed -n '2,62p' "$0"; exit 0 ;;
+    --parts) PARTS="$2"; shift 2 ;;
+    -h|--help) sed -n '2,76p' "$0"; exit 0 ;;
     *) echo "[bundle-speech] unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -192,7 +227,15 @@ case "$(uname -m)" in
   *) die "unsupported CPU $(uname -m)" ;;
 esac
 EXE=molt-speech
-[[ "$OS" == win ]] && EXE=molt-speech.exe
+VOICE_EXE=molt-voice
+[[ "$OS" == win ]] && EXE=molt-speech.exe && VOICE_EXE=molt-voice.exe
+
+# want PART: whether --parts names it.
+want() { [[ ",$PARTS," == *",$1,"* ]]; }
+for part in ${PARTS//,/ }; do
+  case "$part" in speech|voice) ;; *) die "--parts takes speech and voice" ;; esac
+done
+want speech || want voice || die "--parts names nothing to build"
 
 sha1_of() {
   if command -v sha1sum >/dev/null 2>&1; then
@@ -239,9 +282,41 @@ verify_models() {
   echo "[bundle-speech] OK: $count model files match their pins"
 }
 
+# verify_voice DIR: every file of VOICE_FILES under DIR/models matches its
+# pin, and nothing else is there.
+verify_voice() {
+  local dir="$1" path sha _rest actual count=0 present
+  [[ -d "$dir/models" ]] || { echo "[bundle-speech] $dir/models is missing"; return 1; }
+  for entry in "${VOICE_FILES[@]}"; do
+    IFS='|' read -r path sha _rest <<< "$entry"
+    [[ -f "$dir/models/$path" && ! -L "$dir/models/$path" ]] || {
+      echo "[bundle-speech] missing: voice/models/$path"; return 1; }
+    actual="$(sha256_of "$dir/models/$path")"
+    if [[ "$actual" != "$sha" ]]; then
+      echo "[bundle-speech] SHA-256 mismatch: voice/models/$path"
+      echo "[bundle-speech]   expected $sha"
+      echo "[bundle-speech]   actual   $actual"
+      return 1
+    fi
+    count=$((count + 1))
+  done
+  present="$(find "$dir/models" -type f -o -type l | wc -l | tr -d ' ')"
+  if [[ "$present" != "$count" ]]; then
+    echo "[bundle-speech] voice/models/ holds $present files; expected exactly $count"
+    return 1
+  fi
+  echo "[bundle-speech] OK: $count voice model files match their pins"
+}
+
 if [[ -n "$VERIFY_DIR" ]]; then
-  verify_models "$VERIFY_DIR/speech"
-  [[ -x "$VERIFY_DIR/speech/$EXE" ]] || die "$VERIFY_DIR/speech/$EXE is missing"
+  if want speech; then
+    verify_models "$VERIFY_DIR/speech"
+    [[ -x "$VERIFY_DIR/speech/$EXE" ]] || die "$VERIFY_DIR/speech/$EXE is missing"
+  fi
+  if want voice; then
+    verify_voice "$VERIFY_DIR/voice"
+    [[ -x "$VERIFY_DIR/voice/$VOICE_EXE" ]] || die "$VERIFY_DIR/voice/$VOICE_EXE is missing"
+  fi
   exit 0
 fi
 
@@ -332,10 +407,18 @@ if [[ "$OS" == mac ]]; then
   fetch_pinned "$PROTOC_ZIP" "$url" "$sha"
 fi
 
-for entry in "${MODEL_ARCHIVES[@]}"; do
-  IFS='|' read -r name url sha <<< "$entry"
-  fetch_pinned "$DL/$(basename "$url")" "$url" "$sha"
-done
+if want speech; then
+  for entry in "${MODEL_ARCHIVES[@]}"; do
+    IFS='|' read -r name url sha <<< "$entry"
+    fetch_pinned "$DL/$(basename "$url")" "$url" "$sha"
+  done
+fi
+if want voice; then
+  for entry in "${VOICE_ARCHIVES[@]}"; do
+    IFS='|' read -r name url sha <<< "$entry"
+    fetch_pinned "$DL/$(basename "$url")" "$url" "$sha"
+  done
+fi
 
 # fresh_extract TARBALL DIR: unpacks into a new, empty DIR.
 fresh_extract() {
@@ -472,9 +555,12 @@ SHERPA_SRC="$WORK/src/$SHERPA_PREFIX_DIR"
 SHERPA_BUILD="$WORK/sherpa-build"
 SHERPA_OUT="$WORK/sherpa"
 SHERPA_STAMP="$SHERPA_OUT/.stamp"
-sherpa_key="$(sha256_of "$DL/$SHERPA_PREFIX_DIR.tar.gz") $(cat "$ORT_STAMP")"
+# A build from this tarball, this ONNX Runtime and this script's sherpa-onnx
+# flags is reused.
+sed -n '/^  sherpa_flags=(/,/^  )/p' "$0" > "$WORK/sherpa-flags.txt"
+sherpa_key="$(sha256_of "$DL/$SHERPA_PREFIX_DIR.tar.gz") $(cat "$ORT_STAMP") $(sha256_of "$WORK/sherpa-flags.txt")"
 if [[ ! -f "$SHERPA_STAMP" || "$(cat "$SHERPA_STAMP")" != "$sherpa_key" ]]; then
-  log "building sherpa-onnx (static, C API, no TTS)"
+  log "building sherpa-onnx (static, C API, with TTS)"
   rm -rf "$SHERPA_SRC" "$SHERPA_BUILD" "$SHERPA_OUT"
   mkdir -p "$WORK/src" "$SHERPA_BUILD"
   tar -xzf "$DL/$SHERPA_PREFIX_DIR.tar.gz" -C "$WORK/src"
@@ -498,7 +584,7 @@ if [[ ! -f "$SHERPA_STAMP" || "$(cat "$SHERPA_STAMP")" != "$sherpa_key" ]]; then
     -DCMAKE_INSTALL_PREFIX="$SHERPA_OUT"
     -DBUILD_SHARED_LIBS=OFF
     -DSHERPA_ONNX_ENABLE_C_API=ON
-    -DSHERPA_ONNX_ENABLE_TTS=OFF
+    -DSHERPA_ONNX_ENABLE_TTS=ON
     -DSHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=OFF
     -DSHERPA_ONNX_ENABLE_PYTHON=OFF
     -DSHERPA_ONNX_ENABLE_TESTS=OFF
@@ -512,6 +598,12 @@ if [[ ! -f "$SHERPA_STAMP" || "$(cat "$SHERPA_STAMP")" != "$sherpa_key" ]]; then
     -DSHERPA_ONNX_USE_PRE_INSTALLED_ONNXRUNTIME_IF_AVAILABLE=ON
     -DFETCHCONTENT_QUIET=OFF
   )
+  # Each function in its own section, so a helper links only the code it
+  # calls (molt-speech none of the TTS code).
+  case "$OS" in
+    linux) sherpa_flags+=("-DCMAKE_CXX_FLAGS=-ffunction-sections -fdata-sections"
+                          "-DCMAKE_C_FLAGS=-ffunction-sections -fdata-sections") ;;
+  esac
   case "$OS" in
     mac) sherpa_flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0) ;;
     win) sherpa_flags+=(-DSHERPA_ONNX_USE_STATIC_CRT=ON) ;;
@@ -539,6 +631,7 @@ if [[ ! -f "$SHERPA_STAMP" || "$(cat "$SHERPA_STAMP")" != "$sherpa_key" ]]; then
 fi
 
 # ---------------------------------------------------------------- models
+if want speech; then
 MODELS_OUT="$WORK/speech/models"
 rm -rf "$WORK/speech" "$WORK/model-src"
 mkdir -p "$WORK/model-src" "$MODELS_OUT/kws" "$MODELS_OUT/asr" "$MODELS_OUT/vad"
@@ -632,21 +725,119 @@ HELPER_SHA="$(sha256_of "$WORK/speech/$EXE")"
   model_files | awk -F'|' '{print "models/" $1 " sha256 " $2}'
 } > "$WORK/speech/.build-info"
 log "molt-speech $(du -h "$WORK/speech/$EXE" | cut -f1), SHA-256 $HELPER_SHA"
+fi  # want speech
 
-[[ "$BUILD_ONLY" == 1 ]] && { log "built into $WORK/speech"; exit 0; }
+# ---------------------------------------------------------------- molt-voice
+if want voice; then
+VOICE_OUT="$WORK/voice"
+rm -rf "$VOICE_OUT" "$WORK/voice-src"
+mkdir -p "$WORK/voice-src" "$VOICE_OUT/models"
+for entry in "${VOICE_ARCHIVES[@]}"; do
+  IFS='|' read -r name url sha <<< "$entry"
+  file="$DL/$(basename "$url")"
+  case "$file" in
+    *.tar.bz2) tar -xjf "$file" -C "$WORK/voice-src" ;;
+    *) cp "$file" "$WORK/voice-src/" ;;
+  esac
+done
+for entry in "${VOICE_FILES[@]}"; do
+  IFS='|' read -r path sha from <<< "$entry"
+  src="$WORK/voice-src/$from"
+  [[ -f "$src" && ! -L "$src" ]] || die "the voice archives lack $from"
+  install -m 644 "$src" "$VOICE_OUT/models/$path"
+done
+verify_voice "$VOICE_OUT" || die "the voice's files do not match their pins"
+rm -rf "$WORK/voice-src"
+
+VOICE_BUILD="$WORK/voice-build"
+log "building molt-voice"
+rm -rf "$VOICE_BUILD"
+voice_flags=(
+  -DCMAKE_BUILD_TYPE=Release
+  -DMOLT_VOICE_SHERPA_PREFIX="$SHERPA_OUT"
+  -DMOLT_VOICE_ORT_LIB_DIR="$ORT_OUT/lib"
+)
+case "$OS" in
+  mac) voice_flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0) ;;
+  win) voice_flags+=(-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded) ;;
+esac
+cmake "${GENERATOR[@]}" -S "$VOICE_SRC" -B "$VOICE_BUILD" "${voice_flags[@]}" \
+    > "$WORK/voice-configure.log" 2>&1 ||
+  { tail -40 "$WORK/voice-configure.log"; die "molt-voice configure failed"; }
+cmake --build "$VOICE_BUILD" --config Release --parallel "$JOBS" --target molt-voice \
+    > "$WORK/voice-build.log" 2>&1 ||
+  { grep -E "error|Error" "$WORK/voice-build.log" | head -30; die "molt-voice build failed ($WORK/voice-build.log)"; }
+VOICE_BIN="$(find "$VOICE_BUILD" -name "$VOICE_EXE" -type f | head -1)"
+[[ -n "$VOICE_BIN" ]] || die "the build produced no $VOICE_EXE"
+install -m 755 "$VOICE_BIN" "$VOICE_OUT/$VOICE_EXE"
+if [[ "$OS" != win ]]; then
+  strip "$VOICE_OUT/$VOICE_EXE" 2>/dev/null || true
+fi
+case "$OS" in
+  linux)
+    if ldd "$VOICE_OUT/$VOICE_EXE" | grep -E "onnx|sherpa|not found"; then
+      die "molt-voice loads a library it should have linked statically"
+    fi ;;
+  mac)
+    if otool -L "$VOICE_OUT/$VOICE_EXE" | tail -n +2 | grep -vE "^\s+/(usr/lib|System/Library)/"; then
+      die "molt-voice loads a library from outside the OS"
+    fi ;;
+esac
+
+# Licences: the voice's model card (public-domain data), the lexicon's
+# sources (CMUdict, espeak-ng's word list: GPL-3.0-or-later), the libraries.
+mkdir -p "$VOICE_OUT/LICENSES"
+install -m 644 "$VOICE_SRC/LICENSES.md" "$VOICE_OUT/LICENSES/README.md"
+install -m 644 "$WORK/src/$ORT_PREFIX/LICENSE" "$VOICE_OUT/LICENSES/onnxruntime-LICENSE.txt"
+install -m 644 "$WORK/src/$ORT_PREFIX/ThirdPartyNotices.txt" "$VOICE_OUT/LICENSES/onnxruntime-ThirdPartyNotices.txt"
+install -m 644 "$SHERPA_SRC/LICENSE" "$VOICE_OUT/LICENSES/sherpa-onnx-LICENSE.txt"
+for dep in "$SHERPA_BUILD"/_deps/*-src "$WORK"/deps/*; do
+  [[ -d "$dep" ]] || continue
+  dep_name="$(basename "$dep")"
+  dep_name="${dep_name%-src}"
+  dep_name="${dep_name%%-[0-9a-f]*[0-9a-f]}"
+  for f in "$dep"/LICENSE* "$dep"/COPYING* "$dep"/NOTICE*; do
+    [[ -f "$f" ]] || continue
+    install -m 644 "$f" "$VOICE_OUT/LICENSES/$dep_name-$(basename "$f")"
+  done
+done
+
+VOICE_SHA="$(sha256_of "$VOICE_OUT/$VOICE_EXE")"
+{
+  echo "molt-voice protocol 1"
+  echo "built $(date -u +%Y-%m-%dT%H:%M:%SZ) on $OS-$ARCH"
+  echo "sherpa-onnx 2.0.1 af2d8d81dbfa61c4cea4c568da78f3982edca005"
+  echo "onnxruntime 1.28.2 33ca9628233dc8f002435e868d4c2e9f82766ca1"
+  echo "$VOICE_EXE sha256 $VOICE_SHA"
+  for entry in "${VOICE_FILES[@]}"; do
+    IFS='|' read -r path sha _rest <<< "$entry"
+    echo "models/$path sha256 $sha"
+  done
+} > "$VOICE_OUT/.build-info"
+log "molt-voice $(du -h "$VOICE_OUT/$VOICE_EXE" | cut -f1), SHA-256 $VOICE_SHA"
+fi  # want voice
+
+[[ "$BUILD_ONLY" == 1 ]] && { log "built into $WORK"; exit 0; }
 
 # ---------------------------------------------------------------- install
 if [[ -n "$APP_PATH" ]]; then
   [[ -d "$APP_PATH/Contents/Resources" ]] || die "$APP_PATH is not an app bundle"
-  DEST="$APP_PATH/Contents/Resources/speech"
+  DEST_PARENT="$APP_PATH/Contents/Resources"
 else
   [[ -d "$DEST_PARENT" ]] || die "$DEST_PARENT does not exist"
-  DEST="$DEST_PARENT/speech"
 fi
-rm -rf "${DEST:?}"
-cp -R "$WORK/speech" "$DEST"
-verify_models "$DEST" || die "the installed models do not match their pins"
-if [[ "$OS" == mac ]]; then
-  xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
-fi
-log "installed into $DEST"
+for part in speech voice; do
+  want "$part" || continue
+  DEST="$DEST_PARENT/$part"
+  rm -rf "${DEST:?}"
+  cp -R "$WORK/$part" "$DEST"
+  if [[ "$part" == speech ]]; then
+    verify_models "$DEST" || die "the installed models do not match their pins"
+  else
+    verify_voice "$DEST" || die "the installed voice does not match its pins"
+  fi
+  if [[ "$OS" == mac ]]; then
+    xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+  fi
+  log "installed into $DEST"
+done

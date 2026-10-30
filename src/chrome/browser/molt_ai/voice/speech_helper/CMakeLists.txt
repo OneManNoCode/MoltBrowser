@@ -101,6 +101,43 @@ find_library(_lib_onnxruntime NAMES onnxruntime
              PATHS "${MOLT_SPEECH_ORT_LIB_DIR}" NO_DEFAULT_PATH REQUIRED)
 list(APPEND _libs "${_lib_onnxruntime}")
 
+# Hardening, for all the code this file compiles into the helper: the core
+# (the frame reader and the CONFIG parser, which read the browser's input)
+# as well as the program, whatever the toolchain's defaults are. Not for
+# the unit tests above, which are built with sanitizers.
+#   - Linux and macOS: stack protector (strong), _FORTIFY_SOURCE (3 where
+#     the compiler supports it: GCC 12 and Clang; macOS's libc reads 2),
+#     stack clash protection where the compiler has it, a position-
+#     independent executable; on Linux also full RELRO with immediate
+#     binding and a non-executable stack (below).
+#   - Windows: /GS (MSVC's default, stated) and Control Flow Guard; ASLR
+#     (/DYNAMICBASE, /HIGHENTROPYVA) and DEP (/NXCOMPAT) are the linker's
+#     defaults.
+include(CheckCXXCompilerFlag)
+include(CheckPIESupported)
+check_pie_supported()
+set_target_properties(molt_speech_core molt-speech PROPERTIES
+                      POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+  set(_hardening /GS /guard:cf)
+  target_link_options(molt-speech PRIVATE /guard:cf)
+else()
+  set(_fortify 3)
+  if(APPLE OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+               CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12))
+    set(_fortify 2)
+  endif()
+  set(_hardening -fstack-protector-strong
+                 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=${_fortify})
+  check_cxx_compiler_flag(-fstack-clash-protection
+                          MOLT_SPEECH_HAVE_STACK_CLASH_PROTECTION)
+  if(MOLT_SPEECH_HAVE_STACK_CLASH_PROTECTION)
+    list(APPEND _hardening -fstack-clash-protection)
+  endif()
+endif()
+target_compile_options(molt_speech_core PRIVATE ${_hardening})
+target_compile_options(molt-speech PRIVATE ${_hardening})
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_link_libraries(molt-speech PRIVATE
     -Wl,--start-group ${_libs} -Wl,--end-group
@@ -110,8 +147,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     -static-libstdc++ -static-libgcc
     -Wl,--gc-sections -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack)
   target_compile_options(molt-speech PRIVATE
-    -fstack-protector-strong -D_FORTIFY_SOURCE=2 -ffunction-sections
-    -fdata-sections)
+    -ffunction-sections -fdata-sections)
 elseif(APPLE)
   target_link_libraries(molt-speech PRIVATE ${_libs} Threads::Threads
                         "-framework Foundation")

@@ -6,7 +6,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
 #include <array>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,7 +27,9 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_POSIX)
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -54,8 +58,10 @@
 #include <linux/seccomp.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 
 #include "chrome/browser/molt_ai/common/helper_sandbox_linux.h"
 #endif
@@ -428,6 +434,13 @@ constexpr uint32_t Errno(int error) {
   return SECCOMP_RET_ERRNO | static_cast<uint32_t>(error);
 }
 
+// socket() or socketpair() (|nr|) of |family| and |type|.
+seccomp_data SocketCall(int nr, uint64_t family, uint64_t type) {
+  seccomp_data data = Call(nr, family);
+  data.args[1] = type;
+  return data;
+}
+
 TEST(HelperSandboxLinuxTest, SeccompProgramShape) {
   const std::vector<sock_filter> program = hsl::BuildSeccompProgram();
   if (hsl::SeccompArchName().empty()) {
@@ -478,19 +491,38 @@ TEST(HelperSandboxLinuxTest, SeccompVerdicts) {
   EXPECT_EQ(RunFilter(program, Call(__NR_vfork)), Errno(EPERM));
 #endif
 
-  // Network: only AF_UNIX sockets, and no connect().
-  EXPECT_EQ(RunFilter(program, Call(__NR_socket, AF_UNIX)), SECCOMP_RET_ALLOW);
-  EXPECT_EQ(RunFilter(program, Call(__NR_socketpair, AF_UNIX)),
-            SECCOMP_RET_ALLOW);
-  for (int family : {AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, AF_UNSPEC}) {
-    EXPECT_EQ(RunFilter(program, Call(__NR_socket, family)), Errno(EACCES))
-        << family;
-    EXPECT_EQ(RunFilter(program, Call(__NR_socketpair, family)), Errno(EACCES))
-        << family;
+  // Network: only AF_UNIX stream and seqpacket sockets, and no connect().
+  for (int nr : {__NR_socket, __NR_socketpair}) {
+    for (uint64_t type :
+         {uint64_t{SOCK_STREAM}, uint64_t{SOCK_STREAM | SOCK_CLOEXEC},
+          uint64_t{SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC}}) {
+      EXPECT_EQ(RunFilter(program, SocketCall(nr, AF_UNIX, type)),
+                SECCOMP_RET_ALLOW)
+          << nr << " " << type;
+    }
+    // A datagram socket sends to a named one without connect() (the
+    // system log, the journal); AF_UNIX takes SOCK_RAW as one too.
+    for (uint64_t type :
+         {uint64_t{SOCK_DGRAM}, uint64_t{SOCK_DGRAM | SOCK_CLOEXEC},
+          uint64_t{SOCK_DGRAM | SOCK_NONBLOCK}, uint64_t{SOCK_RAW},
+          uint64_t{SOCK_RDM}, uint64_t{0}}) {
+      EXPECT_EQ(RunFilter(program, SocketCall(nr, AF_UNIX, type)),
+                Errno(EACCES))
+          << nr << " " << type;
+    }
+    for (int family : {AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, AF_UNSPEC}) {
+      EXPECT_EQ(RunFilter(program, SocketCall(nr, family, SOCK_STREAM)),
+                Errno(EACCES))
+          << nr << " " << family;
+    }
   }
-  // Only the low 32 bits are the family, as in the kernel.
-  EXPECT_EQ(RunFilter(program, Call(__NR_socket, (1ULL << 32) | AF_UNIX)),
+  // Only the low 32 bits are the family and the type, as in the kernel.
+  EXPECT_EQ(RunFilter(program, SocketCall(__NR_socket, (1ULL << 32) | AF_UNIX,
+                                          SOCK_STREAM)),
             SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, SocketCall(__NR_socket, AF_UNIX,
+                                          (1ULL << 32) | SOCK_DGRAM)),
+            Errno(EACCES));
   EXPECT_EQ(RunFilter(program, Call(__NR_connect)), Errno(EACCES));
 
   for (int nr : {__NR_io_uring_setup,
@@ -594,6 +626,233 @@ TEST(HelperSandboxLinuxTest, SeccompKeepsWritesAndMemoryCounted) {
   }
   EXPECT_EQ(RunFilter(program, Call(__NR_munmap)), SECCOMP_RET_ALLOW);
   EXPECT_EQ(RunFilter(program, Call(__NR_mremap)), SECCOMP_RET_ALLOW);
+}
+
+// A call with |arg0| and |arg1|, and |arg2| as its third argument.
+seccomp_data CallWithArgs(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2) {
+  seccomp_data data = Call(nr, arg0);
+  data.args[1] = arg1;
+  data.args[2] = arg2;
+  return data;
+}
+
+TEST(HelperSandboxLinuxTest, SeccompOwnPidSlots) {
+  std::vector<sock_filter> program = hsl::BuildSeccompProgram();
+  if (program.empty()) {
+    GTEST_SKIP() << "no seccomp filter for this architecture";
+  }
+  auto count = [&program](uint32_t k) {
+    return std::ranges::count_if(program, [k](const sock_filter& insn) {
+      return insn.code == (BPF_JMP | BPF_JEQ | BPF_K) && insn.k == k;
+    });
+  };
+  // kill, tgkill, rt_sigqueueinfo, rt_tgsigqueueinfo, fcntl(F_SETOWN),
+  // prlimit64; kill and fcntl(F_SETOWN) also take the process group.
+  EXPECT_EQ(count(hsl::kSeccompOwnPidSlot), 6);
+  EXPECT_EQ(count(hsl::kSeccompOwnGroupSlot), 2);
+  hsl::SetSeccompOwnPid(4242, &program);
+  EXPECT_EQ(count(hsl::kSeccompOwnPidSlot), 0);
+  EXPECT_EQ(count(hsl::kSeccompOwnGroupSlot), 0);
+  EXPECT_EQ(count(4242), 6);
+  EXPECT_EQ(count(static_cast<uint32_t>(-4242)), 2);
+}
+
+TEST(HelperSandboxLinuxTest, SeccompKeepsSignalsToTheHelper) {
+  std::vector<sock_filter> program = hsl::BuildSeccompProgram();
+  if (program.empty()) {
+    GTEST_SKIP() << "no seccomp filter for this architecture";
+  }
+  constexpr int32_t kSelf = 4242;
+  constexpr int32_t kOther = 4243;
+  auto as_arg = [](int64_t value) { return static_cast<uint64_t>(value); };
+  // Before the child put its ID in, only its process group (0) matches.
+  EXPECT_EQ(RunFilter(program, Call(__NR_kill, as_arg(kSelf))), Errno(EPERM));
+  EXPECT_EQ(RunFilter(program, Call(__NR_kill, 0)), SECCOMP_RET_ALLOW);
+  hsl::SetSeccompOwnPid(kSelf, &program);
+
+  // kill(): itself, its process group (0 or minus its ID).
+  for (int64_t pid : {int64_t{kSelf}, int64_t{0}, int64_t{-kSelf}}) {
+    EXPECT_EQ(RunFilter(program, Call(__NR_kill, as_arg(pid))),
+              SECCOMP_RET_ALLOW)
+        << pid;
+  }
+  // Anyone else: another process, another group, every process (-1),
+  // init. The kernel reads a 32-bit pid_t, and so does the filter.
+  for (int64_t pid : {int64_t{kOther}, int64_t{-kOther}, int64_t{-1},
+                      int64_t{1}, int64_t{kSelf} + (int64_t{1} << 32) - 1}) {
+    EXPECT_EQ(RunFilter(program, Call(__NR_kill, as_arg(pid))), Errno(EPERM))
+        << pid;
+  }
+  EXPECT_EQ(RunFilter(program, Call(__NR_kill, (uint64_t{1} << 32) | kSelf)),
+            SECCOMP_RET_ALLOW);
+  // Its own threads (raise(), abort(), pthread_kill()), not another
+  // process's.
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_tgkill, kSelf, 4250, 6)),
+            SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_rt_tgsigqueueinfo, kSelf,
+                                            4250, 10)),
+            SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_rt_sigqueueinfo, kSelf, 10,
+                                            0)),
+            SECCOMP_RET_ALLOW);
+  for (int nr : {__NR_tgkill, __NR_rt_tgsigqueueinfo, __NR_rt_sigqueueinfo}) {
+    for (int64_t pid : {int64_t{kOther}, int64_t{0}, int64_t{-1}}) {
+      EXPECT_EQ(RunFilter(program, CallWithArgs(nr, as_arg(pid), kOther, 0)),
+                Errno(EPERM))
+          << nr << " " << pid;
+    }
+  }
+  // A thread of any process, and a pidfd: never checked, so refused.
+  EXPECT_EQ(RunFilter(program, Call(__NR_tkill, kSelf)), Errno(EPERM));
+  EXPECT_EQ(RunFilter(program, Call(424)), Errno(EPERM));  // pidfd_send_signal
+
+  // Whom the kernel signals when a file is ready.
+  constexpr uint64_t kSetOwner = 8;     // F_SETOWN
+  constexpr uint64_t kSetOwnerEx = 15;  // F_SETOWN_EX
+  for (int64_t pid : {int64_t{kSelf}, int64_t{-kSelf}, int64_t{0}}) {
+    EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_fcntl, 3, kSetOwner,
+                                              as_arg(pid))),
+              SECCOMP_RET_ALLOW)
+        << pid;
+  }
+  for (int64_t pid : {int64_t{kOther}, int64_t{-kOther}, int64_t{1}}) {
+    EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_fcntl, 3, kSetOwner,
+                                              as_arg(pid))),
+              Errno(EPERM))
+        << pid;
+  }
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_fcntl, 3, kSetOwnerEx, 0)),
+            Errno(EPERM));
+  // Other commands, whatever their argument.
+  for (uint64_t command :
+       {uint64_t{F_GETFD}, uint64_t{F_SETFD}, uint64_t{F_GETFL},
+        uint64_t{F_SETFL}, uint64_t{F_GETOWN}, uint64_t{F_DUPFD_CLOEXEC}}) {
+    EXPECT_EQ(
+        RunFilter(program, CallWithArgs(__NR_fcntl, 3, command, kOther)),
+        SECCOMP_RET_ALLOW)
+        << command;
+  }
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_ioctl, 3, 0x8901, 0)),
+            Errno(EPERM));  // FIOSETOWN
+  EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_ioctl, 3, 0x8902, 0)),
+            Errno(EPERM));  // SIOCSPGRP
+  for (uint64_t request : {uint64_t{0x5401}, uint64_t{0x541B},
+                           uint64_t{0x5421}, uint64_t{0x8903}}) {
+    // TCGETS, FIONREAD, FIONBIO; SIOCGPGRP (reading the owner).
+    EXPECT_EQ(RunFilter(program, CallWithArgs(__NR_ioctl, 3, request, 0)),
+              SECCOMP_RET_ALLOW)
+        << request;
+  }
+
+  // Its own resource limits (0 is itself), not another process's.
+  EXPECT_EQ(RunFilter(program, Call(__NR_prlimit64, 0)), SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, Call(__NR_prlimit64, kSelf)),
+            SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, Call(__NR_prlimit64, kOther)), Errno(EPERM));
+  EXPECT_EQ(RunFilter(program, Call(__NR_getpid)), SECCOMP_RET_ALLOW);
+}
+
+// What a confined child could do with signals, as bits: kSignalled* ways
+// of reaching its parent that worked, kSelf* ways of signalling itself
+// that failed.
+enum SignalProbe : uint32_t {
+  kSignalledKill = 1u << 0,
+  kSignalledTgkill = 1u << 1,
+  kSignalledTkill = 1u << 2,
+  kSignalledQueue = 1u << 3,
+  kSignalledEveryone = 1u << 4,
+  kSignalledPidfd = 1u << 5,
+  kSignalledOwner = 1u << 6,
+  kSignalledLimits = 1u << 7,
+  kSelfKillFailed = 1u << 8,
+  kSelfGroupFailed = 1u << 9,
+  kSelfRaiseFailed = 1u << 10,
+  kSelfQueueFailed = 1u << 11,
+  kSelfNotReceived = 1u << 12,
+};
+
+volatile sig_atomic_t g_probe_received = 0;
+
+void ProbeHandler(int) {
+  g_probe_received = g_probe_received + 1;
+}
+
+// In the forked child, after ApplyInChild(): raw calls only. |fd| is a
+// file of its own.
+uint32_t ProbeSignals(pid_t parent, int fd) {
+  uint32_t bits = 0;
+  struct sigaction action = {};
+  action.sa_handler = ProbeHandler;
+  sigaction(SIGUSR1, &action, nullptr);
+  const pid_t self = getpid();
+  bits |= kill(self, SIGUSR1) == 0 ? 0 : kSelfKillFailed;
+  bits |= kill(0, SIGUSR1) == 0 && kill(-self, SIGUSR1) == 0 ? 0
+                                                              : kSelfGroupFailed;
+  bits |= raise(SIGUSR1) == 0 ? 0 : kSelfRaiseFailed;
+  union sigval value = {};
+  bits |= sigqueue(self, SIGUSR1, value) == 0 ? 0 : kSelfQueueFailed;
+  bits |= g_probe_received == 5 ? 0 : kSelfNotReceived;
+
+  // Signal 0: the permission check only.
+  bits |= kill(parent, 0) == 0 ? kSignalledKill : 0;
+  bits |= syscall(__NR_tgkill, parent, parent, 0) == 0 ? kSignalledTgkill : 0;
+  bits |= syscall(__NR_tkill, parent, 0) == 0 ? kSignalledTkill : 0;
+  siginfo_t info = {};
+  info.si_code = SI_QUEUE;
+  info.si_pid = self;
+  bits |= syscall(__NR_rt_sigqueueinfo, parent, 0, &info) == 0
+              ? kSignalledQueue
+              : 0;
+  bits |= kill(-1, 0) == 0 ? kSignalledEveryone : 0;
+  const long pidfd = syscall(434, parent, 0);  // pidfd_open
+  bits |= pidfd >= 0 && syscall(424, pidfd, 0, nullptr, 0) == 0
+              ? kSignalledPidfd
+              : 0;
+  bits |= fcntl(fd, F_SETOWN, parent) == 0 ? kSignalledOwner : 0;
+  struct rlimit limit = {};
+  bits |= syscall(__NR_prlimit64, parent, RLIMIT_NOFILE, nullptr, &limit) == 0
+              ? kSignalledLimits
+              : 0;
+  return bits;
+}
+
+// On a kernel whose Landlock doesn't scope signals (before 6.12, e.g.
+// Ubuntu 22.04's and 24.04's): the seccomp filter alone keeps a confined
+// child's signals to itself, and abort() still ends it with SIGABRT.
+TEST(HelperSandboxLinuxTest, SeccompAloneKeepsSignalsToTheHelper) {
+  hsl::Policy policy;
+  policy.resident = true;
+  policy.max_data_bytes = uint64_t{1} << 30;
+  hsl::Prepared prepared;
+  std::string error;
+  ASSERT_TRUE(hsl::Prepare(policy, &prepared, &error)) << error;
+  if (prepared.seccomp.empty()) {
+    GTEST_SKIP() << "no seccomp filter here";
+  }
+  // Without Landlock, as on such a kernel.
+  prepared.CloseRuleset();
+  int fds[2];
+  ASSERT_EQ(pipe(fds), 0);
+  const pid_t parent = getpid();
+  const pid_t child = fork();
+  ASSERT_GE(child, 0);
+  if (child == 0) {
+    close(fds[0]);
+    hsl::ApplyInChild(prepared);
+    const uint32_t bits = ProbeSignals(parent, fds[1]);
+    [[maybe_unused]] const ssize_t written = write(fds[1], &bits, sizeof(bits));
+    abort();
+  }
+  close(fds[1]);
+  uint32_t bits = ~0u;
+  EXPECT_EQ(read(fds[0], &bits, sizeof(bits)),
+            static_cast<ssize_t>(sizeof(bits)));
+  close(fds[0]);
+  int status = 0;
+  ASSERT_EQ(waitpid(child, &status, 0), child);
+  EXPECT_EQ(bits, 0u) << std::hex << bits;
+  ASSERT_TRUE(WIFSIGNALED(status)) << status;
+  EXPECT_EQ(WTERMSIG(status), SIGABRT);
 }
 
 TEST(HelperSandboxLinuxTest, PathRules) {
@@ -930,6 +1189,59 @@ TEST_F(HelperSandboxLimitsTest, StartsNoOtherProcess) {
   const std::string output = Output({"fork"});
   EXPECT_TRUE(output.starts_with("DENIED")) << output;
 }
+
+TEST_F(HelperSandboxLimitsTest, SendsNoDatagramToANamedSocket) {
+  // A named UNIX socket outside the scratch directory, as the system log's
+  // is: a datagram reaches it without connect().
+  base::ScopedTempDir elsewhere;
+  ASSERT_TRUE(elsewhere.CreateUniqueTempDir());
+  const std::string path = elsewhere.GetPath().AppendASCII("log").value();
+  sockaddr_un address = {};
+  address.sun_family = AF_UNIX;
+  if (path.size() >= sizeof(address.sun_path)) {
+    GTEST_SKIP() << "the temporary directory is too deep for a socket's name";
+  }
+  std::ranges::copy(path, std::begin(address.sun_path));
+  const int listener = socket(AF_UNIX, SOCK_DGRAM, 0);
+  ASSERT_GE(listener, 0);
+  ASSERT_EQ(
+      bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)),
+      0);
+  const std::string output = Output({"dgram", path});
+  char received[16] = {};
+  const ssize_t got =
+      recv(listener, received, sizeof(received), MSG_DONTWAIT);
+  close(listener);
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+  EXPECT_LT(got, 0);
+}
+
+#if BUILDFLAG(IS_LINUX)
+// The ways the stand-in helper tries to signal its parent (the test).
+constexpr std::string_view kSignalWays[] = {
+    "kill",       "everyone", "tgkill", "tkill", "sigqueue",
+    "tgsigqueue", "pidfd",    "owner",  "limits"};
+
+// Signals go to the helper itself only, on every kernel (the seccomp
+// filter; Landlock's scoping too from ABI 6).
+TEST_F(HelperSandboxLimitsTest, SignalsOnlyItself) {
+  const std::string output = Output({"signals"});
+  EXPECT_TRUE(output.starts_with("SELF 5 5\n")) << output;
+  for (std::string_view way : kSignalWays) {
+    EXPECT_NE(output.find(std::string(way) + " DENIED "), std::string::npos)
+        << way << ": " << output;
+  }
+  EXPECT_EQ(output.find("SENT"), std::string::npos) << output;
+}
+
+// abort() (raise(SIGABRT), tgkill()) still reaches its own handler.
+TEST_F(HelperSandboxLimitsTest, AbortStillWorks) {
+  const HelperRunResult run = Run({"abort"});
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_EQ(run.output, "ABORTED\n");
+  EXPECT_EQ(run.exit_code, 0);
+}
+#endif  // BUILDFLAG(IS_LINUX)
 
 TEST_F(HelperSandboxLimitsTest, AnInputDoesntCount) {
   // A 100 MiB input the browser wrote, and a small output.

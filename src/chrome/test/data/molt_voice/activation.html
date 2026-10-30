@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Offers - Shop</title>
+</head>
+<body>
+<!-- A page that uses the activation of whatever clicks it
+     (chrome/browser/molt_ai/security/activation_guard_browsertest.cc). -->
+<h1>Offers</h1>
+<main>
+  <button id="offer" type="button">Open offer</button>
+  <a id="report" href="report.txt" download="report.txt">Download report</a>
+  <button id="big" type="button">Show big</button>
+  <button id="copy" type="button">Copy code</button>
+  <button id="locate" type="button">Find stores</button>
+  <a id="mail" href="mailto:sales@example.com">Email sales</a>
+  <p id="status">Ready</p>
+</main>
+<script>
+  // What the page tried, and what it got.
+  window.moltLog = [];
+  const log = (entry) => {
+    moltLog.push(entry);
+    document.getElementById('status').textContent = entry;
+  };
+  // The offer opens another site in a new tab.
+  const offer = new URL(location.href);
+  offer.hostname = 'ads.test';
+  offer.pathname = '/molt_voice/offer.html';
+  document.getElementById('offer').addEventListener('click', () => {
+    const opened = window.open(offer.href, '_blank');
+    log('open:' + (opened ? 'window' : 'null'));
+  });
+  document.getElementById('big').addEventListener('click', () => {
+    document.documentElement.requestFullscreen().then(
+        () => log('fullscreen:yes'), () => log('fullscreen:no'));
+  });
+  document.getElementById('copy').addEventListener('click', () => {
+    navigator.clipboard.writeText('text from the page').then(
+        () => log('copy:done'), () => log('copy:refused'));
+  });
+  document.getElementById('locate').addEventListener('click', () => {
+    navigator.geolocation.getCurrentPosition(
+        () => log('location:granted'), () => log('location:denied'));
+  });
+</script>
+</body>
+</html>

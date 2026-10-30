@@ -35,7 +35,7 @@ echo "[1/7] Stage out-dir app"
 ditto "$OUT_APP" "$STAGE"
 
 echo "[2/7] Bundled payloads (fresh ones win; missing ones from the installed app)"
-for d in tor ocr whisper speech molt_models molt_fonts; do
+for d in tor ocr whisper speech voice molt_models molt_fonts; do
   if [ -n "$(ls -A "$STAGE/Contents/Resources/$d" 2>/dev/null)" ]; then
     echo "  = $d (fresh, from the out dir)"
     continue
@@ -63,7 +63,7 @@ fi
 
 echo "[4/7] Sign (inside-out, per-helper entitlements)"
 codesign --force --deep --sign "$SIGN_IDENTITY" --options runtime --timestamp "$STAGE" 2>/dev/null
-for d in tor ocr whisper speech; do
+for d in tor ocr whisper speech voice; do
   [ -d "$STAGE/Contents/Resources/$d" ] || continue
   while IFS= read -r -d '' f; do
     if file -b "$f" | grep -q "Mach-O"; then

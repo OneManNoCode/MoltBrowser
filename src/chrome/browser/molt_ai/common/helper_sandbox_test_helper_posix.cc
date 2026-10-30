@@ -37,6 +37,16 @@
 //   read PATH            reads PATH: "READ <bytes>" or "DENIED <errno>"
 //   connect PORT         TCP to 127.0.0.1:PORT: "CONNECTED" or
 //                        "DENIED <errno>"
+//   dgram PATH           a datagram to the UNIX socket at PATH, without
+//                        connect(): "SENT" or "DENIED <errno>"
+//   signals              signals itself in each way (its ID, its process
+//                        group, raise(), sigqueue()): "SELF <sent>
+//                        <received>"; then its parent, with signal 0 (no
+//                        effect but the permission check), in each way:
+//                        one line each, "<way> SENT" or "<way> DENIED
+//                        <errno>"
+//   abort                abort(), with a SIGABRT handler that prints
+//                        "ABORTED" and exits 0
 //   relay                copies stdin to stdout until end of file, then
 //                        prints "EOF" and exits 0
 //   then ACTION...       ACTION, then relay (the helper stays resident)
@@ -52,6 +62,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,6 +73,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
@@ -311,6 +323,104 @@ int Connect(unsigned long port) {
   return Result(result, "CONNECTED\n");
 }
 
+// A datagram to the named UNIX socket at |path|, as a logger sends one to
+// the system log: socket() and sendto(), no connect().
+int Datagram(const char* path) {
+  sockaddr_un address = {};
+  address.sun_family = AF_UNIX;
+  const size_t length = strlen(path);
+  if (length >= sizeof(address.sun_path)) {
+    Print("FAILED path too long\n");
+    return 0;
+  }
+  memcpy(address.sun_path, path, length + 1);
+  const int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    PrintErrno("DENIED");
+    return 0;
+  }
+  const char message[] = "molt";
+  const ssize_t sent =
+      sendto(fd, message, sizeof(message), 0,
+             reinterpret_cast<sockaddr*>(&address), sizeof(address));
+  close(fd);
+  return Result(sent < 0 ? -1 : 0, "SENT\n");
+}
+
+volatile sig_atomic_t g_received = 0;
+
+void CountSignal(int) {
+  g_received = g_received + 1;
+}
+
+void Aborted(int) {
+  static const char kText[] = "ABORTED\n";
+  [[maybe_unused]] const ssize_t written =
+      write(STDOUT_FILENO, kText, sizeof(kText) - 1);
+  _exit(0);
+}
+
+// One way of signalling another process: |result| 0 is a success.
+void Way(const char* way, long result) {
+  if (result == 0) {
+    printf("%s SENT\n", way);
+  } else {
+    printf("%s DENIED %d\n", way, errno);
+  }
+}
+
+int Signals() {
+  struct sigaction action = {};
+  action.sa_handler = CountSignal;
+  sigemptyset(&action.sa_mask);
+  sigaction(SIGUSR1, &action, nullptr);
+  const pid_t self = getpid();
+  // Itself: a signal sent to the calling process is delivered before the
+  // call returns.
+  int sent = 0;
+  sent += kill(self, SIGUSR1) == 0;
+  sent += kill(0, SIGUSR1) == 0;      // its process group
+  sent += kill(-self, SIGUSR1) == 0;  // the same, by its ID
+  sent += raise(SIGUSR1) == 0;
+#if defined(__linux__)
+  union sigval value = {};
+  sent += sigqueue(self, SIGUSR1, value) == 0;
+#endif
+  printf("SELF %d %d\n", sent, static_cast<int>(g_received));
+
+  // Its parent (the browser), with signal 0.
+  const pid_t parent = getppid();
+  Way("kill", kill(parent, 0));
+  Way("everyone", kill(-1, 0));
+#if defined(__linux__)
+  Way("tgkill", syscall(SYS_tgkill, parent, parent, 0));
+  Way("tkill", syscall(SYS_tkill, parent, 0));
+  siginfo_t info = {};
+  info.si_signo = 0;
+  info.si_code = SI_QUEUE;
+  info.si_pid = self;
+  info.si_uid = getuid();
+  Way("sigqueue", syscall(SYS_rt_sigqueueinfo, parent, 0, &info));
+  Way("tgsigqueue",
+      syscall(SYS_rt_tgsigqueueinfo, parent, parent, 0, &info));
+  // pidfd_open() and pidfd_send_signal() (Linux 5.3 and 5.1).
+  const long pidfd = syscall(434, parent, 0);
+  Way("pidfd", pidfd < 0 ? pidfd : syscall(424, pidfd, 0, nullptr, 0));
+  // Whom the kernel signals when a file is ready.
+  int fds[2];
+  if (pipe(fds) == 0) {
+    Way("owner", fcntl(fds[0], F_SETOWN, parent));
+    close(fds[0]);
+    close(fds[1]);
+  }
+  // Its resource limits (RLIMIT_CPU would have the kernel kill it).
+  struct rlimit limit = {};
+  Way("limits", syscall(SYS_prlimit64, parent, RLIMIT_NOFILE, nullptr, &limit));
+#endif
+  fflush(stdout);
+  return 0;
+}
+
 // Copies stdin to stdout until end of file.
 int Relay() {
   char buffer[4096];
@@ -447,13 +557,26 @@ int Act(int argc, char* argv[]) {
   if (argc == 3 && strcmp(argv[1], "connect") == 0) {
     return Connect(strtoul(argv[2], nullptr, 10));
   }
+  if (argc == 3 && strcmp(argv[1], "dgram") == 0) {
+    return Datagram(argv[2]);
+  }
+  if (argc == 2 && strcmp(argv[1], "signals") == 0) {
+    return Signals();
+  }
+  if (argc == 2 && strcmp(argv[1], "abort") == 0) {
+    struct sigaction action = {};
+    action.sa_handler = Aborted;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGABRT, &action, nullptr);
+    abort();
+  }
   if (argc == 2 && strcmp(argv[1], "relay") == 0) {
     return Relay();
   }
   Print(
       "usage: echo|write|spread|files|delete|rename|link|symlink|mkdir|"
       "fork|preallocate|xattr|tmpfile|memfd|shm|shared|alloc|reserve|rsrc|"
-      "lock|limits|spin|read|connect|relay|then ...\n");
+      "lock|limits|spin|read|connect|dgram|signals|abort|relay|then ...\n");
   return 2;
 }
 

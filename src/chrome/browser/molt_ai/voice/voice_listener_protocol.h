@@ -133,7 +133,9 @@ std::string NumberAsWords(std::string_view digits);
 // Hotwords for the page in |map|: each list entry's title, split at its
 // separators (" - ", " | ", ": ", brackets, '!', ',', '?'), and its
 // channel, from the most prominent list down; reduced, de-duplicated
-// whatever their case, at most |max| phrases.
+// whatever their case, at most |max| phrases. A phrase the grammar reads as
+// a yes ("Yes", "OK", "Sure") is left out: page text never biases what the
+// user answers to a question.
 std::vector<std::string> HotwordsFromPageMap(const PageMap& map,
                                              size_t max = kMaxHotwords);
 
@@ -277,7 +279,9 @@ class HelperLineBudget {
 // but `ready` and `error` carries `epoch` and `audio_ms`, which never go
 // back; `epoch` never passes the RESETs sent, and a higher one (the helper
 // read a RESET) drops whatever was in progress. `error` may come at any
-// time. A helper that breaks the order is stopped.
+// time, and is the helper's last line: it exits after one (§3.7), so
+// nothing may follow it, not even another. A helper that breaks the order
+// is stopped.
 class HelperEventSequence {
  public:
   HelperEventSequence();
@@ -293,8 +297,43 @@ class HelperEventSequence {
   bool wake_open_ = false;     // a `wake` its `final` hasn't answered yet
   bool in_utterance_ = false;  // from `speech_start` to `final`
   bool ended_ = false;         // `speech_end` came
+  bool errored_ = false;       // an `error` came
   int64_t epoch_ = 0;
   int64_t audio_ms_ = 0;
+};
+
+// The helper's failures in a row, which decide VoiceListener's restarts
+// (after each failure: 1, 4, then 16 s) and when it gives up (kMaxFailures
+// in a row). Every end of a helper the browser didn't stop is a failure,
+// however it ended: it exited or crashed, wrote what isn't the protocol or
+// an `error`, passed its memory or CPU limit, stopped reading, or never got
+// ready. A helper that had run kStableRunMs since its `ready` when it ended
+// starts the count afresh: its end is the first failure of a new run.
+class HelperFailureCount {
+ public:
+  static constexpr int kMaxFailures = 3;
+  static constexpr int64_t kStableRunMs = 60000;
+
+  HelperFailureCount();
+
+  // Voice mode started listening: no failures yet.
+  void Clear();
+  // A helper is starting.
+  void OnStarted();
+  // It wrote `ready` at |now_ms| (monotonic).
+  void OnReady(int64_t now_ms);
+  // It ended at |now_ms| (monotonic), for any reason: the failures in a
+  // row, this one included.
+  int OnEnded(int64_t now_ms);
+
+  int failures() const { return failures_; }
+  // kMaxFailures in a row: no more restarts.
+  bool exhausted() const { return failures_ >= kMaxFailures; }
+
+ private:
+  int failures_ = 0;
+  // When the current helper wrote `ready`; -1 before it did.
+  int64_t ready_ms_ = -1;
 };
 
 }  // namespace voice

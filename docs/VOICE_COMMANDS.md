@@ -44,9 +44,12 @@ doesn't command it; while the browser itself is speaking, only "Hey Molt"
 and "stop" are heard. A page reading aloud with the system's voices is
 another matter: the browser can't cancel that voice, so while a page reads
 aloud (and a second after) only "stop", "cancel" and "turn off voice mode"
-are heard. Voice mode never cuts a page's reading short: its own answer
-waits until the page has finished, and "stop" stops only voice mode's
-speech. Each state has a short sound: a rising tone when it
+are heard. The same goes for any tab's sound where the microphone has no
+echo cancellation at all (the browser's turned off and the device has
+none): while a tab plays sound, only those three are heard, so pause the
+video yourself before you speak. Voice mode never cuts a page's reading
+short: its own answer waits until the page has finished, and "stop" stops
+only voice mode's speech. Each state has a short sound: a rising tone when it
 heard "Hey Molt", a tick when it took a command, a falling tone when it
 goes back to waiting for "Hey Molt".
 
@@ -78,6 +81,15 @@ and the bar only.
   deleting, sending, posting, subscribing, signing out or sending a form,
   the browser asks "Say yes to press ..." and does it only if your next
   words are "yes".
+- **When a page tries something after the browser clicks for you,** such
+  as opening another site in a new window, downloading a file or opening
+  another app, the browser asks first: "The page tried to open a new
+  window to example.com. Say yes to open it, or no to cancel." It happens
+  only if your next words are "yes". A page that tries to go full screen
+  (unless you said "full screen" or "play") or to change your clipboard is
+  stopped; a permission it asks for, such as your location, is turned down,
+  because voice mode can't answer permission questions yet. The browser
+  tells you each time.
 - **Typing:** choose a field ("click the search box"), then "type ...",
   "delete the last word", "clear the field", "read it back", "submit".
   Password, card and code fields are never typed into or read out.
@@ -594,10 +606,12 @@ said.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
   "Hey Molt" for now. If the browser keeps missing your "Hey Molt", turn on
   "Always listening" in settings.
-- **Interrupting the browser mid-sentence with a new command** works with
-  "Hey Molt" (or "stop"); a command without "Hey Molt" while it speaks is
-  not heard, because the system voices it speaks with can't be cancelled
-  from the microphone yet.
+- **Interrupting the browser mid-sentence with a new command** works
+  without "Hey Molt" when the browser speaks with its own voice and the
+  microphone has echo cancellation (its own voice is then removed from
+  what the microphone hears). With the system's voices, which the browser
+  uses when its own isn't installed, start with "Hey Molt" (or say
+  "stop").
 - **Still to come in voice mode:** the on-device AI for anything these
   commands don't cover, routines, setting the volume to a level, the
   playback speed, reading the page's text and the selection, undo, and

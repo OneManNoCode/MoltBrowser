@@ -1762,7 +1762,9 @@ e40 media "Video player"
   first), its items on screen, its media, its other buttons, its other
   items, then the items of frames of the page's own origin. Items of
   another site's frames (ads, widgets) are never listed, as the snapshot
-  lists no frame; disabled items aren't either.
+  lists no frame, nor those of a frame of the page's origin inside
+  another site's frame (that site chose which of the page's URLs it
+  shows); disabled items aren't either.
 - **Budget:** the text is at most 7,000 characters (about what the
   snapshot's observation takes): the elements up to 4,500, then the lists
   (3 of 10 entries), headings (12) and the page's text (1,500). Every
@@ -1820,7 +1822,7 @@ Every rule of the snapshot's path applies at the same point:
 | Rule | On the page map path |
 |---|---|
 | http(s) only | `DispatchAction` checks the page's committed origin as before; the controller acts only in http(s) documents (`Resolve()`); NAVIGATE and SEARCH are unchanged |
-| Origins per frame | only the page's own frame and frames of its origin are listed; at action time the element's frame must still have that origin, in the run's scope (`FindLiveTarget()`) |
+| Origins per frame | only the page's own frame and frames of its origin are listed, and of those only frames that only frames of that origin embed (`VoicePageController::FramedByItsOwnOrigin()`); at action time the element's frame must still have that origin, in the run's scope, and so must every frame above it (`FindLiveTarget()`, `CheckFrameOrigin()`) |
 | Leaving the run's sites | a click whose node or nearest link ancestor links to another origin asks "Click X — it opens <origin>" (`CheckClick()`, the same function the snapshot's path now uses); a page that moved asks CONTINUE as before |
 | Form submits | a `<button>` (whose type the tree doesn't say: taken as a submit, the HTML default) or `<input type=submit|image>` inside a form asks "— it submits a form on <origin>". The question can't name the form's action (the tree doesn't have it); the page it loads is checked as any other |
 | Password fields | never typed into, by grammar, parser, the agent's check of the live node, and the controller |
@@ -1906,7 +1908,44 @@ windows whatever the switch says.
   `.NeverInMoltNetWindows`, and the planner fallback's
   (TOUCHLESS_BROWSING.md §6.2).
 
-#### 2.10.8 Not done
+#### 2.10.8 The page's use of the agent's activation
+
+Implemented in round 40 (TOUCHLESS_BROWSING.md §7.5 has the whole
+design). A CLICK or SELECT on this path gives the page user
+activation, as a person's click does; the snapshot path's isolated-world
+clicks never did. The page's own script could use it to open another site,
+start a download, open another app, ask for a permission, go full screen
+or write to the clipboard, none of which the run's origin checks see.
+
+- **The state:** from each action the run sends through the page
+  controller until the user's own input on the page, or 7 s after the
+  action and the activation it gave (`activation_policy.h`), the tab's
+  `ActivationGuard` decides what that activation unlocks.
+- **Asked in the run:** while the run holds the page it is the guard's
+  asker on its tab (voice mode asks instead when it is on the tab). A new
+  window, a download or another app the page tries is held and becomes a
+  `PAGE_REQUEST` confirmation, "The page tried to open a new window to
+  ads.example": it doesn't pause the run, "Allow" lets the request go on
+  (the window opens as a new tab, the download continues, the app
+  launches), "Deny" leaves it refused and the run goes on. The chat panel
+  titles it "The page tried this". A run without a confirmation UI refuses
+  them; so does the guard once the run has ended.
+- **Refused:** full screen and clipboard writes (no agent action asks for
+  them). Permission prompts are shown as usual, for the user; the agent
+  never answers one.
+- **A click that leaves the run's sites** is asked about as before
+  (`CheckClick()`); when the link also opens a new tab, the new tab is
+  asked about too.
+- **Voice mode's planner runs** leave these questions to voice mode, which
+  asks them by voice (a `PAGE_REQUEST` that reaches
+  `VoiceAgentPlanner::OnConfirm()` is refused).
+- **MoltNet:** the run acts through scripts there, without activation, and
+  takes no guard.
+- **Tests:** `ActivationGuardBrowserTest.AnAgentsClickOpensNoOtherSiteUnasked`
+  (the page's window refused, the run asked, the tab opened on "Allow")
+  and `.APersonsOwnClickIsUnchanged`.
+
+#### 2.10.9 Not done
 
 - **The AI chat's page actions** (§4) still read the element snapshot.
 - **Screenshots** of page-map observations (tags from the map's bounds).
@@ -2830,7 +2869,7 @@ the draft is built to be harmless until a person has looked at it:
 - **Frames and shadow DOM.** The snapshot lists the main document only, as
   the old selectors did. The page map's path lists frames of the page's
   own origin and shadow DOM (the accessibility tree has both), never
-  another site's frame (§2.10.1).
+  another site's frame or what it embeds (§2.10.1).
 - **A studio editor for extract schemas.** Only `.molt` files carry them.
 - **Screenshots (§2.6):**
   - *Measured benefit.* Whether tags help a 2B vision model more than they

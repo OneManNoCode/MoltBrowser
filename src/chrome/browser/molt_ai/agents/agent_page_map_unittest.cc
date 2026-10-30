@@ -755,26 +755,36 @@ TEST(AgentPageMapTest, ActsOnlyInFramesOfThePagesOrigin) {
   const url::Origin other = url::Origin::Create(GURL("https://ads.test/"));
   const std::vector<url::Origin> allowed = {page};
   // The page's own frame, still of the origin observed.
-  EXPECT_EQ(CheckFrameOrigin("https://shop.test", page, page, allowed),
+  EXPECT_EQ(CheckFrameOrigin("https://shop.test", page, page, allowed,
+                             /*framed_by_own_origin=*/true),
             FrameCheck::kOk);
   // A frame that now holds another site's document: stale if it was the
   // page's (observe again), refused as another site's in any case.
-  EXPECT_EQ(CheckFrameOrigin("https://shop.test", other, page, allowed),
+  EXPECT_EQ(CheckFrameOrigin("https://shop.test", other, page, allowed, true),
             FrameCheck::kRefused);
   EXPECT_EQ(CheckFrameOrigin("https://shop.test", other, other,
-                             {page, other}),
+                             {page, other}, true),
             FrameCheck::kStale);
   // Another site's frame on the page, even one in the run's scope.
-  EXPECT_EQ(CheckFrameOrigin("https://ads.test", other, page, {page, other}),
+  EXPECT_EQ(
+      CheckFrameOrigin("https://ads.test", other, page, {page, other}, true),
+      FrameCheck::kRefused);
+  // A frame of the page's origin inside another site's frame, which chose
+  // which of the page's URLs it shows: refused, however it was observed.
+  EXPECT_EQ(CheckFrameOrigin("https://shop.test", page, page, allowed,
+                             /*framed_by_own_origin=*/false),
+            FrameCheck::kRefused);
+  EXPECT_EQ(CheckFrameOrigin("https://shop.test", page, page, {page, other},
+                             false),
             FrameCheck::kRefused);
   // The page itself out of the run's scope, or not a web page.
-  EXPECT_EQ(CheckFrameOrigin("https://shop.test", page, page, {other}),
+  EXPECT_EQ(CheckFrameOrigin("https://shop.test", page, page, {other}, true),
             FrameCheck::kRefused);
   const url::Origin data = url::Origin::Create(GURL("data:text/html,x"));
-  EXPECT_EQ(CheckFrameOrigin("null", data, data, {data}),
+  EXPECT_EQ(CheckFrameOrigin("null", data, data, {data}, true),
             FrameCheck::kRefused);
   const url::Origin file = url::Origin::Create(GURL("file:///etc/passwd"));
-  EXPECT_EQ(CheckFrameOrigin(file.Serialize(), file, file, {file}),
+  EXPECT_EQ(CheckFrameOrigin(file.Serialize(), file, file, {file}, true),
             FrameCheck::kRefused);
 }
 

@@ -149,9 +149,10 @@ VoiceSessionLogic::Utterance VoiceSessionLogic::NewUtterance(
     int64_t now_ms) const {
   Utterance utterance;
   utterance.woke = woke;
-  utterance.open =
-      !woke && (settings_.always_listening || FollowUpOpen(now_ms));
+  utterance.open = !woke && (settings_.always_listening ||
+                             FollowUpOpen(now_ms) || BargeInOpen());
   utterance.during_speech = SpeakingOrTail(now_ms);
+  utterance.echo_cancelled = own_speech_in_reference_;
   utterance.started_ms = now_ms;
   utterance.begun_ms = now_ms;
   return utterance;
@@ -239,6 +240,14 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       take = true;
     } else if (utterance.open && !utterance.during_speech) {
       take = !page_audible_ || confidence >= kMinConfidenceWithoutWake;
+    } else if (utterance.open && utterance.echo_cancelled) {
+      // Said over the browser's own voice: a command unless it is that
+      // voice heard back.
+      take = confidence >= kMinConfidenceWithoutWake &&
+             !EchoOfBrowser(text, now_ms);
+      if (take && activity_ == BrowserActivity::kSpeaking) {
+        actions.stop_speech = true;
+      }
     }
   }
   if (take) {
@@ -310,6 +319,10 @@ SessionActions VoiceSessionLogic::OnAwaitingAnswer(bool awaiting,
 }
 
 SessionActions VoiceSessionLogic::OnPageAudible(bool audible, int64_t now_ms) {
+  // When it goes quiet, the last time it was heard is now.
+  if (audible || page_audible_) {
+    page_audible_ms_ = now_ms;
+  }
   page_audible_ = audible;
   return Finish(SessionActions(), now_ms);
 }
@@ -320,6 +333,18 @@ SessionActions VoiceSessionLogic::OnOtherSpeech(bool speaking, int64_t now_ms) {
     other_speech_ms_ = now_ms;
   }
   other_speaking_ = speaking;
+  return Finish(SessionActions(), now_ms);
+}
+
+SessionActions VoiceSessionLogic::OnEchoCancellation(bool cancelled,
+                                                     int64_t now_ms) {
+  echo_cancelled_ = cancelled;
+  return Finish(SessionActions(), now_ms);
+}
+
+SessionActions VoiceSessionLogic::OnOwnSpeechInReference(bool in_reference,
+                                                         int64_t now_ms) {
+  own_speech_in_reference_ = in_reference;
   return Finish(SessionActions(), now_ms);
 }
 
@@ -405,12 +430,53 @@ bool VoiceSessionLogic::SpeakingOrTail(int64_t now_ms) const {
 }
 
 bool VoiceSessionLogic::OtherSpeechSince(int64_t since_ms) const {
-  return other_speaking_ || (other_speech_ms_ >= 0 &&
-                             other_speech_ms_ + kOtherSpeechTailMs >= since_ms);
+  if (other_speaking_ || (other_speech_ms_ >= 0 &&
+                          other_speech_ms_ + kOtherSpeechTailMs >= since_ms)) {
+    return true;
+  }
+  // Without an echo canceller, a tab's sound is heard as it is: a video
+  // that says "Hey Molt, ..." would be taken for the user.
+  return !echo_cancelled_ &&
+         (page_audible_ || (page_audible_ms_ >= 0 &&
+                            page_audible_ms_ + kOtherSpeechTailMs >= since_ms));
 }
 
 bool VoiceSessionLogic::Counts(const Utterance& utterance) const {
-  return utterance.woke || (utterance.open && !utterance.during_speech);
+  return utterance.woke || (utterance.open && (!utterance.during_speech ||
+                                               utterance.echo_cancelled));
+}
+
+bool VoiceSessionLogic::BargeInOpen() const {
+  return own_speech_in_reference_ && activity_ == BrowserActivity::kSpeaking;
+}
+
+bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
+                                      int64_t now_ms) const {
+  const std::string folded = FoldForComparison(text.substr(0, kMaxSaidBytes));
+  if (folded.empty()) {
+    return false;
+  }
+  size_t start = 0;
+  while (start < folded.size()) {
+    size_t end = folded.find(' ', start);
+    if (end == std::string::npos) {
+      end = folded.size();
+    }
+    const std::string_view word =
+        std::string_view(folded).substr(start, end - start);
+    bool said = false;
+    for (const auto& [when, words] : said_) {
+      if (now_ms - when <= kSpokenMemoryMs && HasWords(words, word)) {
+        said = true;
+        break;
+      }
+    }
+    if (!said) {
+      return false;
+    }
+    start = end + 1;
+  }
+  return true;
 }
 
 bool VoiceSessionLogic::SaidWakePhrase(int64_t now_ms) const {

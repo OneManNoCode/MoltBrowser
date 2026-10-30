@@ -505,13 +505,17 @@ ClickQuestion CheckClick(const agent_safety::ElementProbe& probe,
 FrameCheck CheckFrameOrigin(std::string_view observed,
                             const url::Origin& live,
                             const url::Origin& page,
-                            const std::vector<url::Origin>& allowed) {
+                            const std::vector<url::Origin>& allowed,
+                            bool framed_by_own_origin) {
   const bool web = !live.opaque() && (live.scheme() == url::kHttpScheme ||
                                       live.scheme() == url::kHttpsScheme);
   const bool in_scope =
       std::any_of(allowed.begin(), allowed.end(),
                   [&](const url::Origin& o) { return o.IsSameOriginWith(live); });
-  if (!web || !in_scope || !live.IsSameOriginWith(page)) {
+  // A frame of the page's origin inside another site's frame shows what
+  // that site chose (any of the page's URLs), not the page.
+  if (!web || !in_scope || !live.IsSameOriginWith(page) ||
+      !framed_by_own_origin) {
     return FrameCheck::kRefused;
   }
   return live.Serialize() == observed ? FrameCheck::kOk : FrameCheck::kStale;

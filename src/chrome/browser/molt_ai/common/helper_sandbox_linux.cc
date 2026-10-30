@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,6 +26,9 @@
 
 // System calls newer than Chromium's sysroot headers. From Linux 5.1 on,
 // system call numbers are the same on every architecture.
+#ifndef __NR_pidfd_send_signal
+#define __NR_pidfd_send_signal 424
+#endif
 #ifndef __NR_io_uring_setup
 #define __NR_io_uring_setup 425
 #endif
@@ -178,6 +182,19 @@ constexpr uint32_t kMapTypeMask = 0x0f;   // MAP_TYPE
 constexpr uint32_t kMapPrivate = 0x02;    // MAP_PRIVATE
 constexpr uint32_t kMapAnonymous = 0x20;  // MAP_ANONYMOUS
 
+// socket() and socketpair(): the type's bits in their second argument;
+// the rest are SOCK_NONBLOCK and SOCK_CLOEXEC (the kernel's
+// SOCK_TYPE_MASK).
+constexpr uint32_t kSocketTypeMask = 0x0f;
+
+// fcntl() commands and ioctl() requests that choose whom the kernel signals
+// when a file is ready (SIGIO, SIGURG, F_SETSIG's signal): the same on
+// x86_64 and aarch64 (asm-generic/fcntl.h, asm-generic/sockios.h).
+constexpr uint32_t kFcntlSetOwner = 8;     // F_SETOWN
+constexpr uint32_t kFcntlSetOwnerEx = 15;  // F_SETOWN_EX
+constexpr uint32_t kIoctlSetOwner = 0x8901;         // FIOSETOWN
+constexpr uint32_t kIoctlSetProcessGroup = 0x8902;  // SIOCSPGRP
+
 // BPF instructions.
 sock_filter Statement(uint16_t code, uint32_t k) {
   return {code, 0, 0, k};
@@ -225,6 +242,22 @@ void OnSyscall(long nr,
 
 void Deny(long nr, int error, std::vector<sock_filter>* program) {
   OnSyscall(nr, {Return(ReturnErrno(error))}, program);
+}
+
+// Allowed when argument |index| is one of |values|; EPERM otherwise. The
+// values may be kSeccompOwnPidSlot and kSeccompOwnGroupSlot.
+std::vector<sock_filter> OnlyWhenArgIs(uint32_t index,
+                                       std::initializer_list<uint32_t> values) {
+  std::vector<sock_filter> body = {LoadWord(ArgLow(index))};
+  // From the first comparison, past the rest and the EPERM, to the allow.
+  uint8_t to_allow = static_cast<uint8_t>(values.size());
+  for (uint32_t value : values) {
+    body.push_back(Jump(BPF_JMP | BPF_JEQ | BPF_K, value, to_allow, 0));
+    --to_allow;
+  }
+  body.push_back(Return(ReturnErrno(EPERM)));
+  body.push_back(Return(SECCOMP_RET_ALLOW));
+  return body;
 }
 
 // An open() or openat() with O_TMPFILE in its flags (argument
@@ -385,11 +418,18 @@ std::vector<sock_filter> BuildSeccompProgram() {
   // that probe fail gracefully. connect() fails too, which also keeps the
   // helper away from named UNIX-socket services (the session bus and
   // through it systemd, X11, ssh-agent, docker); socketpair() still works.
+  // A datagram socket reaches a named one without connect() (sendto() to
+  // the system log or the journal), so AF_UNIX sockets are stream or
+  // seqpacket only (SOCK_RAW is a datagram socket there too).
   const std::vector<sock_filter> unix_only = {
       LoadWord(ArgLow(0)),
-      Jump(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 0, 1),
-      Return(SECCOMP_RET_ALLOW),
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 0, 4),
+      LoadWord(ArgLow(1)),
+      Statement(BPF_ALU | BPF_AND | BPF_K, kSocketTypeMask),
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, SOCK_STREAM, 2, 0),
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, SOCK_SEQPACKET, 1, 0),
       Return(ReturnErrno(EACCES)),
+      Return(SECCOMP_RET_ALLOW),
   };
   OnSyscall(__NR_socket, unix_only, &program);
   OnSyscall(__NR_socketpair, unix_only, &program);
@@ -409,6 +449,53 @@ std::vector<sock_filter> BuildSeccompProgram() {
   Deny(__NR_process_vm_readv, EPERM, &program);
   Deny(__NR_process_vm_writev, EPERM, &program);
   Deny(__NR_pidfd_getfd, EPERM, &program);
+
+  // Signals to the helper itself only: its own process ID, its threads
+  // and its process group (0 or minus its ID: it leads a session of its
+  // own and starts no process), on kernels whose Landlock doesn't scope
+  // signals (before ABI 6) as well. tkill() names a thread of any process
+  // and pidfd_send_signal() a pidfd, neither of which BPF can check;
+  // glibc's raise(), abort() and pthread_kill() use tgkill() with the
+  // process's own ID.
+  OnSyscall(__NR_kill,
+            OnlyWhenArgIs(0, {kSeccompOwnPidSlot, 0, kSeccompOwnGroupSlot}),
+            &program);
+  OnSyscall(__NR_tgkill, OnlyWhenArgIs(0, {kSeccompOwnPidSlot}), &program);
+  OnSyscall(__NR_rt_sigqueueinfo, OnlyWhenArgIs(0, {kSeccompOwnPidSlot}),
+            &program);
+  OnSyscall(__NR_rt_tgsigqueueinfo, OnlyWhenArgIs(0, {kSeccompOwnPidSlot}),
+            &program);
+  Deny(__NR_tkill, EPERM, &program);
+  Deny(__NR_pidfd_send_signal, EPERM, &program);
+  // Whom the kernel signals when a file is ready (O_ASYNC's SIGIO, SIGURG,
+  // or F_SETSIG's signal, of any number): the helper itself only.
+  // F_SETOWN_EX passes its target in memory BPF can't read, and so do
+  // FIOSETOWN and SIOCSPGRP.
+  const std::vector<sock_filter> owner =
+      OnlyWhenArgIs(2, {kSeccompOwnPidSlot, 0, kSeccompOwnGroupSlot});
+  std::vector<sock_filter> fcntl_rule = {
+      LoadWord(ArgLow(1)),
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, kFcntlSetOwnerEx, 0, 1),
+      Return(ReturnErrno(EPERM)),
+      // Any other command: to the allow at the end of |owner|.
+      Jump(BPF_JMP | BPF_JEQ | BPF_K, kFcntlSetOwner, 0,
+           static_cast<uint8_t>(owner.size() - 1)),
+  };
+  fcntl_rule.insert(fcntl_rule.end(), owner.begin(), owner.end());
+  OnSyscall(__NR_fcntl, fcntl_rule, &program);
+  OnSyscall(__NR_ioctl,
+            {
+                LoadWord(ArgLow(1)),
+                Jump(BPF_JMP | BPF_JEQ | BPF_K, kIoctlSetOwner, 1, 0),
+                Jump(BPF_JMP | BPF_JEQ | BPF_K, kIoctlSetProcessGroup, 0, 1),
+                Return(ReturnErrno(EPERM)),
+                Return(SECCOMP_RET_ALLOW),
+            },
+            &program);
+  // Its own resource limits only (0 is itself): another process's
+  // RLIMIT_CPU, lowered below the time it has used, has the kernel kill it.
+  OnSyscall(__NR_prlimit64, OnlyWhenArgIs(0, {0, kSeccompOwnPidSlot}),
+            &program);
 
   // Kernel attack surface no OCR or speech helper needs.
   Deny(__NR_bpf, EPERM, &program);
@@ -497,6 +584,22 @@ std::vector<sock_filter> BuildSeccompProgram() {
   program.push_back(Return(SECCOMP_RET_ALLOW));
   return program;
 #endif
+}
+
+void SetSeccompOwnPid(int32_t pid, std::vector<sock_filter>* program) {
+  const uint32_t own = static_cast<uint32_t>(pid);
+  // Minus the ID, as a 32-bit argument holds it (no overflow: pid > 0).
+  const uint32_t group = 0U - own;
+  for (sock_filter& insn : *program) {
+    if (insn.code != (BPF_JMP | BPF_JEQ | BPF_K)) {
+      continue;
+    }
+    if (insn.k == kSeccompOwnPidSlot) {
+      insn.k = own;
+    } else if (insn.k == kSeccompOwnGroupSlot) {
+      insn.k = group;
+    }
+  }
 }
 
 Prepared::Prepared() = default;
@@ -622,7 +725,7 @@ bool Prepare(const Policy& policy, Prepared* prepared, std::string* error) {
   return true;
 }
 
-void ApplyInChild(const Prepared& prepared) {
+void ApplyInChild(Prepared& prepared) {
   // A session of its own: no controlling terminal to push input into
   // (TIOCSTI), and a process group the launcher can kill as a whole. Fails
   // only for a process group leader, which a forked child is not.
@@ -672,10 +775,12 @@ void ApplyInChild(const Prepared& prepared) {
   }
 
   if (!prepared.seccomp.empty()) {
+    // Signals to this process only: its ID, which exec() keeps, written
+    // into this child's own copy of the program (fork() copied it).
+    SetSeccompOwnPid(getpid(), &prepared.seccomp);
     sock_fprog program = {};
     program.len = static_cast<unsigned short>(prepared.seccomp.size());
-    // The kernel only reads the program.
-    program.filter = const_cast<sock_filter*>(prepared.seccomp.data());
+    program.filter = prepared.seccomp.data();
     if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0U, &program) != 0) {
       FailInChild("seccomp(SECCOMP_SET_MODE_FILTER)");
     }

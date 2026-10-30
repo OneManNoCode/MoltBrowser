@@ -17,6 +17,7 @@
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
+#include "chrome/browser/molt_ai/voice/voice_command.h"
 
 namespace molt_ai {
 namespace voice {
@@ -226,6 +227,15 @@ bool AppendPhraseWords(std::string_view words,
     ++*count;
   }
   return true;
+}
+
+// Whether the grammar reads |phrase| as a yes to a question ("Yes",
+// "Okay", "Sure, go ahead"). Page text never biases the recognizer toward
+// one: the user's answer to "Say yes to ..." is what confirms an action.
+bool IsYesAnswer(std::string_view phrase) {
+  ParseContext context;
+  context.expecting_yes_no = true;
+  return ParseVoiceCommand(phrase, context).kind == VoiceCommandKind::kYes;
 }
 
 // Splits a title at the separators that set its parts apart.
@@ -900,7 +910,8 @@ std::vector<std::string> HotwordsFromPageMap(const PageMap& map, size_t max) {
     std::string phrase = ReduceSpeechPhrase(text);
     std::string key = LowerAscii(phrase);
     if (phrase.empty() ||
-        std::find(seen.begin(), seen.end(), key) != seen.end()) {
+        std::find(seen.begin(), seen.end(), key) != seen.end() ||
+        IsYesAnswer(phrase)) {
       return;
     }
     seen.push_back(std::move(key));
@@ -1172,7 +1183,12 @@ HelperEventSequence::HelperEventSequence() = default;
 
 bool HelperEventSequence::Accept(const HelperEvent& event,
                                  int64_t resets_sent) {
+  // The helper exits after an `error`: nothing follows it.
+  if (errored_) {
+    return false;
+  }
   if (event.type == HelperEventType::kError) {
+    errored_ = true;
     return true;
   }
   if (event.type == HelperEventType::kReady) {
@@ -1225,6 +1241,32 @@ bool HelperEventSequence::Accept(const HelperEvent& event,
       break;
   }
   return false;
+}
+
+HelperFailureCount::HelperFailureCount() = default;
+
+void HelperFailureCount::Clear() {
+  failures_ = 0;
+  ready_ms_ = -1;
+}
+
+void HelperFailureCount::OnStarted() {
+  ready_ms_ = -1;
+}
+
+void HelperFailureCount::OnReady(int64_t now_ms) {
+  ready_ms_ = now_ms;
+}
+
+int HelperFailureCount::OnEnded(int64_t now_ms) {
+  if (ready_ms_ >= 0 && now_ms - ready_ms_ >= kStableRunMs) {
+    failures_ = 0;
+  }
+  ready_ms_ = -1;
+  if (failures_ < kMaxFailures) {
+    ++failures_;
+  }
+  return failures_;
 }
 
 }  // namespace voice

@@ -183,6 +183,20 @@ void VoiceAgentPlanner::OnConfirm(const WebAgent::ConfirmRequest& request) {
   if (!agent_ || !delegate_) {
     return;
   }
+  if (request.action == "PAGE_REQUEST") {
+    // The activation guard's question: voice mode asks those itself when it
+    // is on the tab; here it isn't, so the page's request is refused.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](base::WeakPtr<VoiceAgentPlanner> self, int run, int id) {
+              if (self && self->run_ == run && self->agent_) {
+                self->agent_->ResolveConfirmation(id, false);
+              }
+            },
+            weak_factory_.GetWeakPtr(), run_, request.id));
+    return;
+  }
   if (request.action == "FRAME_TOOLS") {
     // Another site's frame offering tools: "Not now", never asked by voice
     // (the run goes on without them).

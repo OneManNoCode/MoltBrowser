@@ -89,11 +89,17 @@ Listener::ConfigResult Listener::ApplyConfig(const ConfigUpdate& update,
       }
       lines.push_back(std::move(line));
     }
-    if (!engines_->SetKeywords(lines)) {
-      if (error) {
-        *error = "the spotter could not take the wake phrases";
+    // Every CONFIG the browser sends carries the wake phrases: the spotter
+    // (and its model) is rebuilt only when they change.
+    if (lines != keyword_lines_) {
+      keyword_lines_.clear();
+      if (!engines_->SetKeywords(lines)) {
+        if (error) {
+          *error = "the spotter could not take the wake phrases";
+        }
+        return ConfigResult::kEngineError;
       }
-      return ConfigResult::kEngineError;
+      keyword_lines_ = std::move(lines);
     }
     config_.wake_phrases = update.values.wake_phrases;
   }

@@ -475,6 +475,33 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   stop the map; an answer to "Which one?" counts only while the choices
   read out still name the same items; and what was heard is cleaned as
   page text is.
+- Hardening (security review of rounds 38 and 39, `docs/SECURITY_REVIEWS.md`):
+  on Linux the OCR, voice and speech helpers' sandbox lets them open only
+  stream UNIX sockets, so none can send datagrams to the system log or
+  another named socket; where the microphone has no echo canceller, voice
+  mode (preview) takes a tab playing sound for another speaker, as it does
+  a page reading aloud, so only "stop", "cancel" and "turn off voice mode"
+  count while it plays; the page's names that bias speech recognition
+  never include a "yes"; and the AI agent reading a page through its
+  accessibility tree leaves out, and never acts in, a frame of the page's
+  site that another site's frame (an ad) embeds.
+- Hardening: when voice mode (preview) or the web agent clicks on a page,
+  the page can't use that click for things you didn't ask for. A new
+  window or tab, a download or another app the page then tries is asked
+  about first ("The page tried to open a new window to example.com. Say
+  yes to open it", or a question in the agent's run); full screen is
+  allowed only after "full screen" or "play", clipboard writes are
+  refused, and voice mode turns down permission prompts it can't yet
+  answer by voice and says so. Your own clicks work as before, and MoltNet
+  windows are unchanged (`docs/design/TOUCHLESS_BROWSING.md` §7.5).
+- Hardening (security review of rounds 38 and 39, continued): on Linux the
+  OCR, voice and speech helpers can signal only themselves on every
+  kernel, as they already could where the kernel's Landlock scopes
+  signals (6.12 and later); voice mode's (preview) speech helper is
+  stopped and restarted when it reports an error, keeps listening after
+  an occasional failure once it has run a minute, is built with the same
+  compiler hardening throughout, and reloads its wake-phrase model only
+  when the wake phrase changes.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -1157,6 +1184,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page reading aloud is never cut off by voice mode, and what it says
   isn't taken as a command. It never listens in MoltNet windows. How:
   `docs/VOICE_COMMANDS.md`.
+- **Touchless browsing: voice mode speaks with its own voice** (preview,
+  behind `chrome://flags/#molt-voice-mode`, bundled with
+  `MOLT_BUNDLE_VOICE=1`). Answers are spoken by an on-device voice that
+  sounds the same on every OS, in a sandboxed helper like the speech
+  engine's, and every word is said: numbers, prices, dates, times, counts
+  like "1.2M", abbreviations and web addresses ("example dot com") are read
+  as words, and names it doesn't know are sounded out instead of skipped.
+  The browser plays it itself, so the microphone's echo cancellation
+  removes it: you can talk over it with a new command ("the third one")
+  without "Hey Molt", and it stops at once. A page's own speech can't
+  pause it, and it can't cut a page's speech short. The system's voices
+  remain the fallback when it isn't installed or stops working, and Linux
+  no longer needs speech-dispatcher for voice mode to speak. Details:
+  `docs/design/VOICE_HELPER_PROTOCOL.md`.
 - **The AI agent sees and acts on pages as voice mode does, and voice mode
   takes open-ended requests.** Outside MoltNet windows the web agent reads
   a page through its accessibility tree (numbered items, lists of results,

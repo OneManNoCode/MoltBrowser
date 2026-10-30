@@ -20,6 +20,7 @@
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
 #include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/agents/frame_tools.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/profiles/profile.h"
@@ -269,6 +270,19 @@ void WebAgent::Cancel() {
 }
 
 void WebAgent::ResolveConfirmation(int request_id, bool allowed) {
+  // The activation guard's question: answered for the page; the run goes on
+  // either way.
+  auto page_request = page_request_questions_.find(request_id);
+  if (page_request != page_request_questions_.end()) {
+    const int guard_id = page_request->second;
+    page_request_questions_.erase(page_request);
+    content::WebContents* contents = web_contents();
+    if (ActivationGuard* guard =
+            contents ? ActivationGuard::FromWebContents(contents) : nullptr) {
+      guard->Answer(guard_id, allowed);
+    }
+    return;
+  }
   if (cancelled_ || !pending_confirm_ || request_id != pending_confirm_id_)
     return;
   base::OnceClosure on_allow = std::move(pending_confirm_);
@@ -307,6 +321,39 @@ void WebAgent::ResolveFrameTools(int request_id, frame_tools::Grant grant) {
 
 void WebAgent::DidStopLoading() {
   MaybeNavDone();
+}
+
+// ----------------------------------------------------------------
+// The activation guard's questions (activation_guard.h)
+// ----------------------------------------------------------------
+
+bool WebAgent::AskAboutPageRequest(int id,
+                                   const activation::Question& question) {
+  // Without a confirmation UI, the page's request is refused.
+  if (cancelled_ || !confirm_cb_ || id <= 0) {
+    return false;
+  }
+  // At most a few at a time (the guard asks one at a time anyway).
+  if (page_request_questions_.size() >= 4) {
+    page_request_questions_.erase(page_request_questions_.begin());
+  }
+  ConfirmRequest req;
+  req.id = ++next_confirm_id_;
+  req.action = "PAGE_REQUEST";
+  // The browser's words, the page's site cleaned in them.
+  req.message = question.said;
+  page_request_questions_[req.id] = id;
+  confirm_cb_.Run(req);
+  return true;
+}
+
+void WebAgent::TellAboutPageRequest(const std::string& text) {
+  // Only voice mode is told what was refused (activation_policy.h).
+}
+
+void WebAgent::PageRequestQuestionWithdrawn(int id) {
+  std::erase_if(page_request_questions_,
+                [id](const auto& entry) { return entry.second == id; });
 }
 
 // ----------------------------------------------------------------
@@ -1541,6 +1588,9 @@ void WebAgent::HoldPage() {
   VoicePage::CreateForWebContents(contents);
   VoicePage::FromWebContents(contents)->Start(VoicePage::Holder::kWebAgent);
   holds_page_ = true;
+  // What the page tries with the activation this run's actions give it is
+  // asked about in the run (unless voice mode is on the tab).
+  ActivationGuard::SetAsker(contents, activation::Asker::kWebAgent, this);
 }
 
 void WebAgent::ReleasePage() {
@@ -1552,7 +1602,10 @@ void WebAgent::ReleasePage() {
     return;
   }
   holds_page_ = false;
+  page_request_questions_.clear();
   if (content::WebContents* contents = web_contents()) {
+    // Its question, if any, is answered "no" by the guard.
+    ActivationGuard::RemoveAsker(contents, this);
     if (VoicePage* controller = VoicePage::FromWebContents(contents)) {
       controller->Stop(VoicePage::Holder::kWebAgent);
     }
@@ -1640,7 +1693,8 @@ void WebAgent::FinishPageMapObservation(const StructuredPage& page,
   input.url = main->GetLastCommittedURL().spec();
   input.origin = current.Serialize();
   // The trees the map holds, and of those the frames of the page's own
-  // origin: only their items are listed (another site's frame never is).
+  // origin that no other site's frame embeds: only their items are listed
+  // (another site's frame never is, nor what it embeds).
   std::vector<int32_t> trees;
   auto note_tree = [&](int32_t tree) {
     if (tree >= 0 && std::find(trees.begin(), trees.end(), tree) == trees.end())
@@ -1655,7 +1709,8 @@ void WebAgent::FinishPageMapObservation(const StructuredPage& page,
     note_tree(heading.handle.tree);
   for (int32_t tree : trees) {
     const std::optional<url::Origin> origin = controller->OriginOfTree(tree);
-    if (origin && IsWebOrigin(*origin) && origin->IsSameOriginWith(current))
+    if (origin && IsWebOrigin(*origin) && origin->IsSameOriginWith(current) &&
+        controller->FramedByItsOwnOrigin(tree))
       input.same_origin_trees.push_back(tree);
   }
   // The options of its selects, read from the live tree.
@@ -1719,11 +1774,12 @@ WebAgent::LiveResult WebAgent::FindLiveTarget(
                                                   : LiveResult::kStale;
   }
   // Origins per frame: its frame still has the origin it was observed
-  // with, which is the page's, a web origin in the run's scope.
+  // with, which is the page's, a web origin in the run's scope, and so has
+  // every frame above it.
   switch (agent_page_map::CheckFrameOrigin(
       element.frame_origin, facts->origin,
       contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(),
-      allowed_origins_)) {
+      allowed_origins_, facts->framed_by_own_origin)) {
     case agent_page_map::FrameCheck::kOk:
       break;
     case agent_page_map::FrameCheck::kStale:

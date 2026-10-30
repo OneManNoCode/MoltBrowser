@@ -56,6 +56,7 @@ chrome/browser/content_settings/host_content_settings_map_factory.cc.patch
 chrome/browser/devtools/devtools_window.cc.patch
 chrome/browser/download/BUILD.gn.patch
 chrome/browser/download/bubble/download_bubble_ui_controller.cc.patch
+chrome/browser/download/chrome_download_manager_delegate.cc.patch
 chrome/browser/enterprise/data_controls/chrome_clipboard_context.cc.patch
 chrome/browser/enterprise/data_controls/chrome_rules_service.cc.patch
 chrome/browser/extensions/BUILD.gn.patch
@@ -130,6 +131,8 @@ chrome/browser/ui/browser_command_controller.cc.patch
 chrome/browser/ui/browser_commands.cc.patch
 chrome/browser/ui/browser_tabstrip.cc.patch
 chrome/browser/ui/browser_ui_prefs.cc.patch
+chrome/browser/ui/browser_web_contents_delegate/BUILD.gn.patch
+chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc.patch
 chrome/browser/ui/chrome_pages.cc.patch
 chrome/browser/ui/color/chrome_color_mixer.cc.patch
 chrome/browser/ui/extensions/BUILD.gn.patch

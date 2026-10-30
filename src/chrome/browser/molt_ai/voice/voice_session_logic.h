@@ -23,21 +23,35 @@
 //   - "Stop", "cancel", "stop talking" and "turn off voice mode" always
 //     count: the helper hears everything (wake_required false) while the
 //     browser thinks or speaks, so they work without the wake phrase.
-//   - While the browser speaks (and kEchoTailMs after), nothing else
-//     counts without the wake phrase. The platform's voices play outside
-//     Chromium's audio service, so the echo canceller has no reference for
-//     them and a recognizer transcribes the browser's own voice
-//     (VOICE_BENCH.md §3.2): what it hears then may be the browser itself.
-//     A wake phrase while the browser's own words held one is ignored too.
+//   - While the browser speaks with the platform's voices (and
+//     kEchoTailMs after), nothing else counts without the wake phrase.
+//     Those voices play outside Chromium's audio service, so the echo
+//     canceller has no reference for them and a recognizer transcribes
+//     the browser's own voice (VOICE_BENCH.md §3.2): what it hears then may
+//     be the browser itself. A wake phrase while the browser's own words
+//     held one is ignored too.
+//   - While it speaks with its own voice (voice_speech.h: browser output,
+//     in the echo canceller's reference; OnOwnSpeechInReference()), the
+//     user can interrupt it with a command, no wake phrase needed: an
+//     utterance begun then counts if it has kMinConfidenceWithoutWake and
+//     isn't the browser's own words heard back (all its words among what
+//     the browser said in the last kSpokenMemoryMs, which is what an echo
+//     the canceller missed would be). It stops the browser's speech.
 //   - While the speech engine speaks for someone else (a page's
 //     speechSynthesis; OnOtherSpeech()), and kOtherSpeechTailMs after,
 //     only the commands that always count do: no wake phrase, no command
 //     after one, nothing in the follow-up window or in always-listening
 //     mode. That voice plays outside Chromium's audio service too, and a
 //     page chooses what it says ("Hey Molt, ...").
+//   - Without an echo canceller (OnEchoCancellation(false): the microphone
+//     has neither Chrome-wide echo cancellation nor the platform's), a
+//     tab's sound reaches the recognizer as it is: while a tab plays
+//     sound, and kOtherSpeechTailMs after, it is taken as another source's
+//     speech, so only the commands that always count do.
 //
 // Barge-in: the wake phrase (and "stop") while the browser speaks stops its
-// speech at once; the command follows.
+// speech at once; the command follows. With the browser's own voice, a
+// command said over it does too (above).
 //
 // Ducking (§5.1): media is ducked while a command is being spoken (from
 // the wake phrase or the start of an utterance that counts, to its end).
@@ -186,6 +200,13 @@ class VoiceSessionLogic {
   // speechSynthesis, an extension): looked at often, and at each of the
   // helper's events.
   SessionActions OnOtherSpeech(bool speaking, int64_t now_ms);
+  // Whether the microphone has an echo canceller whose reference holds what
+  // tabs play (VoiceAudio's EchoCancellation other than kNone). Until told
+  // otherwise, it does.
+  SessionActions OnEchoCancellation(bool cancelled, int64_t now_ms);
+  // Whether the browser's speech is in the echo canceller's reference: its
+  // own voice speaks and the microphone has echo cancellation.
+  SessionActions OnOwnSpeechInReference(bool in_reference, int64_t now_ms);
   SessionActions OnSettingsChanged(ListeningSettings settings, int64_t now_ms);
 
   // Timers: call at NextDeadline() (or any time).
@@ -206,6 +227,8 @@ class VoiceSessionLogic {
     bool open = false;
     // It began while the browser spoke (or just after).
     bool during_speech = false;
+    // And that speech was in the echo canceller's reference.
+    bool echo_cancelled = false;
     bool started = false;
     int64_t started_ms = 0;
     // Its first event (the wake phrase, or the start of speech).
@@ -218,11 +241,17 @@ class VoiceSessionLogic {
   bool FollowUpOpen(int64_t now_ms) const;
   bool SpeakingOrTail(int64_t now_ms) const;
   // Whether another source's speech was heard since |since_ms| (or
-  // kOtherSpeechTailMs before).
+  // kOtherSpeechTailMs before): the speech engine speaking for someone
+  // else, or, without an echo canceller, a tab playing sound.
   bool OtherSpeechSince(int64_t since_ms) const;
   bool Counts(const Utterance& utterance) const;
   // Whether what the browser said lately holds a wake phrase.
   bool SaidWakePhrase(int64_t now_ms) const;
+  // Whether every word of |text| is among what the browser said lately:
+  // its own voice heard back.
+  bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
+  // A command may interrupt the browser's own voice now.
+  bool BargeInOpen() const;
   Utterance NewUtterance(bool woke, int64_t now_ms) const;
   SessionState ComputeState(int64_t now_ms) const;
   // Fills in what changed (state, wake_required, ducking) and the earcon
@@ -239,7 +268,11 @@ class VoiceSessionLogic {
   int64_t follow_up_until_ms_ = 0;
   bool awaiting_answer_ = false;
   bool page_audible_ = false;
+  // When a tab was last seen playing sound; -1 never.
+  int64_t page_audible_ms_ = -1;
+  bool echo_cancelled_ = true;
   bool other_speaking_ = false;
+  bool own_speech_in_reference_ = false;
   // When another source's speech was last seen; -1 never.
   int64_t other_speech_ms_ = -1;
   std::optional<Utterance> utterance_;
