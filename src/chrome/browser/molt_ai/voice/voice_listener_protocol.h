@@ -133,7 +133,9 @@ std::string NumberAsWords(std::string_view digits);
 // Hotwords for the page in |map|: each list entry's title, split at its
 // separators (" - ", " | ", ": ", brackets, '!', ',', '?'), and its
 // channel, from the most prominent list down; reduced, de-duplicated
-// whatever their case, at most |max| phrases.
+// whatever their case, at most |max| phrases. A phrase the grammar reads as
+// a yes ("Yes", "OK", "Sure") is left out: page text never biases what the
+// user answers to a question.
 std::vector<std::string> HotwordsFromPageMap(const PageMap& map,
                                              size_t max = kMaxHotwords);
 
