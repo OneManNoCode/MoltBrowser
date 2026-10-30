@@ -92,6 +92,9 @@ TEST(VoiceGestureWordsTest, WhatIsSaidAroundTheWord) {
   EXPECT_EQ(MatchConfirmationWord("yes, harbor"), harbor);
   EXPECT_EQ(MatchConfirmationWord("say harbor"), harbor);
   EXPECT_EQ(MatchConfirmationWord("harbor please"), harbor);
+  EXPECT_EQ(MatchConfirmationWord("the harbor"), harbor);
+  // A recognizer's plural.
+  EXPECT_EQ(MatchConfirmationWord("harbors"), harbor);
   // The recognizer's spelling, and a sound-alike.
   EXPECT_EQ(MatchConfirmationWord("harbour"), harbor);
   EXPECT_EQ(MatchConfirmationWord("harber"), harbor);

@@ -19,15 +19,15 @@ namespace {
 // Chosen with the phonetic key (no two within its bound plus a close sound
 // of each other, none within its bound of an answer word) and measured with
 // the speech helper's recognizer on the voice bench's synthetic voices
-// (TOUCHLESS_BROWSING.md §7.3).
+// (TOUCHLESS_BROWSING.md §7.3): of 46 candidates, the six it missed most
+// (mitten, cupcake, ketchup, oatmeal, parrot, teapot) were left out.
 constexpr auto kWords = std::to_array<std::string_view>({
-    "harbor",   "maple",    "tiger",      "lemon",     "rocket",  "garden",
-    "basket",   "dragon",   "planet",     "magnet",    "parrot",  "pepper",
-    "cactus",   "falcon",   "hammer",     "lantern",   "napkin",  "orange",
-    "umbrella", "bamboo",   "cobalt",     "eagle",     "helmet",  "turtle",
-    "banjo",    "fossil",   "kayak",      "lobster",   "mango",   "yogurt",
-    "compass",  "guitar",   "lettuce",    "whistle",   "mitten",  "oatmeal",
-    "canyon",   "cupcake",  "teapot",     "butterfly", "gorilla", "ketchup",
+    "harbor",   "maple",    "tiger",      "lemon",   "rocket",    "garden",
+    "basket",   "dragon",   "planet",     "magnet",  "pepper",    "cactus",
+    "falcon",   "hammer",   "lantern",    "napkin",  "orange",    "umbrella",
+    "bamboo",   "cobalt",   "eagle",      "helmet",  "turtle",    "banjo",
+    "fossil",   "kayak",    "lobster",    "mango",   "yogurt",    "compass",
+    "guitar",   "lettuce",  "whistle",    "canyon",  "butterfly", "gorilla",
     "macaroni", "sandwich", "strawberry", "tornado",
 });
 
@@ -46,9 +46,10 @@ constexpr auto kAnswerWords = std::to_array<std::string_view>({
     "page",   "here",   "got",     "password", "it",     "is",      "my",
 });
 
-// Said around the word: "yes, harbor", "say harbor", "harbor please".
-constexpr std::array<std::string_view, 5> kLeading = {"yes", "ok", "okay",
-                                                      "say", "its"};
+// Said around the word: "yes, harbor", "say harbor", "the harbor",
+// "harbor please".
+constexpr auto kLeading = std::to_array<std::string_view>(
+    {"yes", "ok", "okay", "say", "its", "the", "a"});
 constexpr std::array<std::string_view, 2> kTrailing = {"please", "thanks"};
 
 template <size_t N>
@@ -145,6 +146,14 @@ std::optional<size_t> MatchConfirmationWord(std::string_view heard) {
   if (last - first == 1) {
     if (std::optional<size_t> exact = Exactly(words[first])) {
       return exact;
+    }
+    // A recognizer's plural ("eagles").
+    const std::string& word = words[first];
+    if (word.size() > 3 && word.back() == 's') {
+      if (std::optional<size_t> exact =
+              Exactly(std::string_view(word).substr(0, word.size() - 1))) {
+        return exact;
+      }
     }
     // An answer word is never a confirmation word ("no" is no).
     if (OneOf(kAnswerWords, words[first])) {
