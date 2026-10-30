@@ -32,6 +32,12 @@
 // which plan step it works on ("step", PlanSteps), and REPLAN asks for a
 // new plan. Without one, the schema and the parser are what they were.
 //
+// An observation can come from the accessibility page map instead of the
+// element snapshot (agent_page_map.h, §2.10): its ids are the map's item
+// numbers ("e12" is item 12), and SELECT chooses an option of a select it
+// lists. Without such a select, the schema and the parser are what they
+// were.
+//
 // Pure logic (base::Value, no content/), unit-tested in molt_ai_unittests.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_ACTIONS_H_
@@ -68,6 +74,7 @@ enum class ActionType {
   kCallTool,  // a site tool (WebMCP): the web agent, and the chat on a
               // page that offers tools (chat_actions.h)
   kReplan,    // ask for a new plan (agent_plan.h): the web agent only
+  kSelect,    // choose a select's option: page-map observations only
 };
 
 // The wire name ("NAVIGATE", "FILL_FORM", ...), used in the schema, the
@@ -85,13 +92,15 @@ constexpr ActionSet ActionBit(ActionType type) {
 constexpr bool HasAction(ActionSet set, ActionType type) {
   return (set & ActionBit(type)) != 0;
 }
-// The web agent's set: every action but REPLAN.
+// The web agent's set: every action but REPLAN. SELECT is offered only
+// when the observation lists a select it may choose from (the page map's).
 inline constexpr ActionSet kAgentActions =
     ActionBit(ActionType::kNavigate) | ActionBit(ActionType::kSearch) |
     ActionBit(ActionType::kClick) | ActionBit(ActionType::kType) |
     ActionBit(ActionType::kFillForm) | ActionBit(ActionType::kScroll) |
     ActionBit(ActionType::kObserve) | ActionBit(ActionType::kDone) |
-    ActionBit(ActionType::kError) | ActionBit(ActionType::kCallTool);
+    ActionBit(ActionType::kError) | ActionBit(ActionType::kCallTool) |
+    ActionBit(ActionType::kSelect);
 // ... and while it follows a plan (agent_plan.h): REPLAN too.
 inline constexpr ActionSet kPlannedAgentActions =
     kAgentActions | ActionBit(ActionType::kReplan);
@@ -108,6 +117,8 @@ inline constexpr size_t kMaxFormFields = 8;
 inline constexpr size_t kMaxObservedElements = 40;
 inline constexpr size_t kMaxElementLabelChars = 60;
 inline constexpr size_t kMaxSelectorBytes = 1024;
+// SELECT's option: a select's option as the observation lists it.
+inline constexpr size_t kMaxOptionChars = 80;
 // Visible-token budget for one reply.
 inline constexpr int kMaxReplyTokens = 512;
 // A step's reply is requested at most this many times; the run stops at
@@ -143,8 +154,24 @@ struct ObservedElement {
   std::string label;
   agent_safety::FieldKind field_kind = agent_safety::FieldKind::kOrdinary;
   // A text field TYPE / FILL_FORM may write: a text-like <input> or a
-  // <textarea>; never a password field.
+  // <textarea>; never a password field. From the page map: a writable text
+  // field, never a password, payment card or one-time code field.
   bool typeable = false;
+
+  // From the page map (agent_page_map.h; |selector| is then empty): the
+  // item's number (|ref| is "e" and it), its node (PageNodeHandle's tree
+  // and node) and its frame's origin, as url::Origin::Serialize() wrote it
+  // when it was observed. 0, -1, 0 and "" for the element snapshot.
+  int item_number = 0;
+  int32_t node_tree = -1;
+  int32_t node_id = 0;
+  std::string frame_origin;
+  // A select SELECT may choose from, and its options (page text, cleaned
+  // and capped at kMaxOptionChars). Only from the page map.
+  bool selectable = false;
+  std::vector<std::string> options;
+
+  bool from_page_map() const { return item_number > 0; }
 };
 
 struct Observation {
@@ -157,8 +184,12 @@ struct Observation {
 
   const ObservedElement* Find(std::string_view ref) const;
   bool HasTypeable() const;
+  bool HasSelectable() const;
   const agent_tools::SiteTool* FindTool(std::string_view ref) const;
 
+  // The elements came from the accessibility page map (agent_page_map.h),
+  // not the element snapshot.
+  bool from_page_map = false;
   std::vector<ObservedElement> elements;
   // The page's own tools (t1 ... t8), added by AddSiteTools().
   std::vector<agent_tools::SiteTool> tools;
@@ -255,6 +286,7 @@ struct AgentAction {
   std::vector<FormFieldValue> fields;  // kFillForm
   std::string direction;               // kScroll: "down" or "up"
   std::string result;                  // kDone, kError
+  std::string option;                  // kSelect: the option chosen
   std::string tool;                    // kCallTool: the tool's id ("t1")
   // kCallTool: the arguments the tool gets (JSON, written by the browser)
   // and as the user reads them (agent_tools::ToolArguments).
@@ -269,7 +301,9 @@ struct AgentAction {
 // no others, "reason" first. CLICK needs an element and TYPE / FILL_FORM a
 // text field; their branches are left out when the observation has none.
 // CALL_TOOL is an anyOf of one object per tool of the observation (its id
-// as a const, its arguments' schema), left out without tools.
+// as a const, its arguments' schema), left out without tools. SELECT (a
+// select's id and an option, checked against its options by ParseAction())
+// is left out when no element is selectable.
 // With |plan|, every object also has "step" (an enum of
 // AllowedPlanSteps()) after "reason"; null means no plan (and the schema is
 // exactly what it was before the planner).
@@ -296,6 +330,8 @@ enum class ActionError {
   kUnknownTool,     // CALL_TOOL names a tool that isn't in the observation
   kBadArguments,    // CALL_TOOL's arguments don't match the tool's
   kBadPlanStep,     // "step" is neither the current plan step nor the next
+  kNotSelectable,   // SELECT on something that isn't a select
+  kUnknownOption,   // SELECT names an option the select doesn't list
 };
 
 // Fixed text, for the retry note the model sees ("it named an element

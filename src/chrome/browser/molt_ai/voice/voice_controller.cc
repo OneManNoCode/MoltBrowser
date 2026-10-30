@@ -13,6 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
@@ -28,6 +29,8 @@
 #include "chrome/browser/ui/tabs/tab_muted_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_user_gesture_details.h"
+#include "chrome/browser/ui/views/molt_ai/voice/voice_overlay.h"
+#include "chrome/browser/ui/views/molt_ai/voice/voice_overlay_layout.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/media_session.h"
@@ -52,6 +55,19 @@ using ActionResult = VoicePageController::ActionResult;
 // Tab titles the browser reads, in code points, and tabs listed.
 constexpr size_t kMaxTabTitleChars = 160;
 constexpr size_t kMaxTabsListed = 200;
+// A notice the listening side says, in code points.
+constexpr size_t kMaxNoticeChars = 400;
+// What the planner says, in code points.
+constexpr size_t kMaxPlannerSpeechChars = 400;
+// What "repeat" keeps of what the planner said.
+constexpr size_t kMaxPlannerSpeechRemembered = 8;
+// Said when the planner's question went unanswered.
+constexpr char kPlannerNoAnswer[] = "I didn't hear yes, so I stopped.";
+
+// After a navigation hid the numbers: how often, and how many times, to
+// look for the new page's tree to number.
+constexpr base::TimeDelta kNumbersRefreshDelay = base::Milliseconds(700);
+constexpr int kMaxNumbersRefreshAttempts = 10;
 
 std::optional<StepFailure> FailureFor(ActionResult result) {
   switch (result) {
@@ -79,6 +95,8 @@ std::optional<StepFailure> FailureFor(ActionResult result) {
       return StepFailure::kFocusNotConfirmed;
     case ActionResult::kCancelled:
       return StepFailure::kCancelled;
+    case ActionResult::kNoSuchOption:
+      return StepFailure::kUnavailable;
   }
   return StepFailure::kUnavailable;
 }
@@ -214,6 +232,8 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
   speech_ = std::make_unique<VoiceSpeech>(browser->GetProfile());
   speech_->SetSpeakingChangedCallback(base::BindRepeating(
       &VoiceController::OnSpeakingChanged, weak_factory_.GetWeakPtr()));
+  // The web agent's on-device planner, for what the grammar can't do.
+  planner_ = CreateVoiceAgentPlanner();
 }
 
 VoiceController::~VoiceController() {
@@ -260,6 +280,8 @@ bool VoiceController::Start() {
 
 void VoiceController::Stop() {
   CancelRun();
+  stop_when_quiet_ = false;
+  refresh_numbers_timer_.Stop();
   DetachFromTab();
   active_ = false;
   // The user's preferences stay; the conversation doesn't.
@@ -283,11 +305,44 @@ void VoiceController::StopActivity() {
   SetStatus("Stopped");
 }
 
+void VoiceController::StopSpeaking() {
+  if (speech_) {
+    speech_->Stop();
+  }
+}
+
+bool VoiceController::OthersSpeaking() const {
+  return speech_ && speech_->OthersSpeaking();
+}
+
+void VoiceController::SayNotice(const std::string& text) {
+  const std::string notice = SpeechSafeText(text, kMaxNoticeChars);
+  if (notice.empty() || !speech_) {
+    return;
+  }
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSpeech(notice);
+  }
+  speech_->Speak(notice, state_.speech_rate, /*interrupt=*/true);
+  SetStatus(notice);
+}
+
+void VoiceController::SetListening(ListeningCaption caption) {
+  if (caption == listening_) {
+    return;
+  }
+  listening_ = std::move(caption);
+  NotifyCaption();
+}
+
 void VoiceController::SetNumbersShown(bool shown) {
   state_.numbers_shown = shown;
 }
 
-void VoiceController::CancelRun() {
+void VoiceController::CancelRun(bool keep_planner) {
+  if (!keep_planner) {
+    CancelPlanner();
+  }
   ++run_;
   run_weak_factory_.InvalidateWeakPtrs();
   pending_.clear();
@@ -314,11 +369,34 @@ void VoiceController::AttachToActiveTab() {
   VoicePageController::FromWebContents(contents)->Start();
   attached_ = contents->GetWeakPtr();
   watcher_ = std::make_unique<TabWatcher>(this, contents);
+  // The numbers and the ring follow the page; when they hide by
+  // themselves, they are shown again from a new map.
+  VoiceOverlay::CreateForWebContents(contents);
+  VoiceOverlay::FromWebContents(contents)->SetHiddenCallback(
+      base::BindRepeating(
+          [](base::WeakPtr<VoiceController> self, int run,
+             OverlayHidden reason) {
+            if (self) {
+              self->OnOverlayHidden(run, static_cast<int>(reason));
+            }
+          },
+          weak_factory_.GetWeakPtr(), ++tab_run_));
+  if (state_.numbers_shown) {
+    refresh_attempts_ = 0;
+    RefreshNumbers();
+  }
 }
 
 void VoiceController::DetachFromTab() {
   watcher_.reset();
+  refresh_numbers_timer_.Stop();
   if (attached_) {
+    if (VoiceOverlay* overlay =
+            VoiceOverlay::FromWebContents(attached_.get())) {
+      overlay->SetHiddenCallback(VoiceOverlay::HiddenCallback());
+      overlay->HideNumbers();
+      overlay->ClearCurrentItem();
+    }
     if (VoicePageController* page =
             VoicePageController::FromWebContents(attached_.get())) {
       page->Stop();
@@ -339,8 +417,10 @@ void VoiceController::OnTabGone() {
   attached_.reset();
 }
 
-void VoiceController::SetPlannerHook(PlannerHook hook) {
-  planner_hook_ = std::move(hook);
+void VoiceController::SetPlannerForTesting(
+    std::unique_ptr<VoicePlanner> planner) {
+  CancelPlanner();
+  planner_ = std::move(planner);
 }
 
 void VoiceController::AddObserver(Observer* observer) {
@@ -357,15 +437,21 @@ void VoiceController::SetIdleCallbackForTesting(
 }
 
 bool VoiceController::busy() const {
-  return !pending_.empty() || wait_ || submitting_;
+  return !pending_.empty() || wait_ || submitting_ ||
+         (planner_running_ && planner_question_ == 0);
 }
 
 VoiceActivity VoiceController::activity() const {
-  if (busy()) {
+  if (!pending_.empty() || wait_ || submitting_) {
     return VoiceActivity::kThinking;
   }
+  // While the planner works, what it says is the browser speaking (the
+  // listening side treats what it hears then as the browser's own voice).
   if (speech_ && speech_->speaking()) {
     return VoiceActivity::kSpeaking;
+  }
+  if (busy()) {
+    return VoiceActivity::kThinking;
   }
   return active_ ? VoiceActivity::kListening : VoiceActivity::kOff;
 }
@@ -375,6 +461,41 @@ void VoiceController::NotifyCaption() {
   for (Observer& observer : observers_) {
     observer.OnVoiceCaption(now, heard_, status_);
   }
+  if (!browser_) {
+    return;
+  }
+  // The caption bar: up for as long as voice mode is on.
+  if (!active_) {
+    VoiceOverlay::HideCaptionForWindow(browser_);
+    return;
+  }
+  VoiceState state = VoiceState::kListening;
+  switch (now) {
+    case VoiceActivity::kThinking:
+      state = VoiceState::kThinking;
+      break;
+    case VoiceActivity::kSpeaking:
+      state = VoiceState::kSpeaking;
+      break;
+    case VoiceActivity::kOff:
+    case VoiceActivity::kListening:
+      if (!listening_.listening && !listening_.problem.empty()) {
+        // It can't listen: off, and why.
+        state = VoiceState::kOff;
+      } else if (listening_.waiting || listening_.starting) {
+        state = VoiceState::kWaiting;
+      } else {
+        state = VoiceState::kListening;
+      }
+      break;
+  }
+  const std::string& heard =
+      listening_.heard_live.empty() ? heard_ : listening_.heard_live;
+  const std::string& status =
+      now == VoiceActivity::kListening && !listening_.problem.empty()
+          ? listening_.problem
+          : status_;
+  VoiceOverlay::SetCaptionForWindow(browser_, state, heard, status);
 }
 
 void VoiceController::SetStatus(std::string status) {
@@ -384,6 +505,124 @@ void VoiceController::SetStatus(std::string status) {
 
 void VoiceController::OnSpeakingChanged(bool speaking) {
   NotifyCaption();
+  MaybeStopWhenQuiet();
+}
+
+void VoiceController::MaybeStopWhenQuiet() {
+  if (stop_when_quiet_ && !busy() && !(speech_ && speech_->speaking())) {
+    Stop();
+  }
+}
+
+// ---- The overlay ------------------------------------------------------------
+
+void VoiceController::ShowNumbersOnPage(bool shown) {
+  content::WebContents* contents = active_ ? ActiveContents() : nullptr;
+  if (!contents) {
+    return;
+  }
+  VoiceOverlay::CreateForWebContents(contents);
+  VoiceOverlay* overlay = VoiceOverlay::FromWebContents(contents);
+  if (shown) {
+    overlay->ShowNumbers(CurrentMap());
+  } else {
+    overlay->HideNumbers();
+  }
+}
+
+void VoiceController::SetCurrentItemOnPage(int number) {
+  content::WebContents* contents = active_ ? ActiveContents() : nullptr;
+  if (!contents) {
+    return;
+  }
+  VoiceOverlay::CreateForWebContents(contents);
+  VoiceOverlay* overlay = VoiceOverlay::FromWebContents(contents);
+  if (number <= 0) {
+    overlay->ClearCurrentItem();
+  } else {
+    overlay->SetCurrentItem(CurrentMap(), number);
+  }
+}
+
+bool VoiceController::NumberStillOnScreen(const VoiceCommand& command,
+                                          const PageMap& map) {
+  // A number in a list of tabs or headings is a position, not one shown.
+  if (!state_.numbers_shown || command.kind != VoiceCommandKind::kChoose ||
+      command.choice.kind != ChoiceRef::Kind::kNumber ||
+      state_.list == ListContext::kTabs ||
+      state_.list == ListContext::kHeadings) {
+    return true;
+  }
+  content::WebContents* contents = active_ ? ActiveContents() : nullptr;
+  VoiceOverlay* overlay =
+      contents ? VoiceOverlay::FromWebContents(contents) : nullptr;
+  const int number = command.choice.number;
+  const PageItem* now = map.ItemByNumber(number);
+  if (overlay && overlay->numbers_shown()) {
+    const OverlayItem* drawn = nullptr;
+    for (const OverlayItem& item : overlay->items()) {
+      if (item.number == number) {
+        drawn = &item;
+        break;
+      }
+    }
+    // No such number at all: the planner says so.
+    if (!drawn && !now) {
+      return true;
+    }
+    if (drawn && now && drawn->handle == now->handle) {
+      return true;
+    }
+  }
+  // The numbers on screen are gone (the page changed or navigated) or no
+  // longer match the page: nothing is done with a stale number.
+  heard_ = SpeechSafeText(command.heard, kMaxNoticeChars);
+  ShowNumbersOnPage(true);
+  SayNotice(
+      "The page changed, so its numbers moved. Say the number you see now.");
+  return false;
+}
+
+void VoiceController::OnOverlayHidden(int run_of_tab, int reason) {
+  if (run_of_tab != tab_run_ || !active_ || !state_.numbers_shown) {
+    return;
+  }
+  switch (static_cast<OverlayHidden>(reason)) {
+    case OverlayHidden::kPageChanged:
+      // The numbering moved: number the page again now (in this task, so
+      // nothing flickers).
+      ShowNumbersOnPage(true);
+      return;
+    case OverlayHidden::kNavigated:
+      // Another page: number it once its tree has come.
+      refresh_attempts_ = 0;
+      refresh_numbers_timer_.Start(
+          FROM_HERE, kNumbersRefreshDelay,
+          base::BindOnce(&VoiceController::RefreshNumbers,
+                         base::Unretained(this)));
+      return;
+    case OverlayHidden::kTabHidden:
+      // The newly active tab gets them (AttachToActiveTab()).
+      return;
+  }
+}
+
+void VoiceController::RefreshNumbers() {
+  if (!active_ || !state_.numbers_shown) {
+    return;
+  }
+  VoicePageController* page = ActivePage();
+  content::WebContents* contents = ActiveContents();
+  const bool ready =
+      page && page->HasPageTree() && contents && !contents->IsLoading();
+  if (!ready && ++refresh_attempts_ < kMaxNumbersRefreshAttempts) {
+    refresh_numbers_timer_.Start(
+        FROM_HERE, kNumbersRefreshDelay,
+        base::BindOnce(&VoiceController::RefreshNumbers,
+                       base::Unretained(this)));
+    return;
+  }
+  ShowNumbersOnPage(true);
 }
 
 // ---- Context --------------------------------------------------------------
@@ -399,6 +638,7 @@ PageMap VoiceController::CurrentMap() {
 VoiceEnvironment VoiceController::Environment() {
   VoiceEnvironment env;
   env.moltnet = IsMoltNet();
+  env.listening = listening_.listening;
   env.page_id = page_id_;
   env.now_ms = (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
   if (!browser_) {
@@ -458,8 +698,9 @@ void VoiceController::HandleUtterance(const std::string& text) {
   if (!browser_ || !VoiceModeEnabled()) {
     return;
   }
-  // Barge-in: what was being said and done stops.
-  CancelRun();
+  // Barge-in: what was being said and done stops (the planner's run too,
+  // unless this answers its question: below).
+  CancelRun(/*keep_planner=*/true);
   commits_at_utterance_ = commits_;
   if (!active_ && !IsMoltNet()) {
     Start();
@@ -467,7 +708,20 @@ void VoiceController::HandleUtterance(const std::string& text) {
   // Longer than the grammar takes: it refuses it without reading it all.
   const std::string utterance = text.substr(0, kMaxUtteranceInputBytes);
   const PageMap map = CurrentMap();
-  VoiceTurn turn = PlanUtterance(utterance, map, Environment(), state_);
+  for (Observer& observer : observers_) {
+    observer.OnVoicePageMapped(map);
+  }
+  const VoiceEnvironment env = Environment();
+  // As PlanUtterance() does, with the numbers on screen checked between.
+  const VoiceCommand command =
+      ParseVoiceCommand(utterance, ContextFor(state_, map, env));
+  if (!AnswersPlannerQuestion(command, map, env)) {
+    CancelPlanner();
+  }
+  if (!NumberStillOnScreen(command, map)) {
+    return;
+  }
+  VoiceTurn turn = PlanCommand(command, map, env, state_);
   heard_ = turn.heard;
   status_ = turn.status;
   RunTurn(std::move(turn));
@@ -507,8 +761,12 @@ void VoiceController::RunSteps() {
 
 void VoiceController::Idle() {
   NotifyCaption();
+  base::WeakPtr<VoiceController> self = weak_factory_.GetWeakPtr();
   if (!busy() && idle_for_testing_) {
     idle_for_testing_.Run();
+  }
+  if (self) {
+    MaybeStopWhenQuiet();
   }
 }
 
@@ -751,14 +1009,25 @@ bool VoiceController::RunStep(const VoiceStep& step) {
     }
 
     case VoiceStepKind::kShowNumbers:
+      ShowNumbersOnPage(step.flag);
       for (Observer& observer : observers_) {
         observer.OnVoiceNumbers(step.flag);
       }
       return true;
 
     case VoiceStepKind::kSetCurrentItem:
+      SetCurrentItemOnPage(step.index);
       for (Observer& observer : observers_) {
         observer.OnVoiceCurrentItem(step.index);
+      }
+      return true;
+
+    case VoiceStepKind::kSetVoiceMode:
+      // Off: the microphone closes now (the listening side); voice mode
+      // itself once it has said so.
+      stop_when_quiet_ = !step.flag;
+      for (Observer& observer : observers_) {
+        observer.OnVoiceModeRequested(step.flag);
       }
       return true;
 
@@ -766,15 +1035,131 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       BeginWait(step);
       return false;
 
-    case VoiceStepKind::kToPlanner:
-      if (planner_hook_) {
-        planner_hook_.Run(step.text, CurrentMap());
-      } else {
+    case VoiceStepKind::kToPlanner: {
+      if (!planner_) {
         Say(step.preface);
+        return true;
+      }
+      CancelPlanner();
+      planner_running_ = true;
+      planner_question_ = 0;
+      // What the user said is the run's goal; the planner works in the
+      // active tab, on the page this map is of.
+      planner_->Start(contents, step.text, CurrentMap(), this);
+      return true;
+    }
+
+    case VoiceStepKind::kPlannerAnswer:
+      // Only the question pending now; an older one's answer is dropped.
+      if (planner_ && planner_running_ && planner_question_ != 0 &&
+          step.index == planner_question_) {
+        planner_question_ = 0;
+        planner_question_timer_.Stop();
+        planner_->Answer(step.index, step.flag);
       }
       return true;
   }
   return true;
+}
+
+// ---- The planner ------------------------------------------------------------
+
+bool VoiceController::AnswersPlannerQuestion(
+    const VoiceCommand& command,
+    const PageMap& map,
+    const VoiceEnvironment& env) const {
+  return planner_running_ && planner_question_ != 0 &&
+         (command.kind == VoiceCommandKind::kYes ||
+          command.kind == VoiceCommandKind::kNo) &&
+         ContextFor(state_, map, env).expecting_yes_no &&
+         PlannerQuestionHeld(state_) == planner_question_;
+}
+
+void VoiceController::CancelPlanner() {
+  planner_question_timer_.Stop();
+  planner_question_ = 0;
+  if (!planner_running_) {
+    return;
+  }
+  planner_running_ = false;
+  if (planner_) {
+    planner_->Cancel();
+  }
+}
+
+void VoiceController::PlannerSays(const std::string& text) {
+  if (!planner_running_ || !speech_) {
+    return;
+  }
+  // Model output and page text: cleaned and capped, as page text is.
+  const std::string said = SpeechSafeText(text, kMaxPlannerSpeechChars);
+  if (said.empty()) {
+    return;
+  }
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSpeech(said);
+  }
+  // In turn: each step after the one before.
+  speech_->Speak(said, state_.speech_rate, /*interrupt=*/false);
+  std::vector<std::string>& last = state_.last_spoken;
+  last.push_back(said);
+  if (last.size() > kMaxPlannerSpeechRemembered) {
+    last.erase(last.begin());
+  }
+  SetStatus(said);
+}
+
+void VoiceController::PlannerAsks(int question, const std::string& what) {
+  if (!planner_running_ || question <= 0) {
+    return;
+  }
+  // Asked as the loop asks before pressing Buy, and answered only by a
+  // "yes" or "no" heard in that context.
+  VoiceTurn turn =
+      PlanPlannerQuestion(question, what, Environment(), state_);
+  if (PlannerQuestionHeld(turn.state) != question) {
+    CancelPlanner();
+    Idle();
+    return;
+  }
+  planner_question_ = question;
+  planner_question_timer_.Start(
+      FROM_HERE, base::Milliseconds(kConfirmationTimeoutMs),
+      base::BindOnce(&VoiceController::OnPlannerQuestionTimeout,
+                     base::Unretained(this)));
+  interrupt_next_speech_ = false;
+  state_ = std::move(turn.state);
+  if (!turn.status.empty()) {
+    status_ = std::move(turn.status);
+  }
+  for (VoiceStep& step : turn.steps) {
+    pending_.push_back(std::move(step));
+  }
+  NotifyCaption();
+  RunSteps();
+}
+
+void VoiceController::OnPlannerQuestionTimeout() {
+  if (!planner_running_ || planner_question_ == 0) {
+    return;
+  }
+  CancelPlanner();
+  Say(kPlannerNoAnswer);
+  Idle();
+}
+
+void VoiceController::PlannerFinished() {
+  if (!planner_running_) {
+    return;
+  }
+  planner_running_ = false;
+  planner_question_ = 0;
+  planner_question_timer_.Stop();
+  if (!busy()) {
+    Idle();
+  } else {
+    NotifyCaption();
+  }
 }
 
 void VoiceController::OnSubmitted(int run, int result) {
@@ -941,6 +1326,9 @@ void VoiceController::OnAutoplayWaitOver() {
 
 void VoiceController::PlanFollowUpNow(const VoiceStep& step) {
   const PageMap map = CurrentMap();
+  for (Observer& observer : observers_) {
+    observer.OnVoicePageMapped(map);
+  }
   RunTurn(PlanFollowUp(step, map, Environment(), state_));
 }
 

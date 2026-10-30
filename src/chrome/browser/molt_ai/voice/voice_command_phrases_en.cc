@@ -34,6 +34,20 @@ constexpr CommandPattern kPatterns[] = {
      "audio)"},
     {K::kStop, "stop [it|that|everything|all|now]"},
 
+    // --- Voice mode itself ------------------------------------------------
+    {K::kVoiceModeOff,
+     "(turn|switch|shut) (off|down) voice [mode|control|commands]"},
+    {K::kVoiceModeOff, "(turn|switch) voice [mode|control] off"},
+    {K::kVoiceModeOff, "voice [mode|control] off"},
+    {K::kVoiceModeOff,
+     "(stop|quit|exit|end|leave|close) voice [mode|control|commands]"},
+    {K::kVoiceModeOff, "stop listening [to me]"},
+    {K::kVoiceModeOn, "(turn|switch) on voice [mode|control|commands]"},
+    {K::kVoiceModeOn, "(turn|switch) voice [mode|control] on"},
+    {K::kVoiceModeOn, "voice [mode|control] on"},
+    {K::kVoiceModeOn, "(start|enter) voice [mode|control|commands]"},
+    {K::kVoiceModeOn, "start listening [to me]"},
+
     // --- Corrections and answers ----------------------------------------
     {K::kCorrection, "[no|nope|wrong] i (said|meant|asked for) {text}"},
     {K::kCorrection,
@@ -504,6 +518,13 @@ constexpr CommandInfo kInfos[] = {
      "remember this as my news"},
     {K::kRunRoutine, "Routines", "Run a routine by its name.", "run my news"},
     {K::kForgetRoutine, "Routines", "Delete a routine.", "forget my news"},
+    // Voice mode itself.
+    {K::kVoiceModeOn, "Voice mode",
+     "Start listening (typed in the Agent mode panel).", "turn on voice mode"},
+    {K::kVoiceModeOff, "Voice mode",
+     "Stop listening. The browser asks first: afterwards the Voice button "
+     "in the toolbar, or settings, turns it back on.",
+     "turn off voice mode"},
 };
 
 }  // namespace

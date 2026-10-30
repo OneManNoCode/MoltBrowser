@@ -245,6 +245,12 @@ source_set("browser_tests") {
 
     # The voice loop's own browser test (below).
     ":voice_loop_browser_tests",
+
+    # Listening: a stand-in helper under the real sandbox, fake audio.
+    ":voice_session_browser_tests",
+
+    # The web agent on the page map, and the planner fallback.
+    "//chrome/browser/molt_ai/agents:browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",
@@ -288,6 +294,14 @@ source_set("voice_loop") {
   deps = [ "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion" ]
 }
 
+# What voice mode hands open-ended requests to (the planner fallback,
+# docs/design/TOUCHLESS_BROWSING.md §6.2): the interface the web agent's
+# planner implements (//chrome/browser/molt_ai:molt_ai_agents,
+# agents/voice_agent_planner.h). Header-only.
+source_set("voice_planner") {
+  sources = [ "voice_planner.h" ]
+}
+
 # chrome://flags/#molt-voice-mode (about_flags.cc includes
 # voice_controller_features.h).
 source_set("features") {
@@ -312,6 +326,7 @@ source_set("voice_controller") {
 
   public_deps = [
     ":voice_loop",
+    ":voice_planner",
     "//base",
     "//ui/base/unowned_user_data",
   ]
@@ -321,8 +336,17 @@ source_set("voice_controller") {
     ":voice_page",
     "//chrome/app:command_ids",
 
+    # The planner fallback: the web agent's on-device planner
+    # (agents/voice_agent_planner.h).
+    "//chrome/browser/molt_ai:molt_ai_agents",
+
     # Every URL is checked before it loads.
     "//chrome/browser/molt_ai/security:agent_safety",
+
+    # The numbers, the ring and the caption bar (voice_overlay.h; no views
+    # code).
+    "//chrome/browser/ui/views/molt_ai/voice:layout",
+    "//chrome/browser/ui/views/molt_ai/voice:overlay",
 
     # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): voice
     # mode stays off in MoltNet windows.
@@ -412,4 +436,157 @@ source_set("voice_loop_browser_tests") {
     "//testing/gtest",
     "//url",
   ]
+}
+
+# --- Touchless browsing: listening (docs/design/TOUCHLESS_BROWSING.md §5.1,
+# §6.1; docs/design/SPEECH_HELPER_PROTOCOL.md) ----------------------------
+
+# The browser's side of the speech helper protocol (frames, CONFIG, the
+# helper's lines read as untrusted, hotwords from the page map), when voice
+# mode listens and what it does with what it hears, and the audio as
+# numbers (the helper's frames, the earcons). Std-only: molt_ai_unittests,
+# a standalone harness and molt_voice_listener_fuzzer build the same code.
+source_set("voice_listening") {
+  sources = [
+    "voice_audio_samples.cc",
+    "voice_audio_samples.h",
+    "voice_listener_protocol.cc",
+    "voice_listener_protocol.h",
+    "voice_session_logic.cc",
+    "voice_session_logic.h",
+  ]
+
+  public_deps = [
+    ":page_map",
+    ":voice_command",
+  ]
+}
+
+# The speech helper's stdout, as a helper a hostile input took over may
+# write it, and the session's rules over any order of events. See
+# docs/FUZZING.md.
+fuzzer_test("molt_voice_listener_fuzzer") {
+  sources = [ "molt_voice_listener_fuzzer.cc" ]
+  deps = [
+    ":voice_listening",
+    "//base",
+  ]
+  dict = "dicts/voice_listener.dict"
+  seed_corpus = "corpus/molt_voice_listener_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+# Voice mode listening in a window: the speech helper started confined and
+# watched (voice_listener), the microphone with echo cancellation and the
+# earcons through the audio service (voice_audio), and the session that
+# joins them to the voice loop (voice_session), with its settings.
+source_set("voice_session") {
+  sources = [
+    "voice_audio.cc",
+    "voice_audio.h",
+    "voice_listener.cc",
+    "voice_listener.h",
+    "voice_session.cc",
+    "voice_session.h",
+    "voice_session_settings.cc",
+    "voice_session_settings.h",
+  ]
+
+  public_deps = [
+    ":voice_controller",
+    ":voice_listening",
+    "//base",
+    "//media",
+    "//ui/base/unowned_user_data",
+  ]
+
+  deps = [
+    ":features",
+
+    # The helper: the bundled copy only, under the resident sandbox.
+    "//chrome/browser/molt_ai/common:helper_binary",
+    "//chrome/browser/molt_ai/common:helper_resident",
+
+    # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): never
+    # in MoltNet windows.
+    "//chrome/browser/profiles:profile",
+
+    # The OS's microphone permission.
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+
+    # The microphone and the earcons through the audio service.
+    "//media/mojo/common",
+    "//media/mojo/mojom",
+    "//mojo/public/cpp/bindings",
+    "//services/audio/public/cpp",
+
+    # Windows' loader's start failures (helper_sandbox_win_policy.h, pure
+    # C++, built everywhere).
+    "//chrome/browser/molt_ai/common:helper_sandbox_win_policy",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("voice_listening_unit_tests") {
+  testonly = true
+  sources = [
+    "voice_audio_samples_unittest.cc",
+    "voice_listener_protocol_unittest.cc",
+    "voice_session_logic_unittest.cc",
+  ]
+
+  deps = [
+    ":page_map",
+    ":voice_command",
+    ":voice_listening",
+
+    # Voice mode turned on and off by voice, through the loop.
+    ":voice_loop",
+    "//testing/gtest",
+  ]
+}
+
+# A stand-in for the speech helper in the session's browser tests: it plays
+# a script of protocol events timed by the audio it receives
+# (voice_session_fake_helper.cc). Plain C++, no //base.
+executable("molt_fake_speech_helper") {
+  testonly = true
+  sources = [ "voice_session_fake_helper.cc" ]
+}
+
+# Listening end to end but for the recognizer: Chromium's fake audio
+# capture, the real listener and resident sandbox, the stand-in helper.
+# Picked up by :browser_tests.
+source_set("voice_session_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_session_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_listening",
+    ":voice_session",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media",
+    "//testing/gtest",
+    "//url",
+  ]
+
+  data_deps = [ ":molt_fake_speech_helper" ]
 }

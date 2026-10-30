@@ -33,6 +33,13 @@
 //                        (chmod 000), then waits
 //   limits               its file size, core, data and open file limits
 //   spin                 loops until killed
+// and for the resident mode's tests (helper_resident_unittest.cc):
+//   read PATH            reads PATH: "READ <bytes>" or "DENIED <errno>"
+//   connect PORT         TCP to 127.0.0.1:PORT: "CONNECTED" or
+//                        "DENIED <errno>"
+//   relay                copies stdin to stdout until end of file, then
+//                        prints "EOF" and exits 0
+//   then ACTION...       ACTION, then relay (the helper stays resident)
 //
 // Plain POSIX, no //base.
 
@@ -44,6 +51,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,6 +59,7 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/shm.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -268,9 +277,83 @@ int Limits() {
   return 0;
 }
 
+int Read(const char* path) {
+  const int fd = open(path, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    PrintErrno("DENIED");
+    return 0;
+  }
+  char buffer[4096];
+  const ssize_t bytes = read(fd, buffer, sizeof(buffer));
+  close(fd);
+  if (bytes < 0) {
+    PrintErrno("DENIED");
+    return 0;
+  }
+  printf("READ %zd\n", bytes);
+  fflush(stdout);
+  return 0;
+}
+
+int Connect(unsigned long port) {
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    PrintErrno("DENIED");
+    return 0;
+  }
+  sockaddr_in address = {};
+  address.sin_family = AF_INET;
+  address.sin_port = htons(static_cast<uint16_t>(port));
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  const int result =
+      connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+  close(fd);
+  return Result(result, "CONNECTED\n");
+}
+
+// Copies stdin to stdout until end of file.
+int Relay() {
+  char buffer[4096];
+  for (;;) {
+    const ssize_t bytes = read(STDIN_FILENO, buffer, sizeof(buffer));
+    if (bytes < 0 && errno == EINTR) {
+      continue;
+    }
+    if (bytes <= 0) {
+      break;
+    }
+    ssize_t done = 0;
+    while (done < bytes) {
+      const ssize_t n = write(STDOUT_FILENO, buffer + done,
+                              static_cast<size_t>(bytes - done));
+      if (n < 0 && errno == EINTR) {
+        continue;
+      }
+      if (n <= 0) {
+        return 1;
+      }
+      done += n;
+    }
+  }
+  Print("EOF\n");
+  return 0;
+}
+
+int Act(int argc, char* argv[]);
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  if (argc >= 3 && strcmp(argv[1], "then") == 0) {
+    Act(argc - 1, argv + 1);
+    return Relay();
+  }
+  return Act(argc, argv);
+}
+
+namespace {
+
+int Act(int argc, char* argv[]) {
   if (argc == 3 && strcmp(argv[1], "echo") == 0) {
     printf("%s\n", argv[2]);
     fflush(stdout);
@@ -358,9 +441,20 @@ int main(int argc, char* argv[]) {
     for (volatile unsigned counter = 0;; counter = counter + 1) {
     }
   }
+  if (argc == 3 && strcmp(argv[1], "read") == 0) {
+    return Read(argv[2]);
+  }
+  if (argc == 3 && strcmp(argv[1], "connect") == 0) {
+    return Connect(strtoul(argv[2], nullptr, 10));
+  }
+  if (argc == 2 && strcmp(argv[1], "relay") == 0) {
+    return Relay();
+  }
   Print(
       "usage: echo|write|spread|files|delete|rename|link|symlink|mkdir|"
       "fork|preallocate|xattr|tmpfile|memfd|shm|shared|alloc|reserve|rsrc|"
-      "lock|limits|spin ...\n");
+      "lock|limits|spin|read|connect|relay|then ...\n");
   return 2;
 }
+
+}  // namespace

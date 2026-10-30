@@ -195,6 +195,24 @@ fuzzer_test("molt_page_map_fuzzer") {
   libfuzzer_options = [ "max_len=65536" ]
 }
 
+# The web agent's observation through the page map: hostile page maps,
+# select options, page text and model replies (agents/agent_page_map.h).
+fuzzer_test("molt_agent_page_map_fuzzer") {
+  sources = [ "molt_agent_page_map_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_actions",
+    "//chrome/browser/molt_ai/agents:agent_page_map",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//url",
+  ]
+  dict = "dicts/page_map.dict"
+  seed_corpus = "corpus/molt_agent_page_map_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # --- Agents and workflows ------------------------------------------------------
 
 fuzzer_test("molt_agent_actions_fuzzer") {
@@ -416,6 +434,7 @@ group("fuzzers") {
   testonly = true
   deps = [
     ":molt_agent_actions_fuzzer",
+    ":molt_agent_page_map_fuzzer",
     ":molt_agent_plan_fuzzer",
     ":molt_agent_run_draft_fuzzer",
     ":molt_agent_safety_fuzzer",
@@ -455,6 +474,8 @@ group("molt_fuzzers") {
     "//chrome/browser/molt_ai/voice:molt_spoken_choice_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_voice_command_fuzzer",
     "//chrome/browser/molt_ai/voice:molt_voice_controller_fuzzer",
+    "//chrome/browser/molt_ai/voice:molt_voice_listener_fuzzer",
+    "//chrome/browser/molt_ai/voice/speech_helper:molt_speech_protocol_fuzzer",
     "//chrome/services/molt_ai/inference/fuzzers",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_farbling_fuzzer",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_moltnet_font_set_fuzzer",

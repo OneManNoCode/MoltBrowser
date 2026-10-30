@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<!-- A shop's checkout: a form whose button places the order. Submitting it
+     is a sensitive action the web agent asks about first (a form submit);
+     the page counts the orders and whether the click was trusted, for the
+     planner fallback's browser test: the order is placed only after a
+     spoken "yes". -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Checkout - Shop</title>
+</head>
+<body>
+<main>
+  <h1>Checkout</h1>
+  <p>One pair of socks, 4 euros.</p>
+  <form id="order-form" action="checkout.html">
+    <label for="note">Delivery note</label>
+    <input id="note" name="note" type="text">
+    <button id="order">Place order</button>
+  </form>
+</main>
+<script>
+  window.ordered = 0;
+  window.orderTrusted = false;
+  document.getElementById('order').addEventListener('click', (e) => {
+    window.orderTrusted = e.isTrusted;
+  });
+  document.getElementById('order-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    window.ordered++;
+  });
+</script>
+</body>
+</html>

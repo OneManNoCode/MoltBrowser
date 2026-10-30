@@ -6,7 +6,7 @@ be honest. Where we have only read the code and not yet watched the traffic,
 the page says so.
 
 **Scope.** Desktop builds (macOS arm64, Linux x64, Windows x64) at Chromium
-156.0.8078.74 (`d331de35`, see `chromium_version.txt`), on a new profile that
+156.0.8078.80 (`fb096c00`, see `chromium_version.txt`), on a new profile that
 is not signed in to anything, with default settings. That covers startup,
 idle time, the first navigation and every navigation after it. Android and
 iOS are **not covered**: they use different services (for example Google
@@ -14,10 +14,12 @@ Play Services for Safe Browsing on Android) and have not been audited. The
 page was first written at Chromium 148, and re-audited against Chromium
 156's source after the rebase (PR #64): new components, model downloads,
 Safe Browsing, Privacy Sandbox, variations, metrics, sign-in, DNS and the
-Gemini and Lens entry points. The 156.0.8078.74 security respin changes no
-request this page lists and adds none: its network-side changes are the
-HTTP cache's lock timeout, more blocked certificates, and a histogram the
-activity reporter records locally.
+Gemini and Lens entry points. The 156.0.8078.74 and 156.0.8078.80
+security respins change no request this page lists and add none: their
+network-side changes are the HTTP cache's lock timeout and its check of a
+range response's length, more blocked certificates, a histogram the
+activity reporter records locally, and Cache Storage remembering that a
+stored response answered a range request.
 
 **How sure we are.** Each row says one of:
 

@@ -47,6 +47,17 @@ const char kActionsPrompt[] =
     "  {\"reason\":\"...\",\"action\":\"ERROR\",\"result\":\"...\"}\n"
     "      the task is impossible; say why\n";
 
+// The action and its rule when the ELEMENTS list a select (an observation
+// through the page map; docs/design/AGENT_ACTIONS.md §2.10).
+const char kSelectAction[] =
+    "  {\"reason\":\"...\",\"action\":\"SELECT\",\"target\":\"e5\","
+    "\"option\":\"...\"}\n"
+    "      choose an option of element e5\n";
+
+const char kSelectRules[] =
+    "- SELECT takes only elements marked (options: ...), and one of their "
+    "options exactly as listed.\n";
+
 // The action and its rules when the page offers tools (WebMCP;
 // docs/design/AGENT_ACTIONS.md §2.7).
 const char kToolAction[] =
@@ -235,11 +246,15 @@ AgentPrompt BuildAgentPrompt(const PromptInput& input) {
   const bool with_plan = !input.plan.empty();
   AgentPrompt prompt;
   prompt.system = kActionsPrompt;
+  if (input.with_select)
+    prompt.system += kSelectAction;
   if (with_plan)
     prompt.system += kReplanAction;
   if (input.with_tools)
     prompt.system += kToolAction;
   prompt.system += base::StringPrintf(kRulesPrompt, input.max_steps);
+  if (input.with_select)
+    prompt.system += kSelectRules;
   if (with_plan)
     prompt.system += kPlanRules;
   if (input.with_tools)

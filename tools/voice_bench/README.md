@@ -32,6 +32,7 @@ the repository, never from inside the data directory.
 | `build_whisper_cpp.sh` | whisper.cpp at the commit `scripts/bundle-whisper.sh` pins, for the `whisper-cpp` step. |
 | `voice_bench_lib.py` | Test set loading and checks, normalization, WER, command and entity accuracy, hotwords, SentencePiece and ONNX readers. |
 | `voice_bench_test.py` | Offline tests of the above. |
+| `speech_helper_check.py` | Checks a built `molt-speech` (`scripts/bundle-speech.sh`, `docs/design/SPEECH_HELPER_PROTOCOL.md`) over its stdin and stdout: the protocol's error and edge cases, then accuracy, the wake phrase, latency and listening cost on this kit's audio. |
 
 ## Running it
 

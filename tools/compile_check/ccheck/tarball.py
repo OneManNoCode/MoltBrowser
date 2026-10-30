@@ -70,6 +70,10 @@ PINNED_SHA256 = {
     # bucket's and the .hashes file's agree).
     "chromium-156.0.8078.74-lite.tar.xz":
         "db3c09af522e140e6c3851394f269f979552ded4fceac7047e5b66be54328346",
+    # 2,009,635,388 bytes; MD5 831563a77c448aadbb6ae2eee9d0c4e1 (the
+    # bucket's and the .hashes file's agree).
+    "chromium-156.0.8078.80-lite.tar.xz":
+        "6c4dc0a9e809ed3ad44b69a9d4622f147f3b3f9b34740ec8fc9735a78bbde80b",
 }
 
 

@@ -81,6 +81,31 @@ source_set("views") {
   ]
 }
 
+# The toolbar's Voice button: listening on and off for its window
+# (chrome/browser/molt_ai/voice/voice_session.h), made by ToolbarView's hook
+# (chrome/browser/ui/views/toolbar/toolbar_view.cc).
+source_set("toolbar_button") {
+  sources = [
+    "voice_toolbar_button.cc",
+    "voice_toolbar_button.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//chrome/browser/molt_ai/voice:voice_session",
+    "//chrome/browser/ui/views/toolbar:toolbar_button",
+    "//skia",
+    "//ui/base/metadata",
+  ]
+
+  deps = [
+    "//chrome/browser/ui/browser_window",
+    "//ui/accessibility:ax_base",
+    "//ui/gfx",
+    "//ui/views",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true

@@ -2,11 +2,11 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // chrome://flags entries for the web agent (agent_features.h): its
-// screenshots, its use of site tools and its planner. Expanded inside
+// screenshots, its use of site tools, its planner and its page map. Expanded inside
 // kFeatureEntries in chrome/browser/about_flags.cc next to the other
 // MoltBrowser entries, so the upstream file only gains an include and one
 // macro line. All default to Enabled; the first two take effect at the
-// agent's next step, the planner at its next run.
+// agent's next step, the planner and the page map at its next run.
 //
 // The macro uses about_flags.cc's kOsAll and FEATURE_VALUE_TYPE.
 
@@ -43,7 +43,17 @@
      "and asks you as before. Disabled, the agent picks one action at a "     \
      "time without a plan.",                                                  \
      kOsAll,                                                                  \
-     FEATURE_VALUE_TYPE(molt_ai::agent_features::kMoltAgentPlanner)}
+     FEATURE_VALUE_TYPE(molt_ai::agent_features::kMoltAgentPlanner)},        \
+    {molt_ai::agent_features::flags::kPageMap,                                \
+     "MoltBrowser: accessibility page map for the web agent",                 \
+     "Outside MoltNet windows, the AI agent reads pages through their "       \
+     "accessibility tree, as voice mode does (numbered items, lists and "     \
+     "fields), and clicks, types and chooses through accessibility "          \
+     "actions, which pages treat as your own interaction. It never types "    \
+     "into password, card or code fields there. Disabled, it reads and "      \
+     "acts through page scripts only, except in voice mode's runs.",          \
+     kOsAll,                                                                  \
+     FEATURE_VALUE_TYPE(molt_ai::agent_features::kMoltAgentPageMap)}
 // clang-format on
 
 #endif  // CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_ABOUT_FLAGS_H_

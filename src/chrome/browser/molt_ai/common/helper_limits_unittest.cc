@@ -315,6 +315,85 @@ TEST(HelperLimitsWatchTest, AScratchDirectoryThatCantBeMeasured) {
   EXPECT_EQ(watch.error(), "its scratch directory couldn't be measured");
 }
 
+// ---- Resident helpers -------------------------------------------------------
+
+TEST(CpuUsageWindowTest, ASteadyListenerIsFine) {
+  CpuUsageWindow window(kMaxResidentCpuCores, kResidentCpuWindowMs);
+  // 6% of a core for ten minutes, with a 1.5-core burst of 2 s now and
+  // then (a long final being decoded).
+  int64_t cpu = 0;
+  for (int64_t ms = 0; ms <= 600000; ms += 1000) {
+    cpu += 60;
+    if (ms % 60000 < 2000) {
+      cpu += 1500;
+    }
+    ASSERT_TRUE(window.Add(ms, cpu)) << ms;
+  }
+}
+
+TEST(CpuUsageWindowTest, AStuckLoopIsStoppedWithinTheWindow) {
+  CpuUsageWindow window(kMaxResidentCpuCores, kResidentCpuWindowMs);
+  int64_t ms = 0;
+  // One core, all the time: past 0.75 of the window's CPU at 22.5 s.
+  for (; ms < kResidentCpuWindowMs * 3 / 4; ms += 1000) {
+    ASSERT_TRUE(window.Add(ms, ms));
+  }
+  bool stopped = false;
+  for (; ms <= 2 * kResidentCpuWindowMs && !stopped; ms += 1000) {
+    stopped = !window.Add(ms, ms);
+  }
+  EXPECT_TRUE(stopped);
+  EXPECT_LE(ms, kResidentCpuWindowMs + 1000);
+  // It stays stopped.
+  EXPECT_FALSE(window.Add(ms + 1000, ms));
+  EXPECT_EQ(window.Describe(), "it used more than 0.75 of a CPU core for 30 s");
+}
+
+TEST(CpuUsageWindowTest, ABurstOnManyCoresIsStoppedEarly) {
+  CpuUsageWindow window(kMaxResidentCpuCores, kResidentCpuWindowMs);
+  ASSERT_TRUE(window.Add(0, 0));
+  // Eight cores: past 22.5 s of CPU within 3 s.
+  EXPECT_TRUE(window.Add(1000, 8000));
+  EXPECT_TRUE(window.Add(2000, 16000));
+  EXPECT_FALSE(window.Add(3000, 24000));
+}
+
+TEST(CpuUsageWindowTest, JustUnderTheAverageIsFine) {
+  CpuUsageWindow window(0.5, 10000);
+  for (int64_t ms = 0; ms <= 100000; ms += 500) {
+    ASSERT_TRUE(window.Add(ms, ms * 49 / 100)) << ms;
+  }
+}
+
+TEST(CpuUsageWindowTest, ACounterThatGoesBackStartsAgain) {
+  CpuUsageWindow window(1, 10000);
+  ASSERT_TRUE(window.Add(0, 0));
+  ASSERT_TRUE(window.Add(5000, 4000));
+  // A new process (restarted): its counter starts again.
+  EXPECT_TRUE(window.Add(6000, 100));
+  EXPECT_TRUE(window.Add(16000, 9000));
+  EXPECT_EQ(CpuUsageWindow(2, 60000).Describe(),
+            "it used more than 2 of a CPU core for 60 s");
+  EXPECT_EQ(CpuUsageWindow(0.05, 1000).Describe(),
+            "it used more than 0.05 of a CPU core for 1 s");
+}
+
+TEST(ProcStatTest, ReadsUserAndSystemTime) {
+  const std::string stat =
+      "1234 (molt-speech) S 1 1234 1234 0 -1 4194560 2741 0 0 0 "
+      "150 25 0 0 20 0 3 0 99 1000000 5000 18446744073709551615 1 1 0 0 0 0";
+  EXPECT_EQ(ParseProcStatCpuTicks(stat), 175u);
+  // The command name may hold anything, parentheses and spaces included.
+  EXPECT_EQ(ParseProcStatCpuTicks("7 (a) b) (c d) R 1 7 7 0 -1 0 0 0 0 0 "
+                                  "3 4 0 0 20 0 1 0 1 1 1"),
+            7u);
+  EXPECT_FALSE(ParseProcStatCpuTicks("").has_value());
+  EXPECT_FALSE(ParseProcStatCpuTicks("1 (x) S 1 2 3").has_value());
+  EXPECT_FALSE(
+      ParseProcStatCpuTicks("1 (x) S 1 1 1 0 -1 0 0 0 0 0 1x 2 0").has_value());
+  EXPECT_FALSE(ParseProcStatCpuTicks("no parenthesis 1 2 3").has_value());
+}
+
 }  // namespace
 }  // namespace helper_limits
 }  // namespace molt_ai

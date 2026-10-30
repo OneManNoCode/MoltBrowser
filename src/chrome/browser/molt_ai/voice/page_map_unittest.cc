@@ -36,7 +36,12 @@ void ExpectWellFormed(const PageMap& map, const PageMapLimits& limits) {
   for (size_t l = 0; l < map.lists.size(); ++l) {
     const PageList& list = map.lists[l];
     if (l > 0) {
-      EXPECT_GE(map.lists[l - 1].prominence, list.prominence);
+      // The top-level document's lists first, each part by prominence.
+      const PageList& before = map.lists[l - 1];
+      EXPECT_TRUE(map.InPage(before.container) || !map.InPage(list.container));
+      if (map.InPage(before.container) == map.InPage(list.container)) {
+        EXPECT_GE(before.prominence, list.prominence);
+      }
     }
     EXPECT_LE(list.entries.size(), limits.max_entries_per_list);
     for (size_t e = 0; e < list.entries.size(); ++e) {
@@ -479,6 +484,109 @@ TEST(PageMapTest, NumbersAFramesItemsWithThePage) {
 // ---------------------------------------------------------------------------
 // Items
 // ---------------------------------------------------------------------------
+
+// A frame the page embeds (an ad, another site's widget) can't take the
+// page's place: its lists come after the page's however prominent, its
+// media after the page's, and it numbers only its share of the items.
+// A shop page whose ad frame comes first in reading order, with a longer,
+// larger list ("Results", 60 entries) and a video, before the page's own
+// list ("Products", 3 entries) and video.
+PageTree ShopWithAnAdFrame() {
+  TreeBuilder b("Shop");
+  const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);
+  const uint32_t iframe = b.Add(root, PageRole::kIframe, "Ad");
+  b.SetTree(1);
+  const uint32_t frame_root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Ad");
+  b.Add(frame_root, PageRole::kVideo, "Ad video");
+  const uint32_t frame_main = b.Add(frame_root, PageRole::kMain);
+  const uint32_t ads = b.Add(frame_main, PageRole::kList, "Results");
+  for (int i = 0; i < 60; ++i) {
+    const uint32_t entry = b.Add(ads, PageRole::kListItem);
+    b.SetBounds(entry, 0, 1000.0f * i, 1000, 1000);
+    b.Heading(entry, 3, "Ad " + std::to_string(i));
+    b.Link(entry, "Watch ad " + std::to_string(i),
+           "https://ad.example/" + std::to_string(i));
+  }
+  b.SetTree(0);
+  b.AppendChild(iframe, frame_root);
+  const uint32_t main = b.Add(root, PageRole::kMain);
+  const uint32_t products = b.Add(main, PageRole::kList, "Products");
+  for (int i = 0; i < 3; ++i) {
+    const uint32_t entry = b.Add(products, PageRole::kListItem);
+    b.SetBounds(entry, 0, 50.0f * i, 300, 40);
+    b.Link(entry, "Product " + std::to_string(i),
+           "https://shop.example/" + std::to_string(i));
+  }
+  b.Add(main, PageRole::kVideo, "Product video");
+  return b.Take();
+}
+
+TEST(PageMapTest, AFrameCantTakeThePagesPlace) {
+  const PageTree tree = ShopWithAnAdFrame();
+  const PageMap map = Map(tree);
+  EXPECT_EQ(map.page_tree, 0);
+  ASSERT_GE(map.lists.size(), 2u);
+  EXPECT_EQ(map.lists[0].label, "Products");
+  EXPECT_TRUE(map.InPage(map.lists[0].container));
+  const PageList* ad_list = nullptr;
+  for (const PageList& list : map.lists) {
+    if (list.label == "Results") {
+      ad_list = &list;
+    }
+  }
+  ASSERT_TRUE(ad_list);
+  EXPECT_FALSE(map.InPage(ad_list->container));
+  // It would have been "the results" by prominence alone.
+  EXPECT_GT(ad_list->prominence, map.lists[0].prominence);
+
+  ASSERT_EQ(map.media.size(), 2u);
+  EXPECT_EQ(map.media[0].label, "Product video");
+  EXPECT_TRUE(map.InPage(map.media[0].handle));
+  EXPECT_EQ(map.media[1].label, "Ad video");
+
+  // Its share of the items, the page's own numbered whatever comes first.
+  PageMapLimits limits;
+  limits.max_items = 30;
+  limits.max_frame_items = 10;
+  const PageMap capped = BuildPageMap(tree, limits);
+  ExpectWellFormed(capped, limits);
+  size_t in_frame = 0;
+  size_t products_numbered = 0;
+  for (const PageItem& item : capped.items) {
+    in_frame += capped.InPage(item.handle) ? 0 : 1;
+    products_numbered +=
+        capped.InPage(item.handle) && item.kind == ItemKind::kLink ? 1 : 0;
+  }
+  EXPECT_EQ(in_frame, 10u);
+  EXPECT_EQ(products_numbered, 3u);
+  EXPECT_TRUE(capped.stats.item_cap);
+}
+
+// The page's lists are looked for and read before the frames', so when the
+// work budget runs out, it isn't the frame's list that is left.
+TEST(PageMapTest, ThePagesListsBeforeAFramesSpendTheWork) {
+  const PageTree tree = ShopWithAnAdFrame();
+  size_t tight = 0;
+  for (size_t max_work = 500; max_work <= 30000; max_work += 100) {
+    PageMapLimits limits;
+    limits.max_work = max_work;
+    const PageMap map = BuildPageMap(tree, limits);
+    if (map.stats.nodes_visited < tree.nodes.size()) {
+      continue;  // the walk itself was cut short
+    }
+    bool page_list = false;
+    bool frame_list = false;
+    for (const PageList& list : map.lists) {
+      page_list |= list.label == "Products";
+      frame_list |= list.label == "Results";
+    }
+    EXPECT_TRUE(page_list || !frame_list) << "max_work " << max_work;
+    tight += page_list && map.stats.work_cap ? 1 : 0;
+  }
+  // Some budgets ran out after the page's list and before the frame's.
+  EXPECT_GT(tight, 0u);
+}
 
 TEST(PageMapTest, NumbersOnlyWhatCanBeActedOn) {
   TreeBuilder b("t");

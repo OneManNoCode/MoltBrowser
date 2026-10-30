@@ -75,6 +75,23 @@
 //     user as text. It grants nothing: the browser never reads it for
 //     URLs, origins, elements or tools, and every action goes through the
 //     checks above exactly as without a plan.
+//
+// The page map (#molt-agent-page-map, agent_page_map.h,
+// docs/design/AGENT_ACTIONS.md §2.10): outside MoltNet windows the run
+// holds the tab's VoicePageController (voice mode's hold on a tab) and
+// observes each page through its accessibility page map: the elements are
+// the map's numbered items (e12 is item 12), and CLICK, TYPE, FILL_FORM,
+// SELECT and SCROLL act through accessibility actions on their nodes, which
+// Blink takes as the user's own interaction (a video the agent starts plays
+// with sound). Every action first maps the page again and finds its node
+// there, of the same kind and name, in a frame still of the page's origin
+// (a stale element is observed again, never guessed); the click's
+// questions come from the live node as they come from the element probe,
+// and no credential field is typed into. The element snapshot stays the
+// fallback for a page whose map is empty or whose tree doesn't come, and
+// the only source in MoltNet windows (TOUCHLESS_BROWSING.md §7.4: no
+// accessibility mode there). The run releases its hold when it ends; voice
+// mode's own hold on the tab stays.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
 #define CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
@@ -82,15 +99,19 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
+#include "chrome/browser/molt_ai/agents/agent_page_map.h"
 #include "chrome/browser/molt_ai/agents/agent_plan.h"
 #include "chrome/browser/molt_ai/agents/agent_prompt.h"
 #include "chrome/browser/molt_ai/agents/agent_screenshot.h"
@@ -115,11 +136,21 @@ class WebContents;
 
 namespace molt_ai {
 
+namespace voice {
+class VoicePageController;
+}  // namespace voice
+
 // ============================================================
 // WebAgent — ReAct-based autonomous browsing agent
 // ============================================================
 class WebAgent : public content::WebContentsObserver {
  public:
+  // Where an observation came from: the accessibility page map
+  // (agent_page_map.h) or the element snapshot (agent_actions.h).
+  enum class ObservationSource { kNone, kPageMap, kElementSnapshot };
+  // "page_map", "element_snapshot" or "" (none).
+  static std::string_view ObservationSourceName(ObservationSource source);
+
   // One step in the agent's execution trace.
   struct Step {
     int number = 0;
@@ -138,6 +169,8 @@ class WebAgent : public content::WebContentsObserver {
     std::string note;        // Short result note (e.g., "Navigated to …")
     int plan_step = 0;       // The plan step it worked on (1-based); 0
                              // without a plan
+    // What the observation the action was chosen on came from.
+    ObservationSource observed_with = ObservationSource::kNone;
 
     // What the step acted on, so a successful run can be saved as a draft
     // workflow (automation/agent_run_draft.h). The browser's own record,
@@ -209,6 +242,20 @@ class WebAgent : public content::WebContentsObserver {
   // current step changes, or the run goes on without one.
   using PlanCallback = base::RepeatingCallback<void(const PlanUpdate&)>;
 
+  // How the run observed pages: the observations through the page map and
+  // through the element snapshot.
+  struct ObservationCounts {
+    int page_map = 0;
+    int element_snapshot = 0;
+  };
+
+  // A model in place of the on-device runtime, for browser tests: it gets
+  // the raw prompt (ToRawPrompt()) and the options (its json_schema says
+  // whether a plan or an action is asked for) and answers at once.
+  using ModelForTesting = base::RepeatingCallback<GenerationResult(
+      const std::string& prompt,
+      const PromptOptions& options)>;
+
   WebAgent(content::WebContents* web_contents, BrowserAIRuntime* runtime);
   ~WebAgent() override;
 
@@ -235,6 +282,26 @@ class WebAgent : public content::WebContentsObserver {
   // caller checked the click). The run goes on either way. Stale or
   // unknown ids are ignored.
   void ResolveFrameTools(int request_id, frame_tools::Grant grant);
+
+  // Called with each action, as the trace will describe it, right before
+  // it runs (voice mode says what the agent is about to do). Set before
+  // Start(); may be null.
+  void SetActionCallback(StepCallback on_action);
+
+  // The run uses the page map (outside MoltNet windows) even while
+  // #molt-agent-page-map is off: voice mode's runs, which act on the page
+  // voice mode already reads through it. Set before Start().
+  void SetUsePageMap(bool use) { use_page_map_ = use; }
+
+  // How this run has observed pages so far.
+  const ObservationCounts& observation_counts() const {
+    return observation_counts_;
+  }
+
+  // Every WebAgent asks |model| instead of the runtime while it is set;
+  // null restores the runtime.
+  static void SetModelForTesting(ModelForTesting model);
+  static bool HasModelForTesting();
 
   // content::WebContentsObserver:
   void DidStopLoading() override;
@@ -301,12 +368,24 @@ class WebAgent : public content::WebContentsObserver {
   void OnPageObserved(const StructuredPage& page);
   void AllowOriginAndContinue(const url::Origin& origin,
                               const StructuredPage& page);
-  // Lists the page's interactive elements (the ids the model may use).
+  // Lists the page's interactive elements (the ids the model may use):
+  // through the page map when the run uses it, else the element snapshot.
   void ContinueAfterObserve(const StructuredPage& page);
+  void ObserveThroughSnapshot(const StructuredPage& page,
+                              content::WeakDocumentPtr document);
   // |document| is the one the snapshot ran in.
   void OnElementsObserved(const StructuredPage& page,
                           content::WeakDocumentPtr document,
                           base::Value snapshot);
+  // The page's own tools, if any, then the rest of the observation
+  // (ContinueObservation()). |observed_origin| is the origin the elements
+  // were read at; |document_is_current|: they were read in the tab's
+  // primary main document.
+  void ListToolsThenContinue(const StructuredPage& page,
+                             content::WeakDocumentPtr document,
+                             std::string observed_origin,
+                             bool origin_allowed,
+                             bool document_is_current);
   // The page's own tools (its main document's and its same-origin
   // frames'), if the switch is on and it offers any
   // (agent_tools::ShouldListTools), added to observation_.
@@ -333,6 +412,52 @@ class WebAgent : public content::WebContentsObserver {
                     std::optional<ModelImage> image);
   // Completes the step the observation was for (or starts the run).
   void FinishObservation(const StructuredPage& page);
+
+  // -- The page map (agent_page_map.h) --------------------------------
+  // The tab's controller while this run holds it (null otherwise).
+  voice::VoicePageController* PageController();
+  void HoldPage();
+  void ReleasePage();
+  // Whether this observation goes through the page map: the run uses it
+  // and the tab shows an http(s) page.
+  bool UsePageMapNow();
+  // Waits until the page's tree has been quiet a moment (kMapQuietMs) or a
+  // deadline (kMapWaitMs) has passed, then maps it.
+  void ObserveThroughPageMap(const StructuredPage& page,
+                             content::WeakDocumentPtr document);
+  void OnPageTreeChanged();
+  void OnPageMapSettled();
+  // Maps the page and makes the observation from the map, or falls back
+  // to the element snapshot when the map is empty or the tree didn't come.
+  void FinishPageMapObservation(const StructuredPage& page,
+                                content::WeakDocumentPtr document);
+
+  // The node an element of the page map names, found again right before
+  // acting (agent_page_map::FindLiveItem()), and what acting on it touches.
+  struct LiveTarget {
+    voice::PageNodeHandle handle;
+    voice::PageItem item;
+    agent_safety::ElementProbe probe;
+  };
+  enum class LiveResult { kFound, kStale, kBlocked };
+  LiveResult FindLiveTarget(const agent_actions::ObservedElement& element,
+                            LiveTarget* target);
+  // The element is gone or changed: the page is observed again and the
+  // step fails with |note| (nothing is acted on).
+  void ReobserveStale(std::string note);
+  // A live result that isn't kFound ends the step.
+  void FailLive(LiveResult result, std::string_view what);
+  // Acting through the page controller.
+  void DoPageMapClick(const agent_actions::ObservedElement& element);
+  void AllowOriginAndPress(std::optional<url::Origin> origin);
+  void PressNow();
+  void DoPageMapType(const agent_actions::ObservedElement& element);
+  void DoPageMapFillForm();
+  void DoSelect();
+  // After an accessibility action (it reaches the page apart from scripts):
+  // a moment for its effects, then the page is observed once it has
+  // loaded.
+  void AfterPageAction();
 
   // -- Planner (agent_plan.h) ----------------------------------------
   // Asks for a plan (the first, or a new one) before the next action.
@@ -390,6 +515,32 @@ class WebAgent : public content::WebContentsObserver {
   DoneCallback done_cb_;
   ConfirmCallback confirm_cb_;
   PlanCallback plan_cb_;
+  StepCallback action_cb_;
+
+  // The page map (#molt-agent-page-map, read at Start(); never in MoltNet):
+  // whether the run uses it, holds the tab's controller, the observation
+  // being made (waiting for the tree), and the current observation's text.
+  bool page_map_on_ = false;
+  bool use_page_map_ = false;
+  bool holds_page_ = false;
+  struct PendingMap {
+    PendingMap();
+    ~PendingMap();
+
+    StructuredPage page;
+    content::WeakDocumentPtr document;
+    base::TimeTicks started;
+  };
+  std::unique_ptr<PendingMap> pending_map_;
+  base::CallbackListSubscription trees_subscription_;
+  base::OneShotTimer map_quiet_timer_;
+  base::OneShotTimer map_deadline_timer_;
+  std::string page_map_text_;
+  ObservationSource observation_source_ = ObservationSource::kNone;
+  ObservationCounts observation_counts_;
+  // Set when an action found its element stale: the observation that
+  // follows ends the step with it.
+  std::string stale_note_;
 
   // Origins this run may act on without asking (see the safety model).
   std::vector<url::Origin> allowed_origins_;

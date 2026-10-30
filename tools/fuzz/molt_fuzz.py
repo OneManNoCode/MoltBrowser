@@ -58,6 +58,8 @@ DOCUMENT_PARSER = "src/chrome/services/molt_ai/document_parser"
 FINGERPRINTING = "src/third_party/blink/renderer/core/molt_fingerprinting"
 LLAMA = "src/third_party/llama_cpp"
 VOICE = f"{MOLT_AI}/voice"
+# molt-speech's std-only parts (voice/speech_helper/BUILD.gn: core).
+SPEECH_HELPER = f"{VOICE}/speech_helper"
 # The std-only voice intent code (voice/BUILD.gn: spoken_choice,
 # voice_command).
 VOICE_INTENT_SOURCES = [
@@ -315,6 +317,30 @@ FUZZERS = {
         max_len=16384,
         smoke_runs=20000,
     ),
+    # --- The browser: voice mode's listening (the speech helper's lines) ---
+    "molt_voice_listener_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "voice_listener_protocol",
+                "voice_session_logic")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
+        tier="std",
+        dict="dicts/voice_listener.dict",
+        max_len=16384,
+        smoke_runs=40000,
+    ),
+    # --- The speech helper's stdin (touchless browsing) --------------------
+    "molt_speech_protocol_fuzzer": dict(
+        dir=SPEECH_HELPER,
+        sources=[f"{SPEECH_HELPER}/{name}.cc" for name in (
+            "frame_reader", "listener", "speech_config", "speech_events",
+            "speech_text")],
+        tier="std",
+        dict="dicts/speech_protocol.dict",
+        max_len=16384,
+        smoke_runs=20000,
+    ),
     # --- The browser: the page map (voice mode) ----------------------------
     "molt_page_map_fuzzer": dict(
         dir=BROWSER,
@@ -333,12 +359,32 @@ FUZZERS = {
                  f"{MOLT_AI}/agents/agent_tools.cc",
                  f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/agents/chat_actions.cc",
+                 f"{MOLT_AI}/agents/frame_tools.cc",
+                 f"{MOLT_AI}/automation/agent_run_draft.cc",
+                 f"{MOLT_AI}/automation/automation_script.cc",
+                 f"{MOLT_AI}/automation/automation_locators.cc",
+                 f"{MOLT_AI}/automation/automation_security.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{ENGINE}/json_schema_grammar.cc",
                  f"{ENGINE}/bounded_json.cc"],
         tier="stand_ins",
         dict="dicts/agent.dict",
         max_len=16384,
+    ),
+    "molt_agent_page_map_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/agents/agent_page_map.cc",
+                 f"{MOLT_AI}/agents/agent_actions.cc",
+                 f"{MOLT_AI}/agents/agent_tools.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc",
+                 f"{MOLT_AI}/security/agent_safety.cc",
+                 f"{MOLT_AI}/voice/page_map.cc",
+                 f"{MOLT_AI}/voice/page_map_text.cc",
+                 f"{ENGINE}/json_schema_grammar.cc",
+                 f"{ENGINE}/bounded_json.cc"],
+        tier="stand_ins",
+        dict="dicts/page_map.dict",
+        max_len=65536,
     ),
     "molt_page_translate_fuzzer": dict(
         dir=BROWSER,
@@ -360,6 +406,11 @@ FUZZERS = {
                  f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/agents/agent_actions.cc",
                  f"{MOLT_AI}/agents/chat_actions.cc",
+                 f"{MOLT_AI}/agents/frame_tools.cc",
+                 f"{MOLT_AI}/automation/agent_run_draft.cc",
+                 f"{MOLT_AI}/automation/automation_script.cc",
+                 f"{MOLT_AI}/automation/automation_locators.cc",
+                 f"{MOLT_AI}/automation/automation_security.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{ENGINE}/json_schema_grammar.cc",
                  f"{ENGINE}/bounded_json.cc"],

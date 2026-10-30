@@ -241,11 +241,22 @@ if ! "$SCRIPT_DIR/bundle-fonts.sh" --verify "$APP_PATH/Contents/Resources"; then
   exit 1
 fi
 
+# The speech helper, when the build bundled it (MOLT_BUNDLE_SPEECH=1):
+# present, and its models matching their pins.
+if [ "${MOLT_BUNDLE_SPEECH:-0}" = "1" ] &&
+   ! "$SCRIPT_DIR/bundle-speech.sh" --verify "$APP_PATH/Contents/Resources"; then
+  echo ""
+  echo "  ❌ FATAL: $APP_PATH/Contents/Resources/speech is missing or its models"
+  echo "     don't match their pins. Run scripts/bundle-speech.sh --app \"$APP_PATH\"."
+  echo "     DO NOT SHIP THIS BUILD."
+  exit 1
+fi
+
 # The Mach-O files of the helpers bundled in Resources/ (tor, tesseract,
-# whisper), NUL-separated.
+# whisper, the speech helper), NUL-separated.
 resource_helpers() {
   local d f
-  for d in tor ocr whisper; do
+  for d in tor ocr whisper speech; do
     [ -d "$APP_PATH/Contents/Resources/$d" ] || continue
     while IFS= read -r -d '' f; do
       if file -b "$f" | grep -q "Mach-O"; then printf '%s\0' "$f"; fi
@@ -283,7 +294,8 @@ if [ -n "$SIGN_IDENTITY" ]; then
   # steps 4-5 so those entitlements survive.
   codesign --force --deep --sign "$SIGN_IDENTITY" --options runtime --timestamp "$APP_PATH"
 
-  # 2. Bundled third-party binaries in Resources/ (tor, tesseract/OCR, whisper).
+  # 2. Bundled third-party binaries in Resources/ (tor, tesseract/OCR, whisper,
+  # molt-speech).
   # codesign --deep treats Resources/ as DATA and skips them; sign each Mach-O
   # explicitly (before the app seal), same Developer ID/team, hardened
   # runtime. Any failure stops the release: an unsigned helper fails

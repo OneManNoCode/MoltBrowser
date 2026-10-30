@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -43,13 +44,17 @@ ui::AXNodeData Node(int id,
 // Holds frames' trees as the controller does, and looks them up.
 class Frames {
  public:
+  // |parent|: the tree of the frame's parent, as the browser sets it
+  // (RenderFrameHostImpl::GetAXTreeData()); unknown for the page's.
   ui::AXTree* Add(int32_t index,
                   const ui::AXTreeID& id,
                   std::vector<ui::AXNodeData> nodes,
-                  const std::string& title = std::string()) {
+                  const std::string& title = std::string(),
+                  const ui::AXTreeID& parent = ui::AXTreeIDUnknown()) {
     ui::AXTreeUpdate update;
     update.has_tree_data = true;
     update.tree_data.tree_id = id;
+    update.tree_data.parent_tree_id = parent;
     update.tree_data.title = title;
     update.root_id = nodes.front().id;
     update.nodes = std::move(nodes);
@@ -177,7 +182,8 @@ TEST(AXPageSourceTest, JoinsChildFramesUnderTheirHosts) {
              "Host page");
   ui::AXNodeData like = Node(2, Role::kButton, "Like");
   like.relative_bounds.bounds = gfx::RectF(5, 6, 40, 20);
-  frames.Add(7, child_id, {Node(1, Role::kRootWebArea, "Widget", {2}), like});
+  frames.Add(7, child_id, {Node(1, Role::kRootWebArea, "Widget", {2}), like},
+             std::string(), main_id);
 
   const PageTree page = frames.Build(main_id);
   EXPECT_EQ(page.title, "Host page");
@@ -226,7 +232,8 @@ TEST(AXPageSourceTest, AFrameIsJoinedOnceAndUnknownFramesAreSkipped) {
               unknown, itself});
   ui::AXNodeData back = Node(2, Role::kIframe);
   back.AddChildTreeId(main_id);  // back up to the page
-  frames.Add(1, child_id, {Node(1, Role::kRootWebArea, "Child", {2}), back});
+  frames.Add(1, child_id, {Node(1, Role::kRootWebArea, "Child", {2}), back},
+             std::string(), main_id);
 
   const PageTree page = frames.Build(main_id);
   int child_roots = 0;
@@ -235,6 +242,177 @@ TEST(AXPageSourceTest, AFrameIsJoinedOnceAndUnknownFramesAreSkipped) {
   }
   EXPECT_EQ(child_roots, 1);
   EXPECT_EQ(page.nodes.size(), 7u);  // 5 in the page, 2 in the frame
+}
+
+// The page index of the node |handle| names, or -1.
+int IndexOf(const PageTree& page, PageNodeHandle handle) {
+  for (size_t i = 0; i < page.nodes.size(); ++i) {
+    if (page.nodes[i].handle == handle) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+TEST(AXPageSourceTest, AFrameJoinsOnlyUnderItsParentsTree) {
+  Frames frames;
+  const ui::AXTreeID main_id = ui::AXTreeID::CreateNewAXTreeID();
+  const ui::AXTreeID ad_id = ui::AXTreeID::CreateNewAXTreeID();
+  const ui::AXTreeID pay_id = ui::AXTreeID::CreateNewAXTreeID();
+  const ui::AXTreeID orphan_id = ui::AXTreeID::CreateNewAXTreeID();
+  ui::AXNodeData ad_host = Node(2, Role::kIframe, "Ad");
+  ad_host.AddChildTreeId(ad_id);
+  ui::AXNodeData pay_host = Node(3, Role::kIframe, "Payment");
+  pay_host.AddChildTreeId(pay_id);
+  ui::AXNodeData orphan_host = Node(4, Role::kIframe, "Orphan");
+  orphan_host.AddChildTreeId(orphan_id);
+  frames.Add(0, main_id,
+             {Node(1, Role::kRootWebArea, "Shop", {2, 3, 4}), ad_host, pay_host,
+              orphan_host});
+  // The ad's frame, first in reading order, claims the payment frame (a
+  // sibling, maybe another site's) as its own child.
+  ui::AXNodeData graft = Node(2, Role::kIframe, "Graft");
+  graft.AddChildTreeId(pay_id);
+  frames.Add(1, ad_id, {Node(1, Role::kRootWebArea, "Ad", {2}), graft},
+             std::string(), main_id);
+  frames.Add(2, pay_id,
+             {Node(1, Role::kRootWebArea, "Payment", {2}),
+              Node(2, Role::kButton, "Pay now")},
+             std::string(), main_id);
+  // A tree the browser names no parent for joins nowhere.
+  frames.Add(3, orphan_id,
+             {Node(1, Role::kRootWebArea, "Orphan", {2}),
+              Node(2, Role::kButton, "Lost")});
+
+  const PageTree page = frames.Build(main_id);
+  const int pay_root = IndexOf(page, {2, 1});
+  ASSERT_GE(pay_root, 0);
+  // Joined once, under its own host in the page, not under the ad's node.
+  const int pay_host_index = IndexOf(page, {0, 3});
+  ASSERT_GE(pay_host_index, 0);
+  EXPECT_EQ(page.nodes[pay_host_index].children,
+            std::vector<uint32_t>{static_cast<uint32_t>(pay_root)});
+  const int graft_index = IndexOf(page, {1, 2});
+  ASSERT_GE(graft_index, 0);
+  EXPECT_TRUE(page.nodes[graft_index].children.empty());
+  EXPECT_EQ(IndexOf(page, {3, 1}), -1);
+  EXPECT_EQ(IndexOf(page, {3, 2}), -1);
+}
+
+TEST(AXPageSourceTest, OffsetContainersThatLoopGiveNoBounds) {
+  Frames frames;
+  const ui::AXTreeID main_id = ui::AXTreeID::CreateNewAXTreeID();
+  // Two nodes each measured from the other, and one measured from them.
+  ui::AXNodeData loop_a = Node(2, Role::kButton, "Loop A");
+  loop_a.relative_bounds.offset_container_id = 3;
+  ui::AXNodeData loop_b = Node(3, Role::kButton, "Loop B");
+  loop_b.relative_bounds.offset_container_id = 2;
+  ui::AXNodeData into = Node(4, Role::kButton, "Into the loop");
+  into.relative_bounds.offset_container_id = 2;
+  ui::AXNodeData fine = Node(5, Role::kButton, "Fine");
+  fine.relative_bounds.bounds = gfx::RectF(5, 6, 40, 20);
+  // A node with no size of its own takes its children's: one loops.
+  ui::AXNodeData empty = Node(6, Role::kGenericContainer, "", {7});
+  empty.relative_bounds.bounds = gfx::RectF();
+  ui::AXNodeData child = Node(7, Role::kButton, "Child");
+  child.relative_bounds.offset_container_id = 3;
+  // A node with no size takes its nearest sized ancestor's: it loops.
+  ui::AXNodeData group_a = Node(8, Role::kGroup, "", {9});
+  group_a.relative_bounds.offset_container_id = 9;
+  ui::AXNodeData group_b = Node(9, Role::kGroup, "", {10});
+  group_b.relative_bounds.offset_container_id = 8;
+  ui::AXNodeData tiny = Node(10, Role::kButton, "Tiny");
+  tiny.relative_bounds.bounds = gfx::RectF();
+  frames.Add(0, main_id,
+             {Node(1, Role::kRootWebArea, "", {2, 3, 4, 5, 6, 8}), loop_a,
+              loop_b, into, fine, empty, child, group_a, group_b, tiny});
+
+  // Returns, rather than walking the loops forever.
+  const PageTree page = frames.Build(main_id);
+  ASSERT_EQ(page.nodes.size(), 10u);
+  for (const PageNode& node : page.nodes) {
+    SCOPED_TRACE(node.handle.node);
+    if (node.handle.node == 1 || node.handle.node == 5) {
+      EXPECT_FALSE(node.bounds.empty());
+      continue;
+    }
+    EXPECT_TRUE(node.bounds.empty());
+    EXPECT_TRUE(node.Has(kStateOffscreen));
+  }
+  EXPECT_FLOAT_EQ(page.nodes[IndexOf(page, {0, 5})].bounds.x, 5);
+  EXPECT_FLOAT_EQ(page.nodes[IndexOf(page, {0, 5})].bounds.width, 40);
+
+  // The root measured from a node measured from the root.
+  ui::AXNodeData root = Node(1, Role::kRootWebArea, "", {2});
+  root.relative_bounds.offset_container_id = 2;
+  const ui::AXTreeID other_id = ui::AXTreeID::CreateNewAXTreeID();
+  frames.Add(1, other_id, {root, Node(2, Role::kButton, "Back to the root")});
+  const PageTree other = frames.Build(other_id);
+  ASSERT_EQ(other.nodes.size(), 2u);
+  EXPECT_TRUE(other.nodes[0].bounds.empty());
+  EXPECT_TRUE(other.nodes[1].bounds.empty());
+}
+
+TEST(AXPageSourceTest, AVeryLongChainOfContainersGivesNoBounds) {
+  Frames frames;
+  const ui::AXTreeID main_id = ui::AXTreeID::CreateNewAXTreeID();
+  // 400 siblings, each measured from the one before: node k is k - 1 hops
+  // from the root. Blink's containers are a node's ancestors, so a chain
+  // longer than the walk is deep isn't followed.
+  std::vector<ui::AXNodeData> nodes = {Node(1, Role::kRootWebArea)};
+  for (int k = 2; k <= 401; ++k) {
+    ui::AXNodeData button = Node(k, Role::kButton, "B");
+    if (k > 2) {
+      button.relative_bounds.offset_container_id = k - 1;
+    }
+    nodes.push_back(button);
+    nodes[0].child_ids.push_back(k);
+  }
+  frames.Add(0, main_id, std::move(nodes));
+
+  const PageTree page = frames.Build(main_id);
+  ASSERT_EQ(page.nodes.size(), 401u);
+  const size_t max_hops = AXPageSourceLimits().max_depth + 2;
+  for (const PageNode& node : page.nodes) {
+    SCOPED_TRACE(node.handle.node);
+    const size_t hops = static_cast<size_t>(node.handle.node - 1);
+    EXPECT_EQ(node.bounds.empty(), hops > max_hops);
+  }
+}
+
+TEST(AXPageSourceTest, ChildFramesShareTheNodeBudget) {
+  Frames frames;
+  const ui::AXTreeID main_id = ui::AXTreeID::CreateNewAXTreeID();
+  const ui::AXTreeID ad_id = ui::AXTreeID::CreateNewAXTreeID();
+  // An embedded frame first in reading order, much larger than the page.
+  ui::AXNodeData host = Node(2, Role::kIframe, "Ad");
+  host.AddChildTreeId(ad_id);
+  std::vector<ui::AXNodeData> page_nodes = {Node(1, Role::kRootWebArea), host};
+  for (int i = 0; i < 50; ++i) {
+    page_nodes.push_back(Node(3 + i, Role::kButton, "Page"));
+    page_nodes[0].child_ids.push_back(3 + i);
+  }
+  page_nodes[0].child_ids.insert(page_nodes[0].child_ids.begin(), 2);
+  frames.Add(0, main_id, std::move(page_nodes));
+  std::vector<ui::AXNodeData> ad_nodes = {Node(1, Role::kRootWebArea)};
+  for (int i = 0; i < 200; ++i) {
+    ad_nodes.push_back(Node(2 + i, Role::kButton, "Ad"));
+    ad_nodes[0].child_ids.push_back(2 + i);
+  }
+  frames.Add(1, ad_id, std::move(ad_nodes), std::string(), main_id);
+
+  AXPageSourceLimits limits;
+  limits.max_nodes = 120;
+  limits.max_frame_nodes = 40;
+  const PageTree page = frames.Build(main_id, limits);
+  size_t in_frame = 0;
+  size_t page_buttons = 0;
+  for (const PageNode& node : page.nodes) {
+    in_frame += node.handle.tree == 1 ? 1 : 0;
+    page_buttons += node.handle.tree == 0 && node.name == "Page" ? 1 : 0;
+  }
+  EXPECT_EQ(in_frame, 40u);
+  EXPECT_EQ(page_buttons, 50u);
 }
 
 TEST(AXPageSourceTest, CapsNodesAndDepth) {
@@ -287,6 +465,7 @@ TEST(AXPageSourceTest, TakesTheFocusOfTheFocusedFrame) {
   ui::AXTreeUpdate child;
   child.has_tree_data = true;
   child.tree_data.tree_id = child_id;
+  child.tree_data.parent_tree_id = main_id;
   child.tree_data.focus_id = 2;
   child.root_id = 1;
   ui::AXNodeData field = Node(2, Role::kTextField, "Search");
@@ -303,6 +482,37 @@ TEST(AXPageSourceTest, TakesTheFocusOfTheFocusedFrame) {
   ASSERT_EQ(map.items.size(), 1u);
   EXPECT_TRUE(map.items[0].focused);
   EXPECT_EQ(map.focused_item, 1);
+}
+
+TEST(AXPageSourceTest, AnEmptyTreeTakesOnlyAWholeTree) {
+  ui::AXTreeUpdate whole;
+  whole.root_id = 1;
+  whole.nodes = {Node(1, Role::kRootWebArea, "", {2}),
+                 Node(2, Role::kButton, "OK")};
+  ui::AXTreeUpdate data_only;
+  data_only.has_tree_data = true;
+  data_only.tree_data.tree_id = ui::AXTreeID::CreateNewAXTreeID();
+  data_only.tree_data.focus_id = 2;
+  ui::AXTreeUpdate part;
+  part.nodes = {Node(2, Role::kButton, "Cancel")};
+  ui::AXTreeUpdate root_not_first = whole;
+  std::swap(root_not_first.nodes[0], root_not_first.nodes[1]);
+
+  ui::AXTree empty;
+  EXPECT_TRUE(TreeCanTakeUpdate(empty, whole));
+  // Tree data alone is an error on a tree without a root
+  // (AXTree::Unserialize(): "Tree has no root").
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, data_only));
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, part));
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, root_not_first));
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, ui::AXTreeUpdate()));
+
+  // A tree with a root takes them (and checks them itself).
+  ui::AXTree tree;
+  ASSERT_TRUE(tree.Unserialize(whole));
+  EXPECT_TRUE(TreeCanTakeUpdate(tree, data_only));
+  EXPECT_TRUE(TreeCanTakeUpdate(tree, part));
+  EXPECT_TRUE(tree.Unserialize(part));
 }
 
 TEST(AXPageSourceTest, NoTreeNoPage) {

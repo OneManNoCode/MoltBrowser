@@ -6773,6 +6773,38 @@ plugins, lazy loading, float exclusions, SVG gradients and animation,
 ImageCapture, WebXR) fix object lifetimes and crashes; none changes a
 value MoltNet makes uniform.
 
+### The 156.0.8078.80 respin
+
+Chrome's security respin of 2026-10-29 changes three things a page can
+observe, the same on every install and none inside MoltNet's uniform
+values:
+
+- **`relatedTarget` across origins.** Pointer boundary events
+  (`pointerover`, `pointerout`, `pointerenter`, `pointerleave`) no longer
+  hand a page a node from another origin: `relatedTarget` is null, or the
+  frame's owner element when one document holds the other
+  (`ClearCrossOriginRelatedTarget`, on by default). MoltNet's uniform
+  `screenX`/`screenY` hook in `mouse_event.cc` merged cleanly beside the
+  new check.
+- **Range responses.** The HTTP cache refuses a range response longer
+  than its own `Content-Range`, and Cache Storage keeps whether a stored
+  response answered a range request, so an opaque 206 or 416 that a
+  service worker returns from it is refused for a request without a range,
+  as one from the network already was.
+- **File System Access** refuses more sensitive locations (writes to a
+  repository's `.git/config` and `.git/modules`, `~/.config` and shell
+  startup files everywhere, `/dev` on macOS, more of the home directory on
+  Linux). What a page sees depends on what the user picks, not on the
+  install.
+
+The rest (Blink's element names and ids, highlights, error events,
+`<area>` focus rings, audio and video tracks; V8's Turboshaft frame size
+and cppgc's write barrier; Skia's shader parser and GL uploads, Graphite's
+readback of bottom-left images, which Skia now flips itself; Dawn's
+asynchronous pipeline creation) fixes object lifetimes, crashes and stack
+use, and PDFium no longer draws zero-size text in its viewer; none changes
+a value MoltNet makes uniform.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature

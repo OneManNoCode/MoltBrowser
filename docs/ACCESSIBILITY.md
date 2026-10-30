@@ -260,8 +260,11 @@ These need layout or a real browser, which jsdom doesn't have. They are in
 ## 5. Voice mode's overlay
 
 For people who browse by voice and have some sight
-([TOUCHLESS_BROWSING.md](design/TOUCHLESS_BROWSING.md) §5.3, §5.5). Not
-switched on yet: the voice controller turns it on.
+([TOUCHLESS_BROWSING.md](design/TOUCHLESS_BROWSING.md) §5.3, §5.5). The
+voice controller drives it while voice mode is on (behind
+`chrome://flags/#molt-voice-mode`): the caption bar is up for as long as
+voice mode is on, showing what is being said as it is said; "show numbers"
+shows the numbers, and the item the browser acts on gets the ring.
 
 **What it shows:**
 
@@ -330,3 +333,16 @@ caption bar's place, fixed height and accessibility), and the
 "voice-overlay" items of [BUILD_MACHINE_CHECKLIST.md](BUILD_MACHINE_CHECKLIST.md)
 §7.3: a look on each OS with its magnifier, high contrast and a screen
 reader.
+
+**Turning voice mode on without a pointer** (round 38): the toolbar's
+**Voice** button is a toggle button named "Voice mode", pressed while its
+window listens (the violet ring of the AI and Agent mode buttons, never
+colour alone: its pressed state is exposed to assistive technology). In
+`molt://ai-settings`, the "Voice mode" section (shown only with the flag)
+has two labelled switches, "Voice mode: listen for "Hey Molt"" (also at
+every start) and "Always listening: no wake phrase", and a polite status
+line; the WebUI checks cover it. A person who uses only their voice needs
+help, or the OS's own voice control, once: to allow the microphone and turn
+on "Voice mode" in settings; from then on it listens whenever MoltBrowser
+starts, and "turn off voice mode" is confirmed first because only the
+button or settings turn it back on.

@@ -16,14 +16,17 @@
 // invisible character (checked here with an independent decoder and
 // hidden_chars), within its cap and unchanged by SpeechSafeText(); a
 // protected or credential field's value is never in the map and such a
-// field is never writable; lists are sorted by prominence, within their
-// caps, and an entry's number names an item with the entry's node and
-// kind; the focused item is the focused node's.
+// field is never writable; the top-level document's lists come first,
+// each part sorted by prominence, within their caps, and an entry's number
+// names an item with the entry's node and kind; the frames' items stay
+// within their share, and the page's media come before the frames'; the
+// focused item is the focused node's.
 //
 // Format: [limits flags][title][focus][records...]
 //   limits flags (1 byte): bit 0 small max_nodes (next byte + 1), bit 1
 //     small max_depth (next byte), bit 2 small max_work (next 2 bytes),
-//     bit 3 small max_items (next byte), bit 4 small list caps (next byte).
+//     bit 3 small max_items (next byte), bit 4 small list caps (next byte),
+//     bit 5 small max_frame_items (next byte).
 //   title: a string; focus: 2 bytes (a node index, 0xFFFF for none).
 //   string: a length byte and the bytes; 255 then 2 bytes n and 1 byte c
 //     is c repeated n times.
@@ -149,6 +152,12 @@ void CheckMap(const PageTree& tree,
   CHECK_LE(map.stats.nodes_visited, tree.nodes.size());
   CHECK_LE(map.items.size(), limits.max_items);
   CheckSpeakable(map.title, molt_ai::voice::kMaxPageTitleChars);
+  CHECK_EQ(map.page_tree, tree.nodes.empty() ? -1 : tree.nodes[0].handle.tree);
+  size_t frame_items = 0;
+  for (const PageItem& item : map.items) {
+    frame_items += map.InPage(item.handle) ? 0 : 1;
+  }
+  CHECK_LE(frame_items, limits.max_frame_items);
 
   for (size_t i = 0; i < map.items.size(); ++i) {
     const PageItem& item = map.items[i];
@@ -194,7 +203,12 @@ void CheckMap(const PageTree& tree,
   for (size_t l = 0; l < map.lists.size(); ++l) {
     const PageList& list = map.lists[l];
     if (l > 0) {
-      CHECK_GE(map.lists[l - 1].prominence, list.prominence);
+      const PageList& before = map.lists[l - 1];
+      const bool in_page = map.InPage(list.container);
+      CHECK(map.InPage(before.container) || !in_page);
+      if (map.InPage(before.container) == in_page) {
+        CHECK_GE(before.prominence, list.prominence);
+      }
     }
     CheckSpeakable(list.label, molt_ai::voice::kMaxItemLabelChars);
     CHECK_LE(list.entries.size(), limits.max_entries_per_list);
@@ -237,10 +251,14 @@ void CheckMap(const PageTree& tree,
     CheckSpeakable(landmark.label, molt_ai::voice::kMaxItemLabelChars);
   }
   CHECK_LE(map.media.size(), limits.max_media);
-  for (const auto& media : map.media) {
+  for (size_t m = 0; m < map.media.size(); ++m) {
+    const auto& media = map.media[m];
     const PageItem* item = map.ItemByNumber(media.number);
     CHECK(item);
     CHECK(item->kind == molt_ai::voice::ItemKind::kMedia);
+    if (m > 0) {
+      CHECK(map.InPage(map.media[m - 1].handle) || !map.InPage(media.handle));
+    }
   }
 }
 
@@ -283,6 +301,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     const uint8_t cap = in.U8();
     limits.max_lists = cap & 15;
     limits.max_entries_per_list = cap >> 4;
+  }
+  if (flags & 32) {
+    limits.max_frame_items = in.U8();
   }
 
   PageTree tree;

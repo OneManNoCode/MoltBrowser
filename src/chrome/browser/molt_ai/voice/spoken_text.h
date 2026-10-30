@@ -117,9 +117,10 @@ bool IsValidUtf8(std::string_view text);
 
 // |text| made safe to show and to hand to the planner: every C0 and C1
 // control, bidi control, zero-width and other invisible format character
-// removed, each run of white space made one space, and trimmed. Invalid
-// UTF-8 sequences become U+FFFD. At most |max_bytes| bytes, never cut
-// inside a character.
+// removed, and the characters SpeechSafeText() drops too (Hangul fillers,
+// private-use characters, noncharacters, U+FFF9 to U+FFFD); each run of
+// white space made one space, and trimmed. Invalid UTF-8 sequences are
+// dropped. At most |max_bytes| bytes, never cut inside a character.
 std::string CleanSpokenText(std::string_view text, size_t max_bytes);
 
 // The source text of |source| that words [first, last] of |text| came

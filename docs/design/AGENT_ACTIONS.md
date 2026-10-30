@@ -19,7 +19,12 @@ A run that ended with DONE can be saved as a draft Agent-mode workflow,
 which can't run until the user has reviewed it and confirmed its sites
 (§2.9; threat model §5.4). Agent-mode steps keep fallback locators for
 their element (§3.4), and a recording keeps the site-tool calls the user
-allowed while recording as steps (§3.5).
+allowed while recording as steps (§3.5). Outside MoltNet windows the web
+agent observes pages through the accessibility page map voice mode reads
+them through, with the map's numbers as its element ids, and acts through
+accessibility actions, which pages take as the user's own; the element
+snapshot is the fallback (§2.10; behind `#molt-agent-page-map`, off by
+default, except in voice mode's runs).
 
 | Decision | Code | Format |
 |---|---|---|
@@ -461,7 +466,7 @@ page's tools from the browser process, and there is no
 `WebContentsObserver` or `ContentBrowserClient` hook for them.
 
 **What 156 changed** (`model_context.idl`, `model_context_tool.idl`,
-`model_context.cc` at 156.0.8078.48, unchanged at 156.0.8078.74), and what
+`model_context.cc` at 156.0.8078.48, unchanged at 156.0.8078.80), and what
 the agent's scripts do about it:
 
 | 156 | The agent |
@@ -1693,6 +1698,224 @@ available in MoltNet windows…" instead of a button.
   `tel`): those values are personal but not secret, and a recording keeps
   them too.
 
+### 2.10 The page map path
+
+Status: implemented (October 2026, round 39), pending a compile on the
+build machine and a run with a real model. The web agent sees a page
+through the **accessibility page map** voice mode reads pages through
+(TOUCHLESS_BROWSING.md §6.3: numbered items, lists with their entries,
+fields with their credential marks, headings) and acts through
+**accessibility actions** on the map's nodes, which Blink takes as the
+user's own interaction: a video the agent starts plays with sound, and
+pages see a trusted click. One way to see and act on pages, for the agent
+and for voice mode. The element snapshot (§2.1) stays the fallback, and the
+only source in MoltNet windows.
+
+| File | What |
+|---|---|
+| `agents/agent_page_map.{h,cc}` | pure: the observation from a map (elements and text), the element's node found again before acting (`FindLiveItem`), what an action touches (`ProbeNode`), the click's question (`CheckClick`, shared with the snapshot's path), the typing check |
+| `agents/agent_actions.{h,cc}` | page-map elements (`item_number`, the node, the frame's origin, select options), SELECT |
+| `agents/agent_prompt.{h,cc}` | SELECT's line and rule, only when a select is listed |
+| `agents/web_agent.{h,cc}` | holding the tab's page controller, observing through the map, acting through it, the fallback, the counts |
+| `voice/voice_page_controller.{h,cc}` | holders (voice mode, agent runs), `Inspect()`, `OptionsOf()`, `SelectOption()`, `OriginOfTree()` |
+| `agents/agent_features.{h,cc}`, `agent_about_flags.h` | `chrome://flags/#molt-agent-page-map` |
+
+#### 2.10.1 Observing
+
+A run holds the tab's `VoicePageController` (`Holder::kWebAgent`) from
+`Start()` to its end, so the renderer keeps the tab's accessibility trees
+in the browser (the scoped mode of TOUCHLESS_BROWSING.md §6.3, this tab
+only, without platform accessibility objects). Each observation waits until
+the tree has been quiet for 300 ms (at most 2 s), maps the page
+(`BuildMap()`), and `BuildObservation()` makes the observation:
+
+```
+URL: https://video.test/molt_voice/video_results.html?search_query=...
+Title: Results - VideoSite
+SOURCE: the page's accessibility tree (element ids are its item numbers)
+HEADINGS:
+h1 Results
+LISTS:
+List 1, 20 entries:
+  1. e12 "Queen – Bohemian Rhapsody (Official Video Remastered)", Queen Official, 6:00, 2.1B views, 15 years ago
+  ...
+  (10 more)
+TEXT:
+<the DOM reader's page text, in what is left of the budget>
+ELEMENTS:
+e3 input "Search" (text field)
+e4 button "Search"
+e9 input "Password" (password field: the agent never types here)
+e12 link "Queen – Bohemian Rhapsody (Official Video Remastered)"
+e31 select "Class" (options: "Standard" | "First class") (now "Standard")
+e40 media "Video player"
+```
+
+- **Ids are the map's numbers:** `e12` is the item numbered 12, the number
+  voice mode draws on screen, so a user's "number 12" and the model's
+  `e12` name the same item. Ids are not consecutive; the schema's enum and
+  `ParseAction` take exactly the listed ones.
+- **The page's own content first:** at most 40 elements (`kMaxObservedElements`,
+  so the schema keeps its tested size), chosen in this order and listed by
+  number: the page's text fields and selects, the primary actions of the
+  first ten entries of its first three lists (the map ranks the results
+  first), its items on screen, its media, its other buttons, its other
+  items, then the items of frames of the page's own origin. Items of
+  another site's frames (ads, widgets) are never listed, as the snapshot
+  lists no frame; disabled items aren't either.
+- **Budget:** the text is at most 7,000 characters (about what the
+  snapshot's observation takes): the elements up to 4,500, then the lists
+  (3 of 10 entries), headings (12) and the page's text (1,500). Every
+  string is page text cleaned for speech (no control, bidi or invisible
+  characters, one line), double quotes become single ones, and each is
+  capped; `agent_prompt` fences the whole as it fences the snapshot's.
+- **Credential fields** (a password, card or one-time-code field by
+  `agent_safety::ClassifyField`, or one whose label names a secret, as the
+  map classifies them) are listed with their mark and are never text
+  fields: TYPE and FILL_FORM can't name them (the grammar's enum, the
+  parser), and no field's value is shown.
+- **Selects:** a collapsed `<select>`'s options aren't map items (they are
+  hidden), so the controller reads them from the live tree
+  (`OptionsOf()`: at most 30, cleaned); the observation lists at most 12
+  per select, leaving out names with double quotes or over 80 characters,
+  and SELECT may choose only one of those, exactly.
+- **The fallback:** the element snapshot when the run doesn't use the map
+  (the switch off, MoltNet), the page isn't http(s), the tree didn't come
+  within 2 s, or the map gives the agent nothing (no element, list or
+  heading of the page's: a canvas app, controls hidden from assistive
+  technology). Which one each observation used is in each step
+  (`Step::observed_with`), the run's counts (`observation_counts()`) and
+  the chat's `agent-step` and result events (`observed_with`).
+- **No screenshot** of a page-map observation (§2.6): its elements have no
+  selectors to measure and tag. Not yet: tags drawn from the map's bounds.
+
+#### 2.10.2 Acting
+
+Every action on a page-map element first finds it again
+(`FindLiveTarget()`): the page is mapped again, the element's node must be
+there with the same kind and name, not disabled (`FindLiveItem()`), and
+the controller's `Inspect()` must find it in its frame's current tree, in a
+frame whose origin is still the one observed, the page's own, an http(s)
+origin in the run's scope. Otherwise the element is **stale**: the page is
+observed again and the step fails ("the page changed before the agent
+could act"); nothing is guessed. The press is found again once more right
+before it runs, after any question.
+
+| Action | Through the controller |
+|---|---|
+| CLICK | `Press()`: the default action (Blink's `OnNativeClickAction()`: user activation, then the element's click). A `<video>`'s plays with sound where the site's player plays on a click |
+| TYPE, FILL_FORM | `SetText()` (`kSetValue`: the value, then `input` and `change`). Never a credential field |
+| SELECT | `SelectOption()`: the option's default action (`HTMLOptionElement::AccessKeyAction()`: the select takes it and fires `input` and `change`) |
+| SCROLL | `ScrollPage()` (Blink's scroll step), else the scroll script |
+
+After a press, a choice or a scroll the agent waits 600 ms (the action
+reaches the renderer apart from the observation's scripts) and for any
+load, then observes. TYPE and FILL_FORM don't observe, as on the
+snapshot's path.
+
+#### 2.10.3 Safety, unchanged in strength
+
+Every rule of the snapshot's path applies at the same point:
+
+| Rule | On the page map path |
+|---|---|
+| http(s) only | `DispatchAction` checks the page's committed origin as before; the controller acts only in http(s) documents (`Resolve()`); NAVIGATE and SEARCH are unchanged |
+| Origins per frame | only the page's own frame and frames of its origin are listed; at action time the element's frame must still have that origin, in the run's scope (`FindLiveTarget()`) |
+| Leaving the run's sites | a click whose node or nearest link ancestor links to another origin asks "Click X — it opens <origin>" (`CheckClick()`, the same function the snapshot's path now uses); a page that moved asks CONTINUE as before |
+| Form submits | a `<button>` (whose type the tree doesn't say: taken as a submit, the HTML default) or `<input type=submit|image>` inside a form asks "— it submits a form on <origin>". The question can't name the form's action (the tree doesn't have it); the page it loads is checked as any other |
+| Password fields | never typed into, by grammar, parser, the agent's check of the live node, and the controller |
+| Payment card and one-time code fields | stricter: never typed into on this path (the snapshot's path asks, then types); the user types them, as passwords |
+| Untrusted page text | everything in the observation is page text, cleaned, one line per name, fenced; a name can't close its quotes or start a line |
+| Confirmations | the same `RequestConfirmation()` and chat chips; nothing in the map is read as a command |
+
+The model still chooses among allowed actions on page text (§5, "What it
+doesn't change"); a page can still mislabel an element. The live check
+does catch a page that renames an element between the observation and the
+action, which the snapshot's path doesn't (§6, "Label drift").
+
+#### 2.10.4 The accessibility mode and MoltNet
+
+- **Holding the tab:** the controller counts its holders: voice mode
+  (one) and agent runs (each). The mode is taken by the first and released
+  by the last, so a run on a tab in voice mode leaves the page as voice
+  mode had it, and a run elsewhere releases the tab when it ends (done,
+  failed, cancelled, or the agent destroyed).
+- **MoltNet:** a run in a MoltNet window never holds the controller and
+  never takes the accessibility mode (TOUCHLESS_BROWSING.md §7.4: a page
+  could tell assistive technology is acting, and the tree's upkeep has a
+  cost a page can measure). There the agent observes and acts through the
+  element snapshot and its scripts exactly as before.
+
+#### 2.10.5 Saving a run
+
+A page-map step has no CSS selector, so a run that clicked or typed
+through the map can't be saved as a draft workflow yet: the draft refuses
+it ("a step the draft can't replay faithfully", §2.9), as it refuses any
+step it can't replay. Not yet: locators from the accessibility tree (role,
+name, landmark) for Agent mode.
+
+#### 2.10.6 The switch
+
+`chrome://flags/#molt-agent-page-map` (`--enable-features=MoltAgentPageMap`),
+**off by default** until the build machine has run it, read when a run
+starts; never expires. Off, the agent observes and acts through the
+element snapshot and its scripts only, except in runs voice mode starts
+(`WebAgent::SetUsePageMap()`), which use the page map outside MoltNet
+windows whatever the switch says.
+
+#### 2.10.7 Tests
+
+- **In `molt_ai_unittests`:** `agents/agent_page_map_unittest.cc` (15
+  tests): the observation of the YouTube-like results (the list's entries
+  with their fields, the first ten primary actions, the search box a text
+  field), the ids as the map's numbers (parsed back to the item's node;
+  unlisted and absent numbers refused), the page's own content first within
+  40 elements, credential fields marked and never TYPE or FILL_FORM
+  targets with no value shown, only frames of the page's origin, empty
+  maps falling back, the budget, hostile names that try to start lines or
+  close the fence, SELECT (listed options only, repeats, quotes and caps;
+  the schema converts; never on the snapshot's observation; the prompt's
+  rule only with a select), finding the live item (moved, renamed, another
+  kind, disabled, gone), the probe (links, an image's address, submits,
+  field kinds, the label cap), the click's question as the snapshot's
+  path asks it, the frame's origin at action time (the page's own, still
+  the one observed, in scope; never another site's or a non-web
+  document), and the typing check. `agents/voice_agent_speech_unittest.cc`
+  (5) and `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`
+  cover the planner fallback (TOUCHLESS_BROWSING.md §6.2).
+- **Fuzzer:** `molt_agent_page_map_fuzzer` (stand-ins tier): hostile
+  trees, options, URLs, page text and model replies.
+- **Run outside the repo:** these 20 tests, the agents' earlier suites
+  (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`,
+  `ChatActionsTest`: 126, unchanged by SELECT) and
+  `VoiceControllerLogicTest` (36) with clang, under ASan and UBSan, and
+  with g++, against the `//base` and `//url` stand-ins;
+  `molt_agent_page_map_fuzzer`: 144,492 runs in 10 minutes from its 10
+  seeds and 32,680 more in 2 after the last change, nothing found; the
+  fuzzers SELECT and the planner's question touch,
+  `molt_voice_controller_fuzzer` (61,792 runs in 5 minutes),
+  `molt_agent_actions_fuzzer` (152,872 in 3) and `molt_agent_tools_fuzzer`
+  (12,558 in 2), nothing found; the real-header compile check
+  (`tools/compile_check/`) of every changed C++ file, for Linux and
+  Windows.
+- **Browser tests** (`agents/agent_page_map_browsertest.cc`, build
+  machine): `AgentPageMapBrowserTest.SearchesChoosesAndPlays` (the fixture
+  video site searched, the Live Aid video chosen and played with sound,
+  every observation through the map, the search form's question asked),
+  `.FallsBackToTheSnapshot` (a page whose tree has nothing to act on),
+  `.NeverInMoltNetWindows`, and the planner fallback's
+  (TOUCHLESS_BROWSING.md §6.2).
+
+#### 2.10.8 Not done
+
+- **The AI chat's page actions** (§4) still read the element snapshot.
+- **Screenshots** of page-map observations (tags from the map's bounds).
+- **Another site's frame's elements**, also when the run's scope covers
+  that site.
+- **Sliders** and the controller's other actions (increment, decrement,
+  focus) as agent actions.
+- **Saving page-map runs as drafts** (§2.10.5).
+
 ## 3. Agent mode (`AutomationRunner`)
 
 All three use temperature 0.1 and `RunPromptAsync` as before. A failed
@@ -2602,9 +2825,12 @@ the draft is built to be harmless until a person has looked at it:
 - **Re-observing after TYPE / FILL_FORM.** The ids stay those of the last
   observation; the probe checks the live element at action time.
 - **Label drift.** An id is resolved to its selector without checking that
-  the element still has the label the model saw.
+  the element still has the label the model saw (the page map's path
+  checks it, §2.10.2).
 - **Frames and shadow DOM.** The snapshot lists the main document only, as
-  the old selectors did.
+  the old selectors did. The page map's path lists frames of the page's
+  own origin and shadow DOM (the accessibility tree has both), never
+  another site's frame (§2.10.1).
 - **A studio editor for extract schemas.** Only `.molt` files carry them.
 - **Screenshots (§2.6):**
   - *Measured benefit.* Whether tags help a 2B vision model more than they

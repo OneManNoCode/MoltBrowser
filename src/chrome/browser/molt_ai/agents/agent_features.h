@@ -22,6 +22,20 @@
 // user's approval). Nothing changes on a page without tools. Disabled, the
 // agent never reads or calls a page's tools. Read at each observation.
 //
+// Page map (§2.10):
+//   chrome://flags/#molt-agent-page-map
+//   --disable-features=MoltAgentPageMap
+//
+// Disabled by default until the build machine has run it: enabled,
+// outside MoltNet windows the agent observes pages through the
+// accessibility page map (voice mode's numbered items, lists and fields)
+// and acts through accessibility actions, which pages take as the user's
+// own interaction; the element snapshot stays the fallback. Disabled, the
+// agent observes and acts through the element snapshot and its scripts
+// only, as it did, except in runs voice mode starts (WebAgent::
+// SetUsePageMap()), which always use the page map outside MoltNet windows.
+// Read when a run starts.
+//
 // Planner (§2.8):
 //   chrome://flags/#molt-agent-planner
 //   --disable-features=MoltAgentPlanner
@@ -42,17 +56,20 @@ namespace molt_ai::agent_features {
 BASE_DECLARE_FEATURE(kMoltAgentScreenshots);
 BASE_DECLARE_FEATURE(kMoltAgentSiteTools);
 BASE_DECLARE_FEATURE(kMoltAgentPlanner);
+BASE_DECLARE_FEATURE(kMoltAgentPageMap);
 
 namespace flags {
 // chrome://flags internal names (entries in agent_about_flags.h).
 inline constexpr char kScreenshots[] = "molt-agent-screenshots";
 inline constexpr char kSiteTools[] = "molt-agent-site-tools";
 inline constexpr char kPlanner[] = "molt-agent-planner";
+inline constexpr char kPageMap[] = "molt-agent-page-map";
 }  // namespace flags
 
 bool AgentScreenshotsEnabled();
 bool AgentSiteToolsEnabled();
 bool AgentPlannerEnabled();
+bool AgentPageMapEnabled();
 
 }  // namespace molt_ai::agent_features
 

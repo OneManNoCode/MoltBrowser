@@ -13,7 +13,9 @@
 //     from AccessibilityEventReceived(), in the browser process as platform
 //     accessibility does. The updates come from renderers and are
 //     untrusted: an update a tree can't take drops that tree (counted), and
-//     a few resets per page ask the renderers for their trees again.
+//     a few resets per page ask the renderers for their trees again. The
+//     top-level document's tree is always kept; the child frames' trees are
+//     capped in number and in nodes together.
 //   - Map: BuildMap() joins the frames' trees (ax_page_source.h) and maps
 //     them (page_map.h). A PageNodeHandle names a frame by an index this
 //     controller gives each tree once per voice session, never reused, and
@@ -25,11 +27,17 @@
 //     frame has now; a stale handle is refused (map again). Text is never
 //     written into a protected or credential field or a field that isn't
 //     editable.
-//   - Stop() releases the mode and drops the trees.
+//   - Holders: voice mode and the web agent (agents/web_agent.h) each hold
+//     the controller (Start(Holder)); the mode stays while either does, so
+//     an agent run on a tab in voice mode leaves the page as voice mode
+//     had it, and a run on another tab releases its hold when it ends.
+//     Stop() of the last holder releases the mode and drops the trees.
 //
-// The page map and these actions are the API voice mode's next parts build
-// on: the numbers overlay draws PageItem::bounds, and the web agent can act
-// on PageNodeHandles instead of isolated-world scripts.
+// The page map and these actions are what voice mode and the web agent act
+// through: the numbers overlay draws PageItem::bounds, voice mode's steps
+// and the agent's actions (docs/design/AGENT_ACTIONS.md §2.10) name
+// PageNodeHandles, and the agent checks what an action would touch with
+// Inspect() first.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_PAGE_CONTROLLER_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_PAGE_CONTROLLER_H_
@@ -39,7 +47,9 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/callback_list.h"
 #include "base/functional/callback.h"
@@ -52,6 +62,7 @@
 #include "ui/accessibility/ax_enums.mojom-forward.h"
 #include "ui/accessibility/ax_mode.h"
 #include "ui/accessibility/ax_tree_id.h"
+#include "url/origin.h"
 
 namespace content {
 class RenderFrameHost;
@@ -85,9 +96,23 @@ class VoicePageController
   // Caps on what the controller keeps.
   static constexpr size_t kMaxTrees = 64;
   static constexpr size_t kMaxTreeNodes = 200000;
+  // The nodes of the child frames' trees together (the top-level document's
+  // tree has kMaxTreeNodes of its own).
+  static constexpr size_t kMaxFrameTreeNodes = 200000;
   static constexpr int kMaxResetsPerPage = 3;
   // Text written by SetText(), in bytes.
   static constexpr size_t kMaxSetTextBytes = 8192;
+  // Inspect(): the ancestors read above the node.
+  static constexpr size_t kMaxInspectAncestors = 32;
+  // OptionsOf(): the options listed, and their names, in code points.
+  static constexpr size_t kMaxOptions = 30;
+  static constexpr size_t kMaxOptionChars = 80;
+
+  // Who holds the controller (Start()): the mode is held while either does.
+  enum class Holder {
+    kVoiceMode,  // voice mode on this tab (voice_controller.h)
+    kWebAgent,   // a web agent run on this tab (agents/web_agent.h)
+  };
 
   enum class ActionResult {
     kDone,               // sent to the page
@@ -102,6 +127,7 @@ class VoicePageController
     kNoMediaSession,     // nothing has played in this tab
     kFocusNotConfirmed,  // Submit: the field didn't get the focus in time
     kCancelled,          // Submit: replaced by another, or voice mode ended
+    kNoSuchOption,       // SelectOption: the select has no such option
   };
   static std::string_view ActionResultName(ActionResult result);
 
@@ -117,16 +143,68 @@ class VoicePageController
   VoicePageController& operator=(const VoicePageController&) = delete;
   ~VoicePageController() override;
 
-  // Voice mode on and off for this tab.
-  void Start();
-  void Stop();
+  // |holder| starts or stops holding the controller (voice mode on and off
+  // for this tab, or a web agent run). The accessibility mode is taken by
+  // the first holder and released, with the trees, by the last. A web
+  // agent's holds are counted (two runs may share a tab); voice mode's is
+  // one.
+  void Start(Holder holder = Holder::kVoiceMode);
+  void Stop(Holder holder = Holder::kVoiceMode);
   bool active() const { return mode_ != nullptr; }
+  bool held_by(Holder holder) const;
 
   // Whether the top-level document's tree is here (the map is empty until
   // it is).
   bool HasPageTree();
   // The page map of the trees held now.
   PageMap BuildMap(const PageMapLimits& limits = PageMapLimits());
+
+  // What an action on |target| would touch now, read from the tree its
+  // frame has now (the web agent's checks before it acts,
+  // agents/agent_page_map.h).
+  struct TargetFacts {
+    TargetFacts();
+    ~TargetFacts();
+    TargetFacts(const TargetFacts&);
+    TargetFacts& operator=(const TargetFacts&);
+    TargetFacts(TargetFacts&&);
+    TargetFacts& operator=(TargetFacts&&);
+
+    // The node, then its ancestors, nearest first, at most
+    // kMaxInspectAncestors of them, in its frame's tree: each as
+    // PageNodeFromData() reads it (role, states, names, value, link
+    // target, HTML tag, input type, autocomplete; no children or bounds).
+    std::vector<PageNode> chain;
+    // The index in |chain| of the nearest form; -1 if none was found.
+    int form_index = -1;
+    // The frame's committed origin, and whether the frame is the top-level
+    // document's.
+    url::Origin origin;
+    bool main_frame = false;
+  };
+  // As every action does, the target is found again first: a stale handle
+  // (*|error| kStale) or a frame that isn't an http(s) document
+  // (kNotAllowed) gives nullopt.
+  std::optional<TargetFacts> Inspect(const PageNodeHandle& target,
+                                     ActionResult* error);
+
+  // The committed origin of the frame whose tree has |tree_index|
+  // (PageNodeHandle::tree), if it is one of this tab's primary page's.
+  std::optional<url::Origin> OriginOfTree(int32_t tree_index);
+
+  // The names of a select's options (a collapsed <select>, whose options
+  // the map doesn't number, or a list box), in order: at most kMaxOptions,
+  // each cleaned for speech and capped at kMaxOptionChars; disabled ones
+  // left out. Empty for anything else, or a stale handle.
+  std::vector<std::string> OptionsOf(const PageNodeHandle& select);
+
+  // Chooses the option named |option| (as OptionsOf() gives it) of the
+  // select |select|: the option's default action, which Blink carries out
+  // as assistive technology's choice (HTMLOptionElement::AccessKeyAction():
+  // the select takes it and fires its input and change events), with user
+  // activation. kNoSuchOption if it has none by that name.
+  ActionResult SelectOption(const PageNodeHandle& select,
+                            std::string_view option);
 
   // Accessibility actions on a node of the last map.
   ActionResult Press(const PageNodeHandle& target);
@@ -181,6 +259,8 @@ class VoicePageController
 
   // Runs |callback| after each batch of tree updates that changed a tree.
   void SetTreesUpdatedCallbackForTesting(base::RepeatingClosure callback);
+  // Lower caps than kMaxTrees and kMaxFrameTreeNodes.
+  void SetTreeCapsForTesting(size_t max_trees, size_t max_frame_tree_nodes);
 
  private:
   friend class content::WebContentsUserData<VoicePageController>;
@@ -224,6 +304,8 @@ class VoicePageController
 
   // This tab's frame of the primary page with |tree_id|, or null.
   content::RenderFrameHost* FrameFor(const ui::AXTreeID& tree_id);
+  // The nodes held of the child frames' trees, together.
+  size_t FrameTreeNodes();
   void DropTree(const ui::AXTreeID& tree_id);
   void DropTreesNotInPrimaryPage();
   std::optional<Target> Resolve(const PageNodeHandle& handle,
@@ -237,10 +319,15 @@ class VoicePageController
   void SendEnter(content::RenderFrameHost* frame);
 
   std::unique_ptr<content::ScopedAccessibilityMode> mode_;
+  // Voice mode holds the controller; web agent runs that do.
+  bool voice_mode_hold_ = false;
+  int web_agent_holds_ = 0;
   std::map<ui::AXTreeID, HeldTree> trees_;
   std::map<int32_t, ui::AXTreeID> tree_ids_;
   int32_t next_tree_index_ = 0;
   int resets_this_page_ = 0;
+  size_t max_trees_ = kMaxTrees;
+  size_t max_frame_tree_nodes_ = kMaxFrameTreeNodes;
   Stats stats_;
   std::optional<PendingSubmit> pending_submit_;
   base::OneShotTimer submit_timer_;

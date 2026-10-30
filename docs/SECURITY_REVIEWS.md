@@ -4,6 +4,116 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-29: PR #80 (October 2026)
+
+**Scope.** The code merged in pull request #80 (rounds 36 and 37, touchless
+browsing's Phase 0), which only its authors had reviewed, in this order of
+priority:
+
+1. The page map and the accessibility actions (`page_map*`,
+   `ax_page_source*`, `voice_page_controller*`): what a page, or a
+   compromised renderer, can send (updates a tree can't take, the reset
+   loop, a frame claiming another frame's tree, huge trees and strings,
+   location changes with hostile bounds and offset containers); whether a
+   page can get the browser to press, type into or focus a node of another
+   frame, tab or origin, or of the browser's own interface; stale handles;
+   the Enter fallback's wait for the focus; and fields that hide a
+   password, card number or one-time code behind other roles, labels or
+   `contenteditable`.
+2. The voice loop (`voice_controller*`, `voice_sites*`,
+   `voice_candidates*`, `voice_speech*`): confirmations (names that avoid
+   the trigger words, a question that outlives its page or tab, a "yes"
+   from elsewhere), spoken addresses and the default engine, page text
+   that tries to steer the loop, the waits and the controller's lifetime
+   across window and tab closes and crashes, and MoltNet's refusal.
+3. The numbers overlay and the caption bar (`ui/views/molt_ai/voice/`, the
+   `ContentsContainerView` hooks read from their import commit): hostile
+   bounds, drawing outside the page, the caption's page text, and what a
+   page can observe.
+4. The agent panel's voice field (`molt_ai_agent_voice_handler.*`),
+   `kMoltA11yJs`, and the pages' new dialog and live-region code under the
+   strict CSP and Trusted Types.
+5. The grammar and the matcher (`voice_command*`, `spoken_*`): linear time,
+   the wake phrase, the `whole_query` fallback, and the characters kept in
+   what was heard.
+6. The `#molt-voice-mode` flag entries, `configs/windows-x64.gn`'s DCHECK
+   switch, and the voice bench fetcher's archive extraction and pinning.
+
+**Method.** Each candidate traced from its attacker (a web page, a frame a
+page embeds such as an ad or another site's widget, a compromised
+renderer, whatever the browser hears or is typed into the voice field)
+through MoltBrowser's code and the upstream Chromium 156 code at the
+pinned revision: `RenderFrameHostImpl::HandleAXEvents()` and
+`GetAXTreeData()` (the tree data the browser sets: tree, parent and
+focused tree ids), `AXTree::Unserialize()` and
+`RelativeToTreeBoundsInternal()`, `AXTreeManager`'s and
+`BrowserAccessibility`'s own check of a child tree's parent, and the
+contents area's layout. Page maps were built from hand-made trees of pages
+that embed a frame larger and more prominent than their own content. Fixes
+tested with the std-only unit tests built standalone (system gtest, ASan
+and UBSan, `-fno-exceptions`), the page map, grammar, matcher and voice
+loop fuzzers (a few minutes each, after the fixes), `molt_fuzz.py check`,
+the WebUI checks and their `npm test`; the changed C++ was compiled
+against Chromium 156's headers; the tests that need Chromium run on the
+build machine.
+
+**Findings.** 22: 1 medium, 11 low and 10 informational (by design,
+already correct, or covered by this round's listening work). Fixed: the
+medium and six of the low; the others are tracked privately.
+
+**Fixed.**
+
+- Voice mode's map of a page puts the page before the frames it embeds,
+  so an ad or another site's widget can't take its place: the frames'
+  trees share part of the node budget and of the numbers, the page's
+  lists are looked for first and come before the frames' however
+  prominent, its media before theirs, and what the browser picks by
+  itself ("next page", "louder", full screen, captions) is the page's own
+  first. "Search for ..." types only into the top-level document's own
+  search box, never one in a frame. The page's own tree is always kept,
+  and the frames' trees are capped in nodes together
+  (`voice/ax_page_source.cc`, `page_map.cc`, `voice_controller_logic.cc`,
+  `voice_page_controller.cc`).
+- A frame's tree joins the page only under a node of the tree the browser
+  records as the frame's parent, as Chromium's own accessibility does
+  (`voice/ax_page_source.cc`).
+- A node whose bounds would be measured through offset containers that
+  lead back to each other, or through a chain of them longer than the walk
+  is deep, gets no bounds instead of being measured
+  (`voice/ax_page_source.cc`).
+- A tree voice mode keeps starts empty, and takes only a whole tree then;
+  tree data alone (which the browser sends when the focus moves, as when
+  a tab becomes active again) waits for it instead of being reported as
+  an error, which builds that fail fast on accessibility errors make a
+  crash (`voice/ax_page_source.cc`, `voice_page_controller.cc`).
+- After "Which one?", an answer counts only while the choices read out
+  still name the same items; when the page changed meanwhile (a frame
+  before them grew, for one), the browser asks again
+  (`voice/voice_controller_logic.cc`).
+- What was heard, and the words a command carries, are cleaned in the
+  grammar as page text is: Hangul fillers, private-use characters,
+  noncharacters and U+FFF9 to U+FFFD are dropped too
+  (`voice/spoken_text.cc`).
+
+**Tests added.**
+
+- `ax_page_source_unittest.cc`: a frame claiming a sibling's tree, and a
+  tree with no recorded parent; offset containers in loops (two nodes, a
+  node leading into a loop, a node without a size whose child or nearest
+  sized ancestor loops, the root) and a very long chain of them; the
+  frames' share of the node budget; what an empty tree takes.
+- `page_map_unittest.cc`: a frame with a list more prominent than the
+  page's, and a video before the page's; the frames' share of the numbers.
+- `voice_controller_logic_unittest.cc`: "search for", "next page", "play"
+  and "louder" on a page with an ad frame; an answer to "Which one?" after
+  a frame before the choices grew.
+- `voice_page_controller_browsertest.cc`: the page's tree kept when the
+  frames' trees fill their caps (in number and in nodes); tree data alone
+  after voice mode starts again, then the whole tree.
+- `spoken_text_unittest.cc`, `voice_command_unittest.cc`: the characters
+  dropped from what was heard; the grammar, page map and voice loop
+  fuzzers check the new rules (with a new grammar seed).
+
 ## 2026-10-29: PR #79 (October 2026)
 
 **Scope.** The code merged in pull request #79 (round 35), which only its

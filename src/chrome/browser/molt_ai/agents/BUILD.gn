@@ -128,6 +128,37 @@ source_set("agent_plan") {
   ]
 }
 
+# The web agent's view of a page through the accessibility page map: the
+# observation (ids are the map's numbers), finding an element's node again
+# before acting, and what acting on it touches
+# (docs/design/AGENT_ACTIONS.md §2.10). Pure logic (no content/), so
+# molt_ai_unittests links it; fuzzed by molt_agent_page_map_fuzzer.
+source_set("agent_page_map") {
+  sources = [
+    "agent_page_map.cc",
+    "agent_page_map.h",
+  ]
+
+  public_deps = [
+    ":agent_actions",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//url",
+  ]
+}
+
+# What voice mode says while the web agent works on an open-ended request
+# (docs/design/TOUCHLESS_BROWSING.md §6.2). Std-only (with the page map's
+# speech-safe text), so molt_ai_unittests links it.
+source_set("voice_agent_speech") {
+  sources = [
+    "voice_agent_speech.cc",
+    "voice_agent_speech.h",
+  ]
+
+  deps = [ "//chrome/browser/molt_ai/voice:page_map" ]
+}
+
 # The web agent's prompt: the rules and the turn, as one raw prompt or as
 # a chat with a screenshot (docs/design/AGENT_ACTIONS.md §2.6), and the
 # planner's request (§2.8). Pure logic, so molt_ai_unittests links it.
@@ -180,11 +211,47 @@ source_set("features") {
   public_deps = [ "//base" ]
 }
 
+# The web agent on the page map and voice mode's planner fallback, on the
+# fixture pages in chrome/test/data/molt_voice/ with a scripted model
+# (agent_page_map_browsertest.cc). Picked up by browser_tests through
+# //chrome/browser/molt_ai/voice:browser_tests.
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "agent_page_map_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai:molt_ai_agents",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai/voice:features",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/browser/molt_ai/voice:voice_controller",
+    "//chrome/browser/molt_ai/voice:voice_page",
+    "//chrome/browser/molt_ai/voice:voice_planner",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media:media_buildflags",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
     "agent_actions_unittest.cc",
+    "agent_page_map_unittest.cc",
     "agent_plan_unittest.cc",
     "agent_prompt_unittest.cc",
     "agent_tools_unittest.cc",
@@ -192,9 +259,11 @@ source_set("unit_tests") {
     "chat_actions_unittest.cc",
     "frame_tools_unittest.cc",
     "hidden_chars_unittest.cc",
+    "voice_agent_speech_unittest.cc",
   ]
   deps = [
     ":agent_actions",
+    ":agent_page_map",
     ":agent_plan",
     ":agent_prompt",
     ":agent_tools",
@@ -202,7 +271,13 @@ source_set("unit_tests") {
     ":chat_actions",
     ":frame_tools",
     ":hidden_chars",
+    ":voice_agent_speech",
     "//base",
+
+    # Hand-built page trees (YouTube-, Google-like, a sign-in form, frames)
+    # for the page map's observation.
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/browser/molt_ai/voice:page_map_test_support",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/security:agent_safety",
     "//chrome/services/molt_ai/inference/engine:image_input",

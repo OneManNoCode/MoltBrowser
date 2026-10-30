@@ -10,19 +10,14 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ref_counted_memory.h"
-#include "chrome/browser/profiles/profile.h"
-#include "content/public/browser/url_data_source.h"
-#include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_ui.h"
-#include "content/public/browser/web_ui_message_handler.h"
-#include "services/network/public/mojom/content_security_policy.mojom.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -32,7 +27,9 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/common/molt_user_click.h"
@@ -40,31 +37,36 @@
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_settings_handler.h"
-#include "base/functional/callback_helpers.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_cpu.h"
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
+#include "chrome/browser/molt_ai/voice/voice_session_settings.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_gpu_inference_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_voice_settings_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_web_ai_sites_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/storage_partition.h"
-#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
+#include "components/keyed_service/core/service_access_type.h"
 #include "components/password_manager/core/browser/password_form.h"
-#include "components/password_manager/core/browser/password_string.h"
 #include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
-#include "components/keyed_service/core/service_access_type.h"
+#include "components/password_manager/core/browser/password_string.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/storage_partition.h"
+#include "content/public/browser/url_data_source.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/mojom/content_security_policy.mojom.h"
 #include "url/gurl.h"
-#include "build/build_config.h"
 
 namespace {
 
@@ -74,9 +76,11 @@ const char kSettingsFileName[] = "settings.json";
 
 // Keys the form below doesn't manage, which Save and Reset keep: the switch
 // for the built-in AI APIs has its own section ("Sites using on-device AI")
-// and applies at once.
+// and applies at once, as do voice mode's ("Voice mode").
 const char* const kKeysKeptOnSaveAndReset[] = {
-    molt_ai::web_ai::kWebAIApisSettingsKey};
+    molt_ai::web_ai::kWebAIApisSettingsKey,
+    molt_ai::voice::kVoiceModeSettingsKey,
+    molt_ai::voice::kVoiceAlwaysListeningSettingsKey};
 
 base::FilePath GetSettingsFilePath() {
   base::FilePath home_dir;
@@ -2419,7 +2423,7 @@ class MoltAISettingsDataSource : public content::URLDataSource {
           std::string(molt_webui::kMoltTrustedHtmlJs) +
           molt_webui::kMoltActionsJs + kSettingsPageJs +
           molt_ai::shield::kMoltShieldSettingsJs + kWebAISitesSettingsJs +
-          kGpuInferenceSettingsJs));
+          kGpuInferenceSettingsJs + kVoiceSettingsJs));
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
@@ -2691,6 +2695,29 @@ h2[tabindex="-1"]:focus{outline:none !important}
     </div>
   </div>
 
+  <div class="section" id="voiceSection" hidden>
+    <h2><span class="icon" aria-hidden="true">&#127908;</span> Voice mode</h2>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="voiceEnabled" data-on-change="voiceSetEnabled">
+        <span class="track"></span>
+        <span class="label">Voice mode: listen for &ldquo;Hey Molt&rdquo;</span>
+      </label>
+      <div class="desc">Listens in this window now, and whenever MoltBrowser starts. Say &ldquo;Hey Molt&rdquo;, then what you want: &ldquo;open YouTube&rdquo;, &ldquo;search for &hellip;&rdquo;, &ldquo;the fourth one&rdquo;. Speech is recognized on this device; nothing is recorded or sent anywhere. The Voice button in the toolbar turns listening on and off in a window, and so does saying &ldquo;turn off voice mode&rdquo;. Never in MoltNet windows.</div>
+    </div>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="voiceAlwaysListening" data-on-change="voiceSetAlwaysListening">
+        <span class="track"></span>
+        <span class="label">Always listening: no wake phrase</span>
+      </label>
+      <div class="desc">Every sentence you say is a command, without &ldquo;Hey Molt&rdquo;. For when you are alone: anyone, or anything, speaking near the microphone can command the browser too.</div>
+    </div>
+    <div class="field">
+      <span class="desc" id="voiceStatus" role="status"></span>
+    </div>
+  </div>
+
   <div class="section" id="providersSection">
     <h2><span class="icon" aria-hidden="true">&#9729;</span> Connect AI Providers</h2>
     <div class="field">
@@ -2859,6 +2886,9 @@ MoltAISettingsUI::MoltAISettingsUI(content::WebUI* web_ui)
   // "Use the GPU for on-device AI" (id="gpuSection"; shown only in builds
   // with GPU inference).
   web_ui->AddMessageHandler(std::make_unique<MoltGpuInferenceHandler>());
+  // "Voice mode" (id="voiceSection"; shown only with
+  // chrome://flags/#molt-voice-mode).
+  web_ui->AddMessageHandler(std::make_unique<MoltVoiceSettingsHandler>());
 }
 
 MoltAISettingsUI::~MoltAISettingsUI() = default;

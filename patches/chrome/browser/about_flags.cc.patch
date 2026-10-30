@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/about_flags.cc
-Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
 Generated from src/chrome/browser/about_flags.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
-index 3bd06fa95993f6060b6b1992c66bbed30cdc2f1b..d3161973c660f74205e1491b3aa4e65295386d13 100644
+index 3bd06fa95993f6060b6b1992c66bbed30cdc2f1b..186124cd7b10732854303bd6678a9cc94905d85d 100644
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
 @@ -51,6 +51,10 @@
@@ -19,7 +19,7 @@ index 3bd06fa95993f6060b6b1992c66bbed30cdc2f1b..d3161973c660f74205e1491b3aa4e652
  #include "chrome/browser/navigation_predictor/navigation_predictor_features.h"
  #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
  #include "chrome/browser/net/stub_resolver_config_reader.h"
-@@ -14264,6 +14268,20 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -14264,6 +14268,21 @@ const FeatureEntry kFeatureEntries[] = {
           webapps::features::kAndroidInstallAnyPageAsDiyAppStopgap)},
  #endif  // BUILDFLAG(IS_ANDROID)
  
@@ -30,8 +30,9 @@ index 3bd06fa95993f6060b6b1992c66bbed30cdc2f1b..d3161973c660f74205e1491b3aa4e652
 +    // (#molt-fingerprinting-protection).
 +    MOLT_FINGERPRINTING_FEATURE_ENTRIES,
 +
-+    // MoltBrowser: the web agent's screenshots, site tools and planner
-+    // (#molt-agent-screenshots, #molt-agent-site-tools, #molt-agent-planner).
++    // MoltBrowser: the web agent's screenshots, site tools, planner and page
++    // map (#molt-agent-screenshots, #molt-agent-site-tools,
++    // #molt-agent-planner, #molt-agent-page-map).
 +    MOLT_AGENT_FEATURE_ENTRIES,
 +
 +    // MoltBrowser: voice mode (#molt-voice-mode).

@@ -8,8 +8,9 @@ manual checks, the MoltNet leak kit, packaging and the offline signing.
 Windows is still at v0.2.1). Since then the October v0.3 work landed: the
 workstream merges and pull requests #2 to #55, including the rebase onto
 Chromium 152 (#11), and then the rebase onto Chromium 156.0.8078.48 (#64),
-when Chrome's Extended Stable channel moved to M156, and its first
-security respin, 156.0.8078.74 (round 31; "(from the .74 respin)" below).
+when Chrome's Extended Stable channel moved to M156, and its security
+respins 156.0.8078.74 (round 31; "(from the .74 respin)" below) and
+156.0.8078.80 (round 39; "(from the .80 respin)").
 **None of it has been compiled against Chromium 156.**
 Each PR body and design doc lists what it still needs; this page collects
 those lists in the order you do them. (#31 changed only CI, and #42 is an
@@ -199,7 +200,7 @@ what to send back.
   ```bash
   ./scripts/setup.sh --resync --target-os mac,linux 2>&1 | tee ~/molt-v0.3.0/setup.log
   ```
-  *Expected:* `chromium/src @ 156.0.8078.74 (d331de35ca8ab1358c7a17e4bd41627d55eaef51)`,
+  *Expected:* `chromium/src @ 156.0.8078.80 (fb096c0011f9d50f0a264a9376420cdea9c421e3)`,
   then `gclient sync`, hooks and `Overlay applied.` It resets `chromium/src`
   (`reset --hard`, `clean -fd`; the gitignored `out/` survives), so the
   first run from an older pin means a full rebuild. A checkout already at
@@ -207,7 +208,12 @@ what to send back.
   V8 (15.6.75.25), Skia, WebRTC, ANGLE, Dawn, devtools-frontend, ICU,
   libaom, libvpx and PDFium, so `gclient sync` fetches all of them and
   most of the build recompiles. No Rust crate changed: gnrt needs no rerun
-  for it.
+  for it. A checkout already at 156.0.8078.74 needs it again (from the .80
+  respin): that respin moves V8 (15.6.75.27), Skia, Dawn and PDFium and
+  76 Chromium files (Blink's events and DOM, storage and quota, the
+  HTTP cache, Cache Storage, File System Access), and V8's and Skia's
+  headers reach most targets, so expect most of the build to recompile
+  again. No Rust crate changed in it either.
 - [ ] The checkout is at the pin (from #11, `chromium_version.txt`):
   ```bash
   [ "$(git -C chromium/src rev-parse HEAD)" = "$(tools/chromium/pin.sh revision)" ] && echo pin-ok
@@ -238,7 +244,7 @@ what to send back.
   *Expected:* `engines-ok`. If not, regenerate with `-o <that src/ path>`
   instead of `--check`, commit it in a PR, and copy it into `chromium/src`.
   Our copy was rebuilt from 156's `search_engines_data`
-  (`5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c`, which 156.0.8078.74 still
+  (`5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c`, which 156.0.8078.80 still
   pins; `git -C chromium/src/third_party/search_engines_data/resources
   rev-parse HEAD`) from the release's source tarball (from the .74
   respin), so expect `engines-ok`; before, it was the 148-era list.
@@ -421,6 +427,32 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 - [ ] Merge the pins-and-version PR; `git pull --ff-only`; `./scripts/setup.sh`
   copies the overlay again (from CLAUDE.md "Git Workflow").
 
+### 2.7 The speech helper's sources (speech-helper)
+
+`scripts/bundle-speech.sh` pins every source tarball (sherpa-onnx, ONNX
+Runtime and their dependencies) and every model file by SHA-256. The
+tarball pins were set where github.com's `/archive/` downloads were
+blocked: each was reproduced from its pinned commit with
+`git archive | gzip -n`, which gives GitHub's bytes (it matched every
+upstream pin there is: sherpa-onnx's own seven, GitLab's Eigen tarball and
+ONNX Runtime's pin of KleidiAI's tarball). Confirm them with real downloads
+once, before the first bundled build:
+
+- [ ] On a trusted machine (from speech-helper):
+  ```bash
+  scripts/bundle-speech.sh --build-only --fetch download --cache /tmp/speech-pins 2>&1 | tee ~/molt-v0.3.0/speech-pins.log
+  grep -nE 'FATAL|mismatch' ~/molt-v0.3.0/speech-pins.log
+  ```
+  *Expected:* no match: every download matches its pin (then it builds,
+  §3.4; stop it with Ctrl-C if the pins were all you wanted). A mismatch
+  means GitHub serves other bytes for the same commit: check the commit
+  the tarball holds (`gunzip -c FILE | git get-tar-commit-id` must print the
+  commit pinned next to it) and, if it is the pinned one, replace that
+  SHA-256 with the download's in `scripts/bundle-speech.sh` and say so in
+  the PR. Never move a commit pin without reading the upstream change.
+  *Recorded in* `scripts/bundle-speech.sh` (`SOURCES`, `SHERPA_DEPS`,
+  `SHERPA_SOURCE_DIRS`, `ORT_DEPS`, `MODEL_ARCHIVES`, `MODEL_FILES`).
+
 ## 3. Configure and build
 
 The first time, follow the order of "First build" at the top: the static
@@ -506,6 +538,65 @@ dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
   (implied). If the runner's RAM can't take the ThinLTO link, try
   `use_thin_lto = false` first and record what `gn gen` says, then the link
   time and peak memory here.
+
+### 3.4 The speech helper (speech-helper)
+
+`molt-speech` (`docs/design/SPEECH_HELPER_PROTOCOL.md`), touchless
+browsing's resident speech helper, is built outside GN by
+`scripts/bundle-speech.sh`, like whisper-cli: ONNX Runtime 1.28.2 (CPU,
+static), sherpa-onnx 2.0.1 (static, no TTS) and the helper, linked into one
+executable, plus three models (about 80 MB). The first run builds ONNX
+Runtime (40 minutes at `--jobs 2` on a 4-core server; allow an hour) and
+sherpa-onnx (5 minutes), and needs about 2 GB of disk for its cache; later
+runs relink in a minute. Bundling is
+opt-in until voice listening ships (`MOLT_BUNDLE_SPEECH=1`, §11).
+
+- [ ] macOS arm64 (from speech-helper; verify the command, not run on a
+  Mac yet): needs CMake 3.28 or later, Xcode's clang, `python3`, `git`,
+  `patch` and preferably `ninja` (Homebrew's are fine: nothing of them
+  ships).
+  ```bash
+  MOLT_BUNDLE_SPEECH=1 ./scripts/build.sh 2>&1 | tee ~/molt-v0.3.0/build-speech-mac.log
+  # or, after a build: scripts/bundle-speech.sh --app chromium/src/out/MoltBrowser/MoltBrowser.app
+  otool -L chromium/src/out/MoltBrowser/MoltBrowser.app/Contents/Resources/speech/molt-speech
+  scripts/bundle-speech.sh --verify chromium/src/out/MoltBrowser/MoltBrowser.app/Contents/Resources
+  ```
+  *Expected:* "[bundle-speech] molt-speech ... MB, SHA-256 ...";
+  `otool -L` lists only `/usr/lib/` and `/System/Library/` libraries; the
+  verify step says "OK: 13 model files match their pins". On Linux x64 the
+  stripped helper is 27 MB.
+- [ ] macOS signing (from speech-helper, CLAUDE.md "Packaging gotchas"):
+  `scripts/release.sh`, `scripts/sign-app.sh` and `scripts/dev-install-mac.sh`
+  sign `Contents/Resources/speech/molt-speech` explicitly with the
+  hardened runtime (`codesign --deep` skips `Resources/`). *Expected:*
+  `codesign -dvv Contents/Resources/speech/molt-speech` shows the Developer
+  ID, `flags=0x10000(runtime)` and a timestamp, and notarization accepts
+  the app. It needs no entitlement (ONNX Runtime doesn't generate code).
+- [ ] Linux x64 (from speech-helper): in the build image (CMake 3.28 or
+  later; Ubuntu 24.04's is), `MOLT_BUNDLE_SPEECH=1 ./scripts/package-linux.sh`
+  puts it in `opt/moltbrowser/speech/`. *Expected:* `ldd .../speech/molt-speech`
+  lists only glibc's libraries (the C++ runtime is linked in), and the
+  checks below pass. This is the one platform it was built and run on.
+- [ ] Windows x64 (from speech-helper; deferred): from Git Bash inside a
+  "x64 Native Tools" prompt with CMake 3.28 or later, Ninja and Python 3,
+  `scripts/bundle-speech.sh --dest <staging>` gives `<staging>/speech/molt-speech.exe`
+  with the static CRT. Never run: expect to fix paths. The installer must
+  grant the helpers' capability on `speech\` as on `ocr\` and `whisper\`
+  (§7.5) once the voice session runs it in the AppContainer.
+- [ ] On each OS, the helper's own checks (from speech-helper):
+  ```bash
+  S=<the speech/ folder>
+  python3 -I tools/voice_bench/speech_helper_check.py --helper $S/molt-speech --models $S/models protocol
+  ```
+  *Expected:* every check "ok" (no audio needed). With the bench's audio
+  (`tools/voice_bench/gen_audio.py`, `--dir` its data directory), the steps
+  `accuracy bias wake latency listen` give numbers to compare with
+  `docs/design/SPEECH_HELPER_PROTOCOL.md` §8 (a slower machine: slower,
+  but the same transcripts).
+- [ ] Record the helper's SHA-256 per OS (printed, and in
+  `speech/.build-info`) with the release. It differs from machine to
+  machine (compilers), so it is recorded, not pinned; the sources and models
+  are pinned (§2.7).
 
 ## 4. Compile-risk hot spots
 
@@ -770,6 +861,9 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
 
 | `voice/voice_controller.cc`, `voice/voice_speech.cc`, `voice/voice_page_controller.cc` (new `Increment()`, `Decrement()`, `ScrollPage()`), `ui/webui/molt_ai/molt_ai_agent_voice_handler.cc`, `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-voice-mode`) | type-checked against 156's headers here; what only the build shows: `DEFINE_USER_DATA` and `ui::ScopedUnownedUserData` on the window, `TtsUtterance::SetEventDelegate(std::unique_ptr)`, `MediaSession::GetMediaSessionInfoSync()` and `SeekTo()`, `TemplateURLRef::ReplaceSearchTerms()`, `SetTabAudioMuted()`, the new GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to `//chrome/browser/search_engines`, `//chrome/browser/ui:browser_commands`, `//chrome/browser/ui/tabs:utils` and `//services/media_session/public/mojom` | voice-loop |
+| `molt_ai/voice/voice_audio.cc` (its own `media::AudioInputIPC` passing a `media::mojom::AudioProcessingConfig` to `AudioStreamFactory::CreateInputStream`, under `media::AudioInputDevice`; `audio::OutputDevice` for the earcons; `system_permission_settings::IsDenied/CanPrompt/Request`), `voice_listener.cc` (dedicated `ThreadPool` single-thread runners, `ReleaseSoon`), `voice_session.cc` (`content::MediaSession::StartDucking()`, `GetAllBrowserWindowInterfaces()`), `voice_speech.cc` (`TtsController::RemoveUtteranceEventDelegate()` and `IsSpeaking()`; utterances that never clear the queue), `common/helper_resident_{posix,win}.cc` (Windows: `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION`, `StartupInformationHelper` with a stdin handle), `ui/views/molt_ai/voice/voice_toolbar_button.cc`, the `toolbar_view.cc` hook, `molt_voice_settings_handler.cc` | type-checked against 156's headers here; what only the build shows: the audio service accepting a processing config from the browser process for a 16 kHz mono 10 ms stream, the GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to the overlay (`//chrome/browser/ui/views/molt_ai/voice:overlay`) and from the toolbar to `:voice_session` | speech-session |
+
+| `agents/web_agent.cc` (the page map path: `VoicePageController::CreateForWebContents()` and its `Start(Holder)`/`Stop(Holder)`, `AddTreesUpdatedCallback()`, `base::OneShotTimer`, `RenderFrameHost::GetLastCommittedURL()`; the testing model), `agents/voice_agent_planner.cc` (`base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `SequencedTaskRunner::DeleteSoon` of a `std::unique_ptr<WebAgent>`, `web_ai::PickWebModel`), `voice/voice_page_controller.cc` (`Inspect()`: `ui::AXNode::parent()`, `GetRole()`; `SelectOption()`: `kDoDefault` on an option), `voice/voice_controller.cc` (it is now a `VoicePlanner::Delegate`), `ui/webui/molt_ai/molt_ai_chat_handler.cc` (`observed_with`), `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-agent-page-map`); the new GN edges `//chrome/browser/molt_ai/voice:voice_controller` → `//chrome/browser/molt_ai:molt_ai_agents`, `molt_ai_agents` → `voice:voice_page`, `voice:voice_planner`, `voice:page_map`, `web_ai:logic`, `agents:agent_page_map`, `agents:voice_agent_speech`, and `voice:browser_tests` → `agents:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges above in `gn gen` (no cycle through `//chrome/browser/profiles` or the overlay), and §5.1's browser tests | agent-pagemap |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1091,6 +1185,9 @@ extension enablement and `MediaRouterEnabled()`).
   | `PageMapTest.*`, `PageMapTextTest.*`, `PageMapAgentSafetyTest.*` (built standalone here), `AXPageSourceTest.*` (needs the build: real `ui::AXTree`s from `AXTreeUpdate`s, frames joined through child tree ids, the caps, the focused frame) | page-map |
   | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
   | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
+  | `VoiceListenerProtocolTest.*` (frames, CONFIG, the helper's lines refused or taken, hotwords), `VoiceSessionLogicTest.*` and `VoiceSessionCommandsTest.*` (wake phrase, follow-up window, always listening, barge-in, "stop", the browser's own voice, a page's speech, crashes), `VoiceAudioSamplesTest.*` (frames, earcons), `CpuUsageWindowTest.*`, `ProcStatTest.*`, `ResidentHelperTest.*` (the resident sandbox with the stand-in helper: reads only its model directory, writes nothing, no network, no process, its limits, its pipes, dies with the browser; Linux and macOS) and `HelperSandboxWinPolicyTest.Resident*`; all built standalone here, `ResidentHelperTest.*` against this machine's kernel | speech-session |
+  | `SpeechFrameReaderTest.*`, `SpeechConfigTest.*`, `SpeechTextTest.*`, `SpeechEventsTest.*`, `SpeechListenerTest.*` (std only, built standalone here under ASan and UBSan: the speech helper's frames, CONFIG's strict JSON, hotword cleaning and the wake phrase's word pieces, the event lines, and the listening states against fake engines) | speech-helper |
+  | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1237,6 +1334,72 @@ extension enablement and `MediaRouterEnabled()`).
   If one fails, send the log: the page waits (load, quiet tree, the
   autoplay grace) are timed for a desktop; a wait that runs out shows as a
   missing or early reading. A failure in what is said prints both texts.
+- [ ] The web agent on the page map and the planner fallback's browser
+  tests (agent-pagemap): a scripted model stands in for the on-device one
+  (`WebAgent::SetModelForTesting()`), on the fixture pages in
+  `chrome/test/data/molt_voice/` (`checkout.html` and `no_tree.html` are
+  new). In the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='AgentPageMapBrowserTest.*:VoicePlannerBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/agent-pagemap-browser-tests.log
+  ```
+  *Expected:* all 5 pass, on macOS and Linux:
+  - `AgentPageMapBrowserTest.SearchesChoosesAndPlays`: the agent types into
+    the video site's search box, presses Search (it asks first: the button
+    submits the site's form), chooses the Live Aid result and presses the
+    video, which plays with a trusted click, user activation and sound;
+    every observation came through the page map, and the accessibility
+    mode goes with the run.
+  - `.FallsBackToTheSnapshot`: a page whose only control is hidden from
+    the accessibility tree is read through the element snapshot, and the
+    control clicked there.
+  - `.NeverInMoltNetWindows`: a run in a MoltNet window takes no
+    accessibility mode and reads the page through the snapshot only.
+  - `VoicePlannerBrowserTest.HandsTheRestToThePlanner`: "find me a train
+    from Paris to Lyon tomorrow" goes to a stub planner with the page map;
+    its step and its question are said; "yes" and "no" answer it; "stop"
+    ends it; without a planner the browser says it can't do that yet.
+  - `.AnOrderWaitsForAYes`: through the web agent, "Place order" (a form)
+    is said, asked about, not pressed on "no", and pressed as a trusted
+    click on "yes", then "Done. Your order is placed." is said.
+
+  If `SearchesChoosesAndPlays` fails on a missing element, send the log
+  with the prompts (`--vmodule=web_agent=1`): the page map's names for the
+  fixture's controls may differ from what the scripted model looks for.
+- [ ] Voice mode listening's browser tests (speech-session): Chromium's
+  fake audio capture feeds the real microphone path (Chrome-wide echo
+  cancellation) and the real listener starts the stand-in helper
+  `molt_fake_speech_helper` (built next to `browser_tests`) under the real
+  resident sandbox. In the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceSessionBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/speech-session-browser-tests.log
+  ```
+  *Expected:* all 7 pass on Linux and macOS (`NeverListensInMoltNetWindows`
+  only on Windows):
+  - `TheWakePhraseThenACommand`: wake, a partial, then "open a new tab"
+    opens one; "Voice mode is on. Say Hey Molt, then what you want." is
+    said once the helper is ready.
+  - `WhatIsHeardWhileTheBrowserSpeaksDoesntCommandIt`: while the browser
+    speaks, "open a new tab" without the wake phrase does nothing, and
+    "stop" stops the speech.
+  - `APagesSpeechIsNeverCutShort`: a page's utterance queued after voice
+    mode's, and one voice mode's answer waits behind, both end by
+    themselves when voice mode is stopped (no `INTERRUPTED` or
+    `CANCELLED`).
+  - `WhatAPageSaysDoesntCommandIt`: in the follow-up window, "open a new
+    tab" heard while a page speaks through `speechSynthesis` does nothing.
+  - `RestartsAfterACrash`: the helper exits; the session shows starting,
+    then waiting again once a new one is ready.
+  - `GivesUpAfterCrashesInARow`: a helper that writes what isn't the
+    protocol is ended three times, then voice mode stops listening and
+    says "Speech recognition stopped working: ...".
+  - `NeverListensInMoltNetWindows`: no helper looked for, no microphone,
+    "Voice mode is off in MoltNet windows.".
+
+  If one fails, send the log, with the lines `[MoltVoice]` and
+  `[MoltHelperSandbox]`: they say which echo canceller the microphone got
+  and what confinement the helper got.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -1372,9 +1535,9 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests`, `media_unittests`, `services_unittests` | `AudioProcessingPropertiesToAudioProcessingSettingsTest.*:MediaStreamAudioProcessor*:ProcessedLocalAudioSource*`; `CreateWebRtcAudioProcessingModuleTest.*:AudioProcessor*`; `AudioProcessorHandler*:InputController*:*InputStream*` (outside MoltNet the module is built and runs as before; `MoltNetAsksForCpuIndependentProcessing` is the new case) | fp-probes2 |
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `UserMediaClientTest.*:*EchoCancellationMode*:MediaStreamAudioProcessingLayout*:MediaStreamConstraintsUtilAudioTest.*:MediaStreamConstraintsRemoteAPMTest.*:MediaDevicesTest.*`; `AudioServiceAudioProcessorProxyTest.*:MediaStreamAudioTest.*`; `MoltPortableMediaTest.*:SincResampler*:VectorMath*:AudioConverter*`; `OutputDeviceMixerImplTest*:OutputDeviceMixerManagerTest.*:MixingGraphImpl.*:MixingGraphInputTest.*:AudioProcessorHandlerTest.*` (outside MoltNet the effects, the echo canceller's choice and the mixing are as before; the new cases are `UserMediaClientTest.MoltNetMicrophoneHasNoPlatformEffects`, `EchoCancellationModeTest.MoltNetUsesWebRtcEchoCancellation`, `MoltPortableMediaTest.NoCaptureEffectsInPortableMode`, `PortableAudioThreadScope`, `PortableAudioThreadMixesWithTheCCode` and `OutputDeviceMixerImplTest.MixesPortablyWhileCpuIndependentListens`) | fp-mic2 |
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `MoltNetSubnormalsTest.*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:UserMediaClientTest.*:MediaDevicesTest.*:MediaStreamConstraintsUtilAudioTest.*:*WebAudio*:*AudioWorklet*:*Biquad*:*DynamicsCompressor*:*AVIF*`; `DenormalDisablerTest.*`; `MoltPortableMediaTest.*:MoltPulseCaptureSourceTest.*:SincResampler*:AudioRendererAlgorithm*:AudioProcessorTest*:*Pulse*`; `MixingGraphImpl.*:MixingGraphInputTest.*:OutputDeviceMixerImplTest*:AudioProcessorHandlerTest.*:InputController*` (outside MoltNet the flush modes, the format, the names and the device a stream opens are as before; the new cases are `MoltNetSubnormalsTest.*`, `MoltNetMediaDevicesTest.TracksGetTheSameNames` and `GenericNamesAndGroups`, `UserMediaClientTest.MoltNetMicrophoneHasUniformFormatAndNames`, `MoltPortableMediaTest.FlushTinyPortableSamplesKeepsTheFloor`, `ScopedPortableSubnormalsComputesSubnormals`, `PortableResamplerFlushesItsKernelAndInput`, `PortableCaptureParametersAreTheSameForAll`, `CommunicationsCategoryOnlyWithRawMode`, `PortableCaptureStreamEffects`, `PortableCaptureOutputFormat` and `MoltPulseCaptureSourceTest.*`, the last on Linux) | fp-mic3 |
-
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `content_unittests` | `MoltNetCameraValuesTest.*:MoltNetCameraTest.*:UserMediaClientTest.*:VideoTrackAdapter*:MediaStreamVideoTrack*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaStreamVideoSource*:MediaDevicesTest.*:InputDeviceInfo*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:MoltNetSubnormalsTest.*:*IIRFilter*:*AudioContext*:*HTMLMediaElementAudioOutputDevice*:MediaStreamConstraintsUtilAudio*`; `*IIR*`; `MoltPortableMediaTest.*:ChannelMixer*:AudioProcessor*`; `RenderFrameAudioInputStreamFactory*:ForwardingAudioStreamFactory*:AudioInputStreamBroker*` (outside MoltNet cameras, channels, outputs, `IIRFilterNode`, a device's layout and a stream's processing are as before; the new cases are `MoltNetCameraTest.*`, `UserMediaClientTest.MoltNetCameraTrackReportsTheMenu`, `MoltNetApplyConstraintsKeepsTheCameraOpen` and `MoltNetChannelCountFollowsTheRequest`, `VideoTrackAdapterTest.MoltNetCameraDesiredSizeIsTheTarget`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesHaveTheTrackSize` and `MoltNetCameraDropsFramesItCannotRead` (since fp-camera2 `MoltNetCameraReadsBackFramesItCannotRead`), `MoltNetMediaDevicesTest.CommunicationsOutputIsRefused`, `MoltNetSubnormalsTest.MoltNetFloorsTheIirFiltersHistory` and `IirTailTimeKeepsItsValue`, `MoltPortableMediaTest.FlushTinyPortableSampleFloorsDoubles`, `PortableCaptureNeedsDownmix` and `DownmixGoldenDigests`) | fp-media4 |
 | `blink_unittests`, `media_unittests` | `MoltNetCameraTest.*:MoltNetCameraValuesTest.*:UserMediaClientTest.*:VideoTrackAdapter*:ImageCapture*:MoltNetImageCaptureTest.*:MediaStreamVideoTrack*:MediaStreamVideoSource*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaDevicesTest.*:InputDeviceInfo*`; `MoltPortableColorTest.*:MoltPortableMediaTest.*:VideoFrameConverter*` (outside MoltNet a camera's frames, timing, colour, `ImageCapture` and pan-tilt-zoom permission are as before; the new cases are `MoltNetCameraTest.NoPanTiltZoom`, `ImageCaptureTest.MoltNetCameraImageCaptureService` and `MoltNetCameraHasNoPanTiltZoomPermission`, `MoltNetImageCaptureTest.*`, `VideoTrackAdapterTest.MoltNetCameraFramesHaveOneColorSpace` and `MoltNetCameraFramesKeepOnlyTheMenusMetadata`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesReachTheGrid`, `MoltNetCameraRepeatsTheNewestFrame`, `MoltNetCameraLowerRateKeepsGridTicks`, `MoltNetCameraHidesTheCamerasDrops`, `MoltNetCameraGridTicksOnItsOwn`, `MoltNetCameraReadsBackFramesItCannotRead`, `MoltNetCameraReadsBackTheNewestFrame` and `MoltNetCameraTurnsBlackWhenItCannotRead`, `MoltPortableColorTest.*`, `MoltPortableMediaTest.PortableCameraEncoding` and `UsePortableCameraColor`; the earlier MoltNet camera cases now run on the grid's ticks, which the tests run by hand) | fp-camera2 |
+| `storage_unittests`, `blink_unittests` | `*QuotaDatabaseTest.*:StorageDirectoryTest.*`; `MouseEvent*:PointerEvent*:FocusEvent*:*BoundaryEvent*:MediaStreamVideoTrack*` (upstream's tests of the respin's changes in files that carry MoltBrowser hooks: the one-key bucket listing, MoltNet's `screenX`/`screenY`, a MoltNet camera's settings; outside MoltNet nothing differs from Chromium) | .80 respin |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1786,6 +1949,8 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   (fonts adds `molt_moltnet_font_set_fuzzer`)
   (helpers-win adds `molt_ocr_image_fuzzer` and `molt_recorded_wav_fuzzer`)
   (page-map adds `molt_page_map_fuzzer`)
+  (speech-helper adds `molt_speech_protocol_fuzzer`; agent-pagemap adds
+  `molt_agent_page_map_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2176,6 +2341,102 @@ open Agent mode and type in "Type what you would say":
   windows." and `chrome://accessibility` shows no mode on its tabs.
 - [ ] With VoiceOver or Orca running, the panel's "Heard: ..." line is
   announced once per change and the browser's own speech isn't cut by it.
+
+**Voice mode listening** (from speech-session; `docs/VOICE_COMMANDS.md`
+"Turning voice mode on", TOUCHLESS_BROWSING.md §5.1, §6.1). With the
+bundled `molt-speech` (speech-helper's checklist items) and
+`chrome://flags/#molt-voice-mode` on, on macOS and Linux (Windows deferred),
+each with a real microphone: a laptop's built-in one and a USB headset.
+
+- [ ] The first time (speech-session): press the toolbar's Voice button.
+  *Expected:* macOS asks for the microphone (allow it); then "Voice mode is
+  on. Say Hey Molt, then what you want." and the bar under the page shows
+  "Waiting". The log has `[MoltVoice] microphone on, echo cancellation:
+  Chrome-wide` and `[MoltVoice] speech helper ready` with the helper's
+  confinement (Linux: Landlock and seccomp-bpf). Deny it instead (System
+  Settings, Privacy, Microphone) and press the button: the browser says "I
+  can't use the microphone: ..." aloud and in the bar.
+- [ ] The owner's scenario spoken aloud (speech-session), in a quiet room:
+  "Hey Molt, open YouTube"; "search for Bohemian Rhapsody" within 8 s of
+  its answer, without "Hey Molt"; "the fourth one"; "Hey Molt, pause";
+  "Hey Molt, play the live one by Queen" and the answer to its question.
+  *Expected:* a rising tone on "Hey Molt", a tick when it takes the command;
+  the bar shows what you say as you say it; each step works as when typed;
+  a falling tone 8 s after an answer (back to waiting). Note each step
+  misheard, missed or slow, with the words you said.
+- [ ] With music playing (speech-session): the same with a YouTube music
+  video playing at a normal volume through the speakers, not headphones.
+  *Expected:* the video's sound turns down from "Hey Molt" to the end of
+  the command, then back; the commands work; the song's lyrics, and a
+  video that says "Hey Molt, open settings", command nothing. Count the
+  misses and anything done that you didn't say.
+- [ ] The browser's own voice (speech-session): "Hey Molt, read the
+  headings" on a long Wikipedia article, through speakers. *Expected:*
+  nothing it reads is taken as a command; "stop" (without "Hey Molt") stops
+  it; "Hey Molt, go back" interrupts it and goes back.
+- [ ] Always listening (speech-session): settings, "Always listening" on.
+  *Expected:* the bar shows "Listening"; "open a new tab" works without
+  "Hey Molt"; a TV or a second person talking near the microphone is heard
+  as commands too (as the setting's text says).
+- [ ] Turning it off by voice (speech-session): "Hey Molt, turn off voice
+  mode". *Expected:* it asks first; "yes": "Voice mode is off.", the bar
+  goes, the Voice button loses its ring, and the microphone indicator (macOS
+  menu bar) goes out.
+- [ ] With the browser (speech-session): settings, "Voice mode" on; quit
+  and start MoltBrowser. *Expected:* it listens in the first window without
+  a click.
+- [ ] A crash (speech-session): `kill -9` the `molt-speech` process.
+  *Expected:* the bar says "Speech recognition is restarting", and it
+  listens again within a few seconds; three kills within a minute make it
+  stop and say so.
+- [ ] Its sandbox and limits (speech-session): while it listens, the
+  helper's process shows about 5-15% of one core and under 300 MB; Linux
+  `/proc/<pid>/status` shows `NoNewPrivs: 1` and `Seccomp: 2`; it has no
+  open network sockets (`lsof -p <pid> -i`) and no file open for writing
+  but its pipes. Close the browser's window: the helper is gone.
+- [ ] A page that speaks (speech-session): open a page that reads a long
+  text aloud with `speechSynthesis` (any "text to speech" demo page), then
+  say "Hey Molt, what time is it" and "Hey Molt, stop" while it reads.
+  *Expected:* the page's reading is never cut off or restarted (voice mode's
+  answer waits until it finishes); the commands spoken over the page's
+  voice are not taken (only "stop", which stops voice mode's own speech).
+  Then a page that says "Hey Molt, open a new tab" with `speechSynthesis`:
+  nothing happens.
+- [ ] Numbers that move (speech-session): "Hey Molt, show numbers" on a
+  page whose content shifts (a news site loading ads), then say a number
+  just as it shifts. *Expected:* either the item you saw that number on is
+  pressed, or "The page changed, so its numbers moved..." and new numbers;
+  never another item.
+- [ ] MoltNet (speech-session): in a MoltNet window the Voice button says
+  "Voice mode is off in MoltNet windows." and the microphone indicator
+  stays off; while a regular window listens, a MoltNet tab's video isn't
+  turned down when you speak.
+
+**The web agent on the page map, and voice mode's planner** (from
+agent-pagemap; `docs/design/AGENT_ACTIONS.md` §2.10,
+`docs/design/TOUCHLESS_BROWSING.md` §6.2):
+
+- [ ] With a model loaded, in the AI chat's agent: "play the live aid
+  version of bohemian rhapsody on youtube". *Expected:* the agent's steps
+  name YouTube's own controls (the search box, a result by its title), the
+  video plays with sound (the agent's click counts as yours), and the
+  chat's result event says `observed_with` mostly `page_map` (DevTools on
+  the chat page, or `--vmodule=web_agent=1`). Note how many steps it took
+  and whether any element was found stale.
+- [ ] A sign-in page and a checkout page: the agent never types into the
+  password, card or code field (the step says it refused), and asks before
+  pressing the form's button.
+- [ ] `chrome://flags/#molt-agent-page-map` off (the default): the same
+  task runs through the element snapshot as before (`observed_with`
+  `element_snapshot`); the page-map items above run with it on.
+- [ ] Voice mode on, with a model installed: "Hey Molt, find me a train
+  from Paris to Lyon tomorrow" on a train site. *Expected:* "Working on
+  it.", then each plan step before it runs ("I'll search the site for
+  ..."), questions as "Say yes to ..., or no to cancel." that wait for your
+  "yes", "stop" ending it at once, and the result said. Without a model:
+  "I can't do that by myself yet: no on-device AI model is installed..."
+- [ ] A MoltNet window: the agent's run takes no accessibility mode
+  (`chrome://accessibility` shows the tab without it) and works as before.
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
@@ -3492,7 +3753,7 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
     --key /Volumes/MOLTKEY/molt-update-signing.key --assets-dir release-v0.3.0
   ```
   *Expected:* `sign` lists every asset and, per build, its commit, Chromium
-  156.0.8078.74, builder label and build times, and refuses unless the
+  156.0.8078.80, builder label and build times, and refuses unless the
   macOS and Linux statements cover every installer, SBOM and checksum file
   with the manifest's hashes and agree on the commit and Chromium.
 - [ ] Step 7: copy back `molt-release-manifest.json`, `.sig`,
@@ -3565,6 +3826,15 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   memory limits (item 4), pre-warming after idle unload (5), keeping prompts
   out of crash dumps (9), whether the agent and automation reload a model
   after an idle unload (12), the macOS `sysctl` denial noise (14) (from #15).
+- [ ] **The speech helper in releases** (from speech-helper): bundle it
+  by default (`MOLT_BUNDLE_SPEECH=1` in the release scripts and workflows)
+  once voice listening ships, about 80 MB of models and a 27 MB
+  helper per platform (§3.4). And the wake-phrase model's training data:
+  the GigaSpeech spotter's model card says Apache-2.0, but GigaSpeech's own
+  terms of use couldn't be read (they sit behind a request form). Confirm
+  with its authors, or spot the wake phrase in Kroko's own transcript
+  instead (no second model; a little more CPU while waiting)
+  (`docs/design/SPEECH_HELPER_PROTOCOL.md` §7.3).
 - [ ] **Who builds the macOS release** (§10.1): `release.yml`'s macOS job
   now runs the same scripts as §10.2 (the metallib, helper bundling,
   `Libraries/` signing and DMG name it lacked when this runbook was

@@ -32,6 +32,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   The upstream files MoltBrowser keeps whole inside V8, Skia and WebRTC
   are now merged with every security release too, and the built-in search
   engine list is Chromium 156's (DuckDuckGo stays the default).
+- **Chromium 156.0.8078.80**, with Chrome's security fixes of 2026-10-29.
 - MoltBrowser's encrypted stores (API keys, password vault, form-filler
   profile, chat history, AI memory) moved from the synchronous OSCrypt,
   which Chromium 152 removed, to `os_crypt_async`. Existing files open
@@ -465,6 +466,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   folder is now tested against a hard link to a file outside it, besides
   deleting, renaming and symbolic links, so the folder stays the only place
   a helper's writes can reach.
+- Hardening (security review of PR #80, `docs/SECURITY_REVIEWS.md`): voice
+  mode (preview) reads a page before the frames it embeds, so an ad or
+  another site's widget can't take the page's place in the numbers, "the
+  results", "play" or "next page", and "search for ..." types only into
+  the page's own search box; a frame's accessibility tree joins only under
+  its own parent; a page's tree data or offset containers can't stall or
+  stop the map; an answer to "Which one?" counts only while the choices
+  read out still name the same items; and what was heard is cleaned as
+  page text is.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -1134,6 +1144,38 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   password, card and code fields are never typed into or read out, and
   page text is only ever read, never obeyed. Voice mode stays off in
   MoltNet windows.
+- **Touchless browsing: the browser listens** (preview, behind
+  `chrome://flags/#molt-voice-mode`). "Hey Molt, open YouTube" is done as if
+  typed: the microphone, with the browser's own sound cancelled from it,
+  feeds MoltBrowser's on-device speech engine in a sandboxed helper that
+  can't write files, reach the network or start programs; for 8 s after an
+  answer, or while it waits for a yes or a choice, no "Hey Molt" is
+  needed; "stop" always works; videos are turned down while you speak; a
+  bar under the page shows what it hears as you say it, with a short sound
+  for each state. Turned on with the toolbar's Voice button, in settings
+  (also at every start, and an "Always listening" mode), or by voice. A
+  page reading aloud is never cut off by voice mode, and what it says
+  isn't taken as a command. It never listens in MoltNet windows. How:
+  `docs/VOICE_COMMANDS.md`.
+- **The AI agent sees and acts on pages as voice mode does, and voice mode
+  takes open-ended requests.** Outside MoltNet windows the web agent reads
+  a page through its accessibility tree (numbered items, lists of results,
+  fields with password, card and code fields marked) and clicks, types,
+  chooses options and scrolls through accessibility actions, which pages
+  treat as your own interaction, so a video it starts plays with sound.
+  Before each action it checks the element is still there and still the
+  same, and reads the page again if not; it never types into password,
+  card or code fields there, and asks you before leaving the site or
+  sending a form as before. Pages without a usable accessibility tree, and
+  MoltNet windows, keep the agent's previous way of reading pages. In
+  voice mode, what the commands don't cover ("find me a train from Paris
+  to Lyon tomorrow") goes to the agent's on-device planner: each step is
+  said before it runs, anything that needs your approval waits for a
+  spoken "yes", and "stop" ends it; without a model installed, the browser
+  says so and what you can say instead. Runs that acted this way can't yet
+  be saved as workflows. The chat agent's use of the accessibility tree is
+  off until `chrome://flags/#molt-agent-page-map` is turned on; voice
+  mode's runs always use it.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an
@@ -1205,6 +1247,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and colours follow the user's text size and contrast settings
   ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md) §5). The page map now keeps
   items' positions current as a page scrolls.
+- **Touchless browsing: a speech helper that listens** (not switched on
+  yet; `docs/design/SPEECH_HELPER_PROTOCOL.md`). `molt-speech` hears the
+  wake phrase ("Hey Molt"), notices when you stop speaking and writes down
+  what you said, word by word as you speak, on your computer's processor
+  and with nothing from the network: sherpa-onnx with the Kroko streaming
+  recognizer, a keyword spotter and Silero's voice activity detector, the
+  choices of the voice bench. It runs as a separate helper process the
+  browser starts once per voice session; it reads only its own model
+  folder, cleans the names it gets from the page before they reach the
+  recognizer, bounds everything it holds and writes, and stops at the first
+  malformed message from the browser. `scripts/bundle-speech.sh` builds it
+  and ONNX Runtime from pinned sources into one executable, with its three
+  models (about 80 MB, bundled only with `MOLT_BUNDLE_SPEECH=1` for now); a
+  new fuzzer covers what the browser sends it.
 - **Voice bench** (`tools/voice_bench/`, `docs/VOICE_BENCH.md`): a
   reproducible kit that measures open-source, on-device speech engines for
   touchless browsing (wake phrase, end of speech, streaming and

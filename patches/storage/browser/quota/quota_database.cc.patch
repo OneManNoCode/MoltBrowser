@@ -1,14 +1,14 @@
 MoltBrowser patch for storage/browser/quota/quota_database.cc
-Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
 Generated from src/storage/browser/quota/quota_database.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/quota/quota_database.cc b/storage/browser/quota/quota_database.cc
-index e2d79ba85523fc86c936203e18b39b9a50cfbae5..4d2c0b521247e623cadbdac67248e7e7f0abd3c5 100644
+index 0b6b9ad515473954f742950bbd560b1d9721fd0e..72aac5b70a5b1597aabe96d409e438623fddfc43 100644
 --- a/storage/browser/quota/quota_database.cc
 +++ b/storage/browser/quota/quota_database.cc
-@@ -740,6 +740,46 @@ QuotaErrorOr<std::set<BucketLocator>> QuotaDatabase::GetBucketsModifiedBetween(
+@@ -741,6 +741,46 @@ QuotaErrorOr<std::set<BucketLocator>> QuotaDatabase::GetBucketsModifiedBetween(
    return buckets;
  }
  

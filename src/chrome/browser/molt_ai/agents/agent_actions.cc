@@ -26,12 +26,13 @@ using agent_safety::FieldKind;
 // reader itself.
 constexpr size_t kMaxReplyJsonDepth = 4;
 
-// In schema order: REPLAN (only with a plan) before the CALL_TOOL group.
+// In schema order: SELECT (only with a select) after FILL_FORM, REPLAN
+// (only with a plan) before the CALL_TOOL group.
 constexpr ActionType kAllActions[] = {
     ActionType::kNavigate, ActionType::kSearch,   ActionType::kClick,
-    ActionType::kType,     ActionType::kFillForm, ActionType::kScroll,
-    ActionType::kObserve,  ActionType::kDone,     ActionType::kError,
-    ActionType::kReplan,   ActionType::kCallTool,
+    ActionType::kType,     ActionType::kFillForm, ActionType::kSelect,
+    ActionType::kScroll,   ActionType::kObserve,  ActionType::kDone,
+    ActionType::kError,    ActionType::kReplan,   ActionType::kCallTool,
 };
 
 // ---- Text checks ------------------------------------------------------------
@@ -175,6 +176,8 @@ std::vector<std::string_view> KeysFor(ActionType type) {
       return {"reason", "action", "target", "text"};
     case ActionType::kFillForm:
       return {"reason", "action", "fields"};
+    case ActionType::kSelect:
+      return {"reason", "action", "target", "option"};
     case ActionType::kScroll:
       return {"reason", "action", "direction"};
     case ActionType::kObserve:
@@ -389,6 +392,8 @@ std::string_view ActionName(ActionType type) {
       return "CALL_TOOL";
     case ActionType::kReplan:
       return "REPLAN";
+    case ActionType::kSelect:
+      return "SELECT";
   }
   return "";
 }
@@ -425,6 +430,11 @@ const ObservedElement* Observation::Find(std::string_view ref) const {
       return &e;
   }
   return nullptr;
+}
+
+bool Observation::HasSelectable() const {
+  return std::any_of(elements.begin(), elements.end(),
+                     [](const ObservedElement& e) { return e.selectable; });
 }
 
 bool Observation::HasTypeable() const {
@@ -603,6 +613,22 @@ std::string DescribeElement(const ObservedElement& element) {
     s += "[" + element.input_type + "]";
   if (!element.label.empty())
     s += " \"" + element.label + "\"";
+  if (element.from_page_map()) {
+    // The page map's credential fields, as it marks them (agent_page_map.h):
+    // the agent types into none of them there.
+    if (agent_safety::IsSensitive(element.field_kind)) {
+      s += " (" + std::string(agent_safety::FieldKindLabel(element.field_kind)) +
+           " field: the agent never types here)";
+    } else if (element.typeable) {
+      s += " (text field)";
+    } else if (element.selectable) {
+      s += " (options:";
+      for (size_t i = 0; i < element.options.size(); ++i)
+        s += std::string(i ? " |" : "") + " \"" + element.options[i] + "\"";
+      s += ")";
+    }
+    return s;
+  }
   if (element.field_kind == FieldKind::kPassword)
     s += " (password field: the agent never types here)";
   else if (element.typeable)
@@ -700,10 +726,13 @@ std::string BuildActionSchema(const Observation& observation,
                               const PlanSteps* plan) {
   std::vector<std::string> all_refs;
   std::vector<std::string> text_refs;
+  std::vector<std::string> select_refs;
   for (const ObservedElement& e : observation.elements) {
     all_refs.push_back(e.ref);
     if (e.typeable)
       text_refs.push_back(e.ref);
+    if (e.selectable)
+      select_refs.push_back(e.ref);
   }
   const std::string reason = StringSchema(0, kMaxReasonChars);
   std::vector<std::string> branches;
@@ -746,6 +775,12 @@ std::string BuildActionSchema(const Observation& observation,
                 base::NumberToString(max_items) + "}");
         break;
       }
+      case ActionType::kSelect:
+        if (select_refs.empty())
+          continue;
+        props.emplace_back("target", EnumSchema(select_refs));
+        props.emplace_back("option", StringSchema(1, kMaxOptionChars));
+        break;
       case ActionType::kScroll:
         props.emplace_back("direction", EnumSchema({"down", "up"}));
         break;
@@ -821,6 +856,10 @@ std::string_view ActionErrorText(ActionError error) {
     case ActionError::kBadPlanStep:
       return "\"step\" was neither the CURRENT STEP of the PLAN nor the "
              "next one";
+    case ActionError::kNotSelectable:
+      return "it chose an option of an element that lists no options";
+    case ActionError::kUnknownOption:
+      return "it named an option that the element doesn't list";
   }
   return "";
 }
@@ -881,6 +920,33 @@ ParsedAction ParseAction(std::string_view json,
       case ActionType::kFillForm:
         e = ReadFields(*dict, observation, &a.fields);
         break;
+      case ActionType::kSelect: {
+        const std::string* ref = dict->FindString("target");
+        const ObservedElement* element =
+            ref ? observation.Find(*ref) : nullptr;
+        if (!ref) {
+          e = ActionError::kWrongKeys;
+          break;
+        }
+        if (!element) {
+          e = ActionError::kUnknownElement;
+          break;
+        }
+        if (!element->selectable) {
+          e = ActionError::kNotSelectable;
+          break;
+        }
+        e = ReadText(*dict, "option", kMaxOptionChars, /*required=*/true,
+                     /*multiline=*/false, &a.option);
+        if (e == ActionError::kNone &&
+            std::find(element->options.begin(), element->options.end(),
+                      a.option) == element->options.end()) {
+          e = ActionError::kUnknownOption;
+        }
+        if (e == ActionError::kNone)
+          a.ref = *ref;
+        break;
+      }
       case ActionType::kScroll: {
         const std::string* d = dict->FindString("direction");
         if (!d)

@@ -139,18 +139,22 @@ const PageList* FindList(const PageMap& map,
   return MainList(map);
 }
 
-// The item whose label (folded) has |word| as a word.
+// The item whose label (folded) has one of |phrases| as words: the
+// top-level document's first, then a frame's (an embedded player's), so a
+// frame the page embeds (an ad) can't answer for the page.
 const PageItem* ItemSaying(const PageMap& map,
                            ItemKind kind,
                            std::initializer_list<std::string_view> phrases) {
-  for (const PageItem& item : map.items) {
-    if (item.kind != kind) {
-      continue;
-    }
-    const std::string folded = " " + FoldForComparison(item.label) + " ";
-    for (std::string_view phrase : phrases) {
-      if (folded.find(" " + std::string(phrase) + " ") != std::string::npos) {
-        return &item;
+  for (const bool in_page : {true, false}) {
+    for (const PageItem& item : map.items) {
+      if (item.kind != kind || map.InPage(item.handle) != in_page) {
+        continue;
+      }
+      const std::string folded = " " + FoldForComparison(item.label) + " ";
+      for (std::string_view phrase : phrases) {
+        if (folded.find(" " + std::string(phrase) + " ") != std::string::npos) {
+          return &item;
+        }
       }
     }
   }
@@ -549,6 +553,17 @@ class Planner {
         ClearConfirmation();
         break;
       case K::kNo:
+        // The planner's question (PlanPlannerQuestion()) hears its "no".
+        if (confirming) {
+          for (const VoiceStep& held : state().confirm_steps) {
+            if (held.kind == VoiceStepKind::kPlannerAnswer) {
+              VoiceStep no = held;
+              no.flag = false;
+              Add(std::move(no));
+              break;
+            }
+          }
+        }
         ClearConfirmation();
         Say(confirming ? "Okay, I won't." : "Okay.");
         break;
@@ -613,7 +628,56 @@ class Planner {
       case K::kRunRoutine:
         Say("Routines come later.");
         break;
+
+      // Voice mode itself.
+      case K::kVoiceModeOn: {
+        if (env_.listening) {
+          Say("I'm already listening.");
+          break;
+        }
+        Status("Turning on voice mode");
+        VoiceStep on = Step(VoiceStepKind::kSetVoiceMode);
+        on.flag = true;
+        Add(std::move(on));
+        break;
+      }
+      case K::kVoiceModeOff: {
+        if (!env_.listening) {
+          Say("I'm not listening now.");
+          break;
+        }
+        // A user who has only their voice can't turn it back on by voice:
+        // ask first.
+        VoiceStep said = Step(VoiceStepKind::kSpeak);
+        said.text = "Voice mode is off.";
+        VoiceStep off = Step(VoiceStepKind::kSetVoiceMode);
+        off.flag = false;
+        std::vector<VoiceStep> steps;
+        steps.push_back(std::move(said));
+        steps.push_back(std::move(off));
+        Say("After this I won't hear you until voice mode is turned on "
+            "again with the Voice button in the toolbar, or in settings.");
+        AskToConfirm(std::move(steps), "turn off voice mode");
+        break;
+      }
     }
+  }
+
+  // ---- The planner's questions ------------------------------------------
+
+  void PlannerQuestion(int question, std::string_view what) {
+    turn_.kind = K::kUnknown;
+    if (env_.moltnet || question <= 0) {
+      return;
+    }
+    // The planner's words: model output and page text among them.
+    const std::string text = PageText(what);
+    VoiceStep yes = Step(VoiceStepKind::kPlannerAnswer);
+    yes.index = question;
+    yes.flag = true;
+    std::vector<VoiceStep> steps;
+    steps.push_back(std::move(yes));
+    AskToConfirm(std::move(steps), text.empty() ? std::string("go on") : text);
   }
 
   // ---- Follow-ups --------------------------------------------------------
@@ -770,6 +834,16 @@ class Planner {
     std::vector<Attempt> attempts;
     if (s.list != ListContext::kNone) {
       CandidateSet base = ContextSet();
+      if (!s.offered.empty() && !OfferStillHolds(base)) {
+        // What was read out names other things now (the page, or a frame
+        // in it, changed since): an answer to it would choose one the
+        // user didn't hear.
+        s.offered.clear();
+        s.offered_handles.clear();
+        s.expecting_choice = false;
+        Say("The page changed since I asked. Say it again.");
+        return;
+      }
       if (!s.offered.empty()) {
         Attempt subset;
         subset.set = SubsetOf(base, s.offered);
@@ -863,6 +937,33 @@ class Planner {
     Act(attempt.set.targets[index], attempt.set.candidates[index], verb);
   }
 
+  // Whether each choice offered is still at its place in |set|.
+  bool OfferStillHolds(const CandidateSet& set) {
+    const ConversationState& s = state();
+    if (s.offered_handles.size() != s.offered.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < s.offered.size(); ++i) {
+      if (s.offered[i] >= set.size() ||
+          !(set.targets[s.offered[i]].handle == s.offered_handles[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // The nodes |indices| of |set| name, to tell later whether they moved.
+  static std::vector<PageNodeHandle> HandlesOf(
+      const CandidateSet& set,
+      const std::vector<size_t>& indices) {
+    std::vector<PageNodeHandle> handles;
+    for (size_t i : indices) {
+      handles.push_back(i < set.size() ? set.targets[i].handle
+                                       : PageNodeHandle());
+    }
+    return handles;
+  }
+
   void Offer(const Attempt& attempt,
              const std::vector<size_t>& close,
              ChoiceVerb verb) {
@@ -875,9 +976,10 @@ class Planner {
         (attempt.list && !(attempt.list->container == s.list_container))) {
       SetListContext(attempt.context, attempt.list);
     }
-    CandidateSet subset = SubsetOf(attempt.base.empty() ? attempt.set
-                                                        : ContextSet(),
-                                   base);
+    const CandidateSet context_set =
+        attempt.base.empty() ? attempt.set : ContextSet();
+    CandidateSet subset = SubsetOf(context_set, base);
+    s.offered_handles = HandlesOf(context_set, base);
     s.offered = std::move(base);
     s.offered_verb = verb;
     s.expecting_choice = true;
@@ -1203,6 +1305,7 @@ class Planner {
       state().list = ListContext::kTabs;
       state().list_page_id = env_.page_id;
       state().offered = match.close;
+      state().offered_handles = HandlesOf(tabs, match.close);
       state().offered_verb = ChoiceVerb::kSelect;
       state().expecting_choice = true;
       Say(OfferSpeech(SubsetOf(tabs, match.close)));
@@ -1714,6 +1817,16 @@ class Planner {
       Say("I didn't catch that.");
       return;
     }
+    // A "yes" or "no" with no question pending (it expired, or another
+    // command dropped it) is no task for the planner.
+    ParseContext answering = ContextFor(state(), map_, env_);
+    answering.expecting_yes_no = true;
+    const VoiceCommandKind answer =
+        ParseVoiceCommand(command.heard, answering).kind;
+    if (answer == K::kYes || answer == K::kNo) {
+      Say("There's nothing to confirm.");
+      return;
+    }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
     planner.preface = "I can't do that yet: " + Quoted(echo) +
@@ -1894,6 +2007,28 @@ VoiceTurn PlanFollowUp(const VoiceStep& wait,
   return planner.Finish();
 }
 
+VoiceTurn PlanPlannerQuestion(int question,
+                              std::string_view what,
+                              const VoiceEnvironment& env,
+                              const ConversationState& state) {
+  const PageMap no_map;
+  Planner planner(no_map, env, state);
+  planner.PlannerQuestion(question, what);
+  return planner.Finish();
+}
+
+int PlannerQuestionHeld(const ConversationState& state) {
+  if (!state.confirming) {
+    return 0;
+  }
+  for (const VoiceStep& held : state.confirm_steps) {
+    if (held.kind == VoiceStepKind::kPlannerAnswer && held.flag) {
+      return held.index;
+    }
+  }
+  return 0;
+}
+
 bool NeedsConfirmation(std::string_view label,
                        std::string_view url,
                        const PageMap& map) {
@@ -1928,8 +2063,10 @@ bool NeedsConfirmation(std::string_view label,
 const PageItem* FindSearchField(const PageMap& map) {
   const PageItem* found = nullptr;
   for (const PageItem& item : map.items) {
+    // Never a frame's: what the user searches for isn't typed into a box
+    // another site (an ad, a widget) put on the page.
     if (item.kind != ItemKind::kTextField || !item.writable ||
-        !item.search_field) {
+        !item.search_field || !map.InPage(item.handle)) {
       continue;
     }
     if (item.on_screen) {

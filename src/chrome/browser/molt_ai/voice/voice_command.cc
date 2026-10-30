@@ -108,6 +108,8 @@ constexpr std::array<std::string_view, kVoiceCommandKindCount> kKindNames = {
     "remember_routine",
     "forget_routine",
     "run_routine",
+    "voice_mode_on",
+    "voice_mode_off",
 };
 
 // --- Patterns ---------------------------------------------------------------

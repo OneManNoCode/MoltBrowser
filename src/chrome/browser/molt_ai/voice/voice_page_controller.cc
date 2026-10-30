@@ -172,13 +172,36 @@ std::string_view VoicePageController::ActionResultName(ActionResult result) {
       return "focus not confirmed";
     case ActionResult::kCancelled:
       return "cancelled";
+    case ActionResult::kNoSuchOption:
+      return "no such option";
   }
   return "unknown";
 }
 
-void VoicePageController::Start() {
-  if (active() || !web_contents()) {
+bool VoicePageController::held_by(Holder holder) const {
+  switch (holder) {
+    case Holder::kVoiceMode:
+      return voice_mode_hold_;
+    case Holder::kWebAgent:
+      return web_agent_holds_ > 0;
+  }
+  return false;
+}
+
+void VoicePageController::Start(Holder holder) {
+  if (!web_contents()) {
     return;
+  }
+  switch (holder) {
+    case Holder::kVoiceMode:
+      voice_mode_hold_ = true;
+      break;
+    case Holder::kWebAgent:
+      ++web_agent_holds_;
+      break;
+  }
+  if (active()) {
+    return;  // another holder took the mode already
   }
   // If another client already asked for the trees, the renderers are
   // mid-stream: ask them for whole trees again, as Reading Mode does.
@@ -193,7 +216,22 @@ void VoicePageController::Start() {
   }
 }
 
-void VoicePageController::Stop() {
+void VoicePageController::Stop(Holder holder) {
+  switch (holder) {
+    case Holder::kVoiceMode:
+      voice_mode_hold_ = false;
+      // Submit() is voice mode's: its wait ends with voice mode's hold.
+      FinishSubmit(ActionResult::kCancelled);
+      break;
+    case Holder::kWebAgent:
+      if (web_agent_holds_ > 0) {
+        --web_agent_holds_;
+      }
+      break;
+  }
+  if (voice_mode_hold_ || web_agent_holds_ > 0) {
+    return;  // another holder keeps the mode
+  }
   FinishSubmit(ActionResult::kCancelled);
   mode_.reset();
   trees_.clear();
@@ -203,6 +241,12 @@ void VoicePageController::Stop() {
 base::CallbackListSubscription VoicePageController::AddTreesUpdatedCallback(
     base::RepeatingClosure callback) {
   return trees_updated_.Add(std::move(callback));
+}
+
+void VoicePageController::SetTreeCapsForTesting(size_t max_trees,
+                                                size_t max_frame_tree_nodes) {
+  max_trees_ = max_trees;
+  max_frame_tree_nodes_ = max_frame_tree_nodes;
 }
 
 void VoicePageController::SetTreesUpdatedCallbackForTesting(
@@ -223,6 +267,18 @@ content::RenderFrameHost* VoicePageController::FrameFor(
     return nullptr;
   }
   return frame;
+}
+
+size_t VoicePageController::FrameTreeNodes() {
+  const ui::AXTreeID main_id =
+      web_contents()->GetPrimaryMainFrame()->GetAXTreeID();
+  size_t nodes = 0;
+  for (const auto& [tree_id, held] : trees_) {
+    if (tree_id != main_id) {
+      nodes += static_cast<size_t>(held.tree->size());
+    }
+  }
+  return nodes;
 }
 
 void VoicePageController::DropTree(const ui::AXTreeID& tree_id) {
@@ -256,12 +312,16 @@ void VoicePageController::AccessibilityEventReceived(
     return;
   }
   const ui::AXTreeID& tree_id = details.ax_tree_id;
-  if (!FrameFor(tree_id)) {
+  content::RenderFrameHost* frame = FrameFor(tree_id);
+  if (!frame) {
     return;  // another page (a cached or prerendered one) or a gone frame
   }
+  // The top-level document's tree is always kept: the frames it embeds
+  // can't take its place.
+  const bool main_frame = frame->IsInPrimaryMainFrame();
   auto it = trees_.find(tree_id);
   if (it == trees_.end()) {
-    if (trees_.size() >= kMaxTrees) {
+    if (trees_.size() >= max_trees_ && !main_frame) {
       ++stats_.trees_over_cap;
       return;
     }
@@ -281,15 +341,14 @@ void VoicePageController::AccessibilityEventReceived(
     // HandleAXEvents()). What a tree can't take here is skipped before
     // Unserialize() sees it: in builds that fail fast on accessibility
     // errors (DCHECK or not official, ax_common.h) it would crash the
-    // browser. An empty tree needs a whole tree (its root first) or tree
-    // data alone; tree data must name this tree.
-    const bool whole_tree = update.root_id != ui::kInvalidAXNodeID &&
-                            !update.nodes.empty() &&
-                            update.nodes[0].id == update.root_id;
-    const bool data_only = update.nodes.empty() && update.has_tree_data;
-    if (!tree.root() && !whole_tree && !data_only) {
-      ++stats_.dropped_updates;
-      need_reset = true;  // ask for a whole tree
+    // browser. An empty tree needs a whole tree (its root first); tree data
+    // alone waits for it (the browser sends some when the focus moves, as
+    // when this tab becomes active again); tree data must name this tree.
+    if (!TreeCanTakeUpdate(tree, update)) {
+      if (!update.nodes.empty()) {
+        ++stats_.dropped_updates;
+        need_reset = true;  // ask for a whole tree
+      }
       continue;
     }
     if (update.has_tree_data && update.tree_data.tree_id != tree_id) {
@@ -301,6 +360,14 @@ void VoicePageController::AccessibilityEventReceived(
       ++stats_.unserialize_failures;
       DropTree(tree_id);
       need_reset = true;
+      changed = false;
+      break;
+    }
+    // The frames' trees together are capped too, so a page that embeds
+    // many large frames can't make the browser hold more.
+    if (!main_frame && FrameTreeNodes() > max_frame_tree_nodes_) {
+      ++stats_.trees_over_cap;
+      DropTree(tree_id);
       changed = false;
       break;
     }
@@ -367,7 +434,9 @@ void VoicePageController::PrimaryPageChanged(content::Page& page) {
 }
 
 void VoicePageController::WebContentsDestroyed() {
-  Stop();
+  voice_mode_hold_ = false;
+  web_agent_holds_ = 0;
+  Stop(Holder::kVoiceMode);
 }
 
 bool VoicePageController::HasPageTree() {
@@ -449,6 +518,139 @@ VoicePageController::ActionResult VoicePageController::Perform(
   data.target_node_id = target.node->id();
   target.frame->AccessibilityPerformAction(data);
   return ActionResult::kDone;
+}
+
+VoicePageController::TargetFacts::TargetFacts() = default;
+VoicePageController::TargetFacts::~TargetFacts() = default;
+VoicePageController::TargetFacts::TargetFacts(const TargetFacts&) = default;
+VoicePageController::TargetFacts& VoicePageController::TargetFacts::operator=(
+    const TargetFacts&) = default;
+VoicePageController::TargetFacts::TargetFacts(TargetFacts&&) = default;
+VoicePageController::TargetFacts& VoicePageController::TargetFacts::operator=(
+    TargetFacts&&) = default;
+
+std::optional<VoicePageController::TargetFacts> VoicePageController::Inspect(
+    const PageNodeHandle& target,
+    ActionResult* error) {
+  std::optional<Target> found = Resolve(target, error);
+  if (!found) {
+    return std::nullopt;
+  }
+  TargetFacts facts;
+  const size_t max_string_bytes = AXPageSourceLimits().max_string_bytes;
+  const ui::AXNode* node = found->node;
+  for (size_t depth = 0; node && depth <= kMaxInspectAncestors;
+       ++depth, node = node->parent()) {
+    facts.chain.push_back(
+        PageNodeFromData(node->data(), target.tree, max_string_bytes));
+    if (facts.form_index < 0 && depth > 0 &&
+        node->GetRole() == ax::mojom::Role::kForm) {
+      facts.form_index = static_cast<int>(depth);
+    }
+  }
+  facts.origin = found->frame->GetLastCommittedOrigin();
+  facts.main_frame = found->frame->IsInPrimaryMainFrame();
+  return facts;
+}
+
+std::optional<url::Origin> VoicePageController::OriginOfTree(
+    int32_t tree_index) {
+  auto id = tree_ids_.find(tree_index);
+  if (id == tree_ids_.end()) {
+    return std::nullopt;
+  }
+  content::RenderFrameHost* frame = FrameFor(id->second);
+  if (!frame) {
+    return std::nullopt;
+  }
+  return frame->GetLastCommittedOrigin();
+}
+
+namespace {
+
+// The enabled options under |select|, in tree order: at most |max| of them,
+// in a walk of at most kMaxFormNodes nodes.
+std::vector<const ui::AXNode*> OptionNodes(const ui::AXNode& select,
+                                           size_t max) {
+  std::vector<const ui::AXNode*> options;
+  std::vector<const ui::AXNode*> stack;
+  const auto& top = select.children();
+  for (size_t k = top.size(); k-- > 0;) {
+    stack.push_back(top[k].get());
+  }
+  size_t visited = 0;
+  while (!stack.empty() && visited++ < kMaxFormNodes && options.size() < max) {
+    const ui::AXNode* node = stack.back();
+    stack.pop_back();
+    if (PageRoleFor(node->data()) == PageRole::kOption) {
+      if (node->data().GetRestriction() != ax::mojom::Restriction::kDisabled) {
+        options.push_back(node);
+      }
+      continue;  // an option's own children are its text
+    }
+    const auto& children = node->children();
+    for (size_t k = children.size(); k-- > 0;) {
+      stack.push_back(children[k].get());
+    }
+  }
+  return options;
+}
+
+bool IsSelectRole(PageRole role) {
+  return role == PageRole::kSelect || role == PageRole::kListBox;
+}
+
+}  // namespace
+
+std::vector<std::string> VoicePageController::OptionsOf(
+    const PageNodeHandle& select) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(select, &error);
+  std::vector<std::string> names;
+  if (!found || !IsSelectRole(PageRoleFor(found->node->data()))) {
+    return names;
+  }
+  for (const ui::AXNode* option : OptionNodes(*found->node, kMaxOptions)) {
+    std::string name = SpeechSafeText(
+        option->data().GetStringAttribute(ax::mojom::StringAttribute::kName),
+        kMaxOptionChars);
+    if (!name.empty()) {
+      names.push_back(std::move(name));
+    }
+  }
+  return names;
+}
+
+VoicePageController::ActionResult VoicePageController::SelectOption(
+    const PageNodeHandle& select,
+    std::string_view option) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(select, &error);
+  if (!found) {
+    return error;
+  }
+  if (found->node->data().GetRestriction() ==
+      ax::mojom::Restriction::kDisabled) {
+    return ActionResult::kDisabled;
+  }
+  if (!IsSelectRole(PageRoleFor(found->node->data()))) {
+    return ActionResult::kNotEditable;
+  }
+  // The same options, named the same way, as OptionsOf() lists.
+  for (const ui::AXNode* node : OptionNodes(*found->node, kMaxOptions)) {
+    const std::string name = SpeechSafeText(
+        node->data().GetStringAttribute(ax::mojom::StringAttribute::kName),
+        kMaxOptionChars);
+    if (name.empty() || name != option) {
+      continue;
+    }
+    Target target = *found;
+    target.node = node;
+    ui::AXActionData data;
+    data.action = ax::mojom::Action::kDoDefault;
+    return Perform(target, data);
+  }
+  return ActionResult::kNoSuchOption;
 }
 
 VoicePageController::ActionResult VoicePageController::Press(

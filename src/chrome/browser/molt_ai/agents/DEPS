@@ -1,3 +1,11 @@
+specific_include_rules = {
+  # The planner fallback's browser test hears what voice mode says through
+  # a fake TTS platform (as voice/voice_controller_browsertest.cc does).
+  r"agent_page_map_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+}
+
 include_rules = [
   # The web agent's screenshots: the bounds and plan a model image follows
   # (std-only), as in runtime/.

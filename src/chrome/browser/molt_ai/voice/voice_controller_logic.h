@@ -34,10 +34,12 @@
 //   - In a MoltNet window voice mode is off (§7.4): nothing is done, and
 //     the browser says so.
 //
-// Not yet: the planner. Anything the grammar leaves kUnknown, and
-// routines, get a kToPlanner step: the hook where the on-device planner
-// will take the utterance and the map; until then the browser says that
-// it can't do it yet.
+// The planner (voice_planner.h): anything the grammar leaves kUnknown, and
+// routines, get a kToPlanner step, where the web agent's on-device planner
+// takes the utterance and the map (without a planner the browser says it
+// can't do that yet). Its questions go through the same confirmation:
+// PlanPlannerQuestion() holds a kPlannerAnswer step for "yes", and "no"
+// answers it with one too.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
@@ -100,6 +102,10 @@ enum class VoiceStepKind : uint8_t {
   // Hand |text| (what was heard) to the on-device planner; without one,
   // say |preface|.
   kToPlanner,
+  // |flag|: start (true) or stop (false) listening (voice_session.h).
+  kSetVoiceMode,
+  // The answer to the planner's question |index|: |flag| yes (true) or no.
+  kPlannerAnswer,
 };
 
 enum class BrowserCommand : uint8_t {
@@ -231,6 +237,9 @@ struct VoiceEnvironment {
   bool muted = false;
   // The window is in full screen.
   bool fullscreen = false;
+  // The browser listens to the microphone (voice_session.h); false while
+  // commands are only typed.
+  bool listening = false;
   std::vector<TabInfo> tabs;
   int active_tab = 0;
   // A monotonic clock, in milliseconds.
@@ -262,8 +271,11 @@ struct ConversationState {
   std::string list_label;
   int64_t list_page_id = -1;
   // After an unclear choice: the close candidates read back (indices into
-  // the list's candidates, in the order read), and the verb to apply.
+  // the list's candidates, in the order read), the nodes they named then
+  // (an answer counts only while they still name them), and the verb to
+  // apply.
   std::vector<size_t> offered;
+  std::vector<PageNodeHandle> offered_handles;
   ChoiceVerb offered_verb = ChoiceVerb::kDefault;
   // The list's entry last chosen or read (1-based), for "the next one".
   int current_position = 0;
@@ -340,6 +352,20 @@ VoiceTurn PlanFollowUp(const VoiceStep& wait,
                        const VoiceEnvironment& env,
                        const ConversationState& state);
 
+// The planner (voice_planner.h) asks the user to confirm |what| (its words,
+// built from model output and page text: cleaned here), as the loop asks
+// before pressing Buy: "Say yes to <what>, or no to cancel.", on this page,
+// within kConfirmationTimeoutMs. A "yes" then runs a kPlannerAnswer step
+// (|index| |question|, |flag| true), a "no" one with |flag| false; any other
+// command drops the question. Nothing in a MoltNet window.
+VoiceTurn PlanPlannerQuestion(int question,
+                              std::string_view what,
+                              const VoiceEnvironment& env,
+                              const ConversationState& state);
+
+// The planner question |state| holds for its "yes", or 0 if none.
+int PlannerQuestionHeld(const ConversationState& state);
+
 // Whether pressing an item named |label| (linking to |url|, raw page data)
 // on |map| needs a spoken "yes" first: its words buy, purchase, pay,
 // order, checkout, delete, remove, erase, discard, trash, send, post,
@@ -351,8 +377,9 @@ bool NeedsConfirmation(std::string_view label,
                        std::string_view url,
                        const PageMap& map);
 
-// The page's search field: a writable text field the map marks as a
-// search field, on screen first; null if there is none.
+// The page's search field: a writable text field of the top-level document
+// (never of a frame it embeds) the map marks as a search field, on screen
+// first; null if there is none.
 const PageItem* FindSearchField(const PageMap& map);
 
 }  // namespace voice

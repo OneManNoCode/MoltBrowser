@@ -1,17 +1,23 @@
 MoltBrowser patch for chrome/browser/flag-metadata.json
-Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
 Generated from src/chrome/browser/flag-metadata.json by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
-index d2d12fc34ae92aa4092096bc602f2f7c63376d10..dbb9c49d66b6dfdde0a482c175095bfa774cb83d 100644
+index d2d12fc34ae92aa4092096bc602f2f7c63376d10..fb44ad8f79c149bb69d172d7eacb5490d9c9dcc1 100644
 --- a/chrome/browser/flag-metadata.json
 +++ b/chrome/browser/flag-metadata.json
-@@ -7132,6 +7132,74 @@
+@@ -7132,6 +7132,80 @@
      ],
      "expiry_milestone": 160
    },
++  {
++    // MoltBrowser: the web agent's page map switch; never expires.
++    "name": "molt-agent-page-map",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
 +  {
 +    // MoltBrowser: the web agent's planner switch; never expires.
 +    "name": "molt-agent-planner",

@@ -14,7 +14,8 @@
 //            turn
 //   byte 1   bits 0-1 the active tab (of up to four), bit 2 a question
 //            expires before the next utterance
-//   lines    "> utterance"; "T title"; "H text" (a heading); "L label" (a
+//   lines    "> utterance"; "? words" (the planner asks the user to
+//            confirm them, voice_planner.h); "T title"; "H text" (a heading); "L label" (a
 //            new list); "E title\tchannel\tduration\tdate\tcount\ttext" (an
 //            entry of the list, with a link item of its own); "I k label\t
 //            value\turl" (an item: k is l link, b button, t text field, s
@@ -27,8 +28,8 @@
 // is https, a known site's or a spoken address's, with no space or control
 // byte; every node a step names is on the map; tabs, counts and repeats
 // are in range; MoltNet only ever hears that voice mode is off; a held
-// confirmation holds only page actions and words; offered choices stay
-// within kMaxCloseChoices; what "repeat" keeps stays within its cap.
+// confirmation holds only page actions, words or the planner's "yes" (to a
+// numbered question); offered choices stay within kMaxCloseChoices; what "repeat" keeps stays within its cap.
 
 #include <cstddef>
 #include <cstdint>
@@ -360,7 +361,16 @@ void CheckTurn(const VoiceTurn& turn,
   for (const VoiceStep& held : state.confirm_steps) {
     CHECK(IsPageAction(held.kind) || held.kind == VoiceStepKind::kSpeak ||
           held.kind == VoiceStepKind::kWaitForPage ||
-          held.kind == VoiceStepKind::kSetCurrentItem);
+          held.kind == VoiceStepKind::kSetCurrentItem ||
+          (held.kind == VoiceStepKind::kSetVoiceMode && !held.flag) ||
+          (held.kind == VoiceStepKind::kPlannerAnswer && held.flag &&
+           held.index > 0));
+  }
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == VoiceStepKind::kPlannerAnswer) {
+      CHECK_GT(step.index, 0);
+      CHECK(!env.moltnet);
+    }
   }
   size_t remembered = 0;
   for (const std::string& text : state.last_spoken) {
@@ -398,6 +408,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                               size - 2);
 
   Page page;
+  // Every node here is the page's own (tree 0), not a frame's.
+  page.map.page_tree = 0;
   VoiceEnvironment env;
   std::vector<std::string_view> utterances;
   size_t lines = 0;
@@ -408,6 +420,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (line.size() >= 2 && line[0] == '>' && line[1] == ' ') {
       if (utterances.size() < kMaxUtterances) {
         utterances.push_back(line.substr(2));
+      }
+      continue;
+    }
+    // The planner's question keeps its "? " (handled in turn below).
+    if (line.size() >= 2 && line[0] == '?' && line[1] == ' ') {
+      if (utterances.size() < kMaxUtterances) {
+        utterances.push_back(line);
       }
       continue;
     }
@@ -427,7 +446,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   env.now_ms = 1000;
 
   ConversationState state;
+  int question = 0;
   for (std::string_view utterance : utterances) {
+    if (utterance.size() >= 2 && utterance[0] == '?' && utterance[1] == ' ') {
+      // The planner asks: the words are model output and page text.
+      const VoiceTurn asked = molt_ai::voice::PlanPlannerQuestion(
+          ++question, utterance.substr(2), env, state);
+      CheckTurn(asked, page, env);
+      CHECK(env.moltnet ||
+            molt_ai::voice::PlannerQuestionHeld(asked.state) == question);
+      state = asked.state;
+      continue;
+    }
     VoiceTurn turn = PlanUtterance(utterance, page.map, env, state);
     CheckTurn(turn, page, env);
     CHECK(SameSteps(turn, PlanUtterance(utterance, page.map, env, state)));

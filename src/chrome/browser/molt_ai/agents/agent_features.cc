@@ -14,6 +14,9 @@ BASE_FEATURE(kMoltAgentSiteTools, base::FEATURE_ENABLED_BY_DEFAULT);
 // Feature name: "MoltAgentPlanner".
 BASE_FEATURE(kMoltAgentPlanner, base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Feature name: "MoltAgentPageMap".
+BASE_FEATURE(kMoltAgentPageMap, base::FEATURE_DISABLED_BY_DEFAULT);
+
 bool AgentScreenshotsEnabled() {
   return base::FeatureList::IsEnabled(kMoltAgentScreenshots);
 }
@@ -24,6 +27,10 @@ bool AgentSiteToolsEnabled() {
 
 bool AgentPlannerEnabled() {
   return base::FeatureList::IsEnabled(kMoltAgentPlanner);
+}
+
+bool AgentPageMapEnabled() {
+  return base::FeatureList::IsEnabled(kMoltAgentPageMap);
 }
 
 }  // namespace molt_ai::agent_features

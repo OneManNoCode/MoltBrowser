@@ -30,10 +30,32 @@
 //     before it loads; every page action names a node of the map, which the
 //     page controller finds again (and refuses when the page changed).
 //
+// The planner fallback (voice_planner.h, TOUCHLESS_BROWSING.md §6.2): an
+// utterance the grammar has no command for goes to the web agent's
+// on-device planner (agents/voice_agent_planner.h), which works in the
+// active tab: each planned step is said before it runs, its questions wait
+// for a spoken "yes" through the loop's confirmation (30 s at most), and
+// anything else the user says, "stop" included, ends its run. What it says
+// is cleaned with SpeechSafeText().
+//
 // The window owns nothing of it: the controller is created on first use
-// and deletes itself when the window closes. The overlay (numbers, the
-// focus ring, the caption bar) and the agent side panel's voice field
-// listen through Observer.
+// and deletes itself when the window closes. The agent side panel's voice
+// field and the window's listening (voice_session.h) listen through
+// Observer.
+//
+// The overlay (chrome/browser/ui/views/molt_ai/voice/voice_overlay.h,
+// TOUCHLESS_BROWSING.md §5.3, §5.5, §6.6) is driven from here:
+//   - the caption bar is up for as long as voice mode is on, with the state
+//     (the listening side's waiting or listening, else thinking or
+//     speaking), what was heard (live while it is being said) and what is
+//     happening;
+//   - "show numbers" and "hide numbers" show and hide the numbers on the
+//     active tab, and each step that acts on or reads an item rings it
+//     (kSetCurrentItem);
+//   - when the numbers hide by themselves (the hidden callback), they are
+//     shown again from a new map: at once when the page's numbering
+//     changed, once the new page's tree has come after a navigation, and on
+//     the newly active tab after a tab switch.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_H_
@@ -54,6 +76,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
+#include "chrome/browser/molt_ai/voice/voice_planner.h"
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
 
 class BrowserWindowInterface;
@@ -77,7 +100,7 @@ enum class VoiceActivity {
   kSpeaking,
 };
 
-class VoiceController {
+class VoiceController : public VoicePlanner::Delegate {
  public:
   DECLARE_USER_DATA(VoiceController);
 
@@ -95,16 +118,31 @@ class VoiceController {
     // The item (its number in the page map) the browser acts on or reads;
     // 0 for none.
     virtual void OnVoiceCurrentItem(int item_number) {}
+    // "Turn on voice mode" / "turn off voice mode" (after its "yes"): the
+    // window's listening (voice_session.h) starts or stops.
+    virtual void OnVoiceModeRequested(bool on) {}
+    // The page map an utterance or a follow-up was planned on (hotwords for
+    // the recognizer, voice_session.h).
+    virtual void OnVoicePageMapped(const PageMap& map) {}
     // The window is closing: stop observing |controller|.
     virtual void OnVoiceControllerDestroying(VoiceController* controller) {}
   };
 
-  // The planner (§6.2, layer 3): gets what was heard and the page map when
-  // the grammar has no direct command for it. Not set until the planner
-  // comes; the browser then says it can't do that yet.
-  using PlannerHook =
-      base::RepeatingCallback<void(const std::string& heard,
-                                   const PageMap& map)>;
+  // What the listening side (voice_session.h) shows in the caption bar.
+  struct ListeningCaption {
+    // The microphone is on (or starting).
+    bool listening = false;
+    // Only the wake phrase counts now ("Waiting"), or it is getting ready.
+    bool waiting = false;
+    bool starting = false;
+    // What is being said, live (the recognizer's partial text).
+    std::string heard_live;
+    // Why it can't listen ("Microphone access is off"), shown while idle.
+    std::string problem;
+
+    friend bool operator==(const ListeningCaption&,
+                           const ListeningCaption&) = default;
+  };
 
   // How long a wait for a page lasts at most, how quiet its tree must be,
   // how long it waits for a navigation to start, and for a site's autoplay.
@@ -125,7 +163,7 @@ class VoiceController {
 
   VoiceController(const VoiceController&) = delete;
   VoiceController& operator=(const VoiceController&) = delete;
-  ~VoiceController();
+  ~VoiceController() override;
 
   // Voice mode on and off for the window. Start() returns false in a
   // MoltNet window (§7.4) and while #molt-voice-mode is off. Stop() cancels
@@ -142,19 +180,41 @@ class VoiceController {
   // Stops the speech and whatever runs, as "stop" does, staying on.
   void StopActivity();
 
+  // Stops voice mode's speech only (barge-in: the user started to speak).
+  // A page's speech is left alone (voice_speech.h).
+  void StopSpeaking();
+
+  // Whether the speech engine is speaking for someone else (a page's
+  // speechSynthesis): the microphone may hear it (voice_speech.h).
+  bool OthersSpeaking() const;
+
+  // Says |text| (what the listening side has to tell: "Voice mode is on",
+  // "I can't use the microphone") and shows it as the status.
+  void SayNotice(const std::string& text);
+
+  // The listening side's part of the caption, and whether it listens
+  // (VoiceEnvironment::listening).
+  void SetListening(ListeningCaption caption);
+
   // The numbers overlay shows numbers without "show numbers" being said
   // (on by default in voice mode, §5.3): lists are then read, and numbers
   // chosen, as they are shown.
   void SetNumbersShown(bool shown);
 
-  void SetPlannerHook(PlannerHook hook);
+  // The planner open-ended requests go to (§6.2, layer 3): the web agent's
+  // (agents/voice_agent_planner.h) unless replaced; null, the browser says
+  // it can't do that yet.
+  void SetPlannerForTesting(std::unique_ptr<VoicePlanner> planner);
+  // A planner run is in progress (it may be waiting for an answer).
+  bool planner_running() const { return planner_running_; }
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
   VoiceActivity activity() const;
   const ConversationState& state() const { return state_; }
-  // Steps, a wait for a page or a submit are still running.
+  // Steps, a wait for a page, a submit or a planner run (not while it waits
+  // for the user's answer) are still running.
   bool busy() const;
 
   // Runs whenever the controller becomes idle (no step, wait or submit
@@ -215,8 +275,38 @@ class VoiceController {
   void OnTabGone();
 
   void OnSpeakingChanged(bool speaking);
-  // Cancels the steps still to run, a wait, a submit and the speech.
-  void CancelRun();
+
+  // The overlay (voice_overlay.h).
+  void ShowNumbersOnPage(bool shown);
+  void SetCurrentItemOnPage(int number);
+  // "Number 5" while numbers are on screen names the item the user sees
+  // as 5. |map| was made just now; a page that renumbered since the
+  // overlay drew (a frame changed, within its follow interval) would make
+  // it name another item. False, having said so and drawn the new numbers,
+  // when the item drawn as |command|'s number isn't that number in |map|.
+  bool NumberStillOnScreen(const VoiceCommand& command, const PageMap& map);
+  void OnOverlayHidden(int run_of_tab, int reason);
+  void RefreshNumbers();
+  // Voice mode turned itself off ("turn off voice mode"): once it has said
+  // so.
+  void MaybeStopWhenQuiet();
+  // Cancels the steps still to run, a wait, a submit and the speech, and
+  // the planner's run unless |keep_planner|.
+  void CancelRun(bool keep_planner = false);
+
+  // VoicePlanner::Delegate:
+  void PlannerSays(const std::string& text) override;
+  void PlannerAsks(int question, const std::string& what) override;
+  void PlannerFinished() override;
+  // Ends the planner's run, if one is in progress.
+  void CancelPlanner();
+  // The planner's question went unanswered.
+  void OnPlannerQuestionTimeout();
+  // Whether |command| answers the planner's pending question (a yes or no
+  // the loop takes as the answer).
+  bool AnswersPlannerQuestion(const VoiceCommand& command,
+                              const PageMap& map,
+                              const VoiceEnvironment& env) const;
   void Idle();
   void NotifyCaption();
   void SetStatus(std::string status);
@@ -255,7 +345,20 @@ class VoiceController {
 
   std::string heard_;
   std::string status_;
-  PlannerHook planner_hook_;
+  ListeningCaption listening_;
+  bool stop_when_quiet_ = false;
+  // Changes with every tab voice mode attaches to: the hidden callback of
+  // an earlier tab's overlay is dropped.
+  int tab_run_ = 0;
+  // Showing the numbers again once a new page's tree has come.
+  base::OneShotTimer refresh_numbers_timer_;
+  int refresh_attempts_ = 0;
+  // The planner (voice_planner.h), its run, and the question it waits on
+  // (0 for none).
+  std::unique_ptr<VoicePlanner> planner_;
+  bool planner_running_ = false;
+  int planner_question_ = 0;
+  base::OneShotTimer planner_question_timer_;
   base::ObserverList<Observer> observers_;
   base::RepeatingClosure idle_for_testing_;
   base::WeakPtrFactory<VoiceController> run_weak_factory_{this};

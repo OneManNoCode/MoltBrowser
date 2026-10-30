@@ -84,6 +84,12 @@ void CheckClean(std::string_view text, size_t cap) {
     CHECK(cp < 0x2066 || cp > 0x2069);
     CHECK(cp < 0xE0000 || cp > 0xE007F);
     CHECK(cp != '\t' && cp != '\n' && cp != '\r');
+    // Nor what page text loses before it is spoken (SpeechSafeText()):
+    // Hangul fillers, private use, noncharacters, U+FFF9 to U+FFFD.
+    CHECK(cp != 0x115F && cp != 0x1160 && cp != 0x3164 && cp != 0xFFA0);
+    CHECK((cp < 0xE000 || cp > 0xF8FF) && cp < 0xF0000);
+    CHECK((cp < 0xFDD0 || cp > 0xFDEF) && (cp & 0xFFFE) != 0xFFFE);
+    CHECK(cp < 0xFFF9 || cp > 0xFFFD);
   }
 }
 

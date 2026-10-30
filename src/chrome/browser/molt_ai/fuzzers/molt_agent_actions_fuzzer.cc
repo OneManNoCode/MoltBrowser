@@ -22,6 +22,7 @@
 //    password field and never opens a non-http(s) URL; MayRun() runs an
 //    asked-about action only with the user's OK on that exact reason.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -161,6 +162,15 @@ void CheckAction(const AgentAction& a,
       // Only with a plan (molt_agent_plan_fuzzer); never in these sets, which
       // the first CHECK above enforces.
       break;
+    case ActionType::kSelect: {
+      // Only on a page map's select (molt_agent_page_map_fuzzer): the
+      // element snapshot lists none, so no SELECT can be accepted here.
+      const ObservedElement* e = observation.Find(a.ref);
+      CHECK(e && e->selectable) << "a SELECT on something that isn't a select";
+      CHECK(std::find(e->options.begin(), e->options.end(), a.option) !=
+            e->options.end());
+      break;
+    }
   }
 }
 

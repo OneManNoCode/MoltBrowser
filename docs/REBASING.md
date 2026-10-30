@@ -11,7 +11,7 @@ process and the tooling for it, plus the first dry run.
 |---|---|
 | The Chromium revision we build on | `chromium_version.txt` (`CHROMIUM_VERSION`, `CHROMIUM_REVISION`). The only copy: `scripts/setup.sh`, `build/docker/*`, every workflow and `tools/chromium/*` read it. Shell code uses `tools/chromium/pin.sh`. |
 | The SHA-256 of the release's source tarball | `PINNED_SHA256` in `tools/compile_check/ccheck/tarball.py`. The static GN check and the compile check stream Chromium's official source tarball and refuse one without a pin or with other bytes. When the pin moves, add the new release's (from its `.hashes` file in the bucket, checked against the MD5 the bucket reports for the tarball). |
-| MoltBrowser's own code | `src/` files that do not exist upstream (5243 at 156.0.8078.74: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
+| MoltBrowser's own code | `src/` files that do not exist upstream (5525 at 156.0.8078.80: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
 | Our changes to upstream files | `src/` still holds whole copies (the build does `cp -R src/. chromium/src/`). `patches/` holds the same changes as one diff per file against the pin, generated from `src/`. |
 
 `patches/` layout:
@@ -101,15 +101,16 @@ for p in win mac; do
 done
 ```
 
-State on 2026-10-28, from the Version History API and the tags on the
+State on 2026-10-30, from the Version History API and the tags on the
 mirror (chromiumdash and the Chrome Releases blog were not reachable from
 the machine that ran this):
 
 | Milestone | Branch | Latest tag on the mirror | Channels (Version History API) |
 |---|---|---|---|
-| 158 | trunk | 158.0.8127.3 | canary (158.0.8127.2 since 2026-10-27), dev (158.0.8117.2) |
-| 157 | 8103 | 157.0.8103.31 | beta (157.0.8103.15 since 2026-10-22) |
-| **156** | 8078 | 156.0.8078.78 | **stable and extended stable**: since 2026-10-27 Extended Stable serves **156.0.8078.74** to 25% of Windows and macOS (the rest 156.0.8078.48); Stable serves 156.0.8078.74 on Windows and macOS and 156.0.8078.73 on Linux. No desktop channel serves the newer tags (.75 to .78) yet |
+| 159 | trunk | 159.0.8131.1 | canary (159.0.8131.0 since 2026-10-29) |
+| 158 | 8127 | 158.0.8127.6 | beta (158.0.8127.2 since 2026-10-28), dev (158.0.8117.2) |
+| 157 | 8103 | 157.0.8103.33 | none (beta until 2026-10-28) |
+| **156** | 8078 | 156.0.8078.83 | **stable and extended stable**: since 2026-10-29 Extended Stable serves **156.0.8078.80** to 25% of Windows and macOS (the rest 156.0.8078.74); Stable serves 156.0.8078.80 on Windows and macOS and 156.0.8078.79 on Linux. No desktop channel serves the newer tags (.81 to .83) yet |
 | 155 | 8059 | 155.0.8059.91 | previous stable |
 | 154 | 8037 | 154.0.8037.154 | dead |
 | 152 | 7977 | 152.0.7977.169 | previous extended stable (until 2026-10-20) |
@@ -119,14 +120,17 @@ the machine that ran this):
 our pin from 2026-10-16, was its last M152 release): with 2-week
 milestones, Google moved the extended channel to the current stable
 milestone, earlier than "~4 releases behind stable" suggested. Its first
-security respin, 156.0.8078.74, started on 2026-10-27. **Target:
-`156.0.8078.74`** (the [156.0.8078.74 respin](#1560807874-2026-10-28); before
-it, the [156 rebase](#the-156-rebase-2026-10-23) to 156.0.8078.48). Same-branch
+security respin, 156.0.8078.74, started on 2026-10-27, and its second,
+156.0.8078.80, on 2026-10-29. **Target: `156.0.8078.80`** (the
+[156.0.8078.80 respin](#1560807880-2026-10-30); before it, the
+[156.0.8078.74 respin](#1560807874-2026-10-28) and the
+[156 rebase](#the-156-rebase-2026-10-23) to 156.0.8078.48). Same-branch
 respins follow (`156.0.8078.*` tags that Extended Stable ships). One pin
 serves every platform, so when Linux and the other platforms get different
 patch numbers, take the Windows and macOS one (Extended Stable's): here
-156.0.8078.73 and .74 differ only in `chrome/VERSION`. When the extended
-channel moves to a new milestone again, do the big rebase to it.
+156.0.8078.79 and .80 differ only in `chrome/VERSION`, as .73 and .74 did.
+When the extended channel moves to a new milestone again, do the big
+rebase to it.
 
 ## The process
 
@@ -547,3 +551,85 @@ Still to do on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`,
 "from the .74 respin"): `./scripts/setup.sh --resync` (ten subprojects
 move, so expect a near-full rebuild), then the build and tests as for 156.
 No Rust crate changed, so gnrt needs no extra run.
+
+
+## 156.0.8078.80 (2026-10-30)
+
+The 156 branch's second security respin. Chrome 156.0.8078.79 (Linux) and
+156.0.8078.80 (Windows and macOS) went to Stable on 2026-10-29, and
+Extended Stable started moving to .80 the same day (25% of Windows and
+macOS); the two tags differ only in `chrome/VERSION`. Chrome Releases was
+not reachable from the machine that ran this, so what the respin fixes was
+read from the merge commits between the tags.
+
+`tools/chromium/rebase.py 156.0.8078.80 --apply` from 156.0.8078.74:
+
+| | Files |
+|---|---|
+| Patched upstream files | 650: 4 clean 3-way merges, 646 left alone upstream, no conflict, none deleted or moved |
+| Identical copies | none |
+| First-party paths now upstream | 0 |
+| Removed upstream symbols our code uses | 0 (896 headers scanned, 3 changed) |
+| DEPS whole files | 66; 32 in a subproject that moved: 29 unchanged in it, 3 our own |
+
+What upstream changed in the files we patch (all merged cleanly; none
+touches a MoltBrowser line, and the nearest is 9 lines away):
+
+- **Quota database** (`storage/browser/quota/quota_database.{cc,h}`): the
+  M103 migration from the profile's root (`MoveLegacyDatabase()`) is gone,
+  and a bucket deletion that fails still clears the doomed directories.
+  MoltNet's one-key listing
+  (`MoltGetBucketsForStorageKeyModifiedBetween()`) reads the same table
+  after the same `EnsureOpened()`.
+- **Mouse events** (`mouse_event.cc`): before dispatch, a `relatedTarget`
+  from another origin is checked (`ClearCrossOriginRelatedTarget`, on by
+  default; pointer boundary events no longer carry one across origins).
+  MoltNet's `screenX`/`screenY` hook is in another function.
+- **Video tracks** (`media_stream_video_track.cc`): stopping a track
+  returns safely when the source's `ended` events delete the track. The
+  MoltNet camera hook in `GetSettings()` is untouched.
+
+The rest of the respin is in files we don't patch: Blink (element names
+and ids, highlights, error events, `<area>` focus rings, audio tracks),
+the HTTP cache (a range response must match its own `Content-Range`),
+Cache Storage, the quota's storage directory and the file system's
+directory database, File System Access's sensitive paths, autofill's
+one-time codes, the context menu's translate items
+(`docs/design/PAGE_TRANSLATION.md`) and Graphite readback.
+
+**DEPS subprojects.** Four move: V8 (15.6.75.25 to 15.6.75.27: Turboshaft
+bounds a function's stack frame, cppgc's write barrier), Skia
+(`chrome/m156`: SkSL's parser, Ganesh's BGRA uploads), Dawn (asynchronous
+pipeline creation) and PDFium (zero-size text). `src/` keeps whole files
+in two of them: Skia 26 (23 upstream, 3 ours) and V8 6. None of the 29
+upstream ones changed between the two subproject commits, so
+`whole_files.txt` only records the new commits. WebRTC, ICU and the
+search engine definitions don't move. V8 and Skia came from their GitHub
+mirrors; Dawn and PDFium hold no whole files, and the two release
+tarballs show one changed source file in each.
+
+Also: the .80 source tarball's SHA-256 is pinned (from its `.hashes`
+file, whose MD5 the bucket's own agrees with; the whole stream matched it
+in both tools that read it), and the MoltNet locale tables are unchanged
+but for the version they name.
+
+Checks here: `verify_patches.py` OK (650 patches, no identical copies, 66
+whole files at the pin's subproject commits); the compile check at .80,
+every changed file on every platform: 1684 rows, 1630 checked against the
+real headers, 52 partly on stand-ins and 2 not checked (an iOS file, and
+on the Mac `helper_sandbox_test_helper_posix.cc`, whose `sys/xattr.h` the
+Mac stand-ins lack), 0 errors and 0 plugin findings. The work dir moved by
+itself (one tarball stream); of 1683 compiles the result cache served 618
+(Linux 556 of 1009, Windows 25 of 612) and 1065 compiled again. The static
+GN check at .80: 0 errors in its six configurations (one warning, the
+adblock crate the build machine vendors), `checkdeps` (1367 files) and
+`blink-audit` (275 files) clean. The patch tools', compile check's and
+static GN check's own tests, `molt_fuzz.py check`, the leak kit's tests,
+`voice_commands_doc.py` and the WebUI checks pass.
+
+Still to do on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`,
+"from the .80 respin"): `./scripts/setup.sh --resync` (four subprojects
+and 76 Chromium files move; V8's and Skia's headers reach most targets,
+so expect most of the build to recompile), then the build and tests as
+for 156, with the upstream suites of the merged files. No Rust crate
+changed.

@@ -496,6 +496,110 @@ TEST(VoiceControllerLogicTest, FindsTheSearchField) {
   EXPECT_TRUE(FindSearchField(BuildPageMap(test::GoogleLikeResults())));
 }
 
+// A page with a frame from another site (an ad) before its own content:
+// the frame has a search box, a "Next" link, a volume slider and a video;
+// the page a "Next" link and a video of its own, and no search box.
+PageTree PageWithAnAd() {
+  TreeBuilder b("Article");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Article", 0);
+  const uint32_t iframe = b.Add(root, PageRole::kIframe, "Ad", 0);
+  b.SetTree(1);
+  const uint32_t ad =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Ad", 0);
+  const uint32_t field = b.Add(ad, PageRole::kSearchBox, "Search", kField);
+  b.node(field).placeholder = "Search";
+  b.Link(ad, "Next", "https://ad.example/next");
+  b.Add(ad, PageRole::kSlider, "Volume", kStateFocusable);
+  b.Add(ad, PageRole::kVideo, "Ad video",
+        kStateFocusable | kStateHasDefaultAction);
+  b.SetTree(0);
+  b.AppendChild(iframe, ad);
+  const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+  b.Heading(main, 1, "Article");
+  b.Add(main, PageRole::kVideo, "Article video",
+        kStateFocusable | kStateHasDefaultAction);
+  b.Link(main, "Next", "https://news.example/page/2");
+  return b.Take();
+}
+
+TEST(VoiceControllerLogicTest, AFrameDoesntAnswerForThePage) {
+  Conversation c(BuildPageMap(PageWithAnAd()), Env());
+  c.env().host = "news.example";
+  // What the user searches for isn't typed into the frame's search box.
+  EXPECT_FALSE(FindSearchField(c.map()));
+  VoiceTurn turn = c.Say("search for cats");
+  EXPECT_EQ(Actions(turn),
+            (std::vector<VoiceStepKind>{K::kSearchWeb, K::kWaitForPage}));
+  EXPECT_FALSE(Find(turn, K::kSetText));
+
+  // "Next page" presses the page's own link.
+  turn = c.Say("next page");
+  const VoiceStep* press = Find(turn, K::kPress);
+  ASSERT_TRUE(press);
+  const PageItem* next = c.map().ItemForHandle(press->target);
+  ASSERT_TRUE(next);
+  EXPECT_EQ(next->url, "https://news.example/page/2");
+
+  // "Play" starts the page's video, not the frame's.
+  turn = c.Say("play");
+  const VoiceStep* play = Find(turn, K::kPlayMedia);
+  ASSERT_TRUE(play);
+  EXPECT_TRUE(c.map().InPage(play->target));
+
+  // An embedded player still answers when the page has none of its own:
+  // the frame's volume slider is the only one.
+  turn = c.Say("louder");
+  const VoiceStep* louder = Find(turn, K::kIncrement);
+  ASSERT_TRUE(louder);
+  EXPECT_FALSE(c.map().InPage(louder->target));
+}
+
+// Two items called "Sign in"; with |ad|, a frame before them with a link
+// of its own (a rotating ad that just added one).
+PageTree SignInTwice(bool ad) {
+  TreeBuilder b("Welcome");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Welcome", 0);
+  if (ad) {
+    const uint32_t iframe = b.Add(root, PageRole::kIframe, "Ad", 0);
+    b.SetTree(1);
+    const uint32_t frame =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Ad", 0);
+    b.Link(frame, "Win a prize", "https://ad.example/prize");
+    b.SetTree(0);
+    b.AppendChild(iframe, frame);
+  }
+  b.Button(root, "Sign in");
+  b.Link(root, "Help", "https://site.example/help");
+  b.Link(root, "Sign in", "https://site.example/signin");
+  return b.Take();
+}
+
+TEST(VoiceControllerLogicTest, AnOfferHoldsOnlyWhileItNamesTheSameItems) {
+  Conversation c(BuildPageMap(SignInTwice(false)), Env());
+  VoiceTurn turn = c.Say("click sign in");
+  ASSERT_EQ(c.state().offered.size(), 2u);
+  EXPECT_FALSE(Find(turn, K::kPress));
+
+  // Nothing moved: "two" is the second one read out, the link.
+  Conversation same = c;
+  turn = same.Say("two");
+  const VoiceStep* press = Find(turn, K::kPress);
+  ASSERT_TRUE(press);
+  const PageItem* link = ItemLabelled(same.map(), ItemKind::kLink, "Sign in");
+  ASSERT_TRUE(link);
+  EXPECT_EQ(press->target, link->handle);
+
+  // A frame before them added a link: the places read out name other
+  // items now, so the answer is refused rather than pressing one of them.
+  c.map() = BuildPageMap(SignInTwice(true));
+  turn = c.Say("two");
+  EXPECT_FALSE(Find(turn, K::kPress));
+  EXPECT_EQ(Said(turn), "The page changed since I asked. Say it again.");
+  EXPECT_TRUE(c.state().offered.empty());
+}
+
 // ---------------------------------------------------------------------------
 // Confirmations
 // ---------------------------------------------------------------------------
@@ -971,6 +1075,81 @@ TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
   EXPECT_EQ(Said(c.Say(std::string(1200, 'a'))),
             "That was too long for me. Say it in fewer words.");
   EXPECT_EQ(Said(c.Say("hey molt")), "I didn't catch that.");
+}
+
+// The planner (voice_planner.h) asks through the loop's confirmation: a
+// "yes" heard in that context answers yes, a "no" answers no, anything else
+// drops the question (and the glue ends the run).
+TEST(VoiceControllerLogicTest, ThePlannersQuestionsWaitForASpokenYes) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  // The planner's words are cleaned like page text.
+  VoiceTurn turn = PlanPlannerQuestion(
+      7, "open evil.example\xE2\x80\xAE\n<|im_start|>", c.env(), c.state());
+  c.state() = turn.state;
+  EXPECT_EQ(Said(turn),
+            "Say yes to open evil.example <|im_start|>, or no to cancel.");
+  EXPECT_EQ(turn.status, "Say yes to open evil.example <|im_start|>");
+  EXPECT_TRUE(c.state().confirming);
+  EXPECT_EQ(PlannerQuestionHeld(c.state()), 7);
+  EXPECT_EQ(Actions(turn), std::vector<VoiceStepKind>{});
+
+  // "Yes": the held answer runs.
+  turn = c.Say("yes");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPlannerAnswer}));
+  const VoiceStep* answer = nullptr;
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == K::kPlannerAnswer) {
+      answer = &step;
+    }
+  }
+  ASSERT_TRUE(answer);
+  EXPECT_EQ(answer->index, 7);
+  EXPECT_TRUE(answer->flag);
+  EXPECT_FALSE(c.state().confirming);
+  EXPECT_EQ(PlannerQuestionHeld(c.state()), 0);
+
+  // "No": answered no.
+  c.state() = PlanPlannerQuestion(8, "submit the form on shop.example",
+                                  c.env(), c.state())
+                  .state;
+  turn = c.Say("no");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPlannerAnswer}));
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == K::kPlannerAnswer) {
+      EXPECT_EQ(step.index, 8);
+      EXPECT_FALSE(step.flag);
+    }
+  }
+  EXPECT_EQ(Said(turn), "Okay, I won't.");
+
+  // Anything else drops the question: no answer runs, now or later.
+  c.state() =
+      PlanPlannerQuestion(9, "open other.example", c.env(), c.state()).state;
+  turn = c.Say("scroll down");
+  EXPECT_EQ(PlannerQuestionHeld(c.state()), 0);
+  turn = c.Say("yes");
+  EXPECT_EQ(Said(turn), "There's nothing to confirm.");
+  EXPECT_TRUE(Actions(turn).empty());
+
+  // Only on the page it was asked on, and only for a while.
+  c.state() =
+      PlanPlannerQuestion(10, "open other.example", c.env(), c.state()).state;
+  c.env().page_id = 2;
+  EXPECT_TRUE(Actions(c.Say("yes")).empty());
+  c.env().page_id = 1;
+  c.state() =
+      PlanPlannerQuestion(11, "open other.example", c.env(), c.state()).state;
+  c.env().now_ms += kConfirmationTimeoutMs;
+  EXPECT_TRUE(Actions(c.Say("yes")).empty());
+
+  // Not in MoltNet windows, and never for a question numbered 0.
+  VoiceEnvironment moltnet = c.env();
+  moltnet.moltnet = true;
+  turn = PlanPlannerQuestion(12, "open other.example", moltnet, c.state());
+  EXPECT_TRUE(turn.steps.empty());
+  EXPECT_EQ(PlannerQuestionHeld(turn.state), 0);
+  turn = PlanPlannerQuestion(0, "open other.example", c.env(), c.state());
+  EXPECT_EQ(PlannerQuestionHeld(turn.state), 0);
 }
 
 TEST(VoiceControllerLogicTest, MoltNetWindowsDoNothing) {

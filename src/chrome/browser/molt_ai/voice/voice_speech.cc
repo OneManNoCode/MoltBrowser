@@ -24,7 +24,7 @@ constexpr double kMaxTtsRate = 10.0;
 
 }  // namespace
 
-// Owned by its utterance; counts the utterance out when it goes, however
+// Owned by its utterance; tells VoiceSpeech when the utterance goes, however
 // it ends (spoken, stopped, dropped from the queue, never spoken).
 class VoiceSpeech::Delegate : public content::UtteranceEventDelegate {
  public:
@@ -34,8 +34,21 @@ class VoiceSpeech::Delegate : public content::UtteranceEventDelegate {
   Delegate& operator=(const Delegate&) = delete;
   ~Delegate() override {
     if (owner_) {
-      owner_->Finished();
+      owner_->OnGone(this);
     }
+  }
+
+  // Whether TtsController is speaking the utterance (it started and hasn't
+  // ended: an ended one is deleted with this).
+  bool started() const { return started_; }
+  // Stopped before it started: it is stopped as it starts.
+  bool cancelled() const { return cancelled_; }
+  void Cancel() { cancelled_ = true; }
+
+  // Stops the utterance, which TtsController is speaking (started()); the
+  // rest of its queue is left as it is. Deletes this.
+  void StopUtterance() {
+    content::TtsController::GetInstance()->RemoveUtteranceEventDelegate(this);
   }
 
   // content::UtteranceEventDelegate:
@@ -43,10 +56,24 @@ class VoiceSpeech::Delegate : public content::UtteranceEventDelegate {
                   content::TtsEventType event_type,
                   int char_index,
                   int length,
-                  const std::string& error_message) override {}
+                  const std::string& error_message) override {
+    if (event_type != content::TTS_EVENT_START) {
+      return;
+    }
+    started_ = true;
+    if (cancelled_ || !owner_) {
+      // Not from inside TtsController's own call: stopping deletes this.
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE,
+          base::BindOnce(&Delegate::StopUtterance, weak_factory_.GetWeakPtr()));
+    }
+  }
 
  private:
   base::WeakPtr<VoiceSpeech> owner_;
+  bool started_ = false;
+  bool cancelled_ = false;
+  base::WeakPtrFactory<Delegate> weak_factory_{this};
 };
 
 VoiceSpeech::VoiceSpeech(content::BrowserContext* context)
@@ -54,7 +81,8 @@ VoiceSpeech::VoiceSpeech(content::BrowserContext* context)
 
 VoiceSpeech::~VoiceSpeech() {
   Stop();
-  // Utterances still queued count out into nothing.
+  // An utterance still waiting in TtsController's queue is stopped as it
+  // starts (its delegate does that without us).
   weak_factory_.InvalidateWeakPtrs();
 }
 
@@ -63,45 +91,89 @@ void VoiceSpeech::SetSpeakingChangedCallback(
   speaking_changed_ = std::move(callback);
 }
 
+bool VoiceSpeech::speaking() const {
+  return !waiting_.empty() || (in_flight_ && !in_flight_->cancelled());
+}
+
+bool VoiceSpeech::OthersSpeaking() const {
+  // Ours is being spoken (it started, or nothing else was when it was
+  // handed over).
+  if (in_flight_ && (in_flight_->started() || !in_flight_behind_others_)) {
+    return false;
+  }
+  return content::TtsController::GetInstance()->IsSpeaking();
+}
+
 void VoiceSpeech::Speak(const std::string& text, double rate, bool interrupt) {
   if (text.empty() || !context_) {
     return;
   }
-  std::unique_ptr<content::TtsUtterance> utterance =
-      content::TtsUtterance::Create(context_.get());
-  utterance->SetText(text);
-  utterance->SetLang(kLanguage);
-  utterance->SetContinuousParameters(std::clamp(rate, kMinTtsRate, kMaxTtsRate),
-                                     /*pitch=*/1.0, /*volume=*/1.0);
-  utterance->SetShouldClearQueue(interrupt);
-  if (live_++ == 0) {
-    NotifySpeakingChanged();
+  if (interrupt) {
+    Stop();
   }
-  utterance->SetEventDelegate(
-      std::make_unique<Delegate>(weak_factory_.GetWeakPtr()));
-  content::TtsController::GetInstance()->SpeakOrEnqueue(std::move(utterance));
+  waiting_.push_back(Pending{text, std::clamp(rate, kMinTtsRate, kMaxTtsRate)});
+  SpeakNext();
+  UpdateSpeaking();
 }
 
 void VoiceSpeech::Stop() {
-  if (!speaking()) {
+  waiting_.clear();
+  if (Delegate* delegate = in_flight_.get()) {
+    if (delegate->started()) {
+      delegate->StopUtterance();  // OnGone() clears |in_flight_|
+    } else {
+      delegate->Cancel();
+    }
+  }
+  UpdateSpeaking();
+}
+
+void VoiceSpeech::SpeakNext() {
+  if (in_flight_ || waiting_.empty() || !context_) {
     return;
   }
-  // Stops the current utterance and drops the queue, finishing each with
-  // an event; their delegates count them out.
-  content::TtsController::GetInstance()->Stop();
+  Pending next = std::move(waiting_.front());
+  waiting_.pop_front();
+  std::unique_ptr<content::TtsUtterance> utterance =
+      content::TtsUtterance::Create(context_.get());
+  utterance->SetText(next.text);
+  utterance->SetLang(kLanguage);
+  utterance->SetContinuousParameters(next.rate, /*pitch=*/1.0,
+                                     /*volume=*/1.0);
+  // Queued after whatever is being said: never clears others' speech.
+  utterance->SetShouldClearQueue(false);
+  auto delegate = std::make_unique<Delegate>(weak_factory_.GetWeakPtr());
+  in_flight_ = delegate.get();
+  utterance->SetEventDelegate(std::move(delegate));
+  content::TtsController* controller = content::TtsController::GetInstance();
+  in_flight_behind_others_ = controller->IsSpeaking();
+  // May end it at once (no voice): OnGone() then runs inside.
+  controller->SpeakOrEnqueue(std::move(utterance));
 }
 
-void VoiceSpeech::Finished() {
-  if (live_ > 0 && --live_ == 0) {
-    NotifySpeakingChanged();
+void VoiceSpeech::OnGone(Delegate* delegate) {
+  if (delegate != in_flight_) {
+    return;
   }
+  in_flight_ = nullptr;
+  in_flight_behind_others_ = false;
+  // Posted: this runs inside TtsController's own calls.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&VoiceSpeech::SpeakNext, weak_factory_.GetWeakPtr()));
+  UpdateSpeaking();
 }
 
-void VoiceSpeech::NotifySpeakingChanged() {
+void VoiceSpeech::UpdateSpeaking() {
+  const bool now = speaking();
+  if (now == was_speaking_) {
+    return;
+  }
+  was_speaking_ = now;
   if (!speaking_changed_) {
     return;
   }
-  // Posted: this runs inside TtsController's own calls.
+  // Posted: this may run inside TtsController's own calls.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(

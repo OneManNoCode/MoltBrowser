@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/views/toolbar/toolbar_view.cc
-Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
 Generated from src/chrome/browser/ui/views/toolbar/toolbar_view.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b5593cf9568c 100644
+index f9bb38f92374559f70077dfcb24c2010d1b7efba..da2d05f03ca812a566ca647cd3d7e80f25e44590 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
 @@ -5,8 +5,11 @@
@@ -20,7 +20,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  
  #include "base/command_line.h"
  #include "base/containers/fixed_flat_map.h"
-@@ -18,11 +21,24 @@
+@@ -18,11 +21,26 @@
  #include "base/metrics/user_metrics.h"
  #include "base/metrics/user_metrics_action.h"
  #include "base/notimplemented.h"
@@ -40,12 +40,14 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
 +#include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 +#include "chrome/browser/molt_ai/tor/molt_net_window.h"
 +#include "chrome/browser/molt_ai/update/update_manager.h"
++#include "chrome/browser/molt_ai/voice/voice_controller_features.h"
++#include "chrome/browser/molt_ai/voice/voice_session.h"
 +#include "content/public/browser/storage_partition.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
  #include "chrome/browser/command_updater.h"
  #include "chrome/browser/glic/browser_ui/activity_list_bubble/glic_activity_list_bubble.h"
  #include "chrome/browser/glic/browser_ui/activity_list_bubble/glic_activity_list_bubble_controller.h"
-@@ -59,6 +75,10 @@
+@@ -59,6 +77,10 @@
  #include "chrome/browser/ui/intent_picker_tab_helper.h"
  #include "chrome/browser/ui/layout_constants.h"
  #include "chrome/browser/ui/omnibox/omnibox_view.h"
@@ -56,7 +58,15 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  #include "chrome/browser/ui/page_action/page_action_properties_provider.h"
  #include "chrome/browser/ui/side_panel/side_panel_entry_id.h"
  #include "chrome/browser/ui/tabs/public/tab_features.h"
-@@ -105,6 +125,8 @@
+@@ -88,6 +110,7 @@
+ #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_view.h"
+ #include "chrome/browser/ui/views/intent_picker_bubble_view.h"
+ #include "chrome/browser/ui/views/location_bar/webui_location_bar.h"
++#include "chrome/browser/ui/views/molt_ai/voice/voice_toolbar_button.h"
+ #include "chrome/browser/ui/views/page_action/page_action_container_view.h"
+ #include "chrome/browser/ui/views/page_action/page_action_view.h"
+ #include "chrome/browser/ui/views/page_action/page_action_view_interface.h"
+@@ -105,6 +128,8 @@
  #include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
  #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
  #include "chrome/browser/ui/views/toolbar/home_button.h"
@@ -65,7 +75,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  #include "chrome/browser/ui/views/toolbar/overflow_menu.h"
  #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
  #include "chrome/browser/ui/views/toolbar/reload_button.h"
-@@ -137,6 +159,8 @@
+@@ -137,6 +162,8 @@
  #include "components/send_tab_to_self/features.h"
  #include "components/signin/public/base/signin_buildflags.h"
  #include "components/strings/grit/components_strings.h"
@@ -74,7 +84,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  #include "content/public/browser/render_view_host.h"
  #include "content/public/browser/web_contents.h"
  #include "third_party/skia/include/core/SkPath.h"
-@@ -145,7 +169,9 @@
+@@ -145,7 +172,9 @@
  #include "ui/actions/actions.h"
  #include "ui/base/interaction/element_identifier.h"
  #include "ui/base/l10n/l10n_util.h"
@@ -84,7 +94,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  #include "ui/base/theme_provider.h"
  #include "ui/base/ui_base_features.h"
  #include "ui/base/window_open_disposition.h"
-@@ -158,6 +184,7 @@
+@@ -158,6 +187,7 @@
  #include "ui/gfx/image/canvas_image_source.h"
  #include "ui/gfx/paint_vector_icon.h"
  #include "ui/gfx/scoped_canvas.h"
@@ -92,7 +102,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  #include "ui/views/accessibility/view_accessibility.h"
  #include "ui/views/actions/action_view_controller.h"
  #include "ui/views/background.h"
-@@ -261,6 +288,353 @@ void SetRefreshMargins(views::View* button, bool expanded) {
+@@ -261,6 +291,353 @@ void SetRefreshMargins(views::View* button, bool expanded) {
                        : kBrowserAppMenuRefreshCollapsedMargin));
  }
  
@@ -446,7 +456,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  }  // namespace
  
  ////////////////////////////////////////////////////////////////////////////////
-@@ -327,6 +701,61 @@ void ToolbarView::DestroyWebUIToolbarWebContents() {
+@@ -327,6 +704,61 @@ void ToolbarView::DestroyWebUIToolbarWebContents() {
    }
  }
  
@@ -508,7 +518,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
  void ToolbarView::Init() {
  #if defined(USE_AURA)
    // Avoid generating too many occlusion tracking calculation events before this
-@@ -363,10 +792,18 @@ void ToolbarView::Init() {
+@@ -363,10 +795,18 @@ void ToolbarView::Init() {
    }
  
    if (display_mode_ == DisplayMode::kNormal) {
@@ -531,7 +541,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
    } else if (display_mode_ == DisplayMode::kCustomTab) {
      custom_tab_bar_ =
          AddChildView(std::make_unique<CustomTabBarView>(browser_view_, this));
-@@ -483,6 +920,32 @@ void ToolbarView::Init() {
+@@ -483,6 +923,32 @@ void ToolbarView::Init() {
      contextual_tasks_button_ = AddChildViewAt(std::move(button), 0);
    }
  
@@ -564,7 +574,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
    if (location_bar_view) {
      location_bar_view_ = AddChildView(std::move(location_bar_view));
      location_bar_ = location_bar_view_;
-@@ -572,6 +1035,118 @@ void ToolbarView::Init() {
+@@ -572,6 +1038,128 @@ void ToolbarView::Init() {
      media_button_ = AddChildView(std::move(media_button));
    }
  
@@ -632,6 +642,16 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
 +    agent_mode_button_ = AddChildView(std::move(agent_button));
 +  }
 +
++  // MoltBrowser: the Voice button, behind chrome://flags/#molt-voice-mode:
++  // listening on and off for this window; and voice mode's "start with the
++  // browser" setting (molt_ai/voice/voice_session.h).
++  if (molt_ai::voice::VoiceModeEnabled() && browser_ &&
++      browser_->GetType() == BrowserWindowInterface::TYPE_NORMAL) {
++    AddChildView(
++        std::make_unique<molt_ai::voice::VoiceToolbarButton>(browser_));
++    molt_ai::voice::VoiceSession::OnWindowReady(browser_);
++  }
++
 +  // MoltBrowser: attach the side-panel-entry observers that swap the violet
 +  // "active" ring between the two mode buttons. The kMoltAiChat / kMoltAgent
 +  // entries are registered by the SidePanelCoordinator, which is created AFTER
@@ -683,7 +703,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
    if (glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile())) {
      if (base::FeatureList::IsEnabled(features::kAiOverlayDialog) &&
          ttc::AiOverlayDialogController::From(browser_)) {
-@@ -611,8 +1186,9 @@ void ToolbarView::Init() {
+@@ -611,8 +1199,9 @@ void ToolbarView::Init() {
  
    if (!features::IsWebUIAvatarButtonEnabled()) {
      avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_));
@@ -695,7 +715,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..b9617a564a5da970567dc67a3835b559
      avatar_->SetVisible(show_avatar_toolbar_button);
    }
  
-@@ -1505,6 +2081,29 @@ void ToolbarView::Layout(PassKey) {
+@@ -1505,6 +2094,29 @@ void ToolbarView::Layout(PassKey) {
    // Call super implementation to ensure layout manager and child layouts
    // happen.
    LayoutSuperclass<AccessiblePaneView>(this);

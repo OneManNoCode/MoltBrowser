@@ -310,13 +310,20 @@ std::vector<PathRule> BuildPathRules(const Policy& policy) {
   for (const char* path : {"/dev/zero", "/dev/random", "/dev/urandom"}) {
     rules.push_back({path, kFsReadFile, false});
   }
+  if (policy.resident) {
+    for (const char* path : kResidentSystemPaths) {
+      rules.push_back({path, kReadAccess, false});
+    }
+  }
   for (const std::string& path : policy.read_execute) {
     rules.push_back({path, kReadExecuteAccess, false});
   }
   for (const std::string& path : policy.read_only) {
     rules.push_back({path, kReadAccess, false});
   }
-  rules.push_back({policy.writable, kScratchAccess, true});
+  if (!policy.resident) {
+    rules.push_back({policy.writable, kScratchAccess, true});
+  }
   return rules;
 }
 
@@ -496,6 +503,8 @@ Prepared::Prepared() = default;
 
 Prepared::Prepared(Prepared&& other)
     : landlock_abi(other.landlock_abi),
+      file_size_limit(other.file_size_limit),
+      data_limit(other.data_limit),
       ruleset_fd(std::exchange(other.ruleset_fd, -1)),
       handled_fs(other.handled_fs),
       restrict_flags(other.restrict_flags),
@@ -505,6 +514,8 @@ Prepared& Prepared::operator=(Prepared&& other) {
   if (this != &other) {
     CloseRuleset();
     landlock_abi = other.landlock_abi;
+    file_size_limit = other.file_size_limit;
+    data_limit = other.data_limit;
     ruleset_fd = std::exchange(other.ruleset_fd, -1);
     handled_fs = other.handled_fs;
     restrict_flags = other.restrict_flags;
@@ -548,7 +559,19 @@ std::string Prepared::Describe() const {
 
 bool Prepare(const Policy& policy, Prepared* prepared, std::string* error) {
   *prepared = Prepared();
-  if (!IsAbsolute(policy.writable)) {
+  if (policy.resident) {
+    // Nothing writable, and its memory bounded.
+    if (!policy.writable.empty()) {
+      *error = "a resident helper has no writable directory";
+      return false;
+    }
+    if (policy.max_data_bytes == 0) {
+      *error = "a resident helper needs a memory limit";
+      return false;
+    }
+    prepared->file_size_limit = 0;
+    prepared->data_limit = policy.max_data_bytes;
+  } else if (!IsAbsolute(policy.writable)) {
     *error = "the scratch directory is not an absolute path";
     return false;
   }
@@ -605,17 +628,18 @@ void ApplyInChild(const Prepared& prepared) {
   // only for a process group leader, which a forked child is not.
   setsid();
 
-  // No file past kMaxHelperFileBytes and no core dump: a helper a hostile
-  // input took over can't fill the disk before its deadline. At most
-  // kMaxHelperDataBytes of private memory and kMaxHelperOpenFiles open
-  // files. (Nothing below allocates memory before exec().)
-  if (!LowerLimit(RLIMIT_FSIZE, kMaxHelperFileBytes)) {
+  // No file past kMaxHelperFileBytes (none at all for a resident helper)
+  // and no core dump: a helper a hostile input took over can't fill the
+  // disk. At most kMaxHelperDataBytes of private memory (a resident
+  // helper's own limit) and kMaxHelperOpenFiles open files. (Nothing below
+  // allocates memory before exec().)
+  if (!LowerLimit(RLIMIT_FSIZE, prepared.file_size_limit)) {
     FailInChild("setrlimit(RLIMIT_FSIZE)");
   }
   if (!LowerLimit(RLIMIT_CORE, 0)) {
     FailInChild("setrlimit(RLIMIT_CORE)");
   }
-  if (!LowerLimit(RLIMIT_DATA, kMaxHelperDataBytes)) {
+  if (!LowerLimit(RLIMIT_DATA, prepared.data_limit)) {
     FailInChild("setrlimit(RLIMIT_DATA)");
   }
   if (!LowerLimit(RLIMIT_NOFILE, kMaxHelperOpenFiles)) {

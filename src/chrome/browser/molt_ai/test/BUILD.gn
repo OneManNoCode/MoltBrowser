@@ -60,6 +60,13 @@ test("molt_ai_unittests") {
 
     # Touchless browsing: the voice loop.
     "//chrome/browser/molt_ai/voice:voice_loop_unit_tests",
+
+    # Touchless browsing: listening (the speech helper's protocol, the
+    # listening states, the earcons).
+    "//chrome/browser/molt_ai/voice:voice_listening_unit_tests",
+
+    # Touchless browsing: the speech helper's std-only parts.
+    "//chrome/browser/molt_ai/voice/speech_helper:unit_tests",
     "//chrome/browser/ui/webui/molt_ai:unit_tests",
     "//chrome/services/molt_ai/inference/engine:unit_tests",
 
