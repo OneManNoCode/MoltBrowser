@@ -73,6 +73,15 @@ and the bar only.
   search engine. Then it reads the results: how many, the first five with
   their channel or site and length, and "Say a number or a name". "Be brief"
   reads only how many; "tell me everything" reads all of them.
+- **On YouTube, Google, DuckDuckGo, Bing and Wikipedia** the browser knows
+  where the search box, the results, the player's buttons and the next page
+  are, so "search YouTube for ..." (while you are on YouTube) types into
+  YouTube's own box, the results are read as the site shows them ("1: Queen
+  – Bohemian Rhapsody, Queen Official, 6 minutes"), "skip the ad" presses
+  the player's skip button once it shows, and "next page" goes to the next
+  page of results (on YouTube, which loads more as you scroll, it scrolls).
+  If one of these sites changes so that the browser can't find a part any
+  more, it finds it the way it does on any other site.
 - **Choosing:** "the fourth one", "number four", "four" right after a list,
   "the live one by Queen". If several fit, the browser reads them back
   numbered ("Did you mean 1: ..., 2: ...?") and you answer with a number or
@@ -95,9 +104,20 @@ and the bar only.
   Password, card and code fields are never typed into or read out.
 - **Media:** "play", "pause", "resume", "louder" and "quieter" (with the
   player's volume control), "mute", "skip ahead one minute", "full screen",
-  "turn on captions".
-- **Reading:** the title, the headings, the links, the results, "next
-  heading", "next link", "next item", "where am I", "what's on the screen".
+  "turn on captions", "skip the ad".
+- **Reading aloud:** "read the page" reads the page's text, not its menus:
+  the article, from its title on, without the navigation, the search box,
+  forms, tables or ads in frames. "Read the section on history" reads that
+  section; "read the selection" what you selected; "read from here" from
+  the item you are on. "Next heading" and "previous heading" say the
+  heading, "next paragraph" reads the next paragraph; while the browser
+  reads, they jump there and go on reading. "Stop", "pause" or any new
+  command stops it where it is, and "continue reading" goes on from there.
+  "Faster" and "slower" while it reads change its speed, which it keeps.
+  The bar under the page shows the sentence being read, and the page
+  scrolls along.
+- **Reading lists:** the title, the headings, the links, the results, "next
+  link", "next item", "where am I", "what's on the screen".
 - **"Stop"** stops the browser speaking and whatever it was doing; a new
   command does too. "Repeat" says the last answer again.
 
@@ -137,7 +157,7 @@ Each command shows a few ways to say it:
 - `{site}`: a site's name or spoken address. `{address}`: a spoken address
   only ("example dot com").
 - `{query}`, `{text}`, `{name}`: your own words (a search, text to type, a
-  routine's name).
+  routine's name, a section's name).
 - `{seconds}`: a length of time; `{seconds?}` may be left out.
 - `{level}`: a volume, from 0 to 10, as a percentage, or "half" or "max".
 - `{pages?}`: how far to scroll ("a bit", "half a page", "a page", "3
@@ -629,8 +649,11 @@ said.
   what the microphone hears). With the system's voices, which the browser
   uses when its own isn't installed, start with "Hey Molt" (or say
   "stop").
+- **While reading aloud,** the sentence being read is shown in the bar
+  under the page, but not highlighted on the page itself.
+- **"Faster" and "slower"** change the reading speed while the browser
+  reads; otherwise they are the video's playback speed, which comes later.
 - **Still to come in voice mode:** the on-device AI for anything these
   commands don't cover, routines, setting the volume to a level, the
-  playback speed, reading the page's text and the selection, undo, and
-  questions about the page. Until then the browser says so when you ask
-  for them.
+  playback speed, undo, and questions about the page ("what is this page
+  about?"). Until then the browser says so when you ask for them.
