@@ -179,6 +179,13 @@ TEST(VoiceReaderTest, ASection) {
             "a second sentence too.|Early years.|The early years come "
             "first. Then the next step follows.|A first point of a list.|A "
             "second point of the list.|That's the end of the section.");
+  // "Continue reading" goes on with the next section.
+  EXPECT_EQ(reader.StateFor(kPage), Reading::kStopped);
+  reader.Interrupt();
+  reader.Run(ReadOp::kResume, "", kPage, 1.0);
+  EXPECT_EQ(host.TakeSaid(), "Musical style.");
+  reader.Interrupt();
+  host.DropAll(reader);
   reader.Run(ReadOp::kSection, "discography", kPage, 1.0);
   EXPECT_EQ(host.TakeSaid().find("There's no section called discography. "
                                  "The sections are: Queen (band), History"),

@@ -27,9 +27,10 @@
 // speech-safe, in order and move forward; the selection's text is
 // speech-safe and capped and never a credential field's value.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <set>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>

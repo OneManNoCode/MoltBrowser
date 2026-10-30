@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/voice/voice_reader.h"
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -203,7 +204,7 @@ void VoiceReader::Move(ReadingUnit unit, bool forward, int64_t page_id) {
     if (reading) {
       ReadFrom(after, n, What::kPage);
     } else {
-      queue_.set_position(after);
+      queue_.Restart(after, n);
       what_ = What::kPage;
     }
     return;
@@ -319,6 +320,12 @@ void VoiceReader::OnUtteranceDone(uint64_t id, bool spoken) {
       case What::kParagraph:
       case What::kSelection:
         break;
+    }
+    // After a section or a paragraph, "continue reading" goes on with the
+    // rest of the page.
+    if (what_ == What::kSection || what_ == What::kParagraph) {
+      queue_.Restart(queue_.position(), queue_.document().blocks.size());
+      what_ = What::kPage;
     }
   }
 }

@@ -297,6 +297,8 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
       [](base::WeakPtr<VoiceController> self, uint64_t id, bool spoken) {
         if (self) {
           self->reader_->OnUtteranceDone(id, spoken);
+          // A reading that ended without more to say ends "speaking".
+          self->NotifyCaption();
         }
       },
       weak_factory_.GetWeakPtr()));
@@ -550,7 +552,9 @@ VoiceActivity VoiceController::activity() const {
   }
   // While the planner works, what it says is the browser speaking (the
   // listening side treats what it hears then as the browser's own voice).
-  if (speech_ && speech_->speaking()) {
+  // A reading is speaking until its last chunk's end is in, between chunks
+  // too.
+  if ((speech_ && speech_->speaking()) || reader_->reading()) {
     return VoiceActivity::kSpeaking;
   }
   if (busy()) {
