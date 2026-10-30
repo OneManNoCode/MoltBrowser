@@ -92,10 +92,20 @@
 // the only source in MoltNet windows (TOUCHLESS_BROWSING.md §7.4: no
 // accessibility mode there). The run releases its hold when it ends; voice
 // mode's own hold on the tab stays.
+//
+// The activation guard (molt_ai/security/activation_guard.h,
+// docs/design/AGENT_ACTIONS.md §2.10.9): those accessibility actions give
+// the page user activation. While the run holds the page it is the tab's
+// asker (unless voice mode is on the tab, which asks itself): a new window,
+// a download or another app the page tries with that activation is held and
+// asked about as a PAGE_REQUEST confirmation, which doesn't pause the run;
+// "Deny" leaves it refused and the run goes on. Full screen and clipboard
+// writes are refused; permission prompts are shown as usual, for the user.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
 #define CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -123,6 +133,7 @@
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
+#include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -143,7 +154,8 @@ class VoicePageController;
 // ============================================================
 // WebAgent — ReAct-based autonomous browsing agent
 // ============================================================
-class WebAgent : public content::WebContentsObserver {
+class WebAgent : public content::WebContentsObserver,
+                 public ActivationGuard::Asker {
  public:
   // Where an observation came from: the accessibility page map
   // (agent_page_map.h) or the element snapshot (agent_actions.h).
@@ -207,7 +219,9 @@ class WebAgent : public content::WebContentsObserver {
   struct ConfirmRequest {
     int id = 0;
     std::string action;   // NAVIGATE, CLICK, TYPE, FILL_FORM, CALL_TOOL,
-                          // CONTINUE or FRAME_TOOLS
+                          // CONTINUE, FRAME_TOOLS or PAGE_REQUEST (the
+                          // activation guard's: the run doesn't wait for
+                          // it, and "Deny" doesn't stop it)
     std::string message;  // e.g. "Open https://example.com"
     // FRAME_TOOLS: whether "Always" may be offered (a profile that keeps
     // answers).
@@ -305,6 +319,12 @@ class WebAgent : public content::WebContentsObserver {
 
   // content::WebContentsObserver:
   void DidStopLoading() override;
+
+  // ActivationGuard::Asker:
+  bool AskAboutPageRequest(int id,
+                           const activation::Question& question) override;
+  void TellAboutPageRequest(const std::string& text) override;
+  void PageRequestQuestionWithdrawn(int id) override;
 
  private:
   // -- ReAct loop --------------------------------------------------
@@ -553,6 +573,9 @@ class WebAgent : public content::WebContentsObserver {
   std::string pending_confirm_message_;
   int pending_confirm_id_ = 0;
   int next_confirm_id_ = 0;
+  // The activation guard's questions asked in this run: the confirmation's
+  // id, the guard's id.
+  std::map<int, int> page_request_questions_;
 
   std::vector<Step> history_;
   Step pending_step_;

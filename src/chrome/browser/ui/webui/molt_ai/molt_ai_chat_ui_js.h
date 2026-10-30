@@ -5821,7 +5821,8 @@ function _stopRecording() {
   // The agent paused on a sensitive action (leaving the task's sites,
   // submitting a form, a payment / one-time-code field). Nothing happens
   // until the user answers; Deny stops the run. Shown in every permission
-  // mode — Auto mode never skips these.
+  // mode — Auto mode never skips these. A PAGE_REQUEST is the activation
+  // guard's question about the page (molt_ai/security/activation_guard.h).
   cr.addWebUiListener('agent-confirm', function(req) {
     if (!agentRunning || !req) return;
     var steps = document.getElementById('agentSteps');
@@ -5830,21 +5831,27 @@ function _stopRecording() {
       frameToolsChip(req, steps);
       return;
     }
+    // PAGE_REQUEST: the page tried something with the activation the
+    // agent's click gave it (a new window, a download, another app). The run
+    // doesn't wait for it, and Deny only leaves it refused.
+    var pageRequest = req.action === 'PAGE_REQUEST';
+    var title = pageRequest ? 'The page tried this' : 'Agent needs your OK';
     var row = document.createElement('div');
     row.className = 'agent-confirm';
     row.setAttribute('role', 'group');
-    row.setAttribute('aria-label', 'Agent needs your OK');
+    row.setAttribute('aria-label', title);
     row.innerHTML =
-      moltHTML('<div class="agent-confirm-title">Agent needs your OK</div>' +
+      moltHTML('<div class="agent-confirm-title"></div>' +
       '<div class="agent-confirm-msg"></div>' +
       '<div class="agent-confirm-btns">' +
         '<button class="agent-deny" type="button">Deny</button>' +
         '<button class="agent-allow" type="button">Allow</button>' +
       '</div>');
+    row.querySelector('.agent-confirm-title').textContent = title;
     // The message quotes page text / URLs — text only, never markup.
     row.querySelector('.agent-confirm-msg').textContent =
         String(req.message || '').substring(0, 300);
-    moltA11y.announce('Agent needs your OK: ' + String(req.message || '').substring(0, 300) +
+    moltA11y.announce(title + ': ' + String(req.message || '').substring(0, 300) +
                       '. Allow or Deny, in the agent run.', {assertive: true});
     var answered = false;
     function answer(allowed) {

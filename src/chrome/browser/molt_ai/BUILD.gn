@@ -125,6 +125,9 @@ source_set("molt_ai_agents") {
     # #molt-agent-planner.
     "//chrome/browser/molt_ai/agents:features",
 
+    # The run asks the activation guard's questions on its tab.
+    "//chrome/browser/molt_ai/security:activation_guard",
+
     # The screenshot scaled for the model on a worker (Skia).
     "//chrome/browser/molt_ai/runtime:model_image_prep",
 
