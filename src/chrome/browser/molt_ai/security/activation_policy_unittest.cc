@@ -306,6 +306,31 @@ TEST(ActivationPolicyTest, SitesAreCleanedForSpeech) {
   }
 }
 
+TEST(ActivationPolicyTest, LongSitesAreSaidFromTheirEnd) {
+  // A host that begins with another site's name: its own domain is said.
+  const std::string padding(40, 'x');
+  const std::string host = "www.accounts.google.com.login." + padding +
+                           ".verify." + padding + ".evil.example";
+  const std::string said = SiteForSpeech(host);
+  EXPECT_LE(said.size(), kMaxSiteChars);
+  EXPECT_EQ(said, "verify." + padding + ".evil.example");
+  EXPECT_EQ(said.find("google"), std::string::npos);
+  // Whole labels only: never the end of one, which could read as a name.
+  EXPECT_EQ(SiteForSpeech(std::string(70, 'a') + "-notpaypal.example"),
+            "example");
+  EXPECT_EQ(SiteForSpeech(std::string(70, 'a') + ".paypal.example"),
+            "paypal.example");
+  // A cut right at a label's start keeps that label.
+  const std::string label(kMaxSiteChars - 8, 'b');
+  EXPECT_EQ(SiteForSpeech("a." + label + ".example"), label + ".example");
+  // At the cap exactly, all of it.
+  const std::string exact = std::string(kMaxSiteChars - 8, 'c') + ".example";
+  EXPECT_EQ(SiteForSpeech(exact), exact);
+  // Only the end of a very long text is read.
+  EXPECT_EQ(SiteForSpeech(std::string(100000, 'q') + ".evil.example"),
+            "evil.example");
+}
+
 TEST(ActivationPolicyTest, SchemesAreCleanedForSpeech) {
   EXPECT_EQ(SchemeForSpeech("mailto"), "mailto");
   EXPECT_EQ(SchemeForSpeech("Zoom-US+x.y"), "zoom-us+x.y");

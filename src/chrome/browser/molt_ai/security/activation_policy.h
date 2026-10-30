@@ -176,7 +176,9 @@ std::string_view DecisionName(Decision decision);
 
 // A host as the browser says and shows it: lower-case ASCII letters,
 // digits, dots and dashes only (anything else, and a leading "www.", is
-// dropped; IDNs stay in their xn-- form), at most kMaxSiteChars.
+// dropped; IDNs stay in their xn-- form), at most kMaxSiteChars. A longer
+// host is said from its end, whole labels where it can, so the registrable
+// domain that says whose site it is is always said.
 inline constexpr size_t kMaxSiteChars = 80;
 std::string SiteForSpeech(std::string_view host);
 
