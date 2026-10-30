@@ -764,6 +764,82 @@ function voiceSettings(args) {
   return voiceState;
 }
 
+// "What voice mode learned" (script: kVoiceLearningSettingsJs). Names are
+// the user's words and pages' labels: shown as text; rows of the wrong
+// shape are skipped.
+const learningCalls = [];
+const LEARNED = {
+  available: true, moltnet: false, enabled: true,
+  routines: [{id: 'voice_1', name: 'my <b>news</b>', steps: 3, draft: false},
+             {id: 'voice_2', name: 'trains', steps: 1, draft: true},
+             {id: 7, name: 'junk'}, null],
+  words: [{phrase: 'Queen <img src=x onerror=alert(1)>', uses: 3}, 'junk'],
+  corrections: [{heard: 'green', meant: 'Queen'}, {heard: 'x'}],
+  hints: [{host: 'www.youtube.com', search: 'Search', list: '',
+           player: 'Video <b>player</b>'}, {search: 'no host'}],
+};
+let learningState = LEARNED;
+function voiceLearning(args) {
+  learningCalls.push([args[0].replace(/_\d+$/, '')].concat(args.slice(1)));
+  return learningState;
+}
+
+async function checkVoiceLearningSection(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const section = doc.getElementById('voiceLearningSection');
+  assert(section, 'voice learning section present');
+  assert.strictEqual(section.hidden, false, 'shown with #molt-voice-mode');
+  assert(doc.getElementById('voiceLearningEnabled').checked);
+  // Every row as text; junk rows skipped.
+  assert.strictEqual(section.querySelectorAll('b, img').length, 0);
+  const routines = doc.getElementById('voiceLearningRoutines');
+  assert.strictEqual(routines.querySelectorAll('button').length, 2);
+  assert(routines.textContent.includes('my <b>news</b>'));
+  assert(routines.textContent.includes('its sites to confirm'));
+  assert.strictEqual(
+      doc.getElementById('voiceLearningWords').querySelectorAll('button').length, 1);
+  assert(doc.getElementById('voiceLearningWords').textContent
+             .includes('<img src=x onerror=alert(1)>'));
+  assert.strictEqual(doc.getElementById('voiceLearningCorrections')
+                         .querySelectorAll('button').length, 1);
+  assert.strictEqual(
+      doc.getElementById('voiceLearningHints').querySelectorAll('button').length, 1);
+  // Forget one: the kind and key go to the browser.
+  learningState = Object.assign({}, LEARNED, {routines: []});
+  routines.querySelector('button').click();
+  await tick();
+  assert.deepStrictEqual(learningCalls.pop(),
+                         ['voiceLearningForget', 'routine', 'voice_1']);
+  assert(/None yet/.test(routines.textContent));
+  doc.getElementById('voiceLearningHints').querySelector('button').click();
+  await tick();
+  assert.deepStrictEqual(learningCalls.pop(),
+                         ['voiceLearningForget', 'hint', 'www.youtube.com']);
+  // The switch, and a refused change shown as text.
+  learningState = Object.assign({}, LEARNED,
+                                {error: '<b>Click the setting to change it.</b>'});
+  doc.getElementById('voiceLearningEnabled').click();
+  await tick();
+  assert.deepStrictEqual(learningCalls.pop(), ['voiceLearningSetEnabled', false]);
+  assert(doc.getElementById('voiceLearningEnabled').checked,
+         'shows the saved value');
+  assert.strictEqual(doc.getElementById('voiceLearningStatus').textContent,
+                     '<b>Click the setting to change it.</b>');
+  // Forget everything.
+  learningState = {available: true, moltnet: false, enabled: true,
+                   routines: [], words: [], corrections: [], hints: []};
+  doc.getElementById('voiceLearningForgetAllBtn').click();
+  await tick();
+  assert.deepStrictEqual(learningCalls.pop(), ['voiceLearningForgetAll']);
+  assert.strictEqual(section.querySelectorAll('.voice-learned').length, 0);
+  // Not available (an off-the-record profile): hidden.
+  learningState = {available: false};
+  doc.getElementById('voiceLearningEnabled').click();
+  await tick();
+  assert.strictEqual(section.hidden, true);
+}
+
 async function checkVoiceSection(window) {
   const doc = window.document;
   const tick = () => new Promise((r) => setTimeout(r, 15));
@@ -1302,17 +1378,25 @@ const PAGES = [
      voiceSettingsGetState: voiceSettings,
      voiceSettingsSetEnabled: voiceSettings,
      voiceSettingsSetAlwaysListening: voiceSettings,
+     // "What voice mode learned" (script: kVoiceLearningSettingsJs).
+     voiceLearningGetState: voiceLearning,
+     voiceLearningSetEnabled: voiceLearning,
+     voiceLearningForget: voiceLearning,
+     voiceLearningForgetAll: voiceLearning,
    },
    extraFiles: ['molt_webui_csp.h',
                 '../../../molt_ai/shield/molt_shield_settings_handler.cc',
                 'molt_web_ai_sites_handler.cc',
                 'molt_gpu_inference_handler.cc',
-                'molt_voice_settings_handler.cc'],
+                'molt_voice_settings_handler.cc',
+                'molt_voice_learning_handler.cc'],
    listenersExtra: ['#vaultAddBtn:click', '#vaultGenBtn:click',
                     '#shieldUpdateBtn:click', '#webAiClearBtn:click',
                     '#webAiEnabled:change', '#gpuModeAuto:change',
                     '#gpuModeOff:change', '#gpuRetryBtn:click',
-                    '#voiceEnabled:change', '#voiceAlwaysListening:change'],
+                    '#voiceEnabled:change', '#voiceAlwaysListening:change',
+                    '#voiceLearningEnabled:change',
+                    '#voiceLearningForgetAllBtn:click'],
    async after(window) {
      const doc = window.document;
      const tick = () => new Promise((r) => setTimeout(r, 10));
@@ -1323,6 +1407,7 @@ const PAGES = [
      await checkWebAISites(window);
      await checkGpuSection(window);
      await checkVoiceSection(window);
+     await checkVoiceLearningSection(window);
      // MoltShield: hostile list/tab metadata renders as text, never markup.
      assert.strictEqual(doc.querySelectorAll('#shieldSection img, #shieldSection b').length, 0);
      assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));
@@ -1458,7 +1543,9 @@ const PAGES = [
        {id: 'q1', name: 'Waiting', stepCount: 2, trust: 'approved',
         host: 'shop.example', trigger: {type: 'manual'},
         question: {id: '7', step: 1, kind: 'site_tool',
-                   text: 'Run the site’s tool “<img src=x onerror=alert(1)>”?'}}]},
+                   text: 'Run the site’s tool “<img src=x onerror=alert(1)>”?'}},
+       {id: 'v1', name: 'my <b>news</b>', stepCount: 3, trust: 'approved',
+        voice: true, host: 'www.youtube.com', trigger: {type: 'manual'}}]},
      getRuns: {id: 'w1', runs: [{ts: 1, ok: true, durationMs: 5, stepsExecuted: 1,
        totalSteps: 1, steps: [{index: 0, type: 'click', description: 'Click',
        ok: true, durationMs: 1, foundBy: 'its <b>label</b> (a fallback)'}]}]},
@@ -1589,6 +1676,16 @@ const PAGES = [
      assert.deepStrictEqual(
          Array.from(draftCard.querySelectorAll('.card-actions button')).map((b) => b.textContent),
          ['\u{1F50D} Review', '⋯'], 'a draft is reviewed, not run');
+     // A routine taught by voice: voice mode runs it; no Run or Schedule.
+     const voiceCard = doc.querySelectorAll('#libList .card')[3];
+     assert(/voice routine/.test(voiceCard.querySelector('.csub').textContent),
+            'voice badge');
+     assert.deepStrictEqual(
+         Array.from(voiceCard.querySelectorAll('.card-actions button')).map((b) => b.textContent),
+         ['✎ Edit', '⋯'], 'a voice routine is run by voice');
+     assert(voiceCard.querySelector('.voice-say').textContent
+                .includes('run my <b>news</b>'));
+     assert.strictEqual(voiceCard.querySelectorAll('b').length, 0);
      draftCard.querySelector('.kebab').click();
      assert(!Array.from(draftCard.querySelectorAll('.menu-item')).some(
          (m) => /[Tt]rust/.test(m.textContent)), 'no trust item for a draft');

@@ -58,6 +58,11 @@
 // field and the window's listening (voice_session.h) listen through
 // Observer.
 //
+// Learning (TOUCHLESS_BROWSING.md §6.8, voice_learning_loop.h): routines
+// taught and run by voice, personal words and corrections, and site hints,
+// joined at a few points (the environment, before planning, after a turn,
+// a failed step, idle) and kLearning steps.
+//
 // The overlay (chrome/browser/ui/views/molt_ai/voice/voice_overlay.h,
 // TOUCHLESS_BROWSING.md §5.3, §5.5, §6.6) is driven from here:
 //   - the caption bar is up for as long as voice mode is on, with the state
@@ -105,6 +110,7 @@ class WebContents;
 namespace molt_ai {
 namespace voice {
 
+class VoiceLearningLoop;
 class VoicePageController;
 class VoiceReader;
 class VoiceSpeech;
@@ -249,6 +255,8 @@ class VoiceController : public VoicePlanner::Delegate,
   class ReaderHost;
   class TabWatcher;
   struct PageWait;
+  // Learning (§6.8) runs its routines through the loop's own steps.
+  friend class VoiceLearningLoop;
 
   explicit VoiceController(BrowserWindowInterface* browser);
 
@@ -406,6 +414,8 @@ class VoiceController : public VoicePlanner::Delegate,
   base::WeakPtr<content::WebContents> page_request_tab_;
   base::OneShotTimer page_request_timer_;
   base::ObserverList<Observer> observers_;
+  // Routines, personal words and site hints (voice_learning_loop.h).
+  std::unique_ptr<VoiceLearningLoop> learning_;
   base::RepeatingClosure idle_for_testing_;
   base::WeakPtrFactory<VoiceController> run_weak_factory_{this};
   base::WeakPtrFactory<VoiceController> weak_factory_{this};

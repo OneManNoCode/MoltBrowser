@@ -16,6 +16,7 @@
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
@@ -143,7 +144,7 @@ void RunScriptInBackgroundBrowser(
   // An unconfirmed draft (a web agent run, agent_run_draft.h) opens nothing:
   // the runner refuses it on about:blank, and the studio hears why.
   for (const auto& step : script.steps) {
-    if (script.security.sites_unconfirmed)
+    if (script.security.sites_unconfirmed || HasVoiceSteps(script))
       break;
     if (step.type == StepType::NAVIGATE && !step.target.empty()) {
       GURL g(step.target);

@@ -101,6 +101,26 @@ constexpr CommandPattern kPatterns[] = {
      C::kAlways, V::kLess},
 
     // --- Routines (learning) ----------------------------------------------
+    // What was learned, forgotten: before "forget {name}", which would take
+    // these as a routine's name.
+    {K::kForgetLearning,
+     "(forget|delete|erase) (everything|all) [that] you (learned|learnt|"
+     "know) [about me|from me]"},
+    {K::kForgetLearning,
+     "(forget|delete|erase) (everything|all) [that] youve (learned|learnt)"
+     " [about me|from me]"},
+    {K::kForgetLearning,
+     "(forget|delete|erase) (everything|all) [that] you have (learned|"
+     "learnt) [about me|from me]"},
+    {K::kForgetWord,
+     "(forget|delete|remove) the (word|name|phrase|correction) {name}"},
+    {K::kListRoutines,
+     "(what|which) (are|is) my routines"},
+    {K::kListRoutines,
+     "(what|which) routines (do i have|are there|have i got|have i saved)"},
+    {K::kListRoutines,
+     "(list|read|tell me|say) [all] [the|my] routines"},
+    {K::kListRoutines, "(my routines|routines)"},
     {K::kRememberRoutine,
      "(remember|save) (this|that|it) as [a routine|routine] [called|named] "
      "{name}"},
@@ -540,6 +560,15 @@ constexpr CommandInfo kInfos[] = {
      "remember this as my news"},
     {K::kRunRoutine, "Routines", "Run a routine by its name.", "run my news"},
     {K::kForgetRoutine, "Routines", "Delete a routine.", "forget my news"},
+    {K::kListRoutines, "Routines", "Hear your routines.",
+     "what are my routines"},
+    {K::kForgetWord, "Routines",
+     "Forget a word or a correction the browser learned from you.",
+     "forget the word Queen"},
+    {K::kForgetLearning, "Routines",
+     "Forget everything the browser learned from you: routines, words, "
+     "corrections and site hints.",
+     "forget everything you learned"},
     // Voice mode itself.
     {K::kVoiceModeOn, "Voice mode",
      "Start listening (typed in the Agent mode panel).", "turn on voice mode"},

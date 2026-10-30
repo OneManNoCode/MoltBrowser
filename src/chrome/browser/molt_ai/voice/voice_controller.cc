@@ -19,8 +19,9 @@
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
-#include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
+#include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_learning_loop.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_reader.h"
 #include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
@@ -315,6 +316,7 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
           weak_factory_.GetWeakPtr()));
   // The web agent's on-device planner, for what the grammar can't do.
   planner_ = CreateVoiceAgentPlanner();
+  learning_ = std::make_unique<VoiceLearningLoop>(this);
 }
 
 VoiceController::~VoiceController() {
@@ -364,6 +366,9 @@ bool VoiceController::Start() {
 }
 
 void VoiceController::Stop() {
+  if (learning_) {
+    learning_->Stop();
+  }
   CancelRun();
   reader_->Clear();
   stop_when_quiet_ = false;
@@ -390,6 +395,9 @@ void VoiceController::Stop() {
 }
 
 void VoiceController::StopActivity() {
+  if (learning_) {
+    learning_->Stop();
+  }
   CancelRun();
   SetStatus("Stopped");
 }
@@ -611,6 +619,9 @@ void VoiceController::SetStatus(std::string status) {
 }
 
 void VoiceController::OnSpeakingChanged(bool speaking) {
+  if (learning_) {
+    learning_->OnSpeakingChanged(speaking);
+  }
   NotifyCaption();
   MaybeStopWhenQuiet();
 }
@@ -797,6 +808,10 @@ VoiceEnvironment VoiceController::Environment() {
                media_session::mojom::MediaPlaybackState::kPlaying);
     }
   }
+  // What was learned (§6.8); nothing in MoltNet windows.
+  if (learning_ && !env.moltnet) {
+    env.learning = learning_->Environment(env.host);
+  }
   return env;
 }
 
@@ -821,8 +836,15 @@ void VoiceController::HandleUtterance(const std::string& text) {
   }
   const VoiceEnvironment env = Environment();
   // As PlanUtterance() does, with the numbers on screen checked between.
-  const VoiceCommand command =
-      ParseVoiceCommand(utterance, ContextFor(state_, map, env));
+  const ParseContext context = ContextFor(state_, map, env);
+  VoiceCommand command = ParseVoiceCommand(utterance, context);
+  // Learning (§6.8): corrections, and the routine that runs.
+  std::optional<VoiceCommand> learned =
+      learning_->BeforePlanning(utterance, std::move(command), context);
+  if (!learned) {
+    return;
+  }
+  command = std::move(*learned);
   // The guard's question, asked during a planner run, is answered without
   // ending the run.
   if (!AnswersPlannerQuestion(command, map, env) &&
@@ -833,6 +855,7 @@ void VoiceController::HandleUtterance(const std::string& text) {
     return;
   }
   VoiceTurn turn = PlanCommand(command, map, env, state_);
+  learning_->OnPlanned(command, turn, state_, map, env);
   heard_ = turn.heard;
   status_ = turn.status;
   RunTurn(std::move(turn));
@@ -885,6 +908,9 @@ void VoiceController::RunSteps() {
 
 void VoiceController::Idle() {
   NotifyCaption();
+  if (learning_) {
+    learning_->OnIdle();
+  }
   base::WeakPtr<VoiceController> self = weak_factory_.GetWeakPtr();
   if (!busy() && idle_for_testing_) {
     idle_for_testing_.Run();
@@ -896,6 +922,9 @@ void VoiceController::Idle() {
 
 void VoiceController::Fail(StepFailure failure) {
   pending_.clear();
+  if (learning_) {
+    learning_->OnStepFailed();
+  }
   const std::string_view text = FailureText(failure);
   if (!text.empty()) {
     interrupt_next_speech_ = true;
@@ -1186,6 +1215,10 @@ bool VoiceController::RunStep(const VoiceStep& step) {
           step.index == page_request_question_) {
         AnswerPageRequest(step.flag);
       }
+      return true;
+
+    case VoiceStepKind::kLearning:
+      learning_->RunStep(step);
       return true;
 
     case VoiceStepKind::kPlannerAnswer:
@@ -1580,7 +1613,9 @@ void VoiceController::PlanFollowUpNow(const VoiceStep& step) {
   for (Observer& observer : observers_) {
     observer.OnVoicePageMapped(map);
   }
-  RunTurn(PlanFollowUp(step, map, Environment(), state_));
+  VoiceTurn turn = PlanFollowUp(step, map, Environment(), state_);
+  learning_->OnFollowUp(turn);
+  RunTurn(std::move(turn));
 }
 
 }  // namespace voice

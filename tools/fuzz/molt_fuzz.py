@@ -317,12 +317,33 @@ FUZZERS = {
             f"{VOICE}/{name}.cc" for name in (
                 "page_map", "page_map_text", "voice_sites",
                 "voice_candidates", "voice_speech_text",
-                "voice_controller_logic")
+                "voice_controller_logic", "voice_hints",
+                "voice_routines_logic", "voice_vocabulary")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
         tier="std",
         dict="dicts/voice_command.dict",
         max_len=16384,
         smoke_runs=20000,
+    ),
+    # --- The browser: what voice mode learned (its files) ----------------
+    "molt_voice_learning_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "voice_sites",
+                "voice_candidates", "voice_speech_text",
+                "voice_controller_logic", "voice_hints",
+                "voice_routines_logic", "voice_vocabulary",
+                "voice_routines", "voice_learning_store")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/automation/agent_run_draft.cc",
+             f"{MOLT_AI}/automation/automation_script.cc",
+             f"{MOLT_AI}/automation/automation_locators.cc",
+             f"{MOLT_AI}/automation/automation_security.cc",
+             f"{MOLT_AI}/security/agent_safety.cc"],
+        tier="stand_ins",
+        dict="dicts/voice_learning.dict",
+        max_len=65536,
     ),
     # --- The browser: voice mode's listening (the speech helper's lines) ---
     "molt_voice_listener_fuzzer": dict(

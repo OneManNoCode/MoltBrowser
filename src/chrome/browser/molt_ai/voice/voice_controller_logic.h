@@ -34,8 +34,17 @@
 //   - In a MoltNet window voice mode is off (§7.4): nothing is done, and
 //     the browser says so.
 //
-// The planner (voice_planner.h): anything the grammar leaves kUnknown, and
-// routines, get a kToPlanner step, where the web agent's on-device planner
+// Learning (§6.8, voice_routines_logic.h): "remember this as my news" reads
+// back what it would save (VoiceEnvironment::learning) and holds a kLearning
+// step for the "yes"; "run my news" (or the name alone) and "what are my
+// routines" answer from the routines' names; "forget my news", "forget the
+// word X" and "forget everything you learned" wait for a "yes". The site's
+// search field, results list and player are found through
+// LocateSitePart() (a site skill, then a learned hint, then the generic
+// map), and each turn says which it used (VoiceTurn::site_parts).
+//
+// The planner (voice_planner.h): anything the grammar leaves kUnknown gets
+// a kToPlanner step, where the web agent's on-device planner
 // takes the utterance and the map (without a planner the browser says it
 // can't do that yet). Its questions go through the same confirmation:
 // PlanPlannerQuestion() holds a kPlannerAnswer step for "yes", and "no"
@@ -74,6 +83,8 @@
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
+#include "chrome/browser/molt_ai/voice/voice_hints.h"
+#include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 
 namespace molt_ai {
 namespace voice {
@@ -132,6 +143,10 @@ enum class VoiceStepKind : uint8_t {
   // Reading aloud (voice_reader.h): |read|, with |text| the section's name
   // for ReadOp::kSection.
   kRead,
+  // Learning (§6.8): |index| is a LearningOp (voice_routines_logic.h),
+  // |text| the routine's name or the word; the glue does it
+  // (voice_learning_loop.h).
+  kLearning,
 };
 
 // What a kRead step asks of the reader.
@@ -294,6 +309,9 @@ struct VoiceEnvironment {
   int active_tab = 0;
   // A monotonic clock, in milliseconds.
   int64_t now_ms = 0;
+  // Learning (§6.8): the routines, what "remember this" would save, the
+  // learned words and the site's hint. Empty in MoltNet windows.
+  LearningEnvironment learning;
 };
 
 // What the user and the browser said so far that matters for what comes
@@ -374,6 +392,9 @@ struct VoiceTurn {
   std::vector<VoiceStep> steps;
   // The state after this turn.
   ConversationState state;
+  // The site's parts the steps use (the search field, the list chosen
+  // from, the player), for site hints (voice_hints.h).
+  std::vector<SitePartUse> site_parts;
 };
 
 // The grammar's context for the next utterance: a yes/no question pending
@@ -452,7 +473,7 @@ const PageItem* FindSearchField(const PageMap& map);
 // The item a site part names (PageMap::site), if it is an item of the
 // top-level document that can be pressed now (not disabled): null
 // otherwise.
-const PageItem* SitePart(const PageMap& map, const PageNodeHandle& part);
+const PageItem* SiteItem(const PageMap& map, const PageNodeHandle& part);
 
 }  // namespace voice
 }  // namespace molt_ai

@@ -932,6 +932,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `agents/web_agent.cc` (the page map path: `VoicePageController::CreateForWebContents()` and its `Start(Holder)`/`Stop(Holder)`, `AddTreesUpdatedCallback()`, `base::OneShotTimer`, `RenderFrameHost::GetLastCommittedURL()`; the testing model), `agents/voice_agent_planner.cc` (`base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `SequencedTaskRunner::DeleteSoon` of a `std::unique_ptr<WebAgent>`, `web_ai::PickWebModel`), `voice/voice_page_controller.cc` (`Inspect()`: `ui::AXNode::parent()`, `GetRole()`; `SelectOption()`: `kDoDefault` on an option), `voice/voice_controller.cc` (it is now a `VoicePlanner::Delegate`), `ui/webui/molt_ai/molt_ai_chat_handler.cc` (`observed_with`), `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-agent-page-map`); the new GN edges `//chrome/browser/molt_ai/voice:voice_controller` → `//chrome/browser/molt_ai:molt_ai_agents`, `molt_ai_agents` → `voice:voice_page`, `voice:voice_planner`, `voice:page_map`, `web_ai:logic`, `agents:agent_page_map`, `agents:voice_agent_speech`, and `voice:browser_tests` → `agents:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges above in `gn gen` (no cycle through `//chrome/browser/profiles` or the overlay), and §5.1's browser tests | agent-pagemap |
 | `security/activation_guard.cc` (new: a `WebContentsUserData` that is a `WebContentsObserver` (`DidGetUserInteraction()`, `FrameReceivedUserActivation()`), a `blocked_content::UrlListManager::Observer` and a `permissions::PermissionRequestManager::Observer`; `PopupBlockerTabHelper::ShowBlockedPopup()`, `PermissionRequestManager::Dismiss(PromptOptions(std::monostate()))`, `blink::kActivationLifespan`, `blink::WebKeyboardEvent`); the hooks in `chrome_content_browser_client.cc` (`CanCreateWindow()`; `HandleExternalProtocol()`: `base::BindOnce(&LaunchURL, ...)` with a typed null `out_factory`; `IsClipboardCopyAllowedByPolicy()`: `ClipboardEndpoint::web_contents()`), `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (imported: `OpenURLFromTab()` copies its `OpenURLParams`, `CanEnterFullscreenModeForTab()`) and `download/chrome_download_manager_delegate.cc` (imported: `CheckDownloadAllowed()` wraps its callback); `voice/voice_page_controller.cc` (`Press(handle, intent)`), `voice/voice_controller.cc` and `agents/web_agent.cc` (now `ActivationGuard::Asker`s); the new GN edges `//chrome/browser/molt_ai:core_hooks`, `//chrome/browser/ui/browser_web_contents_delegate`, `//chrome/browser/download:impl`, `voice:voice_page`, `voice:voice_controller` and `molt_ai_agents` → `security:activation_guard` (→ `//components/blocked_content`, `//components/permissions`), `voice:voice_loop` → `security:activation_policy`, and `voice:browser_tests` → `security:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen` (no cycle from `//chrome/browser/ui` or `//chrome/browser/download` through the guard), and §5.1's browser tests | activation-guard |
 | `voice/site_skills.cc`, `site_skills_data.cc`, `page_reading.cc`, `voice_reader.cc` (new, std-only; `site_skills` → `//chrome/services/molt_ai/inference/engine:constrained_decoding` for `bounded_json.h`, with the DEPS rule `+chrome/services/molt_ai/inference/engine/bounded_json.h`), `voice/voice_reading_settings.cc` (new: `base::JSONReader`/`JSONWriter` on settings.json), `voice/voice_page_controller.cc` (`BuildMap()` with the site's skill: `RenderFrameHost::GetLastCommittedURL()`, `GURL::host()`/`path()` as `std::string_view`; `BuildTree()`), `voice/ax_page_source.cc` (`StringAttribute::kHtmlId`, `kClassName`; `AXTreeData::sel_anchor_object_id` and the rest of the selection), `voice/voice_speech.cc` (`TTS_EVENT_END`/`TTS_EVENT_ERROR` in the delegate; `Speak()` returns an id), `voice/voice_controller.cc` (a nested `VoiceReader::Host`; `base::ThreadPool` for the rate setting); the new GN edges `voice:voice_page` and `voice:voice_controller` → `voice:site_skills`, `voice:voice_loop` → `voice:page_reading` and `voice:site_skills`, `voice:page_map_test_support` → `engine:raw_ptr_exclusion`, and the fuzzer `voice:molt_page_reading_fuzzer` (in `molt_fuzzers`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen`, §5.1's browser tests | skills-reading |
+| `voice/voice_learning.cc` (a `base::SupportsUserData::Data` on the `Profile`, `ThreadPool::CreateSequencedTaskRunner` with `BLOCK_SHUTDOWN`, `ImportantFileWriter::WriteFileAtomically`, `ReadFileToStringWithMaxSize`, `AutomationStorage` on that sequence), `voice/voice_learning_loop.cc` (a friend of `VoiceController`: its `RunTurn()`, `CurrentMap()`, `Environment()`, `DefaultSearchURL()`), the hooks in `voice/voice_controller.cc` and `voice/voice_session.cc` (hotwords), `automation/automation_runner.cc`, `automation_scheduler.cc`, `automation_background_browser.cc` (voice routines refused), `ui/webui/molt_ai/molt_voice_learning_handler.cc`, `molt_ai_settings_ui.cc`, `molt_ai_agent_ui.cc`; the new GN edges `voice:voice_controller` → `//chrome/browser/molt_ai/automation` and `voice:voice_learning_store` → `automation:agent_run_draft` | type-checked against 156's headers here (Linux, Windows); the GN graph checked statically; what only the build shows: the edges in `gn gen` (no cycle from `//chrome/browser/molt_ai/automation` back to the voice controller), and §5.1's browser tests | learning |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1259,6 +1260,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
   | `ActivationPolicyTest.*` (when a tab acts for voice mode or the agent, and every decision: new windows, downloads, other apps, permission prompts, full screen, clipboard writes; the words said), `VoiceControllerLogicTest.ThePagesRequestsWaitForASpokenYes` and the intents of the "full screen" and play presses; all built standalone here (ASan and UBSan) | activation-guard |
   | `SiteSkillsTest.*` (the skill format and its caps, the hosts each built-in skill applies to, every site's stored pages under `chrome/test/data/molt_voice/skills/` read as Blink's tree: search box and button, results with their titles and fields, the player's buttons, the next page, Wikipedia's reading scope; a broken skill reported and the generic map standing in; a hint filling a part; never a frame's node), `PageReadingTest.*` (the article's blocks, sentences, chunks at each rate, moves, sections, locating a node, the selection, the queue), `VoiceReaderTest.*` (reading with a fake voice), `VoiceSkillsLogicTest.*` (the commands on the stored pages), the new `VoiceCommandTest` cases and `AXPageSourceTest.TakesIdsClassesAndTheSelection` (needs the build); the rest built standalone here (ASan and UBSan). They read the stored pages from the source tree (`DIR_SRC_TEST_DATA_ROOT`) | skills-reading |
+  | `VoiceVocabularyTest.*` (names capped at 200 and aged by last use, hotwords, never an answer or a secret, corrections lined up and applied to whole words), `VoiceHintsTest.*` (a skill, then a hint, then the generic map; hints learned, dropped, capped, aged; the store's checks), `VoiceRoutinesLogicTest.*` (commands into steps, choices kept by position or name, "this", names, and the loop's remember / run / forget / list / forget-the-word / forget-everything and its hints), `VoiceRoutinesTest.*` (the .molt round trip, Approved on its sites, secrets as variables, refusals, the planner's steps as a draft, a hostile file), `VoiceLearningStoreTest.*` (the learning file: round trip, broken files, bad entries, caps); 91 with `VoiceCommandTest` and `VoiceControllerLogicTest`, all built standalone here | learning |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1554,6 +1556,33 @@ extension enablement and `MediaRouterEnabled()`).
   links or `[1]`, Blink names the skipped nodes differently than the
   test converter: send the log and the fixture's accessibility tree
   (`chrome://accessibility`).
+- [ ] Voice mode learning's browser tests (learning): the fixture video
+  site, a fake TTS platform, and for the correction the stand-in helper
+  `molt_fake_speech_helper` under the real session. In the same
+  `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceLearningBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/learning-browser-tests.log
+  ```
+  *Expected:* all 3 pass on Linux and macOS (the correction test only
+  there):
+  - `TeachesARoutineByVoiceAndRunsItAgain`: "open VideoSite", "search for
+    Bohemian Rhapsody", "play the fourth one", then "remember this as my
+    videos" reads the three back and "yes" saves it (a `.molt` with three
+    voice steps, Approved on `video.test`); "what are my routines" lists
+    it; from `about:blank`, "run my videos" says each step and ends with
+    the fourth video playing after a trusted click; "my videos" alone
+    starts it; "forget my videos" and "yes" delete it.
+  - `ACorrectionChangesWhatIsRecognisedNextTime`: the helper hears
+    "search for Green", then "no, I said Queen" (the page searches for
+    Queen and the correction is kept, with "Queen" among the hotwords),
+    then "search for Green" again, which searches for Queen.
+  - `NothingIsLearnedInAMoltNetWindow`: no learning for the MoltNet
+    profile; commands there only hear that voice mode is off, and the
+    regular profile learns nothing from them.
+
+  If the correction test times out, send the log: the script's times are
+  the fake microphone's, and a slow machine may need its gaps widened.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -2111,7 +2140,8 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   (bundled-voice adds `molt_voice_helper_fuzzer` and
   `molt_voice_speech_fuzzer`)
   (skills-reading adds `molt_page_reading_fuzzer`, and reading states
-  and site parts to `molt_voice_controller_fuzzer`)
+  and site parts to `molt_voice_controller_fuzzer`; learning adds
+  `molt_voice_learning_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2709,6 +2739,46 @@ activation-guard; `docs/design/TOUCHLESS_BROWSING.md` §7.5,
 - [ ] After either, click a link that opens a new tab yourself, with the
   mouse: it opens at once, as always.
 - [ ] A MoltNet window: nothing changes (no voice mode, no page map).
+
+**Voice mode learning from use** (from learning;
+`docs/design/TOUCHLESS_BROWSING.md` §6.8, `docs/VOICE_COMMANDS.md`):
+
+- [ ] With a real microphone, on real YouTube: "Hey Molt, open YouTube",
+  "search for news", "play the first one", then "remember this as my
+  news". *Expected:* "I'll remember: open YouTube, search for news and
+  play the first one. Say yes to save it as my news, or no to cancel.";
+  "yes": "Saved. Say run my news to do it again."; Agent mode lists "my
+  news" with "voice routine" and no Run button.
+- [ ] The next day (other news): "Hey Molt, run my news" from a new tab.
+  *Expected:* each step said ("Running my news. Step 1: open YouTube."),
+  the first video of today's results playing with sound, then "my news is
+  done."; "stop" during it ends it; "my news" alone runs it too.
+- [ ] A routine with a step that asks first (a shop's "buy" button, or a
+  form that isn't a search): running it stops at "Say yes to press ...",
+  goes on after "yes", and ends after "no" ("I stopped ...").
+- [ ] A routine that types a password-like text ("type hunter2!x" in a
+  field): the `.molt` file in `~/.moltbrowser/automations/` doesn't hold
+  it, and running it asks "I didn't keep the text for it. Say type, then
+  the text."
+- [ ] Corrections, with a real microphone: say a name the recognizer gets
+  wrong (a band or a contact), then "no, I said ..." with the right one.
+  *Expected:* the corrected command runs; the next time the same mistake
+  is heard, the right name is used; settings, "What voice mode learned",
+  lists the correction; "Forget" there (or "forget the word ..." and
+  "yes") removes it. Note how often the name is heard right before and
+  after the correction (it is among the recognizer's hotwords then).
+- [ ] Site hints: on a site with two search boxes, search by voice; then
+  settings lists the box that worked for the site; after the site changes
+  (or with the hint's name edited away in the file), the generic box is
+  used and the hint replaced.
+- [ ] Settings, "What voice mode learned": everything listed as text;
+  "Learn from what I say" off: nothing new is learned and corrections
+  aren't applied, routines still run; "Forget everything" (a real click)
+  empties it and deletes the voice routines; `MoltVoiceLearning.json` in
+  the profile directory follows.
+- [ ] MoltNet and private windows: voice mode is off in MoltNet; in a
+  private window, "remember this as ..." says "I can't keep routines
+  here." and nothing is learned (the profile's file doesn't change).
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 

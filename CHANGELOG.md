@@ -514,6 +514,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   bundled voice ships CMUdict's licence notice.
 
 ### Privacy
+- **Voice mode learns from use, on this device** (round 41, learning;
+  `docs/design/TOUCHLESS_BROWSING.md` §6.8): "remember this as my news"
+  saves what you just did by voice as a routine (an Agent-mode workflow,
+  Approved on its own sites; secret-looking text asked for at each run),
+  "run my news" or "my news" replays it through voice mode's own checks,
+  saying each step; names you say often and your corrections ("no, I said
+  Queen") bias the recognizer and fix what it mishears; the search box,
+  results and player that worked on a site are remembered for it. Never
+  in MoltNet or private windows, never synced; settings lists and deletes
+  everything, and "Learn from what I say" turns it off.
 - **MoltNet in its own window.** Tor browsing opens in a separate,
   throwaway profile that never shares cookies or storage with your regular
   browsing and never falls back to a direct connection. Per-site Tor

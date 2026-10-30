@@ -165,6 +165,9 @@ source_set("automation_policy") {
     "automation_script.h",
     "automation_security.cc",
     "automation_security.h",
+
+    # A routine taught by voice: its steps' marker (header-only).
+    "automation_voice_steps.h",
   ]
 
   deps = [ "//url" ]

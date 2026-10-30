@@ -644,11 +644,24 @@ class Planner {
         break;
       }
 
-      // Routines (§6.8).
+      // Learning (§6.8).
       case K::kRememberRoutine:
-      case K::kForgetRoutine:
+        RememberRoutine(command.text);
+        break;
       case K::kRunRoutine:
-        Say("Routines come later.");
+        RunRoutine(command.text);
+        break;
+      case K::kForgetRoutine:
+        ForgetRoutine(command.text);
+        break;
+      case K::kListRoutines:
+        ListRoutines();
+        break;
+      case K::kForgetWord:
+        ForgetWord(command.text);
+        break;
+      case K::kForgetLearning:
+        ForgetLearning();
         break;
 
       // Voice mode itself.
@@ -760,8 +773,8 @@ class Planner {
         if (env_.media_playing) {
           Status("Playing: " + wait.subject);
           Say("Playing " + wait.subject + ".");
-        } else if (!map_.media.empty()) {
-          const PageMedia& media = map_.media[0];
+        } else if (const PageMedia* player = Locate(SitePart::kPlayer).media) {
+          const PageMedia& media = *player;
           Add(NodeStep(VoiceStepKind::kPlayMedia, media.handle, wait.subject));
           Status("Playing: " + wait.subject);
           Say("Playing " + wait.subject + ".");
@@ -901,7 +914,8 @@ class Planner {
       }
       attempts.push_back(std::move(full));
     } else if (ref.kind != ChoiceRef::Kind::kNumber) {
-      if (const PageList* list = MainList(map_)) {
+      if (const PageList* list =
+              Locate(SitePart::kResultList, /*record=*/false).list) {
         Attempt main;
         main.set = CandidatesFromList(map_, *list, s.numbers_shown);
         main.context = ListContext::kPageList;
@@ -974,6 +988,9 @@ class Planner {
       s.current_position = attempt.base.empty()
                                ? attempt.set.candidates[index].position
                                : static_cast<int>(base_index) + 1;
+      if (attempt.context == ListContext::kPageList && attempt.list) {
+        UsedList(*attempt.list);
+      }
     }
     Act(attempt.set.targets[index], attempt.set.candidates[index], verb);
   }
@@ -1278,11 +1295,16 @@ class Planner {
     // On this site: its own search box, else its search page, else the
     // web.
     if (env_.web_page) {
-      if (const PageItem* field = FindSearchField(map_)) {
+      const LocatedPart box = Locate(SitePart::kSearchField);
+      if (const PageItem* field = box.field) {
         Add(NodeStep(VoiceStepKind::kSetText, field->handle, query));
-        // The site's own search button (its skill names it), else the
-        // form's submit or Enter.
-        if (const PageItem* submit = SitePart(map_, map_.site.search_submit)) {
+        // The site's own search button with its own box (its skill names
+        // both), else the form's submit or Enter.
+        const PageItem* submit =
+            box.source == PartSource::kSkill
+                ? SiteItem(map_, map_.site.search_submit)
+                : nullptr;
+        if (submit) {
           Add(NodeStep(VoiceStepKind::kPress, submit->handle,
                        PageText(submit->label)));
         } else {
@@ -1310,7 +1332,7 @@ class Planner {
   void NextPage() {
     // The site's own (its skill names it): a link, a button, or more
     // results as the page scrolls.
-    const PageItem* next = SitePart(map_, map_.site.next_page);
+    const PageItem* next = SiteItem(map_, map_.site.next_page);
     if (!next && map_.site.next_page_scrolls) {
       VoiceStep scroll = Step(VoiceStepKind::kScrollPage);
       scroll.scroll = PageScroll::kDown;
@@ -1455,18 +1477,10 @@ class Planner {
       Say("Playing.");
       return;
     }
-    // The site's player (its skill names it), else the page's first.
-    const PageItem* site_media = map_.ItemForHandle(map_.site.media);
-    if (site_media && site_media->kind == ItemKind::kMedia) {
-      Add(NodeStep(VoiceStepKind::kPlayMedia, site_media->handle,
-                   PageText(site_media->label)));
-      SetCurrentItem(site_media->number);
-      Status("Playing");
-      Say("Playing.");
-      return;
-    }
-    if (!map_.media.empty()) {
-      const PageMedia& media = map_.media[0];
+    // The site's player (its skill names it), else the hinted one, else
+    // the page's first.
+    if (const PageMedia* player = Locate(SitePart::kPlayer).media) {
+      const PageMedia& media = *player;
       const std::string name = PageText(media.label);
       Add(NodeStep(VoiceStepKind::kPlayMedia, media.handle, name));
       SetCurrentItem(media.number);
@@ -1498,7 +1512,7 @@ class Planner {
     }
     // The player's own button first: it makes the video fill the screen.
     // The page may go full screen from this press (activation_policy.h).
-    const PageItem* button = SitePart(map_, map_.site.fullscreen);
+    const PageItem* button = SiteItem(map_, map_.site.fullscreen);
     if (!button) {
       button =
           ItemSaying(map_, ItemKind::kButton, {"full screen", "fullscreen"});
@@ -1518,7 +1532,7 @@ class Planner {
   // "Skip the ad": the site skill's skip button, else a button of the page
   // or of a frame its player is in that says "skip ad".
   void SkipAd() {
-    const PageItem* button = SitePart(map_, map_.site.skip_ad);
+    const PageItem* button = SiteItem(map_, map_.site.skip_ad);
     if (!button) {
       button = ItemSaying(map_, ItemKind::kButton,
                           {"skip ad", "skip ads", "skip advertisement"});
@@ -1539,7 +1553,7 @@ class Planner {
   }
 
   void Captions(bool on) {
-    const PageItem* button = SitePart(map_, map_.site.captions);
+    const PageItem* button = SiteItem(map_, map_.site.captions);
     if (!button) {
       button = ItemSaying(map_, ItemKind::kButton,
                           {"subtitles", "captions", "closed captions", "cc"});
@@ -1619,7 +1633,8 @@ class Planner {
   // Reads the page's main list and makes it the one to choose from;
   // false (and nothing said) when there is none.
   bool ReadResults(const std::string& query) {
-    const PageList* list = MainList(map_);
+    const PageList* list =
+        Locate(SitePart::kResultList, /*record=*/false).list;
     if (!list) {
       return false;
     }
@@ -1939,6 +1954,210 @@ class Planner {
     AskToConfirm(std::move(steps), "send what is in " + name);
   }
 
+  // ---- Learning (§6.8) ----------------------------------------------------
+
+  // The learned hint for the page's site, while learning is on.
+  const SiteHint* Hint() const {
+    return env_.learning.enabled && !env_.learning.hint.host.empty()
+               ? &env_.learning.hint
+               : nullptr;
+  }
+
+  // |part| of the site, found as LocateSitePart() orders it, and noted for
+  // its hint unless |record| is false (a list is noted once chosen from).
+  LocatedPart Locate(SitePart part, bool record = true) {
+    // The site's built-in skill (§6.7) is the first source: what it named
+    // when the map was built (PageMap::site).
+    const LocatedPart skill = SkillPart(part);
+    const LocatedPart found =
+        LocateSitePart(part, map_, skill.found() ? &skill : nullptr, Hint());
+    if (record && found.found()) {
+      NoteSitePart(part, found);
+    }
+    return found;
+  }
+
+  // |part| as the site's skill named it on this map, or nothing found.
+  LocatedPart SkillPart(SitePart part) const {
+    LocatedPart found;
+    switch (part) {
+      case SitePart::kSearchField:
+        if (map_.site.search_field.valid() &&
+            map_.InPage(map_.site.search_field)) {
+          const PageItem* field = map_.ItemForHandle(map_.site.search_field);
+          if (field && field->kind == ItemKind::kTextField &&
+              field->writable && field->credential == CredentialKind::kNone) {
+            found.field = field;
+          }
+        }
+        break;
+      case SitePart::kResultList:
+        if (map_.site.results && !map_.lists.empty() &&
+            map_.lists[0].from_site) {
+          found.list = &map_.lists[0];
+        }
+        break;
+      case SitePart::kPlayer:
+        if (map_.site.media.valid()) {
+          for (const PageMedia& media : map_.media) {
+            if (media.handle == map_.site.media) {
+              found.media = &media;
+              break;
+            }
+          }
+        }
+        break;
+    }
+    return found;
+  }
+
+  void NoteSitePart(SitePart part, const LocatedPart& found) {
+    if (found.source == PartSource::kSkill || !env_.web_page) {
+      return;
+    }
+    const SiteHint* hint = Hint();
+    SitePartUse use;
+    use.part = part;
+    use.source = found.source;
+    use.host = env_.host;
+    use.name = HintName(part, found);
+    use.hint_missed = hint && !hint->name(part).empty() &&
+                      found.source == PartSource::kGeneric;
+    turn_.site_parts.push_back(std::move(use));
+  }
+
+  void UsedList(const PageList& list) {
+    const SiteHint* hint = Hint();
+    LocatedPart found;
+    found.list = &list;
+    // The site skill's results aren't learned (the skill knows them).
+    found.source = list.from_site ? PartSource::kSkill
+                   : hint && !hint->result_list.empty() &&
+                           FoldForComparison(hint->result_list) ==
+                               FoldForComparison(list.label)
+                       ? PartSource::kHint
+                       : PartSource::kGeneric;
+    NoteSitePart(SitePart::kResultList, found);
+  }
+
+  static VoiceStep LearningStep(LearningOp op, std::string text) {
+    VoiceStep step = Step(VoiceStepKind::kLearning);
+    step.index = static_cast<int>(op);
+    step.text = std::move(text);
+    return step;
+  }
+
+  void RememberRoutine(const std::string& said) {
+    const LearningEnvironment& learning = env_.learning;
+    if (!learning.routines_available) {
+      Say("I can't keep routines here.");
+      return;
+    }
+    const std::string name = RoutineDisplayName(said);
+    if (name.empty()) {
+      Say("Say remember this as, then a short name for it.");
+      return;
+    }
+    const std::string spoken = PageText(name);
+    if (FindRoutineName(learning.routines, name)) {
+      Say("You already have a routine called " + spoken + ". Say forget " +
+          spoken + " first, or choose another name.");
+      return;
+    }
+    if (learning.this_steps.empty()) {
+      Say("There's nothing to remember yet. Do it once, then say remember "
+          "this as " + spoken + ".");
+      return;
+    }
+    Status("Remembering " + spoken);
+    Say("I'll remember: " + JoinSpokenList(learning.this_steps) + ".");
+    if (learning.this_planned) {
+      Say("Some of these steps are the AI's, so you'll confirm the sites they "
+          "use before it runs.");
+    }
+    VoiceStep save = LearningStep(LearningOp::kSaveRoutine, name);
+    save.count = learning.this_version;
+    std::vector<VoiceStep> steps;
+    steps.push_back(std::move(save));
+    AskToConfirm(std::move(steps), "save it as " + spoken);
+  }
+
+  void RunRoutine(const std::string& said) {
+    const LearningEnvironment& learning = env_.learning;
+    if (!learning.routines_available) {
+      Say("I can't run routines here.");
+      return;
+    }
+    const std::string* name = FindRoutineName(learning.routines, said);
+    if (!name) {
+      Say(learning.routines.empty()
+              ? std::string("You don't have any routines yet. Do something, "
+                            "then say remember this as, and a name.")
+              : "I don't have a routine called " + PageText(said) +
+                    ". Say what are my routines.");
+      return;
+    }
+    Status("Running " + PageText(*name));
+    Add(LearningStep(LearningOp::kRunRoutine, *name));
+  }
+
+  void ForgetRoutine(const std::string& said) {
+    const LearningEnvironment& learning = env_.learning;
+    const std::string* name = learning.routines_available
+                                  ? FindRoutineName(learning.routines, said)
+                                  : nullptr;
+    if (!name) {
+      Say("I don't have a routine called " + PageText(said) + ".");
+      return;
+    }
+    std::vector<VoiceStep> steps;
+    steps.push_back(LearningStep(LearningOp::kForgetRoutine, *name));
+    AskToConfirm(std::move(steps), "forget the routine " + PageText(*name));
+  }
+
+  void ListRoutines() {
+    const std::vector<std::string>& names = env_.learning.routines;
+    if (!env_.learning.routines_available || names.empty()) {
+      Say("You don't have any routines yet. Do something, then say remember "
+          "this as, and a name.");
+      return;
+    }
+    std::vector<std::string> read;
+    for (size_t i = 0; i < names.size() && i < kMaxRoutinesRead; ++i) {
+      read.push_back(PageText(names[i]));
+    }
+    std::string said = names.size() == 1
+                           ? std::string("You have one routine: ")
+                           : "You have " + std::to_string(names.size()) +
+                                 " routines: ";
+    said += JoinSpokenList(read);
+    if (names.size() > read.size()) {
+      said += ", and more in Agent mode";
+    }
+    Say(said + ". Say run, then its name.");
+  }
+
+  void ForgetWord(const std::string& said) {
+    const std::string key = FoldForComparison(said);
+    const std::vector<std::string>& words = env_.learning.words;
+    if (key.empty() ||
+        std::find(words.begin(), words.end(), key) == words.end()) {
+      Say("I haven't learned the word " + PageText(said) + ".");
+      return;
+    }
+    std::vector<VoiceStep> steps;
+    steps.push_back(LearningStep(LearningOp::kForgetWord, said));
+    AskToConfirm(std::move(steps), "forget the word " + PageText(said));
+  }
+
+  void ForgetLearning() {
+    std::vector<VoiceStep> steps;
+    steps.push_back(LearningStep(LearningOp::kForgetEverything, std::string()));
+    Say("That's your routines, the words and corrections I learned, and the "
+        "site hints.");
+    AskToConfirm(std::move(steps), "forget everything I learned from you");
+  }
+
   // ---- Conversation ------------------------------------------------------
 
   void Unknown(const VoiceCommand& command) {
@@ -1957,6 +2176,12 @@ class Planner {
         ParseVoiceCommand(command.heard, answering).kind;
     if (answer == K::kYes || answer == K::kNo) {
       Say("There's nothing to confirm.");
+      return;
+    }
+    // A routine's name on its own runs it (before the planner is asked).
+    if (const std::string* name =
+            FindRoutineName(env_.learning.routines, command.heard)) {
+      RunRoutine(*name);
       return;
     }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
@@ -2215,7 +2440,7 @@ bool NeedsConfirmation(std::string_view label,
   return false;
 }
 
-const PageItem* SitePart(const PageMap& map, const PageNodeHandle& part) {
+const PageItem* SiteItem(const PageMap& map, const PageNodeHandle& part) {
   if (!part.valid() || !map.InPage(part)) {
     return nullptr;
   }

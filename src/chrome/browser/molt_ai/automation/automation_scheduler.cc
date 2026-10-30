@@ -15,6 +15,7 @@
 #include "base/strings/string_split.h"
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 
 namespace molt_ai {
 namespace automation {
@@ -218,6 +219,8 @@ void AutomationScheduler::ArmNext(base::Time now) {
     // A draft from a web agent run nobody has reviewed is never fired (the
     // runner would refuse it anyway).
     if (s.security.sites_unconfirmed) continue;
+    // Nor a routine taught by voice: voice mode runs those.
+    if (HasVoiceSteps(s)) continue;
 
     // Catch-up: cron triggers that should have fired during shutdown.
     base::Time next = NextFireTime(s.trigger, now);

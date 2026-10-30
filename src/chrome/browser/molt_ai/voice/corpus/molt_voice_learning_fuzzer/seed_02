@@ -1,0 +1,72 @@
+{
+   "ai_model": "tinyllama-1.1b",
+   "created_at_unix": 1800000000.0,
+   "default_variables": {},
+   "enabled": true,
+   "id": "voice_1",
+   "name": "my news",
+   "security": {
+      "domain_whitelist": [
+         "www.youtube.com"
+      ],
+      "max_navigations": 20,
+      "max_network_bytes": 209715200.0,
+      "max_runtime_seconds": 300,
+      "require_approval_for": [
+         "form_submit",
+         "payment",
+         "login"
+      ],
+      "trust": "approved"
+   },
+   "stats": {
+      "last_run_duration_ms": 0,
+      "last_run_unix": 0.0,
+      "runs": 0,
+      "successes": 0
+   },
+   "steps": [
+      {
+         "description": "Open YouTube",
+         "extra": {
+            "voice": {
+               "address": false,
+               "command": "open_site",
+               "site": "youtube",
+               "words": "YouTube"
+            }
+         },
+         "target": "https://www.youtube.com/",
+         "type": "navigate"
+      },
+      {
+         "description": "Search for news",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "command": "search",
+               "query": "news",
+               "scope": "auto"
+            }
+         },
+         "type": "type"
+      },
+      {
+         "description": "Play the first one",
+         "extra": {
+            "host": "www.youtube.com",
+            "voice": {
+               "by": "position",
+               "command": "choose",
+               "ordinal": 1,
+               "verb": "play"
+            }
+         },
+         "type": "click"
+      }
+   ],
+   "trigger": {
+      "type": "manual"
+   },
+   "version": 1
+}

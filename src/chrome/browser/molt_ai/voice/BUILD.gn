@@ -334,6 +334,9 @@ source_set("browser_tests") {
     # Speaking: the bundled voice with a stand-in helper.
     ":voice_speech_browser_tests",
 
+    # Learning: routines by voice, corrections, nothing in MoltNet.
+    ":voice_learning_browser_tests",
+
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
 
@@ -368,10 +371,18 @@ source_set("voice_loop") {
     "voice_controller_logic.h",
     "voice_reader.cc",
     "voice_reader.h",
+
+    # Learning (§6.8): site hints, routines' steps, personal words.
+    "voice_hints.cc",
+    "voice_hints.h",
+    "voice_routines_logic.cc",
+    "voice_routines_logic.h",
     "voice_sites.cc",
     "voice_sites.h",
     "voice_speech_text.cc",
     "voice_speech_text.h",
+    "voice_vocabulary.cc",
+    "voice_vocabulary.h",
   ]
 
   public_deps = [
@@ -449,6 +460,15 @@ source_set("voice_controller") {
     "voice_controller.h",
     "voice_reading_settings.cc",
     "voice_reading_settings.h",
+
+    # Learning (§6.8): the profile's, the window's, and the seam for
+    # confirming a routine's sites by voice.
+    "voice_learning.cc",
+    "voice_learning.h",
+    "voice_learning_loop.cc",
+    "voice_learning_loop.h",
+    "voice_routine_sites.cc",
+    "voice_routine_sites.h",
     "voice_speech.cc",
     "voice_speech.h",
     "voice_speech_bundled.cc",
@@ -456,6 +476,7 @@ source_set("voice_controller") {
   ]
 
   public_deps = [
+    ":voice_learning_store",
     ":voice_loop",
     ":voice_planner",
     ":voice_speaking",
@@ -487,6 +508,11 @@ source_set("voice_controller") {
 
     # The tab's activation guard, which voice mode answers.
     "//chrome/browser/molt_ai/security:activation_guard",
+
+    # Routines taught by voice are kept with the other workflows
+    # (AutomationStorage) under their trust policy.
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:automation_policy",
 
     # The planner fallback: the web agent's on-device planner
     # (agents/voice_agent_planner.h).
@@ -535,6 +561,47 @@ fuzzer_test("molt_voice_controller_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# What voice mode learned, as files (docs/design/TOUCHLESS_BROWSING.md §6.8):
+# routines as Agent-mode workflows (voice_routines) and the personal words
+# and site hints (voice_learning_store), both read back as untrusted.
+# base::Value and GURL only: molt_ai_unittests links it; fuzzed by
+# molt_voice_learning_fuzzer.
+source_set("voice_learning_store") {
+  sources = [
+    "voice_learning_store.cc",
+    "voice_learning_store.h",
+    "voice_routines.cc",
+    "voice_routines.h",
+  ]
+
+  public_deps = [
+    ":voice_loop",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+  ]
+
+  deps = [
+    # Secret-looking values and addresses (agent_draft::TextLooksSecret()).
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+    "//url",
+  ]
+}
+
+# The learning file and a routine's .molt as anything on the machine may
+# have written them, and corrections applied to any utterance. See
+# docs/FUZZING.md.
+fuzzer_test("molt_voice_learning_fuzzer") {
+  sources = [ "molt_voice_learning_fuzzer.cc" ]
+  deps = [
+    ":voice_learning_store",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+  ]
+  dict = "dicts/voice_learning.dict"
+  seed_corpus = "corpus/molt_voice_learning_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("voice_loop_unit_tests") {
   testonly = true
@@ -544,10 +611,15 @@ source_set("voice_loop_unit_tests") {
     "voice_candidates_unittest.cc",
     "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
+    "voice_hints_unittest.cc",
+    "voice_learning_store_unittest.cc",
     "voice_reader_unittest.cc",
+    "voice_routines_logic_unittest.cc",
+    "voice_routines_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
     "voice_speech_text_unittest.cc",
+    "voice_vocabulary_unittest.cc",
   ]
 
   # The sites' stored pages the skills are tested on.
@@ -557,7 +629,9 @@ source_set("voice_loop_unit_tests") {
     ":page_map_test_support",
     ":page_reading",
     ":site_skills",
+    ":voice_learning_store",
     ":voice_loop",
+    "//chrome/browser/molt_ai/automation:automation_policy",
 
     # The stored pages, read from the source tree.
     "//base",
@@ -777,6 +851,42 @@ source_set("voice_speech_browser_tests") {
 # Listening end to end but for the recognizer: Chromium's fake audio
 # capture, the real listener and resident sandbox, the stand-in helper.
 # Picked up by :browser_tests.
+# Learning from use (§6.8): a routine taught by voice on the fixture video
+# site and run again, a correction through the stand-in speech helper, and
+# nothing learned in a MoltNet window. Picked up by :browser_tests.
+source_set("voice_learning_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_learning_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_loop",
+    ":voice_session",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+
+  data_deps = [ ":molt_fake_speech_helper" ]
+}
+
 source_set("voice_session_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
