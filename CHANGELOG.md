@@ -475,6 +475,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   stop the map; an answer to "Which one?" counts only while the choices
   read out still name the same items; and what was heard is cleaned as
   page text is.
+- Hardening (security review of rounds 38 and 39, `docs/SECURITY_REVIEWS.md`):
+  on Linux the OCR, voice and speech helpers' sandbox lets them open only
+  stream UNIX sockets, so none can send datagrams to the system log or
+  another named socket; where the microphone has no echo canceller, voice
+  mode (preview) takes a tab playing sound for another speaker, as it does
+  a page reading aloud, so only "stop", "cancel" and "turn off voice mode"
+  count while it plays; and the page's names that bias speech recognition
+  never include a "yes".
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
