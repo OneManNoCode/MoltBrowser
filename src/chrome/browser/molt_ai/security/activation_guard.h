@@ -10,7 +10,8 @@
 //     accessibility action, voice mode's Enter key) with NoteAction(); the
 //     frames' user activation (FrameReceivedUserActivation()) extends the
 //     state as Blink's 5 s start late; the user's own input on the page
-//     (DidGetUserInteraction()) ends it, except the key event voice mode
+//     (DidGetUserInteraction()) ends it, except a scroll or Esc (which give
+//     the page no activation of their own) and the key event voice mode
 //     itself sends (ExpectOwnKeyDown()).
 //   - The hooks: the few upstream places that let user activation unlock
 //     something call the static functions below. A tab without a guard, or

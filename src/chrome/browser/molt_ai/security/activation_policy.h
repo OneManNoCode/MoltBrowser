@@ -14,7 +14,8 @@
 // same activation for things the user never asked for.
 //
 // A tab is "acting" from each such action until the user's own next input
-// on the page (a key, a click, a touch), or until kActingWindowMs have
+// on the page that gives it activation of its own (a key other than Esc, a
+// click, a touch; not a scroll), or until kActingWindowMs have
 // passed since the later of the action and the activation it gave a frame,
 // whichever comes first. While it is, what the activation would unlock is
 // decided here:
