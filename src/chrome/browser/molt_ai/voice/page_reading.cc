@@ -660,8 +660,15 @@ std::optional<ReadingChunk> ChunkAt(const ReadingDocument& document,
                                     size_t end_block) {
   max_chars = std::max<size_t>(max_chars, 1);
   end_block = std::min(end_block, document.blocks.size());
-  while (at.block < end_block &&
-         at.offset >= document.blocks[at.block].text.size()) {
+  // A chunk starts at a word: past spaces, and past the end of a block.
+  while (at.block < end_block) {
+    const std::string& text = document.blocks[at.block].text;
+    while (at.offset < text.size() && text[at.offset] == ' ') {
+      ++at.offset;
+    }
+    if (at.offset < text.size()) {
+      break;
+    }
     at = {at.block + 1, 0};
   }
   if (at.block >= end_block) {

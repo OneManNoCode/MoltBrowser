@@ -367,6 +367,19 @@ FUZZERS = {
         smoke_runs=20000,
     ),
     # --- The browser: the page map (voice mode) ----------------------------
+    "molt_page_reading_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES + [
+            f"{VOICE}/{name}.cc" for name in (
+                "page_map", "page_map_text", "page_reading", "site_skills",
+                "site_skills_data", "html_fixture_tree")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{ENGINE}/bounded_json.cc"],
+        tier="std",
+        dict="dicts/page_reading.dict",
+        max_len=65536,
+        smoke_runs=1000,
+    ),
     "molt_page_map_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/voice/page_map.cc",

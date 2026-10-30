@@ -18,6 +18,7 @@ namespace test {
 
 namespace {
 
+constexpr size_t kMaxDepth = 200;
 constexpr float kLineHeight = 24;
 constexpr float kWidth = 1000;
 constexpr float kViewport = 800;
@@ -267,7 +268,9 @@ std::vector<DomNode> ParseHtml(std::string_view html, std::string* title) {
       continue;
     }
     const size_t index = add(std::move(element));
-    if (!self_closing && !IsVoid(tag)) {
+    // Elements deeper than kMaxDepth hold nothing (the converter recurses;
+    // molt_page_reading_fuzzer feeds it any input).
+    if (!self_closing && !IsVoid(tag) && stack.size() < kMaxDepth) {
       stack.push_back(index);
     }
   }

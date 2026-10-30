@@ -196,6 +196,21 @@ source_set("page_reading") {
   ]
 }
 
+# Site skills and reading aloud over hostile pages (a renderer that may be
+# compromised) and skill files. See docs/FUZZING.md.
+fuzzer_test("molt_page_reading_fuzzer") {
+  sources = [ "molt_page_reading_fuzzer.cc" ]
+  deps = [
+    ":page_map_test_support",
+    ":page_reading",
+    ":site_skills",
+    "//base",
+  ]
+  dict = "dicts/page_reading.dict"
+  seed_corpus = "corpus/molt_page_reading_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # Hand-built page trees for the page map's tests, and the stored copies of
 # sites' pages (chrome/test/data/molt_voice/skills/) read as Blink's tree
 # (std-only).
