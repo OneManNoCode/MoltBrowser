@@ -1817,6 +1817,16 @@ class Planner {
       Say("I didn't catch that.");
       return;
     }
+    // A "yes" or "no" with no question pending (it expired, or another
+    // command dropped it) is no task for the planner.
+    ParseContext answering = ContextFor(state(), map_, env_);
+    answering.expecting_yes_no = true;
+    const VoiceCommandKind answer =
+        ParseVoiceCommand(command.heard, answering).kind;
+    if (answer == K::kYes || answer == K::kNo) {
+      Say("There's nothing to confirm.");
+      return;
+    }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
     planner.preface = "I can't do that yet: " + Quoted(echo) +
