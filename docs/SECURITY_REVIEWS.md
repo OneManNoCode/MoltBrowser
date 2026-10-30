@@ -63,8 +63,8 @@ compiled against Chromium 156's headers; the browser tests run on the
 build machine.
 
 **Findings.** 17: 8 low and 9 informational (wording, defence in depth,
-licence notices, or what later phases of the design cover). Fixed: six of
-the low and four of the informational (one in part); the others are
+licence notices, or what later phases of the design cover). Fixed: seven
+of the low and four of the informational (one in part); the others are
 tracked privately.
 
 **Fixed.**
@@ -97,6 +97,11 @@ tracked privately.
   action, is refused and said, so a question can't be swapped for another
   just as the user answers (`security/activation_policy.cc`,
   `activation_guard.cc`).
+- A video's picture-in-picture window, which stays over every app, is
+  refused from an agent's or voice mode's action and said, whatever the
+  action was for (`BrowserWebContentsDelegate::EnterPictureInPicture()`,
+  `ActivationGuard::MayEnterPictureInPicture()`); a document's was already
+  asked about as a new window.
 - The web agent's click questions put the page's label between quotes
   with its own quotes and dashes made plain, so it can't close them and
   continue in the browser's words (`agents/agent_page_map.cc`'s
@@ -122,9 +127,11 @@ tracked privately.
 - `voice_speech_protocol_unittest.cc`: `StoppedAnswering()`.
   `voice_speech_browsertest.cc`: a stand-in helper that never answers is
   ended and the platform's voice speaks.
-- `activation_policy_unittest.cc`: one question per action.
-  `activation_guard_browsertest.cc`: a page's download after its
-  asked-about new window is refused and said.
+- `activation_policy_unittest.cc`: one question per action, and a
+  video's picture-in-picture refused. `activation_guard_browsertest.cc`: a
+  page's download after its asked-about new window is refused and said; a
+  video popped out after a voice press is refused and said, one popped out
+  with the page's own gesture isn't.
 - `agent_page_map_unittest.cc`: quoted labels, a cross-origin form's
   question, submit inputs outside a form; `voice_agent_speech_unittest.cc`:
   the spoken label.

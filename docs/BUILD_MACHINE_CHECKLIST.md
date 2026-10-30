@@ -1469,6 +1469,11 @@ extension enablement and `MediaRouterEnabled()`).
     asked about and answered, the download the page starts itself before
     the next action is refused and said ("The page tried to download a
     file. I stopped it."), not asked; nothing is downloaded.
+  - `PictureInPictureIsRefused` (redteam12): the fixture's video pops out
+    with the page's own gesture ("pip:yes"), then not after a voice press
+    for "play" ("pip:no", and "The page tried to open its video in a
+    window over your other apps. I stopped it."). If the first half fails,
+    picture-in-picture isn't available in this setup: send the log.
 
   If the prompt test fails because no prompt was shown, check the
   geolocation prompt reaches `PermissionRequestManager` in this setup

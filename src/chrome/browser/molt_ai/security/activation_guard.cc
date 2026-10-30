@@ -651,6 +651,24 @@ bool ActivationGuard::RefusesClipboardWrite(content::WebContents* contents) {
   return true;
 }
 
+// static
+bool ActivationGuard::MayEnterPictureInPicture(
+    content::WebContents* contents) {
+  ActivationGuard* guard =
+      contents ? ActivationGuard::FromWebContents(contents) : nullptr;
+  if (!guard) {
+    return true;
+  }
+  const Ruling ruling = guard->Decide(Request::kPictureInPicture);
+  if (ruling.decision == Decision::kProceed) {
+    return true;
+  }
+  if (ruling.tell) {
+    guard->Tell(Request::kPictureInPicture, std::string());
+  }
+  return false;
+}
+
 // ---- Permission prompts -----------------------------------------------------
 
 void ActivationGuard::ObserveTabHelpers() {

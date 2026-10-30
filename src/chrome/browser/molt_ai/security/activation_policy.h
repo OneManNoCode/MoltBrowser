@@ -141,6 +141,7 @@ enum class Request : uint8_t {
   kPermissionPrompt,  // a permission prompt (camera, location, ...)
   kFullScreen,        // the page's own full screen
   kClipboardWrite,    // a write to the clipboard
+  kPictureInPicture,  // a video's picture-in-picture window (always on top)
 };
 
 enum class Decision : uint8_t {

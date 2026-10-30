@@ -532,6 +532,35 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   EXPECT_TRUE(WaitForLog("fullscreen:yes"));
 }
 
+// A video's picture-in-picture window (over every app) is refused after a
+// voice press, whatever the press was for; the page's own script with a
+// person's gesture still gets one, so the refusal is the guard's.
+IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest, PictureInPictureIsRefused) {
+  OpenPage();
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return Js("document.getElementById('clip').readyState").ExtractInt() >= 1;
+  }));
+  // Before any action: as usual (content::ExecJs gives the script a
+  // gesture).
+  ASSERT_TRUE(content::ExecJs(page_.get(),
+                              "document.getElementById('popout').click()"));
+  ASSERT_TRUE(WaitForLog("pip:yes"));
+  ASSERT_TRUE(content::ExecJs(page_.get(), "document.exitPictureInPicture()"));
+
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kVoiceMode);
+  const std::optional<voice::PageItem> popout =
+      WaitForItem(controller, voice::ItemKind::kButton, "Pop out video");
+  ASSERT_TRUE(popout);
+  ASSERT_EQ(controller->Press(popout->handle, activation::Intent::kPlayMedia),
+            ActionResult::kDone);
+  EXPECT_TRUE(WaitForLog("pip:no"));
+  ASSERT_EQ(asker_.told.size(), 1u);
+  EXPECT_EQ(asker_.told[0],
+            "The page tried to open its video in a window over your other "
+            "apps. I stopped it.");
+}
+
 // One question per action: once the page's new window was asked about, its
 // next request before the next action (a download it starts itself) is
 // refused and said, not asked in the first one's place.

@@ -508,7 +508,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   own voice heard back as it speaks ("example dot com" for "example.com")
   and its own reading of a sound-alike of "Hey Molt", ends its voice's
   helper if it stops answering, and asks about at most one of a page's
-  requests per click it makes; the AI agent's click questions keep the
+  requests per click it makes; a video's picture-in-picture window isn't
+  opened from a voice or agent click; the AI agent's click questions keep the
   page's label in its quotes, name where a form goes when it is another
   site, and ask about a submit input tied to a form from outside it; the
   bundled voice ships CMUdict's licence notice.

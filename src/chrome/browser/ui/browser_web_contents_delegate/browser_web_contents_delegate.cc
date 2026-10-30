@@ -302,6 +302,11 @@ BrowserWebContentsDelegate::~BrowserWebContentsDelegate() = default;
 content::PictureInPictureResult
 BrowserWebContentsDelegate::EnterPictureInPicture(
     content::WebContents* web_contents) {
+  // MoltBrowser: not with the user activation an agent's or voice mode's
+  // accessibility action gave the page (molt_ai/security/activation_guard.h).
+  if (!molt_ai::ActivationGuard::MayEnterPictureInPicture(web_contents)) {
+    return content::PictureInPictureResult::kNotSupported;
+  }
   return PictureInPictureWindowManager::GetInstance()
       ->EnterVideoPictureInPicture(web_contents);
 }

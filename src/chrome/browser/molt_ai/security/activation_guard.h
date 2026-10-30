@@ -42,6 +42,10 @@
 //       clipboard writes       ChromeContentBrowserClient::
 //                              IsClipboardCopyAllowedByPolicy()
 //                              (RefusesClipboardWrite()).
+//       a video's picture-     BrowserWebContentsDelegate::
+//       in-picture window      EnterPictureInPicture()
+//                              (MayEnterPictureInPicture()): refused (a
+//                              document's goes through new windows above).
 //       permission prompts     PermissionRequestManager's observer
 //                              (OnPromptAdded()): left to voice mode when
 //                              it reads prompts aloud (it asks, and the
@@ -177,6 +181,9 @@ class ActivationGuard
   // IsClipboardCopyAllowedByPolicy(): true when a page's clipboard write
   // comes from an action's activation and wasn't a copy the user asked for.
   static bool RefusesClipboardWrite(content::WebContents* contents);
+  // EnterPictureInPicture(): false when a video's picture-in-picture window
+  // comes from an action's activation (no command asks for one).
+  static bool MayEnterPictureInPicture(content::WebContents* contents);
 
   // Voice mode's "go back": the offset (-1, or further back) that skips the
   // entries the page added with an action's sticky activation

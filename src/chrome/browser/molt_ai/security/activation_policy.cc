@@ -134,6 +134,10 @@ Ruling Decide(const TabRecord& tab,
         return kProceed;
       }
       return Ruling{Decision::kRefuse, voice};
+    case Request::kPictureInPicture:
+      // A window over every app, showing what the page chooses (it could
+      // look like the system's own dialog): no command asks for one.
+      return Ruling{Decision::kRefuse, voice};
   }
   return Ruling{Decision::kRefuse, false};
 }
@@ -156,6 +160,8 @@ std::string_view RequestName(Request request) {
       return "full screen";
     case Request::kClipboardWrite:
       return "clipboard write";
+    case Request::kPictureInPicture:
+      return "picture-in-picture";
   }
   return "unknown";
 }
@@ -226,6 +232,7 @@ Question QuestionFor(Request request,
     case Request::kPermissionPrompt:
     case Request::kFullScreen:
     case Request::kClipboardWrite:
+    case Request::kPictureInPicture:
       break;
   }
   // Never asked about: refused or shown as usual.
@@ -251,6 +258,9 @@ std::string RefusalNotice(Request request, std::string_view what) {
              "screen if you want it.";
     case Request::kClipboardWrite:
       return "The page tried to change your clipboard. I stopped it.";
+    case Request::kPictureInPicture:
+      return "The page tried to open its video in a window over your other "
+             "apps. I stopped it.";
     case Request::kNewWindow:
       return "The page tried to open a new window. I stopped it.";
     case Request::kDownload:

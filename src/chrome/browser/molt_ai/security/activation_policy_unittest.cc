@@ -21,6 +21,7 @@ const Request kAllRequests[] = {
     Request::kNewWindow,        Request::kDownload,
     Request::kExternalApp,      Request::kPermissionPrompt,
     Request::kFullScreen,       Request::kClipboardWrite,
+    Request::kPictureInPicture,
 };
 const Asker kAllAskers[] = {Asker::kNone, Asker::kVoiceMode,
                             Asker::kWebAgent};
@@ -253,6 +254,29 @@ TEST(ActivationPolicyTest, ClipboardWritesOnlyForACopy) {
   }
 }
 
+// A video's window over every app: never from an action's activation,
+// whatever the user asked for (no command asks for one).
+TEST(ActivationPolicyTest, PictureInPictureIsRefused) {
+  for (Intent intent : {Intent::kNone, Intent::kFullScreen, Intent::kPlayMedia,
+                        Intent::kCopy, Intent::kOpenInNewTab}) {
+    EXPECT_EQ(Decide(ActedAt(0, intent), 100, Request::kPictureInPicture,
+                     Asker::kVoiceMode),
+              kRefuseAndTell);
+    EXPECT_EQ(Decide(ActedAt(0, intent), 100, Request::kPictureInPicture,
+                     Asker::kWebAgent),
+              kRefuse);
+    EXPECT_EQ(Decide(ActedAt(0, intent), 100, Request::kPictureInPicture,
+                     Asker::kVoiceMode, /*prompts_by_voice=*/true),
+              kRefuseAndTell);
+  }
+  // A person's own click: as usual.
+  TabRecord tab = ActedAt(0, Intent::kPlayMedia);
+  NoteUserInput(tab);
+  EXPECT_EQ(
+      Decide(tab, 100, Request::kPictureInPicture, Asker::kVoiceMode),
+      kProceed);
+}
+
 TEST(ActivationPolicyTest, OnlyVoiceModeIsTold) {
   const TabRecord tab = ActedAt(0);
   for (Request request : kAllRequests) {
@@ -336,6 +360,9 @@ TEST(ActivationPolicyTest, TheNotices) {
             "if you want it.");
   EXPECT_EQ(RefusalNotice(Request::kClipboardWrite, ""),
             "The page tried to change your clipboard. I stopped it.");
+  EXPECT_EQ(RefusalNotice(Request::kPictureInPicture, ""),
+            "The page tried to open its video in a window over your other "
+            "apps. I stopped it.");
   for (Request request : kAllRequests) {
     EXPECT_FALSE(RefusalNotice(request, "x").empty());
   }
