@@ -155,18 +155,22 @@ PromptReply Reply(PromptAnswer answer) {
   return reply;
 }
 
-// The gesture's word, another one, or none.
+// The gesture's word, another one, one not for sure, or none.
 std::optional<PromptAnswer> WordAnswer(const PendingPrompt& prompt,
                                        std::string_view heard) {
-  const std::optional<size_t> match = MatchConfirmationWord(heard);
-  if (!match) {
+  const HeardWord word = HearConfirmationWord(heard);
+  if (word.kind == HeardWord::Kind::kNone) {
     return std::nullopt;
   }
   if (prompt.word.empty()) {
     return PromptAnswer::kCantAllow;
   }
-  return ConfirmationWords()[*match] == prompt.word ? PromptAnswer::kAllow
-                                                    : PromptAnswer::kWrongWord;
+  if (word.kind == HeardWord::Kind::kUnsure) {
+    return PromptAnswer::kSayAgain;
+  }
+  return ConfirmationWords()[word.index] == prompt.word
+             ? PromptAnswer::kAllow
+             : PromptAnswer::kWrongWord;
 }
 
 }  // namespace
@@ -225,6 +229,8 @@ std::string_view PromptAnswerName(PromptAnswer answer) {
       return "dictate";
     case PromptAnswer::kNeedWord:
       return "need word";
+    case PromptAnswer::kSayAgain:
+      return "say again";
     case PromptAnswer::kCantAllow:
       return "can't allow";
   }
@@ -429,7 +435,8 @@ PromptReply ParsePromptReply(const PendingPrompt& prompt,
       }
       if (prompt.malicious) {
         // Never kept by voice: no word was offered.
-        if (MatchConfirmationWord(heard) || In(kAllowWords, folded)) {
+        if (HearConfirmationWord(heard).kind != HeardWord::Kind::kNone ||
+            In(kAllowWords, folded)) {
           return Reply(PromptAnswer::kCantAllow);
         }
         return PromptReply();
@@ -527,6 +534,8 @@ std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply) {
       return download ? "To keep it, say " + prompt.word + "."
              : sites  ? "To confirm them, say " + prompt.word + "."
                       : "To allow it, say " + prompt.word + ".";
+    case PromptAnswer::kSayAgain:
+      return "I didn't catch that. Say the word again.";
     case PromptAnswer::kCantAllow:
       return download && prompt.malicious
                  ? "I can't keep a dangerous file by voice. Use the "

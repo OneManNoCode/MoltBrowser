@@ -19,7 +19,10 @@
 #include "chrome/browser/download/download_item_warning_data.h"
 #include "chrome/browser/download/download_ui_model.h"
 #include "chrome/browser/molt_ai/security/activation_policy.h"
+#include "chrome/browser/ui/actions/chrome_action_id.h"
+#include "chrome/browser/ui/page_action/page_action_controller.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
+#include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/download_item.h"
 #include "components/password_manager/core/browser/password_form.h"
@@ -28,6 +31,7 @@
 #include "components/permissions/permission_util.h"
 #include "components/permissions/request_type.h"
 #include "components/permissions/resolvers/permission_prompt_options.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_manager.h"
@@ -204,6 +208,11 @@ void VoiceBrowserPrompts::Attach(content::WebContents* contents) {
         std::make_unique<download::AllDownloadItemNotifier>(manager, this);
   }
   VoiceDialogManager::SetListener(contents, this);
+  ObservePasswordAction(contents);
+  // A save bubble already pending, once the caller is done.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&VoiceBrowserPrompts::CheckPassword,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void VoiceBrowserPrompts::Detach() {
@@ -218,7 +227,7 @@ void VoiceBrowserPrompts::Detach() {
     }
     current_.reset();
   }
-  password_timer_.Stop();
+  password_action_.Reset();
   password_read_ = false;
   if (permissions_) {
     permissions_->RemoveObserver(this);
@@ -329,6 +338,7 @@ void VoiceBrowserPrompts::Answer(const VoiceStep& step,
     case PromptAnswer::kNone:
     case PromptAnswer::kDictate:
     case PromptAnswer::kNeedWord:
+    case PromptAnswer::kSayAgain:
     case PromptAnswer::kCantAllow:
       return;
   }
@@ -375,6 +385,15 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
   if (heard == HearResult::kNotClean) {
     // It keeps waiting.
     delegate_->SayAboutBrowserPrompt(NotCleanSpeech(current_->word));
+    return;
+  }
+  if (heard == HearResult::kUnsure) {
+    // Neither the word nor a miss: it keeps waiting.
+    PromptReply again;
+    again.answer = PromptAnswer::kSayAgain;
+    PendingPrompt pending;
+    pending.kind = current_->kind;
+    delegate_->SayAboutBrowserPrompt(ReplySpeech(pending, again));
     return;
   }
   // The gesture's prompt is closed either way.
@@ -424,6 +443,7 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
       return;
     }
     case HearResult::kNotClean:
+    case HearResult::kUnsure:
     case HearResult::kNotAWord:
     case HearResult::kNoPrompt:
     case HearResult::kLockedOut:
@@ -720,20 +740,42 @@ std::string VoiceBrowserPrompts::AnswerDownload(const Current& prompt,
 
 // ---- The password bubble ----------------------------------------------------
 
+void VoiceBrowserPrompts::ObservePasswordAction(
+    content::WebContents* contents) {
+  password_action_.Reset();
+  tabs::TabInterface* tab = tabs::TabInterface::MaybeGetFromContents(contents);
+  tabs::TabFeatures* features = tab ? tab->GetTabFeatures() : nullptr;
+  page_actions::PageActionController* actions =
+      features ? features->page_action_controller() : nullptr;
+  if (actions && actions->ActionExists(kActionShowPasswordsBubbleOrPage)) {
+    actions->AddObserver(kActionShowPasswordsBubbleOrPage, password_action_);
+  }
+}
+
+void VoiceBrowserPrompts::OnPageActionModelChanged(
+    const page_actions::PageActionModelInterface& model) {
+  // The controller changes the icon in the middle of its own update:
+  // looked at once it is done.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&VoiceBrowserPrompts::CheckPassword,
+                                weak_factory_.GetWeakPtr()));
+}
+
+void VoiceBrowserPrompts::OnPageActionModelWillBeDeleted(
+    const page_actions::PageActionModelInterface& model) {
+  password_action_.Reset();
+}
+
 void VoiceBrowserPrompts::DidFinishNavigation(
     content::NavigationHandle* navigation) {
   if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted() &&
       !navigation->IsSameDocument()) {
-    password_timer_.Start(FROM_HERE, kPasswordCheckDelay,
-                          base::BindOnce(&VoiceBrowserPrompts::CheckPassword,
-                                         weak_factory_.GetWeakPtr()));
+    CheckPassword();
   }
 }
 
 void VoiceBrowserPrompts::DidStopLoading() {
-  password_timer_.Start(FROM_HERE, kPasswordCheckDelay,
-                        base::BindOnce(&VoiceBrowserPrompts::CheckPassword,
-                                       weak_factory_.GetWeakPtr()));
+  CheckPassword();
 }
 
 void VoiceBrowserPrompts::CheckPassword() {

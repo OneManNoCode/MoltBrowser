@@ -27,10 +27,14 @@
 //     speaking, no other source spoke meanwhile, no tab played sound
 //     without an echo canceller). Typed text never mints one; pages can't
 //     reach this at all.
-//   - One try: hearing another word of the list refuses the prompt, and
-//     kMaxWrongWords such misses within kWrongWordWindowMs turn the gesture
-//     off for kLockoutMs (prompts are then answered with the mouse or
-//     keyboard, or refused by voice).
+//   - One try: hearing another word of the list, cleanly and for sure,
+//     refuses the prompt, and kMaxWrongWords such misses within
+//     kWrongWordWindowMs turn the gesture off for kLockoutMs (prompts are
+//     then answered with the mouse or keyboard, or refused by voice). What
+//     sounds like a word of the list but not for sure (HearConfirmationWord()
+//     says kUnsure) neither answers nor refuses: the user is asked to say
+//     the word again, within the prompt's window. Whether a hearing is sure
+//     never depends on the prompt's word, so it tells a guesser nothing.
 //   - The word isn't given to the speech helper as a hotword (see §7.3 for
 //     the measurements): a helper that someone took over would otherwise
 //     know it.
@@ -86,11 +90,31 @@ std::span<const std::string_view> AnswerWords();
 // own words keep a margin of 1 between them).
 bool WordsConfusable(std::string_view a, std::string_view b, int margin);
 
+// What a sound-alike must keep from every other confirmation word to stand
+// for one for sure: no other within the phonetic key's bound plus this many
+// half-edits (the margin the list's own words keep from each other, so a
+// word of the list itself is always sure).
+inline constexpr int kSureSoundAlikeMargin = 1;
+
 // Which confirmation word |heard| (an utterance, the wake phrase already
 // removed) is: its folded words, with "yes", "ok", "okay" or "say" before
-// and "please" after allowed, are one word that is a confirmation word, or
-// sounds like exactly one of them (the phonetic key, within its bound).
-// Returns the word's index in ConfirmationWords(), or nullopt.
+// and "please" after allowed, are one word that is a confirmation word (or
+// its plural, or it split in two), or sounds like one of them (the phonetic
+// key, within its bound).
+struct HeardWord {
+  enum class Kind : uint8_t {
+    kNone,    // not a confirmation word
+    kWord,    // this one, for sure
+    kUnsure,  // it sounds like one, but also like another
+  };
+  Kind kind = Kind::kNone;
+  // kWord: the word's index in ConfirmationWords().
+  size_t index = 0;
+};
+HeardWord HearConfirmationWord(std::string_view heard);
+
+// The index of the confirmation word |heard| is for sure (kWord), or
+// nullopt.
 std::optional<size_t> MatchConfirmationWord(std::string_view heard);
 
 // ---------------------------------------------------------------------------
@@ -155,6 +179,7 @@ enum class HearResult : uint8_t {
   kMinted,     // the prompt's word, heard cleanly
   kNotClean,   // the prompt's word, but not heard cleanly: say it again
   kWrongWord,  // another confirmation word: the prompt is refused
+  kUnsure,     // a confirmation word, but not for sure: say it again
   kNotAWord,   // no confirmation word: the prompt still waits
   kNoPrompt,   // no such prompt waits (answered, expired, cancelled)
   kLockedOut,  // the gesture is off for now
@@ -178,7 +203,9 @@ class GestureBook {
   std::optional<GesturePrompt> Begin(GestureBinding binding, int64_t now_ms);
 
   // |heard| while prompt |id| waits. kMinted fills |gesture| and closes the
-  // prompt; kWrongWord closes it too and counts toward the lockout.
+  // prompt; kWrongWord (another word, heard cleanly and for sure) closes it
+  // too and counts toward the lockout. kUnsure, kNotClean and kNotAWord
+  // leave it waiting.
   HearResult Hear(int id,
                   std::string_view heard,
                   const HeardEvidence& evidence,

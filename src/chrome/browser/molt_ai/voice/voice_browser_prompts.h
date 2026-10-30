@@ -16,11 +16,13 @@
 //     answered as voice_prompts.h says; past kMaxDialogsRead in
 //     kDialogFloodWindowMs, their text isn't read.
 //   - A dangerous download from the tab (the profile's downloads): read;
-//     kept with the word (the download bubble's "Keep"), deleted on
-//     "discard"; a file known to be malicious is only deleted by voice.
-//   - The password manager's save bubble (looked at once a page of the tab
-//     has loaded): "save", "never" or "not now". Nothing of the password,
-//     nor the user name, is said.
+//     kept with the word as the download bubble's warning keeps it,
+//     deleted on "discard"; a file known to be malicious is only deleted by
+//     voice.
+//   - The password manager's save bubble: read when its page action (the
+//     key icon) changes on the tab, whenever that is, and once a page of
+//     the tab has loaded. "save", "never" or "not now". Nothing of the
+//     password, nor the user name, is said.
 //   - A workflow draft's sites (ConfirmDraftSites()): confirmed with the
 //     word.
 //
@@ -50,12 +52,15 @@
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_dialog_manager.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
 #include "chrome/browser/molt_ai/voice/voice_prompts.h"
+#include "chrome/browser/ui/page_action/page_action_model.h"
+#include "chrome/browser/ui/page_action/page_action_model_observer.h"
 #include "components/download/content/public/all_download_item_notifier.h"
 #include "components/permissions/permission_request_manager.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -71,7 +76,8 @@ class VoiceBrowserPrompts
     : public content::WebContentsObserver,
       public permissions::PermissionRequestManager::Observer,
       public download::AllDownloadItemNotifier::Observer,
-      public VoiceDialogManager::Listener {
+      public VoiceDialogManager::Listener,
+      public page_actions::PageActionModelObserver {
  public:
   class Delegate {
    public:
@@ -90,11 +96,6 @@ class VoiceBrowserPrompts
     // Says |text| while the prompt keeps waiting.
     virtual void SayAboutBrowserPrompt(const std::string& text) = 0;
   };
-
-  // How long after a page of the tab loaded the password bubble is looked
-  // at.
-  static constexpr base::TimeDelta kPasswordCheckDelay =
-      base::Milliseconds(1500);
 
   explicit VoiceBrowserPrompts(Delegate* delegate);
   VoiceBrowserPrompts(const VoiceBrowserPrompts&) = delete;
@@ -193,7 +194,12 @@ class VoiceBrowserPrompts
   void ReadPermissionPrompt();
   std::optional<GestureBinding> PermissionBinding();
   void MaybeReadDownload(download::DownloadItem* item);
+  // Reads the save bubble if it is pending and wasn't read yet.
   void CheckPassword();
+  // Watches the tab's password page action (ManagePasswordsUIController
+  // updates it whenever its state changes; 156 has no observer of the
+  // controller itself).
+  void ObservePasswordAction(content::WebContents* contents);
 
   // The word (kAllow or kWrongWord) to the current prompt.
   void AnswerWithWord(const VoiceStep& step, const HeardEvidence& evidence);
@@ -217,6 +223,12 @@ class VoiceBrowserPrompts
                      const VoiceDialogManager::Dialog& dialog) override;
   void OnDialogClosed(content::WebContents* contents) override;
 
+  // page_actions::PageActionModelObserver:
+  void OnPageActionModelChanged(
+      const page_actions::PageActionModelInterface& model) override;
+  void OnPageActionModelWillBeDeleted(
+      const page_actions::PageActionModelInterface& model) override;
+
   raw_ptr<Delegate> delegate_;
   GestureBook gestures_;
   base::RepeatingCallback<base::TimeTicks()> clock_for_testing_;
@@ -227,7 +239,9 @@ class VoiceBrowserPrompts
   // Downloads already read out.
   std::set<uint32_t> downloads_read_;
   DialogReadLimiter dialogs_read_;
-  base::OneShotTimer password_timer_;
+  base::ScopedObservation<page_actions::PageActionModelInterface,
+                          page_actions::PageActionModelObserver>
+      password_action_{this};
   // The save bubble pending was already read.
   bool password_read_ = false;
 

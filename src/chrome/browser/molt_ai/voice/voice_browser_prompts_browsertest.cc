@@ -31,11 +31,15 @@
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/download_item.h"
+#include "components/password_manager/core/browser/mock_password_form_manager_for_ui.h"
+#include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/common/password_manager_ui.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/permissions/test/mock_permission_prompt_factory.h"
 #include "components/prefs/pref_service.h"
@@ -49,6 +53,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -224,6 +229,8 @@ class VoiceBrowserPromptsBrowserTest : public InProcessBrowserTest {
 
   FakeTtsPlatform tts_;
   SpeechLog speech_;
+  // The form the password manager offers to save (outlives the tab).
+  password_manager::PasswordForm form_;
 
  private:
   base::test::ScopedFeatureList features_;
@@ -390,6 +397,41 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
          event.action == DownloadItemWarningData::WarningAction::PROCEED);
   }
   EXPECT_TRUE(proceeded);
+}
+
+// The save bubble, whenever the password manager offers it (here well
+// after the page loaded, with no navigation): read as its key icon changes,
+// with the site only.
+IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
+                       ASaveBubbleOfferedLaterIsRead) {
+  VoiceController* voice = Start();
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !tab()->IsLoading(); }));
+  ManagePasswordsUIController* passwords =
+      ManagePasswordsUIController::FromWebContents(tab());
+  ASSERT_TRUE(passwords);
+  ASSERT_NE(passwords->GetState(),
+            password_manager::ui::PENDING_PASSWORD_STATE);
+
+  form_.url = tab()->GetLastCommittedURL();
+  form_.signon_realm = form_.url.GetWithEmptyPath().spec();
+  form_.username_value = u"ada.lovelace";
+  auto manager = std::make_unique<
+      testing::NiceMock<password_manager::MockPasswordFormManagerForUI>>();
+  ON_CALL(*manager, GetURL()).WillByDefault(testing::ReturnRef(form_.url));
+  ON_CALL(*manager, GetPendingCredentials())
+      .WillByDefault(testing::ReturnRef(form_));
+  ON_CALL(*manager, IsFetchCompleted()).WillByDefault(testing::Return(true));
+  passwords->OnPasswordSubmitted(std::move(manager));
+  ASSERT_EQ(passwords->GetState(),
+            password_manager::ui::PENDING_PASSWORD_STATE);
+
+  EXPECT_TRUE(WaitForSpeech("Save your password for localhost?"));
+  EXPECT_FALSE(speech_.Heard("ada"));
+  voice->HandleHeardUtterance("not now", /*heard_cleanly=*/false);
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return passwords->GetState() !=
+           password_manager::ui::PENDING_PASSWORD_STATE;
+  }));
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,

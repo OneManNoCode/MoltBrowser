@@ -134,6 +134,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       case PromptAnswer::kAllow:
       case PromptAnswer::kWrongWord:
       case PromptAnswer::kNeedWord:
+      case PromptAnswer::kSayAgain:
         CHECK(!word.empty());
         break;
       case PromptAnswer::kCantAllow:

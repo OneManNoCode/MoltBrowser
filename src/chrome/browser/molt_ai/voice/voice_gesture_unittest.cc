@@ -104,6 +104,38 @@ TEST(VoiceGestureWordsTest, WhatIsSaidAroundTheWord) {
   EXPECT_EQ(MatchConfirmationWord("butter fly"), butterfly);
 }
 
+// A sound-alike stands for a word for sure only when no other word of the
+// list is nearly as close: what is close to two is asked again.
+TEST(VoiceGestureWordsTest, ASoundAlikeOfTwoWordsIsUnsure) {
+  // garden's within the key's bound, and falcon's within one more.
+  EXPECT_EQ(HearConfirmationWord("pardon").kind, HeardWord::Kind::kUnsure);
+  EXPECT_FALSE(MatchConfirmationWord("pardon"));
+  EXPECT_EQ(HearConfirmationWord("say pardon please").kind,
+            HeardWord::Kind::kUnsure);
+  // Close to rocket alone: rocket, for sure.
+  const HeardWord larget = HearConfirmationWord("larget");
+  ASSERT_EQ(larget.kind, HeardWord::Kind::kWord);
+  EXPECT_EQ(ConfirmationWords()[larget.index], "rocket");
+  EXPECT_EQ(HearConfirmationWord("harbour").kind, HeardWord::Kind::kWord);
+  EXPECT_EQ(HearConfirmationWord("open youtube").kind, HeardWord::Kind::kNone);
+  EXPECT_EQ(HearConfirmationWord("no").kind, HeardWord::Kind::kNone);
+}
+
+// Every word of the list, said as it is, as a plural or around "yes" and
+// "please", is that word for sure: the margin never makes a guess unsure.
+TEST(VoiceGestureWordsTest, EveryWordOfTheListIsSure) {
+  const auto words = ConfirmationWords();
+  for (size_t i = 0; i < words.size(); ++i) {
+    const std::string word(words[i]);
+    for (const std::string& said :
+         {word, word + "s", "yes " + word + " please", "say " + word}) {
+      const HeardWord heard = HearConfirmationWord(said);
+      EXPECT_EQ(heard.kind, HeardWord::Kind::kWord) << said;
+      EXPECT_EQ(heard.index, i) << said;
+    }
+  }
+}
+
 TEST(VoiceGestureWordsTest, NotAWord) {
   EXPECT_FALSE(MatchConfirmationWord(""));
   EXPECT_FALSE(MatchConfirmationWord("yes"));
@@ -254,6 +286,56 @@ TEST(GestureBookTest, AWrongWordRefusesThePromptAndTwoLockItOut) {
   EXPECT_FALSE(book.Begin(Camera(), 1200));
   EXPECT_FALSE(book.Begin(Camera(), 1100 + kLockoutMs - 1));
   EXPECT_TRUE(book.Begin(Camera(), 1100 + kLockoutMs));
+}
+
+// What is like a word of the list but not for sure which neither answers
+// nor refuses the prompt, nor counts toward the lockout: the user says it
+// again within the prompt's window.
+TEST(GestureBookTest, AnUnsureWordIsAskedAgain) {
+  GestureBook book{Counter(11)};
+  std::optional<GesturePrompt> prompt = book.Begin(Camera(), 0);
+  ASSERT_TRUE(prompt);
+  VoiceGesture gesture;
+  for (int i = 0; i < 2 * kMaxWrongWords + 1; ++i) {
+    EXPECT_EQ(book.Hear(prompt->id, "pardon", kClean, 100 + i, &gesture),
+              HearResult::kUnsure);
+  }
+  EXPECT_FALSE(book.LockedOut(200));
+  EXPECT_NE(book.Find(prompt->id, 200), nullptr);
+  EXPECT_EQ(book.Hear(prompt->id, prompt->word, kClean, 300, &gesture),
+            HearResult::kMinted);
+}
+
+// The guesser's odds: whatever the prompt's word, every other word of the
+// list refuses the prompt at the first try and counts toward the lockout;
+// an unsure hearing is the same for every prompt word, so it tells nothing
+// about it.
+TEST(GestureBookTest, EveryOtherWordIsOneTryWhateverThePromptsWord) {
+  const auto words = ConfirmationWords();
+  for (uint64_t seed = 0; seed < 40; ++seed) {
+    GestureBook book{Counter(seed)};
+    std::optional<GesturePrompt> prompt = book.Begin(Camera(), 0);
+    ASSERT_TRUE(prompt);
+    for (std::string_view other : words) {
+      if (other == prompt->word) {
+        continue;
+      }
+      GestureBook fresh{Counter(seed)};
+      std::optional<GesturePrompt> same = fresh.Begin(Camera(), 0);
+      ASSERT_TRUE(same);
+      ASSERT_EQ(same->word, prompt->word);
+      VoiceGesture gesture;
+      EXPECT_EQ(fresh.Hear(same->id, std::string(other), kClean, 100, &gesture),
+                HearResult::kWrongWord)
+          << other << " for " << prompt->word;
+      EXPECT_EQ(fresh.Find(same->id, 100), nullptr);
+      EXPECT_EQ(fresh.Hear(same->id, "pardon", kClean, 200, &gesture),
+                HearResult::kNoPrompt);
+    }
+    VoiceGesture gesture;
+    EXPECT_EQ(book.Hear(prompt->id, "pardon", kClean, 100, &gesture),
+              HearResult::kUnsure);
+  }
 }
 
 TEST(GestureBookTest, WrongWordsFarApartDontLockOut) {
