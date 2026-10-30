@@ -171,8 +171,9 @@ std::string LearnedPhrase(std::string_view phrase);
 
 // Whether a command of |kind| has voice mode read the page's text aloud:
 // a reading (voice_reader.h) started, resumed ("continue reading") or
-// moved on ("next heading"), or the page's results, links, headings,
-// title or screen read out. Nothing is learned from what is said while
+// moved on ("next heading"), the page's results, links, headings, title or
+// screen read out, or an answer made from its text (a question about the
+// page). Nothing is learned from what is said while
 // that is read, nor just after (voice_learning_loop.h's kReadingGrace).
 bool ReadsPageText(VoiceCommandKind kind);
 

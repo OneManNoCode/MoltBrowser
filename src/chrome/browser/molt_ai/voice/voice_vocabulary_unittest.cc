@@ -167,7 +167,7 @@ TEST(VoiceVocabularyTest, EveryReadingOfThePageCounts) {
         K::kNextParagraph, K::kPreviousParagraph, K::kResume, K::kNextHeading,
         K::kPreviousHeading, K::kReadResults, K::kReadLinks, K::kReadHeadings,
         K::kReadTitle, K::kDescribeScreen, K::kNextItem, K::kPreviousItem,
-        K::kRepeat}) {
+        K::kRepeat, K::kAskPage}) {
     EXPECT_TRUE(ReadsPageText(kind)) << VoiceCommandKindName(kind);
   }
   for (K kind : {K::kSearch, K::kOpenSite, K::kChoose, K::kType, K::kYes,

@@ -465,6 +465,8 @@ bool ReadsPageText(VoiceCommandKind kind) {
     case K::kRepeat:
     // "Continue reading" (and "continue" after "pause").
     case K::kResume:
+    // A question about the page: the answer is made from its text.
+    case K::kAskPage:
       return true;
     default:
       return false;
