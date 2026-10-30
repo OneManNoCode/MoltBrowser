@@ -379,6 +379,14 @@ class VoiceController : public VoicePlanner::Delegate,
   void PlannerSays(const std::string& text) override;
   void PlannerAsks(int question, const std::string& what) override;
   void PlannerFinished() override;
+  // Routines (planner-routines): the steps the planner carried out go to
+  // "this", and a routine's replayed step reports how it went.
+  void PlannerCarriedOut(const PlannerStep& step) override;
+  void PlannerReplayed(PlannerReplay outcome) override;
+  // A routine's step the planner carried out before, replayed by the
+  // planner in the active tab (voice_learning_loop.h). False when there is
+  // no planner or no tab.
+  bool ReplayPlannerStep(const PlannerStep& step);
   // Ends the planner's run, if one is in progress.
   void CancelPlanner();
   // The planner's question went unanswered.

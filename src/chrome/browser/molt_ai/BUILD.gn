@@ -176,7 +176,9 @@ source_set("molt_ai_agents") {
     "//chrome/browser/molt_ai/agents:agent_page_map",
     "//chrome/browser/molt_ai/agents:agent_plan",
 
-    # voice_agent_planner.h: what voice mode says, and the planner it is.
+    # voice_agent_planner.h: what voice mode says, the planner it is, and
+    # the steps it reports and replays for routines.
+    "//chrome/browser/molt_ai/agents:voice_agent_replay",
     "//chrome/browser/molt_ai/agents:voice_agent_speech",
     "//chrome/browser/molt_ai/voice:voice_planner",
     "//chrome/browser/molt_ai/agents:agent_prompt",

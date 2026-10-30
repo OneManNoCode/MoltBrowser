@@ -110,6 +110,37 @@ std::string_view VerbText(ChoiceVerb verb) {
   return "choose";
 }
 
+// The planner's step (IsAgentStep()), as the browser says it.
+std::string DescribeAgentStep(const RoutineStep& step) {
+  const PlannerStep& a = step.agent;
+  const std::string element =
+      a.label.empty() ? "the " + Said(a.kind) : Said(a.label);
+  switch (a.action) {
+    case PlannerStep::Action::kNavigate:
+      return step.host.empty() ? std::string("open a page")
+                               : "open " + Said(step.host);
+    case PlannerStep::Action::kSearch:
+      return a.query.empty() ? std::string("search the web")
+                             : "search the web for " + Said(a.query);
+    case PlannerStep::Action::kClick:
+      return "click " + element;
+    case PlannerStep::Action::kType:
+      return "type " +
+             (step.variable.empty() ? Said(a.text)
+                                    : std::string("what you tell me")) +
+             " in " + element;
+    case PlannerStep::Action::kSelect:
+      return "choose " + Said(a.option) + " in " + element;
+    case PlannerStep::Action::kScroll:
+      return a.direction == "up" ? "scroll up" : "scroll down";
+    case PlannerStep::Action::kUnkept:
+      return "a step the AI took that I can't repeat";
+    case PlannerStep::Action::kNone:
+      break;
+  }
+  return "a step the AI took";
+}
+
 std::string ScrollText(std::string_view way, const VoiceCommand& c) {
   std::string out = "scroll " + std::string(way);
   if (c.scroll == ScrollAmount::kPage && c.count > 1) {
@@ -198,6 +229,14 @@ bool IsTaskStart(const RoutineStep& step) {
   return c.kind == K::kOpenSite || c.kind == K::kHome ||
          (c.kind == K::kSearch && (c.scope == SearchScope::kNamedSite ||
                                    c.scope == SearchScope::kDefaultEngine));
+}
+
+bool IsAgentStep(const RoutineStep& step) {
+  return step.planned && step.agent.action != PlannerStep::Action::kNone;
+}
+
+bool IsUnkeptStep(const RoutineStep& step) {
+  return step.planned && step.agent.action == PlannerStep::Action::kUnkept;
 }
 
 VoiceCommand RoutineCommand(const VoiceCommand& c) {
@@ -323,6 +362,9 @@ VoiceCommand CommandForStep(const RoutineStep& step, std::string_view value) {
 }
 
 std::string DescribeRoutineStep(const RoutineStep& step) {
+  if (IsAgentStep(step)) {
+    return DescribeAgentStep(step);
+  }
   const VoiceCommand& c = step.command;
   const std::string text =
       step.variable.empty() ? Said(c.text) : std::string("what you tell me");
@@ -541,6 +583,17 @@ void RoutineRecorder::Clear() {
 bool RoutineRecorder::planned() const {
   return std::any_of(steps_.begin(), steps_.end(),
                      [](const RoutineStep& step) { return step.planned; });
+}
+
+std::string RoutineRecorder::refusal() const {
+  for (const RoutineStep& step : steps_) {
+    if (IsUnkeptStep(step)) {
+      return step.agent.why.empty()
+                 ? std::string("one of the AI's steps can't be repeated.")
+                 : step.agent.why;
+    }
+  }
+  return std::string();
 }
 
 }  // namespace voice

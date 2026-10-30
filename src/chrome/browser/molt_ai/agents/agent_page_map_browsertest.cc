@@ -17,7 +17,12 @@
 //   - voice mode hands what the grammar can't do to the planner (a stub
 //     here) and speaks its steps; its question waits for "yes", "stop"
 //     ends it;
-//   - through the web agent, placing an order waits for a spoken "yes".
+//   - through the web agent, placing an order waits for a spoken "yes";
+//   - the planner's steps remembered as a routine (planner-routines,
+//     TOUCHLESS_BROWSING.md §6.8): saved as a draft naming its sites,
+//     confirmed before its first run, replayed step by step without the
+//     model, stopped at a step whose element isn't on the page, and made a
+//     draft again when a step in its file uses another site.
 
 #include <memory>
 #include <string>
@@ -25,6 +30,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
@@ -34,12 +40,18 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/threading/thread_restrictions.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
+#include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
+#include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
 #include "chrome/browser/profiles/profile.h"
@@ -69,6 +81,15 @@ class FakeTtsPlatform : public content::TtsPlatform {
   FakeTtsPlatform(const FakeTtsPlatform&) = delete;
   FakeTtsPlatform& operator=(const FakeTtsPlatform&) = delete;
   ~FakeTtsPlatform() = default;
+
+  // Everything said since TakeSpoken() last took it, joined by "|".
+  std::string Untaken() const {
+    std::string out;
+    for (size_t i = taken_; i < spoken_.size(); ++i) {
+      out += (out.empty() ? "" : "|") + spoken_[i];
+    }
+    return out;
+  }
 
   // Everything said since the last call, joined by "|".
   std::string TakeSpoken() {
@@ -444,6 +465,12 @@ class StubPlanner : public voice::VoicePlanner {
     delegate_->PlannerSays("I'll search the site for trains to Lyon.");
     delegate_->PlannerAsks(1, "open trains.example");
   }
+  void Replay(content::WebContents* contents,
+              const voice::PlannerStep& step,
+              Delegate* delegate) override {
+    delegate->PlannerReplayed(voice::PlannerReplay::kFailed);
+    delegate->PlannerFinished();
+  }
   void Answer(int question, bool yes) override {
     log_->answers.push_back(base::NumberToString(question) +
                             (yes ? " yes" : " no"));
@@ -480,6 +507,78 @@ class VoicePlannerBrowserTest : public AgentPageMapBrowserTest {
     })) << "still busy after \""
         << text << "\"";
   }
+
+  // Waits until the browser has said |text| since TakeSpoken() last took
+  // what it said.
+  bool Heard(std::string_view text) {
+    return base::test::RunUntil([&]() {
+      return tts_.Untaken().find(std::string(text)) != std::string::npos;
+    });
+  }
+};
+
+// Routines with the planner's steps: the profile's learning keeps them in
+// a temporary automations directory.
+class VoicePlannerRoutinesBrowserTest : public VoicePlannerBrowserTest {
+ protected:
+  void SetUpOnMainThread() override {
+    VoicePlannerBrowserTest::SetUpOnMainThread();
+    {
+      base::ScopedAllowBlockingForTesting allow_blocking;
+      ASSERT_TRUE(automations_.CreateUniqueTempDir());
+    }
+    learning()->SetAutomationsRootForTesting(automations_.GetPath());
+    ASSERT_TRUE(base::test::RunUntil([&]() { return learning()->loaded(); }));
+  }
+
+  voice::VoiceLearning* learning() {
+    return voice::VoiceLearning::Get(browser()->GetProfile());
+  }
+
+  // The routine as stored, changed by |change| and saved again (as an
+  // edit of its file, or the Agent studio's click on "Confirm these
+  // sites").
+  template <typename Change>
+  void ChangeStored(const std::string& id, Change change) {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    automation::AutomationStorage storage;
+    storage.SetRootForTesting(automations_.GetPath());
+    std::optional<automation::Script> script = storage.Load(id);
+    ASSERT_TRUE(script);
+    change(*script);
+    ASSERT_TRUE(storage.Save(*script));
+  }
+
+  std::optional<automation::Script> Stored(const std::string& id) {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    automation::AutomationStorage storage;
+    storage.SetRootForTesting(automations_.GetPath());
+    return storage.Load(id);
+  }
+
+  // The scripted model: on the video site, types the search, presses the
+  // search button, chooses the Live Aid video; then it's done.
+  static void ScriptTheVideoSearch() {
+    WebAgent::SetModelForTesting(base::BindRepeating(
+        [](const std::string& prompt, const PromptOptions& options) {
+          const std::string page = CurrentPage(prompt);
+          if (page.find("video_home.html") != std::string::npos) {
+            if (prompt.find("[TYPE]") == std::string::npos) {
+              return Reply(
+                  "{\"reason\":\"\",\"action\":\"TYPE\",\"target\":\"" +
+                  ElementWith(prompt, "(text field)") +
+                  "\",\"text\":\"Bohemian Rhapsody\"}");
+            }
+            return Reply(Click(ElementWith(prompt, "button \"Search\"")));
+          }
+          if (page.find("video_results.html") != std::string::npos) {
+            return Reply(Click(ElementWith(prompt, "Live Aid 1985")));
+          }
+          return Reply(Done("Playing it"));
+        }));
+  }
+
+  base::ScopedTempDir automations_;
 };
 
 IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest, HandsTheRestToThePlanner) {
@@ -574,6 +673,183 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest, AnOrderWaitsForAYes) {
   EXPECT_EQ(1, Js("window.ordered"));
   EXPECT_EQ(true, Js("window.orderTrusted"));
   EXPECT_EQ(tts_.TakeSpoken(), "Done. Your order is placed.");
+}
+
+// The planner's steps, remembered as a routine: saved as a draft that names
+// its sites, confirmed before its first run, then replayed step by step
+// without the model, its question asked again.
+IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
+                       RemembersThePlannersStepsAndReplaysThem) {
+  ASSERT_TRUE(voice()->Start());
+  const GURL home = Url("video.test", "/molt_voice/video_home.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), home));
+  ScriptTheVideoSearch();
+  const std::string site =
+      "video.test:" + base::NumberToString(embedded_test_server()->port());
+
+  // The request: the planner types, asks before the search form, chooses.
+  Say("play the live aid version of bohemian rhapsody");
+  ASSERT_TRUE(Heard("Say yes to click Search, it submits a form on " + site +
+                    ", or no to cancel."));
+  Say("yes");
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return !voice()->planner_running() && !voice()->busy(); }));
+  EXPECT_EQ(web_contents()->GetLastCommittedURL().query(), "v=video4");
+
+  // "Remember this": the planner's steps, read back; saved as a draft
+  // that names its site.
+  tts_.TakeSpoken();
+  Say("remember this as live aid");
+  EXPECT_TRUE(
+      Heard("I'll remember: type Bohemian Rhapsody in Search, click "
+            "Search and click Queen - Bohemian Rhapsody (Live Aid "));
+  EXPECT_TRUE(
+      Heard("Some of these steps are the AI's, so you'll confirm the "
+            "sites they use before it runs."));
+  Say("yes");
+  EXPECT_TRUE(
+      Heard("Saved live aid. It uses video.test. Its sites need your "
+            "confirmation the first time you run it."));
+  ASSERT_EQ(learning()->routines().size(), 1u);
+  const std::string id = learning()->routines()[0].id;
+  EXPECT_TRUE(learning()->routines()[0].needs_sites_confirmed);
+  {
+    std::optional<automation::Script> script = Stored(id);
+    ASSERT_TRUE(script);
+    EXPECT_TRUE(automation::HasVoiceSteps(*script));
+    // It starts on the page the request was made on.
+    ASSERT_EQ(script->steps.size(), 4u);
+    EXPECT_EQ(script->steps[0].type, automation::StepType::NAVIGATE);
+    EXPECT_EQ(script->steps[0].target, home.spec());
+    EXPECT_EQ(script->steps[1].type, automation::StepType::TYPE);
+    EXPECT_EQ(script->steps[2].type, automation::StepType::CLICK);
+    EXPECT_EQ(script->steps[3].type, automation::StepType::CLICK);
+    // A draft's rules: Casual, no site until confirmed.
+    EXPECT_EQ(script->security.trust, automation::TrustLevel::CASUAL);
+    EXPECT_TRUE(script->security.sites_unconfirmed);
+    EXPECT_TRUE(script->security.domain_whitelist.empty());
+  }
+
+  // Its first run asks to confirm its sites; this window doesn't listen,
+  // so the Agent studio confirms them.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  tts_.TakeSpoken();
+  Say("run live aid");
+  EXPECT_TRUE(
+      Heard("Before live aid runs, its sites need your confirmation. "
+            "Confirm it in the Agent studio for now."));
+  EXPECT_EQ(web_contents()->GetLastCommittedURL(), GURL("about:blank"));
+  // The studio's "Confirm these sites", on exactly the sites its steps use.
+  ChangeStored(id, [](automation::Script& script) {
+    EXPECT_FALSE(automation::AutomationSecurity::ConfirmDraftSites(
+        script, {"video.test", "other.test"}));
+    EXPECT_TRUE(automation::AutomationSecurity::ConfirmDraftSites(
+        script, {"video.test"}));
+  });
+
+  // Replayed without the model: each step said as it starts, the search
+  // form's question asked again.
+  WebAgent::SetModelForTesting(base::BindRepeating(
+      [](const std::string& prompt, const PromptOptions& options) {
+        ADD_FAILURE() << "a routine's step asked the model";
+        return Reply(Done("no"));
+      }));
+  tts_.TakeSpoken();
+  Say("run live aid");
+  EXPECT_TRUE(Heard("Running live aid. Step 1: open video.test."));
+  EXPECT_TRUE(Heard("Step 2: type Bohemian Rhapsody in Search."));
+  EXPECT_TRUE(Heard("Step 3: click Search."));
+  ASSERT_TRUE(Heard("Say yes to click Search, it submits a form on " + site +
+                    ", or no to cancel."));
+  Say("yes");
+  EXPECT_TRUE(Heard("Step 4: click Queen - Bohemian Rhapsody (Live Aid "));
+  EXPECT_TRUE(Heard("live aid is done."));
+  EXPECT_EQ(web_contents()->GetLastCommittedURL().query(), "v=video4");
+}
+
+// A routine's planner step whose element isn't on the page stops the
+// routine there; a step in its file that uses another site makes it a
+// draft again.
+IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
+                       StopsWhereAStepCantBeFoundAndConfirmsNewSites) {
+  ASSERT_TRUE(voice()->Start());
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), Url("video.test", "/molt_voice/video_home.html")));
+  ScriptTheVideoSearch();
+  Say("play the live aid version of bohemian rhapsody");
+  ASSERT_TRUE(Heard("Say yes to click Search"));
+  Say("yes");
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return !voice()->planner_running() && !voice()->busy(); }));
+  tts_.TakeSpoken();
+  Say("remember this as live aid");
+  Say("yes");
+  ASSERT_TRUE(Heard("Saved live aid."));
+  ASSERT_EQ(learning()->routines().size(), 1u);
+  const std::string id = learning()->routines()[0].id;
+  // Confirmed; then its last step renamed in the file (the same site).
+  ChangeStored(id, [](automation::Script& script) {
+    ASSERT_TRUE(automation::AutomationSecurity::ConfirmDraftSites(
+        script, {"video.test"}));
+    script.steps[3]
+        .extra.GetDict()
+        .FindDict(automation::kVoiceStepKey)
+        ->Set("label", "Queen - Not On This Page");
+  });
+
+  tts_.TakeSpoken();
+  Say("run live aid");
+  ASSERT_TRUE(Heard("Say yes to click Search"));
+  Say("yes");
+  EXPECT_TRUE(
+      Heard("I couldn't find Queen - Not On This Page on this page. "
+            "I stopped live aid at step 4."));
+  EXPECT_NE(web_contents()->GetLastCommittedURL().query(), "v=video4");
+
+  // A step added in its file on another site: its sites need confirming
+  // again, and the file is a draft again.
+  ChangeStored(id, [](automation::Script& script) {
+    automation::Step added;
+    added.type = automation::StepType::CLICK;
+    base::DictValue voice;
+    voice.Set("agent", "click");
+    voice.Set("kind", "button");
+    voice.Set("label", "Pay");
+    voice.Set("planned", true);
+    base::DictValue extra;
+    extra.Set(automation::kVoiceStepKey, std::move(voice));
+    extra.Set(automation::kStepHostKey, "pay.test");
+    added.extra = base::Value(std::move(extra));
+    script.steps.push_back(std::move(added));
+  });
+  tts_.TakeSpoken();
+  Say("run live aid");
+  EXPECT_TRUE(Heard("Before live aid runs, its sites need your confirmation."));
+  std::optional<automation::Script> script = Stored(id);
+  ASSERT_TRUE(script);
+  EXPECT_TRUE(script->security.sites_unconfirmed);
+  EXPECT_TRUE(script->security.domain_whitelist.empty());
+}
+
+// While "Learn from what I say" is off, the planner's steps aren't kept.
+IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
+                       KeepsNothingOfThePlannerWhileLearningIsOff) {
+  learning()->SetEnabled(false);
+  ASSERT_TRUE(voice()->Start());
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), Url("video.test", "/molt_voice/video_home.html")));
+  ScriptTheVideoSearch();
+  Say("play the live aid version of bohemian rhapsody");
+  ASSERT_TRUE(Heard("Say yes to click Search"));
+  Say("yes");
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return !voice()->planner_running() && !voice()->busy(); }));
+  tts_.TakeSpoken();
+  Say("remember this as live aid");
+  EXPECT_TRUE(
+      Heard("I can't remember this: the AI's steps aren't kept while "
+            "Learn from what I say is off."));
+  EXPECT_TRUE(learning()->routines().empty());
 }
 
 }  // namespace

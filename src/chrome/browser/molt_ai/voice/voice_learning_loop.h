@@ -17,6 +17,11 @@
 //     carried out becomes "this" (voice_routines_logic.h); names said are
 //     noted; the site's parts that worked become its hints, and a hint
 //     whose part failed is dropped.
+//   - OnPlannerCarriedOut(): a step the on-device planner carried out for
+//     the user's request joins "this", in order with the user's own steps
+//     (voice_routines.h's RoutineStepForPlanner()); one a routine can't
+//     repeat is a gap, and while "Learn from what I say" is off every such
+//     step is one.
 //   - RunStep(): a kLearning step: save, run or forget a routine, forget a
 //     word or everything.
 //
@@ -30,6 +35,13 @@
 // on the routine's own sites (AutomationSecurity::EffectivePolicy()). A
 // step that fails or finds nothing to act on, a "no", 30 s without an
 // answer, or anything else the user says ends it.
+//
+// A step the planner carried out is replayed by the planner
+// (VoicePlanner::Replay(), through the web agent, without the model): said
+// as it starts, on the routine's own sites, with the agent's checks and
+// questions; the routine waits for it (OnPlannerReplayed()), and stops at
+// it when its element isn't on the page ("I couldn't find Search on this
+// page.").
 //
 // Nothing is learned in MoltNet windows or private ones, and nothing
 // learned is used there (VoiceLearning::Get() is null), nor from what is
@@ -101,6 +113,10 @@ class VoiceLearningLoop {
   void OnSpeakingChanged(bool speaking);
   // A kLearning step.
   void RunStep(const VoiceStep& step);
+  // The planner's run carried out |step|; a routine's step the planner
+  // replayed ended so.
+  void OnPlannerCarriedOut(const PlannerStep& step);
+  void OnPlannerReplayed(PlannerReplay outcome);
   // Voice mode stopped: the routine ends, unsaid.
   void Stop();
 
@@ -131,6 +147,10 @@ class VoiceLearningLoop {
     bool failed = false;
     bool stop_after = false;
     bool scheduled = false;
+    // The planner replays the step (it may be waiting for an answer).
+    bool replaying = false;
+    // Why the step failed, said before "I stopped ...".
+    std::string why;
   };
 
   VoiceLearning* Learning() const;
@@ -147,7 +167,9 @@ class VoiceLearningLoop {
   void CommitSiteParts();
 
   void SaveRoutine(const std::string& name, int version);
-  void RunRoutine(const std::string& name);
+  // The routine called |name|, or the one with id |id| when that isn't
+  // empty (|name| is then only said).
+  void RunRoutine(const std::string& name, const std::string& id);
   void OnRoutineLoaded(std::string name, std::optional<RoutineToRun> routine);
   void StartRoutine(RoutineToRun routine);
   void ScheduleNextStep();
@@ -155,6 +177,8 @@ class VoiceLearningLoop {
   void StopRoutine(const std::string& said);
   void StartAnswerTimer();
   void OnAnswerTimeout();
+  // NextStep() for a step the planner carried out.
+  void ReplayStep(size_t index, const std::string& said);
 
   raw_ptr<VoiceController> controller_;
   std::unique_ptr<RoutineSiteConfirmer> confirmer_;
@@ -174,6 +198,12 @@ class VoiceLearningLoop {
   // step failed since.
   std::vector<SitePartUse> parts_;
   bool failed_ = false;
+  // The planner's run that the user's last request started: what was said
+  // (its secrets are withheld from typed text), the page it began on, and
+  // whether no step of it has been carried out yet.
+  std::string planner_goal_;
+  std::string planner_start_url_;
+  bool planner_first_ = false;
   std::optional<Playing> playing_;
   base::OneShotTimer answer_timer_;
   base::WeakPtrFactory<VoiceLearningLoop> weak_factory_{this};

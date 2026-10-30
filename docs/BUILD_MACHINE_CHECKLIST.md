@@ -933,6 +933,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `security/activation_guard.cc` (new: a `WebContentsUserData` that is a `WebContentsObserver` (`DidGetUserInteraction()`, `FrameReceivedUserActivation()`), a `blocked_content::UrlListManager::Observer` and a `permissions::PermissionRequestManager::Observer`; `PopupBlockerTabHelper::ShowBlockedPopup()`, `PermissionRequestManager::Dismiss(PromptOptions(std::monostate()))`, `blink::kActivationLifespan`, `blink::WebKeyboardEvent`); the hooks in `chrome_content_browser_client.cc` (`CanCreateWindow()`; `HandleExternalProtocol()`: `base::BindOnce(&LaunchURL, ...)` with a typed null `out_factory`; `IsClipboardCopyAllowedByPolicy()`: `ClipboardEndpoint::web_contents()`), `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (imported: `OpenURLFromTab()` copies its `OpenURLParams`, `CanEnterFullscreenModeForTab()`) and `download/chrome_download_manager_delegate.cc` (imported: `CheckDownloadAllowed()` wraps its callback); `voice/voice_page_controller.cc` (`Press(handle, intent)`), `voice/voice_controller.cc` and `agents/web_agent.cc` (now `ActivationGuard::Asker`s); the new GN edges `//chrome/browser/molt_ai:core_hooks`, `//chrome/browser/ui/browser_web_contents_delegate`, `//chrome/browser/download:impl`, `voice:voice_page`, `voice:voice_controller` and `molt_ai_agents` → `security:activation_guard` (→ `//components/blocked_content`, `//components/permissions`), `voice:voice_loop` → `security:activation_policy`, and `voice:browser_tests` → `security:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen` (no cycle from `//chrome/browser/ui` or `//chrome/browser/download` through the guard), and §5.1's browser tests | activation-guard |
 | `voice/site_skills.cc`, `site_skills_data.cc`, `page_reading.cc`, `voice_reader.cc` (new, std-only; `site_skills` → `//chrome/services/molt_ai/inference/engine:constrained_decoding` for `bounded_json.h`, with the DEPS rule `+chrome/services/molt_ai/inference/engine/bounded_json.h`), `voice/voice_reading_settings.cc` (new: `base::JSONReader`/`JSONWriter` on settings.json), `voice/voice_page_controller.cc` (`BuildMap()` with the site's skill: `RenderFrameHost::GetLastCommittedURL()`, `GURL::host()`/`path()` as `std::string_view`; `BuildTree()`), `voice/ax_page_source.cc` (`StringAttribute::kHtmlId`, `kClassName`; `AXTreeData::sel_anchor_object_id` and the rest of the selection), `voice/voice_speech.cc` (`TTS_EVENT_END`/`TTS_EVENT_ERROR` in the delegate; `Speak()` returns an id), `voice/voice_controller.cc` (a nested `VoiceReader::Host`; `base::ThreadPool` for the rate setting); the new GN edges `voice:voice_page` and `voice:voice_controller` → `voice:site_skills`, `voice:voice_loop` → `voice:page_reading` and `voice:site_skills`, `voice:page_map_test_support` → `engine:raw_ptr_exclusion`, and the fuzzer `voice:molt_page_reading_fuzzer` (in `molt_fuzzers`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges in `gn gen`, §5.1's browser tests | skills-reading |
 | `voice/voice_learning.cc` (a `base::SupportsUserData::Data` on the `Profile`, `ThreadPool::CreateSequencedTaskRunner` with `BLOCK_SHUTDOWN`, `ImportantFileWriter::WriteFileAtomically`, `ReadFileToStringWithMaxSize`, `AutomationStorage` on that sequence), `voice/voice_learning_loop.cc` (a friend of `VoiceController`: its `RunTurn()`, `CurrentMap()`, `Environment()`, `DefaultSearchURL()`), the hooks in `voice/voice_controller.cc` and `voice/voice_session.cc` (hotwords), `automation/automation_runner.cc`, `automation_scheduler.cc`, `automation_background_browser.cc` (voice routines refused), `ui/webui/molt_ai/molt_voice_learning_handler.cc`, `molt_ai_settings_ui.cc`, `molt_ai_agent_ui.cc`; the new GN edges `voice:voice_controller` → `//chrome/browser/molt_ai/automation` and `voice:voice_learning_store` → `automation:agent_run_draft` | type-checked against 156's headers here (Linux, Windows); the GN graph checked statically; what only the build shows: the edges in `gn gen` (no cycle from `//chrome/browser/molt_ai/automation` back to the voice controller), and §5.1's browser tests | learning |
+| `agents/voice_agent_planner.cc` (a step callback for `WebAgent::Start()`, `Replay()`: a `WebAgent` with `SetReplayPicker()`, `SequencedTaskRunner::PostTask` of a lambda with a `WeakPtr`), `agents/web_agent.cc` (`SetReplayPicker()`: the picker's reply posted to `OnLLMDecision()`), `agents/voice_agent_replay.cc` (new: `base::JSONWriter::Write()` of a `base::DictValue`, `GURL::host()`), `voice/voice_controller.cc` (`PlannerCarriedOut()`, `PlannerReplayed()`, `ReplayPlannerStep()`), `voice/voice_learning_loop.cc` (reads `VoiceController::planner_question_` as a friend), `voice/voice_learning.cc` (`SaveResult` through `PostTaskAndReplyWithResult`); the new GN target `agents:voice_agent_replay` (→ `automation:agent_run_draft`, `voice:voice_planner`) and the edge `voice:voice_loop` → `voice:voice_planner` | type-checked against 156's headers here (Linux, Windows); the GN graph checked statically; what only the build shows: §5.1's `VoicePlannerRoutinesBrowserTest.*` | planner-routines |
 | `voice/voice_browser_prompts.cc` (new: a `WebContentsObserver`, `permissions::PermissionRequestManager::Observer` (`Accept()`, `AcceptThisTime()`, `Deny()`, `Dismiss()` with `PromptOptions(std::monostate())`, `Requests()`, `GetRequestingOrigin()`, `PermissionRequest::request_type()`/`GetContentSettingsType()`, `PermissionUtil::DoesSupportTemporaryGrants()`), `download::AllDownloadItemNotifier::Observer` (`DownloadItemModel`, `DownloadUIModel::GetDangerUiPattern()`/`MightBeMalicious()`, `DownloadCommands(model->GetWeakPtr()).ExecuteCommand(KEEP / DISCARD)`, `content::DownloadItemUtils::GetWebContents()`) and the password bubble (`ManagePasswordsUIController::FromWebContents()`, `GetState()`, `GetPendingPassword()`, `SavePassword(username_value, password_value)`, `NeverSavePassword()`, `OnNotNowClicked()`)); `voice/voice_dialog_manager.cc` (new: a `content::JavaScriptDialogManager` and `WebContentsUserData`; `HandleJavaScriptDialog()` always with the text); the hook in `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (`GetJavaScriptDialogManager()`); `security/activation_guard.cc` (the guards' list in a `base::NoDestructor`, `SiteInstance::IsRelatedSiteInstance()`, `NavigationHandle::DidReplaceEntry()`/`GetParentFrame()->GetPage().IsPrimary()`, `NavigationController::GetEntryAtIndex()`); `voice/voice_controller.cc` (`GoToOffset()`); the new GN edges `voice:voice_controller` → `//chrome/browser/download`, `//chrome/browser/ui/passwords`, `//components/download/content/public`, `//components/password_manager/core/{browser,common}`, and `//chrome/browser/ui/browser_web_contents_delegate` → `voice:voice_dialog_manager` | type-checked against 156's headers here (Linux and Windows); the GN graph checked statically; what only the build shows: no cycle in `gn gen` from `//chrome/browser/ui` or `//chrome/browser/download` through `voice:voice_controller`, and §5.1's browser tests | voice-gesture |
 
 ### 4.9 GN targets and DEPS edges
@@ -1262,6 +1263,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `ActivationPolicyTest.*` (when a tab acts for voice mode or the agent, and every decision: new windows, downloads, other apps, permission prompts, full screen, clipboard writes; the words said), `VoiceControllerLogicTest.ThePagesRequestsWaitForASpokenYes` and the intents of the "full screen" and play presses; all built standalone here (ASan and UBSan) | activation-guard |
   | `SiteSkillsTest.*` (the skill format and its caps, the hosts each built-in skill applies to, every site's stored pages under `chrome/test/data/molt_voice/skills/` read as Blink's tree: search box and button, results with their titles and fields, the player's buttons, the next page, Wikipedia's reading scope; a broken skill reported and the generic map standing in; a hint filling a part; never a frame's node), `PageReadingTest.*` (the article's blocks, sentences, chunks at each rate, moves, sections, locating a node, the selection, the queue), `VoiceReaderTest.*` (reading with a fake voice), `VoiceSkillsLogicTest.*` (the commands on the stored pages), the new `VoiceCommandTest` cases and `AXPageSourceTest.TakesIdsClassesAndTheSelection` (needs the build); the rest built standalone here (ASan and UBSan). They read the stored pages from the source tree (`DIR_SRC_TEST_DATA_ROOT`) | skills-reading |
   | `VoiceVocabularyTest.*` (names capped at 200 and aged by last use, hotwords, never an answer or a secret, corrections lined up and applied to whole words), `VoiceHintsTest.*` (a skill, then a hint, then the generic map; hints learned, dropped, capped, aged; the store's checks), `VoiceRoutinesLogicTest.*` (commands into steps, choices kept by position or name, "this", names, and the loop's remember / run / forget / list / forget-the-word / forget-everything and its hints), `VoiceRoutinesTest.*` (the .molt round trip, Approved on its sites, secrets as variables, refusals, the planner's steps as a draft, a hostile file), `VoiceLearningStoreTest.*` (the learning file: round trip, broken files, bad entries, caps); 91 with `VoiceCommandTest` and `VoiceControllerLogicTest`, all built standalone here | learning |
+  | `VoiceRoutinesTest.*` (six more: the planner's steps kept in the draft's format and read back, what is withheld or a gap, the routine starting where the run began, confirming exactly the sites the steps use and a changed file needing it again, hostile planner steps), `VoiceRoutinesLogicTest.ThisKeepsThePlannersSteps` and the gap's refusal in `RememberThisReadsBackAndWaitsForYes`, `VoiceAgentReplayTest.*` (what a routine keeps of each agent step, the element found again by kind and name exactly once, as a reply `ParseAction()` takes); 105 with the learning suites and 3 for the replay, all built standalone here | planner-routines |
   | `VoiceGestureWordsTest.*` (no two confirmation words the phonetic key confuses, none like an answer word or a number), `VoiceGestureBindingTest.*`, `GestureBookTest.*` (the word heard cleanly mints a gesture bound to its prompt, used once, for its binding, within 10 s; one try; the lockout; fresh words), `VoicePromptsTest.*` (what is said for each prompt and dialog, the answers, page text cleaned and capped, the dialog flood limit), the `VoiceSessionLogicTest` cases `AWord*` and `TypedTextIsNeverHeardCleanly`, the `VoiceControllerLogicTest` cases `APermissionPrompt*`, `APromptTakesTheFloorFromTheLoopsQuestion`, `APagesDialogsByVoice`, `ADialogsTextIsPageText`, `DownloadsAndPasswordsByVoice`, and `ActivationPolicyTest.HistoryEntriesAfterAnAction`; all built standalone here (ASan and UBSan) | voice-gesture |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
@@ -1617,6 +1619,33 @@ extension enablement and `MediaRouterEnabled()`).
 
   If the correction test times out, send the log: the script's times are
   the fake microphone's, and a slow machine may need its gaps widened.
+- [ ] The planner's steps in routines (planner-routines): the fixture video
+  site, the scripted model the agent's browser tests use, a fake TTS
+  platform. In the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoicePlannerRoutinesBrowserTest.*:VoicePlannerBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/planner-routines-browser-tests.log
+  ```
+  *Expected:* all pass:
+  - `RemembersThePlannersStepsAndReplaysThem`: the planner types the
+    search, asks before the search form ("yes"), chooses the Live Aid
+    video; "remember this as live aid" reads back "type Bohemian Rhapsody
+    in Search, click Search and click Queen - Bohemian Rhapsody (Live Aid
+    ..." and "yes" saves a draft of four steps (the home page first)
+    with "It uses video.test. Its sites need your confirmation the first
+    time you run it."; "run live aid" asks to confirm them in the Agent
+    studio and opens nothing; after the studio's confirmation it runs
+    each step, said as it starts, asks before the search form again, and
+    ends on the Live Aid video, without asking the model.
+  - `StopsWhereAStepCantBeFoundAndConfirmsNewSites`: a step renamed in
+    the file stops the routine at it ("I couldn't find Queen - Not On This
+    Page on this page. I stopped live aid at step 4."); a step added on
+    `pay.test` makes it a draft again.
+  - `KeepsNothingOfThePlannerWhileLearningIsOff`.
+
+  If the first test's read-back names the result differently, send the
+  log: the page map names the link from its `aria-label`, cut at 60
+  characters.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -2176,7 +2205,9 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   (skills-reading adds `molt_page_reading_fuzzer`, and reading states
   and site parts to `molt_voice_controller_fuzzer`; learning adds
   `molt_voice_learning_fuzzer`; voice-gesture adds `molt_voice_prompts_fuzzer`,
-  and the browser's prompts to `molt_voice_controller_fuzzer`)
+  and the browser's prompts to `molt_voice_controller_fuzzer`;
+  planner-routines adds the planner's steps and routines with them to
+  `molt_voice_learning_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2854,6 +2885,31 @@ activation-guard; `docs/design/TOUCHLESS_BROWSING.md` §7.5,
 - [ ] MoltNet and private windows: voice mode is off in MoltNet; in a
   private window, "remember this as ..." says "I can't keep routines
   here." and nothing is learned (the profile's file doesn't change).
+
+**Voice routines with the on-device AI's steps** (from planner-routines;
+`docs/design/TOUCHLESS_BROWSING.md` §6.8, "The planner's steps"):
+
+- [ ] With a real microphone and the on-device model, on a real site
+  (a train or shop site): ask for something the commands don't cover
+  ("Hey Molt, find me a train from Paris to Lyon tomorrow"), let it
+  finish, then "remember this as my train". *Expected:* the read-back
+  lists the AI's steps; "yes": "Saved my train. It uses ... Its sites
+  need your confirmation the first time you run it."; Agent mode lists it
+  as a draft with "voice routine".
+- [ ] "Run my train": the confirmation word is shown and said ("To
+  confirm them, say harbor."); saying it runs the routine, each step said
+  as it starts, without the AI planning again (no "Working on it."), its
+  questions asked before a form is sent. In a window that only takes
+  typed commands it says to confirm in Agent mode; confirming there
+  ("Confirm these sites") then lets it run.
+- [ ] After the site changed a button's name (or with a step's `label`
+  edited in the `.molt` file): the routine stops at that step with "I
+  couldn't find ... on this page." Add a step on another site to the file:
+  the next run asks to confirm the sites again.
+- [ ] A request whose typed text holds a code ("... my PIN is 4321"): the
+  `.molt` file doesn't hold it, and the run asks for it ("Say type, then
+  the text."). "Learn from what I say" off: "remember this" after a
+  request says the AI's steps aren't kept.
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 

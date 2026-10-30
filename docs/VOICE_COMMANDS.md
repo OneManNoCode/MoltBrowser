@@ -145,6 +145,18 @@ and the bar only.
   password or a code isn't kept: the browser asks for it at each run.
   "What are my routines?" lists them; "forget my news" deletes one after
   your "yes". Routines are listed in Agent mode too, which can't run them.
+- **Routines with the AI's steps:** when you asked the on-device AI to do
+  something ("find me a train to Lyon"), what it did is part of "this" too:
+  the pages it opened, what it clicked, typed or chose. Saving such a
+  routine says which sites it uses, and the first time you run it, you
+  confirm them: say the word the browser shows ("say harbor"), or confirm
+  them in Agent mode. Running it again repeats the AI's steps exactly, on
+  those sites only, without asking the AI again; it asks before anything
+  that can't be undone, and stops at a step it can't find ("I couldn't
+  find Search on this page."). Text the AI typed that looks like a
+  password or a code isn't kept; some steps can't be kept at all (a site's
+  own tool, a card number), and then "remember this" says so. While
+  "Learn from what I say" is off, the AI's steps aren't kept.
 - **Learning your words:** names you say often, and your corrections
   ("no, I said Queen" after the browser heard "Green"), help it hear you
   next time. Nothing is learned in MoltNet or private windows, from what
@@ -692,8 +704,10 @@ said.
   punctuation itself.
 - **A site's name on its own** ("YouTube" alone) doesn't open it: say "open
   YouTube". A spoken address on its own ("example dot com") does.
-- **Routines with the AI's steps:** a routine is made of the commands you
-  said; what the on-device AI did for a request isn't kept in one yet.
+- **Routines with a site's own tool:** when the on-device AI used a tool a
+  site offers, that step can't be kept in a routine yet. Nor can a step
+  whose button or link has the same name as another on the page when the
+  routine runs: the routine stops there rather than guess.
 - **Telling your voice from others':** anyone who hears a confirmation
   word ("say harbor") can say it. Recognizing your own voice is planned.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:

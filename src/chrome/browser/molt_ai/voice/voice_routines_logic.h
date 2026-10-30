@@ -16,9 +16,14 @@
 // site or searched the web ("open YouTube", "search the web for ...",
 // "search YouTube for ..."), or at voice mode's start; at most
 // kMaxThisSteps steps. A command that waited for a "yes" counts once the
-// "yes" carried it out. The steps the on-device planner took for a request
-// the grammar had no command for are added as planned steps (|planned|),
-// which make the routine a draft whose sites the user confirms first.
+// "yes" carried it out. The steps the on-device planner carried out for a
+// request the grammar had no command for are added as they run, in order
+// with the user's (|planned|, the agent's step in |agent|: a navigation, a
+// click, typing, a choice in a list or a scroll, as an agent draft keeps
+// them); they make the routine a draft whose sites the user confirms
+// first, and a run that opens a page with its first step begins a new
+// task. A step of the planner's that a routine can't repeat (a site's own
+// tool, ...) is kept as a gap: "this" can't be saved until a new task.
 //
 // Choices replay as they were made:
 //   - by position ("the first one", "the last one"): the same position in
@@ -46,6 +51,7 @@
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_hints.h"
+#include "chrome/browser/molt_ai/voice/voice_planner.h"
 
 namespace molt_ai {
 namespace voice {
@@ -82,6 +88,9 @@ struct LearningEnvironment {
   // step ("open YouTube"), and whether some steps are the planner's.
   std::vector<std::string> this_steps;
   bool this_planned = false;
+  // Why "this" can't be saved (a step of the planner's a routine can't
+  // repeat), as the browser says it; "" when it can.
+  std::string this_refusal;
   // Changes whenever |this_steps| does: a save holds the version it read
   // back, and saves only that.
   int this_version = 0;
@@ -115,11 +124,17 @@ struct RoutineStep {
   std::string host;
   // kOpenSite: the page it opened (the workflow's navigate target).
   std::string url;
-  // kSearch, kType: the text wasn't kept (it looked secret); it is asked
-  // for at each run under this name. |command.text| is then empty.
+  // kSearch, kType (and the planner's kType): the text wasn't kept (it
+  // looked secret); it is asked for at each run under this name.
+  // |command.text| (|agent.text|) is then empty.
   std::string variable;
   // A step the on-device planner chose (an agent run's).
   bool planned = false;
+  // The planner's step, as the web agent carried it out (|planned|; its
+  // action is kNone for a voice command). |command| is then unused, |host|
+  // the page it acted on (a navigation's: the page it opened) and |url|
+  // a navigation's or a search's address.
+  PlannerStep agent;
 };
 
 // Whether a command of |kind| can be a routine's step: going places,
@@ -129,6 +144,11 @@ bool IsRoutineKind(VoiceCommandKind kind);
 
 // Whether |step| begins a new task: it opens a site or searches the web.
 bool IsTaskStart(const RoutineStep& step);
+
+// Whether |step| is the planner's step as the web agent carried it out
+// (not a voice command), and whether it is a gap ("this" can't be saved).
+bool IsAgentStep(const RoutineStep& step);
+bool IsUnkeptStep(const RoutineStep& step);
 
 // The step for |command| as the user said it and it was carried out, on
 // |host|. A choice (kChoose) is kept as RoutineChoice() decides: |position|
@@ -156,7 +176,9 @@ VoiceCommand CommandForStep(const RoutineStep& step, std::string_view value);
 
 // The step as the browser says it: "open YouTube", "search for news",
 // "play the first one", "play the live one by queen", "go back". Words the
-// user said, cleaned.
+// user said, cleaned. The planner's: "open trains.example", "search the web
+// for trains to lyon", "click Search", "type Lyon in To", "choose First
+// class in Class", "scroll down" (page text and the model's, cleaned).
 std::string DescribeRoutineStep(const RoutineStep& step);
 
 // Descriptions joined for speech: "a", "a and b", "a, b and c".
@@ -192,6 +214,9 @@ class RoutineRecorder {
 
   const std::vector<RoutineStep>& steps() const { return steps_; }
   bool planned() const;
+  // Why "this" can't be saved: the first gap's (IsUnkeptStep()); "" when
+  // it can.
+  std::string refusal() const;
   // Changes with every Add() and Clear().
   int version() const { return version_; }
 

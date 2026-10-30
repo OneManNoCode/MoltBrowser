@@ -216,7 +216,7 @@ void WebAgent::Start(const std::string& goal,
 
   // The planner: a plan is written after the first observation, before the
   // first action. Without it the run is what it always was.
-  planner_on_ = agent_features::AgentPlannerEnabled();
+  planner_on_ = agent_features::AgentPlannerEnabled() && !replay_pick_;
   plan_ = agent_plan::PlanTracker();
   plan_needed_ = planner_on_;
   earlier_plan_.clear();
@@ -376,6 +376,19 @@ void WebAgent::IterateOnce() {
 
 void WebAgent::AskLLM() {
   if (cancelled_) return;
+
+  // A replayed step (SetReplayPicker()): the browser's own reply, checked
+  // below as any model's.
+  if (replay_pick_) {
+    GenerationResult result;
+    result.success = true;
+    result.text = replay_pick_.Run(observation_);
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&WebAgent::OnLLMDecision, weak_factory_.GetWeakPtr(),
+                       std::move(result)));
+    return;
+  }
 
   agent_prompt::AgentPrompt prompt =
       agent_prompt::BuildAgentPrompt(BuildPromptInput());
@@ -1323,7 +1336,7 @@ void WebAgent::ContinueObservation(const StructuredPage& page,
   request.observed_origin = std::move(observed_origin);
   request.origin_allowed = origin_allowed;
   request.model_sees_images = runtime_ && runtime_->LoadedModelSeesImages();
-  request.run_allows_images = !screenshots_failed_;
+  request.run_allows_images = !screenshots_failed_ && !replay_pick_;
   screenshotter_->Capture(std::move(request),
                           base::BindOnce(&WebAgent::OnScreenshot,
                                          weak_factory_.GetWeakPtr(), page));

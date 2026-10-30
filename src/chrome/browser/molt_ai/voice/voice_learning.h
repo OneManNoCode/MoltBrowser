@@ -123,13 +123,20 @@ class VoiceLearning : public base::SupportsUserData::Data {
   void ForgetEverything(base::OnceClosure done);
 
   // Routines (in the automation engine's storage).
-  using SavedCallback = base::OnceCallback<void(bool saved, std::string said)>;
+  // |said|: why it wasn't saved. |sites|: a routine with the planner's
+  // steps, the sites it uses (which the user confirms before it runs).
+  using SavedCallback = base::OnceCallback<
+      void(bool saved, std::string said, std::vector<std::string> sites)>;
   // Saves |steps| as the routine |name| (RoutineDisplayName()).
   void SaveRoutine(std::string name,
                    std::vector<RoutineStep> steps,
                    SavedCallback done);
-  // The routine called |name| (FindRoutineName()), or nullopt.
+  // The routine called |name| (FindRoutineName()), or with id |id| when
+  // |name| is empty; nullopt when there is none. One whose steps no longer
+  // use exactly the sites confirmed is made a draft again first, and saved
+  // (UnconfirmChangedRoutine()).
   void LoadRoutine(std::string name,
+                   std::string id,
                    base::OnceCallback<void(std::optional<RoutineToRun>)> done);
   // Deletes the voice routine called |name|, or with id |id| when |name| is
   // empty.

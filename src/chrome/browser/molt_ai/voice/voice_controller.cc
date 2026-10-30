@@ -1553,6 +1553,30 @@ void VoiceController::PlannerFinished() {
   }
 }
 
+void VoiceController::PlannerCarriedOut(const PlannerStep& step) {
+  if (planner_running_ && learning_) {
+    learning_->OnPlannerCarriedOut(step);
+  }
+}
+
+void VoiceController::PlannerReplayed(PlannerReplay outcome) {
+  if (planner_running_ && learning_) {
+    learning_->OnPlannerReplayed(outcome);
+  }
+}
+
+bool VoiceController::ReplayPlannerStep(const PlannerStep& step) {
+  content::WebContents* contents = ActiveContents();
+  if (!planner_ || !contents) {
+    return false;
+  }
+  CancelPlanner();
+  planner_running_ = true;
+  planner_question_ = 0;
+  planner_->Replay(contents, step, this);
+  return true;
+}
+
 void VoiceController::OnSubmitted(int run, int result) {
   if (run != run_) {
     return;

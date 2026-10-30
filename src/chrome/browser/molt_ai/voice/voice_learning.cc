@@ -92,7 +92,7 @@ std::vector<RoutineSummary> ListVoiceRoutines(const base::FilePath& root) {
     summary.id = script.id;
     summary.name = script.name;
     summary.steps = static_cast<int>(script.steps.size());
-    summary.needs_sites_confirmed = script.security.sites_unconfirmed;
+    summary.needs_sites_confirmed = !RoutineSitesConfirmed(script);
     out.push_back(std::move(summary));
   }
   return out;
@@ -121,22 +121,34 @@ const Script* FindRoutine(const std::vector<Script>& routines,
   return nullptr;
 }
 
-std::pair<bool, std::string> SaveRoutineBlocking(
-    const base::FilePath& root,
-    const std::string& id,
-    const std::string& name,
-    const std::vector<RoutineStep>& steps) {
+struct SaveResult {
+  bool saved = false;
+  std::string said;
+  // A draft's sites (the planner's steps), to confirm before it runs.
+  std::vector<std::string> sites;
+};
+
+SaveResult Refused(std::string said) {
+  SaveResult result;
+  result.said = std::move(said);
+  return result;
+}
+
+SaveResult SaveRoutineBlocking(const base::FilePath& root,
+                               const std::string& id,
+                               const std::string& name,
+                               const std::vector<RoutineStep>& steps) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
   std::unique_ptr<AutomationStorage> storage = Storage(root);
   if (FindRoutine(VoiceRoutines(*storage), name, std::string())) {
-    return {false, "You already have a routine called " + name + "."};
+    return Refused("You already have a routine called " + name + ".");
   }
   BuiltRoutine built = BuildRoutine(id, name, steps, NowUnix());
   if (!built.script) {
-    return {false, built.refusal};
+    return Refused(built.refusal);
   }
   if (!storage->Save(*built.script)) {
-    return {false, "I couldn't save it."};
+    return Refused("I couldn't save it.");
   }
   storage->AppendAudit(id, "voice_routine_saved",
                        built.script->security.sites_unconfirmed
@@ -146,17 +158,35 @@ std::pair<bool, std::string> SaveRoutineBlocking(
     storage->AppendAudit(id, "trust_changed",
                          "casual -> approved (taught by voice)");
   }
-  return {true, std::string()};
+  SaveResult result;
+  result.saved = true;
+  if (built.script->security.sites_unconfirmed) {
+    result.sites = AutomationSecurity::HostsReferencedBy(built.script->steps);
+  }
+  return result;
 }
 
 std::optional<RoutineToRun> LoadRoutineBlocking(const base::FilePath& root,
-                                                const std::string& name) {
+                                                const std::string& name,
+                                                const std::string& id) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
   std::unique_ptr<AutomationStorage> storage = Storage(root);
-  const std::vector<Script> routines = VoiceRoutines(*storage);
-  const Script* script = FindRoutine(routines, name, std::string());
+  std::vector<Script> routines = VoiceRoutines(*storage);
+  const Script* found = FindRoutine(routines, name, id);
+  Script* script = nullptr;
+  for (Script& routine : routines) {
+    if (&routine == found) {
+      script = &routine;
+    }
+  }
   if (!script) {
     return std::nullopt;
+  }
+  // Its steps use other sites than the ones confirmed (a step added or
+  // changed in the file): a draft again, confirmed again before it runs.
+  if (UnconfirmChangedRoutine(*script) && storage->Save(*script)) {
+    storage->AppendAudit(script->id, "draft_sites_unconfirmed",
+                         "its steps use other sites");
   }
   RoutineToRun run;
   run.id = script->id;
@@ -390,10 +420,11 @@ void VoiceLearning::SaveRoutine(std::string name,
                      std::move(name), std::move(steps)),
       base::BindOnce(
           [](base::WeakPtr<VoiceLearning> self, SavedCallback done,
-             std::pair<bool, std::string> result) {
+             SaveResult result) {
             if (self) {
               self->RefreshRoutinesThen(base::BindOnce(
-                  std::move(done), result.first, std::move(result.second)));
+                  std::move(done), result.saved, std::move(result.said),
+                  std::move(result.sites)));
             }
           },
           weak_factory_.GetWeakPtr(), std::move(done)));
@@ -401,10 +432,12 @@ void VoiceLearning::SaveRoutine(std::string name,
 
 void VoiceLearning::LoadRoutine(
     std::string name,
+    std::string id,
     base::OnceCallback<void(std::optional<RoutineToRun>)> done) {
   task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&LoadRoutineBlocking, automations_root_, std::move(name)),
+      base::BindOnce(&LoadRoutineBlocking, automations_root_, std::move(name),
+                     std::move(id)),
       std::move(done));
 }
 
