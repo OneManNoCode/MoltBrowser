@@ -10,8 +10,8 @@ namespace voice {
 
 namespace {
 
-// Until the voice gesture (§7.3) joins: confirming a routine's sites needs
-// a real click in the Agent studio.
+// Without the microphone (the voice gesture, §7.3, can't be taken):
+// confirming a routine's sites needs a real click in the Agent studio.
 class StudioOnlyConfirmer : public RoutineSiteConfirmer {
  public:
   void ConfirmSites(content::WebContents* contents,

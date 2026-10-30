@@ -6,16 +6,17 @@
 // agent draft's rules (voice_routines.h): it runs nowhere until the user has
 // confirmed the sites it may use. Today that needs a real click in the Agent
 // studio (AutomationSecurity::ConfirmDraftSites(), behind
-// ConsumeUserClick()). The voice gesture (§7.3) will let voice mode take
-// that confirmation by voice; this is the seam it plugs into.
+// ConsumeUserClick()), or, while the window listens, the voice gesture
+// (§7.3, VoiceController::ConfirmDraftSitesByVoice()).
 //
-// The voice loop (voice_learning_loop.h) asks the confirmer when the user
-// saves such a routine and when they run one whose sites aren't confirmed
-// yet. A confirmer that can confirm by voice speaks and shows the sites,
-// takes the gesture, and answers |done| with true; the loop then saves the
-// routine with AutomationSecurity::ConfirmDraftSites() on exactly |sites|.
-// CreateRoutineSiteConfirmer() gives the stub, which can't: it answers
-// false with the words to say ("Confirm it in the Agent studio for now.").
+// The voice loop (voice_learning_loop.h) runs one whose sites aren't
+// confirmed yet only after that: by voice first (the sites said and shown,
+// the gesture taken for exactly that workflow and those sites), and the
+// loop then saves the routine with AutomationSecurity::ConfirmDraftSites()
+// on exactly |sites|. Where the window doesn't listen (typed commands
+// only) it asks the confirmer, which says what to do instead:
+// CreateRoutineSiteConfirmer() answers false with the words to say
+// ("Confirm it in the Agent studio for now.").
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_ROUTINE_SITES_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_ROUTINE_SITES_H_
@@ -52,8 +53,7 @@ class RoutineSiteConfirmer {
                             Done done) = 0;
 };
 
-// What voice mode confirms sites with: the stub until the voice gesture
-// joins (§7.3).
+// What voice mode confirms sites with when it can't by voice.
 std::unique_ptr<RoutineSiteConfirmer> CreateRoutineSiteConfirmer();
 
 }  // namespace voice

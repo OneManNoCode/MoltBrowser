@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
@@ -607,46 +608,63 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
   // (voice_routine_sites.h).
   const std::string id = routine->id;
   const std::vector<std::string> sites = routine->sites;
-  confirmer_->ConfirmSites(
-      controller_->ActiveContents(), routine->name, sites,
-      base::BindOnce(
-          [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
-             std::string id, std::vector<std::string> sites, bool confirmed,
-             std::string said) {
-            if (!self) {
-              return;
-            }
-            const std::string spoken = PageText(name);
-            if (!confirmed) {
-              self->Say(spoken +
-                            " has steps the AI planned, so the sites it uses "
-                            "need your confirmation. " +
-                            said,
-                        /*interrupt=*/false);
-              return;
-            }
-            VoiceLearning* learning = self->Learning();
-            if (!learning) {
-              return;
-            }
-            learning->ConfirmRoutineSites(
-                id, sites,
-                base::BindOnce(
-                    [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
-                       bool ok) {
-                      if (!self) {
-                        return;
-                      }
-                      if (ok) {
-                        self->RunRoutine(name);
-                      } else {
-                        self->Say("I couldn't confirm its sites.",
-                                  /*interrupt=*/false);
-                      }
-                    },
-                    self, name));
-          },
-          weak_factory_.GetWeakPtr(), routine->name, id, sites));
+  auto [by_voice, by_confirmer] = base::SplitOnceCallback(base::BindOnce(
+      [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
+         std::string id, std::vector<std::string> sites, bool confirmed,
+         std::string said) {
+        if (!self) {
+          return;
+        }
+        const std::string spoken = PageText(name);
+        if (!confirmed && said.empty()) {
+          // The prompt said why already (a wrong word, no answer).
+          return;
+        }
+        if (!confirmed) {
+          self->Say(spoken +
+                        " has steps the AI planned, so the sites it uses "
+                        "need your confirmation. " +
+                        said,
+                    /*interrupt=*/false);
+          return;
+        }
+        VoiceLearning* learning = self->Learning();
+        if (!learning) {
+          return;
+        }
+        learning->ConfirmRoutineSites(
+            id, sites,
+            base::BindOnce(
+                [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
+                   bool ok) {
+                  if (!self) {
+                    return;
+                  }
+                  if (ok) {
+                    self->RunRoutine(name);
+                  } else {
+                    self->Say("I couldn't confirm its sites.",
+                              /*interrupt=*/false);
+                  }
+                },
+                self, name));
+      },
+      weak_factory_.GetWeakPtr(), routine->name, id, sites));
+  // By voice, with the voice gesture, while the window listens
+  // (VoiceBrowserPrompts::ConfirmDraftSites(): the sites said and shown, a
+  // confirmation word heard cleanly, bound to exactly this workflow and
+  // these sites); else the confirmer says what to do instead.
+  if (controller_->ConfirmDraftSitesByVoice(
+          id, sites,
+          base::BindOnce(
+              [](RoutineSiteConfirmer::Done done, bool confirmed) {
+                std::move(done).Run(confirmed, std::string());
+              },
+              std::move(by_voice)))) {
+    return;
+  }
+  confirmer_->ConfirmSites(controller_->ActiveContents(), routine->name, sites,
+                           std::move(by_confirmer));
 }
 
 void VoiceLearningLoop::StartRoutine(RoutineToRun routine) {
