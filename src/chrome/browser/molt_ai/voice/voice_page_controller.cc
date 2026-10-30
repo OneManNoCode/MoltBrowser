@@ -172,13 +172,36 @@ std::string_view VoicePageController::ActionResultName(ActionResult result) {
       return "focus not confirmed";
     case ActionResult::kCancelled:
       return "cancelled";
+    case ActionResult::kNoSuchOption:
+      return "no such option";
   }
   return "unknown";
 }
 
-void VoicePageController::Start() {
-  if (active() || !web_contents()) {
+bool VoicePageController::held_by(Holder holder) const {
+  switch (holder) {
+    case Holder::kVoiceMode:
+      return voice_mode_hold_;
+    case Holder::kWebAgent:
+      return web_agent_holds_ > 0;
+  }
+  return false;
+}
+
+void VoicePageController::Start(Holder holder) {
+  if (!web_contents()) {
     return;
+  }
+  switch (holder) {
+    case Holder::kVoiceMode:
+      voice_mode_hold_ = true;
+      break;
+    case Holder::kWebAgent:
+      ++web_agent_holds_;
+      break;
+  }
+  if (active()) {
+    return;  // another holder took the mode already
   }
   // If another client already asked for the trees, the renderers are
   // mid-stream: ask them for whole trees again, as Reading Mode does.
@@ -193,7 +216,22 @@ void VoicePageController::Start() {
   }
 }
 
-void VoicePageController::Stop() {
+void VoicePageController::Stop(Holder holder) {
+  switch (holder) {
+    case Holder::kVoiceMode:
+      voice_mode_hold_ = false;
+      // Submit() is voice mode's: its wait ends with voice mode's hold.
+      FinishSubmit(ActionResult::kCancelled);
+      break;
+    case Holder::kWebAgent:
+      if (web_agent_holds_ > 0) {
+        --web_agent_holds_;
+      }
+      break;
+  }
+  if (voice_mode_hold_ || web_agent_holds_ > 0) {
+    return;  // another holder keeps the mode
+  }
   FinishSubmit(ActionResult::kCancelled);
   mode_.reset();
   trees_.clear();
@@ -396,7 +434,9 @@ void VoicePageController::PrimaryPageChanged(content::Page& page) {
 }
 
 void VoicePageController::WebContentsDestroyed() {
-  Stop();
+  voice_mode_hold_ = false;
+  web_agent_holds_ = 0;
+  Stop(Holder::kVoiceMode);
 }
 
 bool VoicePageController::HasPageTree() {
@@ -478,6 +518,139 @@ VoicePageController::ActionResult VoicePageController::Perform(
   data.target_node_id = target.node->id();
   target.frame->AccessibilityPerformAction(data);
   return ActionResult::kDone;
+}
+
+VoicePageController::TargetFacts::TargetFacts() = default;
+VoicePageController::TargetFacts::~TargetFacts() = default;
+VoicePageController::TargetFacts::TargetFacts(const TargetFacts&) = default;
+VoicePageController::TargetFacts& VoicePageController::TargetFacts::operator=(
+    const TargetFacts&) = default;
+VoicePageController::TargetFacts::TargetFacts(TargetFacts&&) = default;
+VoicePageController::TargetFacts& VoicePageController::TargetFacts::operator=(
+    TargetFacts&&) = default;
+
+std::optional<VoicePageController::TargetFacts> VoicePageController::Inspect(
+    const PageNodeHandle& target,
+    ActionResult* error) {
+  std::optional<Target> found = Resolve(target, error);
+  if (!found) {
+    return std::nullopt;
+  }
+  TargetFacts facts;
+  const size_t max_string_bytes = AXPageSourceLimits().max_string_bytes;
+  const ui::AXNode* node = found->node;
+  for (size_t depth = 0; node && depth <= kMaxInspectAncestors;
+       ++depth, node = node->parent()) {
+    facts.chain.push_back(
+        PageNodeFromData(node->data(), target.tree, max_string_bytes));
+    if (facts.form_index < 0 && depth > 0 &&
+        node->GetRole() == ax::mojom::Role::kForm) {
+      facts.form_index = static_cast<int>(depth);
+    }
+  }
+  facts.origin = found->frame->GetLastCommittedOrigin();
+  facts.main_frame = found->frame->IsInPrimaryMainFrame();
+  return facts;
+}
+
+std::optional<url::Origin> VoicePageController::OriginOfTree(
+    int32_t tree_index) {
+  auto id = tree_ids_.find(tree_index);
+  if (id == tree_ids_.end()) {
+    return std::nullopt;
+  }
+  content::RenderFrameHost* frame = FrameFor(id->second);
+  if (!frame) {
+    return std::nullopt;
+  }
+  return frame->GetLastCommittedOrigin();
+}
+
+namespace {
+
+// The enabled options under |select|, in tree order: at most |max| of them,
+// in a walk of at most kMaxFormNodes nodes.
+std::vector<const ui::AXNode*> OptionNodes(const ui::AXNode& select,
+                                           size_t max) {
+  std::vector<const ui::AXNode*> options;
+  std::vector<const ui::AXNode*> stack;
+  const auto& top = select.children();
+  for (size_t k = top.size(); k-- > 0;) {
+    stack.push_back(top[k].get());
+  }
+  size_t visited = 0;
+  while (!stack.empty() && visited++ < kMaxFormNodes && options.size() < max) {
+    const ui::AXNode* node = stack.back();
+    stack.pop_back();
+    if (PageRoleFor(node->data()) == PageRole::kOption) {
+      if (node->data().GetRestriction() != ax::mojom::Restriction::kDisabled) {
+        options.push_back(node);
+      }
+      continue;  // an option's own children are its text
+    }
+    const auto& children = node->children();
+    for (size_t k = children.size(); k-- > 0;) {
+      stack.push_back(children[k].get());
+    }
+  }
+  return options;
+}
+
+bool IsSelectRole(PageRole role) {
+  return role == PageRole::kSelect || role == PageRole::kListBox;
+}
+
+}  // namespace
+
+std::vector<std::string> VoicePageController::OptionsOf(
+    const PageNodeHandle& select) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(select, &error);
+  std::vector<std::string> names;
+  if (!found || !IsSelectRole(PageRoleFor(found->node->data()))) {
+    return names;
+  }
+  for (const ui::AXNode* option : OptionNodes(*found->node, kMaxOptions)) {
+    std::string name = SpeechSafeText(
+        option->data().GetStringAttribute(ax::mojom::StringAttribute::kName),
+        kMaxOptionChars);
+    if (!name.empty()) {
+      names.push_back(std::move(name));
+    }
+  }
+  return names;
+}
+
+VoicePageController::ActionResult VoicePageController::SelectOption(
+    const PageNodeHandle& select,
+    std::string_view option) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(select, &error);
+  if (!found) {
+    return error;
+  }
+  if (found->node->data().GetRestriction() ==
+      ax::mojom::Restriction::kDisabled) {
+    return ActionResult::kDisabled;
+  }
+  if (!IsSelectRole(PageRoleFor(found->node->data()))) {
+    return ActionResult::kNotEditable;
+  }
+  // The same options, named the same way, as OptionsOf() lists.
+  for (const ui::AXNode* node : OptionNodes(*found->node, kMaxOptions)) {
+    const std::string name = SpeechSafeText(
+        node->data().GetStringAttribute(ax::mojom::StringAttribute::kName),
+        kMaxOptionChars);
+    if (name.empty() || name != option) {
+      continue;
+    }
+    Target target = *found;
+    target.node = node;
+    ui::AXActionData data;
+    data.action = ax::mojom::Action::kDoDefault;
+    return Perform(target, data);
+  }
+  return ActionResult::kNoSuchOption;
 }
 
 VoicePageController::ActionResult VoicePageController::Press(

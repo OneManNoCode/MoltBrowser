@@ -87,6 +87,8 @@ std::optional<StepFailure> FailureFor(ActionResult result) {
       return StepFailure::kFocusNotConfirmed;
     case ActionResult::kCancelled:
       return StepFailure::kCancelled;
+    case ActionResult::kNoSuchOption:
+      return StepFailure::kUnavailable;
   }
   return StepFailure::kUnavailable;
 }
