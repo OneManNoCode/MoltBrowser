@@ -9,7 +9,9 @@
 #include "chrome/browser/molt_ai/automation/agent_run_draft.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/security/activation_policy.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
+#include "chrome/browser/molt_ai/voice/voice_prompts.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -680,6 +682,29 @@ ReadRoutineResult ReadRoutine(const automation::Script& script) {
   result.needs_sites_confirmed = script.security.sites_unconfirmed;
   result.ok = true;
   return result;
+}
+
+bool RoutineSitesSayable(const std::vector<std::string>& sites) {
+  if (sites.empty()) {
+    return false;
+  }
+  // As VoiceBrowserPrompts::ConfirmDraftSites() joins them: "a, b and c".
+  size_t chars = 0;
+  for (size_t i = 0; i < sites.size(); ++i) {
+    std::string_view site = sites[i];
+    if (site.rfind("www.", 0) == 0) {
+      site.remove_prefix(4);
+    }
+    const std::string said = activation::SiteForSpeech(site);
+    if (said.empty() || said != site) {
+      return false;
+    }
+    chars += said.size() + (i == 0 ? 0 : i + 1 == sites.size() ? 5 : 2);
+    if (chars > kMaxDialogSpokenChars) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace voice

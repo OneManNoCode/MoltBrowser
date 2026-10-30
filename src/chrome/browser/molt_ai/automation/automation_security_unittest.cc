@@ -188,6 +188,57 @@ TEST(AutomationSecurityTest, SavingNeverConfirmsADraft) {
   EXPECT_FALSE(fresh.security.sites_unconfirmed);
 }
 
+// A routine taught by voice (automation_voice_steps.h), as a file brings it.
+Script VoiceRoutine() {
+  Script routine;
+  routine.id = "voice_1";
+  Step open = MakeStep(StepType::NAVIGATE, "https://evil.example/");
+  base::DictValue voice;
+  voice.Set("command", "open site");
+  base::DictValue extra;
+  extra.Set("voice", std::move(voice));
+  open.extra = base::Value(std::move(extra));
+  routine.steps.push_back(std::move(open));
+  routine.security.trust = TrustLevel::APPROVED;
+  routine.security.domain_whitelist = {"evil.example"};
+  return routine;
+}
+
+TEST(AutomationSecurityTest, ABroughtInVoiceRoutineIsADraft) {
+  // Imported or copied: whatever it claims, its sites aren't confirmed.
+  Script incoming = VoiceRoutine();
+  AutomationSecurity::ClampTrustForSave(incoming, nullptr);
+  EXPECT_TRUE(incoming.security.sites_unconfirmed);
+  EXPECT_TRUE(incoming.security.domain_whitelist.empty());
+  EXPECT_EQ(incoming.security.trust, TrustLevel::CASUAL);
+  SecurityPolicy p = AutomationSecurity::EffectivePolicy(incoming);
+  AutomationSecurity sec;
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://evil.example/"));
+  // Voice steps added to a workflow that had none: the same.
+  Script plain;
+  plain.security.trust = TrustLevel::APPROVED;
+  plain.security.domain_whitelist = {"evil.example"};
+  incoming = VoiceRoutine();
+  AutomationSecurity::ClampTrustForSave(incoming, &plain);
+  EXPECT_TRUE(incoming.security.sites_unconfirmed);
+  EXPECT_TRUE(incoming.security.domain_whitelist.empty());
+  // A voice routine edited where it lives keeps what it had.
+  const Script taught = VoiceRoutine();
+  incoming = VoiceRoutine();
+  AutomationSecurity::ClampTrustForSave(incoming, &taught);
+  EXPECT_FALSE(incoming.security.sites_unconfirmed);
+  EXPECT_EQ(incoming.security.trust, TrustLevel::APPROVED);
+  EXPECT_EQ(incoming.security.domain_whitelist,
+            std::vector<std::string>{"evil.example"});
+  // Its sites, once confirmed, are what it may use.
+  incoming = VoiceRoutine();
+  AutomationSecurity::ClampTrustForSave(incoming, nullptr);
+  EXPECT_TRUE(
+      AutomationSecurity::ConfirmDraftSites(incoming, {"evil.example"}));
+  EXPECT_TRUE(sec.AllowNavigation(AutomationSecurity::EffectivePolicy(incoming),
+                                  "https://evil.example/"));
+}
+
 TEST(AutomationSecurityTest, ConfirmDraftSitesNeedsWhatTheUserSaw) {
   Script draft = UnconfirmedDraft();
   EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(draft, {}));
