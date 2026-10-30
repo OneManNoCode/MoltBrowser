@@ -257,6 +257,9 @@ source_set("browser_tests") {
 
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
+
+    # What a page may do with the activation those actions give it.
+    "//chrome/browser/molt_ai/security:browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",

@@ -54,6 +54,46 @@ source_set("activation_guard") {
   deps = [ "//third_party/blink/public/common:headers" ]
 }
 
+# The guard on a page that uses the activation of whatever clicks it
+# (chrome/test/data/molt_voice/activation.html): the web agent's click, voice
+# mode's, a person's, with a scripted model and a fake TTS platform. Picked
+# up by browser_tests through //chrome/browser/molt_ai/voice:browser_tests.
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "activation_guard_browsertest.cc" ]
+
+  deps = [
+    ":activation_guard",
+    ":activation_policy",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/browser/molt_ai:molt_ai_agents",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai/agents:features",
+    "//chrome/browser/molt_ai/voice:features",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/browser/molt_ai/voice:voice_controller",
+    "//chrome/browser/molt_ai/voice:voice_page",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//components/download/public/common:public",
+    "//components/permissions",
+    "//components/permissions:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 # Who may open chrome:// / molt:// pages (S19). Pure logic, unit-tested.
 source_set("webui_navigation_policy") {
   sources = [
