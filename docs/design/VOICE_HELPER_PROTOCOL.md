@@ -269,7 +269,9 @@ frames waiting to be written (exit 3).
   while the last plays). "Stop", barge-in and a new command cancel: a
   CANCEL to the helper, the player's buffer flushed at once.
 - **Failures:** no READY within 30 s, a crash, a protocol violation, the
-  resident limits (§6), or audio that stops moving for 4 s (the output
+  resident limits (§6), a request it sends nothing for during 20 s while
+  nothing is left to play (`StoppedAnswering()`: it would keep voice mode
+  speaking for good), or audio that stops moving for 4 s (the output
   device failed): the helper ends, what it hadn't finished is said again by
   the platform's voice, and it starts again after 2 s. After two failures
   in a row (a helper that ran for a minute resets the count) the

@@ -1253,7 +1253,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
   | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
   | `VoiceListenerProtocolTest.*` (frames, CONFIG, the helper's lines refused or taken, hotwords), `VoiceSessionLogicTest.*` and `VoiceSessionCommandsTest.*` (wake phrase, follow-up window, always listening, barge-in, "stop", the browser's own voice, a page's speech, crashes), `VoiceAudioSamplesTest.*` (frames, earcons), `CpuUsageWindowTest.*`, `ProcStatTest.*`, `ResidentHelperTest.*` (the resident sandbox with the stand-in helper: reads only its model directory, writes nothing, no network, no process, its limits, its pipes, dies with the browser; Linux and macOS) and `HelperSandboxWinPolicyTest.Resident*`; all built standalone here, `ResidentHelperTest.*` against this machine's kernel | speech-session |
-  | `VoiceTextTest.*`, `VoiceLtsTest.*`, `VoicePhonemesTest.*`, `VoiceFramesTest.*`, `VoiceSynthTest.*` (std only, built standalone here under ASan and UBSan: the voice helper's text front end on page-like and hostile text, its letter-to-sound rules, lexicon and forms, the frames both ways, and the work for one request against a fake engine: the short first unit, pacing, cancelling, the limits), `VoiceSpeechProtocolTest.*` and the `VoiceSessionLogicTest` cases `ACommandInterruptsTheBrowsersOwnVoice`, `TheOwnVoiceHeardBackIsNotACommand`, `ThePlatformVoiceStillNeedsTheWakePhrase` (built standalone here) | bundled-voice |
+  | `VoiceTextTest.*`, `VoiceLtsTest.*`, `VoicePhonemesTest.*`, `VoiceFramesTest.*`, `VoiceSynthTest.*` (std only, built standalone here under ASan and UBSan: the voice helper's text front end on page-like and hostile text, its letter-to-sound rules, lexicon and forms, the frames both ways, and the work for one request against a fake engine: the short first unit, pacing, cancelling, the limits), `VoiceSpeechProtocolTest.*`, `VoiceSaidAloudTest.*` (redteam12: what the voice says for a text) and the `VoiceSessionLogicTest` cases `ACommandInterruptsTheBrowsersOwnVoice`, `TheOwnVoiceHeardBackIsNotACommand`, `ThePlatformVoiceStillNeedsTheWakePhrase` (built standalone here) | bundled-voice |
   | `SpeechFrameReaderTest.*`, `SpeechConfigTest.*`, `SpeechTextTest.*`, `SpeechEventsTest.*`, `SpeechListenerTest.*` (std only, built standalone here under ASan and UBSan: the speech helper's frames, CONFIG's strict JSON, hotword cleaning and the wake phrase's word pieces, the event lines, and the listening states against fake engines) | speech-helper |
   | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
   | `ActivationPolicyTest.*` (when a tab acts for voice mode or the agent, and every decision: new windows, downloads, other apps, permission prompts, full screen, clipboard writes; the words said), `VoiceControllerLogicTest.ThePagesRequestsWaitForASpokenYes` and the intents of the "full screen" and play presses; all built standalone here (ASan and UBSan) | activation-guard |
@@ -1444,7 +1444,7 @@ extension enablement and `MediaRouterEnabled()`).
   chromium/src/out/MoltTests/browser_tests \
     --gtest_filter='ActivationGuardBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/activation-guard-browser-tests.log
   ```
-  *Expected:* all 5 pass, on macOS and Linux:
+  *Expected:* all 6 pass, on macOS and Linux:
   - `AnAgentsClickOpensNoOtherSiteUnasked`: the agent presses "Open
     offer"; the page's `window.open` to `ads.test` gets null, the run is
     asked ("PAGE_REQUEST: The page tried to open a new window to
@@ -1459,6 +1459,10 @@ extension enablement and `MediaRouterEnabled()`).
     and the site's location setting stays "ask".
   - `FullScreenOnlyWhenAskedFor`: refused and said after a plain press,
     allowed after a press for "full screen".
+  - `OneQuestionPerAction` (redteam12): after the page's new window was
+    asked about and answered, the download the page starts itself before
+    the next action is refused and said ("The page tried to download a
+    file. I stopped it."), not asked; nothing is downloaded.
 
   If the prompt test fails because no prompt was shown, check the
   geolocation prompt reaches `PermissionRequestManager` in this setup
@@ -1508,10 +1512,13 @@ extension enablement and `MediaRouterEnabled()`).
   chromium/src/out/MoltTests/browser_tests \
     --gtest_filter='VoiceSpeechBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/bundled-voice-browser-tests.log
   ```
-  *Expected:* all 5 pass on Linux and macOS: `SpeaksWithItsOwnVoice` (no
+  *Expected:* all 6 pass on Linux and macOS: `SpeaksWithItsOwnVoice` (no
   platform utterance; speaking ends once the tone played),
   `StopSilencesAtOnce`, `ACrashFallsBackThenTheVoiceComesBack`,
-  `TwoFailuresAndThePlatformVoicesSpeak`, `WithoutTheVoiceThePlatforms`. If
+  `TwoFailuresAndThePlatformVoicesSpeak`, `WithoutTheVoiceThePlatforms`,
+  and `AHelperThatStopsAnswering` (redteam12; it takes about 20 s: a
+  helper that never answers a request is ended, and the platform's voice
+  says it). If
   one fails, send the log with the `[MoltVoice]` lines (the helper's
   confinement, "voice helper ended: ...").
 
@@ -2570,6 +2577,9 @@ each with a real microphone: a laptop's built-in one and a USB headset.
   command (the log shows no utterance taken while it spoke). Repeat at a
   loud volume with the microphone near the speakers, and count anything
   done that you didn't say. The log says `echo cancellation: Chrome-wide`.
+  Also let it read results whose titles hold addresses and numbers
+  (search for "example.com 2nd edition"; redteam12): nothing it says
+  ("example dot com", "second") is taken as a command.
 - [ ] A page's speech (bundled-voice): a page reading aloud with
   `speechSynthesis`, then "Hey Molt, what time is it". *Expected:* voice
   mode answers at once over it (its own queue), and the page's reading
@@ -3409,6 +3419,19 @@ files (helpers-limits):
   still works. A helper that fails with "Operation not permitted" from
   `tkill`, `pidfd_send_signal`, `fcntl(F_SETOWN)` or `prlimit`: report
   which, with `strace -f` of it if you can.
+- [ ] Linux, scheduling stays with the helper (redteam12): on the 6.8
+  kernel above and on a current one, OCR of an attachment and voice, with
+  the distribution's tesseract and whisper-cli and with bundled builds,
+  voice mode listening and speaking with its own voice for a few minutes.
+  *Expected:* as before (here the bundled `molt-speech` passed 21 of 21
+  protocol checks and `molt-voice` 16 of 16 and its speaking checks under
+  the resident sandbox). Then `molt_ai_unittests
+  --gtest_filter='*Scheduling*'` passes: a confined helper can't lower
+  another process's CPU or I/O priority, make it SCHED_IDLE or pin it to a
+  CPU, and still changes its own. A helper that fails, or logs, with
+  "Operation not permitted" from `setpriority`, `sched_setaffinity`,
+  `sched_setscheduler` or `ioprio_set` (OpenMP's or ONNX Runtime's thread
+  affinity, say): report which, with `strace -f` of it if you can.
 - [ ] Every OS, the sandbox tests (helpers-limits; Windows deferred):
   `molt_ai_unittests --gtest_filter='HelperLimits*:HelperSandboxLimits*:HelperSandboxWin*:HelperSandboxLinux*'`
   with `molt_helper_sandbox_test_helper` next to it. *Expected:* all pass:
