@@ -150,7 +150,9 @@ void CheckChoice(const ChoiceRef& ref) {
 bool CarriesText(K kind) {
   return kind == K::kSearch || kind == K::kFindInPage || kind == K::kType ||
          kind == K::kCorrection || kind == K::kRememberRoutine ||
-         kind == K::kForgetRoutine || kind == K::kRunRoutine;
+         kind == K::kForgetRoutine || kind == K::kRunRoutine ||
+         kind == K::kReadSection || kind == K::kForgetWord ||
+         kind == K::kAskPage;
 }
 
 bool Same(const VoiceCommand& a, const VoiceCommand& b) {
