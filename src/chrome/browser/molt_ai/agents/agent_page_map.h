@@ -160,7 +160,9 @@ const voice::PageItem* FindLiveItem(
 //   - submits_form: the nearest <button> or <input> in the chain is inside
 //     the form and submits it: an <input type=submit> or type=image, or a
 //     <button> (whose type the tree doesn't give: taken as a submit, the
-//     HTML default);
+//     HTML default); or it is such an input outside any form, which can
+//     only submit one it is tied to with form="id" (the tree doesn't show
+//     that either);
 //   - label: the node's name, cleaned and capped as the probe's.
 // An empty chain is "not found".
 agent_safety::ElementProbe ProbeNode(const std::vector<voice::PageNode>& chain,
@@ -170,8 +172,10 @@ agent_safety::ElementProbe ProbeNode(const std::vector<voice::PageNode>& chain,
 // either path (the element snapshot's probe or ProbeNode()): a click that
 // follows a link to an http(s) origin outside the run's |allowed| set
 // "opens" it (and the origin joins the set once the user allows it), and
-// one that submits a form "submits a form on <current_origin_text>". No
-// effects: no question.
+// one that submits a form "submits a form on <current_origin_text>", or
+// "submits a form to <origin>" when the probe knows the form goes to
+// another origin (the element snapshot's reads its action). No effects: no
+// question.
 struct ClickQuestion {
   ClickQuestion();
   ~ClickQuestion();
@@ -184,6 +188,12 @@ struct ClickQuestion {
 ClickQuestion CheckClick(const agent_safety::ElementProbe& probe,
                          const std::vector<url::Origin>& allowed,
                          std::string_view current_origin_text);
+
+// The page's |label| between double quotes in a question the user answers
+// ('Click "Pay now" — it submits a form on ...'): its own quotes become
+// single ones and its dashes "-", so it can't end the quote and go on as
+// the browser's words ('Next" — it changes nothing. Click "Pay').
+std::string QuotedLabel(std::string_view label);
 
 // Origins per frame, at action time: the element's frame must have the
 // origin it was observed with (|observed|, as ObservedElement::frame_origin
