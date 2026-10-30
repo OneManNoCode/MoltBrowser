@@ -593,6 +593,20 @@ opt-in until voice listening ships (`MOLT_BUNDLE_SPEECH=1`, §11).
   `accuracy bias wake latency listen` give numbers to compare with
   `docs/design/SPEECH_HELPER_PROTOCOL.md` §8 (a slower machine: slower,
   but the same transcripts).
+- [ ] The helper's hardening, on each OS (review-fixes): the core (frame
+  reader, CONFIG parser) and the program get the same flags whatever the
+  compiler's defaults. Linux: `readelf -lW speech/molt-speech` shows
+  `GNU_RELRO` and a `GNU_STACK` without `E`, `readelf -dW` shows
+  `FLAGS BIND_NOW` and `FLAGS_1 NOW PIE`, and `readelf -hW` type `DYN`
+  (checked here with Ubuntu 24.04's GCC 13). macOS: `otool -hv
+  speech/molt-speech` lists `PIE`; the helper's configure log
+  (`helper-configure.log` in the cache) says whether
+  `-fstack-clash-protection` was taken ("Performing Test
+  MOLT_SPEECH_HAVE_STACK_CLASH_PROTECTION"). Windows (deferred):
+  `dumpbin /headers /loadconfig speech\molt-speech.exe` shows "Dynamic
+  base", "NX compatible", "High Entropy Virtual Addresses" and "Guard" in
+  the DLL characteristics and "CF Instrumented" in the guard flags; a link
+  error naming `/guard:cf` with the static ONNX Runtime: report it.
 - [ ] Record the helper's SHA-256 per OS (printed, and in
   `speech/.build-info`) with the release. It differs from machine to
   machine (compilers), so it is recorded, not pinned; the sources and models
@@ -1375,7 +1389,7 @@ extension enablement and `MediaRouterEnabled()`).
   chromium/src/out/MoltTests/browser_tests \
     --gtest_filter='VoiceSessionBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/speech-session-browser-tests.log
   ```
-  *Expected:* all 7 pass on Linux and macOS (`NeverListensInMoltNetWindows`
+  *Expected:* all 8 pass on Linux and macOS (`NeverListensInMoltNetWindows`
   only on Windows):
   - `TheWakePhraseThenACommand`: wake, a partial, then "open a new tab"
     opens one; "Voice mode is on. Say Hey Molt, then what you want." is
@@ -1394,12 +1408,26 @@ extension enablement and `MediaRouterEnabled()`).
   - `GivesUpAfterCrashesInARow`: a helper that writes what isn't the
     protocol is ended three times, then voice mode stops listening and
     says "Speech recognition stopped working: ...".
+  - `AnErrorLineEndsTheHelper` (review-fixes): a helper that writes
+    `error` lines and carries on is ended at the first, three times, then
+    voice mode says "Speech recognition stopped working: it reported an
+    error".
   - `NeverListensInMoltNetWindows`: no helper looked for, no microphone,
     "Voice mode is off in MoltNet windows.".
 
   If one fails, send the log, with the lines `[MoltVoice]` and
   `[MoltHelperSandbox]`: they say which echo canceller the microphone got
   and what confinement the helper got.
+
+  Not covered by these tests, as it takes minutes (review-fixes; the
+  count itself is `HelperFailureCount`, unit-tested): a helper that ran a
+  minute after it was ready starts the count of failures afresh, however
+  it ended. Check it by hand once, on Linux with the bundled helper: turn
+  voice mode on, wait over a minute, then `kill -STOP` the `molt-speech`
+  process (it stops reading: after 3 s the log says "speech helper ended:
+  it stopped reading its input" and a new one starts); do this four times,
+  over a minute apart. *Expected:* voice mode keeps listening each time,
+  and never says "Speech recognition stopped working".
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -3191,6 +3219,21 @@ files (helpers-limits):
   report which. `molt_ai_unittests
   --gtest_filter='*SendsNoDatagramToANamedSocket*'` passes: a confined
   helper's datagram never reaches a named socket outside its paths.
+- [ ] Linux on a 6.8 kernel, signals (review-fixes): on Ubuntu 24.04's
+  stock kernel (6.8; or 22.04's), whose Landlock (ABI 4) doesn't scope
+  signals, so the seccomp filter alone keeps them in the helper. OCR of an
+  attachment and voice, with the distribution's tesseract and whisper-cli
+  and with bundled builds, and voice mode listening for a few minutes
+  (wake phrase, commands, the follow-up window). *Expected:* as before;
+  the log's `[MoltHelperSandbox]` line says "Landlock ABI 4 (files, TCP),
+  seccomp-bpf (x86_64)". Then
+  `molt_ai_unittests --gtest_filter='*Signal*:*AbortStillWorks*'` (with
+  `molt_helper_sandbox_test_helper` next to it) passes: a confined helper
+  can't signal the browser (or reach it through `tkill`, a pidfd, a file's
+  owner or its resource limits), still signals itself, and `abort()`
+  still works. A helper that fails with "Operation not permitted" from
+  `tkill`, `pidfd_send_signal`, `fcntl(F_SETOWN)` or `prlimit`: report
+  which, with `strace -f` of it if you can.
 - [ ] Every OS, the sandbox tests (helpers-limits; Windows deferred):
   `molt_ai_unittests --gtest_filter='HelperLimits*:HelperSandboxLimits*:HelperSandboxWin*:HelperSandboxLinux*'`
   with `molt_helper_sandbox_test_helper` next to it. *Expected:* all pass:
