@@ -11,7 +11,7 @@ process and the tooling for it, plus the first dry run.
 |---|---|
 | The Chromium revision we build on | `chromium_version.txt` (`CHROMIUM_VERSION`, `CHROMIUM_REVISION`). The only copy: `scripts/setup.sh`, `build/docker/*`, every workflow and `tools/chromium/*` read it. Shell code uses `tools/chromium/pin.sh`. |
 | The SHA-256 of the release's source tarball | `PINNED_SHA256` in `tools/compile_check/ccheck/tarball.py`. The static GN check and the compile check stream Chromium's official source tarball and refuse one without a pin or with other bytes. When the pin moves, add the new release's (from its `.hashes` file in the bucket, checked against the MD5 the bucket reports for the tarball). |
-| MoltBrowser's own code | `src/` files that do not exist upstream (5243 at 156.0.8078.74: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
+| MoltBrowser's own code | `src/` files that do not exist upstream (5525 at 156.0.8078.80: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
 | Our changes to upstream files | `src/` still holds whole copies (the build does `cp -R src/. chromium/src/`). `patches/` holds the same changes as one diff per file against the pin, generated from `src/`. |
 
 `patches/` layout:
@@ -101,15 +101,16 @@ for p in win mac; do
 done
 ```
 
-State on 2026-10-28, from the Version History API and the tags on the
+State on 2026-10-30, from the Version History API and the tags on the
 mirror (chromiumdash and the Chrome Releases blog were not reachable from
 the machine that ran this):
 
 | Milestone | Branch | Latest tag on the mirror | Channels (Version History API) |
 |---|---|---|---|
-| 158 | trunk | 158.0.8127.3 | canary (158.0.8127.2 since 2026-10-27), dev (158.0.8117.2) |
-| 157 | 8103 | 157.0.8103.31 | beta (157.0.8103.15 since 2026-10-22) |
-| **156** | 8078 | 156.0.8078.78 | **stable and extended stable**: since 2026-10-27 Extended Stable serves **156.0.8078.74** to 25% of Windows and macOS (the rest 156.0.8078.48); Stable serves 156.0.8078.74 on Windows and macOS and 156.0.8078.73 on Linux. No desktop channel serves the newer tags (.75 to .78) yet |
+| 159 | trunk | 159.0.8131.1 | canary (159.0.8131.0 since 2026-10-29) |
+| 158 | 8127 | 158.0.8127.6 | beta (158.0.8127.2 since 2026-10-28), dev (158.0.8117.2) |
+| 157 | 8103 | 157.0.8103.33 | none (beta until 2026-10-28) |
+| **156** | 8078 | 156.0.8078.83 | **stable and extended stable**: since 2026-10-29 Extended Stable serves **156.0.8078.80** to 25% of Windows and macOS (the rest 156.0.8078.74); Stable serves 156.0.8078.80 on Windows and macOS and 156.0.8078.79 on Linux. No desktop channel serves the newer tags (.81 to .83) yet |
 | 155 | 8059 | 155.0.8059.91 | previous stable |
 | 154 | 8037 | 154.0.8037.154 | dead |
 | 152 | 7977 | 152.0.7977.169 | previous extended stable (until 2026-10-20) |
@@ -119,14 +120,17 @@ the machine that ran this):
 our pin from 2026-10-16, was its last M152 release): with 2-week
 milestones, Google moved the extended channel to the current stable
 milestone, earlier than "~4 releases behind stable" suggested. Its first
-security respin, 156.0.8078.74, started on 2026-10-27. **Target:
-`156.0.8078.74`** (the [156.0.8078.74 respin](#1560807874-2026-10-28); before
-it, the [156 rebase](#the-156-rebase-2026-10-23) to 156.0.8078.48). Same-branch
+security respin, 156.0.8078.74, started on 2026-10-27, and its second,
+156.0.8078.80, on 2026-10-29. **Target: `156.0.8078.80`** (the
+[156.0.8078.80 respin](#1560807880-2026-10-30); before it, the
+[156.0.8078.74 respin](#1560807874-2026-10-28) and the
+[156 rebase](#the-156-rebase-2026-10-23) to 156.0.8078.48). Same-branch
 respins follow (`156.0.8078.*` tags that Extended Stable ships). One pin
 serves every platform, so when Linux and the other platforms get different
 patch numbers, take the Windows and macOS one (Extended Stable's): here
-156.0.8078.73 and .74 differ only in `chrome/VERSION`. When the extended
-channel moves to a new milestone again, do the big rebase to it.
+156.0.8078.79 and .80 differ only in `chrome/VERSION`, as .73 and .74 did.
+When the extended channel moves to a new milestone again, do the big
+rebase to it.
 
 ## The process
 
