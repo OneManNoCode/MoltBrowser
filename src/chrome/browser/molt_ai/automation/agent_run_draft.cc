@@ -1082,6 +1082,10 @@ std::string CleanDisplayText(std::string_view text, size_t max_chars) {
   return out;
 }
 
+std::string WithoutHiddenChars(std::string_view text) {
+  return StripHidden(text);
+}
+
 std::string VariableNameFor(std::string_view label,
                             const std::set<std::string>& taken) {
   std::string slug;

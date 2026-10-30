@@ -2173,6 +2173,11 @@ class Planner {
           "this as " + spoken + ".");
       return;
     }
+    // A step of the AI's that a routine can't repeat (planner-routines).
+    if (!learning.this_refusal.empty()) {
+      Say("I can't remember this: " + learning.this_refusal);
+      return;
+    }
     Status("Remembering " + spoken);
     Say("I'll remember: " + JoinSpokenList(learning.this_steps) + ".");
     if (learning.this_planned) {

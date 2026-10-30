@@ -449,6 +449,9 @@ source_set("voice_loop") {
     ":spoken_choice",
     ":voice_command",
 
+    # The planner's steps kept in routines (PlannerStep, std-only).
+    ":voice_planner",
+
     # The browser's prompts in the conversation (std-only).
     ":voice_prompts",
 
@@ -468,7 +471,8 @@ source_set("voice_loop") {
 # What voice mode hands open-ended requests to (the planner fallback,
 # docs/design/TOUCHLESS_BROWSING.md §6.2): the interface the web agent's
 # planner implements (//chrome/browser/molt_ai:molt_ai_agents,
-# agents/voice_agent_planner.h). Header-only.
+# agents/voice_agent_planner.h), and the steps it reports and replays for
+# routines (PlannerStep, §6.8). Header-only, std-only.
 source_set("voice_planner") {
   sources = [ "voice_planner.h" ]
 }

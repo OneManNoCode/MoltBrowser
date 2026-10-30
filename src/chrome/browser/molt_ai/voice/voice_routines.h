@@ -12,9 +12,18 @@
 // finds it; click for a choice; type for a search or typing; scroll; else
 // "unknown"), with a description the studio shows ("Open YouTube") and
 // Step::extra:
-//   "voice": the command, only the fields its kind uses (below), and
-//            "planned": true for the on-device planner's steps;
+//   "voice": the command, only the fields its kind uses (below);
 //   "host":  the page it was said on.
+// A step the on-device planner carried out is a recorded agent step, as an
+// agent draft keeps it (agent_run_draft.h): navigate (its address as the
+// target; a search's results page, with the query), click, type, a choice
+// in a select (click) or scroll, the page's host, and in "voice" the
+// action ("agent": "navigate", "search", "click", "type", "select",
+// "scroll"), what the web agent knew of the element (its kind and name,
+// page text, cleaned and capped as the agent's observation shows it: the
+// replay finds it again by them), the text typed or the option chosen,
+// and "planned": true. No selector, no page text but the element's name
+// and the option, nothing the model said but the text typed and the query.
 // The runner, the scheduler and the studio's Run refuse such a workflow
 // (automation_voice_steps.h): voice mode runs it, through its own loop.
 //
@@ -32,9 +41,12 @@
 // Trust (automation_security.h): steps the user said start Approved on
 // their own sites, as a recording does: the user did each of them, on those
 // sites. A routine with the planner's steps keeps a draft's rules: Casual,
-// no sites, sites_unconfirmed, until the user confirms its sites
-// (voice_learning.h's ConfirmSites seam; today a real click in the Agent
-// studio).
+// no sites, sites_unconfirmed, until the user confirms its sites, with the
+// voice gesture (VoiceController::ConfirmDraftSitesByVoice()) or a real
+// click in the Agent studio (AutomationSecurity::ConfirmDraftSites(), on
+// exactly the sites its steps use). The confirmation holds for those
+// sites: once the steps use others (a step added or changed in the file),
+// the routine needs its sites confirmed again (RoutineSitesConfirmed()).
 //
 // ReadRoutine() reads a .molt as untrusted (it may have been imported or
 // edited): every step must be a known voice command with valid, capped
@@ -58,8 +70,17 @@
 namespace molt_ai {
 namespace voice {
 
-// A page address a routine keeps, at most.
+// A page address a routine keeps, at most; the planner's (which the web
+// agent opens again, under its own cap), at most.
 inline constexpr size_t kMaxRoutineUrlBytes = 2048;
+inline constexpr size_t kMaxPlannerUrlBytes = 1024;
+// The planner's step: an element's name and a select's option, in code
+// points (the agent's observation's caps), the text it typed and its
+// search, in code points (the agent's).
+inline constexpr size_t kMaxPlannerLabelChars = 60;
+inline constexpr size_t kMaxPlannerOptionChars = 80;
+inline constexpr size_t kMaxPlannerTextChars = 500;
+inline constexpr size_t kMaxPlannerQueryChars = 256;
 // Words of a choice made by name, at most (the matcher's own cap).
 inline constexpr size_t kMaxRoutineChoiceWords = 12;
 
@@ -104,10 +125,40 @@ struct ReadRoutineResult {
 // The voice routine in |script|, read as untrusted.
 ReadRoutineResult ReadRoutine(const automation::Script& script);
 
+// The routine step for |step|, a step the planner carried out for the
+// request |goal| (what the user said) on a page of |page_host| (the active
+// tab's, for a step whose own host the agent didn't say): checked and
+// cleaned as an agent draft keeps a step (agent_run_draft.h), with typed
+// text that looks secret (by the field's name, the text, or because the
+// goal gave it as one) withheld, to be asked for at each run. A step a
+// routine can't repeat faithfully is a gap (IsUnkeptStep()) saying why.
+RoutineStep RoutineStepForPlanner(const PlannerStep& step,
+                                  std::string_view goal,
+                                  std::string_view page_host);
+// A gap: a step of the planner's that "this" can't keep, for |why| (the
+// browser's words, said after "I can't remember this: ").
+RoutineStep UnkeptPlannerStep(std::string why);
+
+// Whether a routine with the planner's steps may run: its sites were
+// confirmed (not sites_unconfirmed), and they are exactly the sites its
+// steps use now (AutomationSecurity::HostsReferencedBy(), as sets). A
+// routine of the user's own steps only needs the first.
+bool RoutineSitesConfirmed(const automation::Script& script);
+// A routine with the planner's steps whose steps no longer use exactly the
+// sites confirmed: made a draft again (sites_unconfirmed, no sites,
+// Casual), so it is confirmed again before it runs. Returns whether it
+// changed |script| (the caller saves it).
+bool UnconfirmChangedRoutine(automation::Script& script);
+
 // The extra["voice"] of |step|'s command (the wire format), and back
 // (nullopt for anything invalid). Exposed for the tests and the fuzzer.
 base::DictValue VoiceCommandToDict(const RoutineStep& step);
 std::optional<RoutineStep> VoiceCommandFromDict(const base::DictValue& dict);
+// The workflow step for a planner's |step| (IsAgentStep()), and the step
+// read back from one (nullopt for anything invalid).
+automation::Step PlannerStepToWorkflowStep(const RoutineStep& step);
+std::optional<RoutineStep> PlannerStepFromWorkflowStep(
+    const automation::Step& step);
 
 }  // namespace voice
 }  // namespace molt_ai
