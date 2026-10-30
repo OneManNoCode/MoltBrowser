@@ -592,6 +592,9 @@ source_set("voice_controller") {
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
 
+    # The speech rate kept in settings.json, through its one writer.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
+
     # Its audio, played through the audio service.
     "//media",
     "//media/mojo/mojom",
@@ -607,9 +610,18 @@ source_set("voice_controller") {
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/automation:automation_policy",
 
-    # A dangerous download kept or discarded as the download bubble does,
-    # and the password manager's save bubble answered as its buttons do.
+    # A dangerous download kept or discarded as the download bubble does
+    # (through its own DownloadBubbleUIController, which records the
+    # warning's actions), and the password manager's save bubble answered as
+    # its buttons do.
     "//chrome/browser/download",
+    "//chrome/browser/download/bubble",
+
+    # The save bubble's key icon, watched on the tab (its page action).
+    "//chrome/browser/ui/actions:actions_headers",
+    "//chrome/browser/ui/page_action",
+    "//chrome/browser/ui/tabs:tabs_public",
+    "//components/tabs:public",
     "//chrome/browser/ui/passwords",
     "//components/download/public/common:public",
     "//components/password_manager/core/browser",
@@ -746,7 +758,9 @@ source_set("voice_loop_unit_tests") {
 
 # A permission prompt allowed by its confirmation word and refused by "no";
 # the word typed, unclean, replayed or late refused; confirm(), prompt() and
-# beforeunload answered by voice (chrome/test/data/molt_voice/prompts.html).
+# beforeunload answered by voice (chrome/test/data/molt_voice/prompts.html);
+# a dangerous download kept and discarded as the bubble does; the password
+# save bubble read whenever it is offered.
 # Picked up by :browser_tests.
 source_set("voice_prompts_browser_tests") {
   testonly = true
@@ -759,16 +773,26 @@ source_set("voice_prompts_browser_tests") {
     ":voice_prompts",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/download",
+    "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/passwords",
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/test:test_support",
     "//chrome/test:test_support_ui",
+    "//components/download/public/common:public",
+    "//components/password_manager/core/browser",
+    "//components/password_manager/core/browser:test_support",
+    "//components/password_manager/core/common",
     "//components/permissions",
     "//components/permissions:test_support",
+    "//components/prefs",
+    "//components/safe_browsing/core/common:safe_browsing_prefs",
     "//content/public/browser",
     "//content/test:test_support",
     "//net:test_support",
+    "//testing/gmock",
     "//testing/gtest",
     "//url",
   ]
@@ -888,6 +912,9 @@ source_set("voice_session") {
     # The helper: the bundled copy only, under the resident sandbox.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
+
+    # Voice mode's switches in settings.json, through its one writer.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
 
     # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): never
     # in MoltNet windows.
@@ -1030,6 +1057,9 @@ source_set("voice_session_browser_tests") {
     ":voice_session",
     "//base",
     "//base/test:test_support",
+
+    # settings.json's writers, at the same time.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",

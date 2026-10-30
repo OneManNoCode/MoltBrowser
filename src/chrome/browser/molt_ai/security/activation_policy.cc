@@ -86,8 +86,13 @@ bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms) {
   if (tab.history_entries < 1000) {
     ++tab.history_entries;
   }
+  // Pressing full screen, copying, or opening a link in a new tab doesn't
+  // navigate the tab: no entry is the page the user asked for.
+  const bool may_navigate = tab.intent != Intent::kFullScreen &&
+                            tab.intent != Intent::kCopy &&
+                            tab.intent != Intent::kOpenInNewTab;
   // The page the action led to is what the user asked for.
-  return !(acting && tab.history_entries == 1);
+  return !(acting && may_navigate && tab.history_entries == 1);
 }
 
 Ruling Decide(const TabRecord& tab,

@@ -814,6 +814,7 @@ class Planner {
         Say(ReplySpeech(prompt, reply));
         return true;
       case PromptAnswer::kNeedWord:
+      case PromptAnswer::kSayAgain:
       case PromptAnswer::kCantAllow:
         Say(ReplySpeech(prompt, reply));
         return true;

@@ -36,15 +36,19 @@
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_listener.h"
+#include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_session_logic.h"
+#include "chrome/browser/molt_ai/voice/voice_session_settings.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -445,6 +449,88 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, NeverListensInMoltNetWindows) {
   controller->HandleUtterance("turn on voice mode");
   Wait(base::Milliseconds(300));
   EXPECT_FALSE(moltnet_session->listening());
+}
+
+// settings.json's writers in the browser (common/molt_settings_file.h):
+// voice mode's switches and speech rate, and another feature's key, changed
+// at the same time from the UI thread and a worker, all kept, with what the
+// file held before.
+using MoltSettingsFileBrowserTest = InProcessBrowserTest;
+
+IN_PROC_BROWSER_TEST_F(MoltSettingsFileBrowserTest,
+                       WritersAtTheSameTimeKeepEachOthersKeys) {
+  base::ScopedTempDir dir;
+  base::FilePath path;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    ASSERT_TRUE(dir.CreateUniqueTempDir());
+    path = dir.GetPath().AppendASCII("settings.json");
+    ASSERT_TRUE(base::WriteFile(path, "{\"max_tokens\": 512,}"));
+  }
+  SetMoltSettingsFilePathForTesting(path);
+  VoiceModeSettings voice_mode;
+  voice_mode.start_with_browser = true;
+  constexpr int kRounds = 20;
+  for (int i = 0; i < kRounds; ++i) {
+    MoltSettingsFileTaskRunner()->PostTask(
+        FROM_HERE, base::BindOnce(base::IgnoreResult(&WriteVoiceModeSettings),
+                                  voice_mode));
+    base::ThreadPool::PostTask(FROM_HERE,
+                               base::BindOnce(
+                                   [](int i) {
+                                     base::DictValue changes;
+                                     changes.Set("web_ai_apis", i % 2 == 0);
+                                     PostSetMoltSettings(std::move(changes));
+                                   },
+                                   i));
+    MoltSettingsFileTaskRunner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(base::IgnoreResult(&WriteVoiceSpeechRate), 1.5));
+  }
+  // Everything posted before has run once a read on the sequence replies.
+  std::optional<base::DictValue> read;
+  bool done = false;
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    if (!done) {
+      done = true;
+      MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+          FROM_HERE, base::BindOnce(&ReadMoltSettings),
+          base::BindOnce(
+              [](std::optional<base::DictValue>* out,
+                 std::optional<base::DictValue> value) {
+                *out = std::move(value);
+              },
+              &read));
+    }
+    return read.has_value();
+  }));
+  // The worker's posts may have landed after the read: once more.
+  read.reset();
+  done = false;
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    if (!done) {
+      done = true;
+      MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+          FROM_HERE, base::BindOnce(&ReadMoltSettings),
+          base::BindOnce(
+              [](std::optional<base::DictValue>* out,
+                 std::optional<base::DictValue> value) {
+                *out = std::move(value);
+              },
+              &read));
+    }
+    return read.has_value() && read->Find("web_ai_apis");
+  }));
+  EXPECT_EQ(read->FindInt("max_tokens"), 512);
+  EXPECT_EQ(read->FindBool(kVoiceModeSettingsKey), true);
+  EXPECT_EQ(read->FindBool(kVoiceAlwaysListeningSettingsKey), false);
+  EXPECT_EQ(read->FindDouble(kVoiceSpeechRateSettingsKey), 1.5);
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    EXPECT_EQ(ReadVoiceSpeechRate(), 1.5);
+    EXPECT_TRUE(ReadVoiceModeSettings().start_with_browser);
+  }
+  SetMoltSettingsFilePathForTesting(std::nullopt);
 }
 
 }  // namespace

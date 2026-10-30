@@ -1285,6 +1285,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   "continue reading" goes on, and "faster" or "slower" set a reading speed
   that is kept. Page text read aloud is never taken as a command. Details:
   `docs/design/VOICE_SKILLS.md`.
+- **Touchless browsing: listening and the spoken word hardened** (preview,
+  behind `chrome://flags/#molt-voice-mode`). When something was said is
+  now judged by when the microphone captured it, not when the speech
+  engine reported it, and the spoken word in place of a click counts only
+  when the engine kept up. Where the microphone has no echo cancellation,
+  voice mode's own voice is treated like any other sound: while it speaks,
+  "stop" interrupts it and the command follows (voice mode says so). A
+  word heard as possibly one of two is asked again instead of turning the
+  request down. A risky file is kept by voice exactly as the downloads
+  button's warning keeps it, and the offer to save a password is read
+  whenever it appears. `~/.moltbrowser/settings.json` has one writer, so
+  settings changed at the same time all stay and a crash can't leave half a
+  file. Details: `docs/design/TOUCHLESS_BROWSING.md` §5.1, §7.3 and §7.5.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

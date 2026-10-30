@@ -40,6 +40,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <span>
 #include <string>
@@ -187,6 +188,11 @@ struct HelperEvent {
   // when the line has none.
   int64_t epoch = -1;
   int64_t audio_ms = -1;
+  // Not the helper's: VoiceListener sets it from the audio it sent
+  // (HelperAudioClock::LagMs()) before passing the event on. How long
+  // after the audio at |audio_ms| was captured the event reached the
+  // browser; nullopt when |audio_ms| doesn't fit that audio.
+  std::optional<int64_t> lag_ms;
 };
 
 // Why a line was refused.
@@ -300,6 +306,52 @@ class HelperEventSequence {
   bool errored_ = false;       // an `error` came
   int64_t epoch_ = 0;
   int64_t audio_ms_ = 0;
+};
+
+// The audio sent to the current helper, and when it was captured, so that
+// an event's audio_ms (the helper's own clock: the milliseconds of audio it
+// had received when it wrote the event) maps back to the microphone's
+// time. voice_session_logic.h judges when an utterance began by it (the
+// browser's echo tail, other speech, the voice gesture's quiet period).
+// The helper writes audio_ms, so a decision may only become stricter by
+// it: an audio_ms past what was sent, or older than what is remembered,
+// maps to nothing.
+class HelperAudioClock {
+ public:
+  // The frames remembered: 30 s of the microphone's 50 ms frames.
+  static constexpr size_t kMaxSpans = 600;
+  static constexpr int64_t kSamplesPerMs = kHelperSampleRate / 1000;
+
+  HelperAudioClock();
+  ~HelperAudioClock();
+  HelperAudioClock(const HelperAudioClock&) = delete;
+  HelperAudioClock& operator=(const HelperAudioClock&) = delete;
+
+  // A new helper: its clock starts again at 0.
+  void Reset();
+  // |samples| more samples (kHelperSampleRate) went to the helper, the
+  // last of them captured just before |end_captured_ms| (monotonic).
+  void OnSent(size_t samples, int64_t end_captured_ms);
+  // When the helper's audio up to |audio_ms| ended: the capture time of
+  // the last sample it had then. Nullopt when |audio_ms| is negative, past
+  // the audio sent, or before what is remembered.
+  std::optional<int64_t> CapturedAt(int64_t audio_ms) const;
+  // How long after that an event that came at |now_ms| came (at least 0),
+  // or nullopt as above.
+  std::optional<int64_t> LagMs(int64_t audio_ms, int64_t now_ms) const;
+
+  // Samples sent since Reset().
+  int64_t sent_samples() const { return sent_; }
+
+ private:
+  struct Span {
+    int64_t start = 0;  // the helper's position of its first sample
+    int64_t end = 0;    // and past its last
+    int64_t end_captured_ms = 0;
+  };
+
+  std::deque<Span> spans_;
+  int64_t sent_ = 0;
 };
 
 // The helper's failures in a row, which decide VoiceListener's restarts

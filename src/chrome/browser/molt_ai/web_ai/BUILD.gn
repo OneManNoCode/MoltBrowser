@@ -130,6 +130,9 @@ source_set("web_ai") {
     "//chrome/browser/infobars",
     "//chrome/browser/molt_ai:molt_ai_runtime",
 
+    # The switch in settings.json, through its one writer.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
+
     # A page's images, scaled for the model on a worker.
     "//chrome/browser/molt_ai/runtime:model_image_prep",
 

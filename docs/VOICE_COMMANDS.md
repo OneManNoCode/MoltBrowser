@@ -47,7 +47,10 @@ aloud (and a second after) only "stop", "cancel" and "turn off voice mode"
 are heard. The same goes for any tab's sound where the microphone has no
 echo cancellation at all (the browser's turned off and the device has
 none): while a tab plays sound, only those three are heard, so pause the
-video yourself before you speak. Voice mode never cuts a page's reading
+video yourself before you speak. On such a microphone the browser's own
+voice is heard as it is too, so while it speaks, and a second after, only
+those three are heard, "Hey Molt" included: say "stop", then what you want,
+or wait until it has finished. Voice mode tells you so when it starts. Voice mode never cuts a page's reading
 short: its own answer waits until the page has finished, and "stop" stops
 only voice mode's speech. Each state has a short sound: a rising tone when it
 heard "Hey Molt", a tick when it took a command, a falling tone when it
@@ -113,8 +116,10 @@ and the bar only.
   To allow a permission or keep a risky file, say the word the browser
   gives you. It is a new word each time, so a recording or a sound from a
   page can't say it for you; say it once it has finished speaking, in a
-  quiet moment. A different word turns the request down. "No" always
-  refuses. When a page wants text, say "answer" and your answer, then
+  quiet moment. A different word turns the request down. If what it heard
+  could be one of two words, it says "I didn't catch that. Say the word
+  again." and keeps waiting. "No" always refuses. A risky file is kept
+  just as the downloads button's warning keeps it. When a page wants text, say "answer" and your answer, then
   "yes".
 - **Typing:** choose a field ("click the search box"), then "type ...",
   "delete the last word", "clear the field", "read it back", "submit".
@@ -718,7 +723,7 @@ said.
   microphone has echo cancellation (its own voice is then removed from
   what the microphone hears). With the system's voices, which the browser
   uses when its own isn't installed, start with "Hey Molt" (or say
-  "stop").
+  "stop"). With its own voice and no echo cancellation, say "stop" first.
 - **While reading aloud,** the sentence being read is shown in the bar
   under the page, but not highlighted on the page itself.
 - **"Faster" and "slower"** change the reading speed while the browser

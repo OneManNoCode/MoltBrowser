@@ -16,6 +16,16 @@ source_set("common") {
   ]
 }
 
+# ~/.moltbrowser/settings.json's one writer: every change a read-modify-write
+# on one sequence, written atomically (molt_settings_file.h).
+source_set("molt_settings_file") {
+  sources = [
+    "molt_settings_file.cc",
+    "molt_settings_file.h",
+  ]
+  public_deps = [ "//base" ]
+}
+
 # Which helper executables (tor, tesseract, whisper-cli) MoltBrowser may run
 # (audit S18). trusted_binary.* is the pure POSIX policy (no //base) that
 # molt_ai_unittests tests against a fake filesystem; helper_binary.* is the
@@ -189,11 +199,13 @@ source_set("unit_tests") {
     "helper_resident_unittest.cc",
     "helper_sandbox_unittest.cc",
     "helper_sandbox_win_policy_unittest.cc",
+    "molt_settings_file_unittest.cc",
     "molt_user_click_unittest.cc",
   ]
   deps = [
     ":common",
     ":helper_limits",
+    ":molt_settings_file",
     ":helper_output",
     ":helper_resident",
     ":helper_sandbox",
@@ -201,6 +213,7 @@ source_set("unit_tests") {
     ":helper_sandbox_win_policy",
     ":seatbelt_profile",
     "//base",
+    "//base/test:test_support",
     "//crypto",
     "//testing/gtest",
   ]

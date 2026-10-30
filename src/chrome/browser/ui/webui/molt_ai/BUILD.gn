@@ -81,6 +81,10 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai/common:helper_output",
     "//chrome/browser/molt_ai/common:helper_sandbox",
+
+    # settings.json's one writer (molt://ai-settings, voice mode's and the
+    # built-in AI APIs' switches).
+    "//chrome/browser/molt_ai/common:molt_settings_file",
     "//chrome/browser/molt_ai/document_parser",
 
     # Whether the installation has MoltNet's bundled fonts (molt_net_handler.cc).

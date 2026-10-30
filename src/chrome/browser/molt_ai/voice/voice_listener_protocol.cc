@@ -1243,6 +1243,63 @@ bool HelperEventSequence::Accept(const HelperEvent& event,
   return false;
 }
 
+HelperAudioClock::HelperAudioClock() = default;
+HelperAudioClock::~HelperAudioClock() = default;
+
+void HelperAudioClock::Reset() {
+  spans_.clear();
+  sent_ = 0;
+}
+
+void HelperAudioClock::OnSent(size_t samples, int64_t end_captured_ms) {
+  // A frame is at most kMaxFramePayloadBytes / 2 samples.
+  if (samples == 0 || samples > kMaxFramePayloadBytes / 2) {
+    return;
+  }
+  Span span;
+  span.start = sent_;
+  span.end = sent_ + static_cast<int64_t>(samples);
+  span.end_captured_ms = end_captured_ms;
+  sent_ = span.end;
+  spans_.push_back(span);
+  while (spans_.size() > kMaxSpans) {
+    spans_.pop_front();
+  }
+}
+
+std::optional<int64_t> HelperAudioClock::CapturedAt(int64_t audio_ms) const {
+  // The helper's audio_ms is the samples it had, in whole milliseconds,
+  // rounded down: never more than were sent.
+  if (audio_ms < 0 || spans_.empty() || audio_ms > sent_ / kSamplesPerMs) {
+    return std::nullopt;
+  }
+  const int64_t position = audio_ms * kSamplesPerMs;
+  if (position < spans_.front().start) {
+    return std::nullopt;
+  }
+  // The first span that holds the sample just before |position| (or the
+  // first span, for the very start).
+  const auto span =
+      std::lower_bound(spans_.begin(), spans_.end(), position,
+                       [](const Span& a, int64_t at) { return a.end < at; });
+  if (span == spans_.end()) {
+    return std::nullopt;
+  }
+  // Rounded so the time is never later than the sample's.
+  const int64_t before_end_ms =
+      (span->end - position + kSamplesPerMs - 1) / kSamplesPerMs;
+  return span->end_captured_ms - before_end_ms;
+}
+
+std::optional<int64_t> HelperAudioClock::LagMs(int64_t audio_ms,
+                                               int64_t now_ms) const {
+  const std::optional<int64_t> captured = CapturedAt(audio_ms);
+  if (!captured) {
+    return std::nullopt;
+  }
+  return std::max<int64_t>(now_ms - *captured, 0);
+}
+
 HelperFailureCount::HelperFailureCount() = default;
 
 void HelperFailureCount::Clear() {

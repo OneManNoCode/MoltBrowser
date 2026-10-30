@@ -15,6 +15,7 @@
 #include "base/task/thread_pool.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -616,10 +617,15 @@ void VoiceController::NotifyCaption() {
   }
   const std::string& heard =
       listening_.heard_live.empty() ? heard_ : listening_.heard_live;
-  const std::string& status =
+  std::string status =
       now == VoiceActivity::kListening && !listening_.problem.empty()
           ? listening_.problem
           : status_;
+  if (now == VoiceActivity::kSpeaking && !listening_.speaking_hint.empty()) {
+    // First, so the caption's cap keeps it.
+    status = status.empty() ? listening_.speaking_hint
+                            : listening_.speaking_hint + " " + status;
+  }
   VoiceOverlay::SetCaptionForWindow(browser_, state, heard, status);
 }
 
@@ -885,12 +891,10 @@ void VoiceController::HandleUtterance(const std::string& text) {
 void VoiceController::RunTurn(VoiceTurn turn) {
   // A new speech rate is kept as a setting.
   if (turn.state.speech_rate != state_.speech_rate) {
-    base::ThreadPool::PostTask(
-        FROM_HERE,
-        {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
-        base::BindOnce(base::IgnoreResult(&WriteVoiceSpeechRate),
-                       turn.state.speech_rate));
+    // settings.json's one writer (common/molt_settings_file.h).
+    MoltSettingsFileTaskRunner()->PostTask(
+        FROM_HERE, base::BindOnce(base::IgnoreResult(&WriteVoiceSpeechRate),
+                                  turn.state.speech_rate));
   }
   state_ = std::move(turn.state);
   if (!turn.status.empty()) {
