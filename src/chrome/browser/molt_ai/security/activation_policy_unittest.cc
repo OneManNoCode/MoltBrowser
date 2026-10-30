@@ -403,6 +403,25 @@ TEST(ActivationPolicyTest, HistoryEntriesAfterAnAction) {
   EXPECT_LE(tab.history_entries, 1000);
 }
 
+// An action that never navigates the tab leads to no page of its own:
+// an entry the page adds after it, first or not, is skippable.
+TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
+  for (Intent intent :
+       {Intent::kFullScreen, Intent::kCopy, Intent::kOpenInNewTab}) {
+    TabRecord tab;
+    NoteAction(tab, 1000, intent);
+    EXPECT_TRUE(NoteHistoryEntry(tab, 1100));
+    EXPECT_TRUE(NoteHistoryEntry(tab, 1200));
+  }
+  // A link or a video chosen still leads to the page asked for.
+  for (Intent intent : {Intent::kNone, Intent::kPlayMedia}) {
+    TabRecord tab;
+    NoteAction(tab, 1000, intent);
+    EXPECT_FALSE(NoteHistoryEntry(tab, 1100));
+    EXPECT_TRUE(NoteHistoryEntry(tab, 1200));
+  }
+}
+
 TEST(ActivationPolicyTest, Names) {
   std::vector<std::string> names;
   for (Request request : kAllRequests) {
