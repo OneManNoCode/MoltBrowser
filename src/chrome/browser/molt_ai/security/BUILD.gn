@@ -17,6 +17,17 @@ source_set("agent_safety") {
   ]
 }
 
+# What a page may do with the user activation an agent's or voice mode's
+# accessibility action gave it (docs/design/TOUCHLESS_BROWSING.md §7.5): the
+# tab's state and the decisions. Std-only, so molt_ai_unittests and a
+# standalone harness build the same code.
+source_set("activation_policy") {
+  sources = [
+    "activation_policy.cc",
+    "activation_policy.h",
+  ]
+}
+
 # Who may open chrome:// / molt:// pages (S19). Pure logic, unit-tested.
 source_set("webui_navigation_policy") {
   sources = [
@@ -48,10 +59,12 @@ source_set("webui_navigation_throttle") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "activation_policy_unittest.cc",
     "agent_safety_unittest.cc",
     "webui_navigation_policy_unittest.cc",
   ]
   deps = [
+    ":activation_policy",
     ":agent_safety",
     ":webui_navigation_policy",
     "//base",
