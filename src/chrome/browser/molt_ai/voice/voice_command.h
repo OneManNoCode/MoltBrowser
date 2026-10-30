@@ -163,6 +163,9 @@ enum class VoiceCommandKind : uint8_t {
   kRememberRoutine,  // |text|: the name
   kForgetRoutine,    // |text|: the name
   kRunRoutine,       // |text|: the name; the browser decides if it exists
+  kListRoutines,     // "what are my routines"
+  kForgetWord,       // |text|: a learned word or correction to forget
+  kForgetLearning,   // forget everything learned (after a spoken "yes")
 
   // --- Voice mode (listening) ----------------------------------------------
   kVoiceModeOn,   // start listening (typed, or said while voice mode is on)
@@ -252,7 +255,7 @@ struct VoiceCommand {
   // "node.js"), cleaned like |heard|, at most kMaxCommandTextBytes: the
   // query (kSearch, kFindInPage), the text (kType), the correction
   // (kCorrection), the routine's name (kRememberRoutine, kForgetRoutine,
-  // kRunRoutine).
+  // kRunRoutine), the word to forget (kForgetWord).
   std::string text;
   // kOpenSite, and kSearch with kNamedSite: the site as host-like text,
   // lower case: "youtube", "new york times" -> "newyorktimes",

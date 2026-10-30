@@ -317,7 +317,8 @@ FUZZERS = {
             f"{VOICE}/{name}.cc" for name in (
                 "page_map", "page_map_text", "voice_sites",
                 "voice_candidates", "voice_speech_text",
-                "voice_controller_logic")
+                "voice_controller_logic", "voice_hints",
+                "voice_routines_logic", "voice_vocabulary")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
         tier="std",
         dict="dicts/voice_command.dict",

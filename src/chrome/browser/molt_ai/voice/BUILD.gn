@@ -290,10 +290,18 @@ source_set("voice_loop") {
     "voice_candidates.h",
     "voice_controller_logic.cc",
     "voice_controller_logic.h",
+
+    # Learning (§6.8): site hints, routines' steps, personal words.
+    "voice_hints.cc",
+    "voice_hints.h",
+    "voice_routines_logic.cc",
+    "voice_routines_logic.h",
     "voice_sites.cc",
     "voice_sites.h",
     "voice_speech_text.cc",
     "voice_speech_text.h",
+    "voice_vocabulary.cc",
+    "voice_vocabulary.h",
   ]
 
   public_deps = [
@@ -450,9 +458,12 @@ source_set("voice_loop_unit_tests") {
   sources = [
     "voice_candidates_unittest.cc",
     "voice_controller_logic_unittest.cc",
+    "voice_hints_unittest.cc",
+    "voice_routines_logic_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
     "voice_speech_text_unittest.cc",
+    "voice_vocabulary_unittest.cc",
   ]
 
   deps = [

@@ -573,6 +573,23 @@ said.
 - `(forget | delete | remove) [the | my] routine [called | named] {name}`
 - `forget {name}`
 
+**Hear your routines.** For example: "what are my routines".
+
+- `(what | which) (are | is) my routines`
+- `(what | which) routines (do i have | are there | have i got | have i saved)`
+- `(list | read | tell me | say) [all] [the | my] routines`
+- `(my routines | routines)`
+
+**Forget a word or a correction the browser learned from you.** For example: "forget the word Queen".
+
+- `(forget | delete | remove) the (word | name | phrase | correction) {name}`
+
+**Forget everything the browser learned from you: routines, words, corrections and site hints.** For example: "forget everything you learned".
+
+- `(forget | delete | erase) (everything | all) [that] you (learned | learnt | know) [about me | from me]`
+- `(forget | delete | erase) (everything | all) [that] youve (learned | learnt) [about me | from me]`
+- `(forget | delete | erase) (everything | all) [that] you have (learned | learnt) [about me | from me]`
+
 ## Voice mode
 
 **Start listening (typed in the Agent mode panel).** For example: "turn on voice mode".

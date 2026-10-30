@@ -1077,8 +1077,11 @@ TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
             "I can't do that yet: \"find me a train to Lyon\". Say what can I "
             "say to hear what I can do.");
 
-  EXPECT_EQ(Said(c.Say("remember this as my news")), "Routines come later.");
-  EXPECT_EQ(Said(c.Say("run my news")), "Routines come later.");
+  // Routines need the profile's learning (VoiceEnvironment::learning;
+  // voice_routines_logic_unittest.cc has the rest).
+  EXPECT_EQ(Said(c.Say("remember this as my news")),
+            "I can't keep routines here.");
+  EXPECT_EQ(Said(c.Say("run my news")), "I can't run routines here.");
   EXPECT_EQ(Said(c.Say(std::string(1200, 'a'))),
             "That was too long for me. Say it in fewer words.");
   EXPECT_EQ(Said(c.Say("hey molt")), "I didn't catch that.");
