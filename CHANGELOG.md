@@ -1228,9 +1228,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   Allowing a permission or keeping a risky file takes a word the browser
   picks at random for that request and says ("To allow it, say harbor"),
   heard after it has finished speaking with no other sound in the way; it
-  counts once, for that request, within seconds, so a recording or a
-  page's audio can't answer for you, and a wrong word turns the request
-  down. A page's dialogs are read as the site's words, one that shows
+  counts once, for that request, within seconds, an earlier request's word
+  never answers a later one, and a wrong word turns the request down. A page's dialogs are read as the site's words, one that shows
   dialog after dialog is cut short, and passwords are never said. Voice
   mode's clicks are also better contained: a page can't use them to put
   another window in full screen, or to fill your history so that "go
