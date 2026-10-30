@@ -652,8 +652,7 @@ bool ActivationGuard::RefusesClipboardWrite(content::WebContents* contents) {
 }
 
 // static
-bool ActivationGuard::MayEnterPictureInPicture(
-    content::WebContents* contents) {
+bool ActivationGuard::MayEnterPictureInPicture(content::WebContents* contents) {
   ActivationGuard* guard =
       contents ? ActivationGuard::FromWebContents(contents) : nullptr;
   if (!guard) {

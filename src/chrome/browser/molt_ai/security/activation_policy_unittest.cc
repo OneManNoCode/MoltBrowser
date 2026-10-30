@@ -18,9 +18,8 @@ constexpr Ruling kRefuse{Decision::kRefuse, false};
 constexpr Ruling kRefuseAndTell{Decision::kRefuse, true};
 
 const Request kAllRequests[] = {
-    Request::kNewWindow,        Request::kDownload,
-    Request::kExternalApp,      Request::kPermissionPrompt,
-    Request::kFullScreen,       Request::kClipboardWrite,
+    Request::kNewWindow,        Request::kDownload,   Request::kExternalApp,
+    Request::kPermissionPrompt, Request::kFullScreen, Request::kClipboardWrite,
     Request::kPictureInPicture,
 };
 const Asker kAllAskers[] = {Asker::kNone, Asker::kVoiceMode,
@@ -272,9 +271,8 @@ TEST(ActivationPolicyTest, PictureInPictureIsRefused) {
   // A person's own click: as usual.
   TabRecord tab = ActedAt(0, Intent::kPlayMedia);
   NoteUserInput(tab);
-  EXPECT_EQ(
-      Decide(tab, 100, Request::kPictureInPicture, Asker::kVoiceMode),
-      kProceed);
+  EXPECT_EQ(Decide(tab, 100, Request::kPictureInPicture, Asker::kVoiceMode),
+            kProceed);
 }
 
 TEST(ActivationPolicyTest, OnlyVoiceModeIsTold) {
@@ -410,9 +408,10 @@ TEST(ActivationPolicyTest, Names) {
   for (Request request : kAllRequests) {
     names.emplace_back(RequestName(request));
   }
-  EXPECT_EQ(names, (std::vector<std::string>{
-                       "new window", "download", "external app",
-                       "permission prompt", "full screen", "clipboard write"}));
+  EXPECT_EQ(names,
+            (std::vector<std::string>{
+                "new window", "download", "external app", "permission prompt",
+                "full screen", "clipboard write", "picture-in-picture"}));
   EXPECT_EQ(DecisionName(Decision::kProceed), "proceed");
   EXPECT_EQ(DecisionName(Decision::kAsk), "ask");
   EXPECT_EQ(DecisionName(Decision::kRefuse), "refuse");

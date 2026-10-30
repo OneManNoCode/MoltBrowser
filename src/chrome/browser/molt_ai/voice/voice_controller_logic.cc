@@ -1405,10 +1405,9 @@ class Planner {
         Add(NodeStep(VoiceStepKind::kSetText, field->handle, query));
         // The site's own search button with its own box (its skill names
         // both), else the form's submit or Enter.
-        const PageItem* submit =
-            box.source == PartSource::kSkill
-                ? SiteItem(map_, map_.site.search_submit)
-                : nullptr;
+        const PageItem* submit = box.source == PartSource::kSkill
+                                     ? SiteItem(map_, map_.site.search_submit)
+                                     : nullptr;
         if (submit) {
           Add(NodeStep(VoiceStepKind::kPress, submit->handle,
                        PageText(submit->label)));
@@ -2090,8 +2089,8 @@ class Planner {
         if (map_.site.search_field.valid() &&
             map_.InPage(map_.site.search_field)) {
           const PageItem* field = map_.ItemForHandle(map_.site.search_field);
-          if (field && field->kind == ItemKind::kTextField &&
-              field->writable && field->credential == CredentialKind::kNone) {
+          if (field && field->kind == ItemKind::kTextField && field->writable &&
+              field->credential == CredentialKind::kNone) {
             found.field = field;
           }
         }
