@@ -18,9 +18,11 @@ inline constexpr char kWebAIApisSettingsKey[] = "web_ai_apis";
 // Blocking (file I/O). True unless settings.json says false.
 bool ReadWebAIApisSwitch();
 
-// Blocking (file I/O). Sets the key and keeps every other one. False, and
-// nothing written, if settings.json exists but isn't a JSON object (it is
-// left for the user to fix), or if it can't be written.
+// Blocking (file I/O), on MoltSettingsFileTaskRunner()
+// (common/molt_settings_file.h) only. Sets the key and keeps every other
+// one, atomically. False, and nothing written, if settings.json exists but
+// isn't a JSON object (it is left for the user to fix), or if it can't be
+// written.
 bool WriteWebAIApisSwitch(bool enabled);
 
 }  // namespace molt_ai::web_ai

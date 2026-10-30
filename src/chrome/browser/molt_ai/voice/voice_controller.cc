@@ -15,6 +15,7 @@
 #include "base/task/thread_pool.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -890,12 +891,10 @@ void VoiceController::HandleUtterance(const std::string& text) {
 void VoiceController::RunTurn(VoiceTurn turn) {
   // A new speech rate is kept as a setting.
   if (turn.state.speech_rate != state_.speech_rate) {
-    base::ThreadPool::PostTask(
-        FROM_HERE,
-        {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
-        base::BindOnce(base::IgnoreResult(&WriteVoiceSpeechRate),
-                       turn.state.speech_rate));
+    // settings.json's one writer (common/molt_settings_file.h).
+    MoltSettingsFileTaskRunner()->PostTask(
+        FROM_HERE, base::BindOnce(base::IgnoreResult(&WriteVoiceSpeechRate),
+                                  turn.state.speech_rate));
   }
   state_ = std::move(turn.state);
   if (!turn.status.empty()) {

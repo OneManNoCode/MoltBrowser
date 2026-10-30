@@ -16,6 +16,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
@@ -168,9 +169,9 @@ void VoiceSession::OnWindowReady(BrowserWindowInterface* browser) {
     return;
   }
   checked = true;
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ReadVoiceModeSettings),
+  // On settings.json's own sequence (common/molt_settings_file.h).
+  MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadVoiceModeSettings),
       base::BindOnce(
           [](base::WeakPtr<VoiceSession> self,
              const VoiceModeSettings& settings) {
@@ -281,9 +282,8 @@ bool VoiceSession::Start() {
   }
   Apply(logic_.Start(NowMs()));
   Apply(logic_.OnBrowserActivity(ControllerActivity(), NowMs()));
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-      base::BindOnce(&ReadVoiceModeSettings),
+  MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadVoiceModeSettings),
       base::BindOnce(&VoiceSession::OnSettingsRead,
                      weak_factory_.GetWeakPtr()));
   for (Observer& observer : observers_) {

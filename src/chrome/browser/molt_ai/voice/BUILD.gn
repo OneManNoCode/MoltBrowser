@@ -585,6 +585,9 @@ source_set("voice_controller") {
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
 
+    # The speech rate kept in settings.json, through its one writer.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
+
     # Its audio, played through the audio service.
     "//media",
     "//media/mojo/mojom",
@@ -881,6 +884,9 @@ source_set("voice_session") {
     # The helper: the bundled copy only, under the resident sandbox.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
+
+    # Voice mode's switches in settings.json, through its one writer.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
 
     # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): never
     # in MoltNet windows.

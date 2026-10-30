@@ -11,7 +11,8 @@
 //                        (voice_controller_logic.h); default 1
 //
 // A value out of range, or not a number, reads as the default. Blocking
-// (file I/O): call on a thread that may block.
+// (file I/O): call on a thread that may block; the write on
+// MoltSettingsFileTaskRunner() (common/molt_settings_file.h) only.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_READING_SETTINGS_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_READING_SETTINGS_H_
@@ -23,8 +24,9 @@ inline constexpr char kVoiceSpeechRateSettingsKey[] = "voice_speech_rate";
 
 double ReadVoiceSpeechRate();
 
-// Sets the key and keeps every other one. False, and nothing written, if
-// settings.json exists but isn't a JSON object, or can't be written.
+// Sets the key and keeps every other one, atomically. False, and nothing
+// written, if settings.json exists but isn't a JSON object, or can't be
+// written.
 bool WriteVoiceSpeechRate(double rate);
 
 }  // namespace voice

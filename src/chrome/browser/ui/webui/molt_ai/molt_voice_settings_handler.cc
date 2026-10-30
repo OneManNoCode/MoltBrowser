@@ -9,7 +9,8 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
-#include "base/task/thread_pool.h"
+#include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
@@ -30,12 +31,9 @@ using molt_ai::voice::VoiceSession;
 
 constexpr char kClickToChange[] = "Click the setting to change it.";
 
-constexpr base::TaskTraits kFileTraits = {
-    base::MayBlock(), base::TaskPriority::USER_VISIBLE,
-    base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN};
-
-// Read, change one setting, write: on a worker. The settings as written,
-// and whether they were.
+// Read, change one setting, write: on settings.json's own sequence
+// (common/molt_settings_file.h), so no other change comes in between. The
+// settings as written, and whether they were.
 std::pair<VoiceModeSettings, bool> ReadChangeWrite(bool enabled_changed,
                                                    bool value) {
   VoiceModeSettings settings = molt_ai::voice::ReadVoiceModeSettings();
@@ -81,9 +79,8 @@ BrowserWindowInterface* MoltVoiceSettingsHandler::Window() {
 void MoltVoiceSettingsHandler::ResolveWithState(
     std::string callback_id,
     std::optional<std::string> error) {
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kFileTraits,
-      base::BindOnce(&molt_ai::voice::ReadVoiceModeSettings),
+  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&molt_ai::voice::ReadVoiceModeSettings),
       base::BindOnce(&MoltVoiceSettingsHandler::OnRead,
                      weak_factory_.GetWeakPtr(), std::move(callback_id),
                      std::move(error)));
@@ -159,9 +156,8 @@ void MoltVoiceSettingsHandler::HandleSetAlwaysListening(
 void MoltVoiceSettingsHandler::Change(std::string callback_id,
                                       bool enabled_changed,
                                       bool value) {
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kFileTraits,
-      base::BindOnce(&ReadChangeWrite, enabled_changed, value),
+  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadChangeWrite, enabled_changed, value),
       base::BindOnce(
           [](base::WeakPtr<MoltVoiceSettingsHandler> self,
              std::string callback_id, bool enabled_changed,

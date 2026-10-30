@@ -14,12 +14,9 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/json/json_reader.h"
-#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -32,6 +29,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
@@ -73,8 +71,6 @@ namespace {
 
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
-const char kSettingsFileName[] = "settings.json";
-
 // Keys the form below doesn't manage, which Save and Reset keep: the switch
 // for the built-in AI APIs has its own section ("Sites using on-device AI")
 // and applies at once, as do voice mode's ("Voice mode").
@@ -83,11 +79,54 @@ const char* const kKeysKeptOnSaveAndReset[] = {
     molt_ai::voice::kVoiceModeSettingsKey,
     molt_ai::voice::kVoiceAlwaysListeningSettingsKey};
 
-base::FilePath GetSettingsFilePath() {
-  base::FilePath home_dir;
-  base::PathService::Get(base::DIR_HOME, &home_dir);
-  return home_dir.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
-      .Append(base::FilePath::FromUTF8Unsafe(kSettingsFileName));
+// On settings.json's sequence (common/molt_settings_file.h). What the file
+// holds, or |defaults| when it is missing or isn't a JSON object.
+base::DictValue LoadSettings(base::DictValue defaults) {
+  const std::optional<base::FilePath> path = molt_ai::MoltSettingsFilePath();
+  base::DictValue loaded;
+  if (path && molt_ai::ReadMoltSettingsFileAt(*path, &loaded) ==
+                  molt_ai::MoltSettingsRead::kObject) {
+    return loaded;
+  }
+  return defaults;
+}
+
+// The form's keys over what the file holds (the defaults when there is no
+// file), so keys the form doesn't show (e.g. "web_ai_apis") survive a save.
+bool SaveFormSettings(base::DictValue form, base::DictValue defaults) {
+  return molt_ai::UpdateMoltSettings([&](base::DictValue& settings) {
+    if (settings.empty()) {
+      settings = std::move(defaults);
+    }
+    for (const auto [key, value] : form) {
+      settings.Set(key, value.Clone());
+    }
+    return true;
+  });
+}
+
+// The defaults, keeping the switches that have their own section. The
+// settings written, or {"error": ...} when nothing was.
+base::DictValue ResetSettings(base::DictValue defaults) {
+  base::DictValue written;
+  const bool ok = molt_ai::UpdateMoltSettings([&](base::DictValue& settings) {
+    for (const char* key : kKeysKeptOnSaveAndReset) {
+      if (const base::Value* kept = settings.Find(key)) {
+        defaults.Set(key, kept->Clone());
+      }
+    }
+    settings = defaults.Clone();
+    written = std::move(defaults);
+    return true;
+  });
+  if (!ok) {
+    base::DictValue error;
+    error.Set("error",
+              "Couldn't save ~/.moltbrowser/settings.json (is it valid "
+              "JSON?). Nothing was changed.");
+    return error;
+  }
+  return written;
 }
 
 // Display names for the curated exit-country codes returned by
@@ -244,46 +283,19 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     return defaults;
   }
 
-  base::DictValue LoadSettings() {
-    ScopedAllowBlockingForMolt allow_blocking;
-    base::FilePath path = GetSettingsFilePath();
-    std::string contents;
-    if (base::ReadFileToString(path, &contents)) {
-      auto parsed = base::JSONReader::Read(
-          contents, base::JSON_ALLOW_TRAILING_COMMAS);
-      if (parsed && parsed->is_dict()) {
-        // Return loaded settings as DictValue
-        base::DictValue loaded;
-        for (const auto [key, value] : parsed->GetDict()) {
-          loaded.Set(key, value.Clone());
-        }
-        return loaded;
-      }
-    }
-    return GetDefaultSettings();
-  }
-
-  bool SaveSettings(const base::DictValue& settings) {
-    ScopedAllowBlockingForMolt allow_blocking;
-    base::FilePath path = GetSettingsFilePath();
-    base::FilePath dir = path.DirName();
-    if (!base::DirectoryExists(dir)) {
-      base::CreateDirectory(dir);
-    }
-    std::string json;
-    base::JSONWriter::WriteWithOptions(
-        settings, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
-    return base::WriteFile(path, json);
-  }
+  // settings.json goes through its one writer (common/molt_settings_file.h):
+  // read and changed on its own sequence, written atomically; a file that
+  // isn't a JSON object is left alone.
 
   void HandleGetSettings(const base::ListValue& args) {
     AllowJavascript();
     if (!HasCallbackArgs(args, 1u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
-    base::DictValue settings = LoadSettings();
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(settings)));
+    molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&LoadSettings, GetDefaultSettings()),
+        base::BindOnce(&MoltAISettingsHandler::ResolveSettings,
+                       weak_ptr_factory_.GetWeakPtr(), callback_id));
   }
 
   void HandleSaveSettings(const base::ListValue& args) {
@@ -300,16 +312,19 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       return;
     }
 
-    // The form's keys over what the file holds, so keys the form doesn't
-    // show (e.g. "web_ai_apis") survive a save.
-    base::DictValue current = LoadSettings();
-    for (const auto [key, value] : args[1].GetDict()) {
-      current.Set(key, value.Clone());
-    }
+    molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&SaveFormSettings, args[1].GetDict().Clone(),
+                       GetDefaultSettings()),
+        base::BindOnce(&MoltAISettingsHandler::OnSettingsSaved,
+                       weak_ptr_factory_.GetWeakPtr(), callback_id));
+  }
 
-    bool success = SaveSettings(current);
+  void OnSettingsSaved(std::string callback_id, bool success) {
     LOG(INFO) << "[MoltAI] Settings saved: " << success;
-
+    if (!IsJavascriptAllowed()) {
+      return;
+    }
     base::DictValue result;
     result.Set("success", success);
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -321,18 +336,19 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 1u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
-    base::DictValue defaults = GetDefaultSettings();
-    // Switches with their own section keep their value.
-    const base::DictValue current = LoadSettings();
-    for (const char* key : kKeysKeptOnSaveAndReset) {
-      if (const base::Value* kept = current.Find(key)) {
-        defaults.Set(key, kept->Clone());
-      }
-    }
-    SaveSettings(defaults);
+    molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&ResetSettings, GetDefaultSettings()),
+        base::BindOnce(&MoltAISettingsHandler::ResolveSettings,
+                       weak_ptr_factory_.GetWeakPtr(), callback_id));
+  }
 
+  // The settings shown (or, from a reset that couldn't write, an "error").
+  void ResolveSettings(std::string callback_id, base::DictValue settings) {
+    if (!IsJavascriptAllowed()) {
+      return;
+    }
     ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(defaults)));
+                              base::Value(std::move(settings)));
   }
 
   // ---- MoltNet (Tor privacy routing) ----
@@ -1345,6 +1361,10 @@ function saveSettings() {
 
 function resetSettings() {
   sendWithPromise('resetSettings').then(function(s) {
+    if (!s || s.error) {
+      showToast('Error saving settings');
+      return;
+    }
     loadSettingsIntoUI(s);
     showToast('Settings reset to defaults');
   });
