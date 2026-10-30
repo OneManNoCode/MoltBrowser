@@ -5,16 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
-index d4dacf58974a5a9a5a0c1aa08a8428ccefa74dd6..eecec9e33e5093f13ced0b724c0074bdcd1553b7 100644
+index d4dacf58974a5a9a5a0c1aa08a8428ccefa74dd6..7852bc54a3f035d641b79d2a01970179d59a7d8f 100644
 --- a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
 +++ b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
-@@ -23,6 +23,9 @@ if (!is_android) {
+@@ -23,6 +23,11 @@ if (!is_android) {
        "//chrome/browser/custom_handlers",
        "//chrome/browser/devtools",
        "//chrome/browser/headless",
 +
-+      # MoltBrowser: what the activation guard's hooks call.
++      # MoltBrowser: what the activation guard's hooks call, and the hook that
++      # tells voice mode about a page's dialogs.
 +      "//chrome/browser/molt_ai/security:activation_guard",
++      "//chrome/browser/molt_ai/voice:voice_dialog_manager",
        "//chrome/browser/picture_in_picture",
        "//chrome/browser/preloading:prefs",
        "//chrome/browser/search",
