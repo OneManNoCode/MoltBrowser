@@ -35,10 +35,10 @@ using K = VoiceCommandKind;
 // What the loop says, in code points.
 constexpr size_t kMaxSaidChars = 400;
 
+// Any reading of the page's text, "continue reading" included: a barge-in
+// stops the reader before it is planned, so the reader can't tell then.
 bool IsReadingKind(K kind) {
-  return kind == K::kReadPage || kind == K::kReadFromHere ||
-         kind == K::kReadSelection || kind == K::kReadSection ||
-         kind == K::kNextParagraph || kind == K::kPreviousParagraph;
+  return ReadsPageText(kind);
 }
 
 // Whether |turn| did what a command of |kind| asks: a step that acts, a
