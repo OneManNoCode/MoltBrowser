@@ -15,12 +15,16 @@
 //   byte 1   bits 0-1 the active tab (of up to four), bit 2 a question
 //            expires before the next utterance
 //   lines    "> utterance"; "? words" (the planner asks the user to
-//            confirm them, voice_planner.h); "T title"; "H text" (a heading); "L label" (a
-//            new list); "E title\tchannel\tduration\tdate\tcount\ttext" (an
-//            entry of the list, with a link item of its own); "I k label\t
-//            value\turl" (an item: k is l link, b button, t text field, s
-//            search field, p password field, c card field, m media, d
-//            slider, x clickable); "B title\thost" (a tab); "@ host"
+//            confirm them, voice_planner.h); "T title"; "H text" (a heading);
+//            "L label" (a new list); "% k text" (the browser reads its prompt
+//            or a page's dialog k: 0 permission, 1 alert, 2 confirm, 3
+//            prompt(), 4 beforeunload, 5 a dangerous download, 6 saving a
+//            password; the word is "harbor"); "E
+//            title\tchannel\tduration\tdate\tcount\ttext" (an entry of the
+//            list, with a link item of its own); "I k label\t value\turl" (an
+//            item: k is l link, b button, t text field, s search field, p
+//            password field, c card field, m media, d slider, x clickable); "B
+//            title\thost" (a tab); "@ host"
 //
 // Checks: planning returns and is the same twice; every spoken text and
 // status is valid UTF-8 with no control, bidi or invisible character, no
@@ -29,7 +33,8 @@
 // byte; every node a step names is on the map; tabs, counts and repeats
 // are in range; MoltNet only ever hears that voice mode is off; a held
 // confirmation holds only page actions, words or the planner's "yes" (to a
-// numbered question); offered choices stay within kMaxCloseChoices; what "repeat" keeps stays within its cap.
+// numbered question); offered choices stay within kMaxCloseChoices; what
+// "repeat" keeps stays within its cap.
 
 #include <cstddef>
 #include <cstdint>
@@ -47,6 +52,7 @@
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
+#include "chrome/browser/molt_ai/voice/voice_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 
 namespace {
@@ -372,11 +378,24 @@ void CheckTurn(const VoiceTurn& turn,
   }
   for (const VoiceStep& step : turn.steps) {
     if (step.kind == VoiceStepKind::kPlannerAnswer ||
-        step.kind == VoiceStepKind::kPageRequestAnswer) {
+        step.kind == VoiceStepKind::kPageRequestAnswer ||
+        step.kind == VoiceStepKind::kPromptAnswer) {
       CHECK_GT(step.index, 0);
       CHECK(!env.moltnet);
     }
+    // Only a prompt's answer carries one, and the word only where one was
+    // offered.
+    CHECK((step.prompt_answer == molt_ai::voice::PromptAnswer::kNone) ==
+          (step.kind != VoiceStepKind::kPromptAnswer));
+    if (step.prompt_answer == molt_ai::voice::PromptAnswer::kAllow ||
+        step.prompt_answer == molt_ai::voice::PromptAnswer::kWrongWord) {
+      CHECK(molt_ai::voice::NeedsGesture(state.prompt.kind));
+      CHECK(!state.prompt.word.empty());
+    }
   }
+  CHECK(state.prompt.id >= 0);
+  CHECK_LE(state.prompt.answer_text.size(),
+           molt_ai::voice::kMaxPromptAnswerBytes);
   size_t remembered = 0;
   for (const std::string& text : state.last_spoken) {
     remembered += text.size();
@@ -429,8 +448,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       continue;
     }
     // The planner's question keeps its "? ", the activation guard's its
-    // "! " (handled in turn below).
-    if (line.size() >= 2 && (line[0] == '?' || line[0] == '!') &&
+    // "! ", the browser's prompt its "% " (handled in turn below).
+    if (line.size() >= 2 &&
+        (line[0] == '?' || line[0] == '!' || line[0] == '%') &&
         line[1] == ' ') {
       if (utterances.size() < kMaxUtterances) {
         utterances.push_back(line);
@@ -473,6 +493,32 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       CheckTurn(asked, page, env);
       CHECK(env.moltnet ||
             molt_ai::voice::PageRequestQuestionHeld(asked.state) == question);
+      state = asked.state;
+      continue;
+    }
+    if (utterance.size() >= 4 && utterance[0] == '%' && utterance[1] == ' ') {
+      // The browser reads a prompt or a page's dialog: its text is page
+      // text.
+      static constexpr molt_ai::voice::PromptKind kKinds[] = {
+          molt_ai::voice::PromptKind::kPermission,
+          molt_ai::voice::PromptKind::kAlert,
+          molt_ai::voice::PromptKind::kConfirm,
+          molt_ai::voice::PromptKind::kTextPrompt,
+          molt_ai::voice::PromptKind::kBeforeUnload,
+          molt_ai::voice::PromptKind::kDangerousDownload,
+          molt_ai::voice::PromptKind::kSavePassword,
+      };
+      molt_ai::voice::BrowserPrompt prompt;
+      prompt.kind = kKinds[static_cast<unsigned char>(utterance[2]) % 7];
+      prompt.site = env.host;
+      prompt.text = std::string(utterance.substr(4));
+      prompt.what = prompt.text;
+      const VoiceTurn asked = molt_ai::voice::PlanBrowserPrompt(
+          ++question, prompt, "harbor", env, state);
+      CheckTurn(asked, page, env);
+      CHECK(env.moltnet || molt_ai::voice::BrowserPromptHeld(
+                               asked.state, env.now_ms) == question);
+      CHECK(!asked.state.confirming);
       state = asked.state;
       continue;
     }

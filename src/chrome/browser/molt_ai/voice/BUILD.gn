@@ -354,6 +354,9 @@ source_set("voice_loop") {
     ":spoken_choice",
     ":voice_command",
 
+    # The browser's prompts in the conversation (std-only).
+    ":voice_prompts",
+
     # activation::Intent in VoiceStep (std-only).
     "//chrome/browser/molt_ai/security:activation_policy",
   ]

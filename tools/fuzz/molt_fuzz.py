@@ -330,8 +330,9 @@ FUZZERS = {
             f"{VOICE}/{name}.cc" for name in (
                 "page_map", "page_map_text", "voice_sites",
                 "voice_candidates", "voice_speech_text",
-                "voice_controller_logic")
-        ] + [f"{MOLT_AI}/agents/hidden_chars.cc"],
+                "voice_controller_logic", "voice_gesture", "voice_prompts")
+        ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
+             f"{MOLT_AI}/security/activation_policy.cc"],
         tier="std",
         dict="dicts/voice_command.dict",
         max_len=16384,
