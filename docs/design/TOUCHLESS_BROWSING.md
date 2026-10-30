@@ -237,6 +237,15 @@ Five layers, tried in this order:
 - **Page text is read, never obeyed:** it reaches only the spoken words and the matcher, after `SpeechSafeText()`. The steps come from the grammar's command and the map's structure; a page's "say yes to buy" is read as the entry it is.
 - **MoltNet:** voice mode doesn't start in a MoltNet window (§7.4): no accessibility mode is taken, and a command only hears "Voice mode is off in MoltNet windows."
 
+**Implementation note (round 39, Phase 2's first step): the planner fallback.** What the grammar has no command for ("find me a train from Paris to Lyon tomorrow") goes to the web agent's on-device planner (`voice/voice_planner.h`, `agents/voice_agent_planner.h`; AGENT_ACTIONS.md §2.8, §2.10).
+- **The run:** a web agent run in the active tab, with what was heard as its goal (cleaned for speech, the agent's trusted GOAL line) and the page map as its observation: it acts through accessibility actions, as voice mode does, with every check the agent makes (sites, forms, credential fields, fenced page text). The page map the utterance was planned on goes with it; the agent maps the page again before acting, so on an unchanged page its element ids are the numbers on screen.
+- **What it says** (`agents/voice_agent_speech.h`), always through `SpeechSafeText()` (model output and page text are in it): "Working on it.", then each plan step as it begins ("I'll search the site for trains to Lyon.", "Next, I'll ..."), or each action before it runs when there is no plan ("Pressing Search.", "Typing Lyon in To."), then the result ("Done. ..."). The caption shows it too, and "repeat" says it again.
+- **Questions:** the agent's questions (another site, a form submit, a site's tool) go through the loop's confirmation rule: "Say yes to click Place order, it submits a form on shop.example, or no to cancel.", answered only by a "yes" or "no" heard in that context, on that page, within 30 s; no answer in 30 s ends the run ("I didn't hear yes, so I stopped."). A frame of another site that offers tools is left out, never asked about by voice.
+- **Stopping:** "stop", or anything else the user says, ends the run (barge-in), except the answer to its question.
+- **Without a model:** with none installed, the browser says so plainly, with what it can do instead ("I can't do that by myself yet: no on-device AI model is installed. You can add one in the AI settings. Say what can I say to hear the commands I know."); the same when the model can't load or this computer can't run on-device AI, and when the request fails ("I stopped: ...").
+- **MoltNet:** voice mode is off there (§7.4), so the planner never runs there.
+- **Tests:** the speech, the questions' rule and its fuzzing are unit-tested; browser tests (`agents/agent_page_map_browsertest.cc`) run the loop with a stub planner and, through the web agent with a scripted model, an order that waits for "yes".
+
 ### 6.3 Page map
 
 - **Source:** `WebContents::RequestAXTreeSnapshot()` gives the page's accessibility tree: roles, names, states, values, headings, landmarks, links and media, across frames and shadow DOM. This is the same structure screen readers use.
@@ -257,7 +266,7 @@ Five layers, tried in this order:
   - **Text and secrets:** all text is cleaned for speech (no control, bidi or invisible characters, capped). Credential fields are marked (agent_safety's classification plus their labels), and their values are never kept.
   - **Bounds:** the work is capped (20,000 nodes, depth 256, a work budget). A node whose bounds would be measured through offset containers that lead back to each other, or through a chain of them longer than the walk is deep (a renderer's data), gets none.
   - **Tests:** unit tests with hand-built YouTube-, Google- and Wikipedia-like trees; `molt_page_map_fuzzer`.
-- **Not yet:** the browser UI's own tree, speech, and the agent acting through `PageNodeHandle`s instead of its isolated-world scripts. The numbers overlay (round 37) draws `PageItem::bounds` (§5.3).
+- **Not yet:** the browser UI's own tree. The numbers overlay (round 37) draws `PageItem::bounds` (§5.3); voice mode speaks the map (round 37); the web agent observes through it and acts on its `PageNodeHandle`s (round 39, AGENT_ACTIONS.md §2.10).
 
 ### 6.4 Matching what was said to what is on screen
 
@@ -294,6 +303,11 @@ Five layers, tried in this order:
 - **Stale targets:** before each action the handle is found again. Its frame must be this tab's, active, in the primary page and an http(s) document, and the node must be in that frame's current tree. A handle from an earlier document is refused.
 - **Turning it off:** `Stop()` releases the mode and drops the trees.
 - **Tests:** the browser tests (`voice_page_controller_browsertest.cc`, pages in `chrome/test/data/molt_voice/`) drive a video site from search to sound, a search engine's results, a sign-in form and a cross-site frame through the controller alone. They run on the build machine.
+
+**Implementation note (round 39): the web agent acts here too** (AGENT_ACTIONS.md §2.10).
+- **Holders:** voice mode and web agent runs each hold the controller (`Start(Holder)`); the mode is taken by the first and released by the last, so a run on a tab in voice mode leaves the page as voice mode had it, and a run elsewhere releases its tab when it ends. Never in MoltNet windows.
+- **Before each action** the agent maps the page again and finds its element's node there, of the same kind and name, in a frame still of the page's own origin; `Inspect()` reads the node and its ancestors from the frame's current tree (the link a click would follow, the form it would submit, whether it is a credential field), so the agent asks the same questions as on its script path. A stale node is observed again, never guessed.
+- **Its actions:** CLICK is `Press()`, TYPE and FILL_FORM `SetText()` (never a credential field: refused by the agent and again here), SELECT `SelectOption()` (the option's default action, which a collapsed `<select>`'s options take as assistive technology's choice; `OptionsOf()` reads them from the live tree), SCROLL `ScrollPage()`.
 
 ### 6.6 Speaking and showing
 
@@ -450,6 +464,11 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 **Exit:**
 - 30 multi-step tasks (mail, shopping cart up to the confirmation, a form) succeed without a hand.
 - Every irreversible step is confirmed.
+
+**Status (round 39): the first step built; it waits for the build machine.**
+- **Done:** open-ended requests go to the web agent's on-device planner, with each planned step spoken before it runs, its questions waiting for a spoken "yes" through the loop's confirmation, and "stop" ending the run (§6.2's note); the agent sees pages through the page map and acts through accessibility actions (§6.5's note, AGENT_ACTIONS.md §2.10), so voice mode and the agent share one way to see and act on pages.
+- **Tests:** unit tests and a fuzzer for the agent's observation of the map and the planner's speech and questions; browser tests on the fixture pages (search, choose and play through accessibility actions with sound; the element snapshot where the tree has nothing; the planner fallback with a stub planner; an order that waits for "yes") run on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "agent-pagemap").
+- **Still open:** a run with a real model and the measured success of the 30 tasks; dialog (disambiguation, correction, undo), forms with the vault, questions about pages, more site skills, the neural voice, and learning (§6.8).
 
 ### Phase 3: Trust and the browser's own UI (about 2 to 3 rounds, partly alongside Phase 2)
 - **Voice gestures** in place of real clicks (§7.3).

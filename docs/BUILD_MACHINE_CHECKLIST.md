@@ -772,6 +772,8 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `voice/voice_controller.cc`, `voice/voice_speech.cc`, `voice/voice_page_controller.cc` (new `Increment()`, `Decrement()`, `ScrollPage()`), `ui/webui/molt_ai/molt_ai_agent_voice_handler.cc`, `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-voice-mode`) | type-checked against 156's headers here; what only the build shows: `DEFINE_USER_DATA` and `ui::ScopedUnownedUserData` on the window, `TtsUtterance::SetEventDelegate(std::unique_ptr)`, `MediaSession::GetMediaSessionInfoSync()` and `SeekTo()`, `TemplateURLRef::ReplaceSearchTerms()`, `SetTabAudioMuted()`, the new GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to `//chrome/browser/search_engines`, `//chrome/browser/ui:browser_commands`, `//chrome/browser/ui/tabs:utils` and `//services/media_session/public/mojom` | voice-loop |
 | `molt_ai/voice/voice_audio.cc` (its own `media::AudioInputIPC` passing a `media::mojom::AudioProcessingConfig` to `AudioStreamFactory::CreateInputStream`, under `media::AudioInputDevice`; `audio::OutputDevice` for the earcons; `system_permission_settings::IsDenied/CanPrompt/Request`), `voice_listener.cc` (dedicated `ThreadPool` single-thread runners, `ReleaseSoon`), `voice_session.cc` (`content::MediaSession::StartDucking()`, `GetAllBrowserWindowInterfaces()`), `voice_speech.cc` (`TtsController::RemoveUtteranceEventDelegate()` and `IsSpeaking()`; utterances that never clear the queue), `common/helper_resident_{posix,win}.cc` (Windows: `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION`, `StartupInformationHelper` with a stdin handle), `ui/views/molt_ai/voice/voice_toolbar_button.cc`, the `toolbar_view.cc` hook, `molt_voice_settings_handler.cc` | type-checked against 156's headers here; what only the build shows: the audio service accepting a processing config from the browser process for a 16 kHz mono 10 ms stream, the GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to the overlay (`//chrome/browser/ui/views/molt_ai/voice:overlay`) and from the toolbar to `:voice_session` | speech-session |
 
+| `agents/web_agent.cc` (the page map path: `VoicePageController::CreateForWebContents()` and its `Start(Holder)`/`Stop(Holder)`, `AddTreesUpdatedCallback()`, `base::OneShotTimer`, `RenderFrameHost::GetLastCommittedURL()`; the testing model), `agents/voice_agent_planner.cc` (`base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `SequencedTaskRunner::DeleteSoon` of a `std::unique_ptr<WebAgent>`, `web_ai::PickWebModel`), `voice/voice_page_controller.cc` (`Inspect()`: `ui::AXNode::parent()`, `GetRole()`; `SelectOption()`: `kDoDefault` on an option), `voice/voice_controller.cc` (it is now a `VoicePlanner::Delegate`), `ui/webui/molt_ai/molt_ai_chat_handler.cc` (`observed_with`), `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-agent-page-map`); the new GN edges `//chrome/browser/molt_ai/voice:voice_controller` → `//chrome/browser/molt_ai:molt_ai_agents`, `molt_ai_agents` → `voice:voice_page`, `voice:voice_planner`, `voice:page_map`, `web_ai:logic`, `agents:agent_page_map`, `agents:voice_agent_speech`, and `voice:browser_tests` → `agents:browser_tests` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: the edges above in `gn gen` (no cycle through `//chrome/browser/profiles` or the overlay), and §5.1's browser tests | agent-pagemap |
+
 ### 4.9 GN targets and DEPS edges
 
 Since round 28 (gn-ready) the GN graph, the DEPS rules and Blink's audit
@@ -1093,6 +1095,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
   | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
   | `VoiceListenerProtocolTest.*` (frames, CONFIG, the helper's lines refused or taken, hotwords), `VoiceSessionLogicTest.*` and `VoiceSessionCommandsTest.*` (wake phrase, follow-up window, always listening, barge-in, "stop", the browser's own voice, a page's speech, crashes), `VoiceAudioSamplesTest.*` (frames, earcons), `CpuUsageWindowTest.*`, `ProcStatTest.*`, `ResidentHelperTest.*` (the resident sandbox with the stand-in helper: reads only its model directory, writes nothing, no network, no process, its limits, its pipes, dies with the browser; Linux and macOS) and `HelperSandboxWinPolicyTest.Resident*`; all built standalone here, `ResidentHelperTest.*` against this machine's kernel | speech-session |
+  | `AgentPageMapTest.*` (the web agent's observation of the page map, ids as its numbers, credential fields, frames, SELECT, the live item, the probe, the click's question), `VoiceAgentSpeechTest.*` (what voice mode says for the planner), `VoiceControllerLogicTest.ThePlannersQuestionsWaitForASpokenYes`, and the agents' suites again (`AgentActionsTest`, `AgentPromptTest`, `AgentPlanTest`, `ChatActionsTest`: SELECT never in their sets); all built standalone here | agent-pagemap |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1239,6 +1242,38 @@ extension enablement and `MediaRouterEnabled()`).
   If one fails, send the log: the page waits (load, quiet tree, the
   autoplay grace) are timed for a desktop; a wait that runs out shows as a
   missing or early reading. A failure in what is said prints both texts.
+- [ ] The web agent on the page map and the planner fallback's browser
+  tests (agent-pagemap): a scripted model stands in for the on-device one
+  (`WebAgent::SetModelForTesting()`), on the fixture pages in
+  `chrome/test/data/molt_voice/` (`checkout.html` and `no_tree.html` are
+  new). In the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='AgentPageMapBrowserTest.*:VoicePlannerBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/agent-pagemap-browser-tests.log
+  ```
+  *Expected:* all 5 pass, on macOS and Linux:
+  - `AgentPageMapBrowserTest.SearchesChoosesAndPlays`: the agent types into
+    the video site's search box, presses Search (it asks first: the button
+    submits the site's form), chooses the Live Aid result and presses the
+    video, which plays with a trusted click, user activation and sound;
+    every observation came through the page map, and the accessibility
+    mode goes with the run.
+  - `.FallsBackToTheSnapshot`: a page whose only control is hidden from
+    the accessibility tree is read through the element snapshot, and the
+    control clicked there.
+  - `.NeverInMoltNetWindows`: a run in a MoltNet window takes no
+    accessibility mode and reads the page through the snapshot only.
+  - `VoicePlannerBrowserTest.HandsTheRestToThePlanner`: "find me a train
+    from Paris to Lyon tomorrow" goes to a stub planner with the page map;
+    its step and its question are said; "yes" and "no" answer it; "stop"
+    ends it; without a planner the browser says it can't do that yet.
+  - `.AnOrderWaitsForAYes`: through the web agent, "Place order" (a form)
+    is said, asked about, not pressed on "no", and pressed as a trusted
+    click on "yes", then "Done. Your order is placed." is said.
+
+  If `SearchesChoosesAndPlays` fails on a missing element, send the log
+  with the prompts (`--vmodule=web_agent=1`): the page map's names for the
+  fixture's controls may differ from what the scripted model looks for.
 - [ ] Voice mode listening's browser tests (speech-session): Chromium's
   fake audio capture feeds the real microphone path (Chrome-wide echo
   cancellation) and the real listener starts the stand-in helper
@@ -1822,6 +1857,7 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   (fonts adds `molt_moltnet_font_set_fuzzer`)
   (helpers-win adds `molt_ocr_image_fuzzer` and `molt_recorded_wav_fuzzer`)
   (page-map adds `molt_page_map_fuzzer`)
+  (agent-pagemap adds `molt_agent_page_map_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2282,6 +2318,31 @@ each with a real microphone: a laptop's built-in one and a USB headset.
   "Voice mode is off in MoltNet windows." and the microphone indicator
   stays off; while a regular window listens, a MoltNet tab's video isn't
   turned down when you speak.
+
+**The web agent on the page map, and voice mode's planner** (from
+agent-pagemap; `docs/design/AGENT_ACTIONS.md` §2.10,
+`docs/design/TOUCHLESS_BROWSING.md` §6.2):
+
+- [ ] With a model loaded, in the AI chat's agent: "play the live aid
+  version of bohemian rhapsody on youtube". *Expected:* the agent's steps
+  name YouTube's own controls (the search box, a result by its title), the
+  video plays with sound (the agent's click counts as yours), and the
+  chat's result event says `observed_with` mostly `page_map` (DevTools on
+  the chat page, or `--vmodule=web_agent=1`). Note how many steps it took
+  and whether any element was found stale.
+- [ ] A sign-in page and a checkout page: the agent never types into the
+  password, card or code field (the step says it refused), and asks before
+  pressing the form's button.
+- [ ] `chrome://flags/#molt-agent-page-map` off: the same task runs through
+  the element snapshot as before (`observed_with` `element_snapshot`).
+- [ ] Voice mode on, with a model installed: "Hey Molt, find me a train
+  from Paris to Lyon tomorrow" on a train site. *Expected:* "Working on
+  it.", then each plan step before it runs ("I'll search the site for
+  ..."), questions as "Say yes to ..., or no to cancel." that wait for your
+  "yes", "stop" ending it at once, and the result said. Without a model:
+  "I can't do that by myself yet: no on-device AI model is installed..."
+- [ ] A MoltNet window: the agent's run takes no accessibility mode
+  (`chrome://accessibility` shows the tab without it) and works as before.
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
