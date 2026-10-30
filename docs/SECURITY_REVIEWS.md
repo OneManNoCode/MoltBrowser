@@ -4,6 +4,117 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-30: round 41 (October 2026)
+
+**Scope.** The code of round 41, which each of its four workstreams had
+reviewed only on its own side; the places where they meet were looked at
+first:
+
+1. Voice mode's learning (`voice_learning*`, `voice_routines*`,
+   `voice_vocabulary*`, `voice_hints*`, the learning settings section and
+   the automation runner's, scheduler's and Agent studio's refusals):
+   routines kept as Agent-mode workflows and read back as untrusted, an
+   edited or imported routine against the workflow trust policy, a
+   routine replayed on a page that changed or is hostile, the learning
+   file's parser and caps, who can teach a correction and what a
+   correction can rewrite, and the settings section's rendering and
+   argument checks, MoltNet and off-the-record profiles.
+2. Site skills and reading aloud (`site_skills*`, `page_reading*`,
+   `voice_reader*`, `ax_page_source.cc`'s id, class and selection): the
+   five sites' skills against what their users can put on a page (a wiki
+   editor's ids, classes and roles, video titles, result snippets), page
+   text read aloud against the listening session's checks for the
+   browser's own words (with the bundled voice and the platform's, as the
+   voice says the text, after a gap, and when the user talks over it),
+   the sentence splitter's bounds, the selection read, and the reading
+   speed setting.
+3. Prompts and the voice gesture (`voice_gesture*`, `voice_prompts*`,
+   `voice_browser_prompts*`, `voice_dialog_manager*` and its hook in
+   `BrowserWebContentsDelegate::GetJavaScriptDialogManager()`,
+   `voice_session_logic`'s `HeardCleanly()`): minting, replay and binding
+   when prompts race or are replaced, a page's dialogs from frames,
+   background tabs and loops, text dictated into `prompt()`, "leave" on
+   `beforeunload`, permission prompts and their "allow this time", a
+   frame's requests, dangerous downloads, and the pass-through dialog
+   manager's methods and lifetime.
+4. The activation guard's round 41 changes: full screen across a
+   browsing context group, the history entries voice mode's "go back"
+   skips, prompts left to voice mode while it acts, and the video
+   picture-in-picture hook, including automatic picture-in-picture on a
+   tab switch.
+5. The joins: the order in which a site's parts are found (skill, hint,
+   generic map) and the skill's search button, learning's check for what
+   is heard while the page is read, and a routine's sites confirmed with
+   the voice gesture.
+
+**Method.** Each candidate traced from its attacker (a web page or a frame
+it embeds, a user of one of the skills' sites, page text read aloud, a
+file brought into the automations folder by an import, a page's audio)
+through MoltBrowser's code and the upstream Chromium 156 code at the
+pinned revision (`WebContentsImpl`'s dialog paths and its suppression of
+other origins' frames' dialogs, `TabModalDialogManager`, the permission
+request manager, the download item model). What the browser's voice says
+for page text was measured with the voice's own text front end
+(`voice_said_aloud.h`) against the reading chunks' sizes. Fixes tested
+with the std-only unit tests built standalone (system gtest, ASan and
+UBSan), the learning and automation tests on the `//base` stand-ins, the
+page reading, learning, automation script, prompts and voice controller
+fuzzers, and `molt_fuzz.py check`; the changed C++ was compiled against
+Chromium 156's headers; the browser tests run on the build machine.
+
+**Findings.** 18: 6 low and 12 informational (defence in depth,
+usability, or what later phases of the design cover). Fixed: five of the
+low and one of the informational; the others are tracked privately.
+
+**Fixed.**
+
+- A site name too long to say in full is said from its end, in whole
+  labels, so its registrable domain is always said; before, its start
+  was kept, so a long host that began with another site's name was said
+  as that site (permission prompts and the other prompts read by voice,
+  the activation guard's questions, a routine's sites;
+  `security/activation_policy.cc`'s `SiteForSpeech()`).
+- A routine taught by voice that a save brings in (an import, in the
+  Agent studio or `molt://ai-automation`, or a copy) is saved as a draft
+  whose sites the user confirms first, by the voice gesture or in the
+  Agent studio: voice mode's replay checks every step against the
+  routine's sites but not its trust level, so an imported routine would
+  otherwise have run on its sites unasked
+  (`AutomationSecurity::ClampTrustForSave()`).
+- A routine's sites are confirmed by voice only when the question says
+  every one of them in full; otherwise in the Agent studio, which shows
+  them (`voice/voice_routines.cc`'s `RoutineSitesSayable()`).
+- Reading aloud sizes its pieces by how long they take to say, not by
+  their length in characters: numbers said in words, words voices spell
+  out, symbols and pictures said by name and ideographs count for what
+  they take to say (`voice/page_reading.cc`'s `SpokenLength()`), so a
+  piece is said within the time the listening session remembers the
+  browser's words.
+- The first history entry an action leads to is judged by when its
+  navigation began: a page whose server answered after the action's
+  window was taken for one the page added with the action's activation,
+  and voice mode's "go back" then skipped the user's own page
+  (`security/activation_guard.cc`).
+- Nothing is learned from what is said while any of the page's text is
+  read, and just after: "continue reading", moving on by heading, and
+  the results, links, headings, title and screen read out counted too
+  little, and a command said over a reading stops the reader before
+  learning looks (`voice/voice_vocabulary.cc`'s `ReadsPageText()`).
+
+**Tests added.**
+
+- `activation_policy_unittest.cc`: long site names said from their end,
+  in whole labels. `activation_guard_browsertest.cc`: "go back" from what
+  a slowly served page adds returns to the user's page.
+- `automation_security_unittest.cc`: a voice routine brought in by a
+  save is a draft with no sites, one edited where it lives keeps what it
+  had, and its sites once confirmed are what it may use.
+  `voice_routines_unittest.cc`: an imported routine needs its sites
+  confirmed; sites confirmed by voice only when all are said.
+- `page_reading_unittest.cc`: spoken lengths, and a sentence short to read
+  but long to say read in pieces of the rate's size.
+- `voice_vocabulary_unittest.cc`: every reading of the page counts.
+
 ## 2026-10-30: round 40 (October 2026)
 
 **Scope.** The code of round 40, which only its authors had reviewed:

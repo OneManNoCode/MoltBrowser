@@ -513,6 +513,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page's label in its quotes, name where a form goes when it is another
   site, and ask about a submit input tied to a form from outside it; the
   bundled voice ships CMUdict's licence notice.
+- Hardening (security review of round 41, `docs/SECURITY_REVIEWS.md`): voice
+  mode (preview) says a long site name from its end, so the site's own
+  domain is always said; a voice routine brought in by an import or a copy
+  runs only once its sites are confirmed, and sites are confirmed by voice
+  only when the question says all of them; reading aloud sizes its pieces
+  by how long they take to say (numbers, symbols, spelled-out words); and
+  "go back" after a voice click returns to the user's page when the next
+  page's server answers slowly.
 
 ### Privacy
 - **Voice mode learns from use, on this device** (round 41, learning;
