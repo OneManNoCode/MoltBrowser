@@ -147,6 +147,18 @@ source_set("agent_page_map") {
   ]
 }
 
+# What voice mode says while the web agent works on an open-ended request
+# (docs/design/TOUCHLESS_BROWSING.md §6.2). Std-only (with the page map's
+# speech-safe text), so molt_ai_unittests links it.
+source_set("voice_agent_speech") {
+  sources = [
+    "voice_agent_speech.cc",
+    "voice_agent_speech.h",
+  ]
+
+  deps = [ "//chrome/browser/molt_ai/voice:page_map" ]
+}
+
 # The web agent's prompt: the rules and the turn, as one raw prompt or as
 # a chat with a screenshot (docs/design/AGENT_ACTIONS.md §2.6), and the
 # planner's request (§2.8). Pure logic, so molt_ai_unittests links it.
@@ -212,6 +224,7 @@ source_set("unit_tests") {
     "chat_actions_unittest.cc",
     "frame_tools_unittest.cc",
     "hidden_chars_unittest.cc",
+    "voice_agent_speech_unittest.cc",
   ]
   deps = [
     ":agent_actions",
@@ -223,6 +236,7 @@ source_set("unit_tests") {
     ":chat_actions",
     ":frame_tools",
     ":hidden_chars",
+    ":voice_agent_speech",
     "//base",
 
     # Hand-built page trees (YouTube-, Google-like, a sign-in form, frames)

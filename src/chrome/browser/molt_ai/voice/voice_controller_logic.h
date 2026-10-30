@@ -34,10 +34,12 @@
 //   - In a MoltNet window voice mode is off (§7.4): nothing is done, and
 //     the browser says so.
 //
-// Not yet: the planner. Anything the grammar leaves kUnknown, and
-// routines, get a kToPlanner step: the hook where the on-device planner
-// will take the utterance and the map; until then the browser says that
-// it can't do it yet.
+// The planner (voice_planner.h): anything the grammar leaves kUnknown, and
+// routines, get a kToPlanner step, where the web agent's on-device planner
+// takes the utterance and the map (without a planner the browser says it
+// can't do that yet). Its questions go through the same confirmation:
+// PlanPlannerQuestion() holds a kPlannerAnswer step for "yes", and "no"
+// answers it with one too.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_LOGIC_H_
@@ -102,6 +104,8 @@ enum class VoiceStepKind : uint8_t {
   kToPlanner,
   // |flag|: start (true) or stop (false) listening (voice_session.h).
   kSetVoiceMode,
+  // The answer to the planner's question |index|: |flag| yes (true) or no.
+  kPlannerAnswer,
 };
 
 enum class BrowserCommand : uint8_t {
@@ -347,6 +351,20 @@ VoiceTurn PlanFollowUp(const VoiceStep& wait,
                        const PageMap& map,
                        const VoiceEnvironment& env,
                        const ConversationState& state);
+
+// The planner (voice_planner.h) asks the user to confirm |what| (its words,
+// built from model output and page text: cleaned here), as the loop asks
+// before pressing Buy: "Say yes to <what>, or no to cancel.", on this page,
+// within kConfirmationTimeoutMs. A "yes" then runs a kPlannerAnswer step
+// (|index| |question|, |flag| true), a "no" one with |flag| false; any other
+// command drops the question. Nothing in a MoltNet window.
+VoiceTurn PlanPlannerQuestion(int question,
+                              std::string_view what,
+                              const VoiceEnvironment& env,
+                              const ConversationState& state);
+
+// The planner question |state| holds for its "yes", or 0 if none.
+int PlannerQuestionHeld(const ConversationState& state);
 
 // Whether pressing an item named |label| (linking to |url|, raw page data)
 // on |map| needs a spoken "yes" first: its words buy, purchase, pay,
