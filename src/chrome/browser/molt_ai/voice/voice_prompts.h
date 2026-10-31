@@ -43,7 +43,14 @@
 //   - Allowing a permission or keeping a dangerous file needs the prompt's
 //     word; without one (the gesture is off for now, or the browser only
 //     reads typed text) the prompt says to use the mouse or keyboard, and
-//     "no" still refuses.
+//     "no" still refuses. While the screen is shared the prompt has no word
+//     and says so ("I can't take the word while your screen is shared").
+//   - The word reaches the user as voice_gesture_channel.h decides: what is
+//     said with it ("To allow it, say harbor.") always has a twin without
+//     it ("To allow it, say the word on your screen."), kept with the
+//     waiting prompt (PendingPrompt::word_texts): the browser says the
+//     twin wherever the word can't be said, and shows only the twin as
+//     text.
 //
 // While a prompt waits (PendingPrompt, in the conversation's state), an
 // utterance that is one of its answers answers it (ParsePromptReply());
@@ -58,6 +65,7 @@
 #include <deque>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace molt_ai {
 namespace voice {
@@ -121,10 +129,19 @@ struct BrowserPrompt {
   bool malicious = false;
   // The dialog's text isn't read (DialogReadLimiter said no).
   bool flood = false;
+  // Allowing needs the word, and there is none because the screen or a
+  // window is captured (voice_gesture_channel.h).
+  bool screen_shared = false;
+  // The word is shown, not said, for the first time in this window: the
+  // prompt says why.
+  bool explain_shown_only = false;
+  // Said before the prompt (why it is read again with a new word).
+  std::string preface;
 };
 
 // What the browser says for |prompt|. |word| is the voice gesture's word
-// when allowing needs one and the gesture is on; empty otherwise.
+// when allowing needs one and the gesture is on; empty otherwise. The same
+// with kWordOnScreen for |word| is its twin without the word.
 std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word);
 
 // How long a prompt of |kind| waits: kPromptWindowMs for the browser's
@@ -140,6 +157,29 @@ std::string PromptTimeoutSpeech(PromptKind kind);
 // What is said when the word was heard but not cleanly (over the
 // browser's own voice, or while another source spoke).
 std::string NotCleanSpeech(std::string_view word);
+
+// Said before a prompt read again with a new word, by why the word it had
+// was retired.
+enum class WordRetired : uint8_t {
+  kNotClean,       // heard, not cleanly, while something captured
+  kAudioCaptured,  // a microphone capture began after it was said
+  kScreenShared,   // the screen or a window is captured now
+  kScreenFreed,    // no longer: the prompt gets a word again
+};
+std::string WordRetiredPreface(WordRetired why);
+
+// What is said when a word the prompt had before was heard: |word| is its
+// word now (or kWordOnScreen).
+std::string RetiredWordSpeech(PromptKind kind, std::string_view word);
+
+// What the browser says with the voice gesture's word, and its twin
+// without it (kWordOnScreen in its place).
+struct WordText {
+  std::string said;
+  std::string without;
+
+  friend bool operator==(const WordText&, const WordText&) = default;
+};
 
 // The prompt that waits, in the conversation's state.
 struct PendingPrompt {
@@ -159,6 +199,13 @@ struct PendingPrompt {
   // A file known to be malicious (kDangerousDownload): no word, discard
   // only.
   bool malicious = false;
+  // No word because the screen or a window is captured.
+  bool screen_shared = false;
+  // What was said with |word| and each one's twin without it
+  // (kMaxWordTexts at most, the latest kept): VoiceController::Say() says
+  // the twin where the word can't be said, and observers only ever get
+  // the twin.
+  std::vector<WordText> word_texts;
   // kTextPrompt: what the user dictated, waiting for "yes".
   std::string answer_text;
   int64_t expires_ms = 0;
@@ -166,6 +213,17 @@ struct PendingPrompt {
 
 // Whether |prompt| waits at |now_ms|.
 bool PromptWaits(const PendingPrompt& prompt, int64_t now_ms);
+
+// What is said with the word, at most, per prompt.
+inline constexpr size_t kMaxWordTexts = 4;
+
+// Keeps |text| (said with |prompt|'s word) as one of its word texts.
+void NoteWordText(PendingPrompt& prompt, WordText text);
+
+// The twin without the word of |said|, when |said| is one of |prompt|'s
+// word texts and its word is still the prompt's; null otherwise.
+const std::string* WordTextTwin(const PendingPrompt& prompt,
+                                std::string_view said);
 
 enum class PromptAnswer : uint8_t {
   kNone,       // not an answer: a command as usual
@@ -196,6 +254,11 @@ PromptReply ParsePromptReply(const PendingPrompt& prompt,
 // a dictated answer: "Your answer: ... Say yes to send it, or no to
 // cancel.").
 std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply);
+
+// The same, with kWordOnScreen in place of the word: the twin of what
+// ReplySpeech() says with it (kNeedWord).
+std::string ReplySpeechWithoutWord(const PendingPrompt& prompt,
+                                   const PromptReply& reply);
 
 // How many dialogs of a tab have had their text read lately.
 class DialogReadLimiter {

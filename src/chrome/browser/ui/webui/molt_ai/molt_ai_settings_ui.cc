@@ -2736,6 +2736,14 @@ h2[tabindex="-1"]:focus{outline:none !important}
       <div class="desc">Every sentence you say is a command, without &ldquo;Hey Molt&rdquo;. For when you are alone: anyone, or anything, speaking near the microphone can command the browser too.</div>
     </div>
     <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="voiceSayWordAloud" data-on-change="voiceSetSayWordAloud">
+        <span class="track"></span>
+        <span class="label">Say the confirmation word aloud even when another program could hear it</span>
+      </label>
+      <div class="desc">To allow a site to use your camera, or to keep a file the browser warned about, you say a word it gives you, such as &ldquo;harbor&rdquo;. Normally the browser says that word aloud only when nothing else can hear it: its own voice is playing and no page is using a microphone. Otherwise it shows the word large at the bottom of the window and says &ldquo;say the word on your screen&rdquo;, and while your screen is shared it gives no word at all. Turn this on if you can&rsquo;t see the word: the browser will always say it. The cost: a page using the microphone, or a program listening to your computer, could hear the word and answer for you.</div>
+    </div>
+    <div class="field">
       <span class="desc" id="voiceStatus" role="status"></span>
     </div>
   </div>

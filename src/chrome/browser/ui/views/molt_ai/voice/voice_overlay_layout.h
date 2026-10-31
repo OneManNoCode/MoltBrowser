@@ -266,6 +266,8 @@ inline constexpr std::string_view kHeardPrefix = "Heard: ";
 // Caps on the caption's text, in code points, before the prefix.
 inline constexpr size_t kMaxCaptionHeardChars = 200;
 inline constexpr size_t kMaxCaptionStatusChars = 200;
+// The voice gesture's confirmation word, at most (the list's are shorter).
+inline constexpr size_t kMaxCaptionWordChars = 16;
 
 struct CaptionText {
   VoiceState state = VoiceState::kOff;
@@ -274,16 +276,23 @@ struct CaptionText {
   std::string heard;
   // What is happening ("Playing: Bohemian Rhapsody, Live Aid"), or empty.
   std::string status;
+  // The voice gesture's confirmation word while a prompt waits for it and
+  // it may be shown (docs/design/TOUCHLESS_BROWSING.md §7.3, "The word's
+  // channel"), or empty. Drawn large, and kept from assistive technology:
+  // a screen reader would say it with a voice the speech helper hears.
+  std::string word;
 
   friend bool operator==(const CaptionText&, const CaptionText&) = default;
 };
 
 // The caption for what the voice controller says. |heard| (what the
 // recognizer heard) and |status| (which may quote the page) are untrusted:
-// both go through SpeechSafeText() and are capped.
+// both go through SpeechSafeText() and are capped. |word| is kept only if
+// it is lower-case ASCII letters, at most kMaxCaptionWordChars.
 CaptionText MakeCaptionText(VoiceState state,
                             std::string_view heard,
-                            std::string_view status);
+                            std::string_view status,
+                            std::string_view word = {});
 
 struct CaptionMetrics {
   float font = 26;

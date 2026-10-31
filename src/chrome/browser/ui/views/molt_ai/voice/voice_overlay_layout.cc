@@ -546,8 +546,14 @@ std::string_view VoiceStateLabel(VoiceState state) {
 
 CaptionText MakeCaptionText(VoiceState state,
                             std::string_view heard,
-                            std::string_view status) {
+                            std::string_view status,
+                            std::string_view word) {
   CaptionText caption;
+  if (!word.empty() && word.size() <= kMaxCaptionWordChars &&
+      std::all_of(word.begin(), word.end(),
+                  [](char c) { return c >= 'a' && c <= 'z'; })) {
+    caption.word = std::string(word);
+  }
   caption.state = state;
   caption.state_label = std::string(VoiceStateLabel(state));
   const std::string heard_text = SpeechSafeText(heard, kMaxCaptionHeardChars);

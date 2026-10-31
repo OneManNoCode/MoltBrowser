@@ -118,7 +118,22 @@ and the bar only.
   page can't say it for you; say it once it has finished speaking, in a
   quiet moment. A different word turns the request down. If what it heard
   could be one of two words, it says "I didn't catch that. Say the word
-  again." and keeps waiting. "No" always refuses. A risky file is kept
+  again." and keeps waiting. "No" always refuses.
+
+  The word is meant for you alone. The browser says it aloud only when
+  nothing else can hear it: its own voice is speaking, your microphone
+  has echo cancellation, and no page is using a microphone. Otherwise it
+  shows the word in large letters at the end of the bar under the page
+  and says "To allow it, say the word on your screen." While your screen
+  or a window is shared, it gives no word at all ("I can't take the word
+  while your screen is shared"): allow it with the mouse or keyboard, or
+  say "no". If a page starts using a microphone after the word was said,
+  or the screen is shared after it was shown, the browser changes the
+  word and tells you; saying the old one then does nothing. If you can't
+  see the word, turn on "Say the confirmation word aloud even when
+  another program could hear it" in Settings, "Voice mode": the browser
+  then always says it, and a page or program listening could hear it
+  too. A risky file is kept
   just as the downloads button's warning keeps it. When a page wants text, say "answer" and your answer, then
   "yes".
 - **Typing:** choose a field ("click the search box"), then "type ...",
@@ -785,9 +800,14 @@ said.
 - **Interrupting the browser mid-sentence with a new command** works
   without "Hey Molt" when the browser speaks with its own voice and the
   microphone has echo cancellation (its own voice is then removed from
-  what the microphone hears). With the system's voices, which the browser
-  uses when its own isn't installed, start with "Hey Molt" (or say
-  "stop"). With its own voice and no echo cancellation, say "stop" first.
+  what the microphone hears), for what stays with what it is reading or
+  doing: a number, "next", "louder", "pause", "go back", "read the
+  headings". A command that goes to another site, searches, types, sends,
+  closes a tab or runs a routine stops the browser instead, and it says
+  "I've stopped. Now say that again." With "Hey Molt" first, any command
+  interrupts it. With the system's voices, which the browser uses when its
+  own isn't installed, start with "Hey Molt" (or say "stop"). With its own
+  voice and no echo cancellation, say "stop" first.
 - **While reading aloud,** the sentence being read is shown in the bar
   under the page, but not highlighted on the page itself.
 - **"Faster" and "slower"** change the reading speed while the browser

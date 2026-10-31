@@ -154,6 +154,10 @@ bool VoiceSpeech::InEchoReference() const {
   return bundled_ && bundled_->ready() && !in_flight_;
 }
 
+bool VoiceSpeech::CanSpeakPrivately() const {
+  return bundled_ && bundled_->started() && bundled_->ready();
+}
+
 void VoiceSpeech::SetActive(bool active) {
   active_ = active;
   if (!active) {
@@ -206,6 +210,29 @@ uint64_t VoiceSpeech::Speak(const std::string& text,
   }
   Pending pending;
   pending.text = text;
+  pending.rate = std::clamp(rate, kMinTtsRate, kMaxTtsRate);
+  pending.id = next_id_++;
+  const uint64_t id = pending.id;
+  waiting_.push_back(std::move(pending));
+  SpeakNext();
+  UpdateSpeaking();
+  return id;
+}
+
+uint64_t VoiceSpeech::SpeakPrivately(const std::string& text,
+                                     const std::string& fallback,
+                                     double rate,
+                                     bool interrupt) {
+  if (text.empty() || !context_) {
+    return 0;
+  }
+  if (interrupt) {
+    Stop();
+  }
+  Pending pending;
+  pending.text = text;
+  pending.fallback = fallback;
+  pending.privately = true;
   pending.rate = std::clamp(rate, kMinTtsRate, kMaxTtsRate);
   pending.id = next_id_++;
   const uint64_t id = pending.id;
@@ -287,11 +314,22 @@ void VoiceSpeech::OnReadyWaitOver() {
 }
 
 void VoiceSpeech::SpeakWithPlatform() {
+  // What only the bundled voice may say: the platform's voice says its
+  // fallback, or nothing.
+  while (!waiting_.empty() && waiting_.front().privately &&
+         waiting_.front().fallback.empty()) {
+    Done(waiting_.front().id, false);
+    waiting_.pop_front();
+  }
   if (in_flight_ || waiting_.empty() || !context_) {
     return;
   }
   Pending next = std::move(waiting_.front());
   waiting_.pop_front();
+  if (next.privately) {
+    next.text = std::move(next.fallback);
+    next.privately = false;
+  }
   std::unique_ptr<content::TtsUtterance> utterance =
       content::TtsUtterance::Create(context_.get());
   utterance->SetText(next.text);

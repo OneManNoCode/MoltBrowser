@@ -21,6 +21,8 @@ VoiceModeSettings ReadVoiceModeSettings() {
       values->FindBool(kVoiceModeSettingsKey).value_or(false);
   settings.always_listening =
       values->FindBool(kVoiceAlwaysListeningSettingsKey).value_or(false);
+  settings.say_word_aloud =
+      values->FindBool(kVoiceSayWordAloudSettingsKey).value_or(false);
   return settings;
 }
 
@@ -28,6 +30,7 @@ bool WriteVoiceModeSettings(const VoiceModeSettings& settings) {
   base::DictValue changes;
   changes.Set(kVoiceModeSettingsKey, settings.start_with_browser);
   changes.Set(kVoiceAlwaysListeningSettingsKey, settings.always_listening);
+  changes.Set(kVoiceSayWordAloudSettingsKey, settings.say_word_aloud);
   return SetMoltSettings(changes);
 }
 

@@ -247,6 +247,38 @@ IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest,
   EXPECT_FALSE(speech->InEchoReference());
 }
 
+// What holds the voice gesture's confirmation word (SpeakPrivately(),
+// voice_gesture_channel.h) is said only by voice mode's own voice: where
+// the platform's would say it, that says its twin without the word.
+IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest,
+                       APrivateTextIsNeverSaidByThePlatformsVoice) {
+  VoiceSpeech* speech = ReadySpeech();
+  EXPECT_TRUE(speech->CanSpeakPrivately());
+  speech->SpeakPrivately("To allow it, say harbor.",
+                         "To allow it, say the word on your screen.", 1.0,
+                         /*interrupt=*/true);
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !speech->speaking(); }));
+  EXPECT_TRUE(tts_.spoken().empty());
+  // The voice fails while it says it: the platform's says the twin.
+  speech->SpeakPrivately("This will crash. Say harbor.",
+                         "This will crash. Say the word on your screen.", 1.0,
+                         /*interrupt=*/true);
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !tts_.spoken().empty(); }));
+  EXPECT_EQ("This will crash. Say the word on your screen.", tts_.spoken()[0]);
+  EXPECT_FALSE(speech->CanSpeakPrivately());
+  // While it restarts, the same: the twin, or nothing for an empty one.
+  speech->SpeakPrivately("Say maple.", "Say the word on your screen.", 1.0,
+                         /*interrupt=*/true);
+  speech->SpeakPrivately("Say tiger.", "", 1.0, /*interrupt=*/false);
+  speech->Speak("Done.", 1.0, /*interrupt=*/false);
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !speech->speaking(); }));
+  for (const std::string& said : tts_.spoken()) {
+    EXPECT_EQ(said.find("harbor"), std::string::npos) << said;
+    EXPECT_EQ(said.find("maple"), std::string::npos) << said;
+    EXPECT_EQ(said.find("tiger"), std::string::npos) << said;
+  }
+}
+
 IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest, WithoutTheVoiceThePlatforms) {
   BundledVoice::SetPathsForTesting(std::nullopt);
   // DIR_EXE/voice/ doesn't exist next to the test binary.

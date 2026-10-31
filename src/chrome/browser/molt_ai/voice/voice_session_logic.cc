@@ -137,6 +137,46 @@ bool IsAlwaysHeardCommand(std::string_view text) {
   }
 }
 
+bool TakenOverOwnVoice(std::string_view text) {
+  // As the browser reads a list: a bare number or description chooses.
+  ParseContext context;
+  context.expecting_choice = true;
+  const VoiceCommand command = ParseVoiceCommand(text, context);
+  switch (command.kind) {
+    case VoiceCommandKind::kChoose:
+      // A place in the list ("the third one", "number four", "the next
+      // one"); a description may match nothing and go to a site or the
+      // planner ("open evil dot com", "buy the cheapest one").
+      return command.choice.kind == ChoiceRef::Kind::kPosition ||
+             command.choice.kind == ChoiceRef::Kind::kNumber ||
+             command.choice.kind == ChoiceRef::Kind::kRelative;
+    case VoiceCommandKind::kUnknown:
+    case VoiceCommandKind::kRefused:
+    case VoiceCommandKind::kOpenSite:
+    case VoiceCommandKind::kSearch:
+    case VoiceCommandKind::kNewTab:
+    case VoiceCommandKind::kCloseTab:
+    case VoiceCommandKind::kType:
+    case VoiceCommandKind::kNewLine:
+    case VoiceCommandKind::kDeleteLastWord:
+    case VoiceCommandKind::kClearField:
+    case VoiceCommandKind::kSubmit:
+    case VoiceCommandKind::kYes:
+    case VoiceCommandKind::kNo:
+    case VoiceCommandKind::kUndo:
+    case VoiceCommandKind::kCorrection:
+    case VoiceCommandKind::kRememberRoutine:
+    case VoiceCommandKind::kForgetRoutine:
+    case VoiceCommandKind::kRunRoutine:
+    case VoiceCommandKind::kForgetWord:
+    case VoiceCommandKind::kForgetLearning:
+    case VoiceCommandKind::kVoiceModeOn:
+      return false;
+    default:
+      return true;
+  }
+}
+
 ListeningSettings::ListeningSettings() = default;
 ListeningSettings::~ListeningSettings() = default;
 ListeningSettings::ListeningSettings(const ListeningSettings&) = default;
@@ -342,6 +382,12 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       // voice heard back.
       take = confidence >= kMinConfidenceWithoutWake &&
              !EchoOfBrowser(text, utterance.begun_ms);
+      // What needs the browser quiet stops it and is asked for again.
+      if (take && !TakenOverOwnVoice(text)) {
+        take = false;
+        actions.say_again = true;
+        actions.stop_speech = activity_ == BrowserActivity::kSpeaking;
+      }
       if (take && activity_ == BrowserActivity::kSpeaking) {
         actions.stop_speech = true;
       }

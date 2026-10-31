@@ -315,7 +315,8 @@ FUZZERS = {
         dir=VOICE,
         sources=VOICE_INTENT_SOURCES + [
             f"{VOICE}/{name}.cc" for name in (
-                "page_map_text", "voice_gesture", "voice_prompts")
+                "page_map_text", "voice_gesture", "voice_gesture_channel",
+                "voice_prompts")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
              f"{MOLT_AI}/security/activation_policy.cc"],
         tier="std",

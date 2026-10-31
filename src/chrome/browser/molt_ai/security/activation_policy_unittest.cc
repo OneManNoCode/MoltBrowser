@@ -216,7 +216,8 @@ TEST(ActivationPolicyTest, PermissionPromptsAreNeverAnsweredForTheUser) {
 }
 
 TEST(ActivationPolicyTest, FullScreenOnlyWhenAskedForOrToPlay) {
-  for (Intent intent : {Intent::kFullScreen, Intent::kPlayMedia}) {
+  for (Intent intent :
+       {Intent::kFullScreen, Intent::kPlayMedia, Intent::kPlayInPlace}) {
     for (Asker asker : kAllAskers) {
       EXPECT_EQ(Decide(ActedAt(0, intent), 100, Request::kFullScreen, asker),
                 kProceed);
@@ -256,8 +257,9 @@ TEST(ActivationPolicyTest, ClipboardWritesOnlyForACopy) {
 // A video's window over every app: never from an action's activation,
 // whatever the user asked for (no command asks for one).
 TEST(ActivationPolicyTest, PictureInPictureIsRefused) {
-  for (Intent intent : {Intent::kNone, Intent::kFullScreen, Intent::kPlayMedia,
-                        Intent::kCopy, Intent::kOpenInNewTab}) {
+  for (Intent intent :
+       {Intent::kNone, Intent::kFullScreen, Intent::kPlayMedia, Intent::kCopy,
+        Intent::kOpenInNewTab, Intent::kPlayInPlace}) {
     EXPECT_EQ(Decide(ActedAt(0, intent), 100, Request::kPictureInPicture,
                      Asker::kVoiceMode),
               kRefuseAndTell);
@@ -431,8 +433,8 @@ TEST(ActivationPolicyTest, HistoryEntriesAfterAnAction) {
 // An action that never navigates the tab leads to no page of its own:
 // an entry the page adds after it, first or not, is skippable.
 TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
-  for (Intent intent :
-       {Intent::kFullScreen, Intent::kCopy, Intent::kOpenInNewTab}) {
+  for (Intent intent : {Intent::kFullScreen, Intent::kCopy,
+                        Intent::kOpenInNewTab, Intent::kPlayInPlace}) {
     TabRecord tab;
     NoteAction(tab, 1000, intent);
     EXPECT_TRUE(NoteHistoryEntry(tab, 1100));
@@ -445,6 +447,21 @@ TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
     EXPECT_FALSE(NoteHistoryEntry(tab, 1100));
     EXPECT_TRUE(NoteHistoryEntry(tab, 1200));
   }
+}
+
+// "play" of the player on the page (a trap entry the page adds as it
+// starts is no page the user asked for): "go back" leaves the page in one.
+TEST(ActivationPolicyTest, PlayingInPlaceLeadsToNoPage) {
+  TabRecord tab;
+  NoteAction(tab, 1000, Intent::kPlayInPlace);
+  EXPECT_TRUE(NoteHistoryEntry(tab, 1050));
+  // Its player may still go full screen.
+  EXPECT_EQ(Decide(tab, 1100, Request::kFullScreen, Asker::kVoiceMode),
+            kProceed);
+  // Nor does it open windows or write to the clipboard.
+  EXPECT_EQ(Decide(tab, 1100, Request::kNewWindow, Asker::kVoiceMode), kAsk);
+  EXPECT_EQ(Decide(tab, 1100, Request::kClipboardWrite, Asker::kVoiceMode),
+            kRefuseAndTell);
 }
 
 TEST(ActivationPolicyTest, Names) {

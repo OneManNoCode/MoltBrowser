@@ -106,6 +106,21 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // (never 0), or 0 when nothing is to be said.
   uint64_t Speak(const std::string& text, double rate, bool interrupt);
 
+  // As Speak(), but |text| is said only by the bundled voice, whose audio
+  // is in the echo canceller's reference (it holds the voice gesture's
+  // confirmation word, voice_gesture_channel.h). Wherever the platform's
+  // voice would say it instead (the bundled voice isn't ready, or failed
+  // before it finished), that voice says |fallback| (the same without the
+  // word); nothing, when |fallback| is empty.
+  uint64_t SpeakPrivately(const std::string& text,
+                          const std::string& fallback,
+                          double rate,
+                          bool interrupt);
+
+  // Whether the bundled voice can speak now (its helper started and is
+  // ready): what SpeakPrivately() says would be said by it.
+  bool CanSpeakPrivately() const;
+
   // Stops voice mode's speech: what it is saying and what waits. Other
   // speech is left alone.
   void Stop();
@@ -156,6 +171,10 @@ class VoiceSpeech : public BundledVoice::Delegate {
     uint32_t bundled_id = 0;
     // Speak()'s id.
     uint64_t id = 0;
+    // SpeakPrivately(): only the bundled voice says |text|; the platform's
+    // says |fallback|.
+    bool privately = false;
+    std::string fallback;
   };
 
   void OnBundledFound(std::optional<BundledVoice::Paths> paths);

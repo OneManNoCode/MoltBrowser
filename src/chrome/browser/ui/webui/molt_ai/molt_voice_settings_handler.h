@@ -3,8 +3,9 @@
 //
 // "Voice mode" on molt://ai-settings (id="voiceSection", shown only with
 // chrome://flags/#molt-voice-mode): the switch that turns listening on now
-// in this page's window and with the browser from then on, and
-// always-listening mode (molt_ai/voice/voice_session_settings.h,
+// in this page's window and with the browser from then on, always-listening
+// mode, and saying the voice gesture's confirmation word aloud even when
+// another program could hear it (molt_ai/voice/voice_session_settings.h,
 // voice_session.h).
 //
 // Messages (validated with HasCallbackArgs() and BoolArg(); nothing from
@@ -13,8 +14,9 @@
 //   voiceSettingsGetState(cb)
 //   voiceSettingsSetEnabled(cb, bool)
 //   voiceSettingsSetAlwaysListening(cb, bool)
-// each resolving with {available, enabled, alwaysListening, listening,
-// moltnet, error?}.
+//   voiceSettingsSetSayWordAloud(cb, bool)
+// each resolving with {available, enabled, alwaysListening, sayWordAloud,
+// listening, moltnet, error?}.
 //
 // The section's script is kVoiceSettingsJs, appended to the page's app.js;
 // it builds no HTML and wires its switches through moltActions().
@@ -34,6 +36,9 @@ class BrowserWindowInterface;
 
 class MoltVoiceSettingsHandler : public content::WebUIMessageHandler {
  public:
+  // Which setting a message changes.
+  enum class Setting { kEnabled, kAlwaysListening, kSayWordAloud };
+
   MoltVoiceSettingsHandler();
   MoltVoiceSettingsHandler(const MoltVoiceSettingsHandler&) = delete;
   MoltVoiceSettingsHandler& operator=(const MoltVoiceSettingsHandler&) = delete;
@@ -47,6 +52,7 @@ class MoltVoiceSettingsHandler : public content::WebUIMessageHandler {
   void HandleGetState(const base::ListValue& args);
   void HandleSetEnabled(const base::ListValue& args);
   void HandleSetAlwaysListening(const base::ListValue& args);
+  void HandleSetSayWordAloud(const base::ListValue& args);
 
   // Reads the settings (file I/O, on a worker), then resolves.
   void ResolveWithState(std::string callback_id,
@@ -54,10 +60,13 @@ class MoltVoiceSettingsHandler : public content::WebUIMessageHandler {
   void OnRead(std::string callback_id,
               std::optional<std::string> error,
               const molt_ai::voice::VoiceModeSettings& settings);
-  // Changes the settings: read, |change|, write; then applies them.
-  void Change(std::string callback_id, bool enabled_changed, bool value);
+  // A setting's message: validated, counted only with the click itself.
+  void HandleSet(const base::ListValue& args, Setting setting);
+  // Changes the settings: read, |setting| := |value|, write; then applies
+  // them.
+  void Change(std::string callback_id, Setting setting, bool value);
   void OnWritten(std::string callback_id,
-                 bool enabled_changed,
+                 Setting setting,
                  const molt_ai::voice::VoiceModeSettings& settings,
                  bool ok);
   // The window this page is a tab of, or null.

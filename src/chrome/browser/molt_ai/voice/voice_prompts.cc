@@ -13,6 +13,7 @@
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
+#include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
 
 namespace molt_ai {
 namespace voice {
@@ -263,7 +264,59 @@ bool PromptWaits(const PendingPrompt& prompt, int64_t now_ms) {
   return prompt.id != 0 && now_ms < prompt.expires_ms;
 }
 
+void NoteWordText(PendingPrompt& prompt, WordText text) {
+  if (prompt.word.empty() || text.said.empty() || text.said == text.without) {
+    return;
+  }
+  std::erase(prompt.word_texts, text);
+  prompt.word_texts.push_back(std::move(text));
+  if (prompt.word_texts.size() > kMaxWordTexts) {
+    prompt.word_texts.erase(prompt.word_texts.begin());
+  }
+}
+
+const std::string* WordTextTwin(const PendingPrompt& prompt,
+                                std::string_view said) {
+  if (prompt.word.empty()) {
+    return nullptr;
+  }
+  for (const WordText& text : prompt.word_texts) {
+    if (text.said == said) {
+      return &text.without;
+    }
+  }
+  return nullptr;
+}
+
+namespace {
+
+// Why the word was shown, not said: once per window.
+constexpr char kShownOnlyWhy[] =
+    " I don't say the word aloud while another program could hear it.";
+constexpr char kScreenSharedNoWord[] =
+    "I can't take the word while your screen is shared";
+
+std::string PromptSpeechOnly(const BrowserPrompt& prompt,
+                             std::string_view word);
+
+}  // namespace
+
 std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word) {
+  std::string out = PromptSpeechOnly(prompt, word);
+  if (out.empty()) {
+    return out;
+  }
+  if (!word.empty() && prompt.explain_shown_only && NeedsGesture(prompt.kind)) {
+    out += kShownOnlyWhy;
+  }
+  const std::string preface = SpeechSafeText(prompt.preface, 200);
+  return preface.empty() ? out : preface + " " + out;
+}
+
+namespace {
+
+std::string PromptSpeechOnly(const BrowserPrompt& prompt,
+                             std::string_view word) {
   const std::string site = Site(prompt);
   const std::string text = SpeechSafeText(prompt.text, kMaxDialogSpokenChars);
   // The page's text ends with the site's sentence; the browser's words
@@ -282,6 +335,10 @@ std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word) {
       if (!word.empty()) {
         out +=
             " To allow it, say " + std::string(word) + ". To block it, say no.";
+      } else if (prompt.screen_shared) {
+        out += " " + std::string(kScreenSharedNoWord) +
+               ", so to allow it, use the mouse or keyboard. To block it, "
+               "say no.";
       } else {
         out +=
             " To block it, say no. To allow it, use the mouse or "
@@ -329,6 +386,10 @@ std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word) {
       if (!word.empty()) {
         out += " To keep it, say " + std::string(word) +
                ". To delete it, say discard.";
+      } else if (prompt.screen_shared) {
+        out += " " + std::string(kScreenSharedNoWord) +
+               ". To delete it, say discard. To keep it, use the downloads "
+               "page.";
       } else {
         out +=
             " To delete it, say discard. To keep it, use the downloads "
@@ -350,6 +411,9 @@ std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word) {
       if (!word.empty()) {
         out += " To confirm them, say " + std::string(word) +
                ". To leave them unconfirmed, say no.";
+      } else if (prompt.screen_shared) {
+        out += " " + std::string(kScreenSharedNoWord) +
+               ". Confirm them in the Agent studio, or say no.";
       } else {
         out += " Confirm them in the Agent studio, or say no.";
       }
@@ -358,6 +422,8 @@ std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word) {
   }
   return std::string();
 }
+
+}  // namespace
 
 std::string PromptTimeoutSpeech(PromptKind kind) {
   switch (kind) {
@@ -382,6 +448,33 @@ std::string NotCleanSpeech(std::string_view word) {
   return "I couldn't be sure that was you. When it's quiet and I've "
          "finished speaking, say " +
          std::string(word) + ".";
+}
+
+std::string WordRetiredPreface(WordRetired why) {
+  switch (why) {
+    case WordRetired::kNotClean:
+      return "I couldn't be sure that was you, and something else may have "
+             "heard the word, so I changed it.";
+    case WordRetired::kAudioCaptured:
+      return "Something started using a microphone, so I changed the word.";
+    case WordRetired::kScreenShared:
+      return std::string();
+    case WordRetired::kScreenFreed:
+      return "Your screen is no longer shared.";
+  }
+  return std::string();
+}
+
+std::string RetiredWordSpeech(PromptKind kind, std::string_view word) {
+  const std::string say = " say " + std::string(word) + ".";
+  switch (kind) {
+    case PromptKind::kDangerousDownload:
+      return "That word changed. To keep it," + say;
+    case PromptKind::kConfirmSites:
+      return "That word changed. To confirm them," + say;
+    default:
+      return "That word changed. To allow it," + say;
+  }
 }
 
 PromptReply ParsePromptReply(const PendingPrompt& prompt,
@@ -537,15 +630,32 @@ std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply) {
     case PromptAnswer::kSayAgain:
       return "I didn't catch that. Say the word again.";
     case PromptAnswer::kCantAllow:
-      return download && prompt.malicious
-                 ? "I can't keep a dangerous file by voice. Use the "
-                   "downloads page, or say discard."
-             : download ? "I can't keep it by voice right now. Use the "
-                          "downloads page, or say discard."
-                        : "I can't allow that by voice right now. Use "
-                          "the mouse or keyboard, or say no.";
+      if (download && prompt.malicious) {
+        return "I can't keep a dangerous file by voice. Use the downloads "
+               "page, or say discard.";
+      }
+      if (prompt.screen_shared) {
+        return std::string(kScreenSharedNoWord) +
+               (download ? ". Use the downloads page, or say discard."
+                : sites  ? ". Confirm them in the Agent studio, or say no."
+                         : ". Use the mouse or keyboard, or say no.");
+      }
+      return download ? "I can't keep it by voice right now. Use the "
+                        "downloads page, or say discard."
+                      : "I can't allow that by voice right now. Use "
+                        "the mouse or keyboard, or say no.";
   }
   return std::string();
+}
+
+std::string ReplySpeechWithoutWord(const PendingPrompt& prompt,
+                                   const PromptReply& reply) {
+  PendingPrompt twin;
+  twin.kind = prompt.kind;
+  twin.malicious = prompt.malicious;
+  twin.screen_shared = prompt.screen_shared;
+  twin.word = prompt.word.empty() ? std::string() : kWordOnScreen;
+  return ReplySpeech(twin, reply);
 }
 
 DialogReadLimiter::DialogReadLimiter() = default;

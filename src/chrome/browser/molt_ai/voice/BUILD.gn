@@ -99,6 +99,10 @@ source_set("voice_prompts") {
   sources = [
     "voice_gesture.cc",
     "voice_gesture.h",
+
+    # How the word reaches the user: said, shown, both or neither.
+    "voice_gesture_channel.cc",
+    "voice_gesture_channel.h",
     "voice_prompts.cc",
     "voice_prompts.h",
   ]
@@ -115,6 +119,7 @@ source_set("voice_prompts") {
 source_set("voice_prompts_unit_tests") {
   testonly = true
   sources = [
+    "voice_gesture_channel_unittest.cc",
     "voice_gesture_unittest.cc",
     "voice_prompts_unittest.cc",
   ]
@@ -674,6 +679,11 @@ source_set("voice_controller") {
   sources = [
     "voice_browser_prompts.cc",
     "voice_browser_prompts.h",
+
+    # What captures a microphone, the screen or a window: the voice
+    # gesture's word is said or shown accordingly.
+    "voice_capture_watch.cc",
+    "voice_capture_watch.h",
     "voice_controller.cc",
     "voice_controller.h",
     "voice_reading_settings.cc",
@@ -725,6 +735,10 @@ source_set("voice_controller") {
 
     # Questions about the page, answered by the on-device model.
     ":voice_page_questions",
+
+    # Chromium's record of the media streams it gave out
+    # (MediaStreamCaptureIndicator), for the voice gesture's word.
+    "//chrome/browser/media/webrtc",
 
     # The voice helper: the bundled copy only, under the resident sandbox.
     "//chrome/browser/molt_ai/common:helper_binary",
@@ -923,7 +937,14 @@ source_set("voice_loop_unit_tests") {
 source_set("voice_prompts_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "voice_browser_prompts_browsertest.cc" ]
+  sources = [
+    "voice_browser_prompts_browsertest.cc",
+
+    # The word's channel with real captures (chrome/test/data/molt_voice/
+    # capture.html): a page capturing the microphone, one sharing the
+    # screen.
+    "voice_gesture_channel_browsertest.cc",
+  ]
 
   deps = [
     ":features",
@@ -931,6 +952,11 @@ source_set("voice_prompts_browser_tests") {
     ":voice_prompts",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/common:non_code_constants",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//media",
     "//chrome/browser/download",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",

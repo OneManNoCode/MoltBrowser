@@ -4,8 +4,10 @@
 #include "chrome/browser/molt_ai/voice/voice_prompts.h"
 
 #include <string>
+#include <vector>
 
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
+#include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace molt_ai {
@@ -254,6 +256,113 @@ TEST(VoicePromptsTest, DialogsReadAreLimited) {
   // Once the first is out of the window, one more.
   EXPECT_TRUE(limiter.ShouldRead(kDialogFloodWindowMs));
   EXPECT_FALSE(limiter.ShouldRead(kDialogFloodWindowMs + 1));
+}
+
+// The word's channel (voice_gesture_channel.h): every text that holds the
+// word has a twin without it, which differs only where the word is.
+TEST(VoicePromptsTest, EachTextWithTheWordHasATwinWithoutIt) {
+  for (PromptKind kind :
+       {PromptKind::kPermission, PromptKind::kDangerousDownload,
+        PromptKind::kConfirmSites}) {
+    BrowserPrompt prompt = Prompt(kind, "example.com", "setup.exe");
+    prompt.what = "use your camera";
+    const std::string said = PromptSpeech(prompt, "harbor");
+    const std::string twin = PromptSpeech(prompt, kWordOnScreen);
+    EXPECT_NE(said.find(" say harbor."), std::string::npos) << said;
+    EXPECT_EQ(twin.find("harbor"), std::string::npos) << twin;
+    EXPECT_NE(twin.find(" say the word on your screen."), std::string::npos)
+        << twin;
+
+    PendingPrompt pending = Waiting(kind, "harbor");
+    PromptReply need;
+    need.answer = PromptAnswer::kNeedWord;
+    EXPECT_NE(ReplySpeech(pending, need).find("harbor"), std::string::npos);
+    EXPECT_EQ(ReplySpeechWithoutWord(pending, need).find("harbor"),
+              std::string::npos);
+    EXPECT_NE(ReplySpeechWithoutWord(pending, need).find(kWordOnScreen),
+              std::string::npos);
+    EXPECT_EQ(RetiredWordSpeech(kind, kWordOnScreen).find("harbor"),
+              std::string::npos);
+    EXPECT_NE(RetiredWordSpeech(kind, "maple").find("say maple."),
+              std::string::npos);
+  }
+  EXPECT_EQ(NotCleanSpeech(kWordOnScreen),
+            "I couldn't be sure that was you. When it's quiet and I've "
+            "finished speaking, say the word on your screen.");
+}
+
+TEST(VoicePromptsTest, TheTwinIsFoundOnlyForThePromptsWordTexts) {
+  PendingPrompt pending = Waiting(PromptKind::kPermission, "harbor");
+  NoteWordText(pending, WordText{"To allow it, say harbor.",
+                                 "To allow it, say the word on your screen."});
+  const std::string* twin = WordTextTwin(pending, "To allow it, say harbor.");
+  ASSERT_TRUE(twin);
+  EXPECT_EQ(*twin, "To allow it, say the word on your screen.");
+  EXPECT_EQ(WordTextTwin(pending, "To allow it, say harbor"), nullptr);
+  EXPECT_EQ(WordTextTwin(pending, "Blocked."), nullptr);
+  // A text without the word, or a prompt without one, keeps nothing.
+  NoteWordText(pending, WordText{"Same.", "Same."});
+  EXPECT_EQ(WordTextTwin(pending, "Same."), nullptr);
+  PendingPrompt none = Waiting(PromptKind::kPermission);
+  NoteWordText(none, WordText{"a", "b"});
+  EXPECT_EQ(WordTextTwin(none, "a"), nullptr);
+  // At most kMaxWordTexts, the latest kept; the same text once.
+  for (size_t i = 0; i < kMaxWordTexts + 2; ++i) {
+    NoteWordText(pending, WordText{"say harbor " + std::to_string(i), "x"});
+    NoteWordText(pending, WordText{"say harbor " + std::to_string(i), "x"});
+  }
+  EXPECT_EQ(pending.word_texts.size(), kMaxWordTexts);
+  EXPECT_EQ(WordTextTwin(pending, "To allow it, say harbor."), nullptr);
+  EXPECT_TRUE(
+      WordTextTwin(pending, "say harbor " + std::to_string(kMaxWordTexts + 1)));
+}
+
+TEST(VoicePromptsTest, NoWordWhileTheScreenIsSharedAndNoStillWorks) {
+  BrowserPrompt prompt = Prompt(PromptKind::kPermission, "example.com");
+  prompt.what = "use your camera";
+  prompt.screen_shared = true;
+  EXPECT_EQ(PromptSpeech(prompt, ""),
+            "example.com wants to use your camera. I can't take the word "
+            "while your screen is shared, so to allow it, use the mouse or "
+            "keyboard. To block it, say no.");
+  PendingPrompt pending = Waiting(PromptKind::kPermission);
+  pending.screen_shared = true;
+  // Any word of the list, "yes" or "allow": it can't allow, and says why.
+  for (std::string_view heard : {"harbor", "yes", "allow it"}) {
+    const PromptReply reply = ParsePromptReply(pending, heard);
+    EXPECT_EQ(reply.answer, PromptAnswer::kCantAllow) << heard;
+    EXPECT_EQ(ReplySpeech(pending, reply),
+              "I can't take the word while your screen is shared. Use the "
+              "mouse or keyboard, or say no.");
+  }
+  EXPECT_EQ(Answer(pending, "no"), PromptAnswer::kRefuse);
+  EXPECT_EQ(Answer(pending, "cancel"), PromptAnswer::kDecline);
+
+  BrowserPrompt download =
+      Prompt(PromptKind::kDangerousDownload, "example.com", "setup.exe");
+  download.screen_shared = true;
+  EXPECT_EQ(PromptSpeech(download, ""),
+            "The file setup.exe from example.com may be harmful. I can't take "
+            "the word while your screen is shared. To delete it, say discard. "
+            "To keep it, use the downloads page.");
+  PendingPrompt waiting_download = Waiting(PromptKind::kDangerousDownload);
+  waiting_download.screen_shared = true;
+  EXPECT_EQ(Answer(waiting_download, "discard"), PromptAnswer::kRefuse);
+}
+
+TEST(VoicePromptsTest, WhyTheWordIsShownAndWhyItChanged) {
+  BrowserPrompt prompt = Prompt(PromptKind::kPermission, "example.com");
+  prompt.what = "use your camera";
+  prompt.explain_shown_only = true;
+  prompt.preface = WordRetiredPreface(WordRetired::kAudioCaptured);
+  EXPECT_EQ(PromptSpeech(prompt, kWordOnScreen),
+            "Something started using a microphone, so I changed the word. "
+            "example.com wants to use your camera. To allow it, say the word "
+            "on your screen. To block it, say no. I don't say the word aloud "
+            "while another program could hear it.");
+  EXPECT_TRUE(WordRetiredPreface(WordRetired::kScreenShared).empty());
+  EXPECT_FALSE(WordRetiredPreface(WordRetired::kNotClean).empty());
+  EXPECT_FALSE(WordRetiredPreface(WordRetired::kScreenFreed).empty());
 }
 
 TEST(VoicePromptsTest, WindowsAndTimeouts) {

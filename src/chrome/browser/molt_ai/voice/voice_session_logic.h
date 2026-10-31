@@ -39,7 +39,14 @@
 //     the browser said in the last kSpokenMemoryMs, as written or as its
 //     voice says them, voice_said_aloud.h: "example dot com" for
 //     "example.com"; that is what an echo the canceller missed would be).
-//     It stops the browser's speech.
+//     It stops the browser's speech. Only commands that stay with what the
+//     browser is reading or doing are taken that way (TakenOverOwnVoice()):
+//     one that reaches another site, types or sends text, closes a tab,
+//     changes what voice mode learned or goes to the planner stops the
+//     speech and is not run (SessionActions::say_again): the user says it
+//     again once the browser is quiet. Audio the voice's helper chose
+//     would have to survive the echo canceller to be heard at all; this
+//     keeps what it could do then to the page being read.
 //   - While the speech engine speaks for someone else (a page's
 //     speechSynthesis; OnOtherSpeech()), and kOtherSpeechTailMs after,
 //     only the commands that always count do: no wake phrase, no command
@@ -198,6 +205,10 @@ struct SessionActions {
   // canceller was dropped (OnOwnVoiceUnfiltered()): the caption tells the
   // user to say stop first, or wait.
   bool said_over_voice = false;
+  // A command said over voice mode's own voice that needs the browser to be
+  // quiet (TakenOverOwnVoice()) was set aside: the speech stops, and the
+  // browser asks for it again.
+  bool say_again = false;
   // What is being said, live, for the caption; empty clears it.
   std::optional<std::string> partial;
   // Stop the browser's speech now (barge-in).
@@ -379,6 +390,13 @@ class VoiceSessionLogic {
 // Whether |text| is one of the commands that always count: stop, stop
 // talking, cancel, turn off voice mode.
 bool IsAlwaysHeardCommand(std::string_view text);
+
+// Whether |text|, said over voice mode's own voice without the wake phrase
+// (barge-in), may run before the voice has stopped: everything but what
+// reaches another site (open, search, a new tab), types or sends text,
+// closes a tab, changes what voice mode learned (routines, words), turns
+// voice mode on, or goes to the planner (what the grammar doesn't know).
+bool TakenOverOwnVoice(std::string_view text);
 
 }  // namespace voice
 }  // namespace molt_ai

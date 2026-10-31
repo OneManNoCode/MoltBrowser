@@ -11,6 +11,7 @@
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_command_phrases.h"
+#include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 #include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
@@ -780,10 +781,39 @@ class Planner {
     pending.kind = prompt.kind;
     pending.word = gesture ? std::string(word) : std::string();
     pending.malicious = prompt.malicious;
+    pending.screen_shared = gesture && prompt.screen_shared;
     pending.expires_ms = env_.now_ms + PromptWindowMs(prompt.kind);
     Status(prompt.kind == PromptKind::kPermission ? "Permission request"
                                                   : "Waiting for your answer");
-    Say(PromptSpeech(prompt, pending.word));
+    SayWithWord(PromptSpeech(prompt, pending.word),
+                PromptSpeech(prompt, pending.word.empty() ? std::string_view()
+                                                          : kWordOnScreen));
+  }
+
+  // Says |said|, which holds the waiting prompt's word, and keeps it with
+  // |without|, its twin without the word (voice_gesture_channel.h): the
+  // glue says the twin wherever the word can't be said, and observers only
+  // get the twin. Kept as it will be said (cleaned until cleaning changes
+  // nothing), so "repeat" finds it too; otherwise only the twin is said.
+  void SayWithWord(std::string said, std::string without) {
+    PendingPrompt& pending = state().prompt;
+    without = SpeechSafeText(without, kMaxSpokenTextChars);
+    if (pending.word.empty() || said == without) {
+      Say(std::move(said));
+      return;
+    }
+    bool settled = false;
+    for (int i = 0; i < 3 && !settled; ++i) {
+      std::string again = SpeechSafeText(said, kMaxSpokenTextChars);
+      settled = again == said;
+      said = std::move(again);
+    }
+    if (!settled || said.empty()) {
+      Say(std::move(without));
+      return;
+    }
+    NoteWordText(pending, WordText{said, without});
+    Say(std::move(said));
   }
 
   void PromptGone(int id, std::string_view said) {
@@ -822,7 +852,8 @@ class Planner {
       case PromptAnswer::kNeedWord:
       case PromptAnswer::kSayAgain:
       case PromptAnswer::kCantAllow:
-        Say(ReplySpeech(prompt, reply));
+        SayWithWord(ReplySpeech(prompt, reply),
+                    ReplySpeechWithoutWord(prompt, reply));
         return true;
       case PromptAnswer::kAllow:
       case PromptAnswer::kWrongWord:
