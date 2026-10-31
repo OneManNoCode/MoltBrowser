@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "chrome/browser/molt_ai/voice/phonetic_key.h"
+#include "chrome/browser/molt_ai/voice/phonetic_key_es.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/spoken_numbers.h"
 #include "chrome/browser/molt_ai/voice/spoken_phrases.h"
@@ -316,6 +317,12 @@ const std::vector<CompiledPattern>& CompiledPatterns(Language language) {
   switch (language) {
     case Language::kEnglish:
       break;
+    case Language::kSpanish: {
+      // Built once, never destroyed.
+      static const std::vector<CompiledPattern>* const spanish =
+          compile(Language::kSpanish);
+      return *spanish;
+    }
   }
   // Built once, never destroyed.
   static const std::vector<CompiledPattern>* const english =
@@ -505,9 +512,12 @@ std::optional<Site> ReadSite(const Utterance& u,
     }
   }
   if (!address) {
-    // "the New York Times website" -> "new york times".
-    if (end - begin > 1 && HasPhrase(p.site_prefixes, u.words[begin]))
-      ++begin;
+    // "the New York Times website" -> "new york times"; "la web de
+    // YouTube" -> "youtube".
+    if (const size_t n = LongestPhraseAt(p.site_prefixes, u.words, begin);
+        n && end - begin > n) {
+      begin += n;
+    }
     for (std::string_view suffix : p.site_suffixes) {
       const size_t n = static_cast<size_t>(
           std::count(suffix.begin(), suffix.end(), ' ') + 1);
@@ -730,11 +740,20 @@ std::string SpanText(const Utterance& u, size_t begin, size_t end) {
                     u.fillers);
 }
 
-bool SoundsAlike(std::string_view a, std::string_view b) {
+bool SoundsAlike(std::string_view a,
+                 std::string_view b,
+                 const LanguagePhrases& p) {
   if (a == b)
     return true;
   if (a.size() < 3 || b.size() < 3)
     return false;
+  if (p.wake_sound_margin > 0) {
+    const std::string key_a = PhoneticKeyFor(p.language, a);
+    const std::string key_b = PhoneticKeyFor(p.language, b);
+    return !key_a.empty() && !key_b.empty() &&
+           PhoneticDistance(key_a, key_b, p.wake_sound_margin) <=
+               p.wake_sound_margin;
+  }
   const std::string key = PhoneticKey(a);
   return !key.empty() && key == PhoneticKey(b);
 }
@@ -764,7 +783,7 @@ size_t WakePhraseLength(const WordList& words,
   if (at + name.size() > words.size())
     return 0;
   for (size_t i = 0; i < name.size(); ++i) {
-    if (!SoundsAlike(words[at + i], name[i]))
+    if (!SoundsAlike(words[at + i], name[i], p))
       return 0;
   }
   return at + name.size();
@@ -823,6 +842,11 @@ const std::vector<CommandPattern>& CommandPatterns(Language language) {
   switch (language) {
     case Language::kEnglish:
       break;
+    case Language::kSpanish: {
+      static const std::vector<CommandPattern>* const spanish =
+          new std::vector<CommandPattern>(MakeSpanishCommandPatterns());
+      return *spanish;
+    }
   }
   static const std::vector<CommandPattern>* const english =
       new std::vector<CommandPattern>(MakeEnglishCommandPatterns());
@@ -833,6 +857,11 @@ const std::vector<CommandInfo>& CommandInfos(Language language) {
   switch (language) {
     case Language::kEnglish:
       break;
+    case Language::kSpanish: {
+      static const std::vector<CommandInfo>* const spanish =
+          new std::vector<CommandInfo>(MakeSpanishCommandInfos());
+      return *spanish;
+    }
   }
   static const std::vector<CommandInfo>* const english =
       new std::vector<CommandInfo>(MakeEnglishCommandInfos());

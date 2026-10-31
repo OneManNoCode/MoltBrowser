@@ -49,11 +49,15 @@ namespace voice {
 // (spoken_phrases.h, voice_command_phrases.h).
 enum class Language {
   kEnglish,
+  kSpanish,
 };
 
-// "en", "en-US", "en_GB" (any case) -> kEnglish; nullopt for a language
-// voice mode has no tables for.
+// "en", "en-US", "en_GB" (any case) -> kEnglish; "es", "es-419", "es_MX"
+// -> kSpanish; nullopt for a language voice mode has no tables for.
 std::optional<Language> LanguageFromTag(std::string_view tag);
+
+// The language's primary subtag: "en", "es".
+std::string_view LanguageCode(Language language);
 
 // Folded words, as the readers (spoken_numbers.h, spoken_choice.h,
 // voice_command.h) take them.

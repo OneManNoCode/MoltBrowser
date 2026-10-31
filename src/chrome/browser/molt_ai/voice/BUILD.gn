@@ -61,11 +61,16 @@ source_set("unit_tests") {
 # The spoken-choice matcher: which item on screen "the fourth one", "number
 # 12" or "the live one by Queen" means. The page map fills its
 # ChoiceCandidates. With it, the text, number and sound-alike readers the
-# grammar shares, and the per-language word tables.
+# grammar shares, and the per-language word tables (English and Spanish,
+# with Spanish's phonetic key and its voice gesture words).
 source_set("spoken_choice") {
   sources = [
+    "confirmation_words_es.cc",
+    "confirmation_words_es.h",
     "phonetic_key.cc",
     "phonetic_key.h",
+    "phonetic_key_es.cc",
+    "phonetic_key_es.h",
     "spoken_choice.cc",
     "spoken_choice.h",
     "spoken_numbers.cc",
@@ -73,6 +78,7 @@ source_set("spoken_choice") {
     "spoken_phrases.cc",
     "spoken_phrases.h",
     "spoken_phrases_en.cc",
+    "spoken_phrases_es.cc",
     "spoken_text.cc",
     "spoken_text.h",
   ]
@@ -85,6 +91,7 @@ source_set("voice_command") {
     "voice_command.h",
     "voice_command_phrases.h",
     "voice_command_phrases_en.cc",
+    "voice_command_phrases_es.cc",
   ]
   public_deps = [ ":spoken_choice" ]
 }
@@ -147,6 +154,7 @@ source_set("voice_intent_unit_tests") {
     "spoken_numbers_unittest.cc",
     "spoken_text_unittest.cc",
     "voice_command_unittest.cc",
+    "voice_spanish_unittest.cc",
   ]
   deps = [
     ":spoken_choice",

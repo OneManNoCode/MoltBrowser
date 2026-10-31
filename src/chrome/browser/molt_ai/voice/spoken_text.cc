@@ -319,7 +319,19 @@ std::optional<Language> LanguageFromTag(std::string_view tag) {
   }
   if (primary == "en")
     return Language::kEnglish;
+  if (primary == "es")
+    return Language::kSpanish;
   return std::nullopt;
+}
+
+std::string_view LanguageCode(Language language) {
+  switch (language) {
+    case Language::kEnglish:
+      return "en";
+    case Language::kSpanish:
+      return "es";
+  }
+  return "en";
 }
 
 bool IsValidUtf8(std::string_view text) {

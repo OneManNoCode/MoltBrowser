@@ -71,9 +71,10 @@ VOICE_HELPER_SOURCES = [
 # voice_command).
 VOICE_INTENT_SOURCES = [
     f"{VOICE}/{name}.cc" for name in (
-        "phonetic_key", "spoken_choice", "spoken_numbers", "spoken_phrases",
-        "spoken_phrases_en", "spoken_text", "voice_command",
-        "voice_command_phrases_en")
+        "phonetic_key", "phonetic_key_es", "spoken_choice", "spoken_numbers",
+        "spoken_phrases", "spoken_phrases_en", "spoken_phrases_es",
+        "spoken_text", "voice_command", "voice_command_phrases_en",
+        "voice_command_phrases_es")
 ]
 
 # name -> where the fuzzer lives (its .cc, BUILD.gn and corpus/<name>/), the

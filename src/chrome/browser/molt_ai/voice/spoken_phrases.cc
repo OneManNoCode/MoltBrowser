@@ -22,6 +22,12 @@ const LanguagePhrases& PhrasesFor(Language language) {
   switch (language) {
     case Language::kEnglish:
       break;
+    case Language::kSpanish: {
+      // Built once, never destroyed (no exit-time destructor).
+      static const LanguagePhrases* const spanish =
+          new LanguagePhrases(MakeSpanishPhrases());
+      return *spanish;
+    }
   }
   // Built once, never destroyed (no exit-time destructor).
   static const LanguagePhrases* const english =
