@@ -7,6 +7,13 @@
 // per-run variable values), and schedules them on an interval. Built on the
 // existing automation engine (AutomationStorage / AutomationRecorder /
 // AutomationRunner / AutomationScheduler).
+//
+// Workflows are the shared storage's (~/.moltbrowser/automations/); routines
+// taught by voice are the profile's own (molt_ai/voice/voice_routine_store.h),
+// listed beside them, and none in MoltNet or private windows. Voice routines
+// still in the shared storage were made before routines belonged to a
+// profile: they are listed apart, to be kept here (a real click) or left for
+// another profile, and nothing else is done to them here.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.h"
 
@@ -44,6 +51,9 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
+#include "chrome/browser/molt_ai/voice/voice_learning.h"
+#include "chrome/browser/molt_ai/voice/voice_routine_store.h"
+#include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -80,6 +90,11 @@ using molt_ai::automation::TrustLevelFromString;
 using molt_ai::automation::TrustLevelToString;
 using molt_ai::automation::Trigger;
 using molt_ai::automation::TriggerType;
+using molt_ai::voice::VoiceLearning;
+using molt_ai::voice::VoiceRoutineStore;
+
+// Ids the page sends for the routines from before profiles, at most.
+constexpr size_t kMaxRoutineIds = 200;
 
 // ---------------------------------------------------------------------------
 // Friendly rendering helpers.
@@ -255,6 +270,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     bind("answerRunQuestion", &AgentStudioHandler::HandleAnswerRunQuestion);
     bind("listFrameTools", &AgentStudioHandler::HandleListFrameTools);
     bind("forgetFrameTools", &AgentStudioHandler::HandleForgetFrameTools);
+    bind("claimVoiceRoutines", &AgentStudioHandler::HandleClaimVoiceRoutines);
+    bind("declineVoiceRoutines",
+         &AgentStudioHandler::HandleDeclineVoiceRoutines);
+    bind("showDeclinedRoutines",
+         &AgentStudioHandler::HandleShowDeclinedRoutines);
   }
 
  private:
@@ -270,6 +290,56 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       }
     }
     return nullptr;
+  }
+
+  // The profile's voice routines (voice_learning.h); null off the record,
+  // MoltNet's included: no routines there.
+  VoiceLearning* Learning() {
+    Profile* p = profile();
+    return p ? VoiceLearning::Get(p) : nullptr;
+  }
+  std::unique_ptr<VoiceRoutineStore> VoiceStore() {
+    VoiceLearning* learning = Learning();
+    if (!learning) {
+      return nullptr;
+    }
+    return std::make_unique<VoiceRoutineStore>(learning->routines_dir(),
+                                               learning->shared_root());
+  }
+  // Voice mode lists the profile's routines again.
+  void VoiceRoutinesChanged() {
+    if (VoiceLearning* learning = Learning()) {
+      learning->RefreshRoutines();
+    }
+  }
+
+  // Where workflow |id| is: the profile's routines taught by voice, else
+  // the shared storage's workflows. A voice routine in the shared storage
+  // isn't found: it is one from before profiles, kept here first.
+  struct Found {
+    AutomationStorage* storage = nullptr;
+    std::optional<Script> script;
+    bool voice = false;
+  };
+  Found FindWorkflow(const std::string& id, VoiceRoutineStore* voice) {
+    Found found;
+    if (voice) {
+      std::optional<Script> s = voice->storage().Load(id);
+      if (s && molt_ai::automation::HasVoiceSteps(*s)) {
+        found.storage = &voice->storage();
+        found.script = std::move(s);
+        found.voice = true;
+        return found;
+      }
+    }
+    if (AutomationStorage* st = storage()) {
+      std::optional<Script> s = st->Load(id);
+      if (s && !molt_ai::automation::HasVoiceSteps(*s)) {
+        found.storage = st;
+        found.script = std::move(s);
+      }
+    }
+    return found;
   }
 
   // The browser tab the user is actually working in (NOT this side-panel
@@ -300,23 +370,174 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   // -------- messages --------
   void HandleListWorkflows(const base::ListValue& args) {
     AllowJavascript();
+    // Which routines from before profiles this profile declined is in its
+    // learning file: listed once it is read.
+    VoiceLearning* learning = Learning();
+    if (learning && !learning->loaded()) {
+      learning->WhenLoaded(base::BindOnce(
+          [](base::WeakPtr<AgentStudioHandler> self, base::ListValue args) {
+            if (self) {
+              self->HandleListWorkflows(args);
+            }
+          },
+          weak_factory_.GetWeakPtr(), args.Clone()));
+      return;
+    }
+    std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
     base::ListValue list;
+    std::vector<Script> scripts;
     if (auto* st = storage()) {
-      std::vector<Script> scripts = st->ListAll();
-      // Newest activity first: most-recently-run, else most-recently-created,
-      // so a just-recorded or just-run workflow lands at the top.
-      std::sort(scripts.begin(), scripts.end(),
-                [](const Script& a, const Script& b) {
-                  int64_t ka = std::max(a.stats.last_run_unix, a.created_at_unix);
-                  int64_t kb = std::max(b.stats.last_run_unix, b.created_at_unix);
-                  return ka > kb;
-                });
-      for (const auto& s : scripts) {
-        list.Append(WorkflowSummary(s));
+      for (Script& s : st->ListAll()) {
+        // Voice routines in the shared storage are listed apart (below).
+        if (!molt_ai::automation::HasVoiceSteps(s)) {
+          scripts.push_back(std::move(s));
+        }
       }
+    }
+    std::vector<std::string> voice_names;
+    if (voice) {
+      for (Script& s : voice->Routines()) {
+        voice_names.push_back(s.name);
+        scripts.push_back(std::move(s));
+      }
+    }
+    // Newest activity first: most-recently-run, else most-recently-created,
+    // so a just-recorded or just-run workflow lands at the top.
+    std::sort(scripts.begin(), scripts.end(),
+              [](const Script& a, const Script& b) {
+                int64_t ka = std::max(a.stats.last_run_unix, a.created_at_unix);
+                int64_t kb = std::max(b.stats.last_run_unix, b.created_at_unix);
+                return ka > kb;
+              });
+    for (const auto& s : scripts) {
+      base::DictValue d = WorkflowSummary(s);
+      // A name another of the profile's routines answers to too: voice
+      // mode runs neither until one is renamed.
+      if (molt_ai::automation::HasVoiceSteps(s) &&
+          molt_ai::voice::MatchRoutineName(voice_names, s.name).count > 1) {
+        d.Set("nameClash", true);
+      }
+      list.Append(std::move(d));
     }
     base::DictValue out;
     out.Set("workflows", std::move(list));
+    // The routines from before routines belonged to a profile, but the
+    // ones the user said aren't this profile's (counted, to show again).
+    base::ListValue unclaimed;
+    int hidden = 0;
+    if (voice && learning) {
+      for (const molt_ai::voice::RoutineSummary& routine : voice->Unclaimed()) {
+        if (learning->Declined(routine.id)) {
+          ++hidden;
+          continue;
+        }
+        base::DictValue u;
+        u.Set("id", routine.id);
+        u.Set("name", routine.name);
+        u.Set("steps", routine.steps);
+        unclaimed.Append(std::move(u));
+      }
+    }
+    out.Set("unclaimed", std::move(unclaimed));
+    out.Set("unclaimedHidden", hidden);
+    ResolveDict(args, std::move(out));
+  }
+
+  // The page's ids of routines from before profiles: [cb, [id, ...]].
+  static std::optional<std::vector<std::string>> RoutineIds(
+      const base::ListValue& args) {
+    if (args.size() < 2 || !args[1].is_list() ||
+        args[1].GetList().size() > kMaxRoutineIds) {
+      return std::nullopt;
+    }
+    std::vector<std::string> ids;
+    for (const base::Value& v : args[1].GetList()) {
+      if (!v.is_string() || v.GetString().empty() ||
+          v.GetString().size() > 128) {
+        return std::nullopt;
+      }
+      ids.push_back(v.GetString());
+    }
+    return ids;
+  }
+
+  // "Keep here": [cb, [id, ...]] -> {ok, kept: [{id, name, renamedFrom}],
+  // notKept}. The routines move into this profile (each once: another
+  // profile keeping one first wins), so only with a real click.
+  void HandleClaimVoiceRoutines(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    out.Set("ok", false);
+    if (!molt_ai::chat_handler_helpers::ConsumeUserClick(
+            true, web_ui()->GetRenderFrameHost())) {
+      out.Set("error", "Click the button to keep them here");
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    VoiceLearning* learning = Learning();
+    std::optional<std::vector<std::string>> ids = RoutineIds(args);
+    if (!learning || !ids || ids->empty() || args.empty() ||
+        !args[0].is_string()) {
+      out.Set("error", "Routines can't be kept here.");
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    learning->ClaimRoutines(
+        std::move(*ids),
+        base::BindOnce(
+            [](base::WeakPtr<AgentStudioHandler> self, std::string callback_id,
+               molt_ai::voice::ClaimResult result) {
+              if (!self || !self->IsJavascriptAllowed()) {
+                return;
+              }
+              base::DictValue done;
+              done.Set("ok", !result.kept.empty());
+              base::ListValue kept;
+              for (const molt_ai::voice::ClaimedRoutine& routine :
+                   result.kept) {
+                base::DictValue k;
+                k.Set("id", routine.id);
+                k.Set("name", routine.name);
+                if (!routine.renamed_from.empty()) {
+                  k.Set("renamedFrom", routine.renamed_from);
+                }
+                kept.Append(std::move(k));
+              }
+              done.Set("kept", std::move(kept));
+              done.Set("notKept", result.not_kept);
+              if (result.kept.empty()) {
+                done.Set("error",
+                         "They're gone: another profile may have kept them.");
+              }
+              self->ResolveJavascriptCallback(base::Value(callback_id),
+                                              base::Value(std::move(done)));
+            },
+            weak_factory_.GetWeakPtr(), args[0].GetString()));
+  }
+
+  // "Not mine": [cb, [id, ...]] -> {ok}. They aren't offered here again;
+  // nothing moves, so no click is needed.
+  void HandleDeclineVoiceRoutines(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    std::optional<std::vector<std::string>> ids = RoutineIds(args);
+    VoiceLearning* learning = Learning();
+    if (learning && ids) {
+      learning->DeclineRoutines(*ids);
+    }
+    out.Set("ok", learning && ids);
+    ResolveDict(args, std::move(out));
+  }
+
+  // "Show": [cb] -> {ok}. The declined ones are offered here again.
+  void HandleShowDeclinedRoutines(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    VoiceLearning* learning = Learning();
+    if (learning) {
+      learning->UndeclineRoutines();
+    }
+    out.Set("ok", learning != nullptr);
     ResolveDict(args, std::move(out));
   }
 
@@ -324,8 +545,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AllowJavascript();
     base::DictValue out;
     if (args.size() >= 2 && args[1].is_string()) {
-      if (auto* st = storage()) {
-        if (auto s = st->Load(args[1].GetString())) {
+      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
+      std::optional<Script> s =
+          FindWorkflow(args[1].GetString(), voice.get()).script;
+      if (s) {
+        {
           out = s->ToJSON();
           // The UI reads {{variable}} defaults under "variables"; expose an
           // alias so it round-trips (the Script model stores them under
@@ -359,16 +583,27 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       if (!existing || existing->empty()) {
         in.Set("id", NewWorkflowId());
       }
+      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
       if (auto s = Script::FromJSON(in)) {
         if (s->created_at_unix == 0) {
           s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
         }
-        if (auto* st = storage()) {
+        // Routines taught by voice are kept in the profile (an edit, a
+        // rename, an import of one), workflows in the shared storage.
+        Found found = FindWorkflow(s->id, voice.get());
+        const bool voice_steps = molt_ai::automation::HasVoiceSteps(*s);
+        const std::string refused = SaveRefusal(found, *s, voice.get());
+        AutomationStorage* st = found.voice || (!found.script && voice_steps)
+                                    ? (voice ? &voice->storage() : nullptr)
+                                    : storage();
+        if (!refused.empty()) {
+          out.Set("error", refused);
+        } else if (st) {
           // The studio never edits the security policy, so whatever the
           // dict carries is ignored: an existing workflow keeps the policy
           // stored on disk (trust only changes via promoteTrust in
           // molt://ai-automation); a new one gets the default CASUAL one.
-          std::optional<Script> existing = st->Load(s->id);
+          std::optional<Script> existing = std::move(found.script);
           bool recorded_here = false;
           if (existing) {
             s->security = existing->security;
@@ -378,7 +613,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
                                                 "login"};
             // First save of a draft that stopRecording produced in this
             // panel (the id was minted server-side and is used once).
-            recorded_here = recorded_ids_.erase(s->id) > 0;
+            recorded_here = !voice_steps && recorded_ids_.erase(s->id) > 0;
+          }
+          // A routine's name, made its own beside the profile's others
+          // ("my news (2)"): voice mode runs exactly one by each name.
+          if (voice_steps) {
+            s->name = voice->NameFor(*s);
           }
           AutomationSecurity::ClampTrustForSave(
               *s, existing ? &*existing : nullptr);
@@ -392,12 +632,19 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
             // here and start CASUAL.
             s->security.trust = TrustLevel::APPROVED;
           }
-          if (st->Save(*s)) {
+          if (s->name.empty()) {
+            out.Set("error",
+                    "Too many routines have that name. Choose another.");
+          } else if (st->Save(*s)) {
             if (recorded_here) {
               st->AppendAudit(s->id, "trust_changed",
                               "casual -> approved (recorded in Agent studio)");
             }
+            if (voice_steps) {
+              VoiceRoutinesChanged();
+            }
             out.Set("id", s->id);
+            out.Set("name", s->name);
             out.Set("trust", TrustLevelToString(s->security.trust));
             // Still a draft (saving never confirms one): the sites its
             // steps now target, for the review panel.
@@ -409,6 +656,35 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       }
     }
     ResolveDict(args, std::move(out));
+  }
+
+  // Why the studio doesn't save |incoming| where |found| says it goes ("":
+  // it does). A voice routine of the shared storage is one from before
+  // profiles, kept here first; voice steps never join a shared workflow;
+  // a routine of the profile keeps its voice steps; no routines off the
+  // record.
+  std::string SaveRefusal(const Found& found,
+                          const Script& incoming,
+                          VoiceRoutineStore* voice) {
+    const bool voice_steps = molt_ai::automation::HasVoiceSteps(incoming);
+    if (!found.script) {
+      AutomationStorage* st = storage();
+      if (st && st->Load(incoming.id)) {
+        return "This routine was made before routines belonged to a "
+               "profile. Keep it here first.";
+      }
+      if (voice_steps && !voice) {
+        return "Routines taught by voice can't be kept in this window.";
+      }
+      return std::string();
+    }
+    if (!found.voice && voice_steps) {
+      return "Steps taught by voice can't be added to this workflow.";
+    }
+    if (found.voice && !voice_steps) {
+      return "A routine taught by voice keeps its voice steps.";
+    }
+    return std::string();
   }
 
   // The frames of other sites the user let offer their tools to the
@@ -457,8 +733,16 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     base::DictValue out;
     bool ok = false;
     if (args.size() >= 2 && args[1].is_string()) {
-      if (auto* st = storage()) {
-        ok = st->Delete(args[1].GetString());
+      const std::string& id = args[1].GetString();
+      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
+      Found found = FindWorkflow(id, voice.get());
+      if (found.storage) {
+        ok = found.storage->Delete(id);
+        if (ok && found.voice) {
+          found.storage->AppendAudit(id, "voice_routine_deleted",
+                                     "in Agent mode");
+          VoiceRoutinesChanged();
+        }
       }
     }
     out.Set("ok", ok);
@@ -469,17 +753,30 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AllowJavascript();
     base::DictValue out;
     if (args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
-      if (auto* st = storage()) {
-        if (auto s = st->Load(args[1].GetString())) {
-          s->id = NewWorkflowId();
-          s->name = args[2].GetString();
-          s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
-          s->stats = molt_ai::automation::Stats();  // fresh history
-          s->trigger = Trigger();                    // copy starts manual
-          // A copy is a new workflow: it earns trust on its own.
-          AutomationSecurity::ClampTrustForSave(*s, /*existing=*/nullptr);
-          st->Save(*s);
+      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
+      Found found = FindWorkflow(args[1].GetString(), voice.get());
+      if (auto& s = found.script) {
+        AutomationStorage* st = found.storage;
+        s->id = NewWorkflowId();
+        while (st->Load(s->id)) {
+          s->id += "_";
+        }
+        s->name = args[2].GetString();
+        s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
+        s->stats = molt_ai::automation::Stats();  // fresh history
+        s->trigger = Trigger();                    // copy starts manual
+        // A copy is a new workflow: it earns trust on its own.
+        AutomationSecurity::ClampTrustForSave(*s, /*existing=*/nullptr);
+        // A routine's copy is the profile's too, under a name of its own.
+        if (found.voice) {
+          s->name = voice->NameFor(*s);
+        }
+        if (!s->name.empty() && st->Save(*s)) {
+          if (found.voice) {
+            VoiceRoutinesChanged();
+          }
           out.Set("id", s->id);
+          out.Set("name", s->name);
         }
       }
     }
@@ -492,8 +789,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     bool ok = false;
     if (args.size() >= 2 && args[1].is_string()) {
       const std::string id = args[1].GetString();
-      if (auto* st = storage()) {
-        std::optional<Script> loaded = st->Load(id);
+      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
+      if (storage()) {
+        std::optional<Script> loaded = FindWorkflow(id, voice.get()).script;
         // An unconfirmed draft doesn't run (the runner refuses it too).
         if (loaded && loaded->security.sites_unconfirmed) {
           out.Set("ok", false);
@@ -598,8 +896,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     std::string script_id;
     if (args.size() >= 2 && args[1].is_string()) {
       script_id = args[1].GetString();
-      if (auto* st = storage()) {
-        if (auto s = st->Load(script_id)) {
+      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
+      {
+        if (auto s = FindWorkflow(script_id, voice.get()).script) {
           for (const auto& r : s->stats.run_history) {
             base::DictValue rd;
             rd.Set("ts", static_cast<double>(r.timestamp_unix));
@@ -699,8 +998,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     base::DictValue out;
     out.Set("ok", false);
     if (args.size() >= 3 && args[1].is_string() && args[2].is_dict()) {
+      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
       if (auto* st = storage()) {
-        std::optional<Script> loaded = st->Load(args[1].GetString());
+        std::optional<Script> loaded =
+            FindWorkflow(args[1].GetString(), voice.get()).script;
         // An unconfirmed draft is never scheduled.
         if (loaded && loaded->security.sites_unconfirmed) {
           out.Set("error", molt_ai::automation::kDraftNeedsReviewMessage);
@@ -787,11 +1088,13 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       ResolveDict(args, std::move(out));
       return;
     }
-    AutomationStorage* st = storage();
-    if (st && args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
+    std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
+    if (args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
       const std::string& id = args[1].GetString();
       const std::string& level_str = args[2].GetString();
-      std::optional<Script> s = st->Load(id);
+      Found found = FindWorkflow(id, voice.get());
+      AutomationStorage* st = found.storage;
+      std::optional<Script>& s = found.script;
       if (!s) {
         out.Set("error", "Workflow not found");
       } else if (s->security.sites_unconfirmed) {
@@ -826,8 +1129,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       ResolveDict(args, std::move(out));
       return;
     }
-    AutomationStorage* st = storage();
-    if (!st || args.size() < 3 || !args[1].is_string() || !args[2].is_list()) {
+    if (args.size() < 3 || !args[1].is_string() || !args[2].is_list()) {
       ResolveDict(args, std::move(out));
       return;
     }
@@ -840,7 +1142,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       shown.push_back(v.GetString());
     }
     const std::string& id = args[1].GetString();
-    std::optional<Script> s = st->Load(id);
+    std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
+    Found found = FindWorkflow(id, voice.get());
+    AutomationStorage* st = found.storage;
+    std::optional<Script>& s = found.script;
     if (!s) {
       out.Set("error", "Workflow not found");
     } else if (!AutomationSecurity::ConfirmDraftSites(*s, shown)) {
@@ -852,6 +1157,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         sites += (sites.empty() ? "" : " ") + host;
       }
       st->AppendAudit(id, "draft_sites_confirmed", sites);
+      if (found.voice) {
+        VoiceRoutinesChanged();
+      }
       out.Set("ok", true);
       out.Set("trust", TrustLevelToString(s->security.trust));
     }
@@ -1031,7 +1339,8 @@ var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your save
    honoured only on a real click, for exactly the sites shown). It is then
    an ordinary untrusted workflow. */
 var DRAFT_EXPLAIN='Made by the AI agent, or brought in from elsewhere. Check its steps and confirm its sites before it can run.';
-var VOICE_EXPLAIN='Taught by voice. Voice mode runs it: say “run” and its name.';
+var VOICE_EXPLAIN='Taught by voice in this profile. Voice mode runs it: say “run” and its name.';
+var CLASH_EXPLAIN='Another of your routines has this name, so voice mode runs neither. Rename one.';
 /* ---- a run's question (the runner waits for the user) ----
    The text is the browser's (page text in it already cleaned); shown as
    text. Allowing must be a real click: the browser checks for it. */
@@ -1275,7 +1584,70 @@ $('backBtn').addEventListener('click',function(){
 function loadLibrary(){
   return sendWithPromise('listWorkflows').then(function(r){
     renderLibrary((r&&r.workflows)||[]);
-  }).catch(function(){renderLibrary([]);}).then(loadFrameTools);
+    renderUnclaimed(r);
+  }).catch(function(){renderLibrary([]);renderUnclaimed(null);}).then(loadFrameTools);
+}
+/* ---- routines from before profiles ----
+   Routines taught by voice belong to the profile that taught them. Ones
+   made before that are in the storage every profile shares: each profile
+   is asked whether they are its own. "Keep here" moves one into this
+   profile (a real click; another profile can't have it then), "Not mine"
+   stops offering them here, "Show" offers them again. Names are the
+   user's words, shown as text. */
+function renderUnclaimed(r){
+  var box=$('unclaimedBox');clear(box);
+  var list=(r&&Array.isArray(r.unclaimed))?r.unclaimed.slice(0,200):[];
+  var hidden=(r&&typeof r.unclaimedHidden==='number')?r.unclaimedHidden:0;
+  list=list.filter(function(u){return u&&typeof u.id==='string'&&typeof u.name==='string';});
+  if(!list.length&&!hidden)return;
+  var sec=h('section',{'class':'frame-tools unclaimed','aria-labelledby':'unclaimedH'},[
+    h('h3',{'class':'ft-h',id:'unclaimedH'},'Routines from before profiles')
+  ]);
+  if(list.length){
+    sec.appendChild(h('div',{'class':'ft-s'},
+      (list.length===1?'This routine was':'These routines were')+' made before routines belonged to a profile. Keep '+(list.length===1?'it':'them')+' here?'));
+    var ids=[];
+    list.forEach(function(u){
+      ids.push(u.id);
+      var steps=Number(u.steps)||0;
+      sec.appendChild(h('div',{'class':'ft-row'},[
+        h('span',{'class':'ft-pair'},u.name),
+        h('span',{'class':'ft-when'},steps+' step'+(steps===1?'':'s')),
+        h('button',{'class':'btn ghost ft-forget','aria-label':'Keep '+u.name+' here',
+          onClick:function(){claimRoutines([u.id]);}},'Keep here')
+      ]));
+    });
+    sec.appendChild(h('div',{'class':'ft-row'},[
+      h('button',{'class':'btn ghost ft-forget',onClick:function(){claimRoutines(ids);}},
+        list.length===1?'Keep it here':'Keep all here'),
+      h('button',{'class':'btn ghost ft-forget',onClick:function(){
+        sendWithPromise('declineVoiceRoutines',ids).then(loadLibrary,loadLibrary);
+      }},'Not mine')
+    ]));
+  }
+  if(hidden){
+    sec.appendChild(h('div',{'class':'ft-row'},[
+      h('span',{'class':'ft-pair ft-s'},hidden+(hidden===1?' routine':' routines')+' you said aren’t yours'),
+      h('button',{'class':'btn ghost ft-forget',onClick:function(){
+        sendWithPromise('showDeclinedRoutines').then(loadLibrary,loadLibrary);
+      }},'Show')
+    ]));
+  }
+  box.appendChild(sec);
+}
+function claimRoutines(ids){
+  sendWithPromise('claimVoiceRoutines',ids).then(function(r){
+    if(!r||r.ok!==true){
+      toast((r&&typeof r.error==='string')?r.error:'Couldn’t keep them here','err');
+    }else{
+      var renamed=(Array.isArray(r.kept)?r.kept:[]).filter(function(k){
+        return k&&typeof k.renamedFrom==='string'&&typeof k.name==='string';
+      });
+      toast(renamed.length?('Kept here. You had a routine called “'+renamed[0].renamedFrom+
+        '”, so this one is “'+renamed[0].name+'”.'):'Kept here','ok');
+    }
+    loadLibrary();
+  }).catch(function(){toast('Couldn’t keep them here','err');});
 }
 /* ---- other sites' tools the user allowed (per page) ----
    A frame of another site offers its tools to the agent only once the user
@@ -1361,6 +1733,10 @@ function buildCard(wf){
   if(wf.voice===true){
     sub.appendChild(h('span',{'class':'dotsep'},'·'));
     sub.appendChild(h('span',{'class':'tbadge voice',title:VOICE_EXPLAIN},'voice routine'));
+    if(wf.nameClash===true){
+      sub.appendChild(h('span',{'class':'dotsep'},'·'));
+      sub.appendChild(h('span',{'class':'tbadge draft',title:CLASH_EXPLAIN},'same name as another'));
+    }
   }
   sub.appendChild(h('span',{'class':'dotsep'},'·'));
   if(!wf.lastRun){
@@ -1403,7 +1779,8 @@ function buildCard(wf){
     actions.appendChild(h('button',{'class':'mini run grow','aria-label':'Review '+wfName,onClick:function(){openEditor(wf.id);}},['\u{1F50D}',' Review']));
   }else if(wf.voice===true){
     // Taught by voice: voice mode runs it, and it is never scheduled.
-    actions.appendChild(h('span',{'class':'voice-say grow'},'Say “run '+wfName+'” in voice mode'));
+    actions.appendChild(h('span',{'class':'voice-say grow'},wf.nameClash===true
+      ?'Rename it to run it by voice':'Say “run '+wfName+'” in voice mode'));
     actions.appendChild(h('button',{'class':'mini','aria-label':'Edit '+wfName,onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
   }else{
     actions.appendChild(h('button',{'class':'mini run grow','aria-label':'Run '+wfName,onClick:function(){runWorkflowFlow(wf.id);}},['▶',' Run']));
@@ -2016,8 +2393,11 @@ function collectWorkflow(){
 function saveEditor(quiet){
   var w=collectWorkflow();
   return sendWithPromise('saveWorkflow',w).then(function(r){
+    if(r&&typeof r.error==='string'){toast(r.error,'err');return null;}
     if(r&&r.id!=null){
       editorState.id=r.id;
+      // A routine taught by voice may be renamed to keep its name its own.
+      if(typeof r.name==='string')editorState.name=r.name;
       if(r.trust)editorState.trust=r.trust;
       // Still a draft: the sites its saved steps target now.
       if(editorState.draft)editorState.draftSites=cleanSites(r.draftSites);
@@ -2385,14 +2765,24 @@ function askRename(wf){
       sendWithPromise('getWorkflow',wf.id).then(function(full){
         full.name=name;delete full.stats;
         return sendWithPromise('saveWorkflow',{id:full.id,name:name,steps:full.steps,variables:full.variables,trigger:full.trigger});
-      }).then(function(){toast('Renamed','ok');loadLibrary();}).catch(function(){toast('Couldn’t rename','err');});
+      }).then(function(r){
+        if(r&&typeof r.error==='string')toast(r.error,'err');
+        else if(r&&typeof r.name==='string'&&r.name!==name)toast('Renamed to “'+r.name+'”: you have a routine called “'+name+'”','ok');
+        else toast('Renamed','ok');
+        loadLibrary();
+      }).catch(function(){toast('Couldn’t rename','err');});
     }});
 }
 function askDuplicate(wf){
   openMini({title:'Duplicate workflow',hasInput:true,value:(wf.name||'Workflow')+' copy',placeholder:'New name',confirmText:'Duplicate',
     onConfirm:function(name){
       name=(name||'').trim()||((wf.name||'Workflow')+' copy');
-      sendWithPromise('duplicateWorkflow',wf.id,name).then(function(){toast('Duplicated','ok');loadLibrary();})
+      sendWithPromise('duplicateWorkflow',wf.id,name).then(function(r){
+        if(r&&r.id==null)toast('Couldn’t duplicate','err');
+        else if(r&&typeof r.name==='string'&&r.name!==name)toast('Duplicated as “'+r.name+'”','ok');
+        else toast('Duplicated','ok');
+        loadLibrary();
+      })
         .catch(function(){toast('Couldn’t duplicate','err');});
     }});
 }
@@ -3050,7 +3440,7 @@ h2[tabindex="-1"]:focus{outline:none!important}
         </div>
       </div>
       <div id="voiceBox"></div>
-      <div class="scroll" id="libList"><div id="libCards"></div><div id="frameToolsBox"></div></div>
+      <div class="scroll" id="libList"><div id="unclaimedBox"></div><div id="libCards"></div><div id="frameToolsBox"></div></div>
     </section>
 
     <!-- 2. RECORDING -->

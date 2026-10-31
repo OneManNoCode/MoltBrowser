@@ -1188,6 +1188,8 @@ source_set("voice_learning_browser_tests") {
     "//chrome/browser/profiles:profile",
 
     # A second profile of the machine (profile-routines).
+    "//chrome/browser:browser_process",
+    "//chrome/browser/profiles:profile_manager",
     "//chrome/browser/profiles:profile_test_util",
     "//chrome/browser/ui",
     "//chrome/browser/ui/browser_window",
@@ -1200,6 +1202,9 @@ source_set("voice_learning_browser_tests") {
     "//media",
     "//net:test_support",
     "//testing/gtest",
+
+    # The Agent studio opened in a new tab of each profile's window.
+    "//ui/base",
     "//url",
   ]
 
