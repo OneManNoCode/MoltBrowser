@@ -284,6 +284,27 @@ TEST(VoiceRoutinesLogicTest, Names) {
   EXPECT_EQ(*FindRoutineName(copies, "the news"), "my news");
 }
 
+// In Spanish: its articles and its numbers ("mis noticias dos" is "mis
+// noticias (2)"); English names keep their English reading.
+TEST(VoiceRoutinesLogicTest, NamesInSpanish) {
+  const Language es = Language::kSpanish;
+  EXPECT_EQ(RoutineNameKey("Mis Noticias", es), "noticias");
+  EXPECT_EQ(RoutineNameKey("las noticias", es), "noticias");
+  EXPECT_EQ(RoutineNameKey("mis noticias (2)", es), "noticias 2");
+  EXPECT_EQ(RoutineNameKey("mis noticias dos", es), "noticias 2");
+  EXPECT_EQ(RoutineNameKey("los veintiuno", es), "21");
+  EXPECT_EQ(RoutineNameKey("top treinta y uno", es), "top 31");
+  const std::vector<std::string> copies = {"mis noticias", "mis noticias (2)"};
+  ASSERT_TRUE(FindRoutineName(copies, "mis noticias dos", es));
+  EXPECT_EQ(*FindRoutineName(copies, "mis noticias dos", es),
+            "mis noticias (2)");
+  EXPECT_EQ(*FindRoutineName(copies, "las noticias", es), "mis noticias");
+  // English words aren't Spanish numbers, nor the reverse.
+  EXPECT_EQ(RoutineNameKey("my news two", es), "my news two");
+  EXPECT_EQ(RoutineNameKey("mis noticias dos"), "mis noticias dos");
+  EXPECT_EQ(MatchRoutineName(copies, "mis noticias dos").count, 0u);
+}
+
 TEST(VoiceRoutinesLogicTest, ANameRunsExactlyOneRoutine) {
   // Two routines that are said alike (files edited, or copied in by hand):
   // neither is found by that name, and the count says why.

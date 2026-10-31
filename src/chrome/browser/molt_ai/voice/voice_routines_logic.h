@@ -49,6 +49,7 @@
 #include <vector>
 
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_hints.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
@@ -209,10 +210,13 @@ std::string JoinSpokenList(const std::vector<std::string>& items);
 // usable (nor when the whole of it answers a yes-or-no question).
 std::string RoutineDisplayName(std::string_view said);
 
-// The key names are compared by: folded, without a leading "my", "the",
-// "a" or "an", numbers as digits ("My News", "news" and "the news" are one
-// name; so are "my news (2)" and "my news two").
-std::string RoutineNameKey(std::string_view name);
+// The key names are compared by in |language|: folded, without a leading
+// "my", "the", "a" or "an" ("mi", "mis", "el", "la", "los", "las", "un",
+// "una" in Spanish), numbers as digits ("My News", "news" and "the news"
+// are one name; so are "my news (2)" and "my news two", and in Spanish
+// "mis noticias (2)" and "mis noticias dos").
+std::string RoutineNameKey(std::string_view name,
+                           Language language = Language::kEnglish);
 
 struct RoutineNameMatch {
   // The one name that is said so; null when none is, or more than one.
@@ -222,13 +226,15 @@ struct RoutineNameMatch {
   size_t count = 0;
 };
 
-// The names in |names| that |said| names.
+// The names in |names| that |said| names, said in |language|.
 RoutineNameMatch MatchRoutineName(const std::vector<std::string>& names,
-                                  std::string_view said);
+                                  std::string_view said,
+                                  Language language = Language::kEnglish);
 // The one name in |names| that |said| names, or null (none, or more than
 // one).
 const std::string* FindRoutineName(const std::vector<std::string>& names,
-                                   std::string_view said);
+                                   std::string_view said,
+                                   Language language = Language::kEnglish);
 
 // What a routine brought in under |name| is called beside |names| (the
 // profile's): |name| when none of them is said as it is, else the first of

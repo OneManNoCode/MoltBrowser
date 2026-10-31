@@ -2302,7 +2302,8 @@ class Planner {
     }
     const std::string spoken = PageText(name);
     // A name in use: replaced on a "yes" (profile-routines).
-    const RoutineNameMatch in_use = MatchRoutineName(learning.routines, name);
+    const RoutineNameMatch in_use =
+        MatchRoutineName(learning.routines, name, env_.language);
     if (in_use.count > 1) {
       Say("You have " + std::to_string(in_use.count) + " routines called " +
           spoken + ". Choose another name, or rename them in Agent mode.");
@@ -2343,14 +2344,15 @@ class Planner {
       Say("I can't run routines here.");
       return;
     }
-    const RoutineNameMatch match = MatchRoutineName(learning.routines, said);
+    const RoutineNameMatch match =
+        MatchRoutineName(learning.routines, said, env_.language);
     const std::string* name = match.name;
     if (match.count > 1) {
       Say("You have " + std::to_string(match.count) + " routines called " +
           PageText(said) + ". Rename one in Agent mode to run it by voice.");
       return;
     }
-    if (!name && FindRoutineName(learning.unclaimed, said)) {
+    if (!name && FindRoutineName(learning.unclaimed, said, env_.language)) {
       Say(PageText(said) + " was made before routines belonged to a profile.");
       OfferUnclaimed();
       return;
@@ -2370,8 +2372,9 @@ class Planner {
   void ForgetRoutine(const std::string& said) {
     const LearningEnvironment& learning = env_.learning;
     const RoutineNameMatch match =
-        learning.routines_available ? MatchRoutineName(learning.routines, said)
-                                    : RoutineNameMatch();
+        learning.routines_available
+            ? MatchRoutineName(learning.routines, said, env_.language)
+            : RoutineNameMatch();
     const std::string* name = match.name;
     if (match.count > 1) {
       Say("You have " + std::to_string(match.count) + " routines called " +
@@ -2513,7 +2516,8 @@ class Planner {
       return;
     }
     // A routine's name on its own runs it (before the planner is asked).
-    if (MatchRoutineName(env_.learning.routines, command.heard).count) {
+    if (MatchRoutineName(env_.learning.routines, command.heard, env_.language)
+            .count) {
       RunRoutine(command.heard);
       return;
     }

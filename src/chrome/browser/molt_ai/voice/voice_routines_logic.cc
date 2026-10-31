@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 
 #include <algorithm>
+#include <span>
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
@@ -521,13 +522,21 @@ std::string RoutineDisplayName(std::string_view said) {
   return name;
 }
 
-std::string RoutineNameKey(std::string_view name) {
+std::string RoutineNameKey(std::string_view name, Language language) {
   const std::string folded = FoldForComparison(
       name.substr(0, std::min(name.size(), kMaxUtteranceBytes)));
+  static constexpr std::string_view kEnglishArticles[] = {"my ", "the ", "a ",
+                                                          "an "};
+  static constexpr std::string_view kSpanishArticles[] = {
+      "mi ", "mis ", "el ", "la ", "los ", "las ", "un ", "una "};
+  const std::span<const std::string_view> articles =
+      language == Language::kSpanish
+          ? std::span<const std::string_view>(kSpanishArticles)
+          : std::span<const std::string_view>(kEnglishArticles);
   size_t start = 0;
   while (true) {
     bool dropped = false;
-    for (std::string_view article : {"my ", "the ", "a ", "an "}) {
+    for (std::string_view article : articles) {
       if (folded.compare(start, article.size(), article) == 0 &&
           folded.size() > start + article.size()) {
         start += article.size();
@@ -555,13 +564,12 @@ std::string RoutineNameKey(std::string_view name) {
   }
   NumberOptions cardinals;
   cardinals.ordinals = false;
-  const LanguagePhrases& phrases = PhrasesFor(Language::kEnglish);
   std::string key;
   for (size_t i = 0; i < words.size();) {
     if (!key.empty()) {
       key.push_back(' ');
     }
-    const auto number = ReadNumber(words, i, phrases, cardinals);
+    const auto number = ReadNumberIn(words, i, language, cardinals);
     if (number && number->words > 0) {
       key += std::to_string(number->value);
       i += number->words;
@@ -574,15 +582,16 @@ std::string RoutineNameKey(std::string_view name) {
 }
 
 RoutineNameMatch MatchRoutineName(const std::vector<std::string>& names,
-                                  std::string_view said) {
+                                  std::string_view said,
+                                  Language language) {
   RoutineNameMatch match;
-  const std::string key = RoutineNameKey(said);
+  const std::string key = RoutineNameKey(said, language);
   if (key.empty()) {
     return match;
   }
   const std::string* found = nullptr;
   for (const std::string& name : names) {
-    if (RoutineNameKey(name) == key) {
+    if (RoutineNameKey(name, language) == key) {
       found = &name;
       ++match.count;
     }
@@ -594,8 +603,9 @@ RoutineNameMatch MatchRoutineName(const std::vector<std::string>& names,
 }
 
 const std::string* FindRoutineName(const std::vector<std::string>& names,
-                                   std::string_view said) {
-  return MatchRoutineName(names, said).name;
+                                   std::string_view said,
+                                   Language language) {
+  return MatchRoutineName(names, said, language).name;
 }
 
 std::string UniqueRoutineName(const std::vector<std::string>& names,
