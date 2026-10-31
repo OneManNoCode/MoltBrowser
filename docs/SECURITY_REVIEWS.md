@@ -61,7 +61,7 @@ questions, voice controller, prompts and learning fuzzers, and
 headers; the browser test runs on the build machine.
 
 **Findings.** 15: 5 low and 10 informational (defence in depth,
-usability, or what later phases of the design cover). Fixed: three of the
+usability, or what later phases of the design cover). Fixed: the five
 low and one of the informational; the others are tracked privately.
 
 **Fixed.**
@@ -82,6 +82,14 @@ low and one of the informational; the others are tracked privately.
   navigating could make the page a voice click led to count from when it
   committed, and "go back" then skipped the user's page
   (`security/activation_policy.cc`'s `NavigationStarts`).
+- Voice mode counts as speaking whenever its voice plays or a reading
+  holds the floor, also while its steps wait for a page or a submission:
+  what it says then (the activation guard's question, a prompt, a
+  routine's step) reaches the listening session as the browser's own
+  voice (`voice/voice_controller_logic.cc`'s `DecideLoopActivity()`).
+- The built-in AI APIs stay off while `settings.json` exists but can't be
+  read, instead of falling back to on (`web_ai/web_ai_settings_switch.cc`'s
+  `WebAIApisSwitchFrom()`, used by both of its readers).
 
 **Tests added.**
 
@@ -95,6 +103,9 @@ low and one of the informational; the others are tracked privately.
   frame's. `activation_guard_browsertest.cc`: "go back" from a slowly
   served page returns to the user's page while the user's page keeps its
   frames navigating.
+- `voice_controller_logic_unittest.cc`: speaking wins over waiting.
+  `web_ai_settings_switch_unittest.cc`: a settings file that can't be read
+  leaves the built-in AI APIs off.
 
 ## 2026-10-30: round 41 (October 2026)
 

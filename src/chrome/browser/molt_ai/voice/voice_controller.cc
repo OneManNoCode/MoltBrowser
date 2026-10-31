@@ -575,20 +575,22 @@ bool VoiceController::busy() const {
 }
 
 VoiceActivity VoiceController::activity() const {
-  if (!pending_.empty() || wait_ || submitting_) {
-    return VoiceActivity::kThinking;
+  // Speaking first, even while steps wait (DecideLoopActivity()): what the
+  // browser says then is its own voice to the listening side. A reading is
+  // speaking until its last chunk's end is in, between chunks too.
+  switch (DecideLoopActivity(
+      active_, (speech_ && speech_->speaking()) || reader_->reading(),
+      !pending_.empty() || wait_ || submitting_, busy())) {
+    case LoopActivity::kOff:
+      return VoiceActivity::kOff;
+    case LoopActivity::kListening:
+      return VoiceActivity::kListening;
+    case LoopActivity::kThinking:
+      return VoiceActivity::kThinking;
+    case LoopActivity::kSpeaking:
+      return VoiceActivity::kSpeaking;
   }
-  // While the planner works, what it says is the browser speaking (the
-  // listening side treats what it hears then as the browser's own voice).
-  // A reading is speaking until its last chunk's end is in, between chunks
-  // too.
-  if ((speech_ && speech_->speaking()) || reader_->reading()) {
-    return VoiceActivity::kSpeaking;
-  }
-  if (busy()) {
-    return VoiceActivity::kThinking;
-  }
-  return active_ ? VoiceActivity::kListening : VoiceActivity::kOff;
+  return VoiceActivity::kOff;
 }
 
 void VoiceController::NotifyCaption() {

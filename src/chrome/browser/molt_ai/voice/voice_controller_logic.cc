@@ -2723,6 +2723,19 @@ bool NeedsConfirmation(std::string_view label,
   return false;
 }
 
+LoopActivity DecideLoopActivity(bool active,
+                                bool speaking,
+                                bool waiting,
+                                bool busy) {
+  if (speaking) {
+    return LoopActivity::kSpeaking;
+  }
+  if (waiting || busy) {
+    return LoopActivity::kThinking;
+  }
+  return active ? LoopActivity::kListening : LoopActivity::kOff;
+}
+
 const PageItem* SiteItem(const PageMap& map, const PageNodeHandle& part) {
   if (!part.valid() || !map.InPage(part)) {
     return nullptr;

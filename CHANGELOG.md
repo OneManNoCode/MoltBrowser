@@ -527,7 +527,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   to read back; voice mode (preview) doesn't say an answer about the page
   that holds "Hey Molt" run into one word or written with look-alike
   letters; and "go back" after a voice click still returns to the user's
-  page while that page keeps its frames loading.
+  page while that page keeps its frames loading; voice mode counts as
+  speaking whenever its voice plays, also while it waits for a page, so
+  what it says then is never taken for the user's words; and the built-in
+  AI APIs stay off while `settings.json` can't be read.
 
 ### Privacy
 - **Voice mode learns from use, on this device** (round 41, learning;

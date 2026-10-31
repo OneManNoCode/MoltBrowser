@@ -536,6 +536,27 @@ const PageItem* FindSearchField(const PageMap& map);
 // otherwise.
 const PageItem* SiteItem(const PageMap& map, const PageNodeHandle& part);
 
+// What voice mode is doing, as the caption bar and the listening session
+// see it (VoiceController::activity()).
+enum class LoopActivity : uint8_t {
+  kOff,
+  kListening,
+  kThinking,
+  kSpeaking,
+};
+
+// |speaking|: its voice plays, or a reading holds the floor (between its
+// chunks too). |waiting|: steps wait for a page, a submission or more
+// steps. |busy|: anything else runs (the planner, a question about the
+// page). Speaking wins over the rest: what the browser says while it
+// waits (the guard's question, a prompt, a routine's step) must reach the
+// session as the browser's own voice, or the session would take the
+// browser's words, a wake phrase included, for the user's.
+LoopActivity DecideLoopActivity(bool active,
+                                bool speaking,
+                                bool waiting,
+                                bool busy);
+
 }  // namespace voice
 }  // namespace molt_ai
 

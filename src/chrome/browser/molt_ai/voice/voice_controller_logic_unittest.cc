@@ -1656,6 +1656,26 @@ TEST(VoiceControllerLogicTest, DownloadsAndPasswordsByVoice) {
   EXPECT_EQ(Find(turn, K::kPromptAnswer)->prompt_answer, PromptAnswer::kRefuse);
 }
 
+// What the browser says while steps wait for a page (the guard's question,
+// a prompt read by voice, a routine's step) is speaking: the listening
+// session must know it as the browser's own voice.
+TEST(VoiceControllerLogicTest, SpeakingWinsOverWaiting) {
+  for (bool waiting : {false, true}) {
+    for (bool busy : {false, true}) {
+      EXPECT_EQ(
+          DecideLoopActivity(/*active=*/true, /*speaking=*/true, waiting, busy),
+          LoopActivity::kSpeaking);
+    }
+  }
+  EXPECT_EQ(DecideLoopActivity(true, false, true, false),
+            LoopActivity::kThinking);
+  EXPECT_EQ(DecideLoopActivity(true, false, false, true),
+            LoopActivity::kThinking);
+  EXPECT_EQ(DecideLoopActivity(true, false, false, false),
+            LoopActivity::kListening);
+  EXPECT_EQ(DecideLoopActivity(false, false, false, false), LoopActivity::kOff);
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai

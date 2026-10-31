@@ -111,13 +111,12 @@ source_set("web_ai") {
     "runtime_web_ai_backend.h",
     "web_ai_consent.cc",
     "web_ai_consent.h",
-    "web_ai_settings_switch.cc",
-    "web_ai_settings_switch.h",
     "web_ai_site_permissions_factory.cc",
     "web_ai_site_permissions_factory.h",
   ]
   public_deps = [
     ":manager",
+    ":settings_switch",
     ":site_permissions",
   ]
   deps = [
@@ -166,6 +165,17 @@ source_set("web_ai") {
 }
 
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+# The user's switch for the built-in AI APIs in settings.json, read and
+# written through settings.json's one writer.
+source_set("settings_switch") {
+  sources = [
+    "web_ai_settings_switch.cc",
+    "web_ai_settings_switch.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [ "//chrome/browser/molt_ai/common:molt_settings_file" ]
+}
+
 source_set("unit_tests") {
   testonly = true
   sources = [
@@ -173,6 +183,7 @@ source_set("unit_tests") {
     "web_ai_conversation_unittest.cc",
     "web_ai_policy_unittest.cc",
     "web_ai_prompts_unittest.cc",
+    "web_ai_settings_switch_unittest.cc",
     "web_ai_site_permissions_service_unittest.cc",
     "web_ai_site_permissions_unittest.cc",
     "web_ai_translation_unittest.cc",
@@ -180,6 +191,7 @@ source_set("unit_tests") {
   deps = [
     ":logic",
     ":manager",
+    ":settings_switch",
     ":site_permissions",
     "//base",
     "//base/test:test_support",

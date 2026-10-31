@@ -10,12 +10,15 @@
 
 namespace molt_ai::web_ai {
 
-bool ReadWebAIApisSwitch() {
-  const std::optional<base::DictValue> settings = ReadMoltSettings();
+bool WebAIApisSwitchFrom(const std::optional<base::DictValue>& settings) {
   if (!settings) {
-    return true;
+    return false;
   }
   return settings->FindBool(kWebAIApisSettingsKey).value_or(true);
+}
+
+bool ReadWebAIApisSwitch() {
+  return WebAIApisSwitchFrom(ReadMoltSettings());
 }
 
 bool WriteWebAIApisSwitch(bool enabled) {

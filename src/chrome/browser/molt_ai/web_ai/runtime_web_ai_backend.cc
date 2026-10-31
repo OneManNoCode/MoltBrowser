@@ -6,19 +6,16 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/base_paths.h"
-#include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
-#include "base/json/json_reader.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/path_service.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/runtime/model_image_prep.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 
 namespace molt_ai::web_ai {
 
@@ -27,9 +24,6 @@ namespace {
 constexpr base::TaskTraits kWorkerTraits = {
     base::MayBlock(), base::TaskPriority::USER_VISIBLE,
     base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN};
-
-// settings.json is at most a few KiB; anything bigger isn't ours.
-constexpr size_t kMaxSettingsBytes = 1 << 20;
 
 struct WebAISettings {
   // The chat's default model ("default_model").
@@ -65,29 +59,15 @@ std::optional<std::vector<ModelImage>> PrepareImagesOnWorker(
 // ~/.moltbrowser/settings.json, as the chat reads it. Worker thread.
 WebAISettings ReadWebAISettings() {
   WebAISettings settings;
-  base::FilePath home;
-  if (!base::PathService::Get(base::DIR_HOME, &home)) {
+  // settings.json as its one writer reads it (common/molt_settings_file.h):
+  // a file that can't be read leaves the APIs off (WebAIApisSwitchFrom()).
+  const std::optional<base::DictValue> dict = ReadMoltSettings();
+  settings.web_apis_enabled = WebAIApisSwitchFrom(dict);
+  if (!dict) {
     return settings;
   }
-  const base::FilePath path =
-      home.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
-          .Append(base::FilePath::FromUTF8Unsafe("settings.json"));
-  std::string contents;
-  if (!base::ReadFileToStringWithMaxSize(path, &contents,
-                                         kMaxSettingsBytes)) {
-    return settings;
-  }
-  std::optional<base::Value> parsed =
-      base::JSONReader::Read(contents, base::JSON_ALLOW_TRAILING_COMMAS);
-  if (!parsed || !parsed->is_dict()) {
-    return settings;
-  }
-  const auto& dict = parsed->GetDict();
-  if (const std::string* model = dict.FindString("default_model")) {
+  if (const std::string* model = dict->FindString("default_model")) {
     settings.default_model = *model;
-  }
-  if (std::optional<bool> enabled = dict.FindBool("web_ai_apis")) {
-    settings.web_apis_enabled = *enabled;
   }
   return settings;
 }
