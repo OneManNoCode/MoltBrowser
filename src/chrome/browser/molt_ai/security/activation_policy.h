@@ -48,11 +48,12 @@
 // back", except the first one an action leads to within its window (the
 // page the user asked for): NoteHistoryEntry(). An action whose intent
 // never navigates the tab (full screen, a copy, a link opened in a new
-// tab) leads to no such page: every entry the page adds after it is
-// skippable. Otherwise, at 156, the browser can't tell the page the action
-// led to from an entry the page adds for itself in the same click (both
-// are the page's script, with the action's activation; see
-// TOUCHLESS_BROWSING.md §7.5), so the first one is taken as the user's.
+// tab, "play" of a player already on the page) leads to no such page:
+// every entry the page adds after it is skippable. Otherwise, at 156, the
+// browser can't tell the page the action led to from an entry the page
+// adds for itself in the same click (both are the page's script, with the
+// action's activation; see TOUCHLESS_BROWSING.md §7.5), so the first one
+// is taken as the user's.
 //
 // Std-only, so molt_ai_unittests and a standalone harness build the same
 // code. The browser's side (the tab's record, the hooks, the questions) is
@@ -82,9 +83,13 @@ inline constexpr int64_t kActingWindowMs = kTransientActivationMs + kInFlightMs;
 enum class Intent : uint8_t {
   kNone,
   kFullScreen,    // "full screen": the page's own full screen button
-  kPlayMedia,     // "play", or a video chosen to play
+  kPlayMedia,     // a video chosen to play (a link to it)
   kCopy,          // a copy (no voice or agent command copies yet)
   kOpenInNewTab,  // a link opened in a new tab (no command does yet)
+  // "play" of a video or audio element already on the page: it plays where
+  // it is (its player may go full screen, as for kPlayMedia), and leads to
+  // no page of its own.
+  kPlayInPlace,
 };
 
 // Who answers questions for the tab: voice mode on it, else a web agent

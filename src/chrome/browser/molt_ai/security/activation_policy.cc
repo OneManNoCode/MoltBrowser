@@ -86,11 +86,12 @@ bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms) {
   if (tab.history_entries < 1000) {
     ++tab.history_entries;
   }
-  // Pressing full screen, copying, or opening a link in a new tab doesn't
-  // navigate the tab: no entry is the page the user asked for.
-  const bool may_navigate = tab.intent != Intent::kFullScreen &&
-                            tab.intent != Intent::kCopy &&
-                            tab.intent != Intent::kOpenInNewTab;
+  // Pressing full screen, copying, opening a link in a new tab, or playing
+  // the player on the page doesn't navigate the tab: no entry is the page
+  // the user asked for.
+  const bool may_navigate =
+      tab.intent != Intent::kFullScreen && tab.intent != Intent::kCopy &&
+      tab.intent != Intent::kOpenInNewTab && tab.intent != Intent::kPlayInPlace;
   // The page the action led to is what the user asked for.
   return !(acting && may_navigate && tab.history_entries == 1);
 }
@@ -130,7 +131,8 @@ Ruling Decide(const TabRecord& tab,
       return kProceed;
     case Request::kFullScreen:
       if (tab.intent == Intent::kFullScreen ||
-          tab.intent == Intent::kPlayMedia) {
+          tab.intent == Intent::kPlayMedia ||
+          tab.intent == Intent::kPlayInPlace) {
         return kProceed;
       }
       return Ruling{Decision::kRefuse, voice};

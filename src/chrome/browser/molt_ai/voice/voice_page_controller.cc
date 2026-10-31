@@ -929,8 +929,9 @@ VoicePageController::ActionResult VoicePageController::PlayMedia(
   }
   ui::AXActionData data;
   data.action = ax::mojom::Action::kDoDefault;
-  // The user asked for it to play: the player may go full screen.
-  return Perform(*found, data, activation::Intent::kPlayMedia);
+  // The user asked for it to play where it is: the player may go full
+  // screen, and no history entry the page adds is a page of its own.
+  return Perform(*found, data, activation::Intent::kPlayInPlace);
 }
 
 VoicePageController::ActionResult VoicePageController::PauseMedia() {
