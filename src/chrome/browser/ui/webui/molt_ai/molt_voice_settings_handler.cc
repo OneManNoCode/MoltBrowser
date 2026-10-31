@@ -34,13 +34,20 @@ constexpr char kClickToChange[] = "Click the setting to change it.";
 // Read, change one setting, write: on settings.json's own sequence
 // (common/molt_settings_file.h), so no other change comes in between. The
 // settings as written, and whether they were.
-std::pair<VoiceModeSettings, bool> ReadChangeWrite(bool enabled_changed,
-                                                   bool value) {
+std::pair<VoiceModeSettings, bool> ReadChangeWrite(
+    MoltVoiceSettingsHandler::Setting which,
+    bool value) {
   VoiceModeSettings settings = molt_ai::voice::ReadVoiceModeSettings();
-  if (enabled_changed) {
-    settings.start_with_browser = value;
-  } else {
-    settings.always_listening = value;
+  switch (which) {
+    case MoltVoiceSettingsHandler::Setting::kEnabled:
+      settings.start_with_browser = value;
+      break;
+    case MoltVoiceSettingsHandler::Setting::kAlwaysListening:
+      settings.always_listening = value;
+      break;
+    case MoltVoiceSettingsHandler::Setting::kSayWordAloud:
+      settings.say_word_aloud = value;
+      break;
   }
   const bool ok = molt_ai::voice::WriteVoiceModeSettings(settings);
   return {settings, ok};
@@ -63,6 +70,10 @@ void MoltVoiceSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "voiceSettingsSetAlwaysListening",
       base::BindRepeating(&MoltVoiceSettingsHandler::HandleSetAlwaysListening,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "voiceSettingsSetSayWordAloud",
+      base::BindRepeating(&MoltVoiceSettingsHandler::HandleSetSayWordAloud,
                           base::Unretained(this)));
 }
 
@@ -98,6 +109,7 @@ void MoltVoiceSettingsHandler::OnRead(std::string callback_id,
   state.Set("available", molt_ai::voice::VoiceModeEnabled());
   state.Set("enabled", settings.start_with_browser);
   state.Set("alwaysListening", settings.always_listening);
+  state.Set("sayWordAloud", settings.say_word_aloud);
   state.Set("listening", session && session->listening());
   state.Set("moltnet",
             molt_ai::tor::IsMoltNetProfile(Profile::FromWebUI(web_ui())));
@@ -117,61 +129,59 @@ void MoltVoiceSettingsHandler::HandleGetState(const base::ListValue& args) {
 }
 
 void MoltVoiceSettingsHandler::HandleSetEnabled(const base::ListValue& args) {
-  if (!HasCallbackArgs(args, 2u, __func__)) {
-    return;
-  }
-  AllowJavascript();
-  const std::optional<bool> enabled = BoolArg(args, 1);
-  if (!enabled || !molt_ai::voice::VoiceModeEnabled()) {
-    ResolveWithState(args[0].GetString(), std::nullopt);
-    return;
-  }
-  // The microphone: only with the click itself (molt_user_click.h). OS
-  // voice control's clicks count; a page's script can't make one up.
-  if (!molt_ai::ConsumeUserClick(true, web_ui()->GetRenderFrameHost())) {
-    ResolveWithState(args[0].GetString(), kClickToChange);
-    return;
-  }
-  Change(args[0].GetString(), /*enabled_changed=*/true, *enabled);
+  HandleSet(args, Setting::kEnabled);
 }
 
 void MoltVoiceSettingsHandler::HandleSetAlwaysListening(
     const base::ListValue& args) {
+  HandleSet(args, Setting::kAlwaysListening);
+}
+
+void MoltVoiceSettingsHandler::HandleSetSayWordAloud(
+    const base::ListValue& args) {
+  HandleSet(args, Setting::kSayWordAloud);
+}
+
+void MoltVoiceSettingsHandler::HandleSet(const base::ListValue& args,
+                                         Setting setting) {
   if (!HasCallbackArgs(args, 2u, __func__)) {
     return;
   }
   AllowJavascript();
-  const std::optional<bool> always = BoolArg(args, 1);
-  if (!always || !molt_ai::voice::VoiceModeEnabled()) {
+  const std::optional<bool> value = BoolArg(args, 1);
+  if (!value || !molt_ai::voice::VoiceModeEnabled()) {
     ResolveWithState(args[0].GetString(), std::nullopt);
     return;
   }
+  // Only with the click itself (molt_user_click.h). OS voice control's
+  // clicks count; a page's script can't make one up, and neither can
+  // voice mode (nothing it hears changes these).
   if (!molt_ai::ConsumeUserClick(true, web_ui()->GetRenderFrameHost())) {
     ResolveWithState(args[0].GetString(), kClickToChange);
     return;
   }
-  Change(args[0].GetString(), /*enabled_changed=*/false, *always);
+  Change(args[0].GetString(), setting, *value);
 }
 
 void MoltVoiceSettingsHandler::Change(std::string callback_id,
-                                      bool enabled_changed,
+                                      Setting setting,
                                       bool value) {
   molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(&ReadChangeWrite, enabled_changed, value),
+      FROM_HERE, base::BindOnce(&ReadChangeWrite, setting, value),
       base::BindOnce(
           [](base::WeakPtr<MoltVoiceSettingsHandler> self,
-             std::string callback_id, bool enabled_changed,
+             std::string callback_id, Setting setting,
              std::pair<VoiceModeSettings, bool> result) {
             if (self) {
-              self->OnWritten(std::move(callback_id), enabled_changed,
-                              result.first, result.second);
+              self->OnWritten(std::move(callback_id), setting, result.first,
+                              result.second);
             }
           },
-          weak_factory_.GetWeakPtr(), std::move(callback_id), enabled_changed));
+          weak_factory_.GetWeakPtr(), std::move(callback_id), setting));
 }
 
 void MoltVoiceSettingsHandler::OnWritten(std::string callback_id,
-                                         bool enabled_changed,
+                                         Setting setting,
                                          const VoiceModeSettings& settings,
                                          bool ok) {
   if (!IsJavascriptAllowed()) {
@@ -184,7 +194,7 @@ void MoltVoiceSettingsHandler::OnWritten(std::string callback_id,
     return;
   }
   VoiceSession::OnSettingsChanged(settings);
-  if (enabled_changed) {
+  if (setting == Setting::kEnabled) {
     // Now too: listening in this page's window, or off wherever it is.
     if (settings.start_with_browser) {
       if (VoiceSession* session =
@@ -212,6 +222,8 @@ const char kVoiceSettingsJs[] = R"JS(
     document.getElementById('voiceEnabled').checked = s.enabled === true;
     document.getElementById('voiceAlwaysListening').checked =
         s.alwaysListening === true;
+    document.getElementById('voiceSayWordAloud').checked =
+        s.sayWordAloud === true;
     var said = '';
     if (s.error) {
       said = String(s.error);
@@ -235,6 +247,9 @@ const char kVoiceSettingsJs[] = R"JS(
     },
     voiceSetAlwaysListening: function() {
       call('voiceSettingsSetAlwaysListening', !!this.checked);
+    },
+    voiceSetSayWordAloud: function() {
+      call('voiceSettingsSetSayWordAloud', !!this.checked);
     }
   });
 

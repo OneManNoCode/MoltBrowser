@@ -16,7 +16,11 @@
 //
 // For assistive technology it is a polite live region (role status, named
 // "Voice mode", the state as its description): screen readers read what
-// was heard and what is happening as they change. It never takes focus,
+// was heard and what is happening as they change. The voice gesture's
+// confirmation word, while a prompt waits for it and it may be shown, is
+// drawn large at the bar's end, across both lines, and left out of the
+// accessibility tree: a screen reader would say it with a voice the speech
+// helper hears in full (TOUCHLESS_BROWSING.md §7.3). It never takes focus,
 // so the OS magnifier stays where the user is. Its sizes follow the user's
 // text settings and its colours forced colours (voice_overlay_style.h).
 
@@ -76,6 +80,7 @@ class VoiceCaptionBar : public views::View,
   const views::Label* heard_label() const { return heard_label_; }
   const views::Label* status_label() const { return status_label_; }
   const views::Label* state_label() const { return state_label_; }
+  const views::Label* word_label() const { return word_label_; }
 
   // VoiceOverlay::CaptionSink:
   BrowserWindowInterface* GetWindow() const override;
@@ -104,11 +109,14 @@ class VoiceCaptionBar : public views::View,
   raw_ptr<views::Label> state_label_ = nullptr;
   raw_ptr<views::Label> heard_label_ = nullptr;
   raw_ptr<views::Label> status_label_ = nullptr;
+  raw_ptr<views::Label> word_label_ = nullptr;
   std::optional<CaptionText> caption_;
   VoiceOverlayStyle style_;
   // The font size the labels have now, and where the state's pill is.
   float label_font_ = 0;
   gfx::Rect state_pill_;
+  // Where the word's box is (empty without a word).
+  gfx::Rect word_box_;
   base::CallbackListSubscription active_tab_changed_;
   base::CallbackListSubscription window_closed_;
   base::CallbackListSubscription attached_;

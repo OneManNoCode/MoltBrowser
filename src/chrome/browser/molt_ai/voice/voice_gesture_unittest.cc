@@ -5,6 +5,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "chrome/browser/molt_ai/voice/phonetic_key.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -408,6 +409,63 @@ TEST(GestureBookTest, ANewPromptForTheSameBindingReplacesTheOld) {
             HearResult::kNoPrompt);
   EXPECT_EQ(book.Hear(second->id, second->word, kClean, 30, &gesture),
             HearResult::kMinted);
+}
+
+// A word retired (voice_gesture_channel.h): the prompt begun again for the
+// same binding while it waits. The old word is neither the word nor a miss.
+TEST(GestureBookTest, ARetiredWordIsNeitherTheWordNorAMiss) {
+  GestureBook book{Counter(12)};
+  const std::optional<GesturePrompt> first = book.Begin(Camera(), 0);
+  ASSERT_TRUE(first);
+  EXPECT_TRUE(first->retired.empty());
+  const std::optional<GesturePrompt> second = book.Begin(Camera(), 10);
+  ASSERT_TRUE(second);
+  EXPECT_EQ(second->retired, std::vector<std::string>{first->word});
+  EXPECT_NE(second->word, first->word);
+  VoiceGesture gesture;
+  // Clean or not, typed or heard: asked again, no strike.
+  EXPECT_EQ(book.Hear(second->id, first->word, kClean, 20, &gesture),
+            HearResult::kRetired);
+  EXPECT_EQ(book.Hear(second->id, first->word, kNotClean, 30, &gesture),
+            HearResult::kRetired);
+  EXPECT_EQ(book.Hear(second->id, first->word, kClean, 40, &gesture),
+            HearResult::kRetired);
+  EXPECT_FALSE(book.LockedOut(50));
+  EXPECT_NE(book.Find(second->id, 50), nullptr);
+  // The new word still allows.
+  EXPECT_EQ(book.Hear(second->id, second->word, kClean, 60, &gesture),
+            HearResult::kMinted);
+}
+
+TEST(GestureBookTest, RetiredWordsAccumulateAndAreNeverDrawnAgain) {
+  for (uint64_t seed = 0; seed < 50; ++seed) {
+    GestureBook book{Counter(seed)};
+    std::vector<std::string> words;
+    std::optional<GesturePrompt> prompt;
+    for (int i = 0; i < 6; ++i) {
+      prompt = book.Begin(Camera(), i);
+      ASSERT_TRUE(prompt);
+      for (const std::string& before : words) {
+        EXPECT_NE(prompt->word, before) << seed;
+      }
+      EXPECT_EQ(prompt->retired, words) << seed;
+      words.push_back(prompt->word);
+    }
+  }
+}
+
+TEST(GestureBookTest, AnotherPromptsWordIsNotRetiredForThisOne) {
+  GestureBook book{Counter(13)};
+  const std::optional<GesturePrompt> mic =
+      book.Begin(Camera("https://example.com microphone"), 0);
+  const std::optional<GesturePrompt> camera = book.Begin(Camera(), 0);
+  ASSERT_TRUE(mic);
+  ASSERT_TRUE(camera);
+  EXPECT_TRUE(camera->retired.empty());
+  VoiceGesture gesture;
+  // Hearing the microphone prompt's word for the camera's is a miss.
+  EXPECT_EQ(book.Hear(camera->id, mic->word, kClean, 10, &gesture),
+            HearResult::kWrongWord);
 }
 
 TEST(GestureBookTest, AGestureMintedForOnePromptIsNotAnother) {

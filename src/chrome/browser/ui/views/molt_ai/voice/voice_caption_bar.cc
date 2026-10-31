@@ -54,6 +54,10 @@ VoiceCaptionBar::VoiceCaptionBar(BrowserWindowInterface* window,
   state_label_ = AddChildView(MakeLabel());
   heard_label_ = AddChildView(MakeLabel());
   status_label_ = AddChildView(MakeLabel());
+  word_label_ = AddChildView(MakeLabel());
+  word_label_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+  word_label_->SetElideBehavior(gfx::NO_ELIDE);
+  word_label_->SetVisible(false);
 
   // A polite live region named "Voice mode": what was heard and what is
   // happening are read as they change. The state is its description (read
@@ -64,6 +68,9 @@ VoiceCaptionBar::VoiceCaptionBar(BrowserWindowInterface* window,
   accessibility.SetLiveRegionContainer(
       views::ViewAccessibility::LiveRegionStatus::kPolite);
   state_label_->GetViewAccessibility().SetIsIgnored(true);
+  // The confirmation word is for the eyes only: never in the tree a screen
+  // reader (or any program reading it) gets.
+  word_label_->GetViewAccessibility().SetIsIgnored(true);
 
   if (window_) {
     active_tab_changed_ = window_->RegisterActiveTabDidChange(
@@ -142,6 +149,8 @@ void VoiceCaptionBar::UpdateText() {
   state_label_->SetBackgroundColor(StateFill(style_.palette, caption_->state));
   heard_label_->SetText(base::UTF8ToUTF16(caption_->heard));
   status_label_->SetText(base::UTF8ToUTF16(caption_->status));
+  word_label_->SetText(base::UTF8ToUTF16(caption_->word));
+  word_label_->SetVisible(!caption_->word.empty());
   GetViewAccessibility().SetDescription(caption_->state_label);
   // The pill's width follows the state's word.
   InvalidateLayout();
@@ -152,7 +161,8 @@ void VoiceCaptionBar::UpdateStyle() {
   style_ = VoiceOverlayStyle::For(
       *this, contents_view_ ? contents_view_->web_contents() : nullptr);
   const OverlayPalette& palette = style_.palette;
-  for (views::Label* label : {heard_label_.get(), status_label_.get()}) {
+  for (views::Label* label :
+       {heard_label_.get(), status_label_.get(), word_label_.get()}) {
     label->SetEnabledColor(palette.caption_text);
     label->SetBackgroundColor(palette.caption_fill);
   }
@@ -175,6 +185,10 @@ void VoiceCaptionBar::Layout(PassKey) {
          {state_label_.get(), heard_label_.get(), status_label_.get()}) {
       label->SetFontList(font);
     }
+    // The word: bold, half as large again, across both lines.
+    word_label_->SetFontList(
+        VoiceOverlayStyle::CaptionFontAt(metrics.font * 1.5f)
+            .DeriveWithWeight(gfx::Font::Weight::BOLD));
   }
   const int padding = static_cast<int>(std::round(metrics.padding));
   const int line = static_cast<int>(std::ceil(metrics.line_height));
@@ -182,7 +196,21 @@ void VoiceCaptionBar::Layout(PassKey) {
   const int x = padding;
   const int first = static_cast<int>(std::round(metrics.border)) + padding;
   const int second = first + line + padding / 2;
-  const int width = std::max(0, this->width() - 2 * padding);
+  int width = std::max(0, this->width() - 2 * padding);
+
+  // The word's box at the end, across both lines; the text gives way.
+  word_box_ = gfx::Rect();
+  if (caption_ && !caption_->word.empty()) {
+    const int word_width = std::min(
+        word_label_->GetPreferredSize().width() + 2 * padding, width / 2);
+    const int word_height = 2 * line + padding / 2;
+    word_box_ =
+        gfx::Rect(x + width - word_width, first, word_width, word_height);
+    word_label_->SetBoundsRect(gfx::Rect(
+        word_box_.x() + pill_padding, word_box_.y(),
+        std::max(0, word_box_.width() - 2 * pill_padding), word_box_.height()));
+    width = std::max(0, width - word_width - padding);
+  }
 
   const int state_width =
       std::min(state_label_->GetPreferredSize().width(), width / 3);
@@ -208,6 +236,17 @@ void VoiceCaptionBar::OnPaint(gfx::Canvas* canvas) {
     flags.setColor(StateFill(palette, caption_->state));
     canvas->DrawRoundRect(gfx::RectF(state_pill_), state_pill_.height() / 4.0f,
                           flags);
+  }
+  if (!word_box_.IsEmpty()) {
+    // A frame in the border's colour around the word.
+    cc::PaintFlags frame;
+    frame.setAntiAlias(true);
+    frame.setStyle(cc::PaintFlags::kStroke_Style);
+    frame.setStrokeWidth(border);
+    frame.setColor(palette.caption_border);
+    gfx::RectF box(word_box_);
+    box.Inset(border / 2);
+    canvas->DrawRoundRect(box, word_box_.height() / 6.0f, frame);
   }
 }
 
