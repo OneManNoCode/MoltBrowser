@@ -14,6 +14,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"
@@ -21,7 +22,10 @@
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_language.h"
+#include "chrome/browser/molt_ai/voice/voice_language_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_learning_loop.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_page_questions.h"
@@ -33,6 +37,7 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_muted_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -316,6 +321,19 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
             }
           },
           weak_factory_.GetWeakPtr()));
+  // The language voice mode understands and speaks (a setting; else the
+  // browser's own language).
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ReadVoiceLanguageSetting),
+      base::BindOnce(
+          [](base::WeakPtr<VoiceController> self, std::string stored) {
+            if (self) {
+              self->SetLanguage(VoiceLanguageFor(
+                  stored, g_browser_process->GetApplicationLocale()));
+            }
+          },
+          weak_factory_.GetWeakPtr()));
   // The web agent's on-device planner, for what the grammar can't do.
   planner_ = CreateVoiceAgentPlanner();
   learning_ = std::make_unique<VoiceLearningLoop>(this);
@@ -403,7 +421,7 @@ void VoiceController::StopActivity() {
     learning_->Stop();
   }
   CancelRun();
-  SetStatus("Stopped");
+  SetStatus(Localized(language_, "Stopped"));
 }
 
 void VoiceController::StopSpeaking() {
@@ -418,6 +436,30 @@ bool VoiceController::OthersSpeaking() const {
 
 bool VoiceController::SpeechInEchoReference() const {
   return speech_ && speech_->InEchoReference();
+}
+
+void VoiceController::SetLanguage(Language language) {
+  language_ = language;
+  if (speech_) {
+    speech_->SetLanguage(language, g_browser_process->GetApplicationLocale());
+  }
+  // A language voice mode can't listen in yet: the microphone closes, and
+  // voice mode says why; typed commands go on in the language.
+  if (listening_.listening && !ListeningAvailable(language)) {
+    SayNotice(std::string(ListeningUnavailableNotice(language)));
+    for (Observer& observer : observers_) {
+      observer.OnVoiceModeRequested(false);
+    }
+  }
+}
+
+// static
+void VoiceController::SetLanguageForAll(Language language) {
+  for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
+    if (VoiceController* controller = FromBrowser(window)) {
+      controller->SetLanguage(language);
+    }
+  }
 }
 
 void VoiceController::SayNotice(const std::string& text) {
@@ -781,6 +823,7 @@ PageMap VoiceController::CurrentMap() {
 VoiceEnvironment VoiceController::Environment() {
   VoiceEnvironment env;
   env.moltnet = IsMoltNet();
+  env.language = language_;
   env.listening = listening_.listening;
   env.page_id = page_id_;
   env.reading = reader_->StateFor(page_id_);
@@ -957,7 +1000,7 @@ void VoiceController::Fail(StepFailure failure) {
   if (learning_) {
     learning_->OnStepFailed();
   }
-  const std::string_view text = FailureText(failure);
+  const std::string_view text = FailureText(failure, language_);
   if (!text.empty()) {
     interrupt_next_speech_ = true;
     Say(std::string(text));

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_command_phrases.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
@@ -102,6 +103,7 @@ PromptReply PromptReplyFor(const VoiceCommand& command,
                            const ConversationState& state) {
   if (ConfirmationValid(state, env)) {
     ParseContext answering;
+    answering.language = env.language;
     answering.expecting_yes_no = true;
     const VoiceCommandKind kind =
         ParseVoiceCommand(command.heard, answering).kind;
@@ -179,6 +181,40 @@ const PageItem* ItemSaying(const PageMap& map,
   return nullptr;
 }
 
+// What a Spanish page's controls say, for the buttons and links the loop
+// looks for by their words (English's are at the calls): read only in
+// Spanish, so English finds what it always did.
+enum class SpanishControl {
+  kNextPage,
+  kVolume,
+  kFullScreen,
+  kSkipAd,
+  kCaptions
+};
+
+const PageItem* SpanishItemSaying(const PageMap& map,
+                                  ItemKind kind,
+                                  SpanishControl control) {
+  switch (control) {
+    case SpanishControl::kNextPage:
+      return ItemSaying(map, kind,
+                        {"siguiente", "pagina siguiente", "mas resultados",
+                         "mostrar mas", "ver mas", "cargar mas"});
+    case SpanishControl::kVolume:
+      return ItemSaying(map, kind, {"volumen"});
+    case SpanishControl::kFullScreen:
+      return ItemSaying(map, kind, {"pantalla completa"});
+    case SpanishControl::kSkipAd:
+      return ItemSaying(
+          map, kind,
+          {"saltar anuncio", "omitir anuncio", "saltar anuncios",
+           "omitir anuncios", "saltar publicidad", "omitir publicidad"});
+    case SpanishControl::kCaptions:
+      return ItemSaying(map, kind, {"subtitulos", "subtitulado"});
+  }
+  return nullptr;
+}
+
 std::string Quoted(std::string_view text) {
   return "\"" + std::string(text) + "\"";
 }
@@ -252,7 +288,10 @@ class Planner {
   VoiceTurn& turn() { return turn_; }
 
   void Say(std::string text) {
-    // Built from cleaned pieces; cleaned once more as it leaves.
+    // In the window's language (a constant sentence; the others come
+    // through Tr()), then built from cleaned pieces, cleaned once more as
+    // it leaves.
+    text = Localized(env_.language, text);
     text = SpeechSafeText(text, kMaxSpokenTextChars);
     if (text.empty()) {
       return;
@@ -275,7 +314,15 @@ class Planner {
   void Add(VoiceStep step) { turn_.steps.push_back(std::move(step)); }
 
   void Status(std::string status) {
-    turn_.status = SpeechSafeText(status, kMaxStatusChars);
+    turn_.status =
+        SpeechSafeText(Localized(env_.language, status), kMaxStatusChars);
+  }
+
+  // |english| in the window's language with |args| in its {0}, {1}...
+  // (spoken_answers.h); exactly the English sentence in English.
+  std::string Tr(std::string_view english,
+                 std::initializer_list<std::string_view> args = {}) const {
+    return Said(env_.language, english, args);
   }
 
   // ---- Commands ----------------------------------------------------------
@@ -456,8 +503,8 @@ class Planner {
             command.seconds > 0 ? command.seconds : kDefaultSkipSeconds;
         const bool forward = command.kind == K::kSkipForward;
         Add(MediaStep(MediaCommand::kSeek, forward ? seconds : -seconds));
-        Say(std::string(forward ? "Skipped ahead " : "Went back ") +
-            SpokenLength(seconds) + ".");
+        Say(Tr(forward ? "Skipped ahead {0}." : "Went back {0}.",
+               {SpokenLength(seconds, env_.language)}));
         break;
       }
       case K::kRestart:
@@ -529,8 +576,9 @@ class Planner {
         }
         break;
       case K::kReadTitle:
-        Say(map_.title.empty() ? std::string("This page has no title.")
-                               : "The title is: " + PageText(map_.title) + ".");
+        Say(map_.title.empty()
+                ? std::string("This page has no title.")
+                : Tr("The title is: {0}.", {PageText(map_.title)}));
         break;
       case K::kReadSelection:
         Read(ReadOp::kSelection);
@@ -597,7 +645,7 @@ class Planner {
           Say("There's nothing to confirm.");
           break;
         }
-        Status("Going ahead: " + state().confirm_what);
+        Status(Tr("Going ahead: {0}", {state().confirm_what}));
         for (VoiceStep& step : state().confirm_steps) {
           if (step.kind == VoiceStepKind::kSpeak) {
             Say(step.text);
@@ -858,38 +906,41 @@ class Planner {
       case FollowUpKind::kNone:
         break;
       case FollowUpKind::kAnnounceOpened:
-        Status("Opened " + wait.subject);
-        Say(wait.subject + " is open.");
+        Status(Tr("Opened {0}", {wait.subject}));
+        Say(Tr("{0} is open.", {wait.subject}));
         break;
       case FollowUpKind::kAnnouncePage: {
         Say(title.empty() ? std::string("The page is open.") : title + ".");
         if (const PageList* list = MainList(map_)) {
           SetListContext(ListContext::kPageList, list);
           state().expecting_choice = true;
-          Say(CountOf(list->entries.size(), "item", "items") + ". " +
-              std::string(ChooseHint()));
+          Say(CountOf(list->entries.size(), Tr("item"), Tr("items")) + ". " +
+              std::string(ChooseHint(env_.language)));
         }
         break;
       }
       case FollowUpKind::kReadResults:
         if (!ReadResults(wait.subject)) {
-          Say((title.empty() ? std::string("The page is open")
-                             : title + " is open") +
-              ", but I can't find a list of results there.");
+          Say(title.empty()
+                  ? Tr("The page is open, but I can't find a list of results "
+                       "there.")
+                  : Tr("{0} is open, but I can't find a list of results "
+                       "there.",
+                       {title}));
         }
         break;
       case FollowUpKind::kPlayOpened:
         if (env_.media_playing) {
-          Status("Playing: " + wait.subject);
-          Say("Playing " + wait.subject + ".");
+          Status(Tr("Playing: {0}", {wait.subject}));
+          Say(Tr("Playing {0}.", {wait.subject}));
         } else if (const PageMedia* player = Locate(SitePart::kPlayer).media) {
           const PageMedia& media = *player;
           Add(NodeStep(VoiceStepKind::kPlayMedia, media.handle, wait.subject));
-          Status("Playing: " + wait.subject);
-          Say("Playing " + wait.subject + ".");
+          Status(Tr("Playing: {0}", {wait.subject}));
+          Say(Tr("Playing {0}.", {wait.subject}));
         } else {
           Say(title.empty() ? std::string("The page is open.")
-                            : title + " is open.");
+                            : Tr("{0} is open.", {title}));
         }
         break;
     }
@@ -1151,7 +1202,7 @@ class Planner {
     s.offered_verb = verb;
     s.expecting_choice = true;
     Status("Which one?");
-    Say(OfferSpeech(subset));
+    Say(OfferSpeech(subset, env_.language));
   }
 
   void NoMatch(const ChoiceRef& ref, NoMatchReason reason) {
@@ -1162,8 +1213,8 @@ class Planner {
       case NoMatchReason::kOutOfRange: {
         const int n = ref.kind == ChoiceRef::Kind::kNumber ? ref.number
                                                            : ref.ordinal;
-        Say("There's no number " + std::to_string(n) + " here. " +
-            std::string(ChooseHint()));
+        Say(Tr("There's no number {0} here. {1}",
+               {std::to_string(n), ChooseHint(env_.language)}));
         return;
       }
       case NoMatchReason::kNoCurrentItem:
@@ -1172,8 +1223,8 @@ class Planner {
       case NoMatchReason::kEmptyReference:
       case NoMatchReason::kNothingMatched:
       case NoMatchReason::kNone:
-        Say("Nothing here matches " + Quoted(turn_.heard) + ". " +
-            std::string(ChooseHint()));
+        Say(Tr("Nothing here matches {0}. {1}",
+               {Quoted(turn_.heard), ChooseHint(env_.language)}));
         return;
     }
   }
@@ -1184,11 +1235,11 @@ class Planner {
                const std::string& name,
                std::string_view label,
                std::string_view url) {
-    if (!NeedsConfirmation(label, url, map_) &&
-        !NeedsConfirmation(name, std::string_view(), map_)) {
+    if (!NeedsConfirmation(label, url, map_, env_.language) &&
+        !NeedsConfirmation(name, std::string_view(), map_, env_.language)) {
       return false;
     }
-    AskToConfirm(std::move(steps), "press " + name);
+    AskToConfirm(std::move(steps), Tr("press {0}", {name}));
     return true;
   }
 
@@ -1196,11 +1247,12 @@ class Planner {
     ConversationState& s = state();
     s.confirming = true;
     s.confirm_steps = std::move(steps);
-    s.confirm_what = what;
+    // "turn off voice mode", "go on": in the window's language too.
+    s.confirm_what = Localized(env_.language, what);
     s.confirm_page_id = env_.page_id;
     s.confirm_expires_ms = env_.now_ms + kConfirmationTimeoutMs;
-    Status("Say yes to " + what);
-    Say("Say yes to " + what + ", or no to cancel.");
+    Status(Tr("Say yes to {0}", {s.confirm_what}));
+    Say(Tr("Say yes to {0}, or no to cancel.", {s.confirm_what}));
   }
 
   void SetCurrentItem(int number) {
@@ -1227,11 +1279,11 @@ class Planner {
     }
     if (target.source == CandidateSource::kHeading) {
       Add(NodeStep(VoiceStepKind::kScrollIntoView, target.handle, name));
-      Say("Heading: " + name + ".");
+      Say(Tr("Heading: {0}.", {name}));
       return;
     }
     if (!target.handle.valid()) {
-      Say(name + ". There's nothing to open there.");
+      Say(Tr("{0}. There's nothing to open there.", {name}));
       return;
     }
     const PageItem* item = map_.ItemByNumber(target.item_number);
@@ -1241,29 +1293,30 @@ class Planner {
       case ItemKind::kTextField: {
         Add(NodeStep(VoiceStepKind::kFocus, target.handle, name));
         if (item && item->credential != CredentialKind::kNone) {
-          Say(name + ", " + std::string(CredentialKindName(item->credential)) +
-              " field. Voice mode never types or reads passwords, card "
-              "numbers or codes.");
+          Say(
+              Tr("{0}, {1} field. Voice mode never types or reads passwords, "
+                 "card numbers or codes.",
+                 {name, Tr(CredentialKindName(item->credential))}));
           return;
         }
         state().field = target.handle;
         state().field_page_id = env_.page_id;
-        std::string said = name.empty() ? std::string("Text field.")
-                                        : name + " field.";
+        std::string said =
+            name.empty() ? Tr("Text field.") : Tr("{0} field.", {name});
         if (item && !item->value.empty()) {
-          said += " It says: " + PageText(item->value) + ".";
+          said += Tr(" It says: {0}.", {PageText(item->value)});
         }
-        Say(said + " Say type, then your text.");
+        Say(said + Tr(" Say type, then your text."));
         return;
       }
       case ItemKind::kMedia:
         Add(NodeStep(VoiceStepKind::kPlayMedia, target.handle, name));
-        Status("Playing: " + name);
-        Say("Playing " + name + ".");
+        Status(Tr("Playing: {0}", {name}));
+        Say(Tr("Playing {0}.", {name}));
         return;
       case ItemKind::kSlider: {
         Add(NodeStep(VoiceStepKind::kFocus, target.handle, name));
-        std::string said = name + " slider";
+        std::string said = Tr("{0} slider", {name});
         if (item && !item->value.empty()) {
           said += ", " + PageText(item->value);
         }
@@ -1285,7 +1338,7 @@ class Planner {
         if (Confirm(steps, name, label, target.url)) {
           return;
         }
-        Status((play ? "Opening to play: " : "Opening: ") + name);
+        Status(Tr(play ? "Opening to play: {0}" : "Opening: {0}", {name}));
         for (VoiceStep& step : steps) {
           Add(std::move(step));
         }
@@ -1304,12 +1357,12 @@ class Planner {
         std::vector<VoiceStep> steps;
         steps.push_back(NodeStep(VoiceStepKind::kPress, target.handle, name));
         VoiceStep said = Step(VoiceStepKind::kSpeak);
-        said.text = "Pressed " + name + ".";
+        said.text = Tr("Pressed {0}.", {name});
         steps.push_back(said);
         if (Confirm(steps, name, label, target.url)) {
           return;
         }
-        Status("Pressing: " + name);
+        Status(Tr("Pressing: {0}", {name}));
         for (VoiceStep& step : steps) {
           if (step.kind == VoiceStepKind::kSpeak) {
             Say(step.text);
@@ -1337,17 +1390,17 @@ class Planner {
       search.text = name;
       search.new_tab = command.new_tab;
       Add(std::move(search));
-      Status("Searching for " + name);
-      Add(WaitStep(FollowUpKind::kReadResults, name,
-                   "I don't know a site called " + name +
-                       ", so I searched for it."));
+      Status(Tr("Searching for {0}", {name}));
+      Add(WaitStep(
+          FollowUpKind::kReadResults, name,
+          Tr("I don't know a site called {0}, so I searched for it.", {name})));
       return;
     }
     VoiceStep open = Step(VoiceStepKind::kNavigate);
     open.url = target.url;
     open.new_tab = command.new_tab;
     Add(std::move(open));
-    Status("Opening " + target.name);
+    Status(Tr("Opening {0}", {target.name}));
     Add(WaitStep(FollowUpKind::kAnnounceOpened, target.name));
   }
 
@@ -1355,7 +1408,7 @@ class Planner {
     VoiceStep search = Step(VoiceStepKind::kSearchWeb);
     search.text = query;
     Add(std::move(search));
-    Status("Searching for " + query);
+    Status(Tr("Searching for {0}", {query}));
     Add(WaitStep(FollowUpKind::kReadResults, query, std::move(preface)));
   }
 
@@ -1379,7 +1432,7 @@ class Planner {
         VoiceStep open = Step(VoiceStepKind::kNavigate);
         open.url = SiteSearchURL(*site, query);
         Add(std::move(open));
-        Status("Searching " + std::string(site->name) + " for " + query);
+        Status(Tr("Searching {0} for {1}", {site->name, query}));
         Add(WaitStep(FollowUpKind::kReadResults, query));
         return;
       }
@@ -1392,8 +1445,9 @@ class Planner {
                                               ? command.site
                                               : command.site_words);
         const std::string whole = name + " " + query;
-        SearchTheWeb(whole, "I don't know a site called " + name +
-                                ", so I searched the web for " + whole + ".");
+        SearchTheWeb(whole, Tr("I don't know a site called {0}, so I "
+                               "searched the web for {1}.",
+                               {name, whole}));
         return;
       }
     }
@@ -1418,7 +1472,7 @@ class Planner {
         } else {
           Add(NodeStep(VoiceStepKind::kSubmit, field->handle, field->label));
         }
-        Status("Searching for " + query);
+        Status(Tr("Searching for {0}", {query}));
         Add(WaitStep(FollowUpKind::kReadResults, query));
         return;
       }
@@ -1426,14 +1480,14 @@ class Planner {
         VoiceStep open = Step(VoiceStepKind::kNavigate);
         open.url = SiteSearchURL(*site, query);
         Add(std::move(open));
-        Status("Searching " + std::string(site->name) + " for " + query);
+        Status(Tr("Searching {0} for {1}", {site->name, query}));
         Add(WaitStep(FollowUpKind::kReadResults, query));
         return;
       }
     }
     SearchTheWeb(query, scope == SearchScope::kCurrentSite
-                            ? "This page has no search box I can use, so I "
-                              "searched the web."
+                            ? Tr("This page has no search box I can use, so I "
+                                 "searched the web.")
                             : std::string());
   }
 
@@ -1459,13 +1513,21 @@ class Planner {
                         {"next", "next page", "more results", "show more",
                          "load more"});
     }
+    if (!next && env_.language == Language::kSpanish) {
+      next =
+          SpanishItemSaying(map_, ItemKind::kLink, SpanishControl::kNextPage);
+    }
+    if (!next && env_.language == Language::kSpanish) {
+      next =
+          SpanishItemSaying(map_, ItemKind::kButton, SpanishControl::kNextPage);
+    }
     if (next) {
       const std::string name = PageText(next->label);
       Add(NodeStep(VoiceStepKind::kPress, next->handle, name));
       if (next->kind == ItemKind::kLink) {
         Add(WaitStep(FollowUpKind::kReadResults, std::string()));
       } else {
-        Say("Pressed " + name + ".");
+        Say(Tr("Pressed {0}.", {name}));
       }
       return;
     }
@@ -1483,8 +1545,8 @@ class Planner {
     VoiceStep select = Step(VoiceStepKind::kSelectTab);
     select.index = index;
     Add(std::move(select));
-    std::string said = "Tab " + std::to_string(index + 1) + " of " +
-                       std::to_string(env_.tabs.size());
+    std::string said = Tr("Tab {0} of {1}", {std::to_string(index + 1),
+                                             std::to_string(env_.tabs.size())});
     const std::string title = PageText(env_.tabs[index].title);
     if (!title.empty()) {
       said += ": " + title;
@@ -1552,7 +1614,7 @@ class Planner {
       VoiceStep close = Step(VoiceStepKind::kCloseTab);
       close.index = *index;
       Add(std::move(close));
-      std::string said = "Closed tab " + std::to_string(*index + 1);
+      std::string said = Tr("Closed tab {0}", {std::to_string(*index + 1)});
       const std::string title = PageText(env_.tabs[*index].title);
       if (!title.empty()) {
         said += ": " + title;
@@ -1601,6 +1663,10 @@ class Planner {
 
   void Volume(bool up) {
     const PageItem* slider = ItemSaying(map_, ItemKind::kSlider, {"volume"});
+    if (!slider && env_.language == Language::kSpanish) {
+      slider =
+          SpanishItemSaying(map_, ItemKind::kSlider, SpanishControl::kVolume);
+    }
     if (!slider || slider->disabled) {
       Say("I can't find a volume control on this page. Say mute or unmute.");
       return;
@@ -1625,6 +1691,10 @@ class Planner {
       button =
           ItemSaying(map_, ItemKind::kButton, {"full screen", "fullscreen"});
     }
+    if (!button && env_.language == Language::kSpanish) {
+      button = SpanishItemSaying(map_, ItemKind::kButton,
+                                 SpanishControl::kFullScreen);
+    }
     if (button) {
       VoiceStep press = NodeStep(VoiceStepKind::kPress, button->handle,
                                  PageText(button->label));
@@ -1644,6 +1714,10 @@ class Planner {
     if (!button) {
       button = ItemSaying(map_, ItemKind::kButton,
                           {"skip ad", "skip ads", "skip advertisement"});
+    }
+    if (!button && env_.language == Language::kSpanish) {
+      button =
+          SpanishItemSaying(map_, ItemKind::kButton, SpanishControl::kSkipAd);
     }
     if (!button) {
       Say("There's no skip button now. An ad can often be skipped after a "
@@ -1665,6 +1739,10 @@ class Planner {
     if (!button) {
       button = ItemSaying(map_, ItemKind::kButton,
                           {"subtitles", "captions", "closed captions", "cc"});
+    }
+    if (!button && env_.language == Language::kSpanish) {
+      button =
+          SpanishItemSaying(map_, ItemKind::kButton, SpanishControl::kCaptions);
     }
     if (!button) {
       Say("I can't find a captions button on this page.");
@@ -1705,7 +1783,7 @@ class Planner {
         Status("Reading the page");
         break;
       case ReadOp::kSection:
-        Status("Reading the section on " + read.text);
+        Status(Tr("Reading the section on {0}", {read.text}));
         break;
       case ReadOp::kSelection:
         Status("Reading the selection");
@@ -1769,9 +1847,9 @@ class Planner {
     const CandidateSet set =
         CandidatesFromList(map_, *list, state().numbers_shown);
     Status(query.empty() ? std::string("Reading the results")
-                         : "Results for " + query);
-    Say(ListSpeech(set, "result", "results", state().verbosity,
-                   kNormalResultsRead));
+                         : Tr("Results for {0}", {query}));
+    Say(ListSpeech(set, Tr("result"), Tr("results"), state().verbosity,
+                   kNormalResultsRead, env_.language));
     return true;
   }
 
@@ -1782,8 +1860,8 @@ class Planner {
     }
     SetListContext(ListContext::kHeadings, nullptr);
     state().expecting_choice = true;
-    Say(ListSpeech(CandidatesFromHeadings(map_), "heading", "headings",
-                   state().verbosity, kNormalOutlineRead));
+    Say(ListSpeech(CandidatesFromHeadings(map_), Tr("heading"), Tr("headings"),
+                   state().verbosity, kNormalOutlineRead, env_.language));
   }
 
   void ReadLinks() {
@@ -1794,21 +1872,21 @@ class Planner {
     }
     SetListContext(ListContext::kLinks, nullptr);
     state().expecting_choice = true;
-    Say(ListSpeech(links, "link", "links", state().verbosity,
-                   kNormalOutlineRead));
+    Say(ListSpeech(links, Tr("link"), Tr("links"), state().verbosity,
+                   kNormalOutlineRead, env_.language));
   }
 
   void Describe() {
     std::vector<std::string> parts;
     if (!map_.media.empty()) {
-      parts.push_back(map_.media[0].video ? "a video" : "an audio player");
+      parts.push_back(Tr(map_.media[0].video ? "a video" : "an audio player"));
     }
     if (const PageList* list = MainList(map_)) {
-      parts.push_back("a list of " +
-                      CountOf(list->entries.size(), "item", "items"));
+      parts.push_back(Tr("a list of {0}", {CountOf(list->entries.size(),
+                                                   Tr("item"), Tr("items"))}));
     }
     if (FindSearchField(map_)) {
-      parts.emplace_back("a search box");
+      parts.push_back(Tr("a search box"));
     }
     size_t links = 0;
     size_t fields = 0;
@@ -1817,24 +1895,25 @@ class Planner {
       fields += item.kind == ItemKind::kTextField;
     }
     if (links) {
-      parts.push_back(CountOf(links, "link", "links"));
+      parts.push_back(CountOf(links, Tr("link"), Tr("links")));
     }
     if (fields) {
-      parts.push_back(CountOf(fields, "text field", "text fields"));
+      parts.push_back(CountOf(fields, Tr("text field"), Tr("text fields")));
     }
     if (!map_.headings.empty()) {
-      parts.push_back(CountOf(map_.headings.size(), "heading", "headings"));
+      parts.push_back(
+          CountOf(map_.headings.size(), Tr("heading"), Tr("headings")));
     }
     const std::string title = PageText(map_.title);
-    std::string said = title.empty() ? std::string("This page") : title;
+    std::string said = title.empty() ? Tr("This page") : title;
     if (parts.empty()) {
-      Say(said + ". I can't find anything to read or choose on it.");
+      Say(Tr("{0}. I can't find anything to read or choose on it.", {said}));
       return;
     }
-    said += ". On it: ";
+    said += Tr(". On it: ");
     for (size_t i = 0; i < parts.size(); ++i) {
       if (i > 0) {
-        said += i + 1 == parts.size() ? " and " : ", ";
+        said += i + 1 == parts.size() ? Tr(" and ") : ", ";
       }
       said += parts[i];
     }
@@ -1846,15 +1925,15 @@ class Planner {
     const std::string title = PageText(map_.title);
     const std::string host = PageText(env_.host);
     if (!host.empty() && env_.web_page) {
-      said = "You're on " + host;
+      said = Tr("You're on {0}", {host});
       said += title.empty() ? std::string(".") : ": " + title + ".";
     } else {
-      said = title.empty() ? std::string("You're on a browser page.")
-                           : "You're on " + title + ".";
+      said = title.empty() ? Tr("You're on a browser page.")
+                           : Tr("You're on {0}.", {title});
     }
     if (env_.tabs.size() > 1) {
-      said += " Tab " + std::to_string(env_.active_tab + 1) + " of " +
-              std::to_string(env_.tabs.size()) + ".";
+      said += Tr(" Tab {0} of {1}.", {std::to_string(env_.active_tab + 1),
+                                      std::to_string(env_.tabs.size())});
     }
     Say(said);
   }
@@ -1875,30 +1954,32 @@ class Planner {
     int number = 0;
     for (const PageHeading& heading : map_.headings) {
       if (has(heading.text) && found++ == 0) {
-        where = "the heading " + PageText(heading.text);
+        where = Tr("the heading {0}", {PageText(heading.text)});
         target = heading.handle;
       }
     }
     for (const PageItem& item : map_.items) {
       if (has(item.label) && found++ == 0) {
-        where = "the " + std::string(ItemKindName(item.kind)) + " " +
-                PageText(item.label);
+        // "the link", "the button": in the window's language.
+        where = Localized(env_.language,
+                          "the " + std::string(ItemKindName(item.kind))) +
+                " " + PageText(item.label);
         target = item.handle;
         number = item.number;
       }
     }
     if (!found) {
-      Say("I can't find " + Quoted(PageText(query)) +
-          " in this page's headings, links or buttons.");
+      Say(Tr("I can't find {0} in this page's headings, links or buttons.",
+             {Quoted(PageText(query))}));
       return;
     }
     Add(NodeStep(VoiceStepKind::kScrollIntoView, target, where));
     if (number) {
       SetCurrentItem(number);
     }
-    std::string said = "Found it in " + where + ".";
+    std::string said = Tr("Found it in {0}.", {where});
     if (found > 1) {
-      said += " It's in " + std::to_string(found) + " places.";
+      said += Tr(" It's in {0} places.", {std::to_string(found)});
     }
     Say(said);
   }
@@ -1925,8 +2006,8 @@ class Planner {
     const PageItem& link = *links[at - 1];
     Add(NodeStep(VoiceStepKind::kFocus, link.handle, PageText(link.label)));
     SetCurrentItem(link.number);
-    Say("Link " + std::to_string(link.number) + ": " + PageText(link.label) +
-        ".");
+    Say(Tr("Link {0}: {1}.",
+           {std::to_string(link.number), PageText(link.label)}));
   }
 
   void MoveItem(bool next) {
@@ -1988,13 +2069,13 @@ class Planner {
       Say("Choose a field first: say its name or its number.");
       return;
     }
-    const std::string name = field->label.empty() ? std::string("The field")
-                                                   : PageText(field->label);
+    const std::string name =
+        field->label.empty() ? Tr("The field") : PageText(field->label);
     if (field->credential != CredentialKind::kNone) {
-      Say(name + " is a " +
-          std::string(CredentialKindName(field->credential)) +
-          " field. Voice mode never types or reads passwords, card numbers "
-          "or codes.");
+      Say(
+          Tr("{0} is a {1} field. Voice mode never types or reads passwords, "
+             "card numbers or codes.",
+             {name, Tr(CredentialKindName(field->credential))}));
       return;
     }
     state().field = field->handle;
@@ -2005,8 +2086,8 @@ class Planner {
     const bool complete = CountCodePoints(value) < kMaxItemValueChars;
     switch (command.kind) {
       case K::kReadBack:
-        Say(value.empty() ? name + " is empty."
-                          : name + " says: " + PageText(value) + ".");
+        Say(value.empty() ? Tr("{0} is empty.", {name})
+                          : Tr("{0} says: {1}.", {name, PageText(value)}));
         return;
       case K::kSubmit:
         Submit(*field, name);
@@ -2015,7 +2096,7 @@ class Planner {
         break;
     }
     if (!field->writable) {
-      Say("I can't type in " + name + ".");
+      Say(Tr("I can't type in {0}.", {name}));
       return;
     }
     std::string text;
@@ -2036,15 +2117,14 @@ class Planner {
         }
         const size_t space = rest.rfind(' ');
         if (rest.empty()) {
-          Say(name + " is empty.");
+          Say(Tr("{0} is empty.", {name}));
           return;
         }
         text = space == std::string::npos ? std::string()
                                           : rest.substr(0, space);
-        said = "Deleted " + rest.substr(space == std::string::npos
-                                            ? 0
-                                            : space + 1) +
-               ".";
+        said = Tr("Deleted {0}.",
+                  {std::string_view(rest).substr(
+                      space == std::string::npos ? 0 : space + 1)});
         break;
       }
       case K::kClearField:
@@ -2055,8 +2135,10 @@ class Planner {
         return;
     }
     if (!complete && command.kind != K::kClearField) {
-      Say(name + " already holds long text. Say clear the field, then type "
-                 "it again.");
+      Say(
+          Tr("{0} already holds long text. Say clear the field, then type "
+             "it again.",
+             {name}));
       return;
     }
     Add(NodeStep(VoiceStepKind::kSetText, field->handle, text));
@@ -2070,14 +2152,14 @@ class Planner {
       for (VoiceStep& step : steps) {
         Add(std::move(step));
       }
-      Status("Searching for " + PageText(field.value));
+      Status(Tr("Searching for {0}", {PageText(field.value)}));
       Add(WaitStep(FollowUpKind::kReadResults, PageText(field.value)));
       return;
     }
     // A form that isn't a search may send something: ask first, as the
     // web agent does before submitting a form.
     steps.push_back(WaitStep(FollowUpKind::kAnnouncePage, std::string()));
-    AskToConfirm(std::move(steps), "send what is in " + name);
+    AskToConfirm(std::move(steps), Tr("send what is in {0}", {name}));
   }
 
   // ---- Learning (§6.8) ----------------------------------------------------
@@ -2317,8 +2399,9 @@ class Planner {
     }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
-    planner.preface = "I can't do that yet: " + Quoted(echo) +
-                      ". Say what can I say to hear what I can do.";
+    planner.preface = Tr(
+        "I can't do that yet: {0}. Say what can I say to hear what I can do.",
+        {Quoted(echo)});
     Add(std::move(planner));
   }
 
@@ -2364,22 +2447,22 @@ class Planner {
       if (examples.size() >= kMaxHelpExamples) {
         break;
       }
-      for (const CommandInfo& info : CommandInfos(Language::kEnglish)) {
+      for (const CommandInfo& info : CommandInfos(env_.language)) {
         if (info.kind == kind && !info.example.empty()) {
           examples.push_back(std::string(info.example));
           break;
         }
       }
     }
-    std::string said = "You can say: ";
+    std::string said = Tr("You can say: ");
     for (size_t i = 0; i < examples.size(); ++i) {
       if (i > 0) {
-        said += i + 1 == examples.size() ? "; or " : "; ";
+        said += i + 1 == examples.size() ? Tr("; or ") : "; ";
       }
       said += examples[i];
     }
-    Say(ChunkSentences({said + ".",
-                        "The full list is in Voice commands, in the help."}));
+    Say(ChunkSentences(
+        {said + ".", Tr("The full list is in Voice commands, in the help.")}));
   }
 
   // A planner lives on its Plan*() function's stack, inside its inputs' lives.
@@ -2457,10 +2540,15 @@ std::string_view FailureText(StepFailure failure) {
   return "";
 }
 
+std::string_view FailureText(StepFailure failure, Language language) {
+  return Translated(language, FailureText(failure));
+}
+
 ParseContext ContextFor(const ConversationState& state,
                         const PageMap& map,
                         const VoiceEnvironment& env) {
   ParseContext context;
+  context.language = env.language;
   context.expecting_yes_no = ConfirmationValid(state, env);
   context.expecting_choice =
       (state.expecting_choice && ListValid(state, env)) || state.numbers_shown;
@@ -2598,6 +2686,46 @@ bool NeedsConfirmation(std::string_view label,
   for (const PageItem& item : map.items) {
     if (item.credential == CredentialKind::kPaymentCard) {
       return true;
+    }
+  }
+  return false;
+}
+
+// What a Spanish page's buttons say for the same actions (folded).
+constexpr std::string_view kSpanishConfirmWords[] = {
+    "comprar",     "compra",    "pagar",       "pago",          "pedido",
+    "pedir",       "tramitar",  "eliminar",    "borrar",        "suprimir",
+    "descartar",   "papelera",  "enviar",      "publicar",      "responder",
+    "comentar",    "confirmar", "suscribirse", "suscribir",     "suscribete",
+    "desuscribir", "donar",     "transferir",  "transferencia",
+};
+constexpr std::string_view kSpanishConfirmPairs[][2] = {
+    {"cerrar", "sesion"},
+    {"finalizar", "compra"},
+    {"realizar", "pedido"},
+};
+
+bool NeedsConfirmation(std::string_view label,
+                       std::string_view url,
+                       const PageMap& map,
+                       Language language) {
+  if (NeedsConfirmation(label, url, map)) {
+    return true;
+  }
+  if (language != Language::kSpanish) {
+    return false;
+  }
+  const std::vector<std::string> words = SplitWords(FoldForComparison(label));
+  for (std::string_view word : kSpanishConfirmWords) {
+    if (HasWord(words, word)) {
+      return true;
+    }
+  }
+  for (size_t i = 0; i + 1 < words.size(); ++i) {
+    for (const auto& pair : kSpanishConfirmPairs) {
+      if (words[i] == pair[0] && words[i + 1] == pair[1]) {
+        return true;
+      }
     }
   }
   return false;

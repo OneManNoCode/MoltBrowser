@@ -10,11 +10,16 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_language.h"
+#include "chrome/browser/molt_ai/voice/voice_language_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_session.h"
+#include "chrome/browser/molt_ai/voice/voice_speech.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
@@ -26,6 +31,7 @@ namespace {
 
 using molt_ai::chat_handler_helpers::BoolArg;
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
+using molt_ai::chat_handler_helpers::StringArg;
 using molt_ai::voice::VoiceModeSettings;
 using molt_ai::voice::VoiceSession;
 
@@ -64,6 +70,10 @@ void MoltVoiceSettingsHandler::RegisterMessages() {
       "voiceSettingsSetAlwaysListening",
       base::BindRepeating(&MoltVoiceSettingsHandler::HandleSetAlwaysListening,
                           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "voiceSettingsSetLanguage",
+      base::BindRepeating(&MoltVoiceSettingsHandler::HandleSetLanguage,
+                          base::Unretained(this)));
 }
 
 void MoltVoiceSettingsHandler::OnJavascriptDisallowed() {
@@ -92,6 +102,23 @@ void MoltVoiceSettingsHandler::OnRead(std::string callback_id,
   if (!IsJavascriptAllowed()) {
     return;
   }
+  // Then the language (the same sequence: it sees every change before).
+  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&molt_ai::voice::ReadVoiceLanguageSetting),
+      base::BindOnce(&MoltVoiceSettingsHandler::OnLanguageRead,
+                     weak_factory_.GetWeakPtr(), std::move(callback_id),
+                     std::move(error), settings));
+}
+
+void MoltVoiceSettingsHandler::OnLanguageRead(std::string callback_id,
+                                              std::optional<std::string> error,
+                                              VoiceModeSettings settings,
+                                              std::string language) {
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+  const molt_ai::voice::Language in_use = molt_ai::voice::VoiceLanguageFor(
+      language, g_browser_process->GetApplicationLocale());
   BrowserWindowInterface* window = Window();
   VoiceSession* session = VoiceSession::FromBrowser(window);
   base::DictValue state;
@@ -101,6 +128,11 @@ void MoltVoiceSettingsHandler::OnRead(std::string callback_id,
   state.Set("listening", session && session->listening());
   state.Set("moltnet",
             molt_ai::tor::IsMoltNetProfile(Profile::FromWebUI(web_ui())));
+  state.Set("language", language);
+  state.Set("languageInUse", molt_ai::voice::LanguageCode(in_use));
+  state.Set("canListen", molt_ai::voice::ListeningAvailable(in_use));
+  state.Set("hasVoice", molt_ai::voice::VoiceSpeech::HasPlatformVoice(
+                            Profile::FromWebUI(web_ui()), in_use));
   if (error) {
     state.Set("error", *error);
   }
@@ -151,6 +183,43 @@ void MoltVoiceSettingsHandler::HandleSetAlwaysListening(
     return;
   }
   Change(args[0].GetString(), /*enabled_changed=*/false, *always);
+}
+
+void MoltVoiceSettingsHandler::HandleSetLanguage(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 2u, __func__)) {
+    return;
+  }
+  AllowJavascript();
+  std::string language = StringArg(args, 1);
+  if (!molt_ai::voice::VoiceModeEnabled() ||
+      (!language.empty() && !molt_ai::voice::StoredVoiceLanguage(language))) {
+    ResolveWithState(args[0].GetString(), std::nullopt);
+    return;
+  }
+  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&molt_ai::voice::WriteVoiceLanguageSetting, language),
+      base::BindOnce(&MoltVoiceSettingsHandler::OnLanguageWritten,
+                     weak_factory_.GetWeakPtr(), args[0].GetString(),
+                     language));
+}
+
+void MoltVoiceSettingsHandler::OnLanguageWritten(std::string callback_id,
+                                                 std::string language,
+                                                 bool ok) {
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+  if (!ok) {
+    ResolveWithState(std::move(callback_id),
+                     "Couldn't save ~/.moltbrowser/settings.json (is it valid "
+                     "JSON?). Nothing was changed.");
+    return;
+  }
+  molt_ai::voice::VoiceController::SetLanguageForAll(
+      molt_ai::voice::VoiceLanguageFor(
+          language, g_browser_process->GetApplicationLocale()));
+  ResolveWithState(std::move(callback_id), std::nullopt);
 }
 
 void MoltVoiceSettingsHandler::Change(std::string callback_id,
@@ -222,6 +291,23 @@ const char kVoiceSettingsJs[] = R"JS(
     }
     var status = document.getElementById('voiceStatus');
     if (status.textContent !== said) status.textContent = said;
+
+    var language = document.getElementById('voiceLanguage');
+    var chosen = typeof s.language === 'string' ? s.language : '';
+    if (language.value !== chosen) language.value = chosen;
+    var note = '';
+    if (s.canListen === false) {
+      note = 'Voice mode can\'t listen in this language yet: no speech ' +
+          'model for it is installed. Commands typed in Agent mode work, ' +
+          'and the browser answers in it.';
+    }
+    if (s.hasVoice === false) {
+      note += (note ? ' ' : '') + 'This computer has no voice for this ' +
+          'language: add one in the system\'s speech settings, or the ' +
+          'default voice reads the answers.';
+    }
+    var languageNote = document.getElementById('voiceLanguageNote');
+    if (languageNote.textContent !== note) languageNote.textContent = note;
   }
 
   function call() {
@@ -235,6 +321,11 @@ const char kVoiceSettingsJs[] = R"JS(
     },
     voiceSetAlwaysListening: function() {
       call('voiceSettingsSetAlwaysListening', !!this.checked);
+    },
+    voiceSetLanguage: function() {
+      var value = String(this.value);
+      if (value !== '' && value !== 'en' && value !== 'es') return;
+      call('voiceSettingsSetLanguage', value);
     }
   });
 

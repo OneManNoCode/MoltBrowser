@@ -20,6 +20,7 @@
 //     sees every change posted before.
 //
 // Writers: voice_session_settings.h, voice_reading_settings.h,
+// voice_language_settings.h,
 // web_ai_settings_switch.h and molt://ai-settings (molt_ai_settings_ui.cc).
 
 #ifndef CHROME_BROWSER_MOLT_AI_COMMON_MOLT_SETTINGS_FILE_H_

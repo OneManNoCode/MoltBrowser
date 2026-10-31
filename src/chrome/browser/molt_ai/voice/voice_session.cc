@@ -19,6 +19,7 @@
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_language.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_listener_protocol.h"
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
@@ -265,6 +266,13 @@ bool VoiceSession::Start() {
   // Pages in MoltNet windows never get the microphone (§7.4).
   if (IsMoltNet()) {
     controller_->SayNotice("Voice mode is off in MoltNet windows.");
+    return false;
+  }
+  // No recognizer for voice mode's language yet (voice_language.h): it says
+  // so, in that language, and the microphone stays closed.
+  if (!ListeningAvailable(controller_->language())) {
+    controller_->SayNotice(
+        std::string(ListeningUnavailableNotice(controller_->language())));
     return false;
   }
   if (g_listening && g_listening != this) {

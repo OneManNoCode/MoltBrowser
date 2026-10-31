@@ -81,6 +81,13 @@ source_set("spoken_choice") {
     "spoken_phrases_es.cc",
     "spoken_text.cc",
     "spoken_text.h",
+
+    # What the browser says, per language, and which language.
+    "spoken_answers.cc",
+    "spoken_answers.h",
+    "spoken_answers_es.cc",
+    "voice_language.cc",
+    "voice_language.h",
   ]
 }
 
@@ -684,6 +691,8 @@ source_set("voice_controller") {
     "voice_browser_prompts.h",
     "voice_controller.cc",
     "voice_controller.h",
+    "voice_language_settings.cc",
+    "voice_language_settings.h",
     "voice_reading_settings.cc",
     "voice_reading_settings.h",
 
@@ -735,8 +744,13 @@ source_set("voice_controller") {
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
 
-    # The speech rate kept in settings.json, through its one writer.
+    # The speech rate and the language kept in settings.json, through its
+    # one writer.
     "//chrome/browser/molt_ai/common:molt_settings_file",
+
+    # g_browser_process: the browser's own language, voice mode's when the
+    # setting names none.
+    "//chrome/browser:browser_process",
 
     # Its audio, played through the audio service.
     "//media",
@@ -868,6 +882,7 @@ source_set("voice_loop_unit_tests") {
     "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
     "voice_hints_unittest.cc",
+    "voice_language_unittest.cc",
     "voice_learning_store_unittest.cc",
     "voice_reader_unittest.cc",
     "voice_routines_logic_unittest.cc",
