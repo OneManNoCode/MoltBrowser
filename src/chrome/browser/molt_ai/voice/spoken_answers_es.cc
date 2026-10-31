@@ -50,6 +50,20 @@ constexpr SpokenAnswer kAnswers[] = {
      "configuración."},
     {"turn off voice mode", "desactivar el modo de voz"},
     {"go on", "continuar"},
+    // A routine's confirmations (la rutina: feminine).
+    {"replace it", "reemplazarla"},
+    {"keep it here", "conservarla aquí"},
+    {"keep them here", "conservarlas aquí"},
+    {"{0} routines were made before routines belonged to a profile. Choose "
+     "the ones to keep here in Agent mode.",
+     "{0} rutinas se crearon antes de que las rutinas pertenecieran a un "
+     "perfil. Elige en el modo agente las que quieras conservar aquí."},
+    {"One routine was made before routines belonged to a profile: {0}.",
+     "Una rutina se creó antes de que las rutinas pertenecieran a un "
+     "perfil: {0}."},
+    {"{0} routines were made before routines belonged to a profile: {1}.",
+     "{0} rutinas se crearon antes de que las rutinas pertenecieran a un "
+     "perfil: {1}."},
     {"allow it", "permitirlo"},
     {"press {0}", "pulsar {0}"},
     {"send what is in {0}", "enviar lo que hay en {0}"},

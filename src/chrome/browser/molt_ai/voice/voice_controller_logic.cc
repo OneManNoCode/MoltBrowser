@@ -2427,19 +2427,25 @@ class Planner {
       return;
     }
     const bool one = names.size() == 1;
-    const std::string made =
-        (one ? std::string("One routine was")
-             : std::to_string(names.size()) + " routines were") +
-        " made before routines belonged to a profile";
+    const std::string count = std::to_string(names.size());
     if (names.size() > kMaxRoutinesRead) {
-      Say(made + ". Choose the ones to keep here in Agent mode.");
+      Say(
+          Tr("{0} routines were made before routines belonged to a profile. "
+             "Choose the ones to keep here in Agent mode.",
+             {count}));
       return;
     }
     std::vector<std::string> read;
     for (const std::string& name : names) {
       read.push_back(PageText(name));
     }
-    Say(made + ": " + JoinSpokenList(read) + ".");
+    const std::string list = JoinSpokenList(read);
+    Say(one ? Tr("One routine was made before routines belonged to a "
+                 "profile: {0}.",
+                 {list})
+            : Tr("{0} routines were made before routines belonged to a "
+                 "profile: {1}.",
+                 {count, list}));
     VoiceStep claim = LearningStep(LearningOp::kClaimRoutines, std::string());
     claim.count = env_.learning.unclaimed_version;
     std::vector<VoiceStep> steps;
