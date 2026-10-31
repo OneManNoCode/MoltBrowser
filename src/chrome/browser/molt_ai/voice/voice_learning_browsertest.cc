@@ -213,6 +213,11 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
     })) << "still busy after \"" << text << "\"";
   }
 
+  // Not said so far (Say() waits until what an utterance says is said).
+  bool NotSpoken(std::string_view text) {
+    return tts_.All().find(std::string(text)) == std::string::npos;
+  }
+
   bool Spoke(std::string_view text) {
     return base::test::RunUntil([&]() {
       return tts_.All().find(std::string(text)) != std::string::npos;
@@ -256,7 +261,8 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
 
   // What the Agent studio of |window| lists (chrome://molt-ai-agent/ in a
   // new tab of it): its voice routines' names, then after "/" the routines
-  // from before profiles it offers.
+  // from before profiles it offers. The tab is left on about:blank, for
+  // voice mode.
   std::string Studio(BrowserWindowInterface* window) {
     EXPECT_TRUE(ui_test_utils::NavigateToURLWithDisposition(
         window, GURL("chrome://molt-ai-agent/"),
@@ -264,12 +270,15 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
         ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP));
     content::WebContents* tab =
         window->GetTabStripModel()->GetActiveWebContents();
-    return content::EvalJs(
-               tab,
-               "sendWithPromise('listWorkflows').then(r => "
-               "r.workflows.filter(w => w.voice).map(w => w.name).join('|') "
-               "+ '/' + r.unclaimed.map(u => u.name).join('|'))")
-        .ExtractString();
+    const std::string listed =
+        content::EvalJs(
+            tab,
+            "sendWithPromise('listWorkflows').then(r => "
+            "r.workflows.filter(w => w.voice).map(w => w.name).join('|') "
+            "+ '/' + r.unclaimed.map(u => u.name).join('|'))")
+            .ExtractString();
+    EXPECT_TRUE(ui_test_utils::NavigateToURL(window, GURL("about:blank")));
+    return listed;
   }
 
   void Script(std::string_view script) {
@@ -467,7 +476,7 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
   EXPECT_TRUE(other_learning->unclaimed().empty());
   Say("run my videos", other);
   Say("forget my videos", other);
-  EXPECT_FALSE(Spoke("Running my videos."));
+  EXPECT_TRUE(NotSpoken("Running my videos."));
   EXPECT_TRUE(Spoke("I don't have a routine called my videos."));
   ASSERT_EQ(learning()->routines().size(), 1u);
 
@@ -476,9 +485,10 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
   Say("open VideoSite", other);
   Say("search for Queen", other);
   Say("remember this as my videos", other);
-  EXPECT_FALSE(Spoke("You already have a routine called my videos."));
+  EXPECT_TRUE(NotSpoken("You already have a routine called my videos."));
   Say("yes", other);
-  ASSERT_EQ(other_learning->routines().size(), 1u);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return other_learning->routines().size() == 1u; }));
   EXPECT_EQ(other_learning->routines()[0].steps, 2);
   EXPECT_EQ(learning()->routines()[0].steps, 1);
 
@@ -529,7 +539,7 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
 
   // Not run by its name before it is kept: the question is asked.
   Say("run my videos");
-  EXPECT_FALSE(Spoke("Running my videos."));
+  EXPECT_TRUE(NotSpoken("Running my videos."));
   EXPECT_TRUE(
       Spoke("my videos was made before routines belonged to a profile."));
   EXPECT_TRUE(

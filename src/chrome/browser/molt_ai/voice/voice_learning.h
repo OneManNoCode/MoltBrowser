@@ -144,7 +144,7 @@ class VoiceLearning : public base::SupportsUserData::Data {
                      base::OnceCallback<void(ClaimResult)> done);
   // Not this profile's: not offered here again.
   void DeclineRoutines(const std::vector<std::string>& ids);
-  // Offered here again (the Agent studio's "Show them").
+  // Offered here again (the Agent studio's "Show").
   void UndeclineRoutines();
 
   // Anything changed (for the settings page).
