@@ -230,7 +230,9 @@ std::string CleanAnswerText(std::string_view text);
 
 // Whether |text| holds voice mode's wake phrase: a greeting ("hey", "ok",
 // ...) followed by the wake word or a word that sounds like it ("Hey
-// Molt", "hey mold", "ok moltbrowser"), as the session would hear it said.
+// Molt", "hey mold", "ok moltbrowser"), as the session would hear it said;
+// also run together into one word ("HeyMolt", which a voice says apart),
+// and with Greek or Cyrillic letters that look like the Latin ones.
 bool HoldsWakePhrase(std::string_view text);
 
 }  // namespace voice

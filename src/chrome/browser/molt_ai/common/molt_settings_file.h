@@ -14,7 +14,8 @@
 //     leaves the old file or the new one, never part of one.
 //   - Read with a cap (kMaxMoltSettingsFileBytes). A file over it, or one
 //     that isn't a JSON object, is left alone: nothing is written over it
-//     (it is the user's to fix), and the change reports failure.
+//     (it is the user's to fix), and the change reports failure. Nor is a
+//     change written that would make the file bigger than the cap.
 //   - Readers may read from any thread that may block: a write is a rename,
 //     so they see the old file or the new one. Reading on the sequence also
 //     sees every change posted before.
@@ -74,10 +75,21 @@ std::optional<base::DictValue> ReadMoltSettings();
 void MergeMoltSettings(base::DictValue& settings,
                        const base::DictValue& changes);
 
+// A settings form's values (molt://ai-settings' Save, sent by its page) set
+// over |settings|: only the keys of |fields| (the form's own, with their
+// default values), each with a value of its field's kind (a number for a
+// number, a bool, a string). Every other key of |form| is left out, so a
+// form can't write the settings other sections change (voice mode's
+// switches, the built-in AI APIs' switch), nor a list or an object.
+void MergeMoltSettingsForm(base::DictValue& settings,
+                           const base::DictValue& form,
+                           const base::DictValue& fields);
+
 // Blocking: reads |path|, lets |update| change the settings (empty when the
 // file is missing) and writes them atomically, creating the directory if
 // needed. False, and nothing written, when the file isn't a JSON object,
-// |update| returns false, or the write fails. Run on
+// |update| returns false, the settings written would be over
+// kMaxMoltSettingsFileBytes, or the write fails. Run on
 // MoltSettingsFileTaskRunner(), or in a test on a file of its own.
 using MoltSettingsUpdate = base::FunctionRef<bool(base::DictValue& settings)>;
 bool UpdateMoltSettingsFileAt(const base::FilePath& path,

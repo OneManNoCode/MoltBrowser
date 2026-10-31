@@ -64,6 +64,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -136,6 +138,34 @@ bool IsActing(const TabRecord& tab, int64_t now_ms);
 // one the page added on its own). Returns whether the entry it was added
 // from counts as skippable for voice mode's "go back" (above).
 bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms);
+
+// When each of a tab's navigations in flight began (by navigation id), for
+// NoteHistoryEntry(); one not remembered is judged by when it commits. At
+// most kMaxNavigationsInFlight are remembered: a page that piles up its
+// frames' navigations (iframes it keeps navigating to a server that never
+// answers) can't push out its main frame's, the navigation an action most
+// often leads to: when full, the other frames' are forgotten first.
+inline constexpr size_t kMaxNavigationsInFlight = 64;
+class NavigationStarts {
+ public:
+  NavigationStarts();
+  ~NavigationStarts();
+  NavigationStarts(const NavigationStarts&) = delete;
+  NavigationStarts& operator=(const NavigationStarts&) = delete;
+
+  // Navigation |id| began at |now_ms|, in the tab's main frame or not.
+  void Started(int64_t id, int64_t now_ms, bool main_frame);
+  // When navigation |id| began, if remembered; it is forgotten.
+  std::optional<int64_t> Finished(int64_t id);
+  size_t size() const { return starts_.size(); }
+
+ private:
+  struct Start {
+    int64_t ms = 0;
+    bool main_frame = false;
+  };
+  std::map<int64_t, Start> starts_;
+};
 
 // One question per action: once the user was asked about one of the page's
 // requests, the page's next requests until the next action are refused

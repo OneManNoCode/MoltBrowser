@@ -93,14 +93,14 @@ base::DictValue LoadSettings(base::DictValue defaults) {
 
 // The form's keys over what the file holds (the defaults when there is no
 // file), so keys the form doesn't show (e.g. "web_ai_apis") survive a save.
+// Only the form's own keys (the defaults'), with values of their kind: the
+// page can't write the switches other sections change only with a click.
 bool SaveFormSettings(base::DictValue form, base::DictValue defaults) {
   return molt_ai::UpdateMoltSettings([&](base::DictValue& settings) {
     if (settings.empty()) {
-      settings = std::move(defaults);
+      settings = defaults.Clone();
     }
-    for (const auto [key, value] : form) {
-      settings.Set(key, value.Clone());
-    }
+    molt_ai::MergeMoltSettingsForm(settings, form, defaults);
     return true;
   });
 }

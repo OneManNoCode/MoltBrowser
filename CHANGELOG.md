@@ -521,6 +521,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   by how long they take to say (numbers, symbols, spelled-out words); and
   "go back" after a voice click returns to the user's page when the next
   page's server answers slowly.
+- Hardening (security review of round 42, `docs/SECURITY_REVIEWS.md`):
+  `molt://ai-settings`' Save writes only the settings its form shows, and
+  no change is saved that would make `~/.moltbrowser/settings.json` too big
+  to read back; voice mode (preview) doesn't say an answer about the page
+  that holds "Hey Molt" run into one word or written with look-alike
+  letters; and "go back" after a voice click still returns to the user's
+  page while that page keeps its frames loading.
 
 ### Privacy
 - **Voice mode learns from use, on this device** (round 41, learning;
