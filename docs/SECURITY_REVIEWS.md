@@ -56,9 +56,9 @@ answer filter was probed with the voice's own text front end
 (`voice_said_aloud.h`) to compare what is written with what is said. Fixes
 tested with the std-only unit tests built standalone (system gtest, ASan
 and UBSan), the settings file's tests on the `//base` stand-ins, the page
-questions and voice controller fuzzers, and `molt_fuzz.py check`; the
-changed C++ was compiled against Chromium 156's headers; the browser test
-runs on the build machine.
+questions, voice controller, prompts and learning fuzzers, and
+`molt_fuzz.py check`; the changed C++ was compiled against Chromium 156's
+headers; the browser test runs on the build machine.
 
 **Findings.** 15: 5 low and 10 informational (defence in depth,
 usability, or what later phases of the design cover). Fixed: three of the
