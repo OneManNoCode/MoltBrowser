@@ -129,6 +129,74 @@ TEST_F(MoltSettingsFileTest, AFileThatIsntAnObjectIsLeftAlone) {
   }
 }
 
+// A change that would make the file too big to read back is refused, and
+// the file is left as it was: the readers (the built-in AI APIs' switch
+// among them) and later changes keep working.
+TEST_F(MoltSettingsFileTest, AChangeTooBigToReadBackIsRefused) {
+  Write("{\"web_ai_apis\": false}");
+  const std::string before = Contents();
+  base::DictValue changes;
+  changes.Set("system_prompt", std::string(kMaxMoltSettingsFileBytes, 'x'));
+  EXPECT_FALSE(UpdateMoltSettingsFileAt(path_, [&](base::DictValue& settings) {
+    MergeMoltSettings(settings, changes);
+    return true;
+  }));
+  EXPECT_EQ(Contents(), before);
+  EXPECT_EQ(FilesInDir(), 1);
+  base::DictValue read;
+  ASSERT_EQ(ReadMoltSettingsFileAt(path_, &read), MoltSettingsRead::kObject);
+  EXPECT_EQ(read.FindBool("web_ai_apis"), false);
+
+  base::DictValue small;
+  small.Set("system_prompt", "Be brief.");
+  EXPECT_TRUE(UpdateMoltSettingsFileAt(path_, [&](base::DictValue& settings) {
+    MergeMoltSettings(settings, small);
+    return true;
+  }));
+  EXPECT_EQ(Parsed().FindBool("web_ai_apis"), false);
+  EXPECT_EQ(*Parsed().FindString("system_prompt"), "Be brief.");
+}
+
+// molt://ai-settings' Save writes only its form's keys, with values of
+// their kind: never the switches other sections change with a click.
+TEST_F(MoltSettingsFileTest, AFormWritesOnlyItsOwnFields) {
+  base::DictValue settings;
+  settings.Set("voice_mode", false);
+  settings.Set("voice_always_listening", false);
+  settings.Set("web_ai_apis", false);
+  settings.Set("max_tokens", 512);
+  settings.Set("system_prompt", "Be brief.");
+  base::DictValue fields;
+  fields.Set("max_tokens", 512);
+  fields.Set("temperature", 0.7);
+  fields.Set("system_prompt", "default");
+  fields.Set("default_model", "model");
+  fields.Set("auto_load_model", true);
+  base::DictValue form;
+  form.Set("max_tokens", 256);
+  form.Set("temperature", 1);
+  form.Set("system_prompt", base::Value(base::ListValue()));
+  form.Set("default_model", 5);
+  form.Set("auto_load_model", false);
+  form.Set("voice_mode", true);
+  form.Set("voice_always_listening", true);
+  form.Set("web_ai_apis", true);
+  form.Set("anything_else", "x");
+  MergeMoltSettingsForm(settings, form, fields);
+  EXPECT_EQ(settings.FindInt("max_tokens"), 256);
+  EXPECT_EQ(settings.FindDouble("temperature"), 1.0);
+  EXPECT_EQ(settings.FindBool("auto_load_model"), false);
+  // Not of their field's kind: left as they were.
+  EXPECT_EQ(*settings.FindString("system_prompt"), "Be brief.");
+  EXPECT_FALSE(settings.Find("default_model"));
+  // Not the form's: left as they were.
+  EXPECT_EQ(settings.FindBool("voice_mode"), false);
+  EXPECT_EQ(settings.FindBool("voice_always_listening"), false);
+  EXPECT_EQ(settings.FindBool("web_ai_apis"), false);
+  EXPECT_FALSE(settings.Find("anything_else"));
+  EXPECT_EQ(settings.size(), 7u);
+}
+
 TEST_F(MoltSettingsFileTest, AnUpdateMayDecline) {
   EXPECT_FALSE(
       UpdateMoltSettingsFileAt(path_, [](base::DictValue&) { return false; }));

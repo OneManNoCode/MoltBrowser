@@ -105,6 +105,24 @@ void MergeMoltSettings(base::DictValue& settings,
   }
 }
 
+void MergeMoltSettingsForm(base::DictValue& settings,
+                           const base::DictValue& form,
+                           const base::DictValue& fields) {
+  for (const auto [key, value] : form) {
+    const base::Value* field = fields.Find(key);
+    if (!field) {
+      continue;
+    }
+    const bool numbers = (field->is_int() || field->is_double()) &&
+                         (value.is_int() || value.is_double());
+    const bool same_scalar =
+        field->type() == value.type() && (value.is_bool() || value.is_string());
+    if (numbers || same_scalar) {
+      settings.Set(key, value.Clone());
+    }
+  }
+}
+
 bool UpdateMoltSettingsFileAt(const base::FilePath& path,
                               MoltSettingsUpdate update) {
   base::DictValue settings;
@@ -119,6 +137,11 @@ bool UpdateMoltSettingsFileAt(const base::FilePath& path,
   std::string json;
   if (!base::JSONWriter::WriteWithOptions(
           settings, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json)) {
+    return false;
+  }
+  // Never a file the readers would refuse (and every later change with
+  // them): the change is refused instead, the file left as it was.
+  if (json.size() > kMaxMoltSettingsFileBytes) {
     return false;
   }
   const base::FilePath dir = path.DirName();
