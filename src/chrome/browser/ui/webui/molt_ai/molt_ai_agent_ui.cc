@@ -31,6 +31,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -317,7 +318,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   // the shared storage's workflows. A voice routine in the shared storage
   // isn't found: it is one from before profiles, kept here first.
   struct Found {
-    AutomationStorage* storage = nullptr;
+    raw_ptr<AutomationStorage> storage = nullptr;
     std::optional<Script> script;
     bool voice = false;
   };

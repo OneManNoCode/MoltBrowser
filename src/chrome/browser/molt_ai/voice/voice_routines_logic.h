@@ -52,6 +52,7 @@
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_hints.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 
 namespace molt_ai {
 namespace voice {
@@ -215,7 +216,7 @@ std::string RoutineNameKey(std::string_view name);
 
 struct RoutineNameMatch {
   // The one name that is said so; null when none is, or more than one.
-  const std::string* name = nullptr;
+  MOLT_RAW_PTR_EXCLUSION const std::string* name = nullptr;
   // How many are: two or more is a name that runs nothing by voice until
   // the routines are renamed (their files edited, say).
   size_t count = 0;
