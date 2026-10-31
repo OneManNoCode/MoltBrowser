@@ -10,7 +10,12 @@
 //   - a correction ("no, I said Queen" after "Green" was heard) changing
 //     what is recognized next time, through the stand-in speech helper and
 //     the real listening session;
-//   - nothing learned, nor used, in a MoltNet window.
+//   - nothing learned, nor used, in a MoltNet window;
+//   - routines that belong to the profile that taught them: two profiles,
+//     each hearing, running and seeing in the Agent studio only its own; a
+//     name in use replaced on "yes"; a routine from before routines
+//     belonged to a profile kept by the first profile that says it is
+//     theirs, and by no other after that (profile-routines).
 
 #include <algorithm>
 #include <memory>
@@ -31,6 +36,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
@@ -38,11 +44,15 @@
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_listener.h"
+#include "chrome/browser/molt_ai/voice/voice_routine_store.h"
+#include "chrome/browser/molt_ai/voice/voice_routines.h"
 #include "chrome/browser/molt_ai/voice/voice_session.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_test_util.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -57,6 +67,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -202,6 +213,11 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
     })) << "still busy after \"" << text << "\"";
   }
 
+  // Not said so far (Say() waits until what an utterance says is said).
+  bool NotSpoken(std::string_view text) {
+    return tts_.All().find(std::string(text)) == std::string::npos;
+  }
+
   bool Spoke(std::string_view text) {
     return base::test::RunUntil([&]() {
       return tts_.All().find(std::string(text)) != std::string::npos;
@@ -211,6 +227,58 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
   content::EvalJsResult Js(std::string_view script) {
     return content::EvalJs(web_contents(), script,
                            content::EXECUTE_SCRIPT_NO_USER_GESTURE);
+  }
+
+  // A second profile of the machine, with a window; the storage its
+  // routines from before profiles are in is this test's.
+  BrowserWindowInterface* SecondProfileWindow() {
+    ProfileManager* manager = g_browser_process->profile_manager();
+    Profile& other = profiles::testing::CreateProfileSync(
+        manager, manager->GenerateNextProfileDirectoryPath());
+    VoiceLearning* other_learning = VoiceLearning::Get(&other);
+    EXPECT_TRUE(other_learning);
+    other_learning->SetAutomationsRootForTesting(automations_.GetPath());
+    EXPECT_TRUE(
+        base::test::RunUntil([&]() { return other_learning->loaded(); }));
+    return CreateBrowser(&other);
+  }
+
+  // A routine as round 41 and 42 saved it: in the storage every profile
+  // shares, opening the fixture video site.
+  void SaveOldRoutine(const std::string& id, const std::string& name) {
+    ParseContext context;
+    std::optional<RoutineStep> open = RoutineStepFor(
+        ParseVoiceCommand("open VideoSite", context), "", 0, {}, false);
+    ASSERT_TRUE(open);
+    open->url = Url("video.test", "/molt_voice/video_home.html").spec();
+    BuiltRoutine built = BuildRoutine(id, name, {*open}, 1'700'000'000);
+    ASSERT_TRUE(built.script);
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    automation::AutomationStorage shared;
+    shared.SetRootForTesting(automations_.GetPath());
+    ASSERT_TRUE(shared.Save(*built.script));
+  }
+
+  // What the Agent studio of |window| lists (chrome://molt-ai-agent/ in a
+  // new tab of it): its voice routines' names, then after "/" the routines
+  // from before profiles it offers. The tab is left on about:blank, for
+  // voice mode.
+  std::string Studio(BrowserWindowInterface* window) {
+    EXPECT_TRUE(ui_test_utils::NavigateToURLWithDisposition(
+        window, GURL("chrome://molt-ai-agent/"),
+        WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP));
+    content::WebContents* tab =
+        window->GetTabStripModel()->GetActiveWebContents();
+    const std::string listed =
+        content::EvalJs(
+            tab,
+            "sendWithPromise('listWorkflows').then(r => "
+            "r.workflows.filter(w => w.voice).map(w => w.name).join('|') "
+            "+ '/' + r.unclaimed.map(u => u.name).join('|'))")
+            .ExtractString();
+    EXPECT_TRUE(ui_test_utils::NavigateToURL(window, GURL("about:blank")));
+    return listed;
   }
 
   void Script(std::string_view script) {
@@ -251,12 +319,15 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
   ASSERT_EQ(learning()->routines().size(), 1u);
   EXPECT_EQ(learning()->routines()[0].name, "my videos");
 
-  // In the automation engine's storage, as a workflow the user's own steps
-  // make Approved on its site.
+  // In the profile's own storage, as a workflow the user's own steps make
+  // Approved on its site; none in the storage every profile shares.
   {
     base::ScopedAllowBlockingForTesting allow_blocking;
-    automation::AutomationStorage storage;
-    storage.SetRootForTesting(automations_.GetPath());
+    automation::AutomationStorage storage(
+        VoiceRoutinesDir(browser()->GetProfile()->GetPath()));
+    automation::AutomationStorage shared;
+    shared.SetRootForTesting(automations_.GetPath());
+    EXPECT_TRUE(shared.ListIds().empty());
     std::optional<automation::Script> script =
         storage.Load(learning()->routines()[0].id);
     ASSERT_TRUE(script);
@@ -386,6 +457,134 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
   Say("search for Queen");
   Say("remember this as my queen", window);
   EXPECT_EQ(tts_.All().find("I'll remember"), std::string::npos);
+}
+
+IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
+                       RoutinesBelongToTheProfileThatTaughtThem) {
+  Say("open VideoSite");
+  Say("remember this as my videos");
+  Say("yes");
+  EXPECT_TRUE(Spoke("Saved. Say run my videos to do it again."));
+  ASSERT_EQ(learning()->routines().size(), 1u);
+  const std::string id = learning()->routines()[0].id;
+
+  // Another profile of the machine neither hears, runs nor forgets it.
+  BrowserWindowInterface* other = SecondProfileWindow();
+  ASSERT_TRUE(other);
+  VoiceLearning* other_learning = VoiceLearning::Get(other->GetProfile());
+  EXPECT_TRUE(other_learning->routines().empty());
+  EXPECT_TRUE(other_learning->unclaimed().empty());
+  Say("run my videos", other);
+  Say("forget my videos", other);
+  EXPECT_TRUE(NotSpoken("Running my videos."));
+  EXPECT_TRUE(Spoke("I don't have a routine called my videos."));
+  ASSERT_EQ(learning()->routines().size(), 1u);
+
+  // It teaches its own of the same name: no question, a routine of its
+  // own.
+  Say("open VideoSite", other);
+  Say("search for Queen", other);
+  Say("remember this as my videos", other);
+  EXPECT_TRUE(NotSpoken("You already have a routine called my videos."));
+  Say("yes", other);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return other_learning->routines().size() == 1u; }));
+  EXPECT_EQ(other_learning->routines()[0].steps, 2);
+  EXPECT_EQ(learning()->routines()[0].steps, 1);
+
+  // Each Agent studio lists its own profile's.
+  EXPECT_EQ(Studio(browser()), "my videos/");
+  EXPECT_EQ(Studio(other), "my videos/");
+
+  // Taught again here under the name in use: replaced on "yes", its id
+  // kept.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  Say("open VideoSite");
+  Say("search for Bohemian Rhapsody");
+  Say("remember this as my videos");
+  EXPECT_TRUE(Spoke("You already have a routine called my videos."));
+  EXPECT_TRUE(Spoke("Say yes to replace it, or no to cancel."));
+  Say("yes");
+  EXPECT_TRUE(Spoke("Replaced my videos. Say run my videos to do it again."));
+  ASSERT_EQ(learning()->routines().size(), 1u);
+  EXPECT_EQ(learning()->routines()[0].id, id);
+  EXPECT_EQ(learning()->routines()[0].steps, 2);
+  // The other profile's is as it was.
+  ASSERT_EQ(other_learning->routines().size(), 1u);
+  EXPECT_NE(other_learning->routines()[0].id, std::string());
+
+  // "Forget everything" here leaves the other profile's.
+  Say("forget everything you learned");
+  Say("yes");
+  EXPECT_TRUE(Spoke("Done. I forgot everything I learned from you."));
+  EXPECT_TRUE(learning()->routines().empty());
+  other_learning->RefreshRoutines();
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return other_learning->routines().size() == 1u; }));
+}
+
+IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
+                       ARoutineFromBeforeProfilesIsKeptOnce) {
+  SaveOldRoutine("voice_1700000000_1", "my videos");
+  learning()->RefreshRoutines();
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return learning()->unclaimed().size() == 1u; }));
+  BrowserWindowInterface* other = SecondProfileWindow();
+  ASSERT_TRUE(other);
+  VoiceLearning* other_learning = VoiceLearning::Get(other->GetProfile());
+  ASSERT_EQ(other_learning->unclaimed().size(), 1u);
+  // Offered in both Agent studios, neither profile's own.
+  EXPECT_EQ(Studio(browser()), "/my videos");
+  EXPECT_EQ(Studio(other), "/my videos");
+
+  // Not run by its name before it is kept: the question is asked.
+  Say("run my videos");
+  EXPECT_TRUE(NotSpoken("Running my videos."));
+  EXPECT_TRUE(
+      Spoke("my videos was made before routines belonged to a profile."));
+  EXPECT_TRUE(
+      Spoke("One routine was made before routines belonged to a profile: my "
+            "videos."));
+  EXPECT_TRUE(Spoke("Say yes to keep it here, or no to cancel."));
+  Say("yes");
+  EXPECT_TRUE(Spoke("Kept it here."));
+  ASSERT_EQ(learning()->routines().size(), 1u);
+  EXPECT_EQ(learning()->routines()[0].id, "voice_1700000000_1");
+  EXPECT_TRUE(learning()->unclaimed().empty());
+
+  // Gone for the other profile: nothing to keep, nothing to run.
+  other_learning->RefreshRoutines();
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return other_learning->unclaimed().empty(); }));
+  EXPECT_TRUE(other_learning->routines().empty());
+  EXPECT_EQ(Studio(other), "/");
+  EXPECT_EQ(Studio(browser()), "my videos/");
+
+  // It runs here now, as it was saved.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  Say("run my videos");
+  EXPECT_TRUE(Spoke("Running my videos. Step 1: open VideoSite."));
+  EXPECT_TRUE(Spoke("my videos is done."));
+
+  // Another one, which the other profile says isn't theirs: not offered
+  // there again, still offered here.
+  SaveOldRoutine("voice_1700000000_2", "my music");
+  other_learning->RefreshRoutines();
+  learning()->RefreshRoutines();
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return other_learning->unclaimed().size() == 1u &&
+           learning()->unclaimed().size() == 1u;
+  }));
+  Say("what are my routines", other);
+  EXPECT_TRUE(
+      Spoke("One routine was made before routines belonged to a profile: my "
+            "music."));
+  Say("no", other);
+  EXPECT_TRUE(Spoke("Okay, I'll leave them for another profile."));
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return other_learning->unclaimed().empty(); }));
+  EXPECT_EQ(other_learning->declined_count(), 1u);
+  EXPECT_EQ(learning()->unclaimed().size(), 1u);
 }
 
 }  // namespace

@@ -7,6 +7,9 @@
 //     ├── <script-id>.molt          (one JSON file per script)
 //     ├── audit.log                  (append-only log of every run)
 //     └── artifacts/<script-id>/    (screenshots, extracted data)
+// That is the shared storage, every profile's ordinary workflows. A
+// storage made with a directory keeps the same files there instead: a
+// profile's voice routines (molt_ai/voice/voice_routine_store.h).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_
@@ -23,7 +26,11 @@ namespace automation {
 
 class AutomationStorage {
  public:
+  // The shared storage, ~/.moltbrowser/automations/.
   AutomationStorage();
+  // A storage of its own in |directory| (the files above, without the
+  // "automations" level).
+  explicit AutomationStorage(const base::FilePath& directory);
   ~AutomationStorage();
 
   AutomationStorage(const AutomationStorage&) = delete;
@@ -53,6 +60,16 @@ class AutomationStorage {
   // Delete a script + its artifacts directory.
   bool Delete(const std::string& id);
 
+  // Moving a script to another storage, once (a voice routine a profile
+  // claims). Take() renames <id>.molt aside in one step, so of two takers
+  // only one gets it, and returns it read as Load() reads it (its secrets
+  // scrubbed in what it returns); nullopt when it is gone, taken already or
+  // unreadable, and then it stays as it was. After a Take(), FinishTake()
+  // deletes it once it is saved elsewhere, or ReturnTaken() puts it back.
+  std::optional<Script> Take(const std::string& id);
+  void FinishTake(const std::string& id);
+  bool ReturnTaken(const std::string& id);
+
   // The promoteTrust path: sets the stored script's trust level and writes
   // a "trust_changed" audit line. Callers are UI handlers acting on a user
   // click (molt://ai-automation's trust panel, the Agent studio's Trust
@@ -76,18 +93,22 @@ class AutomationStorage {
   base::FilePath EnsureArtifactsDir(const std::string& script_id);
 
   // Test seam: override the root directory (defaults to ~/.moltbrowser).
+  // The shared storage only.
   void SetRootForTesting(const base::FilePath& root);
 
  private:
   base::FilePath GetRoot() const;
   base::FilePath GetAutomationsDir() const;
   base::FilePath GetScriptPath(const std::string& id) const;
+  base::FilePath GetTakenPath(const std::string& id) const;
   base::FilePath GetAuditLogPath() const;
   // Atomically writes |script_json| (pretty-printed) to |path|.
   bool WriteScriptJson(const base::FilePath& path,
                        const base::DictValue& script_json);
 
   base::FilePath root_override_;
+  // A storage of its own: its files are here.
+  base::FilePath directory_;
 };
 
 }  // namespace automation

@@ -699,6 +699,9 @@ source_set("voice_controller") {
     ":voice_loop",
     ":voice_planner",
     ":voice_prompts",
+
+    # The profile's routines, in its own storage (voice_learning.h).
+    ":voice_routine_store",
     ":voice_speaking",
     "//base",
 
@@ -740,9 +743,8 @@ source_set("voice_controller") {
     # The tab's activation guard, which voice mode answers.
     "//chrome/browser/molt_ai/security:activation_guard",
 
-    # Routines taught by voice are kept with the other workflows
-    # (AutomationStorage) under their trust policy.
-    "//chrome/browser/molt_ai/automation",
+    # Routines taught by voice are workflows under the automation trust
+    # policy, kept in the profile's own storage (:voice_routine_store).
     "//chrome/browser/molt_ai/automation:automation_policy",
 
     # A dangerous download kept or discarded as the download bubble does
@@ -835,6 +837,25 @@ source_set("voice_learning_store") {
   ]
 }
 
+# A profile's voice routines on disk (voice_routine_store.h): a storage of
+# its own in the profile directory, and the routines from before routines
+# belonged to a profile, each kept by one profile at most. base only:
+# molt_ai_unittests tests it on a temporary directory.
+source_set("voice_routine_store") {
+  sources = [
+    "voice_routine_store.cc",
+    "voice_routine_store.h",
+  ]
+
+  public_deps = [
+    ":voice_learning_store",
+    ":voice_loop",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/automation:storage",
+  ]
+}
+
 # The learning file and a routine's .molt as anything on the machine may
 # have written them, and corrections applied to any utterance. See
 # docs/FUZZING.md.
@@ -862,6 +883,7 @@ source_set("voice_loop_unit_tests") {
     "voice_hints_unittest.cc",
     "voice_learning_store_unittest.cc",
     "voice_reader_unittest.cc",
+    "voice_routine_store_unittest.cc",
     "voice_routines_logic_unittest.cc",
     "voice_routines_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
@@ -879,6 +901,7 @@ source_set("voice_loop_unit_tests") {
     ":site_skills",
     ":voice_learning_store",
     ":voice_loop",
+    ":voice_routine_store",
     "//chrome/browser/molt_ai/automation:automation_policy",
 
     # The stored pages, read from the source tree.
@@ -1163,6 +1186,11 @@ source_set("voice_learning_browser_tests") {
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
+
+    # A second profile of the machine (profile-routines).
+    "//chrome/browser:browser_process",
+    "//chrome/browser/profiles:profile_manager",
+    "//chrome/browser/profiles:profile_test_util",
     "//chrome/browser/ui",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/tabs:tab_strip",
@@ -1174,6 +1202,9 @@ source_set("voice_learning_browser_tests") {
     "//media",
     "//net:test_support",
     "//testing/gtest",
+
+    # The Agent studio opened in a new tab of each profile's window.
+    "//ui/base",
     "//url",
   ]
 

@@ -185,6 +185,10 @@ LearningEnvironment VoiceLearningLoop::Environment(
   for (const RoutineSummary& routine : learning->routines()) {
     env.routines.push_back(routine.name);
   }
+  for (const RoutineSummary& routine : learning->unclaimed()) {
+    env.unclaimed.push_back(routine.name);
+  }
+  env.unclaimed_version = learning->unclaimed_version();
   for (const RoutineStep& step : recorder_.steps()) {
     env.this_steps.push_back(DescribeRoutineStep(step));
   }
@@ -600,7 +604,16 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
   const std::string name = PageText(step.text);
   switch (static_cast<LearningOp>(step.index)) {
     case LearningOp::kSaveRoutine:
-      SaveRoutine(step.text, step.count);
+      SaveRoutine(step.text, step.count, /*replace=*/false);
+      return;
+    case LearningOp::kReplaceRoutine:
+      SaveRoutine(step.text, step.count, /*replace=*/true);
+      return;
+    case LearningOp::kClaimRoutines:
+      ClaimRoutines(step.count);
+      return;
+    case LearningOp::kDeclineRoutines:
+      DeclineRoutines(step.count);
       return;
     case LearningOp::kRunRoutine:
       RunRoutine(step.text, std::string());
@@ -640,7 +653,9 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
   }
 }
 
-void VoiceLearningLoop::SaveRoutine(const std::string& name, int version) {
+void VoiceLearningLoop::SaveRoutine(const std::string& name,
+                                    int version,
+                                    bool replace) {
   VoiceLearning* learning = Learning();
   if (!learning) {
     return;
@@ -651,30 +666,100 @@ void VoiceLearningLoop::SaveRoutine(const std::string& name, int version) {
     return;
   }
   learning->SaveRoutine(
-      name, recorder_.steps(),
+      name, recorder_.steps(), replace,
       base::BindOnce(
           [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
-             bool saved, std::string said, std::vector<std::string> sites) {
+             RoutineSaveResult result) {
             if (!self) {
               return;
             }
-            if (!saved) {
-              self->Say(said, /*interrupt=*/false);
+            if (!result.saved) {
+              self->Say(result.said, /*interrupt=*/false);
               return;
             }
             self->recorder_.Clear();
             const std::string spoken = PageText(name);
+            const std::string saved =
+                result.replaced ? "Replaced " + spoken : "Saved " + spoken;
             // The planner's steps: the sites it uses, which the user
             // confirms the first time it runs.
-            self->Say(sites.empty()
-                          ? "Saved. Say run " + spoken + " to do it again."
-                          : "Saved " + spoken + ". It uses " +
-                                JoinSpokenList(sites) +
+            self->Say(result.sites.empty()
+                          ? (result.replaced ? saved : std::string("Saved")) +
+                                ". Say run " + spoken + " to do it again."
+                          : saved + ". It uses " +
+                                JoinSpokenList(result.sites) +
                                 ". Its sites need your confirmation the "
                                 "first time you run it.",
                       /*interrupt=*/false);
           },
           weak_factory_.GetWeakPtr(), name));
+}
+
+void VoiceLearningLoop::ClaimRoutines(int version) {
+  VoiceLearning* learning = Learning();
+  if (!learning) {
+    return;
+  }
+  // Exactly the routines the question named: if they changed since (one
+  // kept by another profile, say), the "yes" keeps nothing.
+  if (version != learning->unclaimed_version() ||
+      learning->unclaimed().empty()) {
+    Say("Those routines changed since I asked. Say what are my routines "
+        "again.",
+        /*interrupt=*/false);
+    return;
+  }
+  std::vector<std::string> ids;
+  for (const RoutineSummary& routine : learning->unclaimed()) {
+    ids.push_back(routine.id);
+  }
+  learning->ClaimRoutines(
+      std::move(ids),
+      base::BindOnce(
+          [](base::WeakPtr<VoiceLearningLoop> self, ClaimResult result) {
+            if (!self) {
+              return;
+            }
+            if (result.kept.empty()) {
+              self->Say(
+                  "I couldn't keep them here. Another profile may have "
+                  "kept them first.",
+                  /*interrupt=*/false);
+              return;
+            }
+            std::string said = result.kept.size() == 1
+                                   ? std::string("Kept it here.")
+                                   : "Kept " +
+                                         std::to_string(result.kept.size()) +
+                                         " routines here.";
+            for (const ClaimedRoutine& kept : result.kept) {
+              if (!kept.renamed_from.empty()) {
+                said += " You already had a routine called " +
+                        PageText(kept.renamed_from) + ", so this one is " +
+                        PageText(kept.name) + ".";
+              }
+            }
+            if (result.not_kept) {
+              said += " " + std::to_string(result.not_kept) +
+                      (result.not_kept == 1 ? " wasn't" : " weren't") +
+                      " there any more.";
+            }
+            self->Say(said, /*interrupt=*/false);
+          },
+          weak_factory_.GetWeakPtr()));
+}
+
+void VoiceLearningLoop::DeclineRoutines(int version) {
+  VoiceLearning* learning = Learning();
+  // Only the ones the question named (Declined() said why already).
+  if (!learning || version != learning->unclaimed_version()) {
+    return;
+  }
+  std::vector<std::string> ids;
+  for (const RoutineSummary& routine : learning->unclaimed()) {
+    ids.push_back(routine.id);
+  }
+  learning->DeclineRoutines(ids);
 }
 
 void VoiceLearningLoop::RunRoutine(const std::string& name,

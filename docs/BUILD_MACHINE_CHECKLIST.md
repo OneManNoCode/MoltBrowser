@@ -937,6 +937,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `voice/voice_browser_prompts.cc` (new: a `WebContentsObserver`, `permissions::PermissionRequestManager::Observer` (`Accept()`, `AcceptThisTime()`, `Deny()`, `Dismiss()` with `PromptOptions(std::monostate())`, `Requests()`, `GetRequestingOrigin()`, `PermissionRequest::request_type()`/`GetContentSettingsType()`, `PermissionUtil::DoesSupportTemporaryGrants()`), `download::AllDownloadItemNotifier::Observer` (`DownloadItemModel`, `DownloadUIModel::GetDangerUiPattern()`/`MightBeMalicious()`, `DownloadCommands(model->GetWeakPtr()).ExecuteCommand(KEEP / DISCARD)`, `content::DownloadItemUtils::GetWebContents()`) and the password bubble (`ManagePasswordsUIController::FromWebContents()`, `GetState()`, `GetPendingPassword()`, `SavePassword(username_value, password_value)`, `NeverSavePassword()`, `OnNotNowClicked()`)); `voice/voice_dialog_manager.cc` (new: a `content::JavaScriptDialogManager` and `WebContentsUserData`; `HandleJavaScriptDialog()` always with the text); the hook in `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (`GetJavaScriptDialogManager()`); `security/activation_guard.cc` (the guards' list in a `base::NoDestructor`, `SiteInstance::IsRelatedSiteInstance()`, `NavigationHandle::DidReplaceEntry()`/`GetParentFrame()->GetPage().IsPrimary()`, `NavigationController::GetEntryAtIndex()`); `voice/voice_controller.cc` (`GoToOffset()`); the new GN edges `voice:voice_controller` → `//chrome/browser/download`, `//chrome/browser/ui/passwords`, `//components/download/content/public`, `//components/password_manager/core/{browser,common}`, and `//chrome/browser/ui/browser_web_contents_delegate` → `voice:voice_dialog_manager` | type-checked against 156's headers here (Linux and Windows); the GN graph checked statically; what only the build shows: no cycle in `gn gen` from `//chrome/browser/ui` or `//chrome/browser/download` through `voice:voice_controller`, and §5.1's browser tests | voice-gesture |
 | `common/molt_settings_file.cc` (new: `base::LazyThreadPoolSequencedTaskRunner` with `LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER`, `base::ImportantFileWriter::WriteFileAtomically()`, `base::FunctionRef`, `TaskRunner::PostTaskAndReplyWithResult()`) and its writers (`voice/voice_session_settings.cc`, `voice_reading_settings.cc`, `web_ai/web_ai_settings_switch.cc`, `ui/webui/molt_ai/molt_ai_settings_ui.cc`, `molt_voice_settings_handler.cc`, `molt_web_ai_sites_handler.cc`, `voice/voice_controller.cc`, `voice/voice_session.cc`); `voice/voice_listener.cc` (`AudioSink::Push()` takes the capture time; the sink's `HelperAudioClock` under its lock) and `voice/voice_audio.cc` (`Capture()`'s `audio_capture_time`); `voice/voice_browser_prompts.cc` (`DownloadBubbleUIController::GetForDownload()`/`ProcessDownloadButtonPress()`, `DownloadItemWarningData::AddWarningActionEvent()`, `tabs::TabInterface::GetTabFeatures()->page_action_controller()`, `page_actions::PageActionController::AddObserver(kActionShowPasswordsBubbleOrPage, base::ScopedObservation<PageActionModelInterface, PageActionModelObserver>&)`); the new GN edges `voice:voice_controller` → `//chrome/browser/download/bubble`, `//chrome/browser/ui/page_action`, `//chrome/browser/ui/actions:actions_headers`, `//chrome/browser/ui/tabs:tabs_public`, `//components/tabs:public` and `common:molt_settings_file`; `voice:voice_session`, `web_ai:web_ai` and `ui/webui/molt_ai` → `common:molt_settings_file` | type-checked against 156's headers here; the GN graph checked statically (`check`, `checkdeps`); what only the build shows: no cycle in `gn gen` from `//chrome/browser/download/bubble` or `//chrome/browser/ui/page_action` through `voice:voice_controller`, and §5.1's browser tests | voice-hardening |
 | `voice/page_questions.cc` (new: `base::JSONReader::Read(…, JSON_PARSE_RFC, depth)` and `DictValue::FindBool`/`FindString` on the model's reply, `agent_safety::FenceUntrustedText()`), `voice/voice_page_questions.cc` (new: `BrowserAIRuntime::StreamChat()` with a `ChatPrompt`, `PromptOptions::json_schema` and a request id, `CancelRequest()`/`FinishRequest()` in a `base::ScopedClosureRunner`, `base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `web_ai::PickWebModel`, two `base::OneShotTimer`s), `voice/voice_controller.cc` (a kAskPage step, `VoiceReader::ReadText()`), `voice/voice_reader.cc` (`ReadText()`); the new GN edges `voice:voice_controller` → `voice:voice_page_questions` → `//chrome/browser/molt_ai:molt_ai_runtime` and `web_ai:logic`, `voice:page_questions` → `security:agent_safety`, the DEPS rules for the two tests, and the fuzzer `voice:molt_page_questions_fuzzer` (in `molt_fuzzers`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: no cycle in `gn gen` through `molt_ai_runtime` (which `molt_ai_agents` already reaches from `voice:voice_controller`), and §5.1's browser tests | page-questions |
+| `automation/automation_storage.{h,cc}` (a directory of its own; `Take()`, `FinishTake()`, `ReturnTaken()` with `base::ReplaceFile`; moved into the new light target `automation:storage`, which `//chrome/browser/molt_ai/automation` re-exports), `voice/voice_routine_store.{h,cc}` (new: the profile's `MoltVoiceRoutines/` and the claim of older routines), `voice/voice_learning.cc` (the store on its sequence; `ClaimRoutines()`, `DeclineRoutines()`, `UndeclineRoutines()`), `voice/voice_learning_loop.cc` (the replace, claim and decline steps), `ui/webui/molt_ai/molt_ai_agent_ui.cc` (the studio finds each workflow where it is, `VoiceLearning::WhenLoaded()` before listing, three new messages), `molt_ai_automation_ui.cc` (no voice routines); the GN edges `voice:voice_controller` → `voice:voice_routine_store` → `automation:storage` (replacing `voice:voice_controller` → `//chrome/browser/molt_ai/automation`), and `voice:voice_learning_browser_tests` → `//chrome/browser:browser_process`, `//chrome/browser/profiles:profile_manager`, `:profile_test_util`, `//ui/base` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: §5.1's browser tests (two profiles; the studio opened in a tab of each), and that `automation_storage.cc` moving target leaves no link error | profile-routines |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1269,6 +1270,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `VoiceGestureWordsTest.*` (no two confirmation words the phonetic key confuses, none like an answer word or a number), `VoiceGestureBindingTest.*`, `GestureBookTest.*` (the word heard cleanly mints a gesture bound to its prompt, used once, for its binding, within 10 s; one try; the lockout; fresh words), `VoicePromptsTest.*` (what is said for each prompt and dialog, the answers, page text cleaned and capped, the dialog flood limit), the `VoiceSessionLogicTest` cases `AWord*` and `TypedTextIsNeverHeardCleanly`, the `VoiceControllerLogicTest` cases `APermissionPrompt*`, `APromptTakesTheFloorFromTheLoopsQuestion`, `APagesDialogsByVoice`, `ADialogsTextIsPageText`, `DownloadsAndPasswordsByVoice`, and `ActivationPolicyTest.HistoryEntriesAfterAnAction`; all built standalone here (ASan and UBSan) | voice-gesture |
   | `MoltSettingsFileTest.*` (the merge, other keys kept, no temporary file left, a missing file and directory created, a file that isn't a JSON object or is over 1 MiB left alone, changes posted from two places at once all kept), the `VoiceSessionLogicTest` cases `ALaggingHelpersWordIsPlacedByItsAudio`, `AHelperFarBehindIsNeverClean`, `AHelperNeverMovesTheStartLater`, `TheEchoTailAndOtherSpeechReachBackWithTheLag`, `TheOwnVoiceWithoutAnEchoCanceller` and `TheOwnVoiceWithAnEchoCancellerIsUnchanged`, `VoiceListenerProtocolTest.AudioClock*`, `VoiceGestureWordsTest.ASoundAlikeOfTwoWordsIsUnsure` and `EveryWordOfTheListIsSure`, `GestureBookTest.AnUnsureWordIsAskedAgain` and `EveryOtherWordIsOneTryWhateverThePromptsWord`, `VoicePromptsTest.PermissionAnswers`, `ActivationPolicyTest.NoPageAskedForByAnActionThatDoesntNavigate`; built standalone here (ASan and UBSan; the settings file on `//base` shims) | voice-hardening |
   | `PageQuestionsGrammarTest.*`, `PageQuestionsTextTest.*` (the page's text picked for each kind of question, its caps on hostile pages, "tell me more" giving each block once), `PageQuestionsPromptTest.*` (the schema the service takes, the fence holding whatever the page writes), `PageQuestionsAnswerTest.*` (the answer's cleaning and caps, the wake phrase withheld, malformed replies), `PageQuestionsLoopTest.*` (one step that acts on nothing, MoltNet, the reader's chunks, the session ignoring an answer's wake phrase), and the `VoiceCommandTest` cases moved from the planner; all built standalone here (ASan and UBSan, `base::Value` and `//url` through the fuzzing stand-ins) | page-questions |
+  | `AutomationStorageTest.*` (new: a directory of its own; a script taken once, put back, refused when unreadable), `VoiceRoutineStoreTest.*` (new, on a temporary directory: each of two profiles lists, runs and deletes only its own; a name in use replaced only when asked, keeping its id; a name two routines answer to runs neither; routines from before profiles kept by one profile once, as they were, renamed beside its own; files that say they are another profile's change nothing), `VoiceRoutinesLogicTest.*` (five more: names with numbers, exactly one routine per name, unique names, "replace it?" and its "no", the question about older routines and its "yes" and "no"), `VoiceLearningStoreTest.DeclinedRoutines`; 129 learning tests and 15 store tests built standalone here (ASan and UBSan; the store on real files through POSIX stand-ins for `//base`'s file utilities) | profile-routines |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1621,7 +1623,7 @@ extension enablement and `MediaRouterEnabled()`).
   chromium/src/out/MoltTests/browser_tests \
     --gtest_filter='VoiceLearningBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/learning-browser-tests.log
   ```
-  *Expected:* all 3 pass on Linux and macOS (the correction test only
+  *Expected:* all 5 pass on Linux and macOS (the correction test only
   there):
   - `TeachesARoutineByVoiceAndRunsItAgain`: "open VideoSite", "search for
     Bohemian Rhapsody", "play the fourth one", then "remember this as my
@@ -1637,6 +1639,25 @@ extension enablement and `MediaRouterEnabled()`).
   - `NothingIsLearnedInAMoltNetWindow`: no learning for the MoltNet
     profile; commands there only hear that voice mode is off, and the
     regular profile learns nothing from them.
+  - `RoutinesBelongToTheProfileThatTaughtThem` (profile-routines): "my
+    videos" taught in the first profile is in its `MoltVoiceRoutines/`,
+    not the shared storage; a second profile's window doesn't run or
+    forget it ("I don't have a routine called my videos."), teaches its
+    own "my videos" without a question, and each profile's Agent studio
+    (`chrome://molt-ai-agent/` in a tab) lists only its own; taught again
+    in the first, "You already have a routine called my videos." and "yes"
+    replace it under the same id; "forget everything" there leaves the
+    second profile's.
+  - `ARoutineFromBeforeProfilesIsKeptOnce` (profile-routines): a routine
+    in the shared storage, as round 41 saved it, is offered in both
+    profiles' studios; "run my videos" in the first asks to keep it, "yes"
+    keeps it ("Kept it here.") under its id; the second profile no longer
+    sees it (studio "/"), and the first runs it; another one, which the
+    second profile answers "no" to, isn't offered there again but still is
+    in the first.
+
+  If `Studio()` times out, the studio didn't load in a tab: send the log
+  and whether `chrome://molt-ai-agent/` opens in a normal tab by hand.
 
   If the correction test times out, send the log: the script's times are
   the fake microphone's, and a slow machine may need its gaps widened.
@@ -2972,9 +2993,9 @@ activation-guard; `docs/design/TOUCHLESS_BROWSING.md` §7.5,
   form that isn't a search): running it stops at "Say yes to press ...",
   goes on after "yes", and ends after "no" ("I stopped ...").
 - [ ] A routine that types a password-like text ("type hunter2!x" in a
-  field): the `.molt` file in `~/.moltbrowser/automations/` doesn't hold
-  it, and running it asks "I didn't keep the text for it. Say type, then
-  the text."
+  field): the `.molt` file in the profile's `MoltVoiceRoutines/` directory
+  doesn't hold it, and running it asks "I didn't keep the text for it. Say
+  type, then the text."
 - [ ] Corrections, with a real microphone: say a name the recognizer gets
   wrong (a band or a contact), then "no, I said ..." with the right one.
   *Expected:* the corrected command runs; the next time the same mistake
@@ -2994,6 +3015,29 @@ activation-guard; `docs/design/TOUCHLESS_BROWSING.md` §7.5,
 - [ ] MoltNet and private windows: voice mode is off in MoltNet; in a
   private window, "remember this as ..." says "I can't keep routines
   here." and nothing is learned (the profile's file doesn't change).
+- [ ] Two profiles on one machine (profile-routines): in profile A, teach
+  "my news" by voice; switch to profile B (another window). *Expected:*
+  B's "what are my routines" doesn't mention it, "run my news" says B has
+  no routines, B's Agent mode doesn't list it, and `molt://ai-automation`
+  in either profile lists no voice routine. Teach B its own "my news":
+  saved without a question, and A's still runs A's steps. In A, "remember
+  this as my news" again: "You already have a routine called my news.",
+  then "Say yes to replace it"; "no" keeps the old one ("Say remember this
+  as, and another name."), "yes" replaces it (Agent mode shows one "my
+  news", same card). Import a voice routine file named "my news" in A's
+  Agent mode: it is listed as "my news (2)" (a draft), and "run my news
+  two" runs it once its sites are confirmed. In a private window of A,
+  Agent mode lists no voice routine.
+- [ ] A routine from before the update (profile-routines): with a v0.3.0
+  build from before round 43, teach a routine "my news"; update, then
+  open profile B first. *Expected:* B's Agent mode shows "Routines from
+  before profiles" with "my news"; by voice, "what are my routines" in B
+  says "One routine was made before routines belonged to a profile: my
+  news." and asks to keep it. Say "no": not asked again in B (Agent mode
+  shows "1 routine you said aren't yours" and "Show"). In A, "yes" (or
+  "Keep here" in Agent mode) keeps it: "run my news" works in A, and B
+  no longer offers it. The file has moved from `~/.moltbrowser/automations/`
+  to A's `MoltVoiceRoutines/`, with the same id.
 
 **Voice routines with the on-device AI's steps** (from planner-routines;
 `docs/design/TOUCHLESS_BROWSING.md` §6.8, "The planner's steps"):

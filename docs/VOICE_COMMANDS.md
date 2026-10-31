@@ -164,6 +164,23 @@ and the bar only.
   password or a code isn't kept: the browser asks for it at each run.
   "What are my routines?" lists them; "forget my news" deletes one after
   your "yes". Routines are listed in Agent mode too, which can't run them.
+- **Routines belong to your profile:** a routine is kept in the browser
+  profile you taught it in. Another profile on the same computer (someone
+  else's, or your work profile) doesn't hear it listed, can't run or
+  forget it, and doesn't see it in Agent mode; each profile can have a
+  "my news" of its own. Saying "remember this as my news" when this
+  profile already has one asks first ("You already have a routine called
+  my news. ... Say yes to replace it"): "yes" replaces it, "no" keeps the
+  old one and asks you for another name. Each name runs exactly one
+  routine. A routine you import, copy or rename in Agent mode under a
+  name you already use is called "my news (2)" (say "my news two").
+- **Routines from before this update** were shared by every profile. The
+  first time you ask about routines, or run one of them by name, the
+  browser asks: "2 routines were made before routines belonged to a
+  profile: my news and morning mail. Say yes to keep them here". "Yes"
+  moves them into this profile (and no other profile has them after
+  that); "no" leaves them for another profile and isn't asked again
+  here. Agent mode shows them too, to keep some and not others.
 - **Routines with the AI's steps:** when you asked the on-device AI to do
   something ("find me a train to Lyon"), what it did is part of "this" too:
   the pages it opened, what it clicked, typed or chose. Saving such a
@@ -756,6 +773,10 @@ said.
   site offers, that step can't be kept in a routine yet. Nor can a step
   whose button or link has the same name as another on the page when the
   routine runs: the routine stops there rather than guess.
+- **Renaming a routine by voice,** or choosing which of the routines from
+  before this update to keep one by one: do these in Agent mode. Two
+  routines with the same name (after editing their files) run by neither
+  name until one is renamed there.
 - **Telling your voice from others':** anyone who hears a confirmation
   word ("say harbor") can say it. Recognizing your own voice is planned.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:

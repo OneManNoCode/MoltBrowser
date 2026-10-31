@@ -27,6 +27,7 @@
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
@@ -50,6 +51,14 @@ using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
 // The most audit-log lines a page may ask for at once.
 constexpr int kMaxAuditLines = 2000;
+
+// Routines taught by voice belong to the profile that taught them
+// (molt_ai/voice/voice_routine_store.h), which keeps them in its own
+// directory and shows them in Agent mode. The ones still in the shared
+// storage were made before that, and are kept by a profile in Agent mode
+// or by voice: this page lists and changes neither.
+constexpr char kVoiceRoutinesElsewhere[] =
+    "Routines taught by voice belong to a profile: they are in Agent mode.";
 
 // ---- Message Handler ----
 class MoltAIAutomationHandler : public content::WebUIMessageHandler {
@@ -114,6 +123,16 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   AutomationStorage storage_;
   AutomationSecurity security_;
 
+  // The workflow |id|; nullopt for a routine taught by voice (see
+  // kVoiceRoutinesElsewhere).
+  std::optional<Script> LoadWorkflow(const std::string& id) {
+    std::optional<Script> script = storage_.Load(id);
+    if (script && molt_ai::automation::HasVoiceSteps(*script)) {
+      return std::nullopt;
+    }
+    return script;
+  }
+
   // Convert a Script to a UI-friendly dict (same shape its JSON has, but
   // also pre-renders some computed fields like success_rate).
   base::DictValue ScriptToDict(const Script& s) {
@@ -149,8 +168,10 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     const std::string callback_id = args[0].GetString();
 
     base::ListValue list;
-    for (const auto& s : storage_.ListAll())
-      list.Append(ScriptToDict(s));
+    for (const auto& s : storage_.ListAll()) {
+      if (!molt_ai::automation::HasVoiceSteps(s))
+        list.Append(ScriptToDict(s));
+    }
 
     base::DictValue result;
     result.Set("scripts", std::move(list));
@@ -167,7 +188,7 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
 
-    auto script = storage_.Load(id);
+    auto script = LoadWorkflow(id);
     base::DictValue result;
     if (script) {
       result.Set("script", ScriptToDict(*script));
@@ -195,6 +216,10 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       if (!script) {
         result.Set("success", false);
         result.Set("error", "invalid script");
+      } else if (molt_ai::automation::HasVoiceSteps(*script) ||
+                 (storage_.Load(script->id) && !LoadWorkflow(script->id))) {
+        result.Set("success", false);
+        result.Set("error", kVoiceRoutinesElsewhere);
       } else {
         // The dict's security.trust is UI-supplied and ignored: a save keeps
         // the trust stored on disk (set only via promoteTrust) or starts a
@@ -218,7 +243,7 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
     base::DictValue result;
-    result.Set("success", storage_.Delete(id));
+    result.Set("success", LoadWorkflow(id) && storage_.Delete(id));
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
   }
@@ -235,7 +260,7 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
 
-    auto script = storage_.Load(id);
+    auto script = LoadWorkflow(id);
     base::DictValue result;
     if (!script) {
       result.Set("success", false);
@@ -400,6 +425,17 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
                                 base::Value(std::move(result)));
       return;
     }
+    // A routine taught by voice is imported in Agent mode, into the
+    // profile (renamed there if the profile has one of its name).
+    if (molt_ai::automation::HasVoiceSteps(*script)) {
+      result.Set("success", false);
+      result.Set("error",
+                 "This is a routine taught by voice. Import it in Agent "
+                 "mode, where it belongs to your profile.");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
     // Don't overwrite existing scripts on import — assign a new id if
     // the original is taken. Reset stats so imported scripts start
     // CASUAL-trust and 0 runs (the importer hasn't earned trust yet).
@@ -487,7 +523,7 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
                                 base::Value(std::move(result)));
       return;
     }
-    std::optional<Script> existing = storage_.Load(id);
+    std::optional<Script> existing = LoadWorkflow(id);
     if (!existing) {
       result.Set("success", false);
       result.Set("error", "script not found");

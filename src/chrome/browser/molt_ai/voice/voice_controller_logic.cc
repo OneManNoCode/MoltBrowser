@@ -621,8 +621,11 @@ class Planner {
             }
           }
         }
-        ClearConfirmation();
-        Say(confirming ? "Okay, I won't." : "Okay.");
+        {
+          const std::string declined = Declined(confirming);
+          ClearConfirmation();
+          Say(declined);
+        }
         break;
       case K::kCancel:
         Status("Cancelled");
@@ -2185,9 +2188,11 @@ class Planner {
       return;
     }
     const std::string spoken = PageText(name);
-    if (FindRoutineName(learning.routines, name)) {
-      Say("You already have a routine called " + spoken + ". Say forget " +
-          spoken + " first, or choose another name.");
+    // A name in use: replaced on a "yes" (profile-routines).
+    const RoutineNameMatch in_use = MatchRoutineName(learning.routines, name);
+    if (in_use.count > 1) {
+      Say("You have " + std::to_string(in_use.count) + " routines called " +
+          spoken + ". Choose another name, or rename them in Agent mode.");
       return;
     }
     if (learning.this_steps.empty()) {
@@ -2201,16 +2206,22 @@ class Planner {
       return;
     }
     Status("Remembering " + spoken);
+    if (in_use.name) {
+      Say("You already have a routine called " + spoken + ".");
+    }
     Say("I'll remember: " + JoinSpokenList(learning.this_steps) + ".");
     if (learning.this_planned) {
       Say("Some of these steps are the AI's, so you'll confirm the sites they "
           "use before it runs.");
     }
-    VoiceStep save = LearningStep(LearningOp::kSaveRoutine, name);
+    VoiceStep save = LearningStep(
+        in_use.name ? LearningOp::kReplaceRoutine : LearningOp::kSaveRoutine,
+        name);
     save.count = learning.this_version;
     std::vector<VoiceStep> steps;
     steps.push_back(std::move(save));
-    AskToConfirm(std::move(steps), "save it as " + spoken);
+    AskToConfirm(std::move(steps), in_use.name ? std::string("replace it")
+                                               : "save it as " + spoken);
   }
 
   void RunRoutine(const std::string& said) {
@@ -2219,7 +2230,18 @@ class Planner {
       Say("I can't run routines here.");
       return;
     }
-    const std::string* name = FindRoutineName(learning.routines, said);
+    const RoutineNameMatch match = MatchRoutineName(learning.routines, said);
+    const std::string* name = match.name;
+    if (match.count > 1) {
+      Say("You have " + std::to_string(match.count) + " routines called " +
+          PageText(said) + ". Rename one in Agent mode to run it by voice.");
+      return;
+    }
+    if (!name && FindRoutineName(learning.unclaimed, said)) {
+      Say(PageText(said) + " was made before routines belonged to a profile.");
+      OfferUnclaimed();
+      return;
+    }
     if (!name) {
       Say(learning.routines.empty()
               ? std::string("You don't have any routines yet. Do something, "
@@ -2234,9 +2256,15 @@ class Planner {
 
   void ForgetRoutine(const std::string& said) {
     const LearningEnvironment& learning = env_.learning;
-    const std::string* name = learning.routines_available
-                                  ? FindRoutineName(learning.routines, said)
-                                  : nullptr;
+    const RoutineNameMatch match =
+        learning.routines_available ? MatchRoutineName(learning.routines, said)
+                                    : RoutineNameMatch();
+    const std::string* name = match.name;
+    if (match.count > 1) {
+      Say("You have " + std::to_string(match.count) + " routines called " +
+          PageText(said) + ". Forget the one you mean in Agent mode.");
+      return;
+    }
     if (!name) {
       Say("I don't have a routine called " + PageText(said) + ".");
       return;
@@ -2248,9 +2276,14 @@ class Planner {
 
   void ListRoutines() {
     const std::vector<std::string>& names = env_.learning.routines;
-    if (!env_.learning.routines_available || names.empty()) {
+    if (!env_.learning.routines_available ||
+        (names.empty() && env_.learning.unclaimed.empty())) {
       Say("You don't have any routines yet. Do something, then say remember "
           "this as, and a name.");
+      return;
+    }
+    if (names.empty()) {
+      OfferUnclaimed();
       return;
     }
     std::vector<std::string> read;
@@ -2266,6 +2299,63 @@ class Planner {
       said += ", and more in Agent mode";
     }
     Say(said + ". Say run, then its name.");
+    OfferUnclaimed();
+  }
+
+  // Routines made before routines belonged to a profile (profile-routines):
+  // a "yes" keeps them in this profile, when the user heard every name; a
+  // "no" leaves them for another (Declined()).
+  void OfferUnclaimed() {
+    const std::vector<std::string>& names = env_.learning.unclaimed;
+    if (!env_.learning.routines_available || names.empty()) {
+      return;
+    }
+    const bool one = names.size() == 1;
+    const std::string made =
+        (one ? std::string("One routine was")
+             : std::to_string(names.size()) + " routines were") +
+        " made before routines belonged to a profile";
+    if (names.size() > kMaxRoutinesRead) {
+      Say(made + ". Choose the ones to keep here in Agent mode.");
+      return;
+    }
+    std::vector<std::string> read;
+    for (const std::string& name : names) {
+      read.push_back(PageText(name));
+    }
+    Say(made + ": " + JoinSpokenList(read) + ".");
+    VoiceStep claim = LearningStep(LearningOp::kClaimRoutines, std::string());
+    claim.count = env_.learning.unclaimed_version;
+    std::vector<VoiceStep> steps;
+    steps.push_back(std::move(claim));
+    AskToConfirm(std::move(steps), one ? "keep it here" : "keep them here");
+  }
+
+  // What "no" says to the question that waits, with the learning step it
+  // takes (profile-routines): a name in use kept asks for another; the
+  // routines from before profiles are left for another profile.
+  std::string Declined(bool confirming) {
+    if (!confirming) {
+      return "Okay.";
+    }
+    for (const VoiceStep& held : state().confirm_steps) {
+      if (held.kind != VoiceStepKind::kLearning) {
+        continue;
+      }
+      if (held.index == static_cast<int>(LearningOp::kReplaceRoutine)) {
+        return "Okay, I won't replace it. Say remember this as, and another "
+               "name.";
+      }
+      if (held.index == static_cast<int>(LearningOp::kClaimRoutines)) {
+        VoiceStep decline =
+            LearningStep(LearningOp::kDeclineRoutines, std::string());
+        decline.count = held.count;
+        Add(std::move(decline));
+        return "Okay, I'll leave them for another profile. You can still "
+               "keep them here in Agent mode.";
+      }
+    }
+    return "Okay, I won't.";
   }
 
   void ForgetWord(const std::string& said) {
@@ -2310,9 +2400,8 @@ class Planner {
       return;
     }
     // A routine's name on its own runs it (before the planner is asked).
-    if (const std::string* name =
-            FindRoutineName(env_.learning.routines, command.heard)) {
-      RunRoutine(*name);
+    if (MatchRoutineName(env_.learning.routines, command.heard).count) {
+      RunRoutine(command.heard);
       return;
     }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
