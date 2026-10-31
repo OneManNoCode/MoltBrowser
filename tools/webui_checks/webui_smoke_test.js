@@ -758,7 +758,7 @@ function gpuInference(args) {
 // "Voice mode" (script: kVoiceSettingsJs).
 const voiceCalls = [];
 let voiceState = {available: true, enabled: false, alwaysListening: false,
-                  listening: false, moltnet: false};
+                  sayWordAloud: false, listening: false, moltnet: false};
 function voiceSettings(args) {
   voiceCalls.push([args[0].replace(/_\d+$/, '')].concat(args.slice(1)));
   return voiceState;
@@ -867,6 +867,21 @@ async function checkVoiceSection(window) {
   assert.strictEqual(doc.getElementById('voiceStatus').textContent,
                      '<b>Click the setting to change it.</b>');
   assert.strictEqual(section.querySelectorAll('b').length, 0);
+  // Saying the confirmation word aloud anyway: the value goes to the
+  // browser, and the switch shows what it saved.
+  voiceState = Object.assign({}, voiceState, {error: undefined,
+                                              sayWordAloud: true});
+  doc.getElementById('voiceSayWordAloud').click();
+  await tick();
+  assert.deepStrictEqual(voiceCalls.pop(),
+                         ['voiceSettingsSetSayWordAloud', true]);
+  assert(doc.getElementById('voiceSayWordAloud').checked);
+  voiceState = Object.assign({}, voiceState, {sayWordAloud: false});
+  doc.getElementById('voiceSayWordAloud').click();
+  await tick();
+  assert.deepStrictEqual(voiceCalls.pop(),
+                         ['voiceSettingsSetSayWordAloud', false]);
+  assert(!doc.getElementById('voiceSayWordAloud').checked);
   // A MoltNet window's settings page says it never listens there.
   voiceState = {available: true, enabled: true, alwaysListening: false,
                 listening: false, moltnet: true};
@@ -1325,7 +1340,8 @@ const PAGES = [
    // the GPU setting (MoltGpuInferenceHandler) each take a real click.
    clickGated: ['moltnetConnect', 'moltnetDisconnect', 'moltnetSetExitCountry',
                 'setMoltnetBridges', 'gpuInferenceSetMode', 'gpuInferenceRetry',
-                'voiceSettingsSetEnabled', 'voiceSettingsSetAlwaysListening'],
+                'voiceSettingsSetEnabled', 'voiceSettingsSetAlwaysListening',
+                'voiceSettingsSetSayWordAloud'],
    responses: {
      getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
@@ -1378,6 +1394,7 @@ const PAGES = [
      voiceSettingsGetState: voiceSettings,
      voiceSettingsSetEnabled: voiceSettings,
      voiceSettingsSetAlwaysListening: voiceSettings,
+     voiceSettingsSetSayWordAloud: voiceSettings,
      // "What voice mode learned" (script: kVoiceLearningSettingsJs).
      voiceLearningGetState: voiceLearning,
      voiceLearningSetEnabled: voiceLearning,
@@ -1395,6 +1412,7 @@ const PAGES = [
                     '#webAiEnabled:change', '#gpuModeAuto:change',
                     '#gpuModeOff:change', '#gpuRetryBtn:click',
                     '#voiceEnabled:change', '#voiceAlwaysListening:change',
+                    '#voiceSayWordAloud:change',
                     '#voiceLearningEnabled:change',
                     '#voiceLearningForgetAllBtn:click'],
    async after(window) {

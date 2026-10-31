@@ -914,7 +914,14 @@ source_set("voice_loop_unit_tests") {
 source_set("voice_prompts_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "voice_browser_prompts_browsertest.cc" ]
+  sources = [
+    "voice_browser_prompts_browsertest.cc",
+
+    # The word's channel with real captures (chrome/test/data/molt_voice/
+    # capture.html): a page capturing the microphone, one sharing the
+    # screen.
+    "voice_gesture_channel_browsertest.cc",
+  ]
 
   deps = [
     ":features",
@@ -922,6 +929,11 @@ source_set("voice_prompts_browser_tests") {
     ":voice_prompts",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/common:non_code_constants",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//media",
     "//chrome/browser/download",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",

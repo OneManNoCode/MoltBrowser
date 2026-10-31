@@ -6,8 +6,9 @@
 // chrome/test/data/molt_voice/prompts.html, with a fake TTS platform and
 // the listening session's part played by the test
 // (VoiceController::HandleHeardUtterance()):
-//   - a permission prompt is read with a confirmation word; the word, heard
-//     cleanly, allows it; "no" blocks it;
+//   - a permission prompt is read with a confirmation word (shown, not said:
+//     the test speaks with a platform voice, voice_gesture_channel.h); the
+//     word, heard cleanly, allows it; "no" blocks it;
 //   - the word typed, heard over other speech, said again for the next
 //     prompt (a replay) or said after the prompt's window is refused;
 //   - confirm() is answered by "yes" and "no"; prompt() by a dictated
@@ -197,7 +198,8 @@ class VoiceBrowserPromptsBrowserTest : public InProcessBrowserTest {
     return base::test::RunUntil([&]() { return speech_.Heard(text); });
   }
 
-  // Asks for notifications, and waits until voice mode has read it.
+  // Asks for notifications, and waits until voice mode has read it; its
+  // word (shown in the caption bar, never said here).
   std::string AskNotifications() {
     const size_t before = speech_.count();
     EXPECT_TRUE(content::ExecJs(tab(), "askNotifications()",
@@ -206,7 +208,20 @@ class VoiceBrowserPromptsBrowserTest : public InProcessBrowserTest {
       return speech_.count() > before &&
              speech_.Heard("localhost wants to show notifications.");
     }));
-    return speech_.LastWord();
+    return Word();
+  }
+
+  // The waiting prompt's word, as the caption bar shows it.
+  std::string Word() {
+    VoiceController* voice = VoiceController::FromBrowser(browser());
+    VoiceBrowserPrompts* prompts =
+        voice ? voice->browser_prompts_for_testing() : nullptr;
+    EXPECT_TRUE(prompts);
+    if (!prompts) {
+      return std::string();
+    }
+    EXPECT_EQ(prompts->ShownWord(), prompts->current_word_for_testing());
+    return prompts->current_word_for_testing();
   }
 
   // A file dangerous for its type (.swf, on every platform) downloaded in
@@ -245,9 +260,14 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
 
   const std::string word = AskNotifications();
   ASSERT_TRUE(MatchConfirmationWord(word)) << word;
+  // Never said with the platform's voice, nor given to observers as text.
+  EXPECT_TRUE(WaitForSpeech("To allow it, say the word on your screen."));
+  EXPECT_FALSE(speech_.Heard(" say " + word + "."));
   // A plain "yes" doesn't allow it.
   voice->HandleHeardUtterance("yes", /*heard_cleanly=*/true);
-  EXPECT_TRUE(WaitForSpeech("To allow it, say " + word + "."));
+  EXPECT_TRUE(base::test::RunUntil(
+      [&]() { return speech_.LastWord() == "the word on your screen"; }));
+  EXPECT_FALSE(speech_.Heard(" say " + word + "."));
   EXPECT_TRUE(prompts->IsRequestInProgress());
 
   voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
@@ -378,8 +398,9 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
   ASSERT_EQ(item->GetDangerType(),
             download::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE);
 
-  ASSERT_TRUE(WaitForSpeech("may be harmful. To keep it, say "));
-  const std::string word = speech_.LastWord("To keep it, say ");
+  ASSERT_TRUE(WaitForSpeech(
+      "may be harmful. To keep it, say the word on your screen."));
+  const std::string word = Word();
   ASSERT_TRUE(MatchConfirmationWord(word)) << word;
   EXPECT_FALSE(DownloadItemWarningData::WarningFirstShownTime(item).is_null());
   voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);

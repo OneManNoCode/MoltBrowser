@@ -167,6 +167,7 @@ class VoiceBrowserPrompts
   int current_prompt_for_testing() const { return current_ ? current_->id : 0; }
   std::string current_word_for_testing() const;
   bool gesture_locked_out_for_testing();
+  WordChannelInputs word_channel_inputs_for_testing() { return Inputs(); }
 
  private:
   enum class Source : uint8_t {
