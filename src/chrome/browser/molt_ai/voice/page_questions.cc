@@ -137,6 +137,79 @@ bool IsStopword(std::string_view word) {
   return std::binary_search(std::begin(kStopwords), std::end(kStopwords), word);
 }
 
+// Greek and Cyrillic letters that look like Latin ones, as
+// NormalizeSpokenText() leaves them (their capitals lowered: Greek Μ and
+// Cyrillic М are μ and м here), and the Latin letter each looks like.
+struct LookAlike {
+  uint32_t code;
+  char latin;
+};
+constexpr LookAlike kLookAlikes[] = {
+    // Greek: α β ε ζ η ι κ μ ν ο ρ τ υ χ.
+    {0x03B1, 'a'},
+    {0x03B2, 'b'},
+    {0x03B5, 'e'},
+    {0x03B6, 'z'},
+    {0x03B7, 'h'},
+    {0x03B9, 'i'},
+    {0x03BA, 'k'},
+    {0x03BC, 'm'},
+    {0x03BD, 'n'},
+    {0x03BF, 'o'},
+    {0x03C1, 'p'},
+    {0x03C4, 't'},
+    {0x03C5, 'y'},
+    {0x03C7, 'x'},
+    // Cyrillic: а в е к м н о р с т у х ё ѕ і ј һ ӏ ԁ ԛ ԝ.
+    {0x0430, 'a'},
+    {0x0432, 'b'},
+    {0x0435, 'e'},
+    {0x043A, 'k'},
+    {0x043C, 'm'},
+    {0x043D, 'h'},
+    {0x043E, 'o'},
+    {0x0440, 'p'},
+    {0x0441, 'c'},
+    {0x0442, 't'},
+    {0x0443, 'y'},
+    {0x0445, 'x'},
+    {0x0451, 'e'},
+    {0x0455, 's'},
+    {0x0456, 'i'},
+    {0x0458, 'j'},
+    {0x04BB, 'h'},
+    {0x04CF, 'l'},
+    {0x0501, 'd'},
+    {0x051B, 'q'},
+    {0x051D, 'w'},
+};
+
+// The folded |word| with each look-alike above as its Latin letter
+// ("моlt" -> "molt"); everything else as it is. Linear.
+std::string WithoutLookAlikes(std::string_view word) {
+  std::string out;
+  out.reserve(word.size());
+  for (size_t i = 0; i < word.size(); ++i) {
+    const auto lead = static_cast<unsigned char>(word[i]);
+    // Every look-alike is two bytes in UTF-8.
+    if (lead >= 0xC0 && lead < 0xE0 && i + 1 < word.size() &&
+        (static_cast<unsigned char>(word[i + 1]) & 0xC0) == 0x80) {
+      const uint32_t code = ((lead & 0x1Fu) << 6) |
+                            (static_cast<unsigned char>(word[i + 1]) & 0x3Fu);
+      const auto* found =
+          std::find_if(std::begin(kLookAlikes), std::end(kLookAlikes),
+                       [code](const LookAlike& l) { return l.code == code; });
+      if (found != std::end(kLookAlikes)) {
+        out.push_back(found->latin);
+        ++i;
+        continue;
+      }
+    }
+    out.push_back(word[i]);
+  }
+  return out;
+}
+
 // The folded word without a plural's ending ("batteries" -> "battery",
 // "boxes" -> "box", "prices" -> "price"); short words stay as they are.
 std::string_view Stem(std::string_view word, std::string& scratch) {
@@ -877,29 +950,46 @@ bool HoldsWakePhrase(std::string_view text) {
   const std::string_view phrase = p.default_wake_phrase;
   const std::string_view name = phrase.substr(phrase.rfind(' ') + 1);
   const std::string name_key = PhoneticKey(name);
+  // The name, a word that sounds like it ("mold", "moult", "molts"), or one
+  // that begins with it ("moltbrowser").
+  const auto is_name = [&](std::string_view word) {
+    const bool near_length =
+        word.size() + 1 >= name.size() && word.size() <= name.size() + 2;
+    return !name.empty() &&
+           (word.starts_with(name) || (near_length && !name_key.empty() &&
+                                       PhoneticKey(word) == name_key));
+  };
+  // A greeting of two letters or more ("hey", "ok", "hello"; not "a",
+  // which the grammar takes for a misheard "hey" but which is everywhere
+  // in text: "a mold stain").
+  const auto is_greeting = [&](std::string_view word) {
+    return word.size() >= 2 &&
+           std::find(p.wake_greetings.begin(), p.wake_greetings.end(), word) !=
+               p.wake_greetings.end();
+  };
   NormalizeOptions options;
   options.max_words = kMaxBlockWords;
   const NormalizedText words =
       NormalizeSpokenText(text.substr(0, kMaxModelReplyBytes), options);
-  // After a greeting of two letters or more ("hey", "ok", "hello"; not "a",
-  // which the grammar takes for a misheard "hey" but which is everywhere
-  // in text: "a mold stain").
   bool after_greeting = false;
   for (size_t i = 0; i < words.words.size(); ++i) {
-    const std::string_view word = words.Word(i);
-    if (after_greeting && !name.empty()) {
-      // The name, a word that sounds like it ("mold", "moult", "molts"), or
-      // one that begins with it ("moltbrowser").
-      const bool near_length =
-          word.size() + 1 >= name.size() && word.size() <= name.size() + 2;
-      if (word.starts_with(name) ||
-          (near_length && !name_key.empty() && PhoneticKey(word) == name_key)) {
+    // Read as the Latin letters it looks like ("Hey Моlt" with a Cyrillic
+    // М and о is "hey molt" to the eye, and may be to a voice).
+    const std::string word = WithoutLookAlikes(words.Word(i));
+    if (after_greeting && is_name(word)) {
+      return true;
+    }
+    // A greeting run into the name: a voice says a word written in camel
+    // case apart ("HeyMolt", "OKMold": voice_said_aloud.h), and one written
+    // together much the same ("heymolt").
+    for (std::string_view greeting : p.wake_greetings) {
+      if (greeting.size() >= 2 && word.size() > greeting.size() &&
+          std::string_view(word).starts_with(greeting) &&
+          is_name(std::string_view(word).substr(greeting.size()))) {
         return true;
       }
     }
-    after_greeting = word.size() >= 2 &&
-                     std::find(p.wake_greetings.begin(), p.wake_greetings.end(),
-                               word) != p.wake_greetings.end();
+    after_greeting = is_greeting(word);
   }
   return false;
 }
