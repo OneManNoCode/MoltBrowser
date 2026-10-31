@@ -203,7 +203,7 @@ Five layers, tried in this order:
 
   A model can still answer wrongly about a page, in plain words; every answer says where it came from ("The page says").
 - **Tests:** `PageQuestions*Test` (the grammar, the text and its caps on hostile pages, the fence, the answer, the loop's step, the reader's chunks, the session ignoring an answer's wake phrase), `molt_page_questions_fuzzer` (hostile pages, questions and replies) and the step in `molt_voice_controller_fuzzer`; `VoicePageQuestionsBrowserTest.*` with a scripted model on the build machine, and a real model on a few pages in its checklist ("page-questions").
-- **Not yet:** questions about pictures (the vision model), a conversation about an answer, answers spoken as they are written (the answer is said once it is whole and checked), and other languages.
+- **Not yet:** questions about pictures (the vision model), a conversation about an answer, answers spoken as they are written (the answer is said once it is whole and checked), and answers in the user's language (Spanish questions are understood, §4.1, but the model is asked in English).
 
 ### 5.5 The screen, for low vision
 
@@ -406,7 +406,7 @@ Five layers, tried in this order:
 - **Fallback:** the platform's voices when the voice isn't installed, while its helper starts (an answer waits at most 3 s), and after it failed twice in a row (a crash, a protocol violation, its limits, audio that stopped playing); what it hadn't finished is said again by the platform's voice. On Linux, `--enable-speech-dispatcher` is then needed only for that fallback.
 - **MoltNet:** voice mode stays off in MoltNet windows; the voice's helper starts only when voice mode starts in a window (`VoiceController::Start()`), which refuses MoltNet windows.
 - **Measured here** (a shared 4-core server; VOICE_HELPER_PROTOCOL.md §8): the first sound 0.1 to 0.25 s after the text, synthesis at a tenth of real time on one thread, about 9% of a core while reading and nothing while idle, 150 MB after loading and 370 MB at most; the speech helper's recognizer hears it as well as it hears sherpa-onnx's own reading of the same text (29% against 31% of the words wrong on page-like sentences full of names and numbers, which a synthetic voice and Kroko both find hard).
-- **Not yet:** other languages and voices (and a choice of voice in settings); the voice for pages' `speechSynthesis` through `TtsEngineDelegate` (the MoltNet voice list of "Voices" above); interrupting the engine inside a unit (a CANCEL waits for the unit being synthesized, under a second); listening to it with people (the build machine's checklist, "bundled-voice").
+- **Not yet:** other languages and voices for the bundled voice (Spanish speaks through the platform's Spanish voices, §4.1), and a choice of voice in settings; the voice for pages' `speechSynthesis` through `TtsEngineDelegate` (the MoltNet voice list of "Voices" above); interrupting the engine inside a unit (a CANCEL waits for the unit being synthesized, under a second); listening to it with people (the build machine's checklist, "bundled-voice").
 
 ### 6.7 Site skills
 
