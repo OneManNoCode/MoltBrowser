@@ -1613,7 +1613,7 @@ function renderUnclaimed(r){
       sec.appendChild(h('div',{'class':'ft-row'},[
         h('span',{'class':'ft-pair'},u.name),
         h('span',{'class':'ft-when'},steps+' step'+(steps===1?'':'s')),
-        h('button',{'class':'btn ghost ft-forget','aria-label':'Keep '+u.name+' here',
+        h('button',{'class':'btn ghost ft-forget','aria-label':'Keep here: '+u.name,
           onClick:function(){claimRoutines([u.id]);}},'Keep here')
       ]));
     });
