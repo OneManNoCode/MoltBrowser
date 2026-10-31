@@ -989,7 +989,10 @@ bool HoldsWakePhrase(std::string_view text) {
         return true;
       }
     }
-    after_greeting = is_greeting(word);
+    // "O.K." is said "okay".
+    after_greeting =
+        is_greeting(word) ||
+        (word == "k" && i > 0 && WithoutLookAlikes(words.Word(i - 1)) == "o");
   }
   return false;
 }
