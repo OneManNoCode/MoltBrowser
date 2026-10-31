@@ -233,6 +233,38 @@ TEST(SpanishNumbersTest, Durations) {
   EXPECT_FALSE(ReadYear(Words(year), 0, Spanish()));
 }
 
+// One call for a caller that reads a number in either language (a routine's
+// name: "my news two", "mis noticias dos").
+TEST(SpanishNumbersTest, ParseSpokenNumberInEitherLanguage) {
+  const auto parse = [](std::string_view said, Language language) {
+    const NormalizedText text = NormalizeSpokenText(said, {});
+    return ParseSpokenNumber(Words(text), language);
+  };
+  EXPECT_EQ(parse("two", Language::kEnglish), 2);
+  EXPECT_EQ(parse("twenty one", Language::kEnglish), 21);
+  EXPECT_EQ(parse("a hundred and five", Language::kEnglish), 105);
+  EXPECT_EQ(parse("dos", Language::kSpanish), 2);
+  EXPECT_EQ(parse("treinta y uno", Language::kSpanish), 31);
+  EXPECT_EQ(parse("veintiuno", Language::kSpanish), 21);
+  EXPECT_EQ(parse("ciento uno", Language::kSpanish), 101);
+  EXPECT_EQ(parse("12", Language::kSpanish), 12);
+  // Exactly one number, nothing else; no ordinals, no sound-alikes.
+  EXPECT_FALSE(parse("dos", Language::kEnglish));
+  EXPECT_FALSE(parse("two", Language::kSpanish));
+  EXPECT_FALSE(parse("dos gatos", Language::kSpanish));
+  EXPECT_FALSE(parse("segundo", Language::kSpanish));
+  EXPECT_FALSE(parse("for", Language::kEnglish));
+  EXPECT_FALSE(parse("", Language::kSpanish));
+  // The longest number at a place, for a caller that walks a text.
+  const NormalizedText name =
+      NormalizeSpokenText("mis noticias treinta y dos", {});
+  const std::optional<SpokenNumber> number =
+      ReadNumberIn(Words(name), 2, Language::kSpanish, NumberOptions());
+  ASSERT_TRUE(number);
+  EXPECT_EQ(number->value, 32);
+  EXPECT_EQ(number->words, 3u);
+}
+
 // The fields Spanish adds are empty or off in English: its readings are
 // the ones its own suites check.
 TEST(SpanishNumbersTest, EnglishTablesHaveNoneOfIt) {

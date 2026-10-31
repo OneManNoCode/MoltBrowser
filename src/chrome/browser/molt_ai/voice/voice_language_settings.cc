@@ -26,7 +26,7 @@ std::string ReadVoiceLanguageSetting() {
   return *stored;
 }
 
-bool WriteVoiceLanguageSetting(std::string_view code) {
+bool WriteVoiceLanguageSetting(const std::string& code) {
   if (!code.empty() && !StoredVoiceLanguage(code)) {
     return false;
   }
@@ -34,7 +34,7 @@ bool WriteVoiceLanguageSetting(std::string_view code) {
     if (code.empty()) {
       settings.Remove(kVoiceLanguageSettingsKey);
     } else {
-      settings.Set(kVoiceLanguageSettingsKey, std::string(code));
+      settings.Set(kVoiceLanguageSettingsKey, code);
     }
     return true;
   });

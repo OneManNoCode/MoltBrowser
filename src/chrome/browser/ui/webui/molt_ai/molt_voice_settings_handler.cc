@@ -30,8 +30,8 @@
 namespace {
 
 using molt_ai::chat_handler_helpers::BoolArg;
+using molt_ai::chat_handler_helpers::BoundedStringArg;
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
-using molt_ai::chat_handler_helpers::StringArg;
 using molt_ai::voice::VoiceModeSettings;
 using molt_ai::voice::VoiceSession;
 
@@ -190,18 +190,20 @@ void MoltVoiceSettingsHandler::HandleSetLanguage(const base::ListValue& args) {
     return;
   }
   AllowJavascript();
-  std::string language = StringArg(args, 1);
-  if (!molt_ai::voice::VoiceModeEnabled() ||
-      (!language.empty() && !molt_ai::voice::StoredVoiceLanguage(language))) {
+  // "", "en" or "es"; anything else (not a string, longer, another
+  // language) changes nothing.
+  const std::optional<std::string> language = BoundedStringArg(args, 1, 2);
+  if (!molt_ai::voice::VoiceModeEnabled() || !language ||
+      (!language->empty() && !molt_ai::voice::StoredVoiceLanguage(*language))) {
     ResolveWithState(args[0].GetString(), std::nullopt);
     return;
   }
   molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&molt_ai::voice::WriteVoiceLanguageSetting, language),
+      base::BindOnce(&molt_ai::voice::WriteVoiceLanguageSetting, *language),
       base::BindOnce(&MoltVoiceSettingsHandler::OnLanguageWritten,
                      weak_factory_.GetWeakPtr(), args[0].GetString(),
-                     language));
+                     *language));
 }
 
 void MoltVoiceSettingsHandler::OnLanguageWritten(std::string callback_id,

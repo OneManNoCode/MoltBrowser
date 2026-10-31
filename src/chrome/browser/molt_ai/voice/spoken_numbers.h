@@ -78,6 +78,22 @@ std::optional<SpokenDuration> ReadDuration(const WordList& words,
                                            size_t at,
                                            const LanguagePhrases& phrases);
 
+// ReadNumber() with |language|'s tables (PhrasesFor()): the longest number
+// at |words[at]|, digits or that language's words ("twenty one",
+// "veintiuno", "treinta y uno", "ciento uno"). For a caller that reads
+// numbers in text it walks (a routine's name).
+std::optional<SpokenNumber> ReadNumberIn(const WordList& words,
+                                         size_t at,
+                                         Language language,
+                                         const NumberOptions& options);
+
+// All of |words|, and nothing else, as one cardinal number in |language|
+// ("two", "twenty one", "dos", "treinta y uno", "4"); nullopt when they
+// are not exactly one number. Sound-alikes ("to", "for") and ordinals
+// don't count.
+std::optional<int64_t> ParseSpokenNumber(const WordList& words,
+                                         Language language);
+
 // A year said in two halves: "nineteen eighty five" (1985), "twenty twenty
 // four" (2024), "nineteen oh five" (1905). Plain cardinals ("two thousand
 // five") are ReadNumber()'s.

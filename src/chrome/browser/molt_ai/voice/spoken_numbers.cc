@@ -304,6 +304,25 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
   return best;
 }
 
+std::optional<SpokenNumber> ReadNumberIn(const WordList& words,
+                                         size_t at,
+                                         Language language,
+                                         const NumberOptions& options) {
+  return ReadNumber(words, at, PhrasesFor(language), options);
+}
+
+std::optional<int64_t> ParseSpokenNumber(const WordList& words,
+                                         Language language) {
+  NumberOptions options;
+  options.ordinals = false;
+  const std::optional<SpokenNumber> number =
+      ReadNumberIn(words, 0, language, options);
+  if (!number || number->words != words.size()) {
+    return std::nullopt;
+  }
+  return number->value;
+}
+
 std::optional<SpokenPosition> ReadPosition(const WordList& words,
                                            size_t at,
                                            const LanguagePhrases& phrases,

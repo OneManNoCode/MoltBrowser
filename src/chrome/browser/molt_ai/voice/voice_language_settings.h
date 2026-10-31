@@ -19,7 +19,6 @@
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_LANGUAGE_SETTINGS_H_
 
 #include <string>
-#include <string_view>
 
 namespace molt_ai {
 namespace voice {
@@ -34,7 +33,7 @@ std::string ReadVoiceLanguageSetting();
 // browser's language). Every other key is kept, atomically. False, and
 // nothing written, for any other |code|, or if settings.json exists but
 // isn't a JSON object, or can't be written.
-bool WriteVoiceLanguageSetting(std::string_view code);
+bool WriteVoiceLanguageSetting(const std::string& code);
 
 }  // namespace voice
 }  // namespace molt_ai
