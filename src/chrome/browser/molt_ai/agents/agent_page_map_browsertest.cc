@@ -518,7 +518,8 @@ class VoicePlannerBrowserTest : public AgentPageMapBrowserTest {
 };
 
 // Routines with the planner's steps: the profile's learning keeps them in
-// a temporary automations directory.
+// its own directory (voice_routine_store.h); the storage every profile
+// shares is a temporary one.
 class VoicePlannerRoutinesBrowserTest : public VoicePlannerBrowserTest {
  protected:
   void SetUpOnMainThread() override {
@@ -535,14 +536,13 @@ class VoicePlannerRoutinesBrowserTest : public VoicePlannerBrowserTest {
     return voice::VoiceLearning::Get(browser()->GetProfile());
   }
 
-  // The routine as stored, changed by |change| and saved again (as an
-  // edit of its file, or the Agent studio's click on "Confirm these
-  // sites").
+  // The routine as stored (in the profile's own storage), changed by
+  // |change| and saved again (as an edit of its file, or the Agent
+  // studio's click on "Confirm these sites").
   template <typename Change>
   void ChangeStored(const std::string& id, Change change) {
     base::ScopedAllowBlockingForTesting allow_blocking;
-    automation::AutomationStorage storage;
-    storage.SetRootForTesting(automations_.GetPath());
+    automation::AutomationStorage storage(learning()->routines_dir());
     std::optional<automation::Script> script = storage.Load(id);
     ASSERT_TRUE(script);
     change(*script);
@@ -551,8 +551,7 @@ class VoicePlannerRoutinesBrowserTest : public VoicePlannerBrowserTest {
 
   std::optional<automation::Script> Stored(const std::string& id) {
     base::ScopedAllowBlockingForTesting allow_blocking;
-    automation::AutomationStorage storage;
-    storage.SetRootForTesting(automations_.GetPath());
+    automation::AutomationStorage storage(learning()->routines_dir());
     return storage.Load(id);
   }
 

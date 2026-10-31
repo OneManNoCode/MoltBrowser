@@ -59,8 +59,13 @@ namespace voice {
 // A routine's steps, at most; what "remember this" keeps, at most.
 inline constexpr size_t kMaxRoutineSteps = 50;
 inline constexpr size_t kMaxThisSteps = 20;
-// Routines read out by "what are my routines", at most.
+// Routines read out by "what are my routines", at most. Routines from
+// before routines belonged to a profile are offered by voice only when
+// they are no more (the user must have heard every name a "yes" keeps).
 inline constexpr size_t kMaxRoutinesRead = 10;
+// "My news (2)" to "my news (99)": the names a routine brought in under a
+// name in use may take (UniqueRoutineName()).
+inline constexpr int kMaxRoutineNameCopies = 99;
 // A routine's name: at most this many words (and kMaxRoutineNameBytes).
 inline constexpr size_t kMaxRoutineNameWords = 8;
 // An item's name kept for a choice made by number, in code points.
@@ -82,8 +87,15 @@ struct LearningEnvironment {
   // "Learn from what I say" is on: personal words, corrections and site
   // hints are learned and used.
   bool enabled = false;
-  // The saved routines' names, as the user named them.
+  // The profile's routines' names, as the user named them.
   std::vector<std::string> routines;
+  // The names of routines made before routines belonged to a profile
+  // (voice_routine_store.h), unless the user said in this profile that
+  // they aren't theirs: voice mode asks whether to keep them here. Any
+  // change to them changes |unclaimed_version|, so a "yes" keeps exactly
+  // the routines it was asked about.
+  std::vector<std::string> unclaimed;
+  int unclaimed_version = 0;
   // What "remember this as ..." would save now, as the browser says each
   // step ("open YouTube"), and whether some steps are the planner's.
   std::vector<std::string> this_steps;
@@ -107,6 +119,13 @@ enum class LearningOp : int {
   kForgetRoutine = 3,  // |text|: the name
   kForgetWord = 4,     // |text|: the word
   kForgetEverything = 5,
+  // A routine of the name in use: |text| replaces it (its id kept);
+  // |count|: this_version.
+  kReplaceRoutine = 6,
+  // The routines made before routines belonged to a profile: kept here,
+  // or not this profile's ("no"). |count|: unclaimed_version.
+  kClaimRoutines = 7,
+  kDeclineRoutines = 8,
 };
 
 struct RoutineStep {
@@ -190,12 +209,33 @@ std::string JoinSpokenList(const std::vector<std::string>& items);
 std::string RoutineDisplayName(std::string_view said);
 
 // The key names are compared by: folded, without a leading "my", "the",
-// "a" or "an" ("My News", "news" and "the news" are one name).
+// "a" or "an", numbers as digits ("My News", "news" and "the news" are one
+// name; so are "my news (2)" and "my news two").
 std::string RoutineNameKey(std::string_view name);
 
-// The name in |names| that |said| names, or null.
+struct RoutineNameMatch {
+  // The one name that is said so; null when none is, or more than one.
+  const std::string* name = nullptr;
+  // How many are: two or more is a name that runs nothing by voice until
+  // the routines are renamed (their files edited, say).
+  size_t count = 0;
+};
+
+// The names in |names| that |said| names.
+RoutineNameMatch MatchRoutineName(const std::vector<std::string>& names,
+                                  std::string_view said);
+// The one name in |names| that |said| names, or null (none, or more than
+// one).
 const std::string* FindRoutineName(const std::vector<std::string>& names,
                                    std::string_view said);
+
+// What a routine brought in under |name| is called beside |names| (the
+// profile's): |name| when none of them is said as it is, else the first of
+// "|name| (2)" to "|name| (kMaxRoutineNameCopies)" that none is (a "(n)"
+// that ends |name| replaced, not added to); "" when every one is taken. A
+// name with no word to say is kept.
+std::string UniqueRoutineName(const std::vector<std::string>& names,
+                              std::string_view name);
 
 // "This": the steps the user carried out since the task began.
 class RoutineRecorder {

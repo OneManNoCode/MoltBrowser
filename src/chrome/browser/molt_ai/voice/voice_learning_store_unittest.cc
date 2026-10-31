@@ -7,7 +7,9 @@
 
 #include "chrome/browser/molt_ai/voice/voice_learning_store.h"
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -120,6 +122,41 @@ TEST(VoiceLearningStoreTest, Capped) {
   const LearnedData read = ParseLearning(json, kNow);
   EXPECT_EQ(read.vocabulary.entries().size(), kMaxVocabularyEntries);
   EXPECT_EQ(read.hints.hints().size(), kMaxHintedSites);
+}
+
+// The routines from before profiles that this profile declined
+// (profile-routines): kept across a round trip, read as untrusted.
+TEST(VoiceLearningStoreTest, DeclinedRoutines) {
+  LearnedData data;
+  EXPECT_TRUE(AddDeclinedRoutines(data.declined_routines,
+                                  {"voice_1700000000_1", "wf_2"}));
+  // Repeats and what isn't a file's id are dropped.
+  EXPECT_FALSE(AddDeclinedRoutines(data.declined_routines,
+                                   {"wf_2", "", "../x", "a/b", "c\\d", "e:f",
+                                    "g.molt", "h\ni", std::string(129, 'x')}));
+  const LearnedData read = ParseLearning(SerializeLearning(data), kNow);
+  EXPECT_EQ(read.declined_routines,
+            (std::vector<std::string>{"voice_1700000000_1", "wf_2"}));
+
+  // A hostile file: entries of the wrong type or shape dropped, repeats
+  // kept once, the oldest dropped past the cap.
+  std::string json =
+      "{\"version\":1,\"declined_routines\":[7,null,\"../../x\",\"a\","
+      "\"a\",{\"id\":\"b\"}";
+  for (size_t i = 0; i < kMaxDeclinedRoutines + 5; ++i) {
+    json += ",\"r" + std::to_string(i) + "\"";
+  }
+  json += "]}";
+  const LearnedData hostile = ParseLearning(json, kNow);
+  ASSERT_EQ(hostile.declined_routines.size(), kMaxDeclinedRoutines);
+  EXPECT_EQ(hostile.declined_routines.back(),
+            "r" + std::to_string(kMaxDeclinedRoutines + 4));
+  EXPECT_EQ(std::count(hostile.declined_routines.begin(),
+                       hostile.declined_routines.end(), "a"),
+            0);
+  // Not a list: nothing.
+  EXPECT_TRUE(ParseLearning("{\"version\":1,\"declined_routines\":\"a\"}", kNow)
+                  .declined_routines.empty());
 }
 
 }  // namespace

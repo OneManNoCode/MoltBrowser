@@ -237,8 +237,7 @@ std::optional<Script> AutomationStorage::Take(const std::string& id) {
   std::string contents;
   std::optional<base::Value> parsed;
   if (base::ReadFileToString(taken, &contents)) {
-    parsed =
-        base::JSONReader::Read(contents, base::JSON_ALLOW_TRAILING_COMMAS);
+    parsed = base::JSONReader::Read(contents, base::JSON_ALLOW_TRAILING_COMMAS);
   }
   std::optional<Script> script;
   if (parsed && parsed->is_dict()) {
