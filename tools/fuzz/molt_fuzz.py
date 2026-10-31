@@ -71,9 +71,12 @@ VOICE_HELPER_SOURCES = [
 # voice_command).
 VOICE_INTENT_SOURCES = [
     f"{VOICE}/{name}.cc" for name in (
-        "phonetic_key", "spoken_choice", "spoken_numbers", "spoken_phrases",
-        "spoken_phrases_en", "spoken_text", "voice_command",
-        "voice_command_phrases_en")
+        "confirmation_words_es", "phonetic_key", "phonetic_key_es",
+        "spoken_answers", "spoken_answers_es", "spoken_choice",
+        "spoken_numbers", "spoken_phrases", "spoken_phrases_en",
+        "spoken_phrases_es", "spoken_text", "voice_command",
+        "voice_command_phrases_en", "voice_command_phrases_es",
+        "voice_language")
 ]
 
 # name -> where the fuzzer lives (its .cc, BUILD.gn and corpus/<name>/), the
@@ -315,7 +318,8 @@ FUZZERS = {
         dir=VOICE,
         sources=VOICE_INTENT_SOURCES + [
             f"{VOICE}/{name}.cc" for name in (
-                "page_map_text", "voice_gesture", "voice_prompts")
+                "page_map_text", "voice_gesture", "voice_gesture_channel",
+                "voice_prompts")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
              f"{MOLT_AI}/security/activation_policy.cc"],
         tier="std",

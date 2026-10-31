@@ -105,7 +105,7 @@ or more than 4,104 bytes, a rate out of range, a reserved field that isn't
 
 | type | name | payload |
 |---|---|---|
-| 1 | READY | `protocol` (4 bytes, 1), `sample_rate` (4 bytes, 8,000 to 48,000), the voice's name (0 to 64 bytes of printable ASCII) |
+| 1 | READY | `protocol` (4 bytes, 1), `sample_rate` (4 bytes, 8,000 to 24,000: a speech voice's rate), the voice's name (0 to 64 bytes of printable ASCII) |
 | 2 | AUDIO | `id` (4 bytes), then 16-bit signed little-endian mono samples at `sample_rate`: 1 to 32,766 of them (at most 64 KiB); the helper writes at most 4,096 (0.19 s) per frame |
 | 3 | DONE | `id`, `status`, `audio_ms`, `first_audio_ms`, `synth_ms` (4 bytes each) |
 | 4 | ERROR | `code` (4 bytes), a message (0 to 200 bytes of printable ASCII) |
@@ -252,7 +252,7 @@ frames waiting to be written (exit 3).
   mode is off and nothing more is to be said.
 - **Every frame** passes `molt_voice::FrameReader` (the header first) and
   `VoiceStreamChecker`: READY first and once with protocol 1 and a sample
-  rate of 8 to 48 kHz; AUDIO and DONE only for the oldest request sent and
+  rate of 8 to 24 kHz; AUDIO and DONE only for the oldest request sent and
   not yet answered; at most 361 s of audio per request; a DONE whose
   `audio_ms` is what arrived. Anything else ends the helper.
 - **Played** through an `audio::OutputDevice` on the default output device,

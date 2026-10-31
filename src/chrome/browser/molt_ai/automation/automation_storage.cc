@@ -30,6 +30,8 @@ constexpr char kAutomationsSubdir[] = "automations";
 constexpr char kArtifactsSubdir[] = "artifacts";
 constexpr char kAuditLogName[] = "audit.log";
 constexpr char kScriptExt[] = ".molt";
+// A script taken to be moved (Take()): no longer listed or loaded.
+constexpr char kTakenExt[] = ".taken";
 
 // Reasonably safe filename: only id chars (lowercased ascii, digits, _-)
 // already constrain things, but defensively reject path separators.
@@ -64,6 +66,8 @@ std::string NowISO8601() {
 }  // namespace
 
 AutomationStorage::AutomationStorage() = default;
+AutomationStorage::AutomationStorage(const base::FilePath& directory)
+    : directory_(directory) {}
 AutomationStorage::~AutomationStorage() = default;
 
 base::FilePath AutomationStorage::GetRoot() const {
@@ -75,12 +79,19 @@ base::FilePath AutomationStorage::GetRoot() const {
 }
 
 base::FilePath AutomationStorage::GetAutomationsDir() const {
+  if (!directory_.empty())
+    return directory_;
   return GetRoot().Append(base::FilePath::FromUTF8Unsafe(kAutomationsSubdir));
 }
 
 base::FilePath AutomationStorage::GetScriptPath(const std::string& id) const {
   return GetAutomationsDir().Append(
       base::FilePath::FromUTF8Unsafe(id + kScriptExt));
+}
+
+base::FilePath AutomationStorage::GetTakenPath(const std::string& id) const {
+  return GetAutomationsDir().Append(
+      base::FilePath::FromUTF8Unsafe(id + kScriptExt + kTakenExt));
 }
 
 base::FilePath AutomationStorage::GetAuditLogPath() const {
@@ -212,6 +223,49 @@ bool AutomationStorage::Delete(const std::string& id) {
   base::DeletePathRecursively(artifacts);
   AppendAudit(id, "deleted", "");
   return deleted_script;
+}
+
+std::optional<Script> AutomationStorage::Take(const std::string& id) {
+  ScopedAllowBlockingForMolt allow_blocking;
+  if (!IsValidScriptId(id))
+    return std::nullopt;
+  // One rename: a second taker (another profile, another browser on the
+  // same home directory) finds the file gone.
+  const base::FilePath taken = GetTakenPath(id);
+  if (!base::ReplaceFile(GetScriptPath(id), taken, nullptr))
+    return std::nullopt;
+  std::string contents;
+  std::optional<base::Value> parsed;
+  if (base::ReadFileToString(taken, &contents)) {
+    parsed = base::JSONReader::Read(contents, base::JSON_ALLOW_TRAILING_COMMAS);
+  }
+  std::optional<Script> script;
+  if (parsed && parsed->is_dict()) {
+    AutomationSecurity::ScrubPlaintextSecrets(parsed->GetDict());
+    script = Script::FromJSON(parsed->GetDict());
+  }
+  if (!script) {
+    ReturnTaken(id);
+    return std::nullopt;
+  }
+  // Known by its file's name, whatever the file says.
+  script->id = id;
+  return script;
+}
+
+void AutomationStorage::FinishTake(const std::string& id) {
+  ScopedAllowBlockingForMolt allow_blocking;
+  if (!IsValidScriptId(id))
+    return;
+  base::DeleteFile(GetTakenPath(id));
+  AppendAudit(id, "moved", "");
+}
+
+bool AutomationStorage::ReturnTaken(const std::string& id) {
+  ScopedAllowBlockingForMolt allow_blocking;
+  if (!IsValidScriptId(id))
+    return false;
+  return base::ReplaceFile(GetTakenPath(id), GetScriptPath(id), nullptr);
 }
 
 bool AutomationStorage::SetTrustLevel(const std::string& id,

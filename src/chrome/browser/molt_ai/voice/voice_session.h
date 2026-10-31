@@ -192,6 +192,9 @@ class VoiceSession : public VoiceController::Observer,
   // Whether voice mode speaks with its own voice while the microphone has
   // no echo canceller: the microphone hears the audio its helper chose.
   bool OwnVoiceUnfiltered() const;
+  // Tells the controller what decides the voice gesture word's channel
+  // that the session knows: the microphone's echo canceller, the setting.
+  void UpdateWordChannel();
 
   raw_ptr<BrowserWindowInterface> browser_;
   ui::ScopedUnownedUserData<VoiceSession> scoped_data_holder_;

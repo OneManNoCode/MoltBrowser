@@ -122,11 +122,14 @@ class VoiceOverlay : public content::WebContentsObserver,
   // Hides the caption bar (voice mode is over).
   bool HideCaption();
 
-  // The same for a window, for a controller that has no tab at hand.
+  // The same for a window, for a controller that has no tab at hand;
+  // |word| is the voice gesture's word to show, or empty
+  // (CaptionText::word).
   static void SetCaptionForWindow(BrowserWindowInterface* window,
                                   VoiceState state,
                                   std::string_view heard,
-                                  std::string_view status);
+                                  std::string_view status,
+                                  std::string_view word = {});
   static void HideCaptionForWindow(BrowserWindowInterface* window);
 
   // --- For the views ----------------------------------------------------------

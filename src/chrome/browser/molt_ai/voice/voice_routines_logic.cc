@@ -4,9 +4,12 @@
 #include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 
 #include <algorithm>
+#include <span>
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_numbers.h"
+#include "chrome/browser/molt_ai/voice/spoken_phrases.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 
@@ -519,13 +522,21 @@ std::string RoutineDisplayName(std::string_view said) {
   return name;
 }
 
-std::string RoutineNameKey(std::string_view name) {
+std::string RoutineNameKey(std::string_view name, Language language) {
   const std::string folded = FoldForComparison(
       name.substr(0, std::min(name.size(), kMaxUtteranceBytes)));
+  static constexpr std::string_view kEnglishArticles[] = {"my ", "the ", "a ",
+                                                          "an "};
+  static constexpr std::string_view kSpanishArticles[] = {
+      "mi ", "mis ", "el ", "la ", "los ", "las ", "un ", "una "};
+  const std::span<const std::string_view> articles =
+      language == Language::kSpanish
+          ? std::span<const std::string_view>(kSpanishArticles)
+          : std::span<const std::string_view>(kEnglishArticles);
   size_t start = 0;
   while (true) {
     bool dropped = false;
-    for (std::string_view article : {"my ", "the ", "a ", "an "}) {
+    for (std::string_view article : articles) {
       if (folded.compare(start, article.size(), article) == 0 &&
           folded.size() > start + article.size()) {
         start += article.size();
@@ -537,21 +548,91 @@ std::string RoutineNameKey(std::string_view name) {
       break;
     }
   }
-  return folded.substr(start);
+  // Numbers as digits, whether written or said: "my news (2)" is said "my
+  // news two", and a recognizer may write either.
+  const std::string_view rest = std::string_view(folded).substr(start);
+  WordList words;
+  for (size_t at = 0; at < rest.size();) {
+    size_t space = rest.find(' ', at);
+    if (space == std::string_view::npos) {
+      space = rest.size();
+    }
+    if (space > at) {
+      words.push_back(rest.substr(at, space - at));
+    }
+    at = space + 1;
+  }
+  NumberOptions cardinals;
+  cardinals.ordinals = false;
+  std::string key;
+  for (size_t i = 0; i < words.size();) {
+    if (!key.empty()) {
+      key.push_back(' ');
+    }
+    const auto number = ReadNumberIn(words, i, language, cardinals);
+    if (number && number->words > 0) {
+      key += std::to_string(number->value);
+      i += number->words;
+    } else {
+      key.append(words[i]);
+      ++i;
+    }
+  }
+  return key;
+}
+
+RoutineNameMatch MatchRoutineName(const std::vector<std::string>& names,
+                                  std::string_view said,
+                                  Language language) {
+  RoutineNameMatch match;
+  const std::string key = RoutineNameKey(said, language);
+  if (key.empty()) {
+    return match;
+  }
+  const std::string* found = nullptr;
+  for (const std::string& name : names) {
+    if (RoutineNameKey(name, language) == key) {
+      found = &name;
+      ++match.count;
+    }
+  }
+  if (match.count == 1) {
+    match.name = found;
+  }
+  return match;
 }
 
 const std::string* FindRoutineName(const std::vector<std::string>& names,
-                                   std::string_view said) {
-  const std::string key = RoutineNameKey(said);
-  if (key.empty()) {
-    return nullptr;
+                                   std::string_view said,
+                                   Language language) {
+  return MatchRoutineName(names, said, language).name;
+}
+
+std::string UniqueRoutineName(const std::vector<std::string>& names,
+                              std::string_view name) {
+  if (!MatchRoutineName(names, name).count) {
+    return std::string(name);
   }
-  for (const std::string& name : names) {
-    if (RoutineNameKey(name) == key) {
-      return &name;
+  // "my news (2)" brought in again is "my news (3)", not "my news (2) (2)".
+  std::string_view base = name;
+  if (base.size() > 3 && base.back() == ')') {
+    const size_t open = base.rfind(" (");
+    if (open != std::string_view::npos && open + 3 < base.size()) {
+      const std::string_view digits =
+          base.substr(open + 2, base.size() - open - 3);
+      if (std::all_of(digits.begin(), digits.end(),
+                      [](char c) { return c >= '0' && c <= '9'; })) {
+        base = base.substr(0, open);
+      }
     }
   }
-  return nullptr;
+  for (int n = 2; n <= kMaxRoutineNameCopies; ++n) {
+    std::string candidate = std::string(base) + " (" + std::to_string(n) + ")";
+    if (!MatchRoutineName(names, candidate).count) {
+      return candidate;
+    }
+  }
+  return std::string();
 }
 
 RoutineRecorder::RoutineRecorder() = default;

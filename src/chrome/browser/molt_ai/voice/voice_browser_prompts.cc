@@ -19,6 +19,7 @@
 #include "chrome/browser/download/download_item_warning_data.h"
 #include "chrome/browser/download/download_ui_model.h"
 #include "chrome/browser/molt_ai/security/activation_policy.h"
+#include "chrome/browser/molt_ai/voice/voice_capture_watch.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/page_action/page_action_controller.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
@@ -197,6 +198,11 @@ void VoiceBrowserPrompts::Attach(content::WebContents* contents) {
     return;
   }
   Observe(contents);
+  if (!captures_) {
+    captures_ = std::make_unique<VoiceCaptureWatch>(
+        base::BindRepeating(&VoiceBrowserPrompts::OnWordChannelInputsChanged,
+                            base::Unretained(this)));
+  }
   if (auto* manager =
           permissions::PermissionRequestManager::FromWebContents(contents)) {
     permissions_ = manager;
@@ -263,17 +269,14 @@ int VoiceBrowserPrompts::Begin(Source source,
   current->id = ++next_id_;
   current->source = source;
   current->kind = prompt.kind;
-  if (binding) {
-    // Locked out: no word; voice can only refuse.
-    if (std::optional<GesturePrompt> gesture =
-            gestures_.Begin(*binding, NowMs())) {
-      current->gesture_id = gesture->id;
-      current->word = gesture->word;
-    }
-    current->binding = std::move(*binding);
-  }
   const int id = current->id;
   current_ = std::move(current);
+  if (binding) {
+    current_->binding = std::move(*binding);
+    current_->needs_word = true;
+    DrawWord(WordChannelNow(), prompt);
+  }
+  current_->prompt = prompt;
   if (!delegate_->ReadBrowserPrompt(
           id, prompt, current_ ? current_->word : std::string())) {
     Drop();
@@ -287,6 +290,122 @@ int VoiceBrowserPrompts::Begin(Source source,
                         base::BindOnce(&VoiceBrowserPrompts::OnTimeout,
                                        weak_factory_.GetWeakPtr(), id));
   return id;
+}
+
+// ---- The word's channel -----------------------------------------------------
+
+WordChannelInputs VoiceBrowserPrompts::Inputs() {
+  WordChannelInputs inputs = delegate_->WordChannelInputsNow();
+  // Without the watch, as if both were captured: the word stays private.
+  inputs.audio_captured = !captures_ || captures_->audio_captured();
+  inputs.screen_captured = !captures_ || captures_->screen_captured();
+  return inputs;
+}
+
+WordChannel VoiceBrowserPrompts::WordChannelNow() {
+  return DecideWordChannel(Inputs());
+}
+
+std::string VoiceBrowserPrompts::ShownWord() {
+  if (!current_ || current_->word.empty() || !WordChannelNow().shown) {
+    return std::string();
+  }
+  return ShownWordText(current_->word);
+}
+
+void VoiceBrowserPrompts::NoteWordSaid() {
+  if (current_ && !current_->word.empty()) {
+    current_->delivered.said = true;
+  }
+}
+
+void VoiceBrowserPrompts::DrawWord(const WordChannel& channel,
+                                   BrowserPrompt& prompt) {
+  Current& current = *current_;
+  current.word.clear();
+  current.delivered = WordChannel();
+  current.screen_shared = false;
+  prompt.screen_shared = false;
+  prompt.explain_shown_only = false;
+  ++current.reads;
+  if (!channel.available) {
+    // The screen or a window is captured: no word. Its gesture prompt, if
+    // any, stays (unanswerable) so its words count as retired when one is
+    // drawn again.
+    current.screen_shared = true;
+    prompt.screen_shared = true;
+    return;
+  }
+  if (current.reads > kMaxWordsPerPrompt) {
+    if (current.gesture_id) {
+      gestures_.Cancel(current.gesture_id);
+      current.gesture_id = 0;
+    }
+    return;
+  }
+  // Locked out: no word; voice can only refuse.
+  std::optional<GesturePrompt> gesture =
+      gestures_.Begin(current.binding, NowMs());
+  if (!gesture) {
+    current.gesture_id = 0;
+    return;
+  }
+  current.gesture_id = gesture->id;
+  current.word = gesture->word;
+  current.delivered = channel;
+  if (!channel.said && !explained_shown_only_) {
+    explained_shown_only_ = true;
+    prompt.explain_shown_only = true;
+  }
+}
+
+void VoiceBrowserPrompts::Reissue(WordRetired why) {
+  if (!current_ || !current_->needs_word) {
+    return;
+  }
+  const int id = current_->id;
+  BrowserPrompt prompt = current_->prompt;
+  prompt.preface = WordRetiredPreface(why);
+  DrawWord(WordChannelNow(), prompt);
+  if (current_->reads > kMaxWordsPerPrompt && current_->word.empty() &&
+      !current_->screen_shared) {
+    prompt.preface = "I can't take a word for this one any more.";
+  }
+  if (!delegate_->ReadBrowserPrompt(id, prompt, current_->word)) {
+    Drop();
+    return;
+  }
+  if (!current_ || current_->id != id) {
+    return;
+  }
+  // The prompt waits its window again, from its new reading.
+  current_->timer.Start(FROM_HERE,
+                        base::Milliseconds(PromptWindowMs(current_->kind)),
+                        base::BindOnce(&VoiceBrowserPrompts::OnTimeout,
+                                       weak_factory_.GetWeakPtr(), id));
+}
+
+void VoiceBrowserPrompts::OnWordChannelInputsChanged() {
+  delegate_->WordChannelChanged();
+  if (!current_ || !current_->needs_word) {
+    return;
+  }
+  const WordChannelInputs now = Inputs();
+  const WordChannel channel = DecideWordChannel(now);
+  if (!current_->word.empty()) {
+    if (WordExposed(current_->delivered, now)) {
+      Reissue(now.screen_captured && !now.say_aloud_anyway
+                  ? WordRetired::kScreenShared
+                  : WordRetired::kAudioCaptured);
+      return;
+    }
+    // Shown from now on, if it is.
+    current_->delivered.shown = current_->delivered.shown || channel.shown;
+    return;
+  }
+  if (current_->screen_shared && channel.available) {
+    Reissue(WordRetired::kScreenFreed);
+  }
 }
 
 void VoiceBrowserPrompts::Finish(std::unique_ptr<Current> prompt,
@@ -383,8 +502,23 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     return;
   }
   if (heard == HearResult::kNotClean) {
+    // Said aloud, and heard by whatever captures: a new word then.
+    WordChannel heard_aloud;
+    heard_aloud.said = true;
+    if (WordExposed(heard_aloud, Inputs())) {
+      Reissue(WordRetired::kNotClean);
+      return;
+    }
     // It keeps waiting.
-    delegate_->SayAboutBrowserPrompt(NotCleanSpeech(current_->word));
+    delegate_->SayWordAboutBrowserPrompt(WordText{
+        NotCleanSpeech(current_->word), NotCleanSpeech(kWordOnScreen)});
+    return;
+  }
+  if (heard == HearResult::kRetired) {
+    // The word it had before: it keeps waiting for the new one.
+    delegate_->SayWordAboutBrowserPrompt(
+        WordText{RetiredWordSpeech(current_->kind, current_->word),
+                 RetiredWordSpeech(current_->kind, kWordOnScreen)});
     return;
   }
   if (heard == HearResult::kUnsure) {
@@ -447,6 +581,7 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     case HearResult::kNotAWord:
     case HearResult::kNoPrompt:
     case HearResult::kLockedOut:
+    case HearResult::kRetired:
       Finish(std::move(prompt),
              "I can't take the word now. Use the mouse or keyboard.");
       return;

@@ -75,6 +75,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_bundled.h"
 
 namespace content {
@@ -106,6 +107,21 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // (never 0), or 0 when nothing is to be said.
   uint64_t Speak(const std::string& text, double rate, bool interrupt);
 
+  // As Speak(), but |text| is said only by the bundled voice, whose audio
+  // is in the echo canceller's reference (it holds the voice gesture's
+  // confirmation word, voice_gesture_channel.h). Wherever the platform's
+  // voice would say it instead (the bundled voice isn't ready, or failed
+  // before it finished), that voice says |fallback| (the same without the
+  // word); nothing, when |fallback| is empty.
+  uint64_t SpeakPrivately(const std::string& text,
+                          const std::string& fallback,
+                          double rate,
+                          bool interrupt);
+
+  // Whether the bundled voice can speak now (its helper started and is
+  // ready): what SpeakPrivately() says would be said by it.
+  bool CanSpeakPrivately() const;
+
   // Stops voice mode's speech: what it is saying and what waits. Other
   // speech is left alone.
   void Stop();
@@ -125,6 +141,20 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // ready and no platform utterance of voice mode's is in flight): its
   // audio is browser output, in the echo canceller's reference.
   bool InEchoReference() const;
+
+  // The language voice mode speaks (voice_language.h). English speaks as
+  // always: the bundled voice when it is installed, else the platform's,
+  // tagged kLanguage. Another language speaks through a platform voice of
+  // that language on this computer (PickPlatformVoice(); |ui_locale|'s
+  // region first), as the bundled voice reads English only; without one,
+  // the platform's default voice reads it, and the log says so once. A
+  // change stops what is being said.
+  void SetLanguage(Language language, const std::string& ui_locale);
+
+  // Whether this computer has a platform voice for |language| (English:
+  // always true, the bundled voice or the platform's default).
+  static bool HasPlatformVoice(content::BrowserContext* context,
+                               Language language);
 
   // Runs (posted) when voice mode starts or stops speaking.
   void SetSpeakingChangedCallback(base::RepeatingCallback<void(bool)> callback);
@@ -156,6 +186,10 @@ class VoiceSpeech : public BundledVoice::Delegate {
     uint32_t bundled_id = 0;
     // Speak()'s id.
     uint64_t id = 0;
+    // SpeakPrivately(): only the bundled voice says |text|; the platform's
+    // says |fallback|.
+    bool privately = false;
+    std::string fallback;
   };
 
   void OnBundledFound(std::optional<BundledVoice::Paths> paths);
@@ -168,6 +202,8 @@ class VoiceSpeech : public BundledVoice::Delegate {
   void UpdateSpeaking();
   // Tells the utterance-done callback (posted).
   void Done(uint64_t id, bool spoken);
+  // Whether the bundled voice speaks the language (English only).
+  bool BundledSpeaks() const { return language_ == Language::kEnglish; }
 
   raw_ptr<content::BrowserContext> context_;
   // Not yet handed to either voice.
@@ -195,6 +231,12 @@ class VoiceSpeech : public BundledVoice::Delegate {
 
   base::RepeatingCallback<void(bool)> speaking_changed_;
   UtteranceDoneCallback utterance_done_;
+  // SetLanguage(): the language, its platform tag and the browser's own
+  // language; whether the log said there is no voice for it.
+  Language language_ = Language::kEnglish;
+  std::string language_tag_ = kLanguage;
+  std::string ui_locale_;
+  bool said_no_voice_ = false;
   base::WeakPtrFactory<VoiceSpeech> weak_factory_{this};
 };
 

@@ -289,6 +289,8 @@ enum class StepFailure : uint8_t {
 
 // What the browser says when a step failed; empty for kCancelled.
 std::string_view FailureText(StepFailure failure);
+// The same in |language| (spoken_answers.h).
+std::string_view FailureText(StepFailure failure, Language language);
 
 // ---------------------------------------------------------------------------
 // Context
@@ -307,6 +309,9 @@ struct VoiceEnvironment {
 
   // A MoltNet window: voice mode is off there (§7.4).
   bool moltnet = false;
+  // The language voice mode understands and speaks in (voice_language.h):
+  // the grammar's, and the browser's answers'.
+  Language language = Language::kEnglish;
   // Changes with every new document in the active tab, and when another
   // tab becomes active. Lists, fields and confirmations hold only on the
   // page they were made on.
@@ -524,6 +529,14 @@ bool AnswersBrowserPrompt(const VoiceCommand& command,
 bool NeedsConfirmation(std::string_view label,
                        std::string_view url,
                        const PageMap& map);
+// The same, and in Spanish also its words: comprar, pagar, pedido,
+// eliminar, borrar, enviar, publicar, responder, comentar, confirmar,
+// suscribirse, donar, transferir, cerrar sesión, ... (English's checks are
+// unchanged in every language).
+bool NeedsConfirmation(std::string_view label,
+                       std::string_view url,
+                       const PageMap& map,
+                       Language language);
 
 // The page's search field: the site skill's (PageMap::site), else a
 // writable text field of the top-level document (never of a frame it
@@ -535,6 +548,27 @@ const PageItem* FindSearchField(const PageMap& map);
 // top-level document that can be pressed now (not disabled): null
 // otherwise.
 const PageItem* SiteItem(const PageMap& map, const PageNodeHandle& part);
+
+// What voice mode is doing, as the caption bar and the listening session
+// see it (VoiceController::activity()).
+enum class LoopActivity : uint8_t {
+  kOff,
+  kListening,
+  kThinking,
+  kSpeaking,
+};
+
+// |speaking|: its voice plays, or a reading holds the floor (between its
+// chunks too). |waiting|: steps wait for a page, a submission or more
+// steps. |busy|: anything else runs (the planner, a question about the
+// page). Speaking wins over the rest: what the browser says while it
+// waits (the guard's question, a prompt, a routine's step) must reach the
+// session as the browser's own voice, or the session would take the
+// browser's words, a wake phrase included, for the user's.
+LoopActivity DecideLoopActivity(bool active,
+                                bool speaking,
+                                bool waiting,
+                                bool busy);
 
 }  // namespace voice
 }  // namespace molt_ai

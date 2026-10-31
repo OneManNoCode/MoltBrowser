@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/security/activation_policy.h"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -216,7 +218,8 @@ TEST(ActivationPolicyTest, PermissionPromptsAreNeverAnsweredForTheUser) {
 }
 
 TEST(ActivationPolicyTest, FullScreenOnlyWhenAskedForOrToPlay) {
-  for (Intent intent : {Intent::kFullScreen, Intent::kPlayMedia}) {
+  for (Intent intent :
+       {Intent::kFullScreen, Intent::kPlayMedia, Intent::kPlayInPlace}) {
     for (Asker asker : kAllAskers) {
       EXPECT_EQ(Decide(ActedAt(0, intent), 100, Request::kFullScreen, asker),
                 kProceed);
@@ -256,8 +259,9 @@ TEST(ActivationPolicyTest, ClipboardWritesOnlyForACopy) {
 // A video's window over every app: never from an action's activation,
 // whatever the user asked for (no command asks for one).
 TEST(ActivationPolicyTest, PictureInPictureIsRefused) {
-  for (Intent intent : {Intent::kNone, Intent::kFullScreen, Intent::kPlayMedia,
-                        Intent::kCopy, Intent::kOpenInNewTab}) {
+  for (Intent intent :
+       {Intent::kNone, Intent::kFullScreen, Intent::kPlayMedia, Intent::kCopy,
+        Intent::kOpenInNewTab, Intent::kPlayInPlace}) {
     EXPECT_EQ(Decide(ActedAt(0, intent), 100, Request::kPictureInPicture,
                      Asker::kVoiceMode),
               kRefuseAndTell);
@@ -428,11 +432,49 @@ TEST(ActivationPolicyTest, HistoryEntriesAfterAnAction) {
   EXPECT_LE(tab.history_entries, 1000);
 }
 
+// When the navigations in flight began: a page that piles up its frames'
+// navigations can't push out the main frame's, so the page an action led
+// to, from a server that answers late, is still judged by when it began.
+TEST(ActivationPolicyTest, NavigationStartsKeepTheMainFrames) {
+  NavigationStarts starts;
+  starts.Started(1, 1500, /*main_frame=*/true);
+  for (int64_t id = 100; id < 100 + 5 * int64_t{kMaxNavigationsInFlight};
+       ++id) {
+    starts.Started(id, 1600, /*main_frame=*/false);
+    EXPECT_LE(starts.size(), kMaxNavigationsInFlight);
+  }
+  EXPECT_EQ(starts.Finished(1), 1500);
+  // Once finished, forgotten.
+  EXPECT_EQ(starts.Finished(1), std::nullopt);
+  EXPECT_EQ(starts.Finished(99999), std::nullopt);
+
+  TabRecord tab;
+  NoteAction(tab, 1000, Intent::kNone);
+  // Committed a minute later, begun in the action's window: the page the
+  // action led to.
+  EXPECT_FALSE(NoteHistoryEntry(tab, 1500));
+
+  // Only main frames' navigations: still bounded, the latest kept.
+  NavigationStarts mains;
+  for (int64_t id = 0; id < 3 * int64_t{kMaxNavigationsInFlight}; ++id) {
+    mains.Started(id, id, /*main_frame=*/true);
+    EXPECT_LE(mains.size(), kMaxNavigationsInFlight);
+  }
+  const int64_t last = 3 * int64_t{kMaxNavigationsInFlight} - 1;
+  EXPECT_EQ(mains.Finished(last), last);
+  // The same id started again is kept once, with its latest start.
+  NavigationStarts again;
+  again.Started(7, 10, true);
+  again.Started(7, 20, true);
+  EXPECT_EQ(again.size(), 1u);
+  EXPECT_EQ(again.Finished(7), 20);
+}
+
 // An action that never navigates the tab leads to no page of its own:
 // an entry the page adds after it, first or not, is skippable.
 TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
-  for (Intent intent :
-       {Intent::kFullScreen, Intent::kCopy, Intent::kOpenInNewTab}) {
+  for (Intent intent : {Intent::kFullScreen, Intent::kCopy,
+                        Intent::kOpenInNewTab, Intent::kPlayInPlace}) {
     TabRecord tab;
     NoteAction(tab, 1000, intent);
     EXPECT_TRUE(NoteHistoryEntry(tab, 1100));
@@ -445,6 +487,21 @@ TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
     EXPECT_FALSE(NoteHistoryEntry(tab, 1100));
     EXPECT_TRUE(NoteHistoryEntry(tab, 1200));
   }
+}
+
+// "play" of the player on the page (a trap entry the page adds as it
+// starts is no page the user asked for): "go back" leaves the page in one.
+TEST(ActivationPolicyTest, PlayingInPlaceLeadsToNoPage) {
+  TabRecord tab;
+  NoteAction(tab, 1000, Intent::kPlayInPlace);
+  EXPECT_TRUE(NoteHistoryEntry(tab, 1050));
+  // Its player may still go full screen.
+  EXPECT_EQ(Decide(tab, 1100, Request::kFullScreen, Asker::kVoiceMode),
+            kProceed);
+  // Nor does it open windows or write to the clipboard.
+  EXPECT_EQ(Decide(tab, 1100, Request::kNewWindow, Asker::kVoiceMode), kAsk);
+  EXPECT_EQ(Decide(tab, 1100, Request::kClipboardWrite, Asker::kVoiceMode),
+            kRefuseAndTell);
 }
 
 TEST(ActivationPolicyTest, Names) {

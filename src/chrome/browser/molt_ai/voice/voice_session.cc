@@ -19,6 +19,7 @@
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_language.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_listener_protocol.h"
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
@@ -49,6 +50,10 @@ constexpr base::TimeDelta kPollInterval = base::Milliseconds(250);
 // browser's speech gives a command but "stop" (voice_session_logic.h).
 constexpr char kStopFirstHint[] =
     "To interrupt me, say stop, then what you want.";
+
+// A command said over voice mode's own voice that waits for it to stop
+// (voice_session_logic.h, TakenOverOwnVoice()).
+constexpr char kSayAgainNotice[] = "I've stopped. Now say that again.";
 
 ListeningSettings ToListening(const VoiceModeSettings& settings) {
   ListeningSettings listening;
@@ -190,6 +195,7 @@ void VoiceSession::OnSettingsChanged(const VoiceModeSettings& settings) {
       continue;
     }
     session->settings_ = settings;
+    session->UpdateWordChannel();
     if (session->listening()) {
       session->Apply(session->logic_.OnSettingsChanged(ToListening(settings),
                                                        session->NowMs()));
@@ -267,6 +273,13 @@ bool VoiceSession::Start() {
     controller_->SayNotice("Voice mode is off in MoltNet windows.");
     return false;
   }
+  // No recognizer for voice mode's language yet (voice_language.h): it says
+  // so, in that language, and the microphone stays closed.
+  if (!ListeningAvailable(controller_->language())) {
+    controller_->SayNotice(
+        std::string(ListeningUnavailableNotice(controller_->language())));
+    return false;
+  }
   if (g_listening && g_listening != this) {
     g_listening->Stop();
   }
@@ -294,6 +307,7 @@ bool VoiceSession::Start() {
 
 void VoiceSession::OnSettingsRead(const VoiceModeSettings& settings) {
   settings_ = settings;
+  UpdateWordChannel();
   if (!logic_.running()) {
     return;
   }
@@ -387,6 +401,7 @@ void VoiceSession::StopListening() {
   hotwords_.clear();
   microphone_on_ = false;
   echo_ = EchoCancellation::kNone;
+  UpdateWordChannel();
 }
 
 void VoiceSession::Fail(const std::string& message) {
@@ -492,6 +507,7 @@ void VoiceSession::OnMicrophoneStarted(EchoCancellation echo) {
   // Without one, a tab's sound reaches the recognizer as it is: while a tab
   // plays sound, only the commands that always count do.
   Apply(logic_.OnEchoCancellation(echo != EchoCancellation::kNone, NowMs()));
+  UpdateWordChannel();
 }
 
 void VoiceSession::OnMicrophoneProblem(VoiceAudio::Problem problem) {
@@ -572,6 +588,9 @@ void VoiceSession::Apply(SessionActions actions) {
   }
   if (actions.stop_speech && controller_) {
     controller_->StopSpeaking();
+  }
+  if (actions.say_again && controller_) {
+    controller_->SayNotice(kSayAgainNotice);
   }
   bool caption = actions.state.has_value();
   if (actions.said_over_voice && speaking_hint_.empty() &&
@@ -707,6 +726,14 @@ bool VoiceSession::OwnVoiceUnfiltered() const {
   return microphone_on_ && echo_ == EchoCancellation::kNone && controller_ &&
          controller_->activity() == VoiceActivity::kSpeaking &&
          controller_->SpeechInEchoReference();
+}
+
+void VoiceSession::UpdateWordChannel() {
+  if (controller_) {
+    controller_->SetWordChannelSettings(
+        microphone_on_ && echo_ != EchoCancellation::kNone,
+        settings_.say_word_aloud);
+  }
 }
 
 bool VoiceSession::AnyTabAudible() const {

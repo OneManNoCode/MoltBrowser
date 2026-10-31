@@ -14,6 +14,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/agents/voice_agent_planner.h"
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"
@@ -21,7 +22,10 @@
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_language.h"
+#include "chrome/browser/molt_ai/voice/voice_language_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_learning_loop.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_page_questions.h"
@@ -33,6 +37,7 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_muted_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -316,6 +321,19 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
             }
           },
           weak_factory_.GetWeakPtr()));
+  // The language voice mode understands and speaks (a setting; else the
+  // browser's own language).
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ReadVoiceLanguageSetting),
+      base::BindOnce(
+          [](base::WeakPtr<VoiceController> self, std::string stored) {
+            if (self) {
+              self->SetLanguage(VoiceLanguageFor(
+                  stored, g_browser_process->GetApplicationLocale()));
+            }
+          },
+          weak_factory_.GetWeakPtr()));
   // The web agent's on-device planner, for what the grammar can't do.
   planner_ = CreateVoiceAgentPlanner();
   learning_ = std::make_unique<VoiceLearningLoop>(this);
@@ -403,7 +421,7 @@ void VoiceController::StopActivity() {
     learning_->Stop();
   }
   CancelRun();
-  SetStatus("Stopped");
+  SetStatus(Localized(language_, "Stopped"));
 }
 
 void VoiceController::StopSpeaking() {
@@ -418,6 +436,30 @@ bool VoiceController::OthersSpeaking() const {
 
 bool VoiceController::SpeechInEchoReference() const {
   return speech_ && speech_->InEchoReference();
+}
+
+void VoiceController::SetLanguage(Language language) {
+  language_ = language;
+  if (speech_) {
+    speech_->SetLanguage(language, g_browser_process->GetApplicationLocale());
+  }
+  // A language voice mode can't listen in yet: the microphone closes, and
+  // voice mode says why; typed commands go on in the language.
+  if (listening_.listening && !ListeningAvailable(language)) {
+    SayNotice(std::string(ListeningUnavailableNotice(language)));
+    for (Observer& observer : observers_) {
+      observer.OnVoiceModeRequested(false);
+    }
+  }
+}
+
+// static
+void VoiceController::SetLanguageForAll(Language language) {
+  for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
+    if (VoiceController* controller = FromBrowser(window)) {
+      controller->SetLanguage(language);
+    }
+  }
 }
 
 void VoiceController::SayNotice(const std::string& text) {
@@ -575,20 +617,22 @@ bool VoiceController::busy() const {
 }
 
 VoiceActivity VoiceController::activity() const {
-  if (!pending_.empty() || wait_ || submitting_) {
-    return VoiceActivity::kThinking;
+  // Speaking first, even while steps wait (DecideLoopActivity()): what the
+  // browser says then is its own voice to the listening side. A reading is
+  // speaking until its last chunk's end is in, between chunks too.
+  switch (DecideLoopActivity(
+      active_, (speech_ && speech_->speaking()) || reader_->reading(),
+      !pending_.empty() || wait_ || submitting_, busy())) {
+    case LoopActivity::kOff:
+      return VoiceActivity::kOff;
+    case LoopActivity::kListening:
+      return VoiceActivity::kListening;
+    case LoopActivity::kThinking:
+      return VoiceActivity::kThinking;
+    case LoopActivity::kSpeaking:
+      return VoiceActivity::kSpeaking;
   }
-  // While the planner works, what it says is the browser speaking (the
-  // listening side treats what it hears then as the browser's own voice).
-  // A reading is speaking until its last chunk's end is in, between chunks
-  // too.
-  if ((speech_ && speech_->speaking()) || reader_->reading()) {
-    return VoiceActivity::kSpeaking;
-  }
-  if (busy()) {
-    return VoiceActivity::kThinking;
-  }
-  return active_ ? VoiceActivity::kListening : VoiceActivity::kOff;
+  return VoiceActivity::kOff;
 }
 
 void VoiceController::NotifyCaption() {
@@ -635,7 +679,11 @@ void VoiceController::NotifyCaption() {
     status = status.empty() ? listening_.speaking_hint
                             : listening_.speaking_hint + " " + status;
   }
-  VoiceOverlay::SetCaptionForWindow(browser_, state, heard, status);
+  // The voice gesture's word, while it may be shown (never as text
+  // elsewhere).
+  VoiceOverlay::SetCaptionForWindow(
+      browser_, state, heard, status,
+      prompts_ ? prompts_->ShownWord() : std::string());
 }
 
 void VoiceController::SetStatus(std::string status) {
@@ -781,6 +829,7 @@ PageMap VoiceController::CurrentMap() {
 VoiceEnvironment VoiceController::Environment() {
   VoiceEnvironment env;
   env.moltnet = IsMoltNet();
+  env.language = language_;
   env.listening = listening_.listening;
   env.page_id = page_id_;
   env.reading = reader_->StateFor(page_id_);
@@ -957,7 +1006,7 @@ void VoiceController::Fail(StepFailure failure) {
   if (learning_) {
     learning_->OnStepFailed();
   }
-  const std::string_view text = FailureText(failure);
+  const std::string_view text = FailureText(failure, language_);
   if (!text.empty()) {
     interrupt_next_speech_ = true;
     Say(std::string(text));
@@ -965,6 +1014,11 @@ void VoiceController::Fail(StepFailure failure) {
 }
 
 void VoiceController::Say(const std::string& text) {
+  // What holds the waiting prompt's word ("repeat" included).
+  if (const std::string* twin = WordTextTwin(state_.prompt, text)) {
+    SayWordText(WordText{text, *twin});
+    return;
+  }
   for (Observer& observer : observers_) {
     observer.OnVoiceSpeech(text);
   }
@@ -1528,6 +1582,71 @@ void VoiceController::EndBrowserPrompt(int id, const std::string& said) {
 
 void VoiceController::SayAboutBrowserPrompt(const std::string& text) {
   TellAboutPageRequest(text);
+}
+
+// ---- The voice gesture's word ---------------------------------------------
+
+void VoiceController::SetWordChannelSettings(bool echo_cancelled,
+                                             bool say_aloud_anyway) {
+  if (echo_cancelled == word_echo_cancelled_ &&
+      say_aloud_anyway == say_word_aloud_) {
+    return;
+  }
+  word_echo_cancelled_ = echo_cancelled;
+  say_word_aloud_ = say_aloud_anyway;
+  if (prompts_) {
+    prompts_->OnWordChannelInputsChanged();
+  }
+}
+
+WordChannelInputs VoiceController::WordChannelInputsNow() {
+  WordChannelInputs inputs;
+  inputs.echo_cancelled = word_echo_cancelled_;
+  inputs.bundled_voice = speech_ && speech_->CanSpeakPrivately();
+  inputs.say_aloud_anyway = say_word_aloud_;
+  return inputs;
+}
+
+void VoiceController::WordChannelChanged() {
+  NotifyCaption();
+}
+
+void VoiceController::SayWordText(const WordText& text) {
+  if (!speech_ || text.said.empty()) {
+    return;
+  }
+  const WordChannel channel =
+      prompts_ ? prompts_->WordChannelNow() : WordChannel();
+  // Observers (the agent panel's text, the listening session's memory of
+  // what was said) never get the word.
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSpeech(text.without);
+  }
+  if (channel.said && channel.privately) {
+    speech_->SpeakPrivately(text.said, text.without, state_.speech_rate,
+                            interrupt_next_speech_);
+  } else if (channel.said) {
+    speech_->Speak(text.said, state_.speech_rate, interrupt_next_speech_);
+  } else {
+    speech_->Speak(text.without, state_.speech_rate, interrupt_next_speech_);
+  }
+  interrupt_next_speech_ = false;
+  if (channel.said && prompts_) {
+    prompts_->NoteWordSaid();
+  }
+}
+
+void VoiceController::SayWordAboutBrowserPrompt(const WordText& text) {
+  if (!active_ || !speech_) {
+    return;
+  }
+  const std::string said = SpeechSafeText(text.said, kMaxNoticeChars);
+  const std::string without = SpeechSafeText(text.without, kMaxNoticeChars);
+  if (said.empty()) {
+    return;
+  }
+  SayWordText(WordText{said, without});
+  SetStatus(without);
 }
 
 // ---- The planner ------------------------------------------------------------

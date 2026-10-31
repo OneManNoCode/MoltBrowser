@@ -93,6 +93,10 @@ const voiceCommands = [];
 
 // The Agent studio's "Forget" on an allowed frame ([main, frame] each).
 const frameToolForgets = [];
+// The Agent studio's routines from before profiles: kept, declined, shown.
+const routineClaims = [];
+const routineDeclines = [];
+let routineShows = 0;
 // The Agent studio's run questions (answerRunQuestion [id, qid, allowed]).
 const questionAnswers = [];
 const QUESTION = {id: '42', step: 3, kind: 'weak_match',
@@ -758,7 +762,7 @@ function gpuInference(args) {
 // "Voice mode" (script: kVoiceSettingsJs).
 const voiceCalls = [];
 let voiceState = {available: true, enabled: false, alwaysListening: false,
-                  listening: false, moltnet: false};
+                  sayWordAloud: false, listening: false, moltnet: false};
 function voiceSettings(args) {
   voiceCalls.push([args[0].replace(/_\d+$/, '')].concat(args.slice(1)));
   return voiceState;
@@ -867,6 +871,21 @@ async function checkVoiceSection(window) {
   assert.strictEqual(doc.getElementById('voiceStatus').textContent,
                      '<b>Click the setting to change it.</b>');
   assert.strictEqual(section.querySelectorAll('b').length, 0);
+  // Saying the confirmation word aloud anyway: the value goes to the
+  // browser, and the switch shows what it saved.
+  voiceState = Object.assign({}, voiceState, {error: undefined,
+                                              sayWordAloud: true});
+  doc.getElementById('voiceSayWordAloud').click();
+  await tick();
+  assert.deepStrictEqual(voiceCalls.pop(),
+                         ['voiceSettingsSetSayWordAloud', true]);
+  assert(doc.getElementById('voiceSayWordAloud').checked);
+  voiceState = Object.assign({}, voiceState, {sayWordAloud: false});
+  doc.getElementById('voiceSayWordAloud').click();
+  await tick();
+  assert.deepStrictEqual(voiceCalls.pop(),
+                         ['voiceSettingsSetSayWordAloud', false]);
+  assert(!doc.getElementById('voiceSayWordAloud').checked);
   // A MoltNet window's settings page says it never listens there.
   voiceState = {available: true, enabled: true, alwaysListening: false,
                 listening: false, moltnet: true};
@@ -1325,7 +1344,8 @@ const PAGES = [
    // the GPU setting (MoltGpuInferenceHandler) each take a real click.
    clickGated: ['moltnetConnect', 'moltnetDisconnect', 'moltnetSetExitCountry',
                 'setMoltnetBridges', 'gpuInferenceSetMode', 'gpuInferenceRetry',
-                'voiceSettingsSetEnabled', 'voiceSettingsSetAlwaysListening'],
+                'voiceSettingsSetEnabled', 'voiceSettingsSetAlwaysListening',
+                'voiceSettingsSetSayWordAloud'],
    responses: {
      getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
@@ -1378,6 +1398,7 @@ const PAGES = [
      voiceSettingsGetState: voiceSettings,
      voiceSettingsSetEnabled: voiceSettings,
      voiceSettingsSetAlwaysListening: voiceSettings,
+     voiceSettingsSetSayWordAloud: voiceSettings,
      // "What voice mode learned" (script: kVoiceLearningSettingsJs).
      voiceLearningGetState: voiceLearning,
      voiceLearningSetEnabled: voiceLearning,
@@ -1395,6 +1416,7 @@ const PAGES = [
                     '#webAiEnabled:change', '#gpuModeAuto:change',
                     '#gpuModeOff:change', '#gpuRetryBtn:click',
                     '#voiceEnabled:change', '#voiceAlwaysListening:change',
+                    '#voiceSayWordAloud:change',
                     '#voiceLearningEnabled:change',
                     '#voiceLearningForgetAllBtn:click'],
    async after(window) {
@@ -1534,6 +1556,8 @@ const PAGES = [
      assert(window.__sent.includes('moltnetNewCircuit'));
    }},
   {name: 'molt://ai-agent', file: 'molt_ai_agent_ui.cc',
+   // Keeping routines from before profiles moves them into the profile.
+   clickGated: ['claimVoiceRoutines'],
    responses: {
      listWorkflows: {workflows: [
        {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
@@ -1545,7 +1569,22 @@ const PAGES = [
         question: {id: '7', step: 1, kind: 'site_tool',
                    text: 'Run the site’s tool “<img src=x onerror=alert(1)>”?'}},
        {id: 'v1', name: 'my <b>news</b>', stepCount: 3, trust: 'approved',
-        voice: true, host: 'www.youtube.com', trigger: {type: 'manual'}}]},
+        voice: true, host: 'www.youtube.com', trigger: {type: 'manual'}},
+       {id: 'v2', name: 'trains', stepCount: 1, trust: 'approved',
+        voice: true, nameClash: true, trigger: {type: 'manual'}}],
+       unclaimed: [{id: 'old1', name: 'old <b>news</b>', steps: 2},
+                   {id: 'old2', name: 'mail', steps: 1}],
+       unclaimedHidden: 1},
+     claimVoiceRoutines: (args) => {
+       routineClaims.push(JSON.stringify(args[1]));
+       return {ok: true, notKept: 0, kept: [{id: 'old1',
+         name: 'old <b>news</b> (2)', renamedFrom: 'old <b>news</b>'}]};
+     },
+     declineVoiceRoutines: (args) => {
+       routineDeclines.push(JSON.stringify(args[1]));
+       return {ok: true};
+     },
+     showDeclinedRoutines: () => { routineShows++; return {ok: true}; },
      getRuns: {id: 'w1', runs: [{ts: 1, ok: true, durationMs: 5, stepsExecuted: 1,
        totalSteps: 1, steps: [{index: 0, type: 'click', description: 'Click',
        ok: true, durationMs: 1, foundBy: 'its <b>label</b> (a fallback)'}]}]},
@@ -1797,6 +1836,29 @@ const PAGES = [
      await tick();
      assert.strictEqual(doc.querySelectorAll('#frameTools').length, 1,
                         'listed again, once');
+     // Routines from before profiles: names as text, each kept with a
+     // click of its own, all kept, declined, the declined shown again.
+     const unclaimed = () => doc.querySelector('#unclaimedBox .unclaimed');
+     const oldButton = (text) => Array.from(unclaimed().querySelectorAll('button'))
+         .find((b) => b.textContent === text);
+     assert(unclaimed(), 'routines from before profiles are listed');
+     assert.strictEqual(unclaimed().querySelectorAll('b').length, 0,
+                        'their names stay text');
+     assert.strictEqual(unclaimed().querySelector('.ft-pair').textContent,
+                        'old <b>news</b>');
+     oldButton('Keep here').click(); await tick();
+     assert.strictEqual(routineClaims.pop(), '["old1"]');
+     assert.strictEqual(doc.querySelectorAll('#libList b').length, 0);
+     oldButton('Keep all here').click(); await tick();
+     assert.strictEqual(routineClaims.pop(), '["old1","old2"]');
+     oldButton('Not mine').click(); await tick();
+     assert.strictEqual(routineDeclines.pop(), '["old1","old2"]');
+     oldButton('Show').click(); await tick();
+     assert.strictEqual(routineShows, 1);
+     // A routine whose name another has: voice mode runs neither.
+     const clash = doc.querySelector('[data-wf-id="v2"]');
+     assert(clash.textContent.includes('same name as another'));
+     assert(clash.textContent.includes('Rename it to run it by voice'));
      // The Runs view says how each element was found, as text.
      window.openRuns('w1', 'W');
      await tick();

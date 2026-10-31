@@ -434,8 +434,10 @@ std::optional<ChoiceRef> ParseChoiceRefWords(const WordList& all_words,
         prefixed = true;
       }
     }
-    // "the one" is not a number; a bare "one" right after a list is.
-    if (prefixed || (bare_numbers && i == 0)) {
+    // "the one" is not a number; a bare "one" right after a list is (and,
+    // in Spanish, "el cuatro").
+    if (prefixed ||
+        (bare_numbers && (i == 0 || phrases.bare_number_after_article))) {
       NumberOptions options;
       options.ordinals = false;
       options.homophones = true;

@@ -36,6 +36,17 @@
 // outlives kGestureLifetimeMs. Typed text never mints one. A page can't
 // reach any of this: it only ever sees the prompt answered.
 //
+// The word's channel (voice_gesture_channel.h): decided when a prompt is
+// read, from what the delegate says (the microphone's echo canceller, voice
+// mode's own voice, the setting) and what captures now
+// (VoiceCaptureWatch). The word is said only where nothing else hears it,
+// and shown in the caption bar unless the screen or a window is captured;
+// while one is, the prompt has no word. A word that went out through a
+// channel that stopped being private (a capture began), or that was heard
+// but not cleanly while something captured, is retired: the prompt is read
+// again with a new word (at most kMaxWordsPerPrompt), and hearing the old
+// one is neither the word nor a miss.
+//
 // MoltNet windows: voice mode is off there, so nothing is read (the
 // delegate says the window doesn't listen).
 
@@ -58,6 +69,7 @@
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_dialog_manager.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
+#include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
 #include "chrome/browser/molt_ai/voice/voice_prompts.h"
 #include "chrome/browser/ui/page_action/page_action_model.h"
 #include "chrome/browser/ui/page_action/page_action_model_observer.h"
@@ -71,6 +83,8 @@ class WebContents;
 
 namespace molt_ai {
 namespace voice {
+
+class VoiceCaptureWatch;
 
 class VoiceBrowserPrompts
     : public content::WebContentsObserver,
@@ -95,6 +109,15 @@ class VoiceBrowserPrompts
     virtual void EndBrowserPrompt(int id, const std::string& said) = 0;
     // Says |text| while the prompt keeps waiting.
     virtual void SayAboutBrowserPrompt(const std::string& text) = 0;
+    // The same for what holds the word: |text|.said where the word may be
+    // said now, else its twin (VoiceController::Say()'s rule).
+    virtual void SayWordAboutBrowserPrompt(const WordText& text) = 0;
+    // What decides the word's channel, but the captures (watched here):
+    // the microphone's echo canceller, voice mode's own voice, the setting.
+    virtual WordChannelInputs WordChannelInputsNow() = 0;
+    // The word shown, or whether it may be said, may have changed: the
+    // caption bar is drawn again (ShownWord()).
+    virtual void WordChannelChanged() = 0;
   };
 
   explicit VoiceBrowserPrompts(Delegate* delegate);
@@ -115,6 +138,18 @@ class VoiceBrowserPrompts
   // now (the activation guard leaves prompts raised while acting to it).
   bool TakesPromptsByVoice();
 
+  // How the voice gesture's word may reach the user now.
+  WordChannel WordChannelNow();
+  // The word the caption bar shows: the waiting prompt's, while it may be
+  // shown; empty otherwise.
+  std::string ShownWord();
+  // The word was said (VoiceController::Say()): a capture that begins
+  // later retires it.
+  void NoteWordSaid();
+  // Something the delegate reports for the channel changed (the setting,
+  // the microphone): as when a capture begins or ends.
+  void OnWordChannelInputsChanged();
+
   // The learning workstream's "confirm these sites" seam: asks the user to
   // confirm workflow draft |workflow_id|'s |sites| (hosts) by voice; |done|
   // runs once, with true only when the word was heard cleanly and the
@@ -132,6 +167,7 @@ class VoiceBrowserPrompts
   int current_prompt_for_testing() const { return current_ ? current_->id : 0; }
   std::string current_word_for_testing() const;
   bool gesture_locked_out_for_testing();
+  WordChannelInputs word_channel_inputs_for_testing() { return Inputs(); }
 
  private:
   enum class Source : uint8_t {
@@ -154,6 +190,16 @@ class VoiceBrowserPrompts
     int gesture_id = 0;
     std::string word;
     GestureBinding binding;
+    // Allowing needs the word (|binding| is set).
+    bool needs_word = false;
+    // Where the word went so far: said, shown (voice_gesture_channel.h).
+    WordChannel delivered;
+    // No word because the screen or a window is captured.
+    bool screen_shared = false;
+    // Times the prompt was read (its first word and each one after).
+    int reads = 0;
+    // What was read, to read it again with a new word.
+    BrowserPrompt prompt;
     // kPermission: the requests asked about (the first one's address,
     // compared only).
     uintptr_t request = 0;
@@ -204,6 +250,16 @@ class VoiceBrowserPrompts
   // The word (kAllow or kWrongWord) to the current prompt.
   void AnswerWithWord(const VoiceStep& step, const HeardEvidence& evidence);
 
+  // What decides the channel now: the delegate's and the captures.
+  WordChannelInputs Inputs();
+  // Gives the current prompt a word through |channel| (none when it isn't
+  // available, the gesture is locked out or the prompt had its last
+  // word); fills |prompt|'s screen_shared and explain_shown_only.
+  void DrawWord(const WordChannel& channel, BrowserPrompt& prompt);
+  // The current prompt's word is retired (|why|): read again with a new
+  // one, or without.
+  void Reissue(WordRetired why);
+
   // content::WebContentsObserver:
   void DidFinishNavigation(content::NavigationHandle* navigation) override;
   void DidStopLoading() override;
@@ -247,6 +303,10 @@ class VoiceBrowserPrompts
 
   std::unique_ptr<Current> current_;
   int next_id_ = 0;
+  // Captures of a microphone, the screen or a window (from Attach()).
+  std::unique_ptr<VoiceCaptureWatch> captures_;
+  // A prompt said why the word is shown and not said.
+  bool explained_shown_only_ = false;
 
   base::WeakPtrFactory<VoiceBrowserPrompts> weak_factory_{this};
 };

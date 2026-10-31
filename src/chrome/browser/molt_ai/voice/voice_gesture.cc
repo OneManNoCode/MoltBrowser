@@ -241,6 +241,8 @@ std::string_view HearResultName(HearResult result) {
       return "no prompt";
     case HearResult::kLockedOut:
       return "locked out";
+    case HearResult::kRetired:
+      return "retired word";
   }
   return "unknown";
 }
@@ -268,16 +270,24 @@ namespace {
 constexpr size_t kMaxWaitingPrompts = 8;
 }  // namespace
 
+GesturePrompt::GesturePrompt() = default;
+GesturePrompt::~GesturePrompt() = default;
+GesturePrompt::GesturePrompt(const GesturePrompt&) = default;
+GesturePrompt& GesturePrompt::operator=(const GesturePrompt&) = default;
+GesturePrompt::GesturePrompt(GesturePrompt&&) = default;
+GesturePrompt& GesturePrompt::operator=(GesturePrompt&&) = default;
+
 GestureBook::GestureBook(std::function<uint64_t()> random)
     : random_(std::move(random)) {}
 
 GestureBook::~GestureBook() = default;
 
-std::string GestureBook::PickWord() {
+std::string GestureBook::PickWord(const std::vector<std::string>& retired) {
   std::vector<std::string_view> eligible;
   for (std::string_view word : kWords) {
     if (std::find(recent_words_.begin(), recent_words_.end(), word) ==
-        recent_words_.end()) {
+            recent_words_.end() &&
+        std::find(retired.begin(), retired.end(), word) == retired.end()) {
       eligible.push_back(word);
     }
   }
@@ -317,15 +327,27 @@ std::optional<GesturePrompt> GestureBook::Begin(GestureBinding binding,
   if (LockedOut(now_ms)) {
     return std::nullopt;
   }
-  std::erase_if(prompts_, [&](const GesturePrompt& prompt) {
-    return prompt.binding == binding;
+  GesturePrompt prompt;
+  // The same prompt begun again (its word retired): what it had before
+  // stays known as its own, so hearing it is no miss.
+  for (const GesturePrompt& waiting : prompts_) {
+    if (waiting.binding == binding) {
+      prompt.retired = waiting.retired;
+      prompt.retired.push_back(waiting.word);
+    }
+  }
+  if (prompt.retired.size() > kRecentWordsAvoided) {
+    prompt.retired.erase(prompt.retired.begin(),
+                         prompt.retired.end() - kRecentWordsAvoided);
+  }
+  std::erase_if(prompts_, [&](const GesturePrompt& waiting) {
+    return waiting.binding == binding;
   });
   if (prompts_.size() >= kMaxWaitingPrompts) {
     prompts_.erase(prompts_.begin());
   }
-  GesturePrompt prompt;
   prompt.id = ++next_id_;
-  prompt.word = PickWord();
+  prompt.word = PickWord(prompt.retired);
   prompt.binding = std::move(binding);
   prompt.expires_ms = now_ms + kGesturePromptWindowMs;
   recent_words_.push_back(prompt.word);
@@ -375,6 +397,13 @@ HearResult GestureBook::Hear(int id,
     return HearResult::kUnsure;
   }
   const size_t match = word.index;
+  // A word the prompt had before it was retired: neither the word nor a
+  // miss (the user may have caught the old one). It tells a guesser
+  // nothing: a retired word is never drawn again for its prompt.
+  if (std::find(it->retired.begin(), it->retired.end(), kWords[match]) !=
+      it->retired.end()) {
+    return HearResult::kRetired;
+  }
   // Only what the microphone heard cleanly answers (or refuses) a prompt:
   // typed text, or what may have been another source, changes nothing.
   if (!evidence.from_microphone || !evidence.clean) {

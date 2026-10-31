@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Call - Meet</title>
+</head>
+<body>
+<!-- A page that captures the microphone or shares the screen while it asks
+     for a permission answered by voice
+     (chrome/browser/molt_ai/voice/voice_gesture_channel_browsertest.cc). -->
+<h1>Call</h1>
+<p id="status">Ready</p>
+<script>
+  window.moltLog = [];
+  const log = (entry) => {
+    moltLog.push(entry);
+    document.getElementById('status').textContent = entry;
+  };
+  let streams = [];
+  // The microphone, with the browser's echo canceller off: what a page
+  // replaying the word would ask for.
+  window.captureAudio = () => {
+    navigator.mediaDevices
+        .getUserMedia({audio: {echoCancellation: false}})
+        .then((stream) => {
+          streams.push(stream);
+          log('audio:on');
+        })
+        .catch((error) => log('audio:' + error.name));
+  };
+  // The screen (needs the user's activation).
+  window.shareScreen = () => {
+    navigator.mediaDevices.getDisplayMedia({video: true})
+        .then((stream) => {
+          streams.push(stream);
+          log('screen:on');
+        })
+        .catch((error) => log('screen:' + error.name));
+  };
+  window.stopAll = () => {
+    for (const stream of streams) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    }
+    streams = [];
+    log('stopped');
+  };
+  window.askNotifications = () => {
+    Notification.requestPermission().then((result) => log('notify:' + result));
+  };
+</script>
+</body>
+</html>

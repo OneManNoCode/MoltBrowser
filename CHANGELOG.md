@@ -521,8 +521,29 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   by how long they take to say (numbers, symbols, spelled-out words); and
   "go back" after a voice click returns to the user's page when the next
   page's server answers slowly.
+- Hardening (security review of round 42, `docs/SECURITY_REVIEWS.md`):
+  `molt://ai-settings`' Save writes only the settings its form shows, and
+  no change is saved that would make `~/.moltbrowser/settings.json` too big
+  to read back; voice mode (preview) doesn't say an answer about the page
+  that holds "Hey Molt" run into one word or written with look-alike
+  letters; and "go back" after a voice click still returns to the user's
+  page while that page keeps its frames loading; voice mode counts as
+  speaking whenever its voice plays, also while it waits for a page, so
+  what it says then is never taken for the user's words; and the built-in
+  AI APIs stay off while `settings.json` can't be read.
 
 ### Privacy
+- **Voice mode in Spanish** (round 43, second-language;
+  `docs/design/TOUCHLESS_BROWSING.md` §4.1, `docs/VOICE_COMMANDS.es.md`):
+  voice mode's language is a setting ("Voice mode", "Language"; the
+  browser's own language by default). In Spanish it understands commands
+  as Spanish speakers say them ("abre YouTube", "reproduce el cuarto",
+  "adelanta un minuto y medio", "la penúltima"), answers in Spanish with a
+  Spanish voice of the computer, never a remote one, and asks before
+  pressing "Comprar", "Eliminar" or "Cerrar sesión". Listening in Spanish
+  waits for a Spanish speech model that can be shipped with MoltBrowser;
+  until then commands typed in Agent mode work, and voice mode says why
+  it doesn't open the microphone. English is unchanged.
 - **Voice mode learns from use, on this device** (round 41, learning;
   `docs/design/TOUCHLESS_BROWSING.md` §6.8): "remember this as my news"
   saves what you just did by voice as a routine (an Agent-mode workflow,
@@ -543,6 +564,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the web agent's checks, without asking the AI again, and stops at a step
   it can't find. Nothing is kept in MoltNet or private windows, or while
   "Learn from what I say" is off.
+- **Voice routines belong to the profile that taught them** (round 43,
+  profile-routines; `docs/design/TOUCHLESS_BROWSING.md` §6.8): each
+  profile keeps its routines in its own directory, so another profile on
+  the computer doesn't hear, run, change or see them, in voice mode, Agent
+  mode or `molt://ai-automation`, and they go with the profile. Routines
+  saved before this update are offered to each profile ("Keep them
+  here?", by voice or in Agent mode) and kept by the first that says yes,
+  by no other after that. A name runs exactly one routine: saving under a
+  name in use asks to replace it, and one imported or copied under it is
+  called "my news (2)".
 - **MoltNet in its own window.** Tor browsing opens in a separate,
   throwaway profile that never shares cookies or storage with your regular
   browsing and never falls back to a direct connection. Per-site Tor
@@ -1309,6 +1340,22 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   holding "Hey Molt" isn't said at all, "stop" ends it, and nothing is
   kept; never in MoltNet windows. Without a model, the browser says how to
   get one. Details: `docs/design/TOUCHLESS_BROWSING.md` §5.4.
+- **Touchless browsing: the spoken word in place of a click hardened**
+  (preview, behind `chrome://flags/#molt-voice-mode`). The word that allows
+  a permission, keeps a risky download or confirms a routine's sites is
+  now said aloud only with voice mode's own voice, on a microphone with
+  echo cancellation, while no page or extension uses a microphone; never
+  with the system's voices. Otherwise it is shown in large letters in the
+  bar under the page (not to screen readers) and the browser says "say
+  the word on your screen"; while the screen or a window is shared there
+  is no word, and "no" still works. A word that something may have heard
+  or seen after the fact is replaced. "Say the confirmation word aloud even
+  when another program could hear it" in settings is for those who can't
+  see it. A command said over voice mode's own voice without "Hey Molt"
+  that goes to another site, types or runs a routine now waits until it
+  has stopped, and "play" no longer lets a page's history entry cost an
+  extra "go back". Details: `docs/design/TOUCHLESS_BROWSING.md` §6.6, §7.3
+  and §7.5.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

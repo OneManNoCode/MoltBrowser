@@ -53,15 +53,16 @@ bool IsWordAt(const std::vector<std::string_view>& list,
   return at < words.size() && HasPhrase(list, words[at]);
 }
 
-// "and a half" at |at|: 3 words, else 0.
+// "and a half" at |at|: 3 words ("y medio": 2), else 0.
 size_t AndAHalfAt(const WordList& words,
                   size_t at,
                   const LanguagePhrases& phrases) {
-  return (IsWordAt(phrases.number_and, words, at) &&
-          IsWordAt(phrases.number_article, words, at + 1) &&
-          IsWordAt(phrases.half_words, words, at + 2))
-             ? 3
-             : 0;
+  if (IsWordAt(phrases.number_and, words, at) &&
+      IsWordAt(phrases.number_article, words, at + 1) &&
+      IsWordAt(phrases.half_words, words, at + 2)) {
+    return 3;
+  }
+  return LongestPhraseAt(phrases.and_half_phrases, words, at);
 }
 
 struct DurationPart {
@@ -82,6 +83,13 @@ std::optional<DurationPart> ReadDurationPart(const WordList& words,
       at + 2 < words.size()) {
     if (const TimeUnitWord* unit = FindTimeUnit(phrases, words[at + 2])) {
       return DurationPart{unit->seconds, unit->seconds, 3};
+    }
+  }
+  // "medio minuto"
+  if (phrases.half_before_unit && IsWordAt(phrases.half_words, words, at) &&
+      at + 1 < words.size()) {
+    if (const TimeUnitWord* unit = FindTimeUnit(phrases, words[at + 1])) {
+      return DurationPart{unit->seconds, unit->seconds, 2};
     }
   }
   // "30s", "10sec", "2mins": digits with a unit glued on.
@@ -161,7 +169,9 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
   // Words, built as English builds them: units, teens and tens, then
   // hundred and thousand multiplying what came before. "and" may follow a
   // multiplier; "a" may stand for "one" before one. An ordinal word ends
-  // the number.
+  // the number. Spanish adds whole hundreds in one word ("doscientos",
+  // read as a hundred multiplier just said) and "y" between tens and a
+  // unit ("treinta y uno"), and ordinals of two words ("vigésimo primero").
   enum class Last {
     kNone,
     kArticle,
@@ -170,7 +180,8 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
     kTens,
     kHundred,
     kThousand,
-    kAnd
+    kAnd,
+    kTensAnd
   };
   int64_t total = 0;
   int64_t current = 0;
@@ -202,6 +213,15 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
       last = Last::kAnd;
       continue;
     }
+    if (last == Last::kTens && HasPhrase(phrases.tens_unit_and, w)) {
+      const NumberWord* next = WordAt(words, i + 1, phrases);
+      if (!usable(next) || next->kind != NumberWordKind::kUnit ||
+          next->value == 0) {
+        break;
+      }
+      last = Last::kTensAnd;
+      continue;
+    }
     const NumberWord* word = FindNumberWord(phrases, w);
     if (!usable(word))
       break;
@@ -214,7 +234,8 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
         if (word->value == 0) {
           fits = last == Last::kNone;  // "zero" stands alone
         } else {
-          fits = last == Last::kNone || last == Last::kTens || after_multiplier;
+          fits = last == Last::kNone || last == Last::kTens ||
+                 last == Last::kTensAnd || after_multiplier;
         }
         current += word->value;
         now = Last::kUnit;
@@ -252,11 +273,27 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
         current = 0;
         now = Last::kThousand;
         break;
+      case NumberWordKind::kHundreds:
+        // "doscientos", "mil trescientos": first, or after the thousands.
+        fits = last == Last::kNone || (last == Last::kThousand && current == 0);
+        current += word->value;
+        now = Last::kHundred;
+        break;
     }
     if (!fits)
       break;
     last = now;
     if (word->ordinal) {
+      // "vigésimo primero", "décimo tercero".
+      if (phrases.compound_ordinals &&
+          (word->kind == NumberWordKind::kTens ||
+           (word->kind == NumberWordKind::kTeen && word->value == 10))) {
+        const NumberWord* next = WordAt(words, i + 1, phrases);
+        if (usable(next) && next->ordinal &&
+            next->kind == NumberWordKind::kUnit && next->value > 0) {
+          return SpokenNumber{total + current + next->value, i - at + 2, true};
+        }
+      }
       return SpokenNumber{total + current, i - at + 1, true};
     }
     if (options.cardinals)
@@ -265,6 +302,25 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
       break;
   }
   return best;
+}
+
+std::optional<SpokenNumber> ReadNumberIn(const WordList& words,
+                                         size_t at,
+                                         Language language,
+                                         const NumberOptions& options) {
+  return ReadNumber(words, at, PhrasesFor(language), options);
+}
+
+std::optional<int64_t> ParseSpokenNumber(const WordList& words,
+                                         Language language) {
+  NumberOptions options;
+  options.ordinals = false;
+  const std::optional<SpokenNumber> number =
+      ReadNumberIn(words, 0, language, options);
+  if (!number || number->words != words.size()) {
+    return std::nullopt;
+  }
+  return number->value;
 }
 
 std::optional<SpokenPosition> ReadPosition(const WordList& words,
@@ -279,6 +335,10 @@ std::optional<SpokenPosition> ReadPosition(const WordList& words,
   }
   if (const size_t n = LongestPhraseAt(phrases.last_words, words, i)) {
     return SpokenPosition{1, true, i + n - at};
+  }
+  if (const size_t n =
+          LongestPhraseAt(phrases.third_to_last_phrases, words, i)) {
+    return SpokenPosition{3, true, i + n - at};
   }
   NumberOptions options;
   options.cardinals = false;
@@ -331,6 +391,8 @@ std::optional<SpokenDuration> ReadDuration(const WordList& words,
 std::optional<SpokenNumber> ReadYear(const WordList& words,
                                      size_t at,
                                      const LanguagePhrases& phrases) {
+  if (!phrases.years_in_two_parts)
+    return std::nullopt;
   const auto plain = [&](size_t i) -> const NumberWord* {
     const NumberWord* word = WordAt(words, i, phrases);
     return (word && !word->ordinal && !word->homophone) ? word : nullptr;

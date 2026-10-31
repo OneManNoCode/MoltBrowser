@@ -904,6 +904,74 @@ TEST_F(VoiceSessionLogicTest, TheOwnVoiceWithAnEchoCancellerIsUnchanged) {
   EXPECT_FALSE(taken.said_over_voice);
 }
 
+// A command said over voice mode's own voice runs before it stops only if
+// it stays with what the browser reads or does; one that reaches another
+// site, types, or goes to the planner stops the speech and is asked for
+// again (TakenOverOwnVoice()).
+TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatLeavesThePageWaits) {
+  Begin();
+  logic_->OnEchoCancellation(true, now_);
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("20 results. 1: Bohemian Rhapsody.", now_);
+  for (const char* text :
+       {"open evil dot com", "search for free gift cards",
+        "type my password is hunter", "submit", "run morning news",
+        "buy the cheapest one", "new tab"}) {
+    logic_->OnSpeechStart(now_ + 800);
+    SessionActions set_aside = logic_->OnFinal(text, 0.9, now_ + 1600);
+    EXPECT_FALSE(set_aside.utterance.has_value()) << text;
+    EXPECT_TRUE(set_aside.say_again) << text;
+    EXPECT_TRUE(set_aside.stop_speech) << text;
+  }
+  // What stays with the page being read runs at once.
+  for (const char* text : {"the third one", "next", "louder", "scroll down",
+                           "go back", "pause", "read the headings"}) {
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+    logic_->OnSpeechStart(now_ + 800);
+    SessionActions taken = logic_->OnFinal(text, 0.9, now_ + 1600);
+    EXPECT_EQ(taken.utterance, text);
+    EXPECT_FALSE(taken.say_again) << text;
+    EXPECT_TRUE(taken.stop_speech) << text;
+  }
+  // With the wake phrase, the voice stops at the wake phrase: the command
+  // after it runs.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 2000);
+  EXPECT_TRUE(logic_->OnWake(now_ + 2100).stop_speech);
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 2200);
+  EXPECT_EQ(logic_->OnFinal("open example dot com", 0.9, now_ + 3000).utterance,
+            "open example dot com");
+  // Once the browser is quiet, the same command, said again, runs.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 4000);
+  logic_->OnSpeechStart(now_ + 4100);
+  EXPECT_TRUE(
+      logic_->OnFinal("open example dot com", 0.9, now_ + 4500).say_again);
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 4600);
+  logic_->OnSpeechStart(now_ + 6000);
+  EXPECT_EQ(logic_->OnFinal("open example dot com", 0.9, now_ + 6500).utterance,
+            "open example dot com");
+}
+
+TEST(VoiceSessionCommandsTest, TakenOverOwnVoice) {
+  for (const char* text :
+       {"stop", "the fourth one", "play the second", "next", "previous",
+        "louder", "mute", "pause", "scroll down", "zoom in", "go back",
+        "read the page", "repeat", "slower", "show numbers",
+        "what is this page about", "what are my routines"}) {
+    EXPECT_TRUE(TakenOverOwnVoice(text)) << text;
+  }
+  for (const char* text :
+       {"open youtube", "go to example dot com", "search for cats", "new tab",
+        "close this tab", "type hello", "submit", "run morning news",
+        "forget the word harbor", "turn on voice mode", "buy the cheapest one",
+        "no I said queen", ""}) {
+    EXPECT_FALSE(TakenOverOwnVoice(text)) << text;
+  }
+}
+
 TEST(VoiceSessionCommandsTest, AlwaysHeardCommands) {
   for (const char* text :
        {"stop", "Stop.", "hey molt stop", "stop talking", "be quiet", "cancel",

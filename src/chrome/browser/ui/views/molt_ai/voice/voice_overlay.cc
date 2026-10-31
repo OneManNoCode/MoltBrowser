@@ -155,8 +155,9 @@ bool VoiceOverlay::HideCaption() {
 void VoiceOverlay::SetCaptionForWindow(BrowserWindowInterface* window,
                                        VoiceState state,
                                        std::string_view heard,
-                                       std::string_view status) {
-  SetWindowCaption(window, MakeCaptionText(state, heard, status));
+                                       std::string_view status,
+                                       std::string_view word) {
+  SetWindowCaption(window, MakeCaptionText(state, heard, status, word));
 }
 
 // static

@@ -3,7 +3,9 @@
 
 #include "chrome/browser/molt_ai/voice/voice_learning_store.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <optional>
 #include <utility>
 
@@ -30,6 +32,9 @@ constexpr char kHost[] = "host";
 constexpr char kSearch[] = "search";
 constexpr char kList[] = "list";
 constexpr char kPlayer[] = "player";
+constexpr char kDeclinedRoutines[] = "declined_routines";
+// A script id, at most (AutomationStorage's).
+constexpr size_t kMaxRoutineIdBytes = 128;
 
 // Unix seconds after this (year 33658) are refused.
 constexpr double kMaxTime = 1e12;
@@ -62,6 +67,23 @@ const std::string* StringOf(const base::DictValue& d, const char* key) {
 std::string StringOr(const base::DictValue& d, const char* key) {
   const std::string* value = d.FindString(key);
   return value ? *value : std::string();
+}
+
+// A script id as AutomationStorage takes it (a file name): not empty, at
+// most kMaxRoutineIdBytes, no path or extension separator, no control
+// character.
+bool IsRoutineId(std::string_view id) {
+  if (id.empty() || id.size() > kMaxRoutineIdBytes) {
+    return false;
+  }
+  for (char c : id) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    if (c == '/' || c == '\\' || c == ':' || c == '.' || u < 0x20 ||
+        u == 0x7f) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -104,6 +126,11 @@ std::string SerializeLearning(const LearnedData& data) {
     hints.Append(std::move(d));
   }
   root.Set(kHints, std::move(hints));
+  base::ListValue declined;
+  for (const std::string& id : data.declined_routines) {
+    declined.Append(id);
+  }
+  root.Set(kDeclinedRoutines, std::move(declined));
   std::string out;
   if (!base::JSONWriter::Write(root, &out)) {
     return std::string();
@@ -177,9 +204,37 @@ LearnedData ParseLearning(std::string_view json, int64_t now_unix) {
     hint.last_used = *last;
     data.hints.Restore(std::move(hint));
   });
+  if (const base::ListValue* declined = root.FindList(kDeclinedRoutines)) {
+    std::vector<std::string> ids;
+    for (const base::Value& item : *declined) {
+      if (item.is_string()) {
+        ids.push_back(item.GetString());
+      }
+    }
+    AddDeclinedRoutines(data.declined_routines, ids);
+  }
   data.vocabulary.Age(now_unix);
   data.hints.Age(now_unix);
   return data;
+}
+
+bool AddDeclinedRoutines(std::vector<std::string>& declined,
+                         const std::vector<std::string>& ids) {
+  bool changed = false;
+  for (const std::string& id : ids) {
+    if (!IsRoutineId(id) ||
+        std::find(declined.begin(), declined.end(), id) != declined.end()) {
+      continue;
+    }
+    declined.push_back(id);
+    changed = true;
+  }
+  if (declined.size() > kMaxDeclinedRoutines) {
+    declined.erase(
+        declined.begin(),
+        declined.end() - static_cast<std::ptrdiff_t>(kMaxDeclinedRoutines));
+  }
+  return changed;
 }
 
 }  // namespace voice

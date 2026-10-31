@@ -47,6 +47,21 @@ source_set("unit_tests") {
 
     # The voice gesture, and the browser's prompts by voice.
     ":voice_prompts_unit_tests",
+
+    # Voice mode's language as a setting.
+    ":voice_language_unit_tests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("voice_language_unit_tests") {
+  testonly = true
+  sources = [ "voice_language_settings_unittest.cc" ]
+  deps = [
+    ":voice_controller",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/common:molt_settings_file",
     "//testing/gtest",
   ]
 }
@@ -61,11 +76,16 @@ source_set("unit_tests") {
 # The spoken-choice matcher: which item on screen "the fourth one", "number
 # 12" or "the live one by Queen" means. The page map fills its
 # ChoiceCandidates. With it, the text, number and sound-alike readers the
-# grammar shares, and the per-language word tables.
+# grammar shares, and the per-language word tables (English and Spanish,
+# with Spanish's phonetic key and its voice gesture words).
 source_set("spoken_choice") {
   sources = [
+    "confirmation_words_es.cc",
+    "confirmation_words_es.h",
     "phonetic_key.cc",
     "phonetic_key.h",
+    "phonetic_key_es.cc",
+    "phonetic_key_es.h",
     "spoken_choice.cc",
     "spoken_choice.h",
     "spoken_numbers.cc",
@@ -73,8 +93,16 @@ source_set("spoken_choice") {
     "spoken_phrases.cc",
     "spoken_phrases.h",
     "spoken_phrases_en.cc",
+    "spoken_phrases_es.cc",
     "spoken_text.cc",
     "spoken_text.h",
+
+    # What the browser says, per language, and which language.
+    "spoken_answers.cc",
+    "spoken_answers.h",
+    "spoken_answers_es.cc",
+    "voice_language.cc",
+    "voice_language.h",
   ]
 }
 
@@ -85,6 +113,7 @@ source_set("voice_command") {
     "voice_command.h",
     "voice_command_phrases.h",
     "voice_command_phrases_en.cc",
+    "voice_command_phrases_es.cc",
   ]
   public_deps = [ ":spoken_choice" ]
 }
@@ -99,6 +128,10 @@ source_set("voice_prompts") {
   sources = [
     "voice_gesture.cc",
     "voice_gesture.h",
+
+    # How the word reaches the user: said, shown, both or neither.
+    "voice_gesture_channel.cc",
+    "voice_gesture_channel.h",
     "voice_prompts.cc",
     "voice_prompts.h",
   ]
@@ -115,6 +148,7 @@ source_set("voice_prompts") {
 source_set("voice_prompts_unit_tests") {
   testonly = true
   sources = [
+    "voice_gesture_channel_unittest.cc",
     "voice_gesture_unittest.cc",
     "voice_prompts_unittest.cc",
   ]
@@ -147,6 +181,7 @@ source_set("voice_intent_unit_tests") {
     "spoken_numbers_unittest.cc",
     "spoken_text_unittest.cc",
     "voice_command_unittest.cc",
+    "voice_spanish_unittest.cc",
   ]
   deps = [
     ":spoken_choice",
@@ -674,8 +709,15 @@ source_set("voice_controller") {
   sources = [
     "voice_browser_prompts.cc",
     "voice_browser_prompts.h",
+
+    # What captures a microphone, the screen or a window: the voice
+    # gesture's word is said or shown accordingly.
+    "voice_capture_watch.cc",
+    "voice_capture_watch.h",
     "voice_controller.cc",
     "voice_controller.h",
+    "voice_language_settings.cc",
+    "voice_language_settings.h",
     "voice_reading_settings.cc",
     "voice_reading_settings.h",
 
@@ -699,6 +741,9 @@ source_set("voice_controller") {
     ":voice_loop",
     ":voice_planner",
     ":voice_prompts",
+
+    # The profile's routines, in its own storage (voice_learning.h).
+    ":voice_routine_store",
     ":voice_speaking",
     "//base",
 
@@ -723,12 +768,21 @@ source_set("voice_controller") {
     # Questions about the page, answered by the on-device model.
     ":voice_page_questions",
 
+    # Chromium's record of the media streams it gave out
+    # (MediaStreamCaptureIndicator), for the voice gesture's word.
+    "//chrome/browser/media/webrtc",
+
     # The voice helper: the bundled copy only, under the resident sandbox.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
 
-    # The speech rate kept in settings.json, through its one writer.
+    # The speech rate and the language kept in settings.json, through its
+    # one writer.
     "//chrome/browser/molt_ai/common:molt_settings_file",
+
+    # g_browser_process: the browser's own language, voice mode's when the
+    # setting names none.
+    "//chrome/browser:browser_process",
 
     # Its audio, played through the audio service.
     "//media",
@@ -740,9 +794,8 @@ source_set("voice_controller") {
     # The tab's activation guard, which voice mode answers.
     "//chrome/browser/molt_ai/security:activation_guard",
 
-    # Routines taught by voice are kept with the other workflows
-    # (AutomationStorage) under their trust policy.
-    "//chrome/browser/molt_ai/automation",
+    # Routines taught by voice are workflows under the automation trust
+    # policy, kept in the profile's own storage (:voice_routine_store).
     "//chrome/browser/molt_ai/automation:automation_policy",
 
     # A dangerous download kept or discarded as the download bubble does
@@ -835,6 +888,25 @@ source_set("voice_learning_store") {
   ]
 }
 
+# A profile's voice routines on disk (voice_routine_store.h): a storage of
+# its own in the profile directory, and the routines from before routines
+# belonged to a profile, each kept by one profile at most. base only:
+# molt_ai_unittests tests it on a temporary directory.
+source_set("voice_routine_store") {
+  sources = [
+    "voice_routine_store.cc",
+    "voice_routine_store.h",
+  ]
+
+  public_deps = [
+    ":voice_learning_store",
+    ":voice_loop",
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/automation:storage",
+  ]
+}
+
 # The learning file and a routine's .molt as anything on the machine may
 # have written them, and corrections applied to any utterance. See
 # docs/FUZZING.md.
@@ -860,8 +932,10 @@ source_set("voice_loop_unit_tests") {
     "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
     "voice_hints_unittest.cc",
+    "voice_language_unittest.cc",
     "voice_learning_store_unittest.cc",
     "voice_reader_unittest.cc",
+    "voice_routine_store_unittest.cc",
     "voice_routines_logic_unittest.cc",
     "voice_routines_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
@@ -879,6 +953,7 @@ source_set("voice_loop_unit_tests") {
     ":site_skills",
     ":voice_learning_store",
     ":voice_loop",
+    ":voice_routine_store",
     "//chrome/browser/molt_ai/automation:automation_policy",
 
     # The stored pages, read from the source tree.
@@ -900,7 +975,14 @@ source_set("voice_loop_unit_tests") {
 source_set("voice_prompts_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "voice_browser_prompts_browsertest.cc" ]
+  sources = [
+    "voice_browser_prompts_browsertest.cc",
+
+    # The word's channel with real captures (chrome/test/data/molt_voice/
+    # capture.html): a page capturing the microphone, one sharing the
+    # screen.
+    "voice_gesture_channel_browsertest.cc",
+  ]
 
   deps = [
     ":features",
@@ -908,6 +990,11 @@ source_set("voice_prompts_browser_tests") {
     ":voice_prompts",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/common:non_code_constants",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//media",
     "//chrome/browser/download",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
@@ -1163,6 +1250,11 @@ source_set("voice_learning_browser_tests") {
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
+
+    # A second profile of the machine (profile-routines).
+    "//chrome/browser:browser_process",
+    "//chrome/browser/profiles:profile_manager",
+    "//chrome/browser/profiles:profile_test_util",
     "//chrome/browser/ui",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/tabs:tab_strip",
@@ -1174,6 +1266,9 @@ source_set("voice_learning_browser_tests") {
     "//media",
     "//net:test_support",
     "//testing/gtest",
+
+    # The Agent studio opened in a new tab of each profile's window.
+    "//ui/base",
     "//url",
   ]
 

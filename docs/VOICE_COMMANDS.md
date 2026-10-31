@@ -118,7 +118,22 @@ and the bar only.
   page can't say it for you; say it once it has finished speaking, in a
   quiet moment. A different word turns the request down. If what it heard
   could be one of two words, it says "I didn't catch that. Say the word
-  again." and keeps waiting. "No" always refuses. A risky file is kept
+  again." and keeps waiting. "No" always refuses.
+
+  The word is meant for you alone. The browser says it aloud only when
+  nothing else can hear it: its own voice is speaking, your microphone
+  has echo cancellation, and no page is using a microphone. Otherwise it
+  shows the word in large letters at the end of the bar under the page
+  and says "To allow it, say the word on your screen." While your screen
+  or a window is shared, it gives no word at all ("I can't take the word
+  while your screen is shared"): allow it with the mouse or keyboard, or
+  say "no". If a page starts using a microphone after the word was said,
+  or the screen is shared after it was shown, the browser changes the
+  word and tells you; saying the old one then does nothing. If you can't
+  see the word, turn on "Say the confirmation word aloud even when
+  another program could hear it" in Settings, "Voice mode": the browser
+  then always says it, and a page or program listening could hear it
+  too. A risky file is kept
   just as the downloads button's warning keeps it. When a page wants text, say "answer" and your answer, then
   "yes".
 - **Typing:** choose a field ("click the search box"), then "type ...",
@@ -164,6 +179,23 @@ and the bar only.
   password or a code isn't kept: the browser asks for it at each run.
   "What are my routines?" lists them; "forget my news" deletes one after
   your "yes". Routines are listed in Agent mode too, which can't run them.
+- **Routines belong to your profile:** a routine is kept in the browser
+  profile you taught it in. Another profile on the same computer (someone
+  else's, or your work profile) doesn't hear it listed, can't run or
+  forget it, and doesn't see it in Agent mode; each profile can have a
+  "my news" of its own. Saying "remember this as my news" when this
+  profile already has one asks first ("You already have a routine called
+  my news. ... Say yes to replace it"): "yes" replaces it, "no" keeps the
+  old one and asks you for another name. Each name runs exactly one
+  routine. A routine you import, copy or rename in Agent mode under a
+  name you already use is called "my news (2)" (say "my news two").
+- **Routines from before this update** were shared by every profile. The
+  first time you ask about routines, or run one of them by name, the
+  browser asks: "2 routines were made before routines belonged to a
+  profile: my news and morning mail. Say yes to keep them here". "Yes"
+  moves them into this profile (and no other profile has them after
+  that); "no" leaves them for another profile and isn't asked again
+  here. Agent mode shows them too, to keep some and not others.
 - **Routines with the AI's steps:** when you asked the on-device AI to do
   something ("find me a train to Lyon"), what it did is part of "this" too:
   the pages it opened, what it clicked, typed or chose. Saving such a
@@ -746,8 +778,11 @@ said.
 
 ## Not yet
 
-- **Other languages.** English only for now; the phrase tables are laid out
-  for more.
+- **Other languages.** English, and Spanish ([VOICE_COMMANDS.es.md](VOICE_COMMANDS.es.md),
+  chosen in settings, "Voice mode", "Language"): Spanish commands typed in
+  Agent mode work and are answered in Spanish with the computer's Spanish
+  voice, but voice mode can't listen in Spanish until a Spanish speech
+  model it can ship is found. More languages add their own phrase tables.
 - **Spoken punctuation** in typing ("comma", "period"): the recognizer adds
   punctuation itself.
 - **A site's name on its own** ("YouTube" alone) doesn't open it: say "open
@@ -756,6 +791,10 @@ said.
   site offers, that step can't be kept in a routine yet. Nor can a step
   whose button or link has the same name as another on the page when the
   routine runs: the routine stops there rather than guess.
+- **Renaming a routine by voice,** or choosing which of the routines from
+  before this update to keep one by one: do these in Agent mode. Two
+  routines with the same name (after editing their files) run by neither
+  name until one is renamed there.
 - **Telling your voice from others':** anyone who hears a confirmation
   word ("say harbor") can say it. Recognizing your own voice is planned.
 - **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
@@ -764,9 +803,14 @@ said.
 - **Interrupting the browser mid-sentence with a new command** works
   without "Hey Molt" when the browser speaks with its own voice and the
   microphone has echo cancellation (its own voice is then removed from
-  what the microphone hears). With the system's voices, which the browser
-  uses when its own isn't installed, start with "Hey Molt" (or say
-  "stop"). With its own voice and no echo cancellation, say "stop" first.
+  what the microphone hears), for what stays with what it is reading or
+  doing: a number, "next", "louder", "pause", "go back", "read the
+  headings". A command that goes to another site, searches, types, sends,
+  closes a tab or runs a routine stops the browser instead, and it says
+  "I've stopped. Now say that again." With "Hey Molt" first, any command
+  interrupts it. With the system's voices, which the browser uses when its
+  own isn't installed, start with "Hey Molt" (or say "stop"). With its own
+  voice and no echo cancellation, say "stop" first.
 - **While reading aloud,** the sentence being read is shown in the bar
   under the page, but not highlighted on the page itself.
 - **"Faster" and "slower"** change the reading speed while the browser

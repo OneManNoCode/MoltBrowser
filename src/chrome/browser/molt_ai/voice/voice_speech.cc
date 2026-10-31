@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -13,9 +15,11 @@
 #include "base/logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#include "chrome/browser/molt_ai/voice/voice_language.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_protocol.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_utterance.h"
+#include "url/gurl.h"
 
 namespace molt_ai {
 namespace voice {
@@ -151,7 +155,56 @@ bool VoiceSpeech::OthersSpeaking() const {
 }
 
 bool VoiceSpeech::InEchoReference() const {
-  return bundled_ && bundled_->ready() && !in_flight_;
+  return BundledSpeaks() && bundled_ && bundled_->ready() && !in_flight_;
+}
+
+void VoiceSpeech::SetLanguage(Language language, const std::string& ui_locale) {
+  ui_locale_ = ui_locale;
+  language_tag_ = PlatformLanguageTag(language, ui_locale);
+  if (language == language_) {
+    return;
+  }
+  Stop();
+  language_ = language;
+  said_no_voice_ = false;
+  if (!BundledSpeaks()) {
+    if (bundled_ && bundled_->started()) {
+      bundled_->Stop();
+    }
+  } else if (active_ && bundled_ && !bundled_->started()) {
+    bundled_->Start();
+  }
+}
+
+namespace {
+
+std::vector<PlatformVoice> PlatformVoices(
+    const std::vector<content::VoiceData>& voices) {
+  std::vector<PlatformVoice> out;
+  out.reserve(voices.size());
+  for (const content::VoiceData& voice : voices) {
+    out.push_back(PlatformVoice{voice.name, voice.lang, voice.remote});
+  }
+  return out;
+}
+
+}  // namespace
+
+// static
+bool VoiceSpeech::HasPlatformVoice(content::BrowserContext* context,
+                                   Language language) {
+  if (language == Language::kEnglish) {
+    return true;
+  }
+  std::vector<content::VoiceData> voices;
+  content::TtsController::GetInstance()->GetVoices(context, GURL(), &voices);
+  return PickPlatformVoice(PlatformVoices(voices), language,
+                           LanguageCode(language))
+      .has_value();
+}
+
+bool VoiceSpeech::CanSpeakPrivately() const {
+  return bundled_ && bundled_->started() && bundled_->ready();
 }
 
 void VoiceSpeech::SetActive(bool active) {
@@ -180,7 +233,7 @@ void VoiceSpeech::SetActive(bool active) {
             weak_factory_.GetWeakPtr()));
     return;
   }
-  if (bundled_ && !bundled_->started()) {
+  if (BundledSpeaks() && bundled_ && !bundled_->started()) {
     bundled_->Start();
   }
 }
@@ -190,7 +243,7 @@ void VoiceSpeech::OnBundledFound(std::optional<BundledVoice::Paths> paths) {
     return;
   }
   bundled_ = std::make_unique<BundledVoice>(this, std::move(*paths));
-  if (active_) {
+  if (active_ && BundledSpeaks()) {
     bundled_->Start();
   }
 }
@@ -206,6 +259,29 @@ uint64_t VoiceSpeech::Speak(const std::string& text,
   }
   Pending pending;
   pending.text = text;
+  pending.rate = std::clamp(rate, kMinTtsRate, kMaxTtsRate);
+  pending.id = next_id_++;
+  const uint64_t id = pending.id;
+  waiting_.push_back(std::move(pending));
+  SpeakNext();
+  UpdateSpeaking();
+  return id;
+}
+
+uint64_t VoiceSpeech::SpeakPrivately(const std::string& text,
+                                     const std::string& fallback,
+                                     double rate,
+                                     bool interrupt) {
+  if (text.empty() || !context_) {
+    return 0;
+  }
+  if (interrupt) {
+    Stop();
+  }
+  Pending pending;
+  pending.text = text;
+  pending.fallback = fallback;
+  pending.privately = true;
   pending.rate = std::clamp(rate, kMinTtsRate, kMaxTtsRate);
   pending.id = next_id_++;
   const uint64_t id = pending.id;
@@ -242,7 +318,8 @@ void VoiceSpeech::SpeakNext() {
   if (waiting_.empty() || !context_) {
     return;
   }
-  const bool bundled_running = bundled_ && bundled_->started();
+  const bool bundled_running =
+      BundledSpeaks() && bundled_ && bundled_->started();
   if (bundled_running && bundled_->ready()) {
     platform_until_ready_ = false;
     ready_wait_timer_.Stop();
@@ -287,15 +364,41 @@ void VoiceSpeech::OnReadyWaitOver() {
 }
 
 void VoiceSpeech::SpeakWithPlatform() {
+  // What only the bundled voice may say: the platform's voice says its
+  // fallback, or nothing.
+  while (!waiting_.empty() && waiting_.front().privately &&
+         waiting_.front().fallback.empty()) {
+    Done(waiting_.front().id, false);
+    waiting_.pop_front();
+  }
   if (in_flight_ || waiting_.empty() || !context_) {
     return;
   }
   Pending next = std::move(waiting_.front());
   waiting_.pop_front();
+  if (next.privately) {
+    next.text = std::move(next.fallback);
+    next.privately = false;
+  }
   std::unique_ptr<content::TtsUtterance> utterance =
       content::TtsUtterance::Create(context_.get());
   utterance->SetText(next.text);
-  utterance->SetLang(kLanguage);
+  utterance->SetLang(language_tag_);
+  content::TtsController* controller = content::TtsController::GetInstance();
+  if (language_ != Language::kEnglish) {
+    // A voice of the language on this computer (never a remote one).
+    std::vector<content::VoiceData> voices;
+    controller->GetVoices(context_.get(), GURL(), &voices);
+    if (const std::optional<size_t> voice = PickPlatformVoice(
+            PlatformVoices(voices), language_, language_tag_)) {
+      utterance->SetVoiceName(voices[*voice].name);
+    } else if (!said_no_voice_) {
+      said_no_voice_ = true;
+      LOG(WARNING) << "[MoltVoice] no " << LanguageCode(language_)
+                   << " voice on this computer: the platform's default voice "
+                      "reads voice mode's answers";
+    }
+  }
   utterance->SetContinuousParameters(next.rate, /*pitch=*/1.0,
                                      /*volume=*/1.0);
   // Queued after whatever is being said: never clears others' speech.
@@ -303,7 +406,6 @@ void VoiceSpeech::SpeakWithPlatform() {
   auto delegate = std::make_unique<Delegate>(weak_factory_.GetWeakPtr());
   in_flight_ = delegate.get();
   utterance->SetEventDelegate(std::move(delegate));
-  content::TtsController* controller = content::TtsController::GetInstance();
   in_flight_behind_others_ = controller->IsSpeaking();
   in_flight_id_ = next.id;
   // May end it at once (no voice): OnGone() then runs inside.

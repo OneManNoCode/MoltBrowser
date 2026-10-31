@@ -10,7 +10,8 @@
 // The first byte picks the input; the rest is it.
 //   0: the learning file. Checks: what is read back is within the caps,
 //      every phrase is learnable and no correction's side answers a
-//      question, hints are clean; it saves and reads back the same.
+//      question, hints are clean, the declined routines are ids a file
+//      may have, once each; it saves and reads back the same.
 //   1: a .molt file. Checks: a routine voice mode would run has at most
 //      kMaxRoutineSteps steps of routine kinds or the planner's (never a
 //      gap), each describable; built again from them it reads back the
@@ -28,7 +29,13 @@
 //      step or as a gap that says why; kept, its text is within the caps
 //      and a routine of it reads back as the same step, its typed text
 //      never in the file when withheld.
+//   4: routines' names, one a line (a profile's, as files give them), the
+//      last one a name to bring in or say (round 43). Checks: the match
+//      counts at most the names, finds a name only when exactly one is
+//      said so; the name a routine brought in takes is said by none of
+//      them; declined, the lines are kept only as ids.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -45,6 +52,7 @@
 #include "chrome/browser/molt_ai/voice/voice_learning_store.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
 #include "chrome/browser/molt_ai/voice/voice_routines.h"
+#include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_vocabulary.h"
 
 namespace {
@@ -53,6 +61,17 @@ using molt_ai::voice::LearnedData;
 using molt_ai::voice::VocabularyEntry;
 
 constexpr int64_t kNow = 1'800'000'000;
+
+// An id a script's file may have (AutomationStorage's file names).
+void CheckRoutineId(const std::string& id) {
+  CHECK(!id.empty());
+  CHECK_LE(id.size(), 128u);
+  CHECK_EQ(id.find_first_of("/\\:."), std::string::npos);
+  for (char c : id) {
+    CHECK_GE(static_cast<unsigned char>(c), 0x20u);
+    CHECK_NE(static_cast<unsigned char>(c), 0x7fu);
+  }
+}
 
 bool AnswersAQuestion(std::string_view phrase) {
   molt_ai::voice::ParseContext context;
@@ -83,9 +102,52 @@ void LearningFile(std::string_view input) {
     CHECK(molt_ai::voice::IsValidUtf8(hint.result_list));
     CHECK(molt_ai::voice::IsValidUtf8(hint.player));
   }
+  CHECK_LE(data.declined_routines.size(), molt_ai::voice::kMaxDeclinedRoutines);
+  for (const std::string& id : data.declined_routines) {
+    CheckRoutineId(id);
+    CHECK_EQ(std::count(data.declined_routines.begin(),
+                        data.declined_routines.end(), id),
+             1);
+  }
   const std::string saved = molt_ai::voice::SerializeLearning(data);
   const LearnedData again = molt_ai::voice::ParseLearning(saved, kNow);
   CHECK_EQ(molt_ai::voice::SerializeLearning(again), saved);
+}
+
+// Routines' names (input 4).
+void RoutineNames(std::string_view input) {
+  std::vector<std::string> names;
+  size_t start = 0;
+  while (names.size() < 16) {
+    const size_t newline = input.find('\n', start);
+    names.emplace_back(input.substr(start, newline == std::string_view::npos
+                                               ? std::string_view::npos
+                                               : newline - start));
+    if (newline == std::string_view::npos) {
+      break;
+    }
+    start = newline + 1;
+  }
+  const std::string said = names.back();
+  names.pop_back();
+  const molt_ai::voice::RoutineNameMatch match =
+      molt_ai::voice::MatchRoutineName(names, said);
+  CHECK_LE(match.count, names.size());
+  CHECK_EQ(match.name != nullptr, match.count == 1);
+  if (match.name) {
+    CHECK_EQ(molt_ai::voice::RoutineNameKey(*match.name),
+             molt_ai::voice::RoutineNameKey(said));
+  }
+  CHECK(molt_ai::voice::IsValidUtf8(molt_ai::voice::RoutineNameKey(said)) ||
+        !molt_ai::voice::IsValidUtf8(said));
+  const std::string unique = molt_ai::voice::UniqueRoutineName(names, said);
+  CHECK(unique.empty() ||
+        molt_ai::voice::MatchRoutineName(names, unique).count == 0);
+  std::vector<std::string> declined;
+  molt_ai::voice::AddDeclinedRoutines(declined, names);
+  for (const std::string& id : declined) {
+    CheckRoutineId(id);
+  }
 }
 
 void RoutineFile(std::string_view input) {
@@ -278,7 +340,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // SAFETY: libFuzzer passes |size| valid bytes at |data|.
   const std::string_view whole(reinterpret_cast<const char*>(data), size);
   const std::string_view input = whole.substr(1);
-  switch (static_cast<uint8_t>(whole[0]) % 4) {
+  switch (static_cast<uint8_t>(whole[0]) % 5) {
     case 0:
       LearningFile(input);
       break;
@@ -288,8 +350,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     case 2:
       Utterances(input);
       break;
-    default:
+    case 3:
       PlannerStep(input);
+      break;
+    default:
+      RoutineNames(input);
       break;
   }
   return 0;

@@ -48,11 +48,12 @@
 // back", except the first one an action leads to within its window (the
 // page the user asked for): NoteHistoryEntry(). An action whose intent
 // never navigates the tab (full screen, a copy, a link opened in a new
-// tab) leads to no such page: every entry the page adds after it is
-// skippable. Otherwise, at 156, the browser can't tell the page the action
-// led to from an entry the page adds for itself in the same click (both
-// are the page's script, with the action's activation; see
-// TOUCHLESS_BROWSING.md §7.5), so the first one is taken as the user's.
+// tab, "play" of a player already on the page) leads to no such page:
+// every entry the page adds after it is skippable. Otherwise, at 156, the
+// browser can't tell the page the action led to from an entry the page
+// adds for itself in the same click (both are the page's script, with the
+// action's activation; see TOUCHLESS_BROWSING.md §7.5), so the first one
+// is taken as the user's.
 //
 // Std-only, so molt_ai_unittests and a standalone harness build the same
 // code. The browser's side (the tab's record, the hooks, the questions) is
@@ -63,6 +64,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -82,9 +85,13 @@ inline constexpr int64_t kActingWindowMs = kTransientActivationMs + kInFlightMs;
 enum class Intent : uint8_t {
   kNone,
   kFullScreen,    // "full screen": the page's own full screen button
-  kPlayMedia,     // "play", or a video chosen to play
+  kPlayMedia,     // a video chosen to play (a link to it)
   kCopy,          // a copy (no voice or agent command copies yet)
   kOpenInNewTab,  // a link opened in a new tab (no command does yet)
+  // "play" of a video or audio element already on the page: it plays where
+  // it is (its player may go full screen, as for kPlayMedia), and leads to
+  // no page of its own.
+  kPlayInPlace,
 };
 
 // Who answers questions for the tab: voice mode on it, else a web agent
@@ -131,6 +138,34 @@ bool IsActing(const TabRecord& tab, int64_t now_ms);
 // one the page added on its own). Returns whether the entry it was added
 // from counts as skippable for voice mode's "go back" (above).
 bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms);
+
+// When each of a tab's navigations in flight began (by navigation id), for
+// NoteHistoryEntry(); one not remembered is judged by when it commits. At
+// most kMaxNavigationsInFlight are remembered: a page that piles up its
+// frames' navigations (iframes it keeps navigating to a server that never
+// answers) can't push out its main frame's, the navigation an action most
+// often leads to: when full, the other frames' are forgotten first.
+inline constexpr size_t kMaxNavigationsInFlight = 64;
+class NavigationStarts {
+ public:
+  NavigationStarts();
+  ~NavigationStarts();
+  NavigationStarts(const NavigationStarts&) = delete;
+  NavigationStarts& operator=(const NavigationStarts&) = delete;
+
+  // Navigation |id| began at |now_ms|, in the tab's main frame or not.
+  void Started(int64_t id, int64_t now_ms, bool main_frame);
+  // When navigation |id| began, if remembered; it is forgotten.
+  std::optional<int64_t> Finished(int64_t id);
+  size_t size() const { return starts_.size(); }
+
+ private:
+  struct Start {
+    int64_t ms = 0;
+    bool main_frame = false;
+  };
+  std::map<int64_t, Start> starts_;
+};
 
 // One question per action: once the user was asked about one of the page's
 // requests, the page's next requests until the next action are refused

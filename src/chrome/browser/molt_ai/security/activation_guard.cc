@@ -201,18 +201,17 @@ void ActivationGuard::FrameReceivedUserActivation(
 
 void ActivationGuard::DidStartNavigation(
     content::NavigationHandle* navigation) {
-  // Few are in flight; a page that piles them up has them counted from
-  // when they commit.
-  if (navigation_started_ms_.size() >= kMaxNavigationsInFlight) {
-    navigation_started_ms_.clear();
-  }
-  navigation_started_ms_[navigation->GetNavigationId()] = NowMs();
+  // Few are in flight; a page that piles up its frames' has those counted
+  // from when they commit, never its main frame's
+  // (activation::NavigationStarts).
+  navigation_starts_.Started(navigation->GetNavigationId(), NowMs(),
+                             navigation->IsInPrimaryMainFrame());
 }
 
 void ActivationGuard::DidFinishNavigation(
     content::NavigationHandle* navigation) {
-  NoteHistoryEntry(navigation);
-  navigation_started_ms_.erase(navigation->GetNavigationId());
+  NoteHistoryEntry(navigation,
+                   navigation_starts_.Finished(navigation->GetNavigationId()));
   if (!navigation->IsInPrimaryMainFrame() || !navigation->HasCommitted() ||
       navigation->IsSameDocument()) {
     return;
@@ -231,7 +230,8 @@ void ActivationGuard::WebContentsDestroyed() {
   Resolve(false);
 }
 
-void ActivationGuard::NoteHistoryEntry(content::NavigationHandle* navigation) {
+void ActivationGuard::NoteHistoryEntry(content::NavigationHandle* navigation,
+                                       std::optional<int64_t> started_ms) {
   if (!navigation->HasCommitted() || !InPrimaryPage(navigation)) {
     return;
   }
@@ -249,11 +249,8 @@ void ActivationGuard::NoteHistoryEntry(content::NavigationHandle* navigation) {
   }
   // As of when its navigation began: the page an action led to, from a
   // server that answers late, is still that page.
-  const auto started =
-      navigation_started_ms_.find(navigation->GetNavigationId());
-  const int64_t started_ms =
-      started != navigation_started_ms_.end() ? started->second : NowMs();
-  if (!activation::NoteHistoryEntry(record_, started_ms) || from_id == 0) {
+  if (!activation::NoteHistoryEntry(record_, started_ms.value_or(NowMs())) ||
+      from_id == 0) {
     return;
   }
   if (skippable_entries_.size() >= kMaxSkippableEntries) {

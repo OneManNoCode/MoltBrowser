@@ -149,10 +149,21 @@ GestureBinding DraftSitesBinding(std::string_view workflow_id,
 
 // A prompt that waits for its word.
 struct GesturePrompt {
+  GesturePrompt();
+  ~GesturePrompt();
+  GesturePrompt(const GesturePrompt&);
+  GesturePrompt& operator=(const GesturePrompt&);
+  GesturePrompt(GesturePrompt&&);
+  GesturePrompt& operator=(GesturePrompt&&);
+
   int id = 0;
   std::string word;
   GestureBinding binding;
   int64_t expires_ms = 0;
+  // The words this prompt had before (Begin() for the same binding while
+  // it waited replaced them: a word retired, voice_gesture_channel.h).
+  // Hearing one is neither the word nor a miss.
+  std::vector<std::string> retired;
 };
 
 // Where what was heard came from (voice_session_logic.h fills it; typed
@@ -183,6 +194,7 @@ enum class HearResult : uint8_t {
   kNotAWord,   // no confirmation word: the prompt still waits
   kNoPrompt,   // no such prompt waits (answered, expired, cancelled)
   kLockedOut,  // the gesture is off for now
+  kRetired,    // a word this prompt had before: it changed, say the new one
 };
 
 std::string_view HearResultName(HearResult result);
@@ -199,13 +211,15 @@ class GestureBook {
 
   // A new prompt for |binding|, with a fresh word; nullopt while the gesture
   // is locked out. A prompt with the same binding that still waits is
-  // replaced.
+  // replaced, and its words are the new one's retired words (a word retired
+  // because something may have heard or seen it: the prompt is begun again
+  // with a new word).
   std::optional<GesturePrompt> Begin(GestureBinding binding, int64_t now_ms);
 
   // |heard| while prompt |id| waits. kMinted fills |gesture| and closes the
   // prompt; kWrongWord (another word, heard cleanly and for sure) closes it
-  // too and counts toward the lockout. kUnsure, kNotClean and kNotAWord
-  // leave it waiting.
+  // too and counts toward the lockout. kUnsure, kNotClean, kRetired (one of
+  // its retired words, for sure) and kNotAWord leave it waiting.
   HearResult Hear(int id,
                   std::string_view heard,
                   const HeardEvidence& evidence,
@@ -227,7 +241,8 @@ class GestureBook {
   bool LockedOut(int64_t now_ms) const;
 
  private:
-  std::string PickWord();
+  // Never a recent word, nor one of |retired|.
+  std::string PickWord(const std::vector<std::string>& retired);
   void Expire(int64_t now_ms);
 
   std::function<uint64_t()> random_;

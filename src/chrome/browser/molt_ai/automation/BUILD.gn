@@ -27,8 +27,6 @@ source_set("automation") {
     "automation_scheduler_factory.h",
     "automation_scheduler_service.cc",
     "automation_scheduler_service.h",
-    "automation_storage.cc",
-    "automation_storage.h",
   ]
 
   # automation_notification.cc is a single cross-platform implementation
@@ -86,8 +84,28 @@ source_set("automation") {
     ":ai_steps",
     ":automation_policy",
     ":run_questions",
+    ":storage",
     ":tool_steps",
     "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# The .molt files on disk (automation_storage.h): the shared storage in
+# ~/.moltbrowser/automations/, or one of its own in a directory (a
+# profile's voice routines, molt_ai/voice/voice_routine_store.h). base
+# only, so molt_ai_unittests links it.
+source_set("storage") {
+  sources = [
+    "automation_storage.cc",
+    "automation_storage.h",
+  ]
+
+  # ScopedAllowBlockingForMolt (molt_blocking_scope.h).
+  deps = [ "//chrome/browser/molt_ai/common" ]
+
+  public_deps = [
+    ":automation_policy",
+    "//base",
   ]
 }
 
@@ -210,6 +228,7 @@ source_set("unit_tests") {
     "automation_locators_unittest.cc",
     "automation_script_unittest.cc",
     "automation_security_unittest.cc",
+    "automation_storage_unittest.cc",
     "automation_tool_steps_unittest.cc",
     "run_questions_unittest.cc",
   ]
@@ -219,6 +238,7 @@ source_set("unit_tests") {
     ":automation_policy",
     ":locators",
     ":run_questions",
+    ":storage",
     ":tool_steps",
     "//base",
 

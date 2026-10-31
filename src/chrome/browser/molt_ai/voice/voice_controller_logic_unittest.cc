@@ -1451,6 +1451,61 @@ TEST(VoiceControllerLogicTest, APermissionPromptRefusedOrLeft) {
             "keyboard, or say no.");
 }
 
+// The word's channel (voice_gesture_channel.h): what is said with the word
+// is kept with its twin without it, so the glue says the twin wherever the
+// word can't be said, "repeat" included.
+TEST(VoiceControllerLogicTest, WhatIsSaidWithTheWordKeepsItsTwin) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  VoiceTurn turn =
+      PlanBrowserPrompt(18, Permission(), "harbor", c.env(), c.state());
+  c.state() = turn.state;
+  const std::string said = Said(turn);
+  const std::string* twin = WordTextTwin(c.state().prompt, said);
+  ASSERT_TRUE(twin);
+  EXPECT_EQ(*twin,
+            "maps.example wants to use your location. To allow it, say the "
+            "word on your screen. To block it, say no.");
+  // "yes": the word again, with its twin.
+  turn = c.Say("yes");
+  EXPECT_EQ(Said(turn), "To allow it, say harbor.");
+  twin = WordTextTwin(c.state().prompt, Said(turn));
+  ASSERT_TRUE(twin);
+  EXPECT_EQ(*twin, "To allow it, say the word on your screen.");
+  // "repeat" says what was said, which the glue finds again.
+  turn = c.Say("repeat");
+  EXPECT_EQ(Said(turn), "To allow it, say harbor.");
+  EXPECT_TRUE(WordTextTwin(c.state().prompt, Said(turn)));
+  // The prompt gone, nothing holds a word.
+  c.state() = PlanBrowserPromptGone(18, "", c.env(), c.state()).state;
+  EXPECT_EQ(WordTextTwin(c.state().prompt, "To allow it, say harbor."),
+            nullptr);
+  // A prompt without a word keeps nothing.
+  turn = PlanBrowserPrompt(19, Permission(), "", c.env(), c.state());
+  c.state() = turn.state;
+  EXPECT_TRUE(c.state().prompt.word_texts.empty());
+}
+
+TEST(VoiceControllerLogicTest, NoWordWhileTheScreenIsShared) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  BrowserPrompt prompt = Permission();
+  prompt.screen_shared = true;
+  VoiceTurn turn = PlanBrowserPrompt(20, prompt, "", c.env(), c.state());
+  c.state() = turn.state;
+  EXPECT_EQ(Said(turn),
+            "maps.example wants to use your location. I can't take the word "
+            "while your screen is shared, so to allow it, use the mouse or "
+            "keyboard. To block it, say no.");
+  // A word of the list, or yes: it can't allow it, and says why.
+  turn = c.Say("harbor");
+  EXPECT_TRUE(Actions(turn).empty());
+  EXPECT_EQ(Said(turn),
+            "I can't take the word while your screen is shared. Use the mouse "
+            "or keyboard, or say no.");
+  // No still blocks.
+  turn = c.Say("no");
+  EXPECT_EQ(Find(turn, K::kPromptAnswer)->prompt_answer, PromptAnswer::kRefuse);
+}
+
 TEST(VoiceControllerLogicTest, APromptTakesTheFloorFromTheLoopsQuestion) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   c.state() = PlanPageRequestQuestion(3, "The page tried to open a new window.",
@@ -1599,6 +1654,26 @@ TEST(VoiceControllerLogicTest, DownloadsAndPasswordsByVoice) {
                   .state;
   turn = c.Say("never");
   EXPECT_EQ(Find(turn, K::kPromptAnswer)->prompt_answer, PromptAnswer::kRefuse);
+}
+
+// What the browser says while steps wait for a page (the guard's question,
+// a prompt read by voice, a routine's step) is speaking: the listening
+// session must know it as the browser's own voice.
+TEST(VoiceControllerLogicTest, SpeakingWinsOverWaiting) {
+  for (bool waiting : {false, true}) {
+    for (bool busy : {false, true}) {
+      EXPECT_EQ(
+          DecideLoopActivity(/*active=*/true, /*speaking=*/true, waiting, busy),
+          LoopActivity::kSpeaking);
+    }
+  }
+  EXPECT_EQ(DecideLoopActivity(true, false, true, false),
+            LoopActivity::kThinking);
+  EXPECT_EQ(DecideLoopActivity(true, false, false, true),
+            LoopActivity::kThinking);
+  EXPECT_EQ(DecideLoopActivity(true, false, false, false),
+            LoopActivity::kListening);
+  EXPECT_EQ(DecideLoopActivity(false, false, false, false), LoopActivity::kOff);
 }
 
 }  // namespace

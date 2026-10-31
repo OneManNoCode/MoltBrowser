@@ -11,11 +11,21 @@
 #ifndef CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_SETTINGS_SWITCH_H_
 #define CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_SETTINGS_SWITCH_H_
 
+#include <optional>
+
+#include "base/values.h"
+
 namespace molt_ai::web_ai {
 
 inline constexpr char kWebAIApisSettingsKey[] = "web_ai_apis";
 
-// Blocking (file I/O). True unless settings.json says false.
+// The switch in |settings| as ReadMoltSettings() returns them (an empty
+// dictionary for a missing file): true unless they say false. A file that
+// exists but can't be read (nullopt: not a JSON object, over the size cap)
+// leaves the APIs off until it is fixed, never on by default.
+bool WebAIApisSwitchFrom(const std::optional<base::DictValue>& settings);
+
+// Blocking (file I/O): WebAIApisSwitchFrom(ReadMoltSettings()).
 bool ReadWebAIApisSwitch();
 
 // Blocking (file I/O), on MoltSettingsFileTaskRunner()

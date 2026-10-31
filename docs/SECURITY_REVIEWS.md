@@ -4,6 +4,109 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-31: round 42 (October 2026)
+
+**Scope.** The code of round 42, which each of its four workstreams had
+reviewed only on its own side; the places where they meet were looked at
+first:
+
+1. The listener's audio clock and the listening session's new rules
+   (`voice_listener*`, `voice_listener_protocol*`'s `HelperAudioClock`,
+   `voice_session*`): the helper's `audio_ms` against what the browser sent
+   it (late, negative or wrapped lags, an epoch reset, audio never sent, a
+   helper restarted), voice mode's own voice where the microphone has no
+   echo canceller (its edges: the second after, a voice helper that
+   restarts, the platform's voice taking over), and the browser's own
+   words kept for as long as it speaks.
+2. `~/.moltbrowser/settings.json`'s one writer (`common/molt_settings_file*`
+   and its five writers): changes made outside its sequence, a symlinked or
+   hard-linked file or directory, the read cap, and what molt://ai-settings'
+   Save and Reset write for their page.
+3. The browser's prompts by voice: a risky download kept through the
+   download bubble's controller and without one, the password page
+   action's observer (its lifetime, a tab switch, another tab's bubble),
+   and the confirmation word heard "for sure" (a guesser's tries, and
+   whether the prompt's own word decides it).
+4. The on-device planner's steps in routines (`voice_routines*`,
+   `voice_learning_loop.cc`, `agents/voice_agent_replay.*`,
+   `WebAgent::SetReplayPicker()`): what a hostile page's labels put into a
+   saved routine, the secret checks, the replay picker's reply against
+   page names (quoting, the reply's format, names that fold together), and
+   the site binding (a step changed within the confirmed sites, a click
+   that navigates elsewhere mid-replay, drafts and the trust clamp).
+5. Questions about the page (`page_questions*`, `voice_page_questions*`,
+   `kAskPage`): the untrusted fence and the runtime's middle cut of a long
+   message, the answer's wake phrase filter (punctuation, words run
+   together, spelled forms, look-alike and invisible characters, an answer
+   read in pieces), what a page can make the browser say after "The page
+   says", the scorer's cost on hostile text, the time limit, cancellation
+   and request ids, and the answer read as page text.
+6. Round 41's fixes: a site said from its end (IDNs, IP literals, a final
+   dot), the trust clamp on saves, how long a text takes to say for
+   scripts the weights don't name, and when a navigation began
+   (renderer-initiated, same-document, redirected).
+
+**Method.** Each candidate traced from its attacker (a web page or the
+frames it embeds, the page text the on-device model answers from, a
+speech or voice helper a hostile input took over, the page of
+molt://ai-settings, a file in the settings directory) through MoltBrowser's
+code and the upstream Chromium 156 code at the pinned revision (the
+download bubble's controller, the embedded test server's handlers). The
+answer filter was probed with the voice's own text front end
+(`voice_said_aloud.h`) to compare what is written with what is said. Fixes
+tested with the std-only unit tests built standalone (system gtest, ASan
+and UBSan), the settings file's tests on the `//base` stand-ins, the page
+questions, voice controller, prompts and learning fuzzers, and
+`molt_fuzz.py check`; the changed C++ was compiled against Chromium 156's
+headers; the browser test runs on the build machine.
+
+**Findings.** 15: 5 low and 10 informational (defence in depth,
+usability, or what later phases of the design cover). Fixed: the five
+low and one of the informational; the others are tracked privately.
+
+**Fixed.**
+
+- molt://ai-settings' Save writes only the settings its form shows, each
+  with a value of its kind; the switches other sections change (voice
+  mode's, which take a real click, and the built-in AI APIs') are left as
+  they are (`common/molt_settings_file.cc`'s `MergeMoltSettingsForm()`).
+- A change that would make `settings.json` bigger than its read cap is
+  refused and the file left as it was: such a file would be refused by
+  every reader and every later change (`UpdateMoltSettingsFileAt()`).
+- An answer about the page that holds voice mode's wake phrase run into
+  one word ("HeyMolt", which a voice says as two), after "O.K." (said
+  "okay"), or written with Greek or Cyrillic letters that look like Latin
+  ones isn't said (`voice/page_questions.cc`'s `HoldsWakePhrase()`).
+- When a navigation began is remembered for the tab's main frame however
+  many navigations its frames start: a page that kept its frames
+  navigating could make the page a voice click led to count from when it
+  committed, and "go back" then skipped the user's page
+  (`security/activation_policy.cc`'s `NavigationStarts`).
+- Voice mode counts as speaking whenever its voice plays or a reading
+  holds the floor, also while its steps wait for a page or a submission:
+  what it says then (the activation guard's question, a prompt, a
+  routine's step) reaches the listening session as the browser's own
+  voice (`voice/voice_controller_logic.cc`'s `DecideLoopActivity()`).
+- The built-in AI APIs stay off while `settings.json` exists but can't be
+  read, instead of falling back to on (`web_ai/web_ai_settings_switch.cc`'s
+  `WebAIApisSwitchFrom()`, used by both of its readers).
+
+**Tests added.**
+
+- `molt_settings_file_unittest.cc`: a change too big to read back is
+  refused and later ones still work; a form writes only its own fields,
+  of their kinds.
+- `page_questions_unittest.cc`: the wake phrase run together and with
+  look-alike letters is found; words that only begin like a greeting
+  aren't.
+- `activation_policy_unittest.cc`: navigation starts keep the main
+  frame's. `activation_guard_browsertest.cc`: "go back" from a slowly
+  served page returns to the user's page while the user's page keeps its
+  frames navigating.
+- `voice_controller_logic_unittest.cc`: speaking wins over waiting.
+  `web_ai_settings_switch_unittest.cc`: a settings file that can't be read
+  leaves the built-in AI APIs off.
+
 ## 2026-10-30: round 41 (October 2026)
 
 **Scope.** The code of round 41, which each of its four workstreams had

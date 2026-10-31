@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -17,20 +18,13 @@
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
-#include "chrome/browser/molt_ai/automation/automation_security.h"
-#include "chrome/browser/molt_ai/automation/automation_storage.h"
-#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
-#include "chrome/browser/molt_ai/voice/voice_routines.h"
+#include "chrome/browser/molt_ai/voice/voice_routine_store.h"
 #include "chrome/browser/profiles/profile.h"
 
 namespace molt_ai {
 namespace voice {
 
 namespace {
-
-using automation::AutomationSecurity;
-using automation::AutomationStorage;
-using automation::Script;
 
 // The profile's user data key.
 const char kUserDataKey[] = "MoltVoiceLearning";
@@ -63,198 +57,78 @@ void WriteLearningFile(const base::FilePath& path, const std::string& json) {
   }
 }
 
-// The automation storage, at |root| when tests set one.
-std::unique_ptr<AutomationStorage> Storage(const base::FilePath& root) {
-  auto storage = std::make_unique<AutomationStorage>();
-  if (!root.empty()) {
-    storage->SetRootForTesting(root);
-  }
-  return storage;
-}
-
-// The voice routines in storage (blocking).
-std::vector<Script> VoiceRoutines(AutomationStorage& storage) {
-  std::vector<Script> routines;
-  for (Script& script : storage.ListAll()) {
-    if (automation::HasVoiceSteps(script)) {
-      routines.push_back(std::move(script));
-    }
-  }
-  return routines;
-}
-
-std::vector<RoutineSummary> ListVoiceRoutines(const base::FilePath& root) {
-  base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  std::vector<RoutineSummary> out;
-  std::unique_ptr<AutomationStorage> storage = Storage(root);
-  for (const Script& script : VoiceRoutines(*storage)) {
-    RoutineSummary summary;
-    summary.id = script.id;
-    summary.name = script.name;
-    summary.steps = static_cast<int>(script.steps.size());
-    summary.needs_sites_confirmed = !RoutineSitesConfirmed(script);
-    out.push_back(std::move(summary));
-  }
-  return out;
-}
-
-// The voice routine |name| names (or with id |id|), from |routines|.
-const Script* FindRoutine(const std::vector<Script>& routines,
-                          const std::string& name,
-                          const std::string& id) {
-  std::vector<std::string> names;
-  for (const Script& script : routines) {
-    if (!id.empty() && script.id == id) {
-      return &script;
-    }
-    names.push_back(script.name);
-  }
-  if (name.empty()) {
-    return nullptr;
-  }
-  const std::string* found = FindRoutineName(names, name);
-  for (const Script& script : routines) {
-    if (found && script.name == *found) {
-      return &script;
-    }
-  }
-  return nullptr;
-}
-
-struct SaveResult {
-  bool saved = false;
-  std::string said;
-  // A draft's sites (the planner's steps), to confirm before it runs.
-  std::vector<std::string> sites;
+// The blocking parts run on the learning's sequence, each with a store of
+// the profile's routines and the shared storage (|shared_root| when tests
+// set one).
+struct Listed {
+  std::vector<RoutineSummary> routines;
+  std::vector<RoutineSummary> unclaimed;
 };
 
-SaveResult Refused(std::string said) {
-  SaveResult result;
-  result.said = std::move(said);
-  return result;
+Listed ListBlocking(const base::FilePath& routines_dir,
+                    const base::FilePath& shared_root) {
+  base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
+  VoiceRoutineStore store(routines_dir, shared_root);
+  Listed listed;
+  listed.routines = store.Summaries();
+  listed.unclaimed = store.Unclaimed();
+  return listed;
 }
 
-SaveResult SaveRoutineBlocking(const base::FilePath& root,
+RoutineSaveResult SaveBlocking(const base::FilePath& routines_dir,
+                               const base::FilePath& shared_root,
                                const std::string& id,
                                const std::string& name,
-                               const std::vector<RoutineStep>& steps) {
+                               const std::vector<RoutineStep>& steps,
+                               bool replace) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  std::unique_ptr<AutomationStorage> storage = Storage(root);
-  if (FindRoutine(VoiceRoutines(*storage), name, std::string())) {
-    return Refused("You already have a routine called " + name + ".");
-  }
-  BuiltRoutine built = BuildRoutine(id, name, steps, NowUnix());
-  if (!built.script) {
-    return Refused(built.refusal);
-  }
-  if (!storage->Save(*built.script)) {
-    return Refused("I couldn't save it.");
-  }
-  storage->AppendAudit(id, "voice_routine_saved",
-                       built.script->security.sites_unconfirmed
-                           ? "draft: the planner's steps"
-                           : "");
-  if (built.script->security.trust == automation::TrustLevel::APPROVED) {
-    storage->AppendAudit(id, "trust_changed",
-                         "casual -> approved (taught by voice)");
-  }
-  SaveResult result;
-  result.saved = true;
-  if (built.script->security.sites_unconfirmed) {
-    result.sites = AutomationSecurity::HostsReferencedBy(built.script->steps);
-  }
-  return result;
+  VoiceRoutineStore store(routines_dir, shared_root);
+  return store.Save(id, name, steps, replace, NowUnix());
 }
 
-std::optional<RoutineToRun> LoadRoutineBlocking(const base::FilePath& root,
-                                                const std::string& name,
-                                                const std::string& id) {
+std::optional<RoutineToRun> LoadBlocking(const base::FilePath& routines_dir,
+                                         const base::FilePath& shared_root,
+                                         const std::string& name,
+                                         const std::string& id) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  std::unique_ptr<AutomationStorage> storage = Storage(root);
-  std::vector<Script> routines = VoiceRoutines(*storage);
-  const Script* found = FindRoutine(routines, name, id);
-  Script* script = nullptr;
-  for (Script& routine : routines) {
-    if (&routine == found) {
-      script = &routine;
-    }
-  }
-  if (!script) {
-    return std::nullopt;
-  }
-  // Its steps use other sites than the ones confirmed (a step added or
-  // changed in the file): a draft again, confirmed again before it runs.
-  if (UnconfirmChangedRoutine(*script) && storage->Save(*script)) {
-    storage->AppendAudit(script->id, "draft_sites_unconfirmed",
-                         "its steps use other sites");
-  }
-  RoutineToRun run;
-  run.id = script->id;
-  run.name = script->name;
-  ReadRoutineResult read = ReadRoutine(*script);
-  run.ok = read.ok;
-  run.why = read.why;
-  run.steps = std::move(read.steps);
-  run.needs_sites_confirmed = read.needs_sites_confirmed;
-  run.policy = AutomationSecurity::EffectivePolicy(*script);
-  run.sites = AutomationSecurity::HostsReferencedBy(script->steps);
-  return run;
+  VoiceRoutineStore store(routines_dir, shared_root);
+  return store.Load(name, id);
 }
 
-bool DeleteRoutineBlocking(const base::FilePath& root,
-                           const std::string& name,
-                           const std::string& id) {
+bool DeleteBlocking(const base::FilePath& routines_dir,
+                    const base::FilePath& shared_root,
+                    const std::string& name,
+                    const std::string& id) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  std::unique_ptr<AutomationStorage> storage = Storage(root);
-  const std::vector<Script> routines = VoiceRoutines(*storage);
-  const Script* script = FindRoutine(routines, name, id);
-  if (!script) {
-    return false;
-  }
-  const std::string found = script->id;
-  if (!storage->Delete(found)) {
-    return false;
-  }
-  storage->AppendAudit(found, "voice_routine_deleted", "");
-  return true;
+  VoiceRoutineStore store(routines_dir, shared_root);
+  return store.Delete(name, id);
 }
 
-bool ConfirmSitesBlocking(const base::FilePath& root,
+bool ConfirmSitesBlocking(const base::FilePath& routines_dir,
+                          const base::FilePath& shared_root,
                           const std::string& id,
                           const std::vector<std::string>& sites) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  std::unique_ptr<AutomationStorage> storage = Storage(root);
-  std::optional<Script> script = storage->Load(id);
-  if (!script || !automation::HasVoiceSteps(*script) ||
-      !AutomationSecurity::ConfirmDraftSites(*script, sites) ||
-      !storage->Save(*script)) {
-    return false;
-  }
-  std::string list;
-  for (const std::string& host : script->security.domain_whitelist) {
-    list += (list.empty() ? "" : " ") + host;
-  }
-  storage->AppendAudit(id, "draft_sites_confirmed", list + " (by voice)");
-  return true;
+  VoiceRoutineStore store(routines_dir, shared_root);
+  return store.ConfirmSites(id, sites);
 }
 
-void DeleteAllRoutinesBlocking(const base::FilePath& root) {
+void DeleteAllBlocking(const base::FilePath& routines_dir,
+                       const base::FilePath& shared_root) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  std::unique_ptr<AutomationStorage> storage = Storage(root);
-  for (const Script& script : VoiceRoutines(*storage)) {
-    if (storage->Delete(script.id)) {
-      storage->AppendAudit(script.id, "voice_routine_deleted",
-                           "forget everything");
-    }
-  }
+  VoiceRoutineStore store(routines_dir, shared_root);
+  store.DeleteAll();
+}
+
+ClaimResult ClaimBlocking(const base::FilePath& routines_dir,
+                          const base::FilePath& shared_root,
+                          const std::vector<std::string>& ids) {
+  base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
+  VoiceRoutineStore store(routines_dir, shared_root);
+  return store.Claim(ids);
 }
 
 }  // namespace
-
-RoutineToRun::RoutineToRun() = default;
-RoutineToRun::~RoutineToRun() = default;
-RoutineToRun::RoutineToRun(RoutineToRun&&) = default;
-RoutineToRun& RoutineToRun::operator=(RoutineToRun&&) = default;
 
 // static
 VoiceLearning* VoiceLearning::Get(Profile* profile) {
@@ -275,6 +149,7 @@ VoiceLearning* VoiceLearning::Get(Profile* profile) {
 
 VoiceLearning::VoiceLearning(Profile* profile)
     : path_(profile->GetPath().AppendASCII(kVoiceLearningFileName)),
+      routines_dir_(VoiceRoutinesDir(profile->GetPath())),
       task_runner_(base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
            base::TaskShutdownBehavior::BLOCK_SHUTDOWN})) {
@@ -404,27 +279,28 @@ void VoiceLearning::ForgetEverything(base::OnceClosure done) {
   data_.hints.Clear();
   Changed();
   task_runner_->PostTaskAndReply(
-      FROM_HERE, base::BindOnce(&DeleteAllRoutinesBlocking, automations_root_),
+      FROM_HERE,
+      base::BindOnce(&DeleteAllBlocking, routines_dir_, automations_root_),
       base::BindOnce(&VoiceLearning::RefreshRoutinesThen,
                      weak_factory_.GetWeakPtr(), std::move(done)));
 }
 
 void VoiceLearning::SaveRoutine(std::string name,
                                 std::vector<RoutineStep> steps,
+                                bool replace,
                                 SavedCallback done) {
   const std::string id = "voice_" + base::NumberToString(NowUnix()) + "_" +
                          base::NumberToString(++saves_);
   task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&SaveRoutineBlocking, automations_root_, id,
-                     std::move(name), std::move(steps)),
+      base::BindOnce(&SaveBlocking, routines_dir_, automations_root_, id,
+                     std::move(name), std::move(steps), replace),
       base::BindOnce(
           [](base::WeakPtr<VoiceLearning> self, SavedCallback done,
-             SaveResult result) {
+             RoutineSaveResult result) {
             if (self) {
-              self->RefreshRoutinesThen(base::BindOnce(
-                  std::move(done), result.saved, std::move(result.said),
-                  std::move(result.sites)));
+              self->RefreshRoutinesThen(
+                  base::BindOnce(std::move(done), std::move(result)));
             }
           },
           weak_factory_.GetWeakPtr(), std::move(done)));
@@ -436,8 +312,8 @@ void VoiceLearning::LoadRoutine(
     base::OnceCallback<void(std::optional<RoutineToRun>)> done) {
   task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&LoadRoutineBlocking, automations_root_, std::move(name),
-                     std::move(id)),
+      base::BindOnce(&LoadBlocking, routines_dir_, automations_root_,
+                     std::move(name), std::move(id)),
       std::move(done));
 }
 
@@ -446,7 +322,7 @@ void VoiceLearning::DeleteRoutine(std::string name,
                                   base::OnceCallback<void(bool)> done) {
   task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&DeleteRoutineBlocking, automations_root_,
+      base::BindOnce(&DeleteBlocking, routines_dir_, automations_root_,
                      std::move(name), std::move(id)),
       base::BindOnce(
           [](base::WeakPtr<VoiceLearning> self,
@@ -464,8 +340,8 @@ void VoiceLearning::ConfirmRoutineSites(std::string id,
                                         base::OnceCallback<void(bool)> done) {
   task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&ConfirmSitesBlocking, automations_root_, std::move(id),
-                     std::move(sites)),
+      base::BindOnce(&ConfirmSitesBlocking, routines_dir_, automations_root_,
+                     std::move(id), std::move(sites)),
       base::BindOnce(
           [](base::WeakPtr<VoiceLearning> self,
              base::OnceCallback<void(bool)> done, bool confirmed) {
@@ -483,16 +359,98 @@ void VoiceLearning::RefreshRoutines() {
 
 void VoiceLearning::RefreshRoutinesThen(base::OnceClosure done) {
   task_runner_->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(&ListVoiceRoutines, automations_root_),
-      base::BindOnce(&VoiceLearning::OnRoutines, weak_factory_.GetWeakPtr(),
-                     std::move(done)));
+      FROM_HERE,
+      base::BindOnce(&ListBlocking, routines_dir_, automations_root_),
+      base::BindOnce(
+          [](base::WeakPtr<VoiceLearning> self, base::OnceClosure done,
+             Listed listed) {
+            if (self) {
+              self->OnRoutines(std::move(done), std::move(listed.routines),
+                               std::move(listed.unclaimed));
+            }
+          },
+          weak_factory_.GetWeakPtr(), std::move(done)));
 }
 
 void VoiceLearning::OnRoutines(base::OnceClosure done,
-                               std::vector<RoutineSummary> routines) {
+                               std::vector<RoutineSummary> routines,
+                               std::vector<RoutineSummary> unclaimed) {
   routines_ = std::move(routines);
+  all_unclaimed_ = std::move(unclaimed);
+  FilterUnclaimed();
   changed_callbacks_.Notify();
   std::move(done).Run();
+}
+
+void VoiceLearning::FilterUnclaimed() {
+  std::vector<RoutineSummary> offered;
+  size_t declined = 0;
+  for (const RoutineSummary& routine : all_unclaimed_) {
+    if (Declined(routine.id)) {
+      ++declined;
+    } else {
+      offered.push_back(routine);
+    }
+  }
+  // Another set of routines (or of names): a "yes" given to the question
+  // about the old set keeps nothing.
+  auto same = [](const RoutineSummary& a, const RoutineSummary& b) {
+    return a.id == b.id && a.name == b.name;
+  };
+  if (offered.size() != unclaimed_.size() ||
+      !std::equal(offered.begin(), offered.end(), unclaimed_.begin(), same)) {
+    ++unclaimed_version_;
+  }
+  unclaimed_ = std::move(offered);
+  declined_listed_ = declined;
+}
+
+bool VoiceLearning::Declined(const std::string& id) const {
+  const std::vector<std::string>& declined = data_.declined_routines;
+  return std::find(declined.begin(), declined.end(), id) != declined.end();
+}
+
+void VoiceLearning::ClaimRoutines(std::vector<std::string> ids,
+                                  base::OnceCallback<void(ClaimResult)> done) {
+  task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&ClaimBlocking, routines_dir_, automations_root_,
+                     std::move(ids)),
+      base::BindOnce(
+          [](base::WeakPtr<VoiceLearning> self,
+             base::OnceCallback<void(ClaimResult)> done, ClaimResult result) {
+            if (self) {
+              self->RefreshRoutinesThen(
+                  base::BindOnce(std::move(done), std::move(result)));
+            }
+          },
+          weak_factory_.GetWeakPtr(), std::move(done)));
+}
+
+void VoiceLearning::DeclineRoutines(const std::vector<std::string>& ids) {
+  if (!loaded_) {
+    WhenLoaded(base::BindOnce(&VoiceLearning::DeclineRoutines,
+                              weak_factory_.GetWeakPtr(), ids));
+    return;
+  }
+  if (AddDeclinedRoutines(data_.declined_routines, ids)) {
+    FilterUnclaimed();
+    Changed();
+  }
+}
+
+void VoiceLearning::UndeclineRoutines() {
+  if (!loaded_) {
+    WhenLoaded(base::BindOnce(&VoiceLearning::UndeclineRoutines,
+                              weak_factory_.GetWeakPtr()));
+    return;
+  }
+  if (data_.declined_routines.empty()) {
+    return;
+  }
+  data_.declined_routines.clear();
+  FilterUnclaimed();
+  Changed();
 }
 
 base::CallbackListSubscription VoiceLearning::AddChangedCallback(

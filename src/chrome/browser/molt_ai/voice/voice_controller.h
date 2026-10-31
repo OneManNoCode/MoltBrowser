@@ -64,7 +64,12 @@
 // prompts, alert(), confirm(), prompt(), beforeunload, dangerous downloads
 // and the password bubble on the attached tab are read and answered by
 // voice; allowing a permission or keeping a dangerous file takes the
-// prompt's confirmation word, heard cleanly (HandleHeardUtterance()).
+// prompt's confirmation word, heard cleanly (HandleHeardUtterance()). What
+// is said with the word goes out through Say(), which says it only where
+// the word may be said now (voice_gesture_channel.h: through voice mode's
+// own voice alone, VoiceSpeech::SpeakPrivately()) and its twin without the
+// word otherwise; observers only ever get the twin, and the caption bar
+// shows the word itself while it may be shown.
 //
 // The window owns nothing of it: the controller is created on first use
 // and deletes itself when the window closes. The agent side panel's voice
@@ -251,9 +256,22 @@ class VoiceController : public VoicePlanner::Delegate,
   // "I can't use the microphone") and shows it as the status.
   void SayNotice(const std::string& text);
 
+  // The language voice mode understands and speaks in this window
+  // (voice_language.h): the setting's, read when the window's voice mode is
+  // made, else the browser's own language when voice mode has it, else
+  // English. SetLanguageForAll() is the setting changing.
+  Language language() const { return language_; }
+  void SetLanguage(Language language);
+  static void SetLanguageForAll(Language language);
+
   // The listening side's part of the caption, and whether it listens
   // (VoiceEnvironment::listening).
   void SetListening(ListeningCaption caption);
+
+  // What the listening side knows of the voice gesture word's channel
+  // (voice_gesture_channel.h): whether the microphone has an echo
+  // canceller, and the setting to say the word aloud anyway.
+  void SetWordChannelSettings(bool echo_cancelled, bool say_aloud_anyway);
 
   // The numbers overlay shows numbers without "show numbers" being said
   // (on by default in voice mode, §5.3): lists are then read, and numbers
@@ -384,6 +402,13 @@ class VoiceController : public VoicePlanner::Delegate,
                          const std::string& word) override;
   void EndBrowserPrompt(int id, const std::string& said) override;
   void SayAboutBrowserPrompt(const std::string& text) override;
+  void SayWordAboutBrowserPrompt(const WordText& text) override;
+  WordChannelInputs WordChannelInputsNow() override;
+  void WordChannelChanged() override;
+
+  // Says what holds the waiting prompt's word: |text|.said where the word
+  // may be said now, else its twin; observers get the twin.
+  void SayWordText(const WordText& text);
 
   // VoicePlanner::Delegate:
   void PlannerSays(const std::string& text) override;
@@ -442,6 +467,8 @@ class VoiceController : public VoicePlanner::Delegate,
   base::TimeTicks last_commit_;
 
   ConversationState state_;
+  // The window's language (SetLanguage()).
+  Language language_ = Language::kEnglish;
   std::deque<VoiceStep> pending_;
   // The run the steps belong to: a new utterance or a stop starts another,
   // and callbacks of an earlier run are dropped.
@@ -477,6 +504,9 @@ class VoiceController : public VoicePlanner::Delegate,
   // The browser's prompts on the attached tab, and how the utterance being
   // carried out was heard (for the confirmation word).
   std::unique_ptr<VoiceBrowserPrompts> prompts_;
+  // The word's channel, as the listening side reports it.
+  bool word_echo_cancelled_ = false;
+  bool say_word_aloud_ = false;
   HeardEvidence heard_evidence_;
   HeardEvidence next_evidence_;
   base::ObserverList<Observer> observers_;

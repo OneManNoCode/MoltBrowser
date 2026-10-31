@@ -49,6 +49,10 @@ std::string SpokenDuration(int seconds);
 // An exact length for a skip: "10 seconds", "1 minute 30 seconds".
 std::string SpokenLength(int seconds);
 
+// The same in |language| ("6 minutos", "1 minuto 30 segundos").
+std::string SpokenDuration(int seconds, Language language);
+std::string SpokenLength(int seconds, Language language);
+
 // A count as the page shows it ("2.1B views") said in words ("2.1 billion
 // views"); the text as it is when it isn't a count.
 std::string SpokenCount(std::string_view text);
@@ -77,13 +81,23 @@ std::vector<std::string> ListSpeech(const CandidateSet& set,
                                     std::string_view many,
                                     Verbosity verbosity,
                                     size_t normal_count);
+// The same in |language| (its hint; |one| and |many| are the caller's).
+std::vector<std::string> ListSpeech(const CandidateSet& set,
+                                    std::string_view one,
+                                    std::string_view many,
+                                    Verbosity verbosity,
+                                    size_t normal_count,
+                                    Language language);
 
 // The close choices after an unclear choice: "Did you mean 1: ..., 2:
 // ..., or 3: ...? Say a number or a name."
 std::vector<std::string> OfferSpeech(const CandidateSet& subset);
+std::vector<std::string> OfferSpeech(const CandidateSet& subset,
+                                     Language language);
 
 // "Say a number or a name."
 std::string_view ChooseHint();
+std::string_view ChooseHint(Language language);
 
 // |text| as page text inside a sentence: cleaned and capped at
 // kMaxSpokenPageTextChars.

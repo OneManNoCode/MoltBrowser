@@ -22,8 +22,9 @@
 //     (voice_routines.h's RoutineStepForPlanner()); one a routine can't
 //     repeat is a gap, and while "Learn from what I say" is off every such
 //     step is one.
-//   - RunStep(): a kLearning step: save, run or forget a routine, forget a
-//     word or everything.
+//   - RunStep(): a kLearning step: save (or replace), run or forget a
+//     routine, keep the routines from before profiles here or leave them
+//     for another profile, forget a word or everything.
 //
 // A routine runs through the loop's own steps, one command at a time:
 // each step is said as it starts ("Step 2: search for news."), planned
@@ -166,7 +167,11 @@ class VoiceLearningLoop {
   void NoteNames(const VoiceCommand& command, const VoiceTurn& turn);
   void CommitSiteParts();
 
-  void SaveRoutine(const std::string& name, int version);
+  void SaveRoutine(const std::string& name, int version, bool replace);
+  // The routines from before routines belonged to a profile that the
+  // question with |version| asked about: kept here, or declined.
+  void ClaimRoutines(int version);
+  void DeclineRoutines(int version);
   // The routine called |name|, or the one with id |id| when that isn't
   // empty (|name| is then only said).
   void RunRoutine(const std::string& name, const std::string& id);
