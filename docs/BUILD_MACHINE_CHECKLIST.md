@@ -936,6 +936,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `agents/voice_agent_planner.cc` (a step callback for `WebAgent::Start()`, `Replay()`: a `WebAgent` with `SetReplayPicker()`, `SequencedTaskRunner::PostTask` of a lambda with a `WeakPtr`), `agents/web_agent.cc` (`SetReplayPicker()`: the picker's reply posted to `OnLLMDecision()`), `agents/voice_agent_replay.cc` (new: `base::JSONWriter::Write()` of a `base::DictValue`, `GURL::host()`), `voice/voice_controller.cc` (`PlannerCarriedOut()`, `PlannerReplayed()`, `ReplayPlannerStep()`), `voice/voice_learning_loop.cc` (reads `VoiceController::planner_question_` as a friend), `voice/voice_learning.cc` (`SaveResult` through `PostTaskAndReplyWithResult`); the new GN target `agents:voice_agent_replay` (→ `automation:agent_run_draft`, `voice:voice_planner`) and the edge `voice:voice_loop` → `voice:voice_planner` | type-checked against 156's headers here (Linux, Windows); the GN graph checked statically; what only the build shows: §5.1's `VoicePlannerRoutinesBrowserTest.*` | planner-routines |
 | `voice/voice_browser_prompts.cc` (new: a `WebContentsObserver`, `permissions::PermissionRequestManager::Observer` (`Accept()`, `AcceptThisTime()`, `Deny()`, `Dismiss()` with `PromptOptions(std::monostate())`, `Requests()`, `GetRequestingOrigin()`, `PermissionRequest::request_type()`/`GetContentSettingsType()`, `PermissionUtil::DoesSupportTemporaryGrants()`), `download::AllDownloadItemNotifier::Observer` (`DownloadItemModel`, `DownloadUIModel::GetDangerUiPattern()`/`MightBeMalicious()`, `DownloadCommands(model->GetWeakPtr()).ExecuteCommand(KEEP / DISCARD)`, `content::DownloadItemUtils::GetWebContents()`) and the password bubble (`ManagePasswordsUIController::FromWebContents()`, `GetState()`, `GetPendingPassword()`, `SavePassword(username_value, password_value)`, `NeverSavePassword()`, `OnNotNowClicked()`)); `voice/voice_dialog_manager.cc` (new: a `content::JavaScriptDialogManager` and `WebContentsUserData`; `HandleJavaScriptDialog()` always with the text); the hook in `ui/browser_web_contents_delegate/browser_web_contents_delegate.cc` (`GetJavaScriptDialogManager()`); `security/activation_guard.cc` (the guards' list in a `base::NoDestructor`, `SiteInstance::IsRelatedSiteInstance()`, `NavigationHandle::DidReplaceEntry()`/`GetParentFrame()->GetPage().IsPrimary()`, `NavigationController::GetEntryAtIndex()`); `voice/voice_controller.cc` (`GoToOffset()`); the new GN edges `voice:voice_controller` → `//chrome/browser/download`, `//chrome/browser/ui/passwords`, `//components/download/content/public`, `//components/password_manager/core/{browser,common}`, and `//chrome/browser/ui/browser_web_contents_delegate` → `voice:voice_dialog_manager` | type-checked against 156's headers here (Linux and Windows); the GN graph checked statically; what only the build shows: no cycle in `gn gen` from `//chrome/browser/ui` or `//chrome/browser/download` through `voice:voice_controller`, and §5.1's browser tests | voice-gesture |
 | `common/molt_settings_file.cc` (new: `base::LazyThreadPoolSequencedTaskRunner` with `LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER`, `base::ImportantFileWriter::WriteFileAtomically()`, `base::FunctionRef`, `TaskRunner::PostTaskAndReplyWithResult()`) and its writers (`voice/voice_session_settings.cc`, `voice_reading_settings.cc`, `web_ai/web_ai_settings_switch.cc`, `ui/webui/molt_ai/molt_ai_settings_ui.cc`, `molt_voice_settings_handler.cc`, `molt_web_ai_sites_handler.cc`, `voice/voice_controller.cc`, `voice/voice_session.cc`); `voice/voice_listener.cc` (`AudioSink::Push()` takes the capture time; the sink's `HelperAudioClock` under its lock) and `voice/voice_audio.cc` (`Capture()`'s `audio_capture_time`); `voice/voice_browser_prompts.cc` (`DownloadBubbleUIController::GetForDownload()`/`ProcessDownloadButtonPress()`, `DownloadItemWarningData::AddWarningActionEvent()`, `tabs::TabInterface::GetTabFeatures()->page_action_controller()`, `page_actions::PageActionController::AddObserver(kActionShowPasswordsBubbleOrPage, base::ScopedObservation<PageActionModelInterface, PageActionModelObserver>&)`); the new GN edges `voice:voice_controller` → `//chrome/browser/download/bubble`, `//chrome/browser/ui/page_action`, `//chrome/browser/ui/actions:actions_headers`, `//chrome/browser/ui/tabs:tabs_public`, `//components/tabs:public` and `common:molt_settings_file`; `voice:voice_session`, `web_ai:web_ai` and `ui/webui/molt_ai` → `common:molt_settings_file` | type-checked against 156's headers here; the GN graph checked statically (`check`, `checkdeps`); what only the build shows: no cycle in `gn gen` from `//chrome/browser/download/bubble` or `//chrome/browser/ui/page_action` through `voice:voice_controller`, and §5.1's browser tests | voice-hardening |
+| `voice/voice_capture_watch.cc` (new: a `MediaStreamCaptureIndicator::Observer` from `MediaCaptureDevicesDispatcher::GetInstance()->GetMediaStreamCaptureIndicator()`, `IsCapturingAudio()`/`IsCapturingWindow()`/`IsCapturingDisplay()`, every page through `RenderProcessHost::AllHostsIterator()` and `ForEachRenderFrameHost()`, `WebContents::FromRenderFrameHost()`); `voice/voice_speech.cc` (`SpeakPrivately()`); `voice/voice_browser_prompts.cc`, `voice/voice_controller.cc` and `voice/voice_session.cc` (the word's channel); `ui/views/molt_ai/voice/voice_caption_bar.cc` (a bold label from `VoiceOverlayStyle::CaptionFontAt()` `DeriveWithWeight()`, `SetIsIgnored(true)`, a stroked `cc::PaintFlags` frame); `ui/webui/molt_ai/molt_voice_settings_handler.cc` and `molt_ai_settings_ui.cc` (the setting); `voice/voice_page_controller.cc` (`Intent::kPlayInPlace`); the new GN edge `voice:voice_controller` → `//chrome/browser/media/webrtc`, and the browser tests' → `//chrome/browser/content_settings:content_settings_factory`, `//chrome/common:non_code_constants`, `//components/content_settings/core/{browser,common}`, `//media` | type-checked against 156's headers here; the GN graph checked statically (`check`, `checkdeps`); what only the build shows: no cycle in `gn gen` from `//chrome/browser/media/webrtc` through `voice:voice_controller`, and §5.1's browser tests | gesture-channel |
 | `voice/page_questions.cc` (new: `base::JSONReader::Read(…, JSON_PARSE_RFC, depth)` and `DictValue::FindBool`/`FindString` on the model's reply, `agent_safety::FenceUntrustedText()`), `voice/voice_page_questions.cc` (new: `BrowserAIRuntime::StreamChat()` with a `ChatPrompt`, `PromptOptions::json_schema` and a request id, `CancelRequest()`/`FinishRequest()` in a `base::ScopedClosureRunner`, `base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `web_ai::PickWebModel`, two `base::OneShotTimer`s), `voice/voice_controller.cc` (a kAskPage step, `VoiceReader::ReadText()`), `voice/voice_reader.cc` (`ReadText()`); the new GN edges `voice:voice_controller` → `voice:voice_page_questions` → `//chrome/browser/molt_ai:molt_ai_runtime` and `web_ai:logic`, `voice:page_questions` → `security:agent_safety`, the DEPS rules for the two tests, and the fuzzer `voice:molt_page_questions_fuzzer` (in `molt_fuzzers`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: no cycle in `gn gen` through `molt_ai_runtime` (which `molt_ai_agents` already reaches from `voice:voice_controller`), and §5.1's browser tests | page-questions |
 
 ### 4.9 GN targets and DEPS edges
@@ -1268,6 +1269,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `VoiceRoutinesTest.*` (six more: the planner's steps kept in the draft's format and read back, what is withheld or a gap, the routine starting where the run began, confirming exactly the sites the steps use and a changed file needing it again, hostile planner steps), `VoiceRoutinesLogicTest.ThisKeepsThePlannersSteps` and the gap's refusal in `RememberThisReadsBackAndWaitsForYes`, `VoiceAgentReplayTest.*` (what a routine keeps of each agent step, the element found again by kind and name exactly once, as a reply `ParseAction()` takes); 105 with the learning suites and 3 for the replay, all built standalone here | planner-routines |
   | `VoiceGestureWordsTest.*` (no two confirmation words the phonetic key confuses, none like an answer word or a number), `VoiceGestureBindingTest.*`, `GestureBookTest.*` (the word heard cleanly mints a gesture bound to its prompt, used once, for its binding, within 10 s; one try; the lockout; fresh words), `VoicePromptsTest.*` (what is said for each prompt and dialog, the answers, page text cleaned and capped, the dialog flood limit), the `VoiceSessionLogicTest` cases `AWord*` and `TypedTextIsNeverHeardCleanly`, the `VoiceControllerLogicTest` cases `APermissionPrompt*`, `APromptTakesTheFloorFromTheLoopsQuestion`, `APagesDialogsByVoice`, `ADialogsTextIsPageText`, `DownloadsAndPasswordsByVoice`, and `ActivationPolicyTest.HistoryEntriesAfterAnAction`; all built standalone here (ASan and UBSan) | voice-gesture |
   | `MoltSettingsFileTest.*` (the merge, other keys kept, no temporary file left, a missing file and directory created, a file that isn't a JSON object or is over 1 MiB left alone, changes posted from two places at once all kept), the `VoiceSessionLogicTest` cases `ALaggingHelpersWordIsPlacedByItsAudio`, `AHelperFarBehindIsNeverClean`, `AHelperNeverMovesTheStartLater`, `TheEchoTailAndOtherSpeechReachBackWithTheLag`, `TheOwnVoiceWithoutAnEchoCanceller` and `TheOwnVoiceWithAnEchoCancellerIsUnchanged`, `VoiceListenerProtocolTest.AudioClock*`, `VoiceGestureWordsTest.ASoundAlikeOfTwoWordsIsUnsure` and `EveryWordOfTheListIsSure`, `GestureBookTest.AnUnsureWordIsAskedAgain` and `EveryOtherWordIsOneTryWhateverThePromptsWord`, `VoicePromptsTest.PermissionAnswers`, `ActivationPolicyTest.NoPageAskedForByAnActionThatDoesntNavigate`; built standalone here (ASan and UBSan; the settings file on `//base` shims) | voice-hardening |
+  | `VoiceGestureChannelTest.*` (the word's channel: every row of TOUCHLESS_BROWSING.md §7.3's table and every combination of its inputs, what exposes a word, the word the caption shows), `GestureBookTest.ARetiredWordIsNeitherTheWordNorAMiss`, `RetiredWordsAccumulateAndAreNeverDrawnAgain` and `AnotherPromptsWordIsNotRetiredForThisOne`, `VoicePromptsTest.EachTextWithTheWordHasATwinWithoutIt`, `TheTwinIsFoundOnlyForThePromptsWordTexts`, `NoWordWhileTheScreenIsSharedAndNoStillWorks` and `WhyTheWordIsShownAndWhyItChanged`, `VoiceControllerLogicTest.WhatIsSaidWithTheWordKeepsItsTwin` and `NoWordWhileTheScreenIsShared`, `VoiceSessionLogicTest.OverTheOwnVoiceWhatLeavesThePageWaits`, `VoiceSessionCommandsTest.TakenOverOwnVoice`, `ActivationPolicyTest.PlayingInPlaceLeadsToNoPage`; built standalone here (ASan and UBSan) | gesture-channel |
   | `PageQuestionsGrammarTest.*`, `PageQuestionsTextTest.*` (the page's text picked for each kind of question, its caps on hostile pages, "tell me more" giving each block once), `PageQuestionsPromptTest.*` (the schema the service takes, the fence holding whatever the page writes), `PageQuestionsAnswerTest.*` (the answer's cleaning and caps, the wake phrase withheld, malformed replies), `PageQuestionsLoopTest.*` (one step that acts on nothing, MoltNet, the reader's chunks, the session ignoring an answer's wake phrase), and the `VoiceCommandTest` cases moved from the planner; all built standalone here (ASan and UBSan, `base::Value` and `//url` through the fuzzing stand-ins) | page-questions |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
@@ -1532,8 +1534,9 @@ extension enablement and `MediaRouterEnabled()`).
   ```
   *Expected:* all 7 pass, on macOS and Linux:
   - `APermissionPromptAllowedByItsWord`: "localhost wants to show
-    notifications. To allow it, say <word>." is said; "yes" only repeats
-    the word; the word grants it.
+    notifications. To allow it, say the word on your screen." is said
+    (the test speaks with a platform voice: the word is shown, never said,
+    gesture-channel); "yes" only says where it is; the word grants it.
   - `APermissionPromptRefusedByNo`: "no" denies it.
   - `TheWordTypedUncleanReplayedOrLateIsRefused`: the word typed, heard
     over other speech, after the prompt's window, or said again for the
@@ -1547,6 +1550,34 @@ extension enablement and `MediaRouterEnabled()`).
   If a dialog test hangs: the tab-modal dialog may not have shown (check
   the log for "suppressed"), or `beforeunload`'s app-modal dialog may need
   the window active (`ui_test_utils::BringBrowserWindowToFront()`).
+- [ ] The word's channel with real captures (gesture-channel):
+  `chrome/test/data/molt_voice/capture.html` (new), a fake microphone
+  (`--use-fake-device-for-media-stream`) and the screen picker choosing
+  the screen by itself (`--auto-select-desktop-capture-source`), as
+  Chromium's own getDisplayMedia browser tests do. In the same
+  `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceGestureChannelBrowserTest.*:VoiceBrowserPromptsBrowserTest.*' \
+    2>&1 | tee ~/molt-v0.3.0/gesture-channel-browser-tests.log
+  ```
+  *Expected:* all pass on macOS and Linux (the two screen tests skip
+  themselves on Windows, and where the bot has no screen to capture):
+  - `AMicrophoneCapturedSeesTheWordShownNeverSpoken`: with the page
+    capturing the microphone, the prompt says "the word on your screen",
+    the caption's word is the prompt's, no utterance holds it; heard but
+    not cleanly it changes ("so I changed it."), the old one is answered
+    "That word changed." and leaves the request waiting, the new one
+    grants it.
+  - `NoWordWhileTheScreenIsSharedAndNoStillBlocks`: while the page shares
+    the screen, "I can't take the word while your screen is shared", no
+    word, a word of the list allows nothing, "no" denies it.
+  - `AShareThatBeginsTakesTheShownWordBack`: the word shown, then the
+    share begins: it is taken off the screen and the prompt read again
+    without one; the share ends: "Your screen is no longer shared." and a
+    new word, which grants it while the old one doesn't.
+  If the screen tests fail at `screen:on`, check that the bot's capturer
+  works with Chromium's own `WebRtcScreenCaptureBrowserTestWithPicker`.
 - [ ] The prompts' downloads and password bubble (voice-hardening): in the
   same `browser_tests`, `VoiceBrowserPromptsBrowserTest.ADangerousDownloadKeptAsTheBubbleKeepsIt`,
   `ADangerousDownloadDiscardedByVoice` and `ASaveBubbleOfferedLaterIsRead`.
@@ -2250,7 +2281,9 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   and the browser's prompts to `molt_voice_controller_fuzzer`;
   planner-routines adds the planner's steps and routines with them to
   `molt_voice_learning_fuzzer`; voice-hardening adds lags, voice mode's own
-  voice and the audio clock to `molt_voice_listener_fuzzer`; page-questions adds
+  voice and the audio clock to `molt_voice_listener_fuzzer`; gesture-channel
+  adds the word's channel, retired words and the twins without the word to
+  `molt_voice_prompts_fuzzer`; page-questions adds
   `molt_page_questions_fuzzer`, and the question's step to
   `molt_voice_controller_fuzzer`)
   (verify the command):
@@ -2868,6 +2901,53 @@ system's voices):
   "discard" deletes it, a file shown in red is only deleted by voice. Sign
   in to a test site: "Save your password for ...? Say save, never, or not
   now."; nothing of the password or user name is said.
+- [ ] The word with voice mode's own voice (gesture-channel): with the
+  bundled voice and Chrome-wide echo cancellation on, ask for a
+  permission. *Expected:* "... To allow it, say <word>." is said and the
+  word is shown large at the end of the bar under the page; a screen
+  reader (VoiceOver, Orca) reading the bar says what was heard and what is
+  happening, never the word. Record the microphone at the same time
+  (`arecord` / QuickTime with Chrome-wide echo cancellation, or
+  `chrome://webrtc-internals` "Enable diagnostic audio recordings") and
+  play the recording back: note whether the word can be made out, and
+  how loud what is left of the voice is against the room.
+- [ ] A page listening while a prompt is read (gesture-channel): open a
+  page that records the microphone (the WebRTC samples' "getUserMedia
+  audio", with echo cancellation off) and keep it recording, then ask for
+  a permission in another tab. *Expected:* "To allow it, say the word on
+  your screen." (the first time also "I don't say the word aloud while
+  another program could hear it."), the word shown, and the recording has
+  only your voice saying it; with the recording started after the word was
+  said: "Something started using a microphone, so I changed the word.",
+  and the old word answers "That word changed.".
+- [ ] A screen share (gesture-channel): share the whole screen from a
+  meeting page (or the WebRTC samples' getDisplayMedia), then ask for a
+  permission. *Expected:* "I can't take the word while your screen is
+  shared, so to allow it, use the mouse or keyboard. To block it, say
+  no."; no word in the bar; "no" blocks it. Share a single window: the
+  same. Share a tab: the word is shown as usual. Start the share while a
+  word is shown: it goes from the bar at once and the prompt is read again
+  without one; stop the share: "Your screen is no longer shared." and a
+  new word.
+- [ ] The platform's voice (gesture-channel): remove the bundled voice
+  (or `kill -9` `molt-voice` until it gives up) and ask for a permission.
+  *Expected:* the system's voice says "the word on your screen", never the
+  word, also after "yes", "repeat", and a word heard over the browser;
+  `kill -9` `molt-voice` while it says the prompt: the system's voice says
+  the prompt again without the word. Turn on "Say the confirmation word
+  aloud even when another program could hear it" in molt://ai-settings:
+  the system's voice now says it, and the setting survives a restart
+  (`voice_say_word_aloud` in `~/.moltbrowser/settings.json`).
+- [ ] A command over the browser's own voice (gesture-channel): while it
+  reads a results list with its own voice and echo cancellation, say "the
+  third one": it stops and opens it; say "open example dot com" over it:
+  it stops and says "I've stopped. Now say that again.", and the same
+  command said then opens it; "Hey Molt, open example dot com" over it
+  opens it at once.
+- [ ] "Play" and a trap entry (gesture-channel): on a test page whose
+  video's play button handler calls `history.pushState()` (or a site that
+  does), say "play", then "go back". *Expected:* one "go back" leaves the
+  page; Chromium's own back button is unchanged.
 - [ ] Without an echo canceller (voice-hardening): turn Chrome-wide echo
   cancellation off (`chrome://flags`) on a device without its own (a USB
   microphone and speakers, not a headset). *Expected:* voice mode says

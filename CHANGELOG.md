@@ -1309,6 +1309,22 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   holding "Hey Molt" isn't said at all, "stop" ends it, and nothing is
   kept; never in MoltNet windows. Without a model, the browser says how to
   get one. Details: `docs/design/TOUCHLESS_BROWSING.md` §5.4.
+- **Touchless browsing: the spoken word in place of a click hardened**
+  (preview, behind `chrome://flags/#molt-voice-mode`). The word that allows
+  a permission, keeps a risky download or confirms a routine's sites is
+  now said aloud only with voice mode's own voice, on a microphone with
+  echo cancellation, while no page or extension uses a microphone; never
+  with the system's voices. Otherwise it is shown in large letters in the
+  bar under the page (not to screen readers) and the browser says "say
+  the word on your screen"; while the screen or a window is shared there
+  is no word, and "no" still works. A word that something may have heard
+  or seen after the fact is replaced. "Say the confirmation word aloud even
+  when another program could hear it" in settings is for those who can't
+  see it. A command said over voice mode's own voice without "Hey Molt"
+  that goes to another site, types or runs a routine now waits until it
+  has stopped, and "play" no longer lets a page's history entry cost an
+  extra "go back". Details: `docs/design/TOUCHLESS_BROWSING.md` §6.6, §7.3
+  and §7.5.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an
