@@ -543,6 +543,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the web agent's checks, without asking the AI again, and stops at a step
   it can't find. Nothing is kept in MoltNet or private windows, or while
   "Learn from what I say" is off.
+- **Voice routines belong to the profile that taught them** (round 43,
+  profile-routines; `docs/design/TOUCHLESS_BROWSING.md` §6.8): each
+  profile keeps its routines in its own directory, so another profile on
+  the computer doesn't hear, run, change or see them, in voice mode, Agent
+  mode or `molt://ai-automation`, and they go with the profile. Routines
+  saved before this update are offered to each profile ("Keep them
+  here?", by voice or in Agent mode) and kept by the first that says yes,
+  by no other after that. A name runs exactly one routine: saving under a
+  name in use asks to replace it, and one imported or copied under it is
+  called "my news (2)".
 - **MoltNet in its own window.** Tor browsing opens in a separate,
   throwaway profile that never shares cookies or storage with your regular
   browsing and never falls back to a direct connection. Per-site Tor
