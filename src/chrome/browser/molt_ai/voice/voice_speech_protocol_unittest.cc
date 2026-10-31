@@ -92,6 +92,7 @@ TEST(VoiceSpeechProtocolTest, Violations) {
       {"audio before ready", {Audio(1, 10)}},
       {"ready twice", {Ready(), Ready()}},
       {"bad rate", {Ready(7999)}},
+      {"a rate above a speech voice's", {Ready(48000)}},
       {"audio for no request", {Ready(), Audio(9, 10)}},
       {"audio for the second request", {Ready(), Audio(2, 10)}},
       {"done out of order", {Ready(), Done(2, 0)}},

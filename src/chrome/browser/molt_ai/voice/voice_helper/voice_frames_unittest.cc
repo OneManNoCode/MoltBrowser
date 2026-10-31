@@ -160,8 +160,15 @@ TEST(VoiceFramesTest, BadHelperFrames) {
   ReadyInfo ready;
   EXPECT_FALSE(
       ParseReady(EncodeReady(7999, "x").substr(kFrameHeaderBytes), &ready));
-  EXPECT_FALSE(
-      ParseReady(EncodeReady(48001, "x").substr(kFrameHeaderBytes), &ready));
+  // Speech voices' rates only (Piper's 16 and 22.05 kHz), nothing above
+  // 24 kHz.
+  EXPECT_TRUE(
+      ParseReady(EncodeReady(24000, "x").substr(kFrameHeaderBytes), &ready));
+  for (int rate : {24001, 44100, 48000, 48001}) {
+    EXPECT_FALSE(
+        ParseReady(EncodeReady(rate, "x").substr(kFrameHeaderBytes), &ready))
+        << rate;
+  }
   std::string payload = EncodeReady(22050, "ab").substr(kFrameHeaderBytes);
   payload[8] = '\x01';
   EXPECT_FALSE(ParseReady(payload, &ready));

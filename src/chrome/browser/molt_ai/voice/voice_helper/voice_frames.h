@@ -42,8 +42,12 @@ inline constexpr int kMaxRatePercent = 250;
 // READY's voice name and ERROR's message, in bytes.
 inline constexpr size_t kMaxVoiceNameBytes = 64;
 inline constexpr size_t kMaxErrorMessageBytes = 200;
+// READY's sample rate. Speech voices are at most 22.05 kHz (Piper's); a
+// higher rate would only let a helper play what no voice says (sound above
+// speech, which a speaker and microphone can fold back into the band the
+// microphone's echo canceller doesn't see).
 inline constexpr int kMinSampleRate = 8000;
-inline constexpr int kMaxSampleRate = 48000;
+inline constexpr int kMaxSampleRate = 24000;
 // An AUDIO frame holds at most this many samples (after its 4-byte id).
 inline constexpr size_t kMaxAudioFrameSamples = (kMaxFramePayloadBytes - 4) / 2;
 inline constexpr size_t kDoneBytes = 20;
