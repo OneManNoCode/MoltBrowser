@@ -1604,8 +1604,12 @@ extension enablement and `MediaRouterEnabled()`).
   chromium/src/out/MoltTests/browser_tests \
     --gtest_filter='VoiceSpeechBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/bundled-voice-browser-tests.log
   ```
-  *Expected:* all 6 pass on Linux and macOS: `SpeaksWithItsOwnVoice` (no
+  *Expected:* all 7 pass on Linux and macOS: `SpeaksWithItsOwnVoice` (no
   platform utterance; speaking ends once the tone played),
+  `APrivateTextIsNeverSaidByThePlatformsVoice` (gesture-channel: what
+  holds the confirmation word is said by the stand-in voice only; when it
+  crashes, or while it restarts, the platform's voice says the text
+  without the word, or nothing),
   `StopSilencesAtOnce`, `ACrashFallsBackThenTheVoiceComesBack`,
   `TwoFailuresAndThePlatformVoicesSpeak`, `WithoutTheVoiceThePlatforms`,
   and `AHelperThatStopsAnswering` (redteam12; it takes about 20 s: a
