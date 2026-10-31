@@ -4,9 +4,10 @@
 // "Voice mode" on molt://ai-settings (id="voiceSection", shown only with
 // chrome://flags/#molt-voice-mode): the switch that turns listening on now
 // in this page's window and with the browser from then on, always-listening
-// mode, and saying the voice gesture's confirmation word aloud even when
+// mode, saying the voice gesture's confirmation word aloud even when
 // another program could hear it (molt_ai/voice/voice_session_settings.h,
-// voice_session.h).
+// voice_session.h), and the language voice mode understands and speaks
+// (voice_language_settings.h).
 //
 // Messages (validated with HasCallbackArgs() and BoolArg(); nothing from
 // the page reaches a CHECK; the two that change a setting count only with
@@ -15,8 +16,11 @@
 //   voiceSettingsSetEnabled(cb, bool)
 //   voiceSettingsSetAlwaysListening(cb, bool)
 //   voiceSettingsSetSayWordAloud(cb, bool)
+//   voiceSettingsSetLanguage(cb, "" | "en" | "es")  (no click needed: it
+//     changes no permission; anything else is refused)
 // each resolving with {available, enabled, alwaysListening, sayWordAloud,
-// listening, moltnet, error?}.
+// listening, moltnet, language ("" for the browser's), languageInUse ("en",
+// "es"), canListen, hasVoice, error?}.
 //
 // The section's script is kVoiceSettingsJs, appended to the page's app.js;
 // it builds no HTML and wires its switches through moltActions().
@@ -53,6 +57,7 @@ class MoltVoiceSettingsHandler : public content::WebUIMessageHandler {
   void HandleSetEnabled(const base::ListValue& args);
   void HandleSetAlwaysListening(const base::ListValue& args);
   void HandleSetSayWordAloud(const base::ListValue& args);
+  void HandleSetLanguage(const base::ListValue& args);
 
   // Reads the settings (file I/O, on a worker), then resolves.
   void ResolveWithState(std::string callback_id,
@@ -62,6 +67,13 @@ class MoltVoiceSettingsHandler : public content::WebUIMessageHandler {
               const molt_ai::voice::VoiceModeSettings& settings);
   // A setting's message: validated, counted only with the click itself.
   void HandleSet(const base::ListValue& args, Setting setting);
+  void OnLanguageRead(std::string callback_id,
+                      std::optional<std::string> error,
+                      molt_ai::voice::VoiceModeSettings settings,
+                      std::string language);
+  void OnLanguageWritten(std::string callback_id,
+                         std::string language,
+                         bool ok);
   // Changes the settings: read, |setting| := |value|, write; then applies
   // them.
   void Change(std::string callback_id, Setting setting, bool value);

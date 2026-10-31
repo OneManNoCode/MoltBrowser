@@ -47,6 +47,19 @@ const std::string* FieldOf(const ChoiceCandidate& candidate,
   return nullptr;
 }
 
+// The units of time a length is said in.
+struct TimeWords {
+  std::string_view second, seconds, minute, minutes, hour, hours;
+};
+
+const TimeWords& TimeWordsFor(Language language) {
+  static constexpr TimeWords kEnglish = {"second",  "seconds", "minute",
+                                         "minutes", "hour",    "hours"};
+  static constexpr TimeWords kSpanish = {"segundo", "segundos", "minuto",
+                                         "minutos", "hora",     "horas"};
+  return language == Language::kSpanish ? kSpanish : kEnglish;
+}
+
 void AppendPart(std::string& out, std::string_view part) {
   if (part.empty()) {
     return;
@@ -60,25 +73,35 @@ void AppendPart(std::string& out, std::string_view part) {
 }  // namespace
 
 std::string SpokenDuration(int seconds) {
+  return SpokenDuration(seconds, Language::kEnglish);
+}
+
+std::string SpokenLength(int seconds) {
+  return SpokenLength(seconds, Language::kEnglish);
+}
+
+std::string SpokenDuration(int seconds, Language language) {
+  const TimeWords& w = TimeWordsFor(language);
   if (seconds < 0) {
     return std::string();
   }
   if (seconds < 60) {
-    return Unit(seconds, "second", "seconds");
+    return Unit(seconds, w.second, w.seconds);
   }
   const int minutes = (seconds + 30) / 60;
   if (minutes < 60) {
-    return Unit(minutes, "minute", "minutes");
+    return Unit(minutes, w.minute, w.minutes);
   }
-  std::string out = Unit(minutes / 60, "hour", "hours");
+  std::string out = Unit(minutes / 60, w.hour, w.hours);
   if (minutes % 60 != 0) {
     out.push_back(' ');
-    out.append(Unit(minutes % 60, "minute", "minutes"));
+    out.append(Unit(minutes % 60, w.minute, w.minutes));
   }
   return out;
 }
 
-std::string SpokenLength(int seconds) {
+std::string SpokenLength(int seconds, Language language) {
+  const TimeWords& w = TimeWordsFor(language);
   if (seconds < 0) {
     seconds = -seconds;
   }
@@ -87,19 +110,19 @@ std::string SpokenLength(int seconds) {
   const int rest = seconds % 60;
   std::string out;
   if (hours > 0) {
-    out = Unit(hours, "hour", "hours");
+    out = Unit(hours, w.hour, w.hours);
   }
   if (minutes > 0) {
     if (!out.empty()) {
       out.push_back(' ');
     }
-    out.append(Unit(minutes, "minute", "minutes"));
+    out.append(Unit(minutes, w.minute, w.minutes));
   }
   if (rest > 0 || out.empty()) {
     if (!out.empty()) {
       out.push_back(' ');
     }
-    out.append(Unit(rest, "second", "seconds"));
+    out.append(Unit(rest, w.second, w.seconds));
   }
   return out;
 }
@@ -186,6 +209,16 @@ std::string SpokenCandidate(const ChoiceCandidate& candidate,
 }
 
 std::string_view ChooseHint() {
+  return ChooseHint(Language::kEnglish);
+}
+
+std::string_view ChooseHint(Language language) {
+  switch (language) {
+    case Language::kEnglish:
+      break;
+    case Language::kSpanish:
+      return "Di un número o un nombre.";
+  }
   return "Say a number or a name.";
 }
 
@@ -223,6 +256,16 @@ std::vector<std::string> ListSpeech(const CandidateSet& set,
                                     std::string_view many,
                                     Verbosity verbosity,
                                     size_t normal_count) {
+  return ListSpeech(set, one, many, verbosity, normal_count,
+                    Language::kEnglish);
+}
+
+std::vector<std::string> ListSpeech(const CandidateSet& set,
+                                    std::string_view one,
+                                    std::string_view many,
+                                    Verbosity verbosity,
+                                    size_t normal_count,
+                                    Language language) {
   std::vector<std::string> sentences;
   sentences.push_back(CountOf(set.size(), one, many) + ".");
   size_t read = 0;
@@ -245,19 +288,25 @@ std::vector<std::string> ListSpeech(const CandidateSet& set,
                         SpokenCandidate(candidate, verbosity) + ".");
   }
   if (!set.empty()) {
-    sentences.emplace_back(ChooseHint());
+    sentences.emplace_back(ChooseHint(language));
   }
   return ChunkSentences(sentences);
 }
 
 std::vector<std::string> OfferSpeech(const CandidateSet& subset) {
+  return OfferSpeech(subset, Language::kEnglish);
+}
+
+std::vector<std::string> OfferSpeech(const CandidateSet& subset,
+                                     Language language) {
+  const bool spanish = language == Language::kSpanish;
   std::vector<std::string> sentences;
   for (size_t i = 0; i < subset.size(); ++i) {
     std::string sentence;
     if (i == 0) {
-      sentence = "Did you mean ";
+      sentence = spanish ? "¿Te refieres a " : "Did you mean ";
     } else if (i + 1 == subset.size()) {
-      sentence = "or ";
+      sentence = spanish ? "o " : "or ";
     }
     sentence.append(std::to_string(SpokenNumber(subset.candidates[i])));
     sentence.append(": ");
@@ -265,7 +314,7 @@ std::vector<std::string> OfferSpeech(const CandidateSet& subset) {
     sentence.append(i + 1 == subset.size() ? "?" : ",");
     sentences.push_back(std::move(sentence));
   }
-  sentences.emplace_back(ChooseHint());
+  sentences.emplace_back(ChooseHint(language));
   return ChunkSentences(sentences);
 }
 

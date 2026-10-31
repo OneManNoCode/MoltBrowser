@@ -10,8 +10,11 @@
 // voice_command_phrases_<lang>.cc with the same tables, and add the
 // language to Language (spoken_text.h) and to the two dispatchers. The
 // code reading the tables doesn't change, as long as the language's
-// numbers are built like English ones (units, teens, tens, then hundred
-// and thousand as multipliers); see spoken_numbers.h.
+// numbers are built from units, teens, tens, hundreds and thousands
+// (English multiplies by "hundred"; Spanish has words for whole hundreds,
+// "doscientos", and joins tens to units, "treinta y uno"); see
+// spoken_numbers.h. The fields after "Spanish and others" below are empty
+// or off for English, so its readings never change.
 //
 // Every entry is folded as spoken_text.h folds words (lower-case ASCII, no
 // apostrophes). An entry of several words ("next to last") is written with
@@ -36,6 +39,9 @@ enum class NumberWordKind : uint8_t {
   kTens,      // 20, 30, ... 90
   kHundred,   // multiplies by 100
   kThousand,  // multiplies by 1000
+  // A whole number of hundreds in one word, followed by the rest without a
+  // joiner: "ciento" (100), "doscientos" (200), "cien" (100).
+  kHundreds,
 };
 
 struct NumberWord {
@@ -86,7 +92,8 @@ struct LanguagePhrases {
   std::vector<NumberWord> numbers;  // sorted by word
   // Joins a hundred or a thousand to the rest: "one hundred and five".
   std::vector<std::string_view> number_and;
-  // Stands for "one" before a multiplier: "a hundred".
+  // Stands for "one" before a multiplier: "a hundred". Also "a" before a
+  // unit of time: "a minute".
   std::vector<std::string_view> number_article;
   // After digits: "4th", "21st".
   std::vector<std::string_view> ordinal_suffixes;
@@ -168,13 +175,37 @@ struct LanguagePhrases {
   std::vector<std::string_view> site_suffixes;
   // Dropped from the start of a site name: "the".
   std::vector<std::string_view> site_prefixes;
+
+  // --- Spanish and others (empty or off in English) -----------------------
+  // Joins tens to a unit: "treinta y uno" (31). Only there.
+  std::vector<std::string_view> tens_unit_and;
+  // The third from the end: "antepenúltimo".
+  std::vector<std::string_view> third_to_last_phrases;
+  // "and a half" said without an article: "un minuto y medio".
+  std::vector<std::string_view> and_half_phrases;
+  // "half" directly before a unit of time: "medio minuto".
+  bool half_before_unit = false;
+  // An ordinal of tens (or "tenth") followed by an ordinal unit is one
+  // ordinal: "vigésimo primero" (21st), "décimo tercero" (13th).
+  bool compound_ordinals = false;
+  // Years said in two halves, "nineteen eighty five" (ReadYear()).
+  bool years_in_two_parts = true;
+  // A bare number after an article chooses from a list: "el cuatro" (in
+  // English "the four" isn't said, so only "four" is).
+  bool bare_number_after_article = false;
+  // How far, in the phonetic key's half-edits, a word may be from the wake
+  // phrase's name and still be taken for it ("oye mol" for "oye molt"); 0:
+  // the same key (English's "hey mold").
+  int wake_sound_margin = 0;
 };
 
 // The tables of |language|, built on first use and kept.
 const LanguagePhrases& PhrasesFor(Language language);
 
-// spoken_phrases_en.cc's tables (PhrasesFor() keeps one copy).
+// spoken_phrases_en.cc's and spoken_phrases_es.cc's tables (PhrasesFor()
+// keeps one copy of each).
 LanguagePhrases MakeEnglishPhrases();
+LanguagePhrases MakeSpanishPhrases();
 
 // --- Lookups shared by the readers ------------------------------------------
 

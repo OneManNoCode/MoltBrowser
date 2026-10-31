@@ -289,6 +289,8 @@ enum class StepFailure : uint8_t {
 
 // What the browser says when a step failed; empty for kCancelled.
 std::string_view FailureText(StepFailure failure);
+// The same in |language| (spoken_answers.h).
+std::string_view FailureText(StepFailure failure, Language language);
 
 // ---------------------------------------------------------------------------
 // Context
@@ -307,6 +309,9 @@ struct VoiceEnvironment {
 
   // A MoltNet window: voice mode is off there (§7.4).
   bool moltnet = false;
+  // The language voice mode understands and speaks in (voice_language.h):
+  // the grammar's, and the browser's answers'.
+  Language language = Language::kEnglish;
   // Changes with every new document in the active tab, and when another
   // tab becomes active. Lists, fields and confirmations hold only on the
   // page they were made on.
@@ -524,6 +529,14 @@ bool AnswersBrowserPrompt(const VoiceCommand& command,
 bool NeedsConfirmation(std::string_view label,
                        std::string_view url,
                        const PageMap& map);
+// The same, and in Spanish also its words: comprar, pagar, pedido,
+// eliminar, borrar, enviar, publicar, responder, comentar, confirmar,
+// suscribirse, donar, transferir, cerrar sesión, ... (English's checks are
+// unchanged in every language).
+bool NeedsConfirmation(std::string_view label,
+                       std::string_view url,
+                       const PageMap& map,
+                       Language language);
 
 // The page's search field: the site skill's (PageMap::site), else a
 // writable text field of the top-level document (never of a frame it

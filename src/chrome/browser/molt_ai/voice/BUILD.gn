@@ -47,6 +47,21 @@ source_set("unit_tests") {
 
     # The voice gesture, and the browser's prompts by voice.
     ":voice_prompts_unit_tests",
+
+    # Voice mode's language as a setting.
+    ":voice_language_unit_tests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("voice_language_unit_tests") {
+  testonly = true
+  sources = [ "voice_language_settings_unittest.cc" ]
+  deps = [
+    ":voice_controller",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/common:molt_settings_file",
     "//testing/gtest",
   ]
 }
@@ -61,11 +76,16 @@ source_set("unit_tests") {
 # The spoken-choice matcher: which item on screen "the fourth one", "number
 # 12" or "the live one by Queen" means. The page map fills its
 # ChoiceCandidates. With it, the text, number and sound-alike readers the
-# grammar shares, and the per-language word tables.
+# grammar shares, and the per-language word tables (English and Spanish,
+# with Spanish's phonetic key and its voice gesture words).
 source_set("spoken_choice") {
   sources = [
+    "confirmation_words_es.cc",
+    "confirmation_words_es.h",
     "phonetic_key.cc",
     "phonetic_key.h",
+    "phonetic_key_es.cc",
+    "phonetic_key_es.h",
     "spoken_choice.cc",
     "spoken_choice.h",
     "spoken_numbers.cc",
@@ -73,8 +93,16 @@ source_set("spoken_choice") {
     "spoken_phrases.cc",
     "spoken_phrases.h",
     "spoken_phrases_en.cc",
+    "spoken_phrases_es.cc",
     "spoken_text.cc",
     "spoken_text.h",
+
+    # What the browser says, per language, and which language.
+    "spoken_answers.cc",
+    "spoken_answers.h",
+    "spoken_answers_es.cc",
+    "voice_language.cc",
+    "voice_language.h",
   ]
 }
 
@@ -85,6 +113,7 @@ source_set("voice_command") {
     "voice_command.h",
     "voice_command_phrases.h",
     "voice_command_phrases_en.cc",
+    "voice_command_phrases_es.cc",
   ]
   public_deps = [ ":spoken_choice" ]
 }
@@ -152,6 +181,7 @@ source_set("voice_intent_unit_tests") {
     "spoken_numbers_unittest.cc",
     "spoken_text_unittest.cc",
     "voice_command_unittest.cc",
+    "voice_spanish_unittest.cc",
   ]
   deps = [
     ":spoken_choice",
@@ -686,6 +716,8 @@ source_set("voice_controller") {
     "voice_capture_watch.h",
     "voice_controller.cc",
     "voice_controller.h",
+    "voice_language_settings.cc",
+    "voice_language_settings.h",
     "voice_reading_settings.cc",
     "voice_reading_settings.h",
 
@@ -744,8 +776,13 @@ source_set("voice_controller") {
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
 
-    # The speech rate kept in settings.json, through its one writer.
+    # The speech rate and the language kept in settings.json, through its
+    # one writer.
     "//chrome/browser/molt_ai/common:molt_settings_file",
+
+    # g_browser_process: the browser's own language, voice mode's when the
+    # setting names none.
+    "//chrome/browser:browser_process",
 
     # Its audio, played through the audio service.
     "//media",
@@ -895,6 +932,7 @@ source_set("voice_loop_unit_tests") {
     "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",
     "voice_hints_unittest.cc",
+    "voice_language_unittest.cc",
     "voice_learning_store_unittest.cc",
     "voice_reader_unittest.cc",
     "voice_routine_store_unittest.cc",

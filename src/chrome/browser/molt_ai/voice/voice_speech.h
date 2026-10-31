@@ -75,6 +75,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_bundled.h"
 
 namespace content {
@@ -141,6 +142,20 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // audio is browser output, in the echo canceller's reference.
   bool InEchoReference() const;
 
+  // The language voice mode speaks (voice_language.h). English speaks as
+  // always: the bundled voice when it is installed, else the platform's,
+  // tagged kLanguage. Another language speaks through a platform voice of
+  // that language on this computer (PickPlatformVoice(); |ui_locale|'s
+  // region first), as the bundled voice reads English only; without one,
+  // the platform's default voice reads it, and the log says so once. A
+  // change stops what is being said.
+  void SetLanguage(Language language, const std::string& ui_locale);
+
+  // Whether this computer has a platform voice for |language| (English:
+  // always true, the bundled voice or the platform's default).
+  static bool HasPlatformVoice(content::BrowserContext* context,
+                               Language language);
+
   // Runs (posted) when voice mode starts or stops speaking.
   void SetSpeakingChangedCallback(base::RepeatingCallback<void(bool)> callback);
 
@@ -187,6 +202,8 @@ class VoiceSpeech : public BundledVoice::Delegate {
   void UpdateSpeaking();
   // Tells the utterance-done callback (posted).
   void Done(uint64_t id, bool spoken);
+  // Whether the bundled voice speaks the language (English only).
+  bool BundledSpeaks() const { return language_ == Language::kEnglish; }
 
   raw_ptr<content::BrowserContext> context_;
   // Not yet handed to either voice.
@@ -214,6 +231,12 @@ class VoiceSpeech : public BundledVoice::Delegate {
 
   base::RepeatingCallback<void(bool)> speaking_changed_;
   UtteranceDoneCallback utterance_done_;
+  // SetLanguage(): the language, its platform tag and the browser's own
+  // language; whether the log said there is no voice for it.
+  Language language_ = Language::kEnglish;
+  std::string language_tag_ = kLanguage;
+  std::string ui_locale_;
+  bool said_no_voice_ = false;
   base::WeakPtrFactory<VoiceSpeech> weak_factory_{this};
 };
 

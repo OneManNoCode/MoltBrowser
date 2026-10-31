@@ -123,6 +123,8 @@ const std::vector<CommandInfo>& CommandInfos(Language language);
 // voice_command_phrases_<lang>.cc's tables.
 std::vector<CommandPattern> MakeEnglishCommandPatterns();
 std::vector<CommandInfo> MakeEnglishCommandInfos();
+std::vector<CommandPattern> MakeSpanishCommandPatterns();
+std::vector<CommandInfo> MakeSpanishCommandInfos();
 
 }  // namespace voice
 }  // namespace molt_ai

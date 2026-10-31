@@ -39,6 +39,7 @@
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
+#include "chrome/browser/molt_ai/voice/voice_language_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_session_settings.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
@@ -77,7 +78,8 @@ using molt_ai::chat_handler_helpers::HasCallbackArgs;
 const char* const kKeysKeptOnSaveAndReset[] = {
     molt_ai::web_ai::kWebAIApisSettingsKey,
     molt_ai::voice::kVoiceModeSettingsKey,
-    molt_ai::voice::kVoiceAlwaysListeningSettingsKey};
+    molt_ai::voice::kVoiceAlwaysListeningSettingsKey,
+    molt_ai::voice::kVoiceLanguageSettingsKey};
 
 // On settings.json's sequence (common/molt_settings_file.h). What the file
 // holds, or |defaults| when it is missing or isn't a JSON object.
@@ -2742,6 +2744,16 @@ h2[tabindex="-1"]:focus{outline:none !important}
         <span class="label">Say the confirmation word aloud even when another program could hear it</span>
       </label>
       <div class="desc">To allow a site to use your camera, or to keep a file the browser warned about, you say a word it gives you, such as &ldquo;harbor&rdquo;. Normally the browser says that word aloud only when nothing else can hear it: its own voice is playing and no page is using a microphone. Otherwise it shows the word large at the bottom of the window and says &ldquo;say the word on your screen&rdquo;, and while your screen is shared it gives no word at all. Turn this on if you can&rsquo;t see the word: the browser will always say it. The cost: a page using the microphone, or a program listening to your computer, could hear the word and answer for you.</div>
+    </div>
+    <div class="field">
+      <label class="lbl" for="voiceLanguage">Language</label>
+      <select id="voiceLanguage" data-on-change="voiceSetLanguage">
+        <option value="">The browser&rsquo;s language</option>
+        <option value="en" lang="en">English</option>
+        <option value="es" lang="es">Espa&ntilde;ol</option>
+      </select>
+      <div class="desc">What voice mode understands and answers in. In Spanish the wake phrase is &ldquo;Oye Molt&rdquo;, and the browser speaks with a Spanish voice of this computer.</div>
+      <div class="desc" id="voiceLanguageNote" role="status"></div>
     </div>
     <div class="field">
       <span class="desc" id="voiceStatus" role="status"></span>

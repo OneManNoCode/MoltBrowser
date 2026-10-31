@@ -256,6 +256,14 @@ class VoiceController : public VoicePlanner::Delegate,
   // "I can't use the microphone") and shows it as the status.
   void SayNotice(const std::string& text);
 
+  // The language voice mode understands and speaks in this window
+  // (voice_language.h): the setting's, read when the window's voice mode is
+  // made, else the browser's own language when voice mode has it, else
+  // English. SetLanguageForAll() is the setting changing.
+  Language language() const { return language_; }
+  void SetLanguage(Language language);
+  static void SetLanguageForAll(Language language);
+
   // The listening side's part of the caption, and whether it listens
   // (VoiceEnvironment::listening).
   void SetListening(ListeningCaption caption);
@@ -459,6 +467,8 @@ class VoiceController : public VoicePlanner::Delegate,
   base::TimeTicks last_commit_;
 
   ConversationState state_;
+  // The window's language (SetLanguage()).
+  Language language_ = Language::kEnglish;
   std::deque<VoiceStep> pending_;
   // The run the steps belong to: a new utterance or a stop starts another,
   // and callbacks of an earlier run are dropped.
