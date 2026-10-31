@@ -5,7 +5,9 @@
 // speech recognizer writes, and so whatever anyone near the microphone, or
 // a page's audio that gets past echo cancellation, makes it write. The
 // first byte picks the context (a yes/no question asked, a list read, a
-// text field focused, a custom wake phrase); the rest is the utterance.
+// text field focused, a custom wake phrase); the rest is the utterance,
+// parsed in every language voice mode has (English, Spanish), each with
+// the same checks.
 //
 // Checks: the same command every time; over kMaxUtteranceBytes or invalid
 // UTF-8 is refused (and nothing else is); |heard| and |text| are valid
@@ -38,6 +40,7 @@ using molt_ai::voice::kMaxCommandTextBytes;
 using molt_ai::voice::kMaxSiteBytes;
 using molt_ai::voice::kMaxSpokenSeconds;
 using molt_ai::voice::kMaxUtteranceBytes;
+using molt_ai::voice::Language;
 using molt_ai::voice::ParseContext;
 using molt_ai::voice::ParseVoiceCommand;
 using molt_ai::voice::RefusalReason;
@@ -167,15 +170,11 @@ bool Same(const VoiceCommand& a, const VoiceCommand& b) {
          a.choice.by_words == b.choice.by_words;
 }
 
-}  // namespace
-
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  if (size == 0)
-    return 0;
-  const uint8_t flags = data[0];
-  const std::string_view utterance(reinterpret_cast<const char*>(data + 1),
-                                   size - 1);
+void CheckUtterance(uint8_t flags,
+                    std::string_view utterance,
+                    Language language) {
   ParseContext context;
+  context.language = language;
   context.expecting_yes_no = flags & 1;
   context.expecting_choice = flags & 2;
   context.text_field_focused = flags & 4;
@@ -198,7 +197,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   }
   if (command.kind == K::kRefused) {
     CHECK(command.heard.empty());
-    return 0;
+    return;
   }
 
   CheckClean(command.heard, kMaxUtteranceBytes);
@@ -237,5 +236,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     CHECK(command.text.empty());
     CHECK(command.site.empty());
   }
+}
+
+}  // namespace
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  if (size == 0)
+    return 0;
+  const uint8_t flags = data[0];
+  const std::string_view utterance(reinterpret_cast<const char*>(data + 1),
+                                   size - 1);
+  CheckUtterance(flags, utterance, Language::kEnglish);
+  CheckUtterance(flags, utterance, Language::kSpanish);
   return 0;
 }

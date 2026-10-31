@@ -746,8 +746,11 @@ said.
 
 ## Not yet
 
-- **Other languages.** English only for now; the phrase tables are laid out
-  for more.
+- **Other languages.** English, and Spanish ([VOICE_COMMANDS.es.md](VOICE_COMMANDS.es.md),
+  chosen in settings, "Voice mode", "Language"): Spanish commands typed in
+  Agent mode work and are answered in Spanish with the computer's Spanish
+  voice, but voice mode can't listen in Spanish until a Spanish speech
+  model it can ship is found. More languages add their own phrase tables.
 - **Spoken punctuation** in typing ("comma", "period"): the recognizer adds
   punctuation itself.
 - **A site's name on its own** ("YouTube" alone) doesn't open it: say "open

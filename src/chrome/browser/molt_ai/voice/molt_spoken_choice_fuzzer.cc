@@ -13,6 +13,8 @@
 //   line 0      the reference ("the live one by queen")
 //   lines 1...  items: title, then tab-separated fields (author, then
 //               details)
+// The reference is parsed, and the items matched, in every language voice
+// mode has (English, Spanish), each with the checks below.
 //
 // Checks: ParseChoiceRef() gives a reference that names something, within
 // its caps; the match is the same every time, and the same (by position)
@@ -182,25 +184,18 @@ void CheckMatch(const ChoiceMatch& m,
   }
 }
 
-}  // namespace
-
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  if (size == 0)
-    return 0;
-  const uint8_t flags = data[0];
-  const std::string_view text(reinterpret_cast<const char*>(data + 1),
-                              size - 1);
-  const std::vector<std::string_view> lines = Split(text, '\n');
-
+void Run(uint8_t flags,
+         const std::vector<std::string_view>& lines,
+         Language language) {
   // The reference.
   ChoiceRef ref;
   if (flags & 16) {
     ref = RawRef(lines[0]);
   } else {
     const std::optional<ChoiceRef> parsed =
-        ParseChoiceRef(lines[0], Language::kEnglish, flags & 1);
+        ParseChoiceRef(lines[0], language, flags & 1);
     if (!parsed)
-      return 0;
+      return;
     ref = *parsed;
     CHECK(ref.kind != ChoiceRef::Kind::kNone);
     const size_t words =
@@ -238,6 +233,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   }
 
   MatchOptions options;
+  options.language = language;
   options.current_position = (flags >> 5) & 7;
   const ChoiceMatch m = MatchSpokenChoice(ref, list, options);
   CheckMatch(m, ref, list, options);
@@ -277,5 +273,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       CHECK_EQ(r.close.size(), m.close.size());
     }
   }
+}
+
+}  // namespace
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  if (size == 0)
+    return 0;
+  const uint8_t flags = data[0];
+  const std::string_view text(reinterpret_cast<const char*>(data + 1),
+                              size - 1);
+  const std::vector<std::string_view> lines = Split(text, '\n');
+  Run(flags, lines, Language::kEnglish);
+  Run(flags, lines, Language::kSpanish);
   return 0;
 }

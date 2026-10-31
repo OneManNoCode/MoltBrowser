@@ -523,6 +523,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page's server answers slowly.
 
 ### Privacy
+- **Voice mode in Spanish** (round 43, second-language;
+  `docs/design/TOUCHLESS_BROWSING.md` §4.1, `docs/VOICE_COMMANDS.es.md`):
+  voice mode's language is a setting ("Voice mode", "Language"; the
+  browser's own language by default). In Spanish it understands commands
+  as Spanish speakers say them ("abre YouTube", "reproduce el cuarto",
+  "adelanta un minuto y medio", "la penúltima"), answers in Spanish with a
+  Spanish voice of the computer, never a remote one, and asks before
+  pressing "Comprar", "Eliminar" or "Cerrar sesión". Listening in Spanish
+  waits for a Spanish speech model that can be shipped with MoltBrowser;
+  until then commands typed in Agent mode work, and voice mode says why
+  it doesn't open the microphone. English is unchanged.
 - **Voice mode learns from use, on this device** (round 41, learning;
   `docs/design/TOUCHLESS_BROWSING.md` §6.8): "remember this as my news"
   saves what you just did by voice as a routine (an Agent-mode workflow,
