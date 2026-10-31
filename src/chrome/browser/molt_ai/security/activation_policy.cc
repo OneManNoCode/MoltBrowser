@@ -95,6 +95,32 @@ bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms) {
   return !(acting && may_navigate && tab.history_entries == 1);
 }
 
+NavigationStarts::NavigationStarts() = default;
+NavigationStarts::~NavigationStarts() = default;
+
+void NavigationStarts::Started(int64_t id, int64_t now_ms, bool main_frame) {
+  if (starts_.size() >= kMaxNavigationsInFlight && !starts_.count(id)) {
+    // The other frames' first; all of them only if the main frame's alone
+    // fill it.
+    std::erase_if(starts_,
+                  [](const auto& start) { return !start.second.main_frame; });
+    if (starts_.size() >= kMaxNavigationsInFlight) {
+      starts_.clear();
+    }
+  }
+  starts_[id] = {now_ms, main_frame};
+}
+
+std::optional<int64_t> NavigationStarts::Finished(int64_t id) {
+  const auto it = starts_.find(id);
+  if (it == starts_.end()) {
+    return std::nullopt;
+  }
+  const int64_t ms = it->second.ms;
+  starts_.erase(it);
+  return ms;
+}
+
 Ruling Decide(const TabRecord& tab,
               int64_t now_ms,
               Request request,
