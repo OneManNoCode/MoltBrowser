@@ -40,6 +40,7 @@
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/molt_ai/voice/voice_language_settings.h"
+#include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_session_settings.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
@@ -79,16 +80,39 @@ const char* const kKeysKeptOnSaveAndReset[] = {
     molt_ai::web_ai::kWebAIApisSettingsKey,
     molt_ai::voice::kVoiceModeSettingsKey,
     molt_ai::voice::kVoiceAlwaysListeningSettingsKey,
-    molt_ai::voice::kVoiceLanguageSettingsKey};
+    molt_ai::voice::kVoiceLanguageSettingsKey,
+    molt_ai::voice::kVoiceSayWordAloudSettingsKey,
+    molt_ai::voice::kVoiceSpeechRateSettingsKey};
 
 // On settings.json's sequence (common/molt_settings_file.h). What the file
-// holds, or |defaults| when it is missing or isn't a JSON object.
+// holds, or |defaults| when it is missing or can't be used; then, under
+// "fileNotice", why (the page says so: the file is left alone, and Save
+// changes nothing until it is fixed).
 base::DictValue LoadSettings(base::DictValue defaults) {
   const std::optional<base::FilePath> path = molt_ai::MoltSettingsFilePath();
   base::DictValue loaded;
-  if (path && molt_ai::ReadMoltSettingsFileAt(*path, &loaded) ==
-                  molt_ai::MoltSettingsRead::kObject) {
-    return loaded;
+  const molt_ai::MoltSettingsRead read =
+      path ? molt_ai::ReadMoltSettingsFileAt(*path, &loaded)
+           : molt_ai::MoltSettingsRead::kMissing;
+  switch (read) {
+    case molt_ai::MoltSettingsRead::kObject:
+      return loaded;
+    case molt_ai::MoltSettingsRead::kMissing:
+      break;
+    case molt_ai::MoltSettingsRead::kNotAnObject:
+      defaults.Set("fileNotice",
+                   "~/.moltbrowser/settings.json isn't valid JSON (or is "
+                   "over 1 MB), so MoltBrowser leaves it alone. These are "
+                   "the default settings, and saving changes nothing until "
+                   "the file is fixed.");
+      break;
+    case molt_ai::MoltSettingsRead::kNotAFile:
+      defaults.Set("fileNotice",
+                   "~/.moltbrowser/settings.json isn't a regular file, nor a "
+                   "link to one in your home folder, so MoltBrowser doesn't "
+                   "read or change it. These are the default settings, and "
+                   "saving changes nothing until it is one.");
+      break;
   }
   return defaults;
 }
@@ -1285,7 +1309,8 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   base::WeakPtrFactory<MoltAISettingsHandler> weak_ptr_factory_{this};
 };
 
-constexpr char kSettingsPageJs[] = R"JS(// molt://ai-settings page script, served as /app.js under the strict
+constexpr char kSettingsPageJs[] =
+    R"JS(// molt://ai-settings page script, served as /app.js under the strict
 // molt WebUI CSP (molt_webui_csp.h), after the shared moltHTML()
 // Trusted Types prologue.
 var idCounter = 0;
@@ -1319,6 +1344,15 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(function() { t.classList.remove('show'); }, 2000);
+}
+
+// settings.json can't be used (it isn't a regular file or a link to one in
+// the home folder, or isn't JSON): the browser's words, as text.
+function showSettingsFileNotice(s) {
+  var notice = document.getElementById('settingsFileNotice');
+  var text = s && typeof s.fileNotice === 'string' ? s.fileNotice : '';
+  notice.textContent = text;
+  notice.hidden = !text;
 }
 
 function loadSettingsIntoUI(s) {
@@ -2361,6 +2395,7 @@ document.getElementById('resetBtn').addEventListener('click', resetSettings);
 // Init
 sendWithPromise('getSettings').then(function(s) {
   loadSettingsIntoUI(s);
+  showSettingsFileNotice(s);
 });
 // Drive the exit-country picker from the real backend list.
 loadExitCountries();
@@ -2925,6 +2960,7 @@ h2[tabindex="-1"]:focus{outline:none !important}
     </div>
   </div>
 
+  <div id="settingsFileNotice" class="desc" role="status" hidden></div>
   <div class="actions">
     <button class="btn primary" id="saveBtn">Save Settings</button>
     <button class="btn danger" id="resetBtn">Reset to Defaults</button>

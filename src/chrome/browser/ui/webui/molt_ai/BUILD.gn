@@ -76,9 +76,15 @@ source_set("molt_ai") {
 
     # /fill ai and /paste: form fills proposed the same way.
     ":chat_form_fill",
+
+    # The Agent studio's storage, on each storage's sequence.
+    ":agent_studio_storage",
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/cloud",
     "//chrome/browser/molt_ai/common",
+
+    # The studio's screenshots read only as regular files.
+    "//chrome/browser/molt_ai/common:molt_regular_file",
     "//chrome/browser/molt_ai/common:helper_output",
     "//chrome/browser/molt_ai/common:helper_sandbox",
 
@@ -173,19 +179,47 @@ source_set("chat_form_fill") {
   ]
 }
 
+# The Agent studio's reads and changes of workflows and routines, run on
+# each storage's sequence (molt_ai_agent_storage.h): the profile's routines'
+# (shared with voice mode) and the shared storage's. base and the storages
+# only, so molt_ai_unittests tests it on temporary directories.
+source_set("agent_studio_storage") {
+  sources = [
+    "molt_ai_agent_storage.cc",
+    "molt_ai_agent_storage.h",
+  ]
+  public_deps = [
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/voice:voice_routine_store",
+  ]
+  deps = [ "//chrome/browser/molt_ai/automation:storage" ]
+}
+
 # Pure-logic tests for the shared WebUI handler helpers (argument
-# validation, the chat's window) and the chat's form fills. Linked into
+# validation, the chat's window), the chat's form fills and the Agent
+# studio's storage. Linked into
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_ai_agent_storage_unittest.cc",
     "molt_ai_chat_form_fill_unittest.cc",
     "molt_ai_chat_handler_helpers.h",
     "molt_ai_chat_handler_helpers_unittest.cc",
   ]
   deps = [
+    ":agent_studio_storage",
     ":chat_form_fill",
     "//base",
+
+    # The studio's and voice mode's saves on one sequence (TaskEnvironment).
+    "//base/test:test_support",
+
+    # The routines the studio's tests save (voice_routines.h, the grammar).
+    "//chrome/browser/molt_ai/automation:storage",
+    "//chrome/browser/molt_ai/voice:voice_learning_store",
+    "//chrome/browser/molt_ai/voice:voice_loop",
 
     # ConsumeUserClick() (molt_ai_chat_handler_helpers.h).
     "//chrome/browser/molt_ai/common",

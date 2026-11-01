@@ -14,6 +14,11 @@
 // still in the shared storage were made before routines belonged to a
 // profile: they are listed apart, to be kept here (a real click) or left for
 // another profile, and nothing else is done to them here.
+//
+// No file is read or written on the UI thread: each storage's reads and
+// changes run on its own sequence, the profile's routines' shared with
+// voice mode (molt_ai_agent_storage.h), and the page is answered from
+// there.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.h"
 
@@ -48,10 +53,11 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
-#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
+#include "chrome/browser/molt_ai/common/molt_regular_file.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
 #include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
@@ -60,6 +66,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_storage.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_voice_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
@@ -74,10 +81,16 @@
 
 namespace {
 
+using molt_ai::agent_studio::Answer;
+using molt_ai::agent_studio::Holds;
+using molt_ai::agent_studio::RoutinesListing;
+using molt_ai::agent_studio::SaveRequest;
+using molt_ai::agent_studio::StudioPlaces;
+using molt_ai::agent_studio::WorkflowRequest;
 using molt_ai::automation::AutomationRecorderTabHelper;
 using molt_ai::automation::AutomationScheduler;
-using molt_ai::automation::AutomationSecurity;
 using molt_ai::automation::AutomationSchedulerServiceFactory;
+using molt_ai::automation::AutomationSecurity;
 using molt_ai::automation::AutomationStorage;
 using molt_ai::automation::RunQuestion;
 using molt_ai::automation::RunQuestions;
@@ -86,13 +99,12 @@ using molt_ai::automation::Script;
 using molt_ai::automation::Step;
 using molt_ai::automation::StepType;
 using molt_ai::automation::StepTypeToString;
+using molt_ai::automation::Trigger;
+using molt_ai::automation::TriggerType;
 using molt_ai::automation::TrustLevel;
 using molt_ai::automation::TrustLevelFromString;
 using molt_ai::automation::TrustLevelToString;
-using molt_ai::automation::Trigger;
-using molt_ai::automation::TriggerType;
 using molt_ai::voice::VoiceLearning;
-using molt_ai::voice::VoiceRoutineStore;
 
 // Ids the page sends for the routines from before profiles, at most.
 constexpr size_t kMaxRoutineIds = 200;
@@ -225,23 +237,10 @@ base::DictValue WorkflowSummary(const Script& s) {
   return d;
 }
 
-std::string NewWorkflowId() {
-  return "wf_" +
-         base::NumberToString(static_cast<int64_t>(std::time(nullptr)));
-}
-
-// The sites an unconfirmed draft (agent_run_draft.h) asks the user to
-// confirm: the hosts its steps target, as the browser computes them.
-base::ListValue DraftSites(const Script& s) {
-  base::ListValue sites;
-  for (std::string& host : AutomationSecurity::HostsReferencedBy(s.steps)) {
-    sites.Append(std::move(host));
-  }
-  return sites;
-}
-
 // ---------------------------------------------------------------------------
-// AgentStudioHandler — the JS <-> C++ bridge for the studio.
+// AgentStudioHandler — the JS <-> C++ bridge for the studio. Every read and
+// change of workflows and routines runs on the sequence of the storage it
+// touches (molt_ai_agent_storage.h), and the page is answered from there.
 // ---------------------------------------------------------------------------
 class AgentStudioHandler : public content::WebUIMessageHandler {
  public:
@@ -279,11 +278,18 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   }
 
  private:
+  // The page's callback id (args[0]); none when it sent no string.
+  using CallbackId = std::optional<std::string>;
+  using AnswerCallback = base::OnceCallback<void(Answer)>;
+
   Profile* profile() {
     return Profile::FromBrowserContext(
         web_ui()->GetWebContents()->GetBrowserContext());
   }
 
+  // The profile's automation service's shared storage, which the runner
+  // and the scheduler use on the UI thread. The studio itself only takes
+  // its directory (Places()) and never reads or writes through it here.
   AutomationStorage* storage() {
     if (Profile* p = profile()) {
       if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p)) {
@@ -299,14 +305,6 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     Profile* p = profile();
     return p ? VoiceLearning::Get(p) : nullptr;
   }
-  std::unique_ptr<VoiceRoutineStore> VoiceStore() {
-    VoiceLearning* learning = Learning();
-    if (!learning) {
-      return nullptr;
-    }
-    return std::make_unique<VoiceRoutineStore>(learning->routines_dir(),
-                                               learning->shared_root());
-  }
   // Voice mode lists the profile's routines again.
   void VoiceRoutinesChanged() {
     if (VoiceLearning* learning = Learning()) {
@@ -314,33 +312,79 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     }
   }
 
-  // Where workflow |id| is: the profile's routines taught by voice, else
-  // the shared storage's workflows. A voice routine in the shared storage
-  // isn't found: it is one from before profiles, kept here first.
-  struct Found {
-    raw_ptr<AutomationStorage> storage = nullptr;
-    std::optional<Script> script;
-    bool voice = false;
-  };
-  Found FindWorkflow(const std::string& id, VoiceRoutineStore* voice) {
-    Found found;
-    if (voice) {
-      std::optional<Script> s = voice->storage().Load(id);
-      if (s && molt_ai::automation::HasVoiceSteps(*s)) {
-        found.storage = &voice->storage();
-        found.script = std::move(s);
-        found.voice = true;
-        return found;
-      }
+  // Where the studio's workflows are: the profile's routines (none off the
+  // record), and the shared storage of the profile's automation service
+  // (or, in tests, the root VoiceLearning was given).
+  StudioPlaces Places() {
+    StudioPlaces places;
+    VoiceLearning* learning = Learning();
+    if (learning) {
+      places.routines_dir = learning->routines_dir();
+      places.shared_root = learning->shared_root();
     }
     if (AutomationStorage* st = storage()) {
-      std::optional<Script> s = st->Load(id);
-      if (s && !molt_ai::automation::HasVoiceSteps(*s)) {
-        found.storage = st;
-        found.script = std::move(s);
-      }
+      places.shared_dir = st->directory();
+    } else if (learning && !learning->shared_root().empty()) {
+      places.shared_dir =
+          AutomationStorage::SharedDirectory(learning->shared_root());
     }
-    return found;
+    return places;
+  }
+  // The profile's routines' sequence (voice mode's own); null without
+  // routines.
+  scoped_refptr<base::SequencedTaskRunner> RoutinesSequence(
+      const StudioPlaces& places) {
+    VoiceLearning* learning = Learning();
+    if (!learning || places.routines_dir.empty()) {
+      return nullptr;
+    }
+    return learning->routines_task_runner();
+  }
+
+  // |request| answered where its workflow is: among the profile's routines
+  // on their sequence, else in the shared storage on its sequence; then
+  // |done| on the UI thread (not once the page is gone).
+  void AnswerAbout(WorkflowRequest request, AnswerCallback done) {
+    const StudioPlaces places = Places();
+    scoped_refptr<base::SequencedTaskRunner> routines =
+        RoutinesSequence(places);
+    if (!routines) {
+      AnswerInShared(places, std::move(request), std::move(done));
+      return;
+    }
+    routines->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::AnswerInRoutines, places,
+                       request),
+        base::BindOnce(&AgentStudioHandler::OnRoutinesAnswer,
+                       weak_factory_.GetWeakPtr(), places, request,
+                       std::move(done)));
+  }
+  void OnRoutinesAnswer(StudioPlaces places,
+                        WorkflowRequest request,
+                        AnswerCallback done,
+                        std::optional<Answer> answer) {
+    if (answer) {
+      Finish(std::move(done), std::move(*answer));
+      return;
+    }
+    AnswerInShared(places, std::move(request), std::move(done));
+  }
+  void AnswerInShared(StudioPlaces places,
+                      WorkflowRequest request,
+                      AnswerCallback done) {
+    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::AnswerInSharedStorage,
+                       std::move(places), std::move(request)),
+        base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
+                       std::move(done)));
+  }
+  void Finish(AnswerCallback done, Answer answer) {
+    if (answer.routines_changed) {
+      VoiceRoutinesChanged();
+    }
+    std::move(done).Run(std::move(answer));
   }
 
   // The browser tab the user is actually working in (NOT this side-panel
@@ -360,12 +404,29 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     return nullptr;
   }
 
-  void ResolveDict(const base::ListValue& args, base::DictValue out) {
+  static CallbackId CallbackIdOf(const base::ListValue& args) {
     if (args.empty() || !args[0].is_string()) {
+      return std::nullopt;
+    }
+    return args[0].GetString();
+  }
+
+  void ResolveDict(const base::ListValue& args, base::DictValue out) {
+    Resolve(CallbackIdOf(args), std::move(out));
+  }
+  void Resolve(const CallbackId& callback_id, base::DictValue out) {
+    if (!callback_id || !IsJavascriptAllowed()) {
       return;
     }
-    ResolveJavascriptCallback(base::Value(args[0].GetString()),
+    ResolveJavascriptCallback(base::Value(*callback_id),
                               base::Value(std::move(out)));
+  }
+  void ResolveAnswer(CallbackId callback_id, Answer answer) {
+    Resolve(callback_id, std::move(answer.out));
+  }
+  AnswerCallback Resolver(const base::ListValue& args) {
+    return base::BindOnce(&AgentStudioHandler::ResolveAnswer,
+                          weak_factory_.GetWeakPtr(), CallbackIdOf(args));
   }
 
   // -------- messages --------
@@ -384,23 +445,40 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           weak_factory_.GetWeakPtr(), args.Clone()));
       return;
     }
-    std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-    base::ListValue list;
-    std::vector<Script> scripts;
-    if (auto* st = storage()) {
-      for (Script& s : st->ListAll()) {
-        // Voice routines in the shared storage are listed apart (below).
-        if (!molt_ai::automation::HasVoiceSteps(s)) {
-          scripts.push_back(std::move(s));
-        }
-      }
+    // The profile's routines on their sequence, then the shared storage's
+    // workflows on its own.
+    const StudioPlaces places = Places();
+    scoped_refptr<base::SequencedTaskRunner> routines =
+        RoutinesSequence(places);
+    if (!routines) {
+      OnRoutinesListed(places, CallbackIdOf(args), RoutinesListing());
+      return;
     }
+    routines->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&molt_ai::agent_studio::ListRoutines, places),
+        base::BindOnce(&AgentStudioHandler::OnRoutinesListed,
+                       weak_factory_.GetWeakPtr(), places, CallbackIdOf(args)));
+  }
+  void OnRoutinesListed(StudioPlaces places,
+                        CallbackId callback_id,
+                        RoutinesListing listing) {
+    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::ListSharedWorkflows,
+                       std::move(places)),
+        base::BindOnce(&AgentStudioHandler::OnWorkflowsListed,
+                       weak_factory_.GetWeakPtr(), std::move(callback_id),
+                       std::move(listing)));
+  }
+  void OnWorkflowsListed(CallbackId callback_id,
+                         RoutinesListing listing,
+                         std::vector<Script> scripts) {
+    VoiceLearning* learning = Learning();
+    base::ListValue list;
     std::vector<std::string> voice_names;
-    if (voice) {
-      for (Script& s : voice->Routines()) {
-        voice_names.push_back(s.name);
-        scripts.push_back(std::move(s));
-      }
+    for (Script& s : listing.routines) {
+      voice_names.push_back(s.name);
+      scripts.push_back(std::move(s));
     }
     // Newest activity first: most-recently-run, else most-recently-created,
     // so a just-recorded or just-run workflow lands at the top.
@@ -426,8 +504,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     // ones the user said aren't this profile's (counted, to show again).
     base::ListValue unclaimed;
     int hidden = 0;
-    if (voice && learning) {
-      for (const molt_ai::voice::RoutineSummary& routine : voice->Unclaimed()) {
+    if (learning) {
+      for (const molt_ai::voice::RoutineSummary& routine : listing.unclaimed) {
         if (learning->Declined(routine.id)) {
           ++hidden;
           continue;
@@ -441,7 +519,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     }
     out.Set("unclaimed", std::move(unclaimed));
     out.Set("unclaimedHidden", hidden);
-    ResolveDict(args, std::move(out));
+    Resolve(callback_id, std::move(out));
   }
 
   // The page's ids of routines from before profiles: [cb, [id, ...]].
@@ -544,148 +622,109 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
 
   void HandleGetWorkflow(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
-    if (args.size() >= 2 && args[1].is_string()) {
-      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-      std::optional<Script> s =
-          FindWorkflow(args[1].GetString(), voice.get()).script;
-      if (s) {
-        {
-          out = s->ToJSON();
-          // The UI reads {{variable}} defaults under "variables"; expose an
-          // alias so it round-trips (the Script model stores them under
-          // "default_variables").
-          if (const base::DictValue* dv = out.FindDict("default_variables")) {
-            out.Set("variables", dv->Clone());
-          }
-          if (s->security.sites_unconfirmed) {
-            out.Set("draftSites", DraftSites(*s));
-          }
-        }
-      }
+    if (args.size() < 2 || !args[1].is_string()) {
+      ResolveDict(args, base::DictValue());
+      return;
     }
-    ResolveDict(args, std::move(out));
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kGet;
+    request.id = args[1].GetString();
+    AnswerAbout(std::move(request), Resolver(args));
   }
 
   void HandleSaveWorkflow(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
-    if (args.size() >= 2 && args[1].is_dict()) {
-      base::DictValue in = args[1].GetDict().Clone();
-      // The UI sends variable defaults under "variables"; Script::FromJSON
-      // reads "default_variables" — copy so they persist.
-      if (const base::DictValue* vars = in.FindDict("variables")) {
-        if (!in.FindDict("default_variables")) {
-          in.Set("default_variables", vars->Clone());
-        }
-      }
-      // Assign an id for brand-new (recorded / blank) workflows.
-      const std::string* existing = in.FindString("id");
-      if (!existing || existing->empty()) {
-        in.Set("id", NewWorkflowId());
-      }
-      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-      if (auto s = Script::FromJSON(in)) {
-        if (s->created_at_unix == 0) {
-          s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
-        }
-        // Routines taught by voice are kept in the profile (an edit, a
-        // rename, an import of one), workflows in the shared storage.
-        Found found = FindWorkflow(s->id, voice.get());
-        const bool voice_steps = molt_ai::automation::HasVoiceSteps(*s);
-        const std::string refused = SaveRefusal(found, *s, voice.get());
-        AutomationStorage* st = found.voice || (!found.script && voice_steps)
-                                    ? (voice ? &voice->storage() : nullptr)
-                                    : storage();
-        if (!refused.empty()) {
-          out.Set("error", refused);
-        } else if (st) {
-          // The studio never edits the security policy, so whatever the
-          // dict carries is ignored: an existing workflow keeps the policy
-          // stored on disk (trust only changes via promoteTrust in
-          // molt://ai-automation); a new one gets the default CASUAL one.
-          std::optional<Script> existing = std::move(found.script);
-          bool recorded_here = false;
-          if (existing) {
-            s->security = existing->security;
-          } else {
-            s->security = molt_ai::automation::SecurityPolicy();
-            s->security.require_approval_for = {"form_submit", "payment",
-                                                "login"};
-            // First save of a draft that stopRecording produced in this
-            // panel (the id was minted server-side and is used once).
-            recorded_here = !voice_steps && recorded_ids_.erase(s->id) > 0;
-          }
-          // A routine's name, made its own beside the profile's others
-          // ("my news (2)"): voice mode runs exactly one by each name.
-          if (voice_steps) {
-            s->name = voice->NameFor(*s);
-          }
-          AutomationSecurity::ClampTrustForSave(
-              *s, existing ? &*existing : nullptr);
-          if (recorded_here) {
-            // The user just performed these steps themselves, on these
-            // sites; replaying them — including the form they submitted or
-            // the saved password they used — is the point of recording.
-            // APPROVED allows exactly that and no more: actions stay on
-            // the sites the steps target, other sites / RUN_JS / headless
-            // runs still need Trusted. Imports and duplicates never get
-            // here and start CASUAL.
-            s->security.trust = TrustLevel::APPROVED;
-          }
-          if (s->name.empty()) {
-            out.Set("error",
-                    "Too many routines have that name. Choose another.");
-          } else if (st->Save(*s)) {
-            if (recorded_here) {
-              st->AppendAudit(s->id, "trust_changed",
-                              "casual -> approved (recorded in Agent studio)");
-            }
-            if (voice_steps) {
-              VoiceRoutinesChanged();
-            }
-            out.Set("id", s->id);
-            out.Set("name", s->name);
-            out.Set("trust", TrustLevelToString(s->security.trust));
-            // Still a draft (saving never confirms one): the sites its
-            // steps now target, for the review panel.
-            if (s->security.sites_unconfirmed) {
-              out.Set("draftSites", DraftSites(*s));
-            }
-          }
-        }
+    if (args.size() < 2 || !args[1].is_dict()) {
+      ResolveDict(args, base::DictValue());
+      return;
+    }
+    base::DictValue in = args[1].GetDict().Clone();
+    // The UI sends variable defaults under "variables"; Script::FromJSON
+    // reads "default_variables" — copy so they persist.
+    if (const base::DictValue* vars = in.FindDict("variables")) {
+      if (!in.FindDict("default_variables")) {
+        in.Set("default_variables", vars->Clone());
       }
     }
-    ResolveDict(args, std::move(out));
+    // Assign an id for brand-new (recorded / blank) workflows.
+    const std::string* existing = in.FindString("id");
+    if (!existing || existing->empty()) {
+      in.Set("id", molt_ai::agent_studio::NewWorkflowId());
+    }
+    std::optional<Script> s = Script::FromJSON(in);
+    if (!s) {
+      ResolveDict(args, base::DictValue());
+      return;
+    }
+    if (s->created_at_unix == 0) {
+      s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
+    }
+    SaveRequest request;
+    request.script = std::move(*s);
+    const std::string id = request.script.id;
+    const bool voice_steps = molt_ai::automation::HasVoiceSteps(request.script);
+    // First save of a draft that stopRecording produced in this panel (the
+    // id was minted here and is used once).
+    request.recorded_here = !voice_steps && recorded_ids_.erase(id) > 0;
+    // Routines taught by voice are kept in the profile (an edit, a rename,
+    // an import of one), workflows in the shared storage: a look at the
+    // other storage on its sequence, then the save on its own.
+    const StudioPlaces places = Places();
+    scoped_refptr<base::SequencedTaskRunner> routines =
+        RoutinesSequence(places);
+    if (voice_steps && routines) {
+      AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
+          FROM_HERE,
+          base::BindOnce(&molt_ai::agent_studio::SharedStorageHolds, places,
+                         id),
+          base::BindOnce(&AgentStudioHandler::SaveInRoutines,
+                         weak_factory_.GetWeakPtr(), places, std::move(request),
+                         CallbackIdOf(args)));
+      return;
+    }
+    if (routines) {
+      routines->PostTaskAndReplyWithResult(
+          FROM_HERE,
+          base::BindOnce(&molt_ai::agent_studio::RoutinesHold, places, id),
+          base::BindOnce(&AgentStudioHandler::SaveInShared,
+                         weak_factory_.GetWeakPtr(), places, std::move(request),
+                         CallbackIdOf(args)));
+      return;
+    }
+    SaveInShared(places, std::move(request), CallbackIdOf(args),
+                 Holds::kNothing);
   }
-
-  // Why the studio doesn't save |incoming| where |found| says it goes ("":
-  // it does). A voice routine of the shared storage is one from before
-  // profiles, kept here first; voice steps never join a shared workflow;
-  // a routine of the profile keeps its voice steps; no routines off the
-  // record.
-  std::string SaveRefusal(const Found& found,
-                          const Script& incoming,
-                          VoiceRoutineStore* voice) {
-    const bool voice_steps = molt_ai::automation::HasVoiceSteps(incoming);
-    if (!found.script) {
-      AutomationStorage* st = storage();
-      if (st && st->Load(incoming.id)) {
-        return "This routine was made before routines belonged to a "
-               "profile. Keep it here first.";
-      }
-      if (voice_steps && !voice) {
-        return "Routines taught by voice can't be kept in this window.";
-      }
-      return std::string();
+  void SaveInRoutines(StudioPlaces places,
+                      SaveRequest request,
+                      CallbackId callback_id,
+                      Holds in_shared_storage) {
+    scoped_refptr<base::SequencedTaskRunner> routines =
+        RoutinesSequence(places);
+    if (!routines) {
+      Resolve(callback_id, base::DictValue());
+      return;
     }
-    if (!found.voice && voice_steps) {
-      return "Steps taught by voice can't be added to this workflow.";
-    }
-    if (found.voice && !voice_steps) {
-      return "A routine taught by voice keeps its voice steps.";
-    }
-    return std::string();
+    routines->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::SaveRoutine, places,
+                       std::move(request), in_shared_storage),
+        base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
+                       base::BindOnce(&AgentStudioHandler::ResolveAnswer,
+                                      weak_factory_.GetWeakPtr(),
+                                      std::move(callback_id))));
+  }
+  void SaveInShared(StudioPlaces places,
+                    SaveRequest request,
+                    CallbackId callback_id,
+                    Holds in_routines) {
+    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::SaveSharedWorkflow,
+                       std::move(places), std::move(request), in_routines),
+        base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
+                       base::BindOnce(&AgentStudioHandler::ResolveAnswer,
+                                      weak_factory_.GetWeakPtr(),
+                                      std::move(callback_id))));
   }
 
   // The frames of other sites the user let offer their tools to the
@@ -731,111 +770,79 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
 
   void HandleDeleteWorkflow(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
-    bool ok = false;
-    if (args.size() >= 2 && args[1].is_string()) {
-      const std::string& id = args[1].GetString();
-      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-      Found found = FindWorkflow(id, voice.get());
-      if (found.storage) {
-        ok = found.storage->Delete(id);
-        if (ok && found.voice) {
-          found.storage->AppendAudit(id, "voice_routine_deleted",
-                                     "in Agent mode");
-          VoiceRoutinesChanged();
-        }
-      }
+    if (args.size() < 2 || !args[1].is_string()) {
+      base::DictValue out;
+      out.Set("ok", false);
+      ResolveDict(args, std::move(out));
+      return;
     }
-    out.Set("ok", ok);
-    ResolveDict(args, std::move(out));
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kDelete;
+    request.id = args[1].GetString();
+    AnswerAbout(std::move(request), Resolver(args));
   }
 
   void HandleDuplicateWorkflow(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
-    if (args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
-      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-      Found found = FindWorkflow(args[1].GetString(), voice.get());
-      if (auto& s = found.script) {
-        AutomationStorage* st = found.storage;
-        s->id = NewWorkflowId();
-        while (st->Load(s->id)) {
-          s->id += "_";
-        }
-        s->name = args[2].GetString();
-        s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
-        s->stats = molt_ai::automation::Stats();  // fresh history
-        s->trigger = Trigger();                    // copy starts manual
-        // A copy is a new workflow: it earns trust on its own.
-        AutomationSecurity::ClampTrustForSave(*s, /*existing=*/nullptr);
-        // A routine's copy is the profile's too, under a name of its own.
-        if (found.voice) {
-          s->name = voice->NameFor(*s);
-        }
-        if (!s->name.empty() && st->Save(*s)) {
-          if (found.voice) {
-            VoiceRoutinesChanged();
-          }
-          out.Set("id", s->id);
-          out.Set("name", s->name);
-        }
-      }
+    if (args.size() < 3 || !args[1].is_string() || !args[2].is_string()) {
+      ResolveDict(args, base::DictValue());
+      return;
     }
-    ResolveDict(args, std::move(out));
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kDuplicate;
+    request.id = args[1].GetString();
+    request.name = args[2].GetString();
+    AnswerAbout(std::move(request), Resolver(args));
   }
 
   void HandleRunWorkflow(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
-    bool ok = false;
-    if (args.size() >= 2 && args[1].is_string()) {
-      const std::string id = args[1].GetString();
-      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-      if (storage()) {
-        std::optional<Script> loaded = FindWorkflow(id, voice.get()).script;
-        // An unconfirmed draft doesn't run (the runner refuses it too).
-        if (loaded && loaded->security.sites_unconfirmed) {
-          out.Set("ok", false);
-          out.Set("error", molt_ai::automation::kDraftNeedsReviewMessage);
-          ResolveDict(args, std::move(out));
-          return;
-        }
-        // Nor here a routine taught by voice: voice mode runs it.
-        if (loaded && molt_ai::automation::HasVoiceSteps(*loaded)) {
-          out.Set("ok", false);
-          out.Set("error", molt_ai::automation::kVoiceRoutineMessage);
-          ResolveDict(args, std::move(out));
-          return;
-        }
-        if (auto s = std::move(loaded)) {
-          std::map<std::string, std::string> overrides;
-          if (args.size() >= 3 && args[2].is_dict()) {
-            for (const auto kv : args[2].GetDict()) {
-              if (kv.second.is_string()) {
-                overrides[kv.first] = kv.second.GetString();
-              }
-            }
-          }
-          const int64_t before = s->stats.last_run_unix;
-          // Run mode (args[3]): "watch" shows the run window so the user can
-          // watch the replay live; "auto" runs it minimized in the background.
-          // Default watch.
-          bool minimize = false;
-          if (args.size() >= 4 && args[3].is_string()) {
-            minimize = (args[3].GetString() == "auto");
-          }
-          RunScriptInBackgroundBrowser(profile(), *s, minimize,
-                                       /*start_index=*/0, overrides);
-          ok = true;
-          // The background run writes its result to disk on finish; poll for
-          // it so we can fire 'run-complete' back to the panel. (Per-step
-          // 'run-progress' is future work — the popup window shows live steps.)
-          PollRunResult(id, before, /*attempts=*/80);
+    // Runs need the profile's automation service (the run window and the
+    // poll for its result).
+    if (args.size() < 2 || !args[1].is_string() || !storage()) {
+      base::DictValue out;
+      out.Set("ok", false);
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    std::map<std::string, std::string> overrides;
+    if (args.size() >= 3 && args[2].is_dict()) {
+      for (const auto kv : args[2].GetDict()) {
+        if (kv.second.is_string()) {
+          overrides[kv.first] = kv.second.GetString();
         }
       }
     }
-    out.Set("ok", ok);
-    ResolveDict(args, std::move(out));
+    // Run mode (args[3]): "watch" shows the run window so the user can
+    // watch the replay live; "auto" runs it minimized in the background.
+    // Default watch.
+    bool minimize = false;
+    if (args.size() >= 4 && args[3].is_string()) {
+      minimize = (args[3].GetString() == "auto");
+    }
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kCheckRun;
+    request.id = args[1].GetString();
+    AnswerAbout(request,
+                base::BindOnce(&AgentStudioHandler::OnRunChecked,
+                               weak_factory_.GetWeakPtr(), CallbackIdOf(args),
+                               request.id, std::move(overrides), minimize));
+  }
+  void OnRunChecked(CallbackId callback_id,
+                    std::string id,
+                    std::map<std::string, std::string> overrides,
+                    bool minimize,
+                    Answer answer) {
+    if (answer.script && profile()) {
+      const int64_t before = answer.script->stats.last_run_unix;
+      RunScriptInBackgroundBrowser(profile(), *answer.script, minimize,
+                                   /*start_index=*/0, overrides);
+      // The background run writes its result to disk on finish; poll for
+      // it so we can fire 'run-complete' back to the panel. (Per-step
+      // 'run-progress' is future work — the popup window shows live steps.)
+      PollRunResult(id, before, /*attempts=*/80);
+    }
+    Resolve(callback_id, std::move(answer.out));
   }
 
   void PollRunResult(const std::string& id, int64_t before, int attempts) {
@@ -855,31 +862,42 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       }
       ++attempts;
     }
-    auto* st = storage();
-    if (auto s = st ? st->Load(id) : std::nullopt) {
-      if (s->stats.last_run_unix > before) {
-        base::DictValue d;
-        d.Set("id", id);
-        d.Set("ok", s->stats.last_failed_step_index < 0);
-        // Which step failed (0-based; -1 if the run succeeded), so the panel
-        // can say "Failed at step N" instead of a bare "failed".
-        const int failed = s->stats.last_failed_step_index;
-        d.Set("failedStepIndex", failed);
-        if (failed >= 0 && failed < static_cast<int>(s->steps.size())) {
-          const Step& fs = s->steps[failed];
-          d.Set("failedStep", fs.description.empty()
-                                  ? StepTypeToString(fs.type)
-                                  : fs.description);
-        }
-        // Stopped by the trust level, and trusting the workflow would let
-        // it through: the panel offers "Trust & re-run".
-        d.Set("needsTrust", s->stats.last_run_needs_trust &&
-                                s->security.trust < TrustLevel::APPROVED);
-        d.Set("message", s->stats.last_result.empty() ? "Finished"
-                                                       : s->stats.last_result);
-        FireWebUIListener("run-complete", base::Value(std::move(d)));
-        return;
+    // The workflow as stored, read on the shared storage's sequence.
+    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::LoadSharedWorkflow, Places(),
+                       id),
+        base::BindOnce(&AgentStudioHandler::OnRunPolled,
+                       weak_factory_.GetWeakPtr(), id, before, attempts));
+  }
+  void OnRunPolled(std::string id,
+                   int64_t before,
+                   int attempts,
+                   std::optional<Script> s) {
+    if (!IsJavascriptAllowed()) {
+      return;
+    }
+    if (s && s->stats.last_run_unix > before) {
+      base::DictValue d;
+      d.Set("id", id);
+      d.Set("ok", s->stats.last_failed_step_index < 0);
+      // Which step failed (0-based; -1 if the run succeeded), so the panel
+      // can say "Failed at step N" instead of a bare "failed".
+      const int failed = s->stats.last_failed_step_index;
+      d.Set("failedStepIndex", failed);
+      if (failed >= 0 && failed < static_cast<int>(s->steps.size())) {
+        const Step& fs = s->steps[failed];
+        d.Set("failedStep", fs.description.empty() ? StepTypeToString(fs.type)
+                                                   : fs.description);
       }
+      // Stopped by the trust level, and trusting the workflow would let
+      // it through: the panel offers "Trust & re-run".
+      d.Set("needsTrust", s->stats.last_run_needs_trust &&
+                              s->security.trust < TrustLevel::APPROVED);
+      d.Set("message",
+            s->stats.last_result.empty() ? "Finished" : s->stats.last_result);
+      FireWebUIListener("run-complete", base::Value(std::move(d)));
+      return;
     }
     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
@@ -892,47 +910,17 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   // per-step pass/fail timeline + screenshot filenames, for the Runs view.
   void HandleGetRuns(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
-    base::ListValue runs;
-    std::string script_id;
-    if (args.size() >= 2 && args[1].is_string()) {
-      script_id = args[1].GetString();
-      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-      {
-        if (auto s = FindWorkflow(script_id, voice.get()).script) {
-          for (const auto& r : s->stats.run_history) {
-            base::DictValue rd;
-            rd.Set("ts", static_cast<double>(r.timestamp_unix));
-            rd.Set("ok", r.success);
-            rd.Set("durationMs", r.duration_ms);
-            rd.Set("stepsExecuted", r.steps_executed);
-            rd.Set("totalSteps", r.total_steps);
-            rd.Set("message", r.message);
-            int failed = -1;
-            base::ListValue steps;
-            for (const auto& sr : r.steps) {
-              base::DictValue sd;
-              sd.Set("index", sr.index);
-              sd.Set("type", StepTypeToString(sr.type));
-              sd.Set("description", sr.description);
-              sd.Set("ok", sr.ok);
-              sd.Set("durationMs", sr.duration_ms);
-              if (!sr.note.empty()) sd.Set("note", sr.note);
-              if (!sr.found_by.empty()) sd.Set("foundBy", sr.found_by);
-              if (!sr.screenshot.empty()) sd.Set("shot", sr.screenshot);
-              if (!sr.ok && failed < 0) failed = sr.index;
-              steps.Append(std::move(sd));
-            }
-            rd.Set("failedStepIndex", failed);
-            rd.Set("steps", std::move(steps));
-            runs.Append(std::move(rd));
-          }
-        }
-      }
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kRuns;
+    if (args.size() < 2 || !args[1].is_string()) {
+      base::DictValue out;
+      out.Set("id", "");
+      out.Set("runs", base::ListValue());
+      ResolveDict(args, std::move(out));
+      return;
     }
-    out.Set("id", script_id);
-    out.Set("runs", std::move(runs));
-    ResolveDict(args, std::move(out));
+    request.id = args[1].GetString();
+    AnswerAbout(std::move(request), Resolver(args));
   }
 
   void HandleStartRecording(const base::ListValue& args) {
@@ -960,115 +948,123 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
 
   void HandleStopRecording(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
+    std::optional<Script> draft;
     content::WebContents* tab =
         AutomationRecorderTabHelper::GetActivelyRecordingContents();
     if (tab) {
       if (auto* helper =
               AutomationRecorderTabHelper::FromWebContents(tab)) {
-        Script draft = helper->StopRecording();
-        if (draft.name.empty()) {
-          draft.name = "New workflow";
+        draft = helper->StopRecording();
+        if (draft->name.empty()) {
+          draft->name = "New workflow";
         }
-        // Mint the id now and remember it: the first saveWorkflow with this
-        // id is a recording the user made here (see HandleSaveWorkflow).
-        std::string id = NewWorkflowId() + "_rec";
-        while (recorded_ids_.count(id) || (storage() && storage()->Load(id))) {
-          id += "_";
-        }
-        draft.id = id;
-        recorded_ids_.insert(id);
-        base::DictValue json = draft.ToJSON();
-        // The page reads {{variable}} defaults under "variables" (as
-        // getWorkflow gives them): a recorded site tool's withheld values.
-        if (const base::DictValue* dv = json.FindDict("default_variables")) {
-          json.Set("variables", dv->Clone());
-        }
-        out.Set("draft", std::move(json));
       }
     }
     base::DictValue st;
     st.Set("recording", false);
     st.Set("count", 0);
     FireWebUIListener("recorder-state", base::Value(std::move(st)));
-    ResolveDict(args, std::move(out));
+    if (!draft) {
+      ResolveDict(args, base::DictValue());
+      return;
+    }
+    // Mint the id now and remember it: the first saveWorkflow with this
+    // id is a recording the user made here (see HandleSaveWorkflow). One
+    // the shared storage doesn't have, looked up on its sequence.
+    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::UnusedWorkflowId, Places(),
+                       molt_ai::agent_studio::NewWorkflowId() + "_rec",
+                       recorded_ids_),
+        base::BindOnce(&AgentStudioHandler::OnRecordingIdMinted,
+                       weak_factory_.GetWeakPtr(), CallbackIdOf(args),
+                       std::move(*draft)));
+  }
+  void OnRecordingIdMinted(CallbackId callback_id,
+                           Script draft,
+                           std::string id) {
+    // Another stopRecording minted it meanwhile.
+    while (recorded_ids_.count(id)) {
+      id += "_";
+    }
+    draft.id = id;
+    recorded_ids_.insert(id);
+    base::DictValue json = draft.ToJSON();
+    // The page reads {{variable}} defaults under "variables" (as
+    // getWorkflow gives them): a recorded site tool's withheld values.
+    if (const base::DictValue* dv = json.FindDict("default_variables")) {
+      json.Set("variables", dv->Clone());
+    }
+    base::DictValue out;
+    out.Set("draft", std::move(json));
+    Resolve(callback_id, std::move(out));
   }
 
   void HandleSaveSchedule(const base::ListValue& args) {
     AllowJavascript();
-    base::DictValue out;
-    out.Set("ok", false);
-    if (args.size() >= 3 && args[1].is_string() && args[2].is_dict()) {
-      std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-      if (auto* st = storage()) {
-        std::optional<Script> loaded =
-            FindWorkflow(args[1].GetString(), voice.get()).script;
-        // An unconfirmed draft is never scheduled.
-        if (loaded && loaded->security.sites_unconfirmed) {
-          out.Set("error", molt_ai::automation::kDraftNeedsReviewMessage);
-          ResolveDict(args, std::move(out));
-          return;
-        }
-        // Nor a routine taught by voice.
-        if (loaded && molt_ai::automation::HasVoiceSteps(*loaded)) {
-          out.Set("error", molt_ai::automation::kVoiceRoutineMessage);
-          ResolveDict(args, std::move(out));
-          return;
-        }
-        if (auto s = std::move(loaded)) {
-          const base::DictValue& t = args[2].GetDict();
-          const std::string* type = t.FindString("type");
-          const std::string* expr = t.FindString("expression");
-          Trigger trig;
-          if (type && *type == "interval") {
-            trig.type = TriggerType::INTERVAL;
-            // UI sends "<n>m" / "<n>h"; the engine wants seconds.
-            int secs = 3600;
-            std::string e = expr ? *expr : "60m";
-            if (!e.empty() && (e.back() == 'm' || e.back() == 'h')) {
-              char unit = e.back();
-              int n = 0;
-              base::StringToInt(e.substr(0, e.size() - 1), &n);
-              secs = (unit == 'h') ? n * 3600 : n * 60;
-            } else {
-              base::StringToInt(e, &secs);
-            }
-            if (secs < 60) {
-              secs = 60;
-            }
-            trig.expression = base::NumberToString(secs);
-          } else if (type && *type == "daily" && expr) {
-            // "HH:MM" -> cron "MM HH * * *".
-            std::string hh = expr->substr(0, expr->find(':'));
-            std::string mm = expr->substr(expr->find(':') + 1);
-            trig.type = TriggerType::CRON;
-            trig.expression = mm + " " + hh + " * * *";
-          } else if (type && *type == "cron") {
-            trig.type = TriggerType::CRON;
-            trig.expression = expr ? *expr : "";
-          } else {
-            trig.type = TriggerType::MANUAL;
+    if (args.size() < 3 || !args[1].is_string() || !args[2].is_dict() ||
+        !storage()) {
+      base::DictValue out;
+      out.Set("ok", false);
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    const base::DictValue& t = args[2].GetDict();
+    const std::string* type = t.FindString("type");
+    const std::string* expr = t.FindString("expression");
+    Trigger trig;
+    if (type && *type == "interval") {
+      trig.type = TriggerType::INTERVAL;
+      // UI sends "<n>m" / "<n>h"; the engine wants seconds.
+      int secs = 3600;
+      std::string e = expr ? *expr : "60m";
+      if (!e.empty() && (e.back() == 'm' || e.back() == 'h')) {
+        char unit = e.back();
+        int n = 0;
+        base::StringToInt(e.substr(0, e.size() - 1), &n);
+        secs = (unit == 'h') ? n * 3600 : n * 60;
+      } else {
+        base::StringToInt(e, &secs);
+      }
+      if (secs < 60) {
+        secs = 60;
+      }
+      trig.expression = base::NumberToString(secs);
+    } else if (type && *type == "daily" && expr) {
+      // "HH:MM" -> cron "MM HH * * *".
+      std::string hh = expr->substr(0, expr->find(':'));
+      std::string mm = expr->substr(expr->find(':') + 1);
+      trig.type = TriggerType::CRON;
+      trig.expression = mm + " " + hh + " * * *";
+    } else if (type && *type == "cron") {
+      trig.type = TriggerType::CRON;
+      trig.expression = expr ? *expr : "";
+    } else {
+      trig.type = TriggerType::MANUAL;
+    }
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kSchedule;
+    request.id = args[1].GetString();
+    request.trigger = trig;
+    AnswerAbout(std::move(request),
+                base::BindOnce(&AgentStudioHandler::OnScheduleSaved,
+                               weak_factory_.GetWeakPtr(), CallbackIdOf(args)));
+  }
+  void OnScheduleSaved(CallbackId callback_id, Answer answer) {
+    if (answer.trigger) {
+      if (Profile* p = profile()) {
+        if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p)) {
+          if (svc->scheduler()) {
+            svc->scheduler()->Reschedule();  // pick up immediately
           }
-          s->trigger = trig;
-          s->enabled = trig.type != TriggerType::MANUAL;
-          st->Save(*s);
-          if (Profile* p = profile()) {
-            if (auto* svc =
-                    AutomationSchedulerServiceFactory::GetForProfile(p)) {
-              if (svc->scheduler()) {
-                svc->scheduler()->Reschedule();  // pick up immediately
-              }
-            }
-          }
-          base::Time next =
-              AutomationScheduler::NextFireTime(s->trigger, base::Time::Now());
-          out.Set("ok", true);
-          out.Set("nextFire",
-                  next.is_null() ? 0.0 : next.InSecondsFSinceUnixEpoch());
         }
       }
+      base::Time next =
+          AutomationScheduler::NextFireTime(*answer.trigger, base::Time::Now());
+      answer.out.Set("nextFire",
+                     next.is_null() ? 0.0 : next.InSecondsFSinceUnixEpoch());
     }
-    ResolveDict(args, std::move(out));
+    Resolve(callback_id, std::move(answer.out));
   }
 
   // The studio's Trust / Undo control: [callback_id, id, "approved" |
@@ -1089,28 +1085,15 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       ResolveDict(args, std::move(out));
       return;
     }
-    std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-    if (args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
-      const std::string& id = args[1].GetString();
-      const std::string& level_str = args[2].GetString();
-      Found found = FindWorkflow(id, voice.get());
-      AutomationStorage* st = found.storage;
-      std::optional<Script>& s = found.script;
-      if (!s) {
-        out.Set("error", "Workflow not found");
-      } else if (s->security.sites_unconfirmed) {
-        // A draft from a web agent run is trusted only after its sites are
-        // confirmed (HandleConfirmDraftSites).
-        out.Set("error", "Confirm this draft's sites first.");
-      } else if ((level_str != "approved" && level_str != "casual") ||
-                 s->security.trust > TrustLevel::APPROVED) {
-        out.Set("error", "Manage this workflow's trust in molt://ai-automation");
-      } else if (st->SetTrustLevel(id, TrustLevelFromString(level_str))) {
-        out.Set("ok", true);
-        out.Set("trust", level_str);
-      }
+    if (args.size() < 3 || !args[1].is_string() || !args[2].is_string()) {
+      ResolveDict(args, std::move(out));
+      return;
     }
-    ResolveDict(args, std::move(out));
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kTrust;
+    request.id = args[1].GetString();
+    request.level = args[2].GetString();
+    AnswerAbout(std::move(request), Resolver(args));
   }
 
   // The draft review's "Confirm sites": [callback_id, id, [site, ...]], the
@@ -1142,29 +1125,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       }
       shown.push_back(v.GetString());
     }
-    const std::string& id = args[1].GetString();
-    std::unique_ptr<VoiceRoutineStore> voice = VoiceStore();
-    Found found = FindWorkflow(id, voice.get());
-    AutomationStorage* st = found.storage;
-    std::optional<Script>& s = found.script;
-    if (!s) {
-      out.Set("error", "Workflow not found");
-    } else if (!AutomationSecurity::ConfirmDraftSites(*s, shown)) {
-      out.Set("error",
-              "The draft's steps changed. Save them, then confirm again.");
-    } else if (st->Save(*s)) {
-      std::string sites;
-      for (const std::string& host : s->security.domain_whitelist) {
-        sites += (sites.empty() ? "" : " ") + host;
-      }
-      st->AppendAudit(id, "draft_sites_confirmed", sites);
-      if (found.voice) {
-        VoiceRoutinesChanged();
-      }
-      out.Set("ok", true);
-      out.Set("trust", TrustLevelToString(s->security.trust));
-    }
-    ResolveDict(args, std::move(out));
+    WorkflowRequest request;
+    request.kind = WorkflowRequest::Kind::kConfirmSites;
+    request.id = args[1].GetString();
+    request.sites = std::move(shown);
+    AnswerAbout(std::move(request), Resolver(args));
   }
 
   // A run's question (run_questions.h): [callback_id, workflow id,
@@ -1263,12 +1228,17 @@ bool IsSafeFilename(const std::string& s) {
   return base::EndsWith(s, ".png", base::CompareCase::SENSITIVE);
 }
 
-// Reads a file into ref-counted memory. Runs on a MayBlock pool thread.
+// A run's screenshot, at most.
+constexpr size_t kMaxScreenshotBytes = 32 * 1024 * 1024;
+
+// Reads a screenshot into ref-counted memory: only a regular file (never
+// through a link), within the cap. Runs on a MayBlock pool thread.
 scoped_refptr<base::RefCountedMemory> ReadFileBytes(const base::FilePath& path) {
-  std::string data;
-  if (!base::ReadFileToString(path, &data))
+  molt_ai::MoltFileRead read = molt_ai::ReadMoltFile(
+      path, kMaxScreenshotBytes, molt_ai::MoltFileLinks::kNotFollowed);
+  if (read.kind != molt_ai::MoltFileKind::kRegular)
     return nullptr;
-  return base::MakeRefCounted<base::RefCountedString>(std::move(data));
+  return base::MakeRefCounted<base::RefCountedString>(std::move(read.contents));
 }
 
 constexpr char kAgentPageJs[] = R"JS(/* Agent studio page script, served as /app.js under the strict molt
@@ -3576,11 +3546,8 @@ h2[tabindex="-1"]:focus{outline:none!important}
       std::move(callback).Run(empty());
       return;
     }
-    base::FilePath dir = st->EnsureArtifactsDir(script_id);
-    if (dir.empty()) {
-      std::move(callback).Run(empty());
-      return;
-    }
+    // Where its run left it (no I/O here: read on the pool below).
+    base::FilePath dir = st->ArtifactsDir(script_id);
     base::FilePath path = dir.Append(base::FilePath::FromUTF8Unsafe(filename));
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
