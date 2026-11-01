@@ -158,6 +158,148 @@ what to send back.
 | Windows-only hooks (deferred) | [§3.3](#33-windows-deferred) |
 | The vendored adblock crates (gnrt) | [§1](#1-sync) |
 
+### First build after round 43: what fails first, and how it looks
+
+Rounds 38 to 43 (#81 to #85) added touchless browsing's listening, its own
+voice, learning, site skills and reading, prompts by voice, the activation
+guard, the web agent on the page map, questions about the page, routines
+per profile and Spanish. Every C++ file was type-checked against 156's
+headers and the GN graph was checked statically, but none of it has been
+compiled. Their "needs the build machine" notes are collected here, in the
+order to meet them; the steps of "First build" above still apply, and §3
+to §6 hold the detail (from build-readiness, round 44).
+
+1. **The static checks, including the two round 44 added** (no checkout;
+   `tests` takes about 3 minutes, `flags` seconds). Run step 1 above,
+   then:
+   ```bash
+   python3 tools/chromium/gn_static_check.py tests --warnings 2>&1 | tee ~/molt-v0.3.0/static-tests.log
+   python3 tools/chromium/gn_static_check.py flags --warnings 2>&1 | tee ~/molt-v0.3.0/static-flags.log
+   ```
+   *Expected:* `tests` finds 0 errors and 0 warnings on all six configs
+   (327 test sources: 258 unit, 12 browser, 57 fuzzer, at round 44);
+   `flags` finds 0 errors and one warning, the `LoginCustomFlags` lines
+   for `enums.xml` (§11). Both read the pinned commit's file list through
+   `tools/chromium/upstream.py`'s cache (`--chromium-cache`, by default
+   `.molt-chromium-cache`, which fetches about 20 MB of trees from the
+   GitHub mirror the first time), because the release tarball leaves test
+   data out. CI's `gn-static-check` job (`lint.yml`) runs the five
+   `gn_static_check.py` checks on every pull request: if it is red, start
+   there.
+   - `tests` would have shown, before round 44, five fuzzers that no
+     fuzzing build built (`molt_automation_locators_fuzzer`,
+     `molt_automation_tool_steps_fuzzer`, `molt_frame_tools_fuzzer`,
+     `molt_voice_speech_fuzzer`, `molt_voice_helper_fuzzer`; now in
+     `molt_fuzzers`). An orphan looks like
+     `ERROR tests [...] <file>: is listed in <target>, which no test binary
+     reaches` or `... (no target)`; missing test data like
+     `ERROR testdata [...] <file>:<line>: reads //chrome/test/data/...,
+     which isn't in the runtime data of //chrome/test:browser_tests`.
+   - `flags` would have shown `AboutFlagsTest.OwnersLookValid` failing for
+     all 13 `#molt-*` flags (their owner was a bare name; now
+     `//chrome/browser/molt_ai/OWNERS`).
+2. **`gn gen`: the cycles to watch** (§3, §4.9). The static `cycles` check
+   finds none, but it drops other toolchains and values only `gn gen`
+   knows. Every round added an edge from
+   `//chrome/browser/molt_ai/voice:voice_controller` into the browser,
+   while upstream targets that MoltBrowser hooks
+   (`//chrome/browser:core` through `molt_ai:core_hooks`,
+   `//chrome/browser/ui/browser_web_contents_delegate`,
+   `//chrome/browser/download:impl`) depend on small MoltBrowser targets:
+
+   | Round | Edges added | From |
+   |---|---|---|
+   | 38 | `voice:voice_controller` → `//chrome/browser/ui/views/molt_ai/voice:overlay`; the toolbar → `voice:voice_session` | speech-session |
+   | 39 | `voice:voice_controller` → `//chrome/browser/molt_ai:molt_ai_agents` → `voice:voice_page`, `voice:voice_planner`, `voice:page_map`, `web_ai:logic`, `agents:agent_page_map` (no cycle through `//chrome/browser/profiles`) | agent-pagemap |
+   | 40 | `molt_ai:core_hooks`, `ui/browser_web_contents_delegate`, `download:impl`, `voice:voice_page`, `voice:voice_controller`, `molt_ai_agents` → `security:activation_guard` → `//components/blocked_content`, `//components/permissions` | activation-guard |
+   | 41 | `voice:voice_controller` → `//chrome/browser/download`, `//chrome/browser/ui/passwords` (and → `//chrome/browser/molt_ai/automation`, replaced in round 43) | learning, voice-gesture |
+   | 42 | `voice:voice_controller` → `//chrome/browser/download/bubble`, `//chrome/browser/ui/page_action`, `ui/actions:actions_headers`, `ui/tabs:tabs_public`, `//components/tabs:public`, `common:molt_settings_file`; `voice:voice_page_questions` → `//chrome/browser/molt_ai:molt_ai_runtime` | voice-hardening, page-questions |
+   | 43 | `voice:voice_controller` → `//chrome/browser/media/webrtc`, `//chrome/browser:browser_process`, `voice:voice_routine_store` → `automation:storage` | gesture-channel, second-language, profile-routines |
+
+   *A failure looks like* `ERROR Dependency cycle:` and a list of labels
+   that ends where it began. Read it for the hooked upstream target (one of
+   the three above) on the way back to `voice:voice_controller`: the fix is
+   to give the hook a smaller target to depend on, as
+   `voice:voice_dialog_manager` and `automation:storage` were split out,
+   never `allow_circular_includes_from` (it covers includes, not deps).
+   Send `configure-*.log` whole.
+3. **Build MoltBrowser's targets before `chrome`** (`-k 0`, read the whole
+   log; on Linux in `out/MoltBrowser-linux`) (verify the command):
+   ```bash
+   cd chromium/src
+   B=out/MoltBrowser
+   for t in chrome/browser/molt_ai/voice:voice_loop chrome/browser/molt_ai/voice:page_map \
+            chrome/browser/molt_ai/voice:site_skills chrome/browser/molt_ai/voice:page_questions \
+            chrome/browser/molt_ai/security:activation_policy chrome/browser/molt_ai/common:molt_settings_file \
+            chrome/browser/molt_ai/automation:storage chrome/browser/molt_ai/voice:voice_routine_store \
+            chrome/browser/molt_ai/voice:voice_session chrome/browser/molt_ai/security:activation_guard \
+            chrome/browser/molt_ai:molt_ai_agents chrome/browser/molt_ai/voice:voice_controller \
+            chrome/browser/ui/views/molt_ai/voice:overlay chrome/browser/ui/webui/molt_ai \
+            chrome/browser/ui/browser_web_contents_delegate chrome/browser/download:impl; do
+     autoninja -C $B -k 0 $t 2>&1 | tee ~/molt-v0.3.0/build-r43-${t//[\/:]/_}.log
+   done
+   grep -lE 'error:|FAILED:|finished with an error' ~/molt-v0.3.0/build-r43-*.log
+   ```
+   In order: the std-only logic (grammar, page map, skills, the activation
+   policy, settings and routine files; minutes, and the first sign that
+   the toolchain and DEPS agree), then the browser side, where the risk
+   is. The likeliest to fail, each with §4.8's row for its round:
+   `voice:voice_controller` (every round added to it; `TtsController`,
+   `MediaSession`, `PermissionRequestManager`, `DownloadBubbleUIController`,
+   `PageActionController`, `MediaStreamCaptureIndicator`,
+   `g_browser_process`), `voice:voice_session` (its own
+   `media::AudioInputIPC` with a processing config), `security:activation_guard`
+   and the two imported delegates it hooks
+   (`browser_web_contents_delegate.cc`,
+   `chrome_download_manager_delegate.cc`), `molt_ai_agents` (the page-map
+   path, the planner's replay), and `ui/webui/molt_ai`
+   (`molt_ai_chat_handler.cc` was never type-checked). *A failure looks
+   like* `error: no member named ...`, `no matching member function for
+   call to ...` or `cannot convert ...` in one of those files: an API whose
+   156 form the checker's headers didn't show. Send the log; the round's
+   tag in §4.8 names the change.
+4. **The links** (still `-k 0`):
+   ```bash
+   for t in molt_ai_unittests chrome/browser/molt_ai/voice:browser_tests \
+            chrome/browser/molt_ai/voice:molt_fake_speech_helper \
+            chrome/browser/molt_ai/voice:molt_fake_voice_helper browser_tests chrome; do
+     autoninja -C $B -k 0 $t 2>&1 | tee ~/molt-v0.3.0/build-r43-${t//[\/:]/_}.log
+   done
+   ```
+   `voice:browser_tests` compiles every MoltBrowser browser test (85 tests
+   in 12 files) without linking `browser_tests`, the slowest link of all.
+   *A failure looks like* `ld.lld: error: undefined symbol: ...` (or
+   `Undefined symbols for architecture arm64` on the Mac) or
+   `duplicate symbol: ...`. Round 43 moved `automation_storage.cc` into
+   `automation:storage` (listed in that target only, checked statically):
+   an undefined `molt_ai::AutomationStorage::...` means a target that
+   used to get it through `//chrome/browser/molt_ai/automation` now needs
+   `automation:storage` in its deps. In a component build, an undefined
+   MoltBrowser symbol is a missing export macro (§4.9).
+5. **Fuzzers** (§6): `molt_fuzzers` now reaches all 57 fuzzer sources'
+   targets; before round 44, §6's loop would have printed `FINDING` for
+   the five above (no binary to run).
+6. **The first test runs** (§5): `molt_ai_unittests` first, then the
+   browser tests of rounds 36 to 43 in one run:
+   ```bash
+   chromium/src/out/MoltTests/browser_tests --gtest_filter='Voice*BrowserTest.*:AgentPageMapBrowserTest.*:ActivationGuard*BrowserTest.*:MoltSettingsFileBrowserTest.*' \
+     2>&1 | tee ~/molt-v0.3.0/r36-r43-browser-tests.log
+   ```
+   (verify the filter), and `unit_tests --gtest_filter='AboutFlagsTest.*:AboutFlagsHistogramTest.*'`.
+   *Expected:* §5.1's results for each suite; `AboutFlagsTest.*` passes
+   and `AboutFlagsHistogramTest.CheckHistograms` fails until the
+   `LoginCustomFlags` lines `flags --warnings` prints are in `enums.xml`
+   (§5.3, §11). *A failure looks like*: a fixture page that never loads
+   (the embedded test server's 404) or `ReadFileToString` failing on a
+   path under `chrome/test/data/molt_voice/` (test data; `tests` checks
+   it, so send the path); `VoiceSessionBrowserTest`,
+   `VoiceLearningBrowserTest` or `VoiceSpeechBrowserTest` failing as the
+   helper starts (`molt_fake_speech_helper`, `molt_fake_voice_helper`, built
+   through `data_deps`: check they are next to `browser_tests`); a wait
+   that runs out (§5.1: the waits are timed for a desktop).
+7. **Send back:** the logs of steps 1 to 6 (or, for long ones, what
+   "First build" step 5 says to grep), and the browser tests' log whole.
+
 ---
 
 ## 0. Before you start
