@@ -4,6 +4,118 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-11-01: round 43 (November 2026)
+
+**Scope.** The code of round 43, which each of its four workstreams had
+reviewed only on its own side, and the places where the integrator joined
+them:
+
+1. The confirmation word's channel (`voice_gesture_channel.*`,
+   `voice_capture_watch.*`, `VoiceSpeech::SpeakPrivately()`, the word texts
+   and their twins in `voice_prompts.*`, `VoiceController::Say()`, the
+   caption bar's word): every path that says a text holding the word
+   ("repeat" included), the caption's accessibility node, logs, the agent
+   panel and the controller's other observers, the platform's voice taking
+   over when voice mode's own voice fails mid-sentence, the captures the
+   watch sees (a tab's, an extension's and an offscreen document's, other
+   profiles' and MoltNet's, Cast) and one that begins between the word
+   being shown and being said, how many words a page can make the browser
+   draw, and the "say aloud" setting's click through the merged settings
+   page.
+2. Barge-in over voice mode's own voice (`TakenOverOwnVoice()`): which
+   commands still run at once, and in which context the voice loop parses
+   them afterwards.
+3. "Play" in place (`Intent::kPlayInPlace`) and the activation guard's
+   history rules: a press that loads a new page after all.
+4. Routines per profile (`voice_routine_store.*`,
+   `AutomationStorage::Take()`, `FinishTake()` and `ReturnTaken()`, the
+   Agent studio's "Routines from before profiles", `molt://ai-automation`'s
+   refusals): ids and paths, links and `.taken` files in the directories,
+   two profiles claiming at once, the declined list, the studio's new
+   messages and the clicks they need, and private and MoltNet windows.
+5. Spanish (`spoken_phrases_es.cc`, `voice_command_phrases_es.cc`,
+   `phonetic_key_es.*`, `confirmation_words_es.*`, `spoken_answers*`,
+   `voice_language*`, `spoken_numbers.*`): what parses as a confirmation, a
+   stop or a command that acts without a question; the catalog's
+   `Localized()` and `Tr()` with page text and hostile placeholders; the
+   language setting; the Spanish number reader on hostile input; every
+   path that opens the microphone; and the voice Spanish is said with.
+6. The integrator's fixes: `DecideLoopActivity()`, `WebAIApisSwitchFrom()`
+   and its target, the voice helper's sample rate cap, routine names in
+   the voice's language and the Spanish catalog's routine sentences.
+
+**Method.** Each candidate traced from its attacker (a web page or the
+frames it embeds, its audio, an extension, a page capturing a microphone
+or the screen, a file in a routines directory, another profile, the page
+of `molt://ai-settings` or the Agent studio) through MoltBrowser's code
+and the upstream Chromium 156 code at the pinned revision (the media
+stream capture indicator and what registers with it, Cast mirroring's
+indicator, the speech engine's voice matching). The barge-in check was
+compared with the grammar over every command pattern of both languages,
+expanded, in every parse context. Fixes tested with the std-only unit
+tests built standalone (system gtest, ASan and UBSan), the voice
+controller, prompts, listener and learning fuzzers, and
+`molt_fuzz.py check`; the changed C++ was compiled against Chromium
+156's headers; the browser tests run on the build machine.
+
+**Findings.** 16: 4 low and 12 informational (defence in depth,
+usability, local files, or what later rounds cover). Fixed: all four of
+the low and six of the informational, three of the low in this review
+and the rest in the same round's other work (voice mode in Spanish,
+storage robustness) and at integration; the others are tracked
+privately.
+
+**Fixed.**
+
+- A voice press that doesn't navigate the tab ("play" of the player on
+  the page, full screen) but loads a new page after all (a video inside a
+  link, a page that navigates as its video starts) no longer makes "go
+  back" from that page skip the page the user was on: a new document in
+  the tab is the page the press led to, as for any action
+  (`security/activation_policy.cc`'s `NoteHistoryEntry()`).
+- A command said over voice mode's own voice runs at once only if it
+  stays with the page whether or not a list is being read: "open three"
+  chooses from a list, but without one it opens a site, so it now waits
+  for the browser to be quiet (`voice/voice_session_logic.cc`'s
+  `TakenOverOwnVoice()`).
+- Where the computer has no voice of voice mode's language, the answers
+  are read by one of its own voices, never by a remote voice of the
+  language the speech engine would otherwise pick
+  (`voice/voice_language.cc`'s `PickLocalVoice()`, used by
+  `VoiceSpeech`).
+
+Fixed in the same round's other work:
+
+- A confirmation word said in a sentence that doesn't answer the prompt,
+  or heard unsure, while something else may be listening, is retired and
+  a new one drawn, as a word heard unclearly already was
+  (`voice/voice_prompts.cc`'s `WordSaidInPassing()`, through
+  `VoiceBrowserPrompts::OnUtteranceHeard()`).
+- The answer filter for questions about the page also finds Spanish
+  greetings to the browser (`page_questions.cc`'s `HoldsWakePhrase()`).
+- Routine files in the shared directory are never followed through a
+  link, and each claim sets its file aside under a name of its own
+  (`automation/automation_storage.cc`).
+- The learning file's list of declined routines is read in one pass
+  (`voice/voice_learning_store.cc`).
+- A `web_ai_apis` value in `settings.json` that isn't true or false
+  leaves the built-in AI APIs off (`WebAIApisSwitchFrom()`).
+- `molt://ai-settings`' Reset keeps the "say the word aloud" setting and
+  the speech rate, so the page and the running voice mode agree.
+
+**Tests added.**
+
+- `activation_policy_unittest.cc`: a new document after a press that
+  doesn't navigate is the page it led to; entries a document adds for
+  itself stay skippable. `activation_guard_browsertest.cc`: "go back"
+  after "play" loaded another page returns to the user's page.
+- `voice_session_logic_unittest.cc`: "open three", "go to three", "visit
+  three" wait; a place in a list and a bare number still run at once.
+- `voice_language_unittest.cc`: the computer's own voice, of the
+  browser's language first, never a remote one.
+  `voice_speech_browsertest.cc`: Spanish without a Spanish voice is read
+  by the computer's voice, not a remote Spanish one.
+
 ## 2026-10-31: round 42 (October 2026)
 
 **Scope.** The code of round 42, which each of its four workstreams had

@@ -396,6 +396,9 @@ bool IsAlwaysHeardCommand(std::string_view text);
 // reaches another site (open, search, a new tab), types or sends text,
 // closes a tab, changes what voice mode learned (routines, words), turns
 // voice mode on, or goes to the planner (what the grammar doesn't know).
+// The loop parses it later in its own context, so it must stay so whether
+// a list is being read or not ("open three" chooses from a list, and opens
+// a site called "three" without one); a bare number is let through.
 bool TakenOverOwnVoice(std::string_view text);
 
 }  // namespace voice

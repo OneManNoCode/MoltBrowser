@@ -531,6 +531,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   speaking whenever its voice plays, also while it waits for a page, so
   what it says then is never taken for the user's words; and the built-in
   AI APIs stay off while `settings.json` can't be read.
+- Hardening (security review of round 43, `docs/SECURITY_REVIEWS.md`):
+  in voice mode (preview), "go back" after "play" or "full screen" that
+  loaded another page returns to the page you were on; a command said
+  over voice mode's voice that would open a site without a list being
+  read ("open three") waits until it has stopped; and a language your
+  computer has no voice for is read by one of its own voices, never a
+  remote one.
 
 ### Privacy
 - **Voice mode in Spanish** (round 43, second-language;
@@ -544,6 +551,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   waits for a Spanish speech model that can be shipped with MoltBrowser;
   until then commands typed in Agent mode work, and voice mode says why
   it doesn't open the microphone. English is unchanged.
+- **Everything voice mode says, in Spanish** (round 44, spanish-prompts;
+  `docs/design/TOUCHLESS_BROWSING.md` §4.1, §7.3): the browser's prompts
+  and a page's dialogs, with Spanish confirmation words ("Para
+  permitirlo, di manzana.") and Spanish answers ("bloquéalo", "quédate",
+  "descarta", "nunca"), routines and learning ("Ejecutando mis noticias.
+  Paso 1: abre YouTube."), reading aloud, the activation guard's
+  questions, the planner's steps, and questions about the page, which the
+  on-device AI is asked to answer in Spanish. "Oye Molt" is ready as
+  Spanish's wake phrase for when Spanish can listen. As hardening, the
+  confirmation word is changed when it is said in passing (inside a
+  sentence, or unclearly) while something could record it. A check in CI
+  keeps every sentence voice mode says in the Spanish catalog. English is
+  unchanged.
 - **Voice mode learns from use, on this device** (round 41, learning;
   `docs/design/TOUCHLESS_BROWSING.md` §6.8): "remember this as my news"
   saves what you just did by voice as a routine (an Agent-mode workflow,
@@ -1358,6 +1378,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and §7.5.
 
 ### Fixed
+- **Workflows, routines and settings files hold up to crashes, odd files
+  and a busy window** (round 44, storage-robustness). A routine being kept
+  from before profiles when the browser closed is put back to be offered
+  again (or finished, if the profile already has it), never lost and never
+  given to a profile without asking. The Agent studio reads and saves on
+  background sequences, the profile's shared with voice mode, so the
+  window never waits on the disk and two changes to a routine never mix.
+  `settings.json`, the voice learning file and the `.molt` files are read
+  only when they are regular files of a sane size: a pipe, a device or a
+  folder in their place is left alone (the settings page says so) instead
+  of holding up shutdown. A `settings.json` kept by a dotfile manager, a
+  link to a file in your home folder, stays a link. The automation audit
+  log is now created when missing.
 - **A Windows clock set before 1970 no longer ends the browser** when an
   automation writes its audit timestamp (it records the epoch instead), and
   a schedule whose time can't be converted has no next run.
@@ -1534,6 +1567,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   non-Blink-usage audit. Every MoltBrowser header is now listed in its
   build target, the targets and include rules declare what they use, and
   the build-machine checklist starts with one ordered first-build list.
+- **Test and flag checks before the first build** (`gn_static_check.py
+  tests` and `flags`, in CI): every MoltBrowser test and fuzzer is built
+  by a binary that runs it, the pages and files tests open are there and
+  shipped with the test binary, and every MoltBrowser feature switch is a
+  `chrome://flags` entry with the metadata Chromium's own flag tests
+  require. Five fuzzers that no fuzzing build reached are now built, the
+  `#molt-*` flags name an owner Chromium's flag tests accept, and the
+  build-machine checklist has one ordered list of what the first build
+  after round 43 should meet.
 - **Compile check on every platform** (`tools/compile_check/`): it now
   type-checks every C, C++ and Objective-C++ file MoltBrowser adds or
   changes, and the changed headers no source includes, on each platform

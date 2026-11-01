@@ -110,6 +110,10 @@ class VoicePageQuestions {
   // A question is being answered.
   bool running() const { return run_ != 0 && static_cast<bool>(done_); }
 
+  // The language questions are asked in (the window's voice language): the
+  // model is asked to answer in it (page_questions.h).
+  void set_language(Language language) { language_ = language; }
+
  private:
   struct Followed;
   struct ModelCheck;
@@ -129,7 +133,7 @@ class VoicePageQuestions {
   void Finish(std::string text, bool from_page);
   // The question is done without the model (the browser's own |text|),
   // from a task of its own.
-  void FinishSoon(const char* text);
+  void FinishSoon(std::string_view text);
   // Cancels the inference request, if one is out.
   void CancelRequest();
 
@@ -138,6 +142,7 @@ class VoicePageQuestions {
   // The question running: its run (0 for none), its page, its request.
   int run_ = 0;
   int next_run_ = 0;
+  Language language_ = Language::kEnglish;
   int64_t page_id_ = -1;
   uint64_t request_id_ = 0;
   // A worker generates with |request_id_| (and releases it).

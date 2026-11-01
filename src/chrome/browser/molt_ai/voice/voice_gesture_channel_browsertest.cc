@@ -264,6 +264,49 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
   EXPECT_TRUE(NoWordSpoken());
 }
 
+// The word said in passing (inside a sentence, which answers nothing) while
+// the page listens: what it recorded is retired, so a replay of it later,
+// heard cleanly, neither allows nor refuses.
+IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
+                       TheWordSaidInPassingWhileAPageListensChanges) {
+  VoiceController* voice = Start();
+  auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(manager);
+  permissions::MockPermissionPromptFactory factory(manager);
+
+  ASSERT_TRUE(content::ExecJs(tab(), "captureAudio()"));
+  ASSERT_TRUE(WaitForLog("audio:on"));
+  ASSERT_TRUE(Prompts(voice));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return Prompts(voice)->word_channel_inputs_for_testing().audio_captured;
+  }));
+
+  AskNotifications();
+  const std::string word = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(word)) << word;
+  voice->HandleHeardUtterance("the word is " + word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(
+      WaitForSpeech("Something else may have heard you say the word, "
+                    "so I changed it."));
+  const std::string next = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(next)) << next;
+  EXPECT_NE(next, word);
+  // The recording, replayed and heard cleanly, allows nothing.
+  voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForSpeech("That word changed."));
+  EXPECT_TRUE(manager->IsRequestInProgress());
+  // Without a capture, a sentence holding the word changes nothing.
+  ASSERT_TRUE(content::ExecJs(tab(), "stopAll()"));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return !Prompts(voice)->word_channel_inputs_for_testing().audio_captured;
+  }));
+  voice->HandleHeardUtterance("i said " + next, /*heard_cleanly=*/true);
+  EXPECT_EQ(Prompts(voice)->current_word_for_testing(), next);
+  voice->HandleHeardUtterance(next, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  EXPECT_TRUE(NoWordSpoken());
+}
+
 IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
                        NoWordWhileTheScreenIsSharedAndNoStillBlocks) {
 #if BUILDFLAG(IS_WIN)

@@ -27,7 +27,11 @@
 // is said with the word has a twin that differs only where the word is,
 // and the reply's twin never holds it; the channel never shows the word
 // while the screen is captured, and says it without the setting only
-// privately.
+// privately. Every input runs twice (round 44): its prompt said and its
+// lines heard in English, then in Spanish (Spanish's words and answers);
+// an answer with the word is never the word said in passing, and each
+// line, read as the browser's English sentence and said in Spanish
+// (Relocalized()), stays bounded.
 
 #include <cstddef>
 #include <cstdint>
@@ -38,6 +42,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
@@ -54,6 +59,7 @@ using molt_ai::voice::HeardEvidence;
 using molt_ai::voice::HearResult;
 using molt_ai::voice::kMaxDialogSpokenChars;
 using molt_ai::voice::kMaxPromptAnswerBytes;
+using molt_ai::voice::Language;
 using molt_ai::voice::MatchConfirmationWord;
 using molt_ai::voice::PendingPrompt;
 using molt_ai::voice::PromptAnswer;
@@ -113,25 +119,16 @@ void CheckChannel(uint8_t bits) {
   CHECK(!molt_ai::voice::WordExposed(channel, inputs));
 }
 
-}  // namespace
-
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  if (size < 1) {
-    return 0;
-  }
-  const uint8_t flags = data[0];
-  // A second byte of flags only when the input says so (bit 7 of the
-  // first, with a gesture word offered, retires a word), else text: the
-  // seeds before round 43 keep their meaning.
-  const uint8_t channel_bits = size > 1 && (flags & 0x88) == 0x88 ? data[1] : 0;
-  const size_t text_at = size > 1 && (flags & 0x88) == 0x88 ? 2 : 1;
-  CheckChannel(channel_bits & 31);
-  const std::string_view rest(reinterpret_cast<const char*>(data + text_at),
-                              size - text_at);
-  const std::vector<std::string_view> lines = Lines(rest);
-
+// One input, its prompt said and answered in |language| (round 44: every
+// input runs in English and in Spanish).
+void Run(uint8_t flags,
+         uint8_t channel_bits,
+         const std::vector<std::string_view>& lines,
+         size_t size,
+         Language language) {
   BrowserPrompt prompt;
   prompt.kind = kKinds[flags & 7];
+  prompt.language = language;
   prompt.site = std::string(lines.size() > 0 ? lines[0] : "");
   prompt.text = std::string(lines.size() > 1 ? lines[1] : "");
   prompt.what = prompt.text;
@@ -150,12 +147,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   std::string retired;
   if (offer) {
     const GestureBinding binding{GestureAction::kAllowPermission, prompt.site};
-    gesture_prompt = book.Begin(binding, 0);
+    gesture_prompt = book.Begin(binding, language, 0);
     CHECK(gesture_prompt);
+    CHECK(MatchConfirmationWord(gesture_prompt->word, language));
     if (flags & 128) {
       // Retired once: the prompt begun again for the same binding.
       retired = gesture_prompt->word;
-      gesture_prompt = book.Begin(binding, 0);
+      gesture_prompt = book.Begin(binding, language, 0);
       CHECK(gesture_prompt);
       CHECK_NE(gesture_prompt->word, retired);
       CHECK_EQ(gesture_prompt->retired.size(), 1u);
@@ -170,23 +168,25 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   PendingPrompt pending;
   pending.id = 1;
   pending.kind = prompt.kind;
+  pending.language = language;
   pending.word = word;
   pending.malicious = prompt.malicious;
   pending.screen_shared = prompt.screen_shared;
   pending.expires_ms = 1000;
 
+  const std::string_view on_screen = molt_ai::voice::WordOnScreen(language);
+  const std::string say =
+      language == Language::kSpanish ? std::string(" di ") : " say ";
   if (!word.empty()) {
     // The twin differs from what is said only where the word is: the
     // browser's sentence comes after the page's text.
-    const std::string twin =
-        molt_ai::voice::PromptSpeech(prompt, molt_ai::voice::kWordOnScreen);
+    const std::string twin = molt_ai::voice::PromptSpeech(prompt, on_screen);
     CheckSaid(twin);
-    const std::string placeholder =
-        std::string(" say ") + molt_ai::voice::kWordOnScreen + ".";
+    const std::string placeholder = say + std::string(on_screen) + ".";
     const size_t at = twin.rfind(placeholder);
     CHECK_NE(at, std::string::npos) << twin;
     std::string back = twin;
-    back.replace(at, placeholder.size(), " say " + word + ".");
+    back.replace(at, placeholder.size(), say + word + ".");
     CHECK_EQ(back, said);
     molt_ai::voice::NoteWordText(pending, molt_ai::voice::WordText{said, twin});
     if (said != twin) {
@@ -222,7 +222,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         break;
     }
     if (reply.answer == PromptAnswer::kAllow) {
-      CHECK_EQ(ConfirmationWords()[*MatchConfirmationWord(lines[i])], word);
+      CHECK_EQ(ConfirmationWords(
+                   language)[*MatchConfirmationWord(lines[i], language)],
+               word);
+      // An answer with the word is never the word said in passing.
+      CHECK(!molt_ai::voice::WordSaidInPassing(pending, lines[i]));
+    }
+    // The word itself is held by what says it.
+    if (!word.empty() && MatchConfirmationWord(lines[i], language) ==
+                             MatchConfirmationWord(word, language)) {
+      CHECK(molt_ai::voice::HoldsConfirmationWord(lines[i], word, language));
     }
     CheckSaid(molt_ai::voice::ReplySpeech(pending, reply));
     // The reply's twin: the browser's own words, never the word.
@@ -240,7 +249,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           book.Hear(gesture_prompt->id, lines[i], HeardEvidence{true, true},
                     static_cast<int64_t>(i), &gesture);
       if (!retired.empty() &&
-          MatchConfirmationWord(lines[i]) == MatchConfirmationWord(retired) &&
+          MatchConfirmationWord(lines[i], language) ==
+              MatchConfirmationWord(retired, language) &&
           result != HearResult::kNotAWord && result != HearResult::kUnsure &&
           result != HearResult::kNoPrompt && result != HearResult::kLockedOut) {
         // The old word, for sure: neither the word nor a miss.
@@ -253,7 +263,36 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         CHECK(!book.Consume(gesture, gesture.binding, static_cast<int64_t>(i)));
       }
     }
+    // The browser's English sentence, made where the language isn't known,
+    // said in Spanish: a heard line read as one is bounded and never more
+    // than the catalog's sentence with the line's words in it.
+    if (language == Language::kSpanish) {
+      const std::string relocalized =
+          molt_ai::voice::Relocalized(Language::kSpanish, lines[i]);
+      CHECK_LE(relocalized.size(), 4 * lines[i].size() + 2048);
+    }
   }
   CHECK_LE(minted, 1);
+}
+
+}  // namespace
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  if (size < 1) {
+    return 0;
+  }
+  const uint8_t flags = data[0];
+  // A second byte of flags only when the input says so (bit 7 of the
+  // first, with a gesture word offered, retires a word), else text: the
+  // seeds before round 43 keep their meaning.
+  const uint8_t channel_bits = size > 1 && (flags & 0x88) == 0x88 ? data[1] : 0;
+  const size_t text_at = size > 1 && (flags & 0x88) == 0x88 ? 2 : 1;
+  CheckChannel(channel_bits & 31);
+  const std::string_view rest(reinterpret_cast<const char*>(data + text_at),
+                              size - text_at);
+  const std::vector<std::string_view> lines = Lines(rest);
+  for (Language language : {Language::kEnglish, Language::kSpanish}) {
+    Run(flags, channel_bits, lines, size, language);
+  }
   return 0;
 }

@@ -157,6 +157,24 @@ TEST(VoiceLearningStoreTest, DeclinedRoutines) {
   // Not a list: nothing.
   EXPECT_TRUE(ParseLearning("{\"version\":1,\"declined_routines\":\"a\"}", kNow)
                   .declined_routines.empty());
+
+  // As many ids as fit in the file, each listed twice: read at once (the
+  // repeats found in a set), the last distinct ones kept, in order.
+  std::string many = "{\"version\":1,\"declined_routines\":[";
+  size_t count = 0;
+  while (many.size() < kMaxLearningFileBytes - 64) {
+    const std::string id = "\"" + std::to_string(count / 2) + "\"";
+    many += (count ? "," : "") + id;
+    ++count;
+  }
+  many += "]}";
+  ASSERT_LE(many.size(), kMaxLearningFileBytes);
+  const LearnedData big = ParseLearning(many, kNow);
+  ASSERT_EQ(big.declined_routines.size(), kMaxDeclinedRoutines);
+  const size_t last = (count - 1) / 2;
+  EXPECT_EQ(big.declined_routines.back(), std::to_string(last));
+  EXPECT_EQ(big.declined_routines.front(),
+            std::to_string(last + 1 - kMaxDeclinedRoutines));
 }
 
 }  // namespace

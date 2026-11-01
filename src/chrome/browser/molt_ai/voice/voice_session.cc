@@ -18,6 +18,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_language.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
@@ -38,27 +39,27 @@ namespace {
 // The window that listens: one microphone, one helper.
 VoiceSession* g_listening = nullptr;
 
-// The wake phrase (TOUCHLESS_BROWSING.md §11, decision 2: "Hey Molt" until
-// the owner chooses).
-constexpr char kWakePhrase[] = "hey molt";
-
 // How often the session looks at the tabs' sound and the speech engine
 // (well within kOtherSpeechTailMs).
 constexpr base::TimeDelta kPollInterval = base::Milliseconds(250);
 
 // Where the microphone has no echo canceller, nothing said over the
 // browser's speech gives a command but "stop" (voice_session_logic.h).
-constexpr char kStopFirstHint[] =
-    "To interrupt me, say stop, then what you want.";
+std::string StopFirstHint(Language language) {
+  return Said(language, "To interrupt me, say stop, then what you want.", {});
+}
 
 // A command said over voice mode's own voice that waits for it to stop
 // (voice_session_logic.h, TakenOverOwnVoice()).
-constexpr char kSayAgainNotice[] = "I've stopped. Now say that again.";
+std::string SayAgainNotice(Language language) {
+  return Said(language, "I've stopped. Now say that again.", {});
+}
 
-ListeningSettings ToListening(const VoiceModeSettings& settings) {
+ListeningSettings ToListening(const VoiceModeSettings& settings,
+                              Language language) {
   ListeningSettings listening;
   listening.always_listening = settings.always_listening;
-  listening.wake_phrases = {kWakePhrase};
+  listening.wake_phrases = WakePhrasesFor(language);
   listening.vad_silence_ms = kDefaultVadSilenceMs;
   return listening;
 }
@@ -76,20 +77,32 @@ BrowserActivity ToBrowserActivity(VoiceActivity activity) {
   return BrowserActivity::kIdle;
 }
 
-std::string ProblemText(VoiceAudio::Problem problem) {
+std::string ProblemText(VoiceAudio::Problem problem, Language language) {
   switch (problem) {
     case VoiceAudio::Problem::kPermissionDenied:
-      return "I can't use the microphone: the system's privacy settings "
-             "don't let MoltBrowser use it. Allow it there, then turn voice "
-             "mode on again.";
+      return Said(language,
+                  "I can't use the microphone: the system's privacy settings "
+                  "don't let MoltBrowser use it. Allow it there, then turn "
+                  "voice mode on again.",
+                  {});
     case VoiceAudio::Problem::kNoMicrophone:
-      return "I can't find a microphone. Connect one, then turn voice mode "
-             "on again.";
+      return Said(language,
+                  "I can't find a microphone. Connect one, then turn voice "
+                  "mode on again.",
+                  {});
     case VoiceAudio::Problem::kFailed:
-      return "The microphone stopped working. Turn voice mode on again to "
-             "try once more.";
+      return Said(language,
+                  "The microphone stopped working. Turn voice mode on again "
+                  "to try once more.",
+                  {});
   }
-  return "I can't use the microphone.";
+  return Said(language, "I can't use the microphone.", {});
+}
+
+// Why the speech helper can't run (voice_listener.h's reasons), in
+// |language| where the catalog has it; else as the helper's side wrote it.
+std::string_view HelperReason(Language language, const std::string& why) {
+  return Translated(language, why);
 }
 
 struct FoundHelper {
@@ -197,8 +210,8 @@ void VoiceSession::OnSettingsChanged(const VoiceModeSettings& settings) {
     session->settings_ = settings;
     session->UpdateWordChannel();
     if (session->listening()) {
-      session->Apply(session->logic_.OnSettingsChanged(ToListening(settings),
-                                                       session->NowMs()));
+      session->Apply(session->logic_.OnSettingsChanged(
+          ToListening(settings, session->SpeechLanguage()), session->NowMs()));
     }
   }
 }
@@ -211,7 +224,7 @@ VoiceSession* VoiceSession::Listening() {
 VoiceSession::VoiceSession(BrowserWindowInterface* browser)
     : browser_(browser),
       scoped_data_holder_(browser->GetUnownedUserDataHost(), *this),
-      logic_(ToListening(VoiceModeSettings())) {
+      logic_(ToListening(VoiceModeSettings(), Language::kEnglish)) {
   did_close_subscription_ =
       browser->RegisterBrowserDidClose(base::BindRepeating(
           &VoiceSession::OnBrowserDidClose, base::Unretained(this)));
@@ -242,6 +255,10 @@ bool VoiceSession::IsMoltNet() const {
   return browser_ && tor::IsMoltNetProfile(browser_->GetProfile());
 }
 
+Language VoiceSession::SpeechLanguage() const {
+  return controller_ ? controller_->language() : Language::kEnglish;
+}
+
 int64_t VoiceSession::NowMs() const {
   return (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
 }
@@ -270,7 +287,8 @@ bool VoiceSession::Start() {
   }
   // Pages in MoltNet windows never get the microphone (§7.4).
   if (IsMoltNet()) {
-    controller_->SayNotice("Voice mode is off in MoltNet windows.");
+    controller_->SayNotice(
+        Said(SpeechLanguage(), "Voice mode is off in MoltNet windows.", {}));
     return false;
   }
   // No recognizer for voice mode's language yet (voice_language.h): it says
@@ -311,7 +329,8 @@ void VoiceSession::OnSettingsRead(const VoiceModeSettings& settings) {
   if (!logic_.running()) {
     return;
   }
-  Apply(logic_.OnSettingsChanged(ToListening(settings), NowMs()));
+  Apply(logic_.OnSettingsChanged(ToListening(settings, SpeechLanguage()),
+                                 NowMs()));
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
       base::BindOnce(&FindHelper),
@@ -330,7 +349,8 @@ void VoiceSession::OnHelperFound(std::optional<VoiceListener::Paths> paths,
     return;
   }
   if (!paths) {
-    Fail("I can't listen: " + why + ".");
+    Fail(Said(SpeechLanguage(), "I can't listen: {0}.",
+              {HelperReason(SpeechLanguage(), why)}));
     return;
   }
   listener_ = std::make_unique<VoiceListener>(this, std::move(*paths));
@@ -431,13 +451,15 @@ void VoiceSession::OnListenerReady(const HelperEvent& ready) {
   problem_.clear();
   Apply(logic_.OnHelperReady(NowMs()));
   if (first && controller_) {
+    const Language language = SpeechLanguage();
     std::string notice =
         settings_.always_listening
-            ? "Voice mode is on. I'm listening."
-            : "Voice mode is on. Say Hey Molt, then what you want.";
+            ? Said(language, "Voice mode is on. I'm listening.", {})
+            : Said(language,
+                   "Voice mode is on. Say Hey Molt, then what you want.", {});
     if (microphone_on_ && echo_ == EchoCancellation::kNone) {
       // Without an echo canceller, only "stop" interrupts the browser.
-      notice += " " + std::string(kStopFirstHint);
+      notice += " " + StopFirstHint(language);
     }
     controller_->SayNotice(notice);
   }
@@ -484,14 +506,16 @@ void VoiceSession::OnListenerEvent(const HelperEvent& event) {
 void VoiceSession::OnListenerLost(VoiceListener::StopReason reason,
                                   const std::string& why,
                                   bool restarting) {
-  problem_ = "Speech recognition is restarting";
+  problem_ = Said(SpeechLanguage(), "Speech recognition is restarting", {});
   Apply(logic_.OnHelperLost(NowMs()));
   UpdateCaption();
 }
 
 void VoiceSession::OnListenerGaveUp(const std::string& why) {
-  Fail("Speech recognition stopped working: " + why +
-       ". Turn voice mode on again with the Voice button.");
+  Fail(Said(SpeechLanguage(),
+            "Speech recognition stopped working: {0}. Turn voice mode on "
+            "again with the Voice button.",
+            {HelperReason(SpeechLanguage(), why)}));
 }
 
 // ---- The microphone ---------------------------------------------------------
@@ -511,7 +535,7 @@ void VoiceSession::OnMicrophoneStarted(EchoCancellation echo) {
 }
 
 void VoiceSession::OnMicrophoneProblem(VoiceAudio::Problem problem) {
-  Fail(ProblemText(problem));
+  Fail(ProblemText(problem, SpeechLanguage()));
 }
 
 // ---- The voice loop ---------------------------------------------------------
@@ -571,6 +595,15 @@ void VoiceSession::OnVoiceControllerDestroying(VoiceController* controller) {
   }
 }
 
+void VoiceSession::OnVoiceLanguageChanged(Language language) {
+  // The wake phrases are the language's (a language voice mode can't listen
+  // in closes the microphone instead: VoiceController::SetLanguage()).
+  if (listening() && ListeningAvailable(language)) {
+    Apply(logic_.OnSettingsChanged(ToListening(settings_, language), NowMs()));
+    SendConfig();
+  }
+}
+
 // ---- Carrying out -----------------------------------------------------------
 
 void VoiceSession::Apply(SessionActions actions) {
@@ -590,14 +623,14 @@ void VoiceSession::Apply(SessionActions actions) {
     controller_->StopSpeaking();
   }
   if (actions.say_again && controller_) {
-    controller_->SayNotice(kSayAgainNotice);
+    controller_->SayNotice(SayAgainNotice(SpeechLanguage()));
   }
   bool caption = actions.state.has_value();
   if (actions.said_over_voice && speaking_hint_.empty() &&
       ControllerActivity() == BrowserActivity::kSpeaking) {
     // Said over voice mode's own voice with no echo canceller: the user
     // says stop first, or waits.
-    speaking_hint_ = kStopFirstHint;
+    speaking_hint_ = StopFirstHint(SpeechLanguage());
     caption = true;
   }
   if (actions.partial) {

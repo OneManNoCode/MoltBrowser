@@ -20,9 +20,10 @@ namespace molt_ai::web_ai {
 inline constexpr char kWebAIApisSettingsKey[] = "web_ai_apis";
 
 // The switch in |settings| as ReadMoltSettings() returns them (an empty
-// dictionary for a missing file): true unless they say false. A file that
-// exists but can't be read (nullopt: not a JSON object, over the size cap)
-// leaves the APIs off until it is fixed, never on by default.
+// dictionary for a missing file): true when the key is missing or true.
+// A file that exists but can't be read (nullopt: not a JSON object, over
+// the size cap), or a value that isn't a boolean, leaves the APIs off until
+// it is fixed, never on by default.
 bool WebAIApisSwitchFrom(const std::optional<base::DictValue>& settings);
 
 // Blocking (file I/O): WebAIApisSwitchFrom(ReadMoltSettings()).

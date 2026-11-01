@@ -51,6 +51,23 @@ std::string_view ListeningUnavailableNotice(Language language) {
   return "";
 }
 
+std::vector<std::string> WakePhrasesFor(Language language) {
+  switch (language) {
+    case Language::kEnglish:
+      break;
+    case Language::kSpanish:
+      if (ListeningAvailable(Language::kSpanish)) {
+        return SpanishWakePhrases();
+      }
+      break;
+  }
+  return {"hey molt"};
+}
+
+std::vector<std::string> SpanishWakePhrases() {
+  return {"oye molt", "hey molt"};
+}
+
 std::string_view LanguageDisplayName(Language language) {
   switch (language) {
     case Language::kEnglish:
@@ -118,6 +135,29 @@ std::optional<size_t> PickPlatformVoice(
     }
   }
   return any;
+}
+
+std::optional<size_t> PickLocalVoice(const std::vector<PlatformVoice>& voices,
+                                     std::string_view ui_locale) {
+  // The primary language subtag ("en" of "en-GB" or "en_US").
+  const auto primary = [](std::string_view tag) {
+    const std::string normal = NormalTag(tag);
+    return normal.substr(0, normal.find('-'));
+  };
+  const std::string wanted = primary(ui_locale);
+  std::optional<size_t> first;
+  for (size_t i = 0; i < voices.size(); ++i) {
+    if (voices[i].remote) {
+      continue;
+    }
+    if (!wanted.empty() && primary(voices[i].lang) == wanted) {
+      return i;
+    }
+    if (!first) {
+      first = i;
+    }
+  }
+  return first;
 }
 
 }  // namespace voice

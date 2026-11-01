@@ -14,6 +14,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
 
 namespace molt_ai {
@@ -21,29 +22,35 @@ namespace voice {
 
 namespace {
 
-// What the browser says.
-constexpr char kStart[] = "Let me look at the page.";
-constexpr char kStartMore[] = "Let me look further.";
-constexpr char kStillWorkingText[] = "Still working on it.";
-constexpr char kNoModel[] =
-    "The on-device AI isn't set up. You can download a model in settings.";
-constexpr char kUnsupported[] =
+// What the browser says: in English here, said in the window's language by
+// the voice loop (VoiceController::OnPageQuestionProgress(),
+// OnPageAnswer(): whole sentences of the catalog, spoken_answers.h).
+constexpr std::string_view kStart = SaidLater("Let me look at the page.");
+constexpr std::string_view kStartMore = SaidLater("Let me look further.");
+constexpr std::string_view kStillWorkingText =
+    SaidLater("Still working on it.");
+constexpr std::string_view kNoModel = SaidLater(
+    "The on-device AI isn't set up. You can download a model in settings.");
+constexpr std::string_view kUnsupported = SaidLater(
     "The on-device AI can't run on this computer, so I can't answer "
-    "questions about pages.";
-constexpr char kLoadFailed[] =
+    "questions about pages.");
+constexpr std::string_view kLoadFailed = SaidLater(
     "I couldn't start the on-device AI. Try again in a moment, or choose "
-    "another model in settings.";
-constexpr char kTooSlow[] =
+    "another model in settings.");
+constexpr std::string_view kTooSlow = SaidLater(
     "The on-device AI didn't answer in time, so I stopped. It may be busy, "
-    "or the page too long for this computer.";
-constexpr char kFailed[] =
-    "The on-device AI couldn't answer that. Try asking another way.";
-constexpr char kNoText[] = "There's no text on this page I can answer from.";
-constexpr char kAskFirst[] =
-    "Ask me something about this page first, then say tell me more.";
-constexpr char kNoMorePage[] = "That's all of the page.";
-constexpr char kNoMoreTopic[] = "That's all the page says about that.";
-constexpr char kPageChanged[] = "The page changed, so I stopped.";
+    "or the page too long for this computer.");
+constexpr std::string_view kFailed =
+    SaidLater("The on-device AI couldn't answer that. Try asking another way.");
+constexpr std::string_view kNoText =
+    SaidLater("There's no text on this page I can answer from.");
+constexpr std::string_view kAskFirst =
+    SaidLater("Ask me something about this page first, then say tell me more.");
+constexpr std::string_view kNoMorePage = SaidLater("That's all of the page.");
+constexpr std::string_view kNoMoreTopic =
+    SaidLater("That's all the page says about that.");
+constexpr std::string_view kPageChanged =
+    SaidLater("The page changed, so I stopped.");
 
 // The answer's sampling: low temperature, for answers that stay close to
 // the page's words.
@@ -153,7 +160,7 @@ void VoicePageQuestions::Ask(PageQuestionKind kind,
   if (!more) {
     auto followed = std::make_unique<Followed>();
     followed->page_id = page_id;
-    followed->question = MakePageQuestion(kind, text);
+    followed->question = MakePageQuestion(kind, text, language_);
     followed->document = QuestionDocument(tree, skill);
     last_.reset();
     if (followed->document.blocks.empty()) {
@@ -186,7 +193,7 @@ void VoicePageQuestions::Ask(PageQuestionKind kind,
   question_ = last_->question;
   progress_ = std::move(progress);
   if (progress_) {
-    progress_.Run(more ? kStartMore : kStart);
+    progress_.Run(std::string(more ? kStartMore : kStart));
   }
   still_working_timer_.Start(FROM_HERE, kStillWorking,
                              base::BindOnce(&VoicePageQuestions::OnStillWorking,
@@ -302,7 +309,7 @@ void VoicePageQuestions::OnReply(int run, GenerationResult result) {
            << " prompt and " << result.tokens_generated
            << " answer token(s) in " << result.generation_time_ms << " ms";
   if (!result.success || result.was_cancelled) {
-    Finish(kFailed, /*from_page=*/false);
+    Finish(std::string(kFailed), /*from_page=*/false);
     return;
   }
   // The model wrote it from the page's text: hostile.
@@ -312,7 +319,7 @@ void VoicePageQuestions::OnReply(int run, GenerationResult result) {
 
 void VoicePageQuestions::OnStillWorking(int run) {
   if (run == run_ && progress_) {
-    progress_.Run(kStillWorkingText);
+    progress_.Run(std::string(kStillWorkingText));
   }
 }
 
@@ -321,7 +328,7 @@ void VoicePageQuestions::OnTimeLimit(int run) {
     return;
   }
   CancelRequest();
-  Finish(kTooSlow, /*from_page=*/false);
+  Finish(std::string(kTooSlow), /*from_page=*/false);
 }
 
 void VoicePageQuestions::Finish(std::string text, bool from_page) {
@@ -338,7 +345,7 @@ void VoicePageQuestions::Finish(std::string text, bool from_page) {
   }
 }
 
-void VoicePageQuestions::FinishSoon(const char* text) {
+void VoicePageQuestions::FinishSoon(std::string_view text) {
   // Never inside Ask(): its caller hears the outcome as it hears an
   // answer, and "stop" before then drops it.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
@@ -382,7 +389,7 @@ void VoicePageQuestions::PageChanged(int64_t page_id) {
   }
   if (running() && page_id_ != page_id) {
     CancelRequest();
-    Finish(kPageChanged, /*from_page=*/false);
+    Finish(std::string(kPageChanged), /*from_page=*/false);
   }
 }
 

@@ -11,11 +11,11 @@
 // none within its bound of a word voice mode answers with in Spanish (the
 // answers, the words said around them, the numbers and ordinals up to
 // twenty). Spanish words have fewer distinct consonants than English ones,
-// so many candidates fall out; the list holds under both keys, the English
-// one voice_gesture.h compares with today and the Spanish one
-// (phonetic_key_es.h) it should compare Spanish with. Each word's plural
-// adds "s" or "es" ("manzanas", "camiones"), so a matcher can take it off
-// exactly, as voice_gesture.h does for English.
+// so many candidates fall out; the list holds under both keys, English's
+// and Spanish's (phonetic_key_es.h), which voice_gesture.h hears a Spanish
+// prompt's word with (HearConfirmationWord(heard, Language::kSpanish)).
+// Each word's plural adds "s" or "es" ("manzanas", "camiones"), and the
+// matcher takes either off exactly.
 //
 // Not yet measured with a Spanish recognizer: no Spanish model is bundled
 // (TOUCHLESS_BROWSING.md §9). Std-only.

@@ -99,6 +99,9 @@ class VoiceBrowserPrompts
     // Voice mode is on and listens to the microphone in this window (not
     // only typed text, not a MoltNet window): prompts are read.
     virtual bool ListensForPrompts() = 0;
+    // The language prompts are read in, their words drawn in and their
+    // answers heard in (the window's voice language, voice_language.h).
+    virtual Language VoiceLanguage() = 0;
     // Reads |prompt| as prompt |id| (PlanBrowserPrompt()), |word| the
     // voice gesture's word or empty. False if it can't now.
     virtual bool ReadBrowserPrompt(int id,
@@ -133,6 +136,14 @@ class VoiceBrowserPrompts
   // A kPromptAnswer step for prompt |step.index|; |evidence| is how its
   // utterance was heard.
   void Answer(const VoiceStep& step, const HeardEvidence& evidence);
+
+  // Utterance |heard| (|evidence|: from the microphone or typed), once the
+  // loop has planned it. One that said the waiting prompt's word in passing
+  // (WordSaidInPassing(): inside a sentence, or unsure which word) while
+  // something could have recorded it retires the word: the prompt is read
+  // again with a new one, as for a word heard but not cleanly.
+  void OnUtteranceHeard(const std::string& heard,
+                        const HeardEvidence& evidence);
 
   // Whether prompts on the attached tab are read and answered by voice
   // now (the activation guard leaves prompts raised while acting to it).

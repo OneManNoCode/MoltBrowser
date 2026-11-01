@@ -42,6 +42,20 @@ bool ListeningAvailable(Language language);
 // language it can't listen in yet; "" when it can.
 std::string_view ListeningUnavailableNotice(Language language);
 
+// The wake phrases the speech helper spots (its CONFIG; at most
+// kMaxWakePhrases) for |language|: "hey molt" in English; in Spanish, once
+// voice mode can listen in it (ListeningAvailable()), SpanishWakePhrases().
+// Until then Spanish's are English's: nothing changes before a Spanish
+// recognizer is bundled.
+std::vector<std::string> WakePhrasesFor(Language language);
+
+// "oye molt" (Spanish's usual way to call an assistant), and "hey molt"
+// (TOUCHLESS_BROWSING.md §4.1). The grammar takes the other greetings
+// before "molt" ("hola", "ok": spoken_phrases_es.cc) once the helper has
+// woken; the helper isn't asked to spot them: "hola" begins much everyday
+// speech, and every phrase it spots is another way to wake it by mistake.
+std::vector<std::string> SpanishWakePhrases();
+
 // The language's name for the settings page ("English", "Español").
 std::string_view LanguageDisplayName(Language language);
 
@@ -61,12 +75,20 @@ struct PlatformVoice {
 // computer (never a remote one, which would send the text off it) whose
 // language is |language|, the one of |tag|'s region first ("es-MX"), then
 // any of the language, in the platform's order. nullopt when there is none:
-// the platform's default voice then reads the text, with its own
-// language's sounds, and the settings page says so.
+// a voice of this computer in another language then reads the text, with
+// its own language's sounds (PickLocalVoice()), and the settings page says
+// so.
 std::optional<size_t> PickPlatformVoice(
     const std::vector<PlatformVoice>& voices,
     Language language,
     std::string_view tag);
+
+// The voice that reads text in a language this computer has no voice for:
+// a voice on this computer (never a remote one), of |ui_locale|'s language
+// first ("en-GB": any English one), else the first, in the platform's
+// order. nullopt when the computer has none.
+std::optional<size_t> PickLocalVoice(const std::vector<PlatformVoice>& voices,
+                                     std::string_view ui_locale);
 
 }  // namespace voice
 }  // namespace molt_ai

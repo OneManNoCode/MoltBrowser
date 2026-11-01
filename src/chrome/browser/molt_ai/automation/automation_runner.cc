@@ -1028,11 +1028,12 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
     // draft's withheld values, agent_run_draft.h): they must never be
     // saved as the workflow's defaults. (And RUN_SCRIPT inlined another
     // workflow's steps into script_.steps.) A workflow deleted meanwhile
-    // stays deleted.
-    if (std::optional<Script> stored = storage_->Load(script_.id)) {
-      stored->stats = script_.stats;
-      storage_->Save(*stored);
-    }
+    // stays deleted. One read-modify-write under the storage directory's
+    // lock (the Agent studio changes it on its own sequence).
+    storage_->Update(script_.id, [this](Script& stored) {
+      stored.stats = script_.stats;
+      return true;
+    });
     storage_->AppendAudit(script_.id, success ? "run_succeeded" : "run_failed",
                           message);
   }

@@ -28,10 +28,22 @@
 // is renamed "my news (2)" (UniqueRoutineName()). A name two routines
 // answer to (their files edited) runs neither by voice.
 //
-// Blocking (file I/O, through AutomationStorage): VoiceLearning calls it
-// on its sequence, the Agent studio on the UI thread as it does the shared
-// storage. base::Value and base::FilePath only: molt_ai_unittests tests it
-// on a temporary directory.
+// A claim cut short (round 44): the browser ended after a routine was set
+// aside (Take()) and before the claim finished, so neither the shared
+// storage lists it nor, unless it was saved there first, the profile.
+// RecoverInterruptedClaims(), run before listing the routines from before
+// profiles and before claiming, settles each such move (once no browser
+// may still be making it, AutomationStorage::InterruptedTakes()): if this
+// profile has the routine as the claim saved it (IsClaimedCopy()), the
+// set-aside file is deleted, as the claim would have; otherwise it is put
+// back in the shared storage, to be offered again. Nothing is ever given
+// to a profile by the recovery.
+//
+// Blocking (file I/O, through AutomationStorage, which checks it): on the
+// profile's routines' sequence (VoiceLearning's), which voice mode and the
+// Agent studio share, so no two read-modify-writes of the profile's
+// routines interleave. base::Value and base::FilePath only:
+// molt_ai_unittests tests it on a temporary directory.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_ROUTINE_STORE_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_ROUTINE_STORE_H_
@@ -103,6 +115,13 @@ struct RoutineSaveResult {
   std::vector<std::string> sites;
 };
 
+// Whether |copy|, a routine of the profile, is |set_aside| as a claim saved
+// it: the same in every field of its file but its name, which a claim may
+// change ("my news (2)"), and its id, which a claim keeps or lengthens with
+// "_" (both read as AutomationStorage reads them).
+bool IsClaimedCopy(const automation::Script& copy,
+                   const automation::Script& set_aside);
+
 // A routine a profile kept from before routines belonged to one.
 struct ClaimedRoutine {
   std::string id;
@@ -140,8 +159,11 @@ class VoiceRoutineStore {
   // else in the directory is left alone.
   std::vector<automation::Script> Routines();
   std::vector<RoutineSummary> Summaries();
-  // The routines from before routines belonged to a profile.
+  // The routines from before routines belonged to a profile (claims cut
+  // short settled first).
   std::vector<RoutineSummary> Unclaimed();
+  // Claims cut short (see the file comment): the number settled.
+  int RecoverInterruptedClaims();
 
   // Saves |steps| as the routine |name| (RoutineDisplayName()), with id
   // |id|, at |now_unix|. When the profile has a routine of that name, it is
@@ -168,7 +190,8 @@ class VoiceRoutineStore {
   void DeleteAll();
 
   // Keeps the routines |ids| from before routines belonged to a profile in
-  // this profile (see the file comment), in order.
+  // this profile (see the file comment), in order (claims cut short
+  // settled first).
   ClaimResult Claim(const std::vector<std::string>& ids);
 
   // The name |script| (a routine the Agent studio brings in or edits: an

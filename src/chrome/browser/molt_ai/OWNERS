@@ -1,0 +1,4 @@
+# MoltBrowser's own browser code (GenEye AI Labs Inc.). Reviews go through
+# the MoltBrowser repository. chrome/browser/flag-metadata.json names this
+# file as the owner of the #molt-* flags (Chromium's flag tests accept an
+# email address or a path to an OWNERS file).

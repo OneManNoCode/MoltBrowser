@@ -147,8 +147,9 @@ class VoiceSpeech : public BundledVoice::Delegate {
   // tagged kLanguage. Another language speaks through a platform voice of
   // that language on this computer (PickPlatformVoice(); |ui_locale|'s
   // region first), as the bundled voice reads English only; without one,
-  // the platform's default voice reads it, and the log says so once. A
-  // change stops what is being said.
+  // another voice on this computer reads it (PickLocalVoice(): never a
+  // remote one), and the log says so once. A change stops what is being
+  // said.
   void SetLanguage(Language language, const std::string& ui_locale);
 
   // Whether this computer has a platform voice for |language| (English:

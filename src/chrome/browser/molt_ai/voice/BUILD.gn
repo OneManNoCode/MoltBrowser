@@ -150,6 +150,7 @@ source_set("voice_prompts_unit_tests") {
   sources = [
     "voice_gesture_channel_unittest.cc",
     "voice_gesture_unittest.cc",
+    "voice_prompts_es_unittest.cc",
     "voice_prompts_unittest.cc",
   ]
   deps = [
@@ -565,6 +566,10 @@ source_set("browser_tests") {
 
     # What a page may do with the activation those actions give it.
     "//chrome/browser/molt_ai/security:browser_tests",
+
+    # The Agent studio's storage, answered from its sequences (shared with
+    # voice mode's routines).
+    "//chrome/browser/ui/webui/molt_ai:browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",
@@ -780,6 +785,9 @@ source_set("voice_controller") {
     # one writer.
     "//chrome/browser/molt_ai/common:molt_settings_file",
 
+    # The learning file read and written only as a regular file.
+    "//chrome/browser/molt_ai/common:molt_regular_file",
+
     # g_browser_process: the browser's own language, voice mode's when the
     # setting names none.
     "//chrome/browser:browser_process",
@@ -940,6 +948,7 @@ source_set("voice_loop_unit_tests") {
     "voice_routines_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
+    "voice_spanish_speech_unittest.cc",
     "voice_speech_text_unittest.cc",
     "voice_vocabulary_unittest.cc",
   ]
@@ -954,10 +963,19 @@ source_set("voice_loop_unit_tests") {
     ":voice_learning_store",
     ":voice_loop",
     ":voice_routine_store",
+
+    # The wake phrases' cap (voice_listener_protocol.h).
+    ":voice_listening",
     "//chrome/browser/molt_ai/automation:automation_policy",
+
+    # The routine store's claims cut short (set-aside files on disk).
+    "//chrome/browser/molt_ai/automation:storage",
 
     # The stored pages, read from the source tree.
     "//base",
+
+    # Two writers on the profile's routines' sequence (TaskEnvironment).
+    "//base/test:test_support",
 
     # Every URL the loop builds passes agent_safety's navigation check.
     "//chrome/browser/molt_ai/security:agent_safety",

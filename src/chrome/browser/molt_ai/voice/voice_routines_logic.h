@@ -201,9 +201,15 @@ VoiceCommand CommandForStep(const RoutineStep& step, std::string_view value);
 // for trains to lyon", "click Search", "type Lyon in To", "choose First
 // class in Class", "scroll down" (page text and the model's, cleaned).
 std::string DescribeRoutineStep(const RoutineStep& step);
+// The same in |language| (spoken_answers.h): "abre YouTube", "busca
+// noticias", "reproduce el primero".
+std::string DescribeRoutineStep(const RoutineStep& step, Language language);
 
-// Descriptions joined for speech: "a", "a and b", "a, b and c".
+// Descriptions joined for speech: "a", "a and b", "a, b and c"; in Spanish
+// "a, b y c" ("e" before an "i" sound).
 std::string JoinSpokenList(const std::vector<std::string>& items);
+std::string JoinSpokenList(const std::vector<std::string>& items,
+                           Language language);
 
 // A routine's name as said ("my news"), cleaned: 1 to kMaxRoutineNameWords
 // words with a letter, at most kMaxRoutineNameBytes; "" when it isn't

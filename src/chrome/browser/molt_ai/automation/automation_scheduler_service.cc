@@ -70,12 +70,14 @@ void AutomationSchedulerService::OnTriggerFired(const Script& script,
   // interval phase-tracking work across restarts (the scheduler reads
   // trigger.last_fired_unix). Written to disk here because the run reloads a
   // fresh copy; its later stats-Save preserves this field.
+  // One read-modify-write under the storage directory's lock (the Agent
+  // studio changes it on its own sequence).
   if (storage_) {
-    if (auto fresh = storage_->Load(script.id)) {
-      fresh->trigger.last_fired_unix =
+    storage_->Update(script.id, [&](Script& fresh) {
+      fresh.trigger.last_fired_unix =
           static_cast<int64_t>(fired_at.InSecondsFSinceUnixEpoch());
-      storage_->Save(*fresh);
-    }
+      return true;
+    });
   }
 
   // Headless if TRUSTED+, otherwise foreground tab so user sees activity.

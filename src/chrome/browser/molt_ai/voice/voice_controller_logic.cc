@@ -827,6 +827,7 @@ class Planner {
     pending = PendingPrompt();
     pending.id = id;
     pending.kind = prompt.kind;
+    pending.language = prompt.language;
     pending.word = gesture ? std::string(word) : std::string();
     pending.malicious = prompt.malicious;
     pending.screen_shared = gesture && prompt.screen_shared;
@@ -834,8 +835,9 @@ class Planner {
     Status(prompt.kind == PromptKind::kPermission ? "Permission request"
                                                   : "Waiting for your answer");
     SayWithWord(PromptSpeech(prompt, pending.word),
-                PromptSpeech(prompt, pending.word.empty() ? std::string_view()
-                                                          : kWordOnScreen));
+                PromptSpeech(prompt, pending.word.empty()
+                                         ? std::string_view()
+                                         : WordOnScreen(prompt.language)));
   }
 
   // Says |said|, which holds the waiting prompt's word, and keeps it with
@@ -1308,7 +1310,7 @@ class Planner {
         Add(NodeStep(VoiceStepKind::kScrollIntoView, target.handle, name));
         SetCurrentItem(target.item_number);
       }
-      Say(SpokenCandidate(candidate, Verbosity::kFull) + ".");
+      Say(SpokenCandidate(candidate, Verbosity::kFull, env_.language) + ".");
       return;
     }
     if (target.source == CandidateSource::kHeading) {
@@ -2067,7 +2069,7 @@ class Planner {
     const CandidateTarget& target = set.targets[at - 1];
     if (target.source == CandidateSource::kTab) {
       Say(std::to_string(at) + ": " +
-          SpokenCandidate(candidate, state().verbosity) + ".");
+          SpokenCandidate(candidate, state().verbosity, env_.language) + ".");
       return;
     }
     if (target.handle.valid()) {
@@ -2078,7 +2080,7 @@ class Planner {
       }
     }
     Say(std::to_string(SpokenNumber(candidate)) + ": " +
-        SpokenCandidate(candidate, state().verbosity) + ".");
+        SpokenCandidate(candidate, state().verbosity, env_.language) + ".");
   }
 
   // ---- Dictation ---------------------------------------------------------
@@ -2305,25 +2307,31 @@ class Planner {
     const RoutineNameMatch in_use =
         MatchRoutineName(learning.routines, name, env_.language);
     if (in_use.count > 1) {
-      Say("You have " + std::to_string(in_use.count) + " routines called " +
-          spoken + ". Choose another name, or rename them in Agent mode.");
+      Say(
+          Tr("You have {0} routines called {1}. Choose another name, or "
+             "rename them in Agent mode.",
+             {std::to_string(in_use.count), spoken}));
       return;
     }
     if (learning.this_steps.empty()) {
-      Say("There's nothing to remember yet. Do it once, then say remember "
-          "this as " + spoken + ".");
+      Say(
+          Tr("There's nothing to remember yet. Do it once, then say remember "
+             "this as {0}.",
+             {spoken}));
       return;
     }
-    // A step of the AI's that a routine can't repeat (planner-routines).
+    // A step of the AI's that a routine can't repeat (planner-routines);
+    // the environment has it in the window's language.
     if (!learning.this_refusal.empty()) {
-      Say("I can't remember this: " + learning.this_refusal);
+      Say(Tr("I can't remember this: {0}", {learning.this_refusal}));
       return;
     }
-    Status("Remembering " + spoken);
+    Status(Tr("Remembering {0}", {spoken}));
     if (in_use.name) {
-      Say("You already have a routine called " + spoken + ".");
+      Say(Tr("You already have a routine called {0}.", {spoken}));
     }
-    Say("I'll remember: " + JoinSpokenList(learning.this_steps) + ".");
+    Say(Tr("I'll remember: {0}.",
+           {JoinSpokenList(learning.this_steps, env_.language)}));
     if (learning.this_planned) {
       Say("Some of these steps are the AI's, so you'll confirm the sites they "
           "use before it runs.");
@@ -2334,8 +2342,9 @@ class Planner {
     save.count = learning.this_version;
     std::vector<VoiceStep> steps;
     steps.push_back(std::move(save));
-    AskToConfirm(std::move(steps), in_use.name ? std::string("replace it")
-                                               : "save it as " + spoken);
+    AskToConfirm(std::move(steps), in_use.name
+                                       ? std::string("replace it")
+                                       : Tr("save it as {0}", {spoken}));
   }
 
   void RunRoutine(const std::string& said) {
@@ -2348,12 +2357,15 @@ class Planner {
         MatchRoutineName(learning.routines, said, env_.language);
     const std::string* name = match.name;
     if (match.count > 1) {
-      Say("You have " + std::to_string(match.count) + " routines called " +
-          PageText(said) + ". Rename one in Agent mode to run it by voice.");
+      Say(
+          Tr("You have {0} routines called {1}. Rename one in Agent mode to "
+             "run it by voice.",
+             {std::to_string(match.count), PageText(said)}));
       return;
     }
     if (!name && FindRoutineName(learning.unclaimed, said, env_.language)) {
-      Say(PageText(said) + " was made before routines belonged to a profile.");
+      Say(Tr("{0} was made before routines belonged to a profile.",
+             {PageText(said)}));
       OfferUnclaimed();
       return;
     }
@@ -2361,11 +2373,12 @@ class Planner {
       Say(learning.routines.empty()
               ? std::string("You don't have any routines yet. Do something, "
                             "then say remember this as, and a name.")
-              : "I don't have a routine called " + PageText(said) +
-                    ". Say what are my routines.");
+              : Tr("I don't have a routine called {0}. Say what are my "
+                   "routines.",
+                   {PageText(said)}));
       return;
     }
-    Status("Running " + PageText(*name));
+    Status(Tr("Running {0}", {PageText(*name)}));
     Add(LearningStep(LearningOp::kRunRoutine, *name));
   }
 
@@ -2377,17 +2390,20 @@ class Planner {
             : RoutineNameMatch();
     const std::string* name = match.name;
     if (match.count > 1) {
-      Say("You have " + std::to_string(match.count) + " routines called " +
-          PageText(said) + ". Forget the one you mean in Agent mode.");
+      Say(
+          Tr("You have {0} routines called {1}. Forget the one you mean in "
+             "Agent mode.",
+             {std::to_string(match.count), PageText(said)}));
       return;
     }
     if (!name) {
-      Say("I don't have a routine called " + PageText(said) + ".");
+      Say(Tr("I don't have a routine called {0}.", {PageText(said)}));
       return;
     }
     std::vector<VoiceStep> steps;
     steps.push_back(LearningStep(LearningOp::kForgetRoutine, *name));
-    AskToConfirm(std::move(steps), "forget the routine " + PageText(*name));
+    AskToConfirm(std::move(steps),
+                 Tr("forget the routine {0}", {PageText(*name)}));
   }
 
   void ListRoutines() {
@@ -2406,15 +2422,19 @@ class Planner {
     for (size_t i = 0; i < names.size() && i < kMaxRoutinesRead; ++i) {
       read.push_back(PageText(names[i]));
     }
-    std::string said = names.size() == 1
-                           ? std::string("You have one routine: ")
-                           : "You have " + std::to_string(names.size()) +
-                                 " routines: ";
-    said += JoinSpokenList(read);
-    if (names.size() > read.size()) {
-      said += ", and more in Agent mode";
+    const std::string list = JoinSpokenList(read, env_.language);
+    const bool more = names.size() > read.size();
+    if (names.size() == 1) {
+      Say(Tr("You have one routine: {0}. Say run, then its name.", {list}));
+    } else if (more) {
+      Say(
+          Tr("You have {0} routines: {1}, and more in Agent mode. Say run, "
+             "then its name.",
+             {std::to_string(names.size()), list}));
+    } else {
+      Say(Tr("You have {0} routines: {1}. Say run, then its name.",
+             {std::to_string(names.size()), list}));
     }
-    Say(said + ". Say run, then its name.");
     OfferUnclaimed();
   }
 
@@ -2439,7 +2459,7 @@ class Planner {
     for (const std::string& name : names) {
       read.push_back(PageText(name));
     }
-    const std::string list = JoinSpokenList(read);
+    const std::string list = JoinSpokenList(read, env_.language);
     Say(one ? Tr("One routine was made before routines belonged to a "
                  "profile: {0}.",
                  {list})
@@ -2485,12 +2505,12 @@ class Planner {
     const std::vector<std::string>& words = env_.learning.words;
     if (key.empty() ||
         std::find(words.begin(), words.end(), key) == words.end()) {
-      Say("I haven't learned the word " + PageText(said) + ".");
+      Say(Tr("I haven't learned the word {0}.", {PageText(said)}));
       return;
     }
     std::vector<VoiceStep> steps;
     steps.push_back(LearningStep(LearningOp::kForgetWord, said));
-    AskToConfirm(std::move(steps), "forget the word " + PageText(said));
+    AskToConfirm(std::move(steps), Tr("forget the word {0}", {PageText(said)}));
   }
 
   void ForgetLearning() {

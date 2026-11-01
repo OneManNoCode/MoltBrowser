@@ -972,6 +972,24 @@ TEST(VoiceSessionCommandsTest, TakenOverOwnVoice) {
   }
 }
 
+// What chooses from a list being read may open a site when none is: the
+// loop parses it in its own context, so it waits for the browser to be
+// quiet. A place in the list, or a bare number, still runs at once.
+TEST(VoiceSessionCommandsTest, TakenOverOwnVoiceWithOrWithoutAList) {
+  for (const char* text : {"open three", "go to three", "visit three",
+                           "bring up three", "open 3"}) {
+    EXPECT_FALSE(TakenOverOwnVoice(text)) << text;
+    EXPECT_EQ(ParseVoiceCommand(text, ParseContext()).kind,
+              VoiceCommandKind::kOpenSite)
+        << text;
+  }
+  for (const char* text :
+       {"three", "3", "twenty one", "the third one", "the last one",
+        "number four", "play the second", "the next one"}) {
+    EXPECT_TRUE(TakenOverOwnVoice(text)) << text;
+  }
+}
+
 TEST(VoiceSessionCommandsTest, AlwaysHeardCommands) {
   for (const char* text :
        {"stop", "Stop.", "hey molt stop", "stop talking", "be quiet", "cancel",
