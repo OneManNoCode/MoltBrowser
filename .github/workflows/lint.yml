@@ -53,6 +53,12 @@ name: Lint
 #     llama tiers) built with clang + ASan/UBSan and run over their seed
 #     corpora with a fixed seed and run count (tools/fuzz/molt_fuzz.py;
 #     blocking; see docs/FUZZING.md)
+#   * the static GN checks against the pinned Chromium's own build files
+#     (tools/chromium/gn_static_check.py): gn check's include and
+#     dependency rules on six configs, checkdeps, Blink's audit, test
+#     sources no test binary builds and the test data they open, and the
+#     chrome://flags entries. The pin's GN files are streamed from the
+#     release tarball once per pin (SHA-256 pinned) and cached (blocking)
 
 on:
   push:
@@ -248,6 +254,48 @@ jobs:
       # mirrors and release tarballs built in the test.
       - name: tools/chromium/patch_tools_test.py
         run: python3 tools/chromium/patch_tools_test.py -v
+
+  gn-static-check:
+    # The checks themselves, against the pin's BUILD.gn files with src/ on
+    # top (docs/BUILD_MACHINE_CHECKLIST.md, "First build"). A cache miss
+    # (a new pin) streams the release tarball once, about 5 minutes; the
+    # pinned tree's file list (test data the tarball leaves out) and the
+    # upstream copies the tree lacks come from the GitHub mirror.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cache the pin's GN files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .molt-gn-check-cache
+          key: gn-tree-${{ hashFiles('chromium_version.txt', 'tools/compile_check/ccheck/tarball.py') }}
+      # Trees only (blob-less); its own key, so it doesn't take the place of
+      # patches-in-sync's cache with the patched files' contents.
+      - name: Cache the pinned tree's file list
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .molt-chromium-cache
+          key: chromium-trees-${{ hashFiles('chromium_version.txt') }}
+      - name: Fetch the pin's GN files (on a cache miss)
+        run: |
+          set -euo pipefail
+          version="$(tools/chromium/pin.sh version)"
+          if [ ! -d ".molt-gn-check-cache/$version/tree" ]; then
+            python3 tools/chromium/gn_static_check.py fetch
+          fi
+      - name: gn check's include and dependency rules (six configs)
+        run: python3 tools/chromium/gn_static_check.py check
+      - name: checkdeps
+        run: python3 tools/chromium/gn_static_check.py checkdeps
+      - name: Blink's audit_non_blink_usage
+        run: python3 tools/chromium/gn_static_check.py blink-audit
+      - name: Test sources no test binary builds, and the data they open
+        run: python3 tools/chromium/gn_static_check.py tests --warnings
+      - name: chrome://flags entries and their metadata
+        run: python3 tools/chromium/gn_static_check.py flags --warnings
 
   leak-test-kit:
     runs-on: ubuntu-latest
