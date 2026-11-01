@@ -59,8 +59,11 @@ controller, prompts, listener and learning fuzzers, and
 156's headers; the browser tests run on the build machine.
 
 **Findings.** 16: 4 low and 12 informational (defence in depth,
-usability, local files, or what later rounds cover). Fixed: three of the
-low; the others are tracked privately.
+usability, local files, or what later rounds cover). Fixed: all four of
+the low and six of the informational, three of the low in this review
+and the rest in the same round's other work (voice mode in Spanish,
+storage robustness) and at integration; the others are tracked
+privately.
 
 **Fixed.**
 
@@ -80,6 +83,25 @@ low; the others are tracked privately.
   language the speech engine would otherwise pick
   (`voice/voice_language.cc`'s `PickLocalVoice()`, used by
   `VoiceSpeech`).
+
+Fixed in the same round's other work:
+
+- A confirmation word said in a sentence that doesn't answer the prompt,
+  or heard unsure, while something else may be listening, is retired and
+  a new one drawn, as a word heard unclearly already was
+  (`voice/voice_prompts.cc`'s `WordSaidInPassing()`, through
+  `VoiceBrowserPrompts::OnUtteranceHeard()`).
+- The answer filter for questions about the page also finds Spanish
+  greetings to the browser (`page_questions.cc`'s `HoldsWakePhrase()`).
+- Routine files in the shared directory are never followed through a
+  link, and each claim sets its file aside under a name of its own
+  (`automation/automation_storage.cc`).
+- The learning file's list of declined routines is read in one pass
+  (`voice/voice_learning_store.cc`).
+- A `web_ai_apis` value in `settings.json` that isn't true or false
+  leaves the built-in AI APIs off (`WebAIApisSwitchFrom()`).
+- `molt://ai-settings`' Reset keeps the "say the word aloud" setting and
+  the speech rate, so the page and the running voice mode agree.
 
 **Tests added.**
 
