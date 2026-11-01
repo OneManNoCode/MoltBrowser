@@ -8,8 +8,10 @@ friend, allow_circular_includes_from, check_includes, no_check_targets,
 nogncheck, unlisted headers, files a configuration never loads, platform
 conditions, mojom() headers), gn gen's dependency rules (undefined labels,
 visibility, testonly, the circular-include allowlist), cycles, missing
-sources, the overlay's "only the includes MoltBrowser added" rule, and the
-plumbing of the checkdeps and Blink-audit runs (with stand-in scripts).
+sources, the overlay's "only the includes MoltBrowser added" rule, the
+plumbing of the checkdeps and Blink-audit runs (with stand-in scripts),
+and the `tests` and `flags` checks (orphan tests and fuzzers, test data,
+the source scanners, chrome://flags entries and their metadata).
 
 Run: python3 tools/chromium/gn_static_check_test.py -v
 """
@@ -646,6 +648,421 @@ class PresubmitTest(Base):
         self.assertEqual(n, 2)
         self.assertEqual(sorted(f.where for f in findings.errors()),
                          [blink + "a.cc:2", blink + "new.h:1"])
+
+
+TESTS_ROOT_BUILD = """
+group("all") {
+  testonly = true
+  deps = [
+    "//chrome/browser/molt_ai/test:molt_ai_unittests",
+    "//chrome/test:browser_tests",
+    "//chrome/browser/molt_ai/fuzzers:molt_fuzzers",
+    "//other:other_unittests",
+    "//molt",
+  ]
+}
+"""
+
+# A small tree with the test binaries `tests` knows, for the orphan and
+# test-data checks.
+TESTS_TREE = {
+    ".gn": DOT_GN,
+    "build/config/BUILDCONFIG.gn": BUILDCONFIG,
+    "BUILD.gn": TESTS_ROOT_BUILD,
+    "chrome/browser/molt_ai/test/BUILD.gn": """
+test("molt_ai_unittests") {
+  deps = [ "//molt:unit_tests" ]
+}
+""",
+    "chrome/test/BUILD.gn": """
+test("browser_tests") {
+  deps = [ "//molt:browser_tests" ]
+  data = [ "data/" ]
+}
+""",
+    "chrome/browser/molt_ai/fuzzers/BUILD.gn": """
+group("molt_fuzzers") {
+  testonly = true
+  deps = [ "//molt:reached_fuzzer" ]
+}
+""",
+    "other/BUILD.gn": """
+test("other_unittests") {
+  deps = [ "//molt:elsewhere_tests" ]
+}
+""",
+    "chrome/test/data/media/clip.webm": "",
+}
+
+TESTS_OVERLAY = {
+    "molt/BUILD.gn": """
+source_set("molt") {
+  sources = [ "molt.cc" ]
+}
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "listed_unittest.cc", "data_unittest.cc" ]
+  data = [ "//chrome/test/data/molt_x/" ]
+  data_deps = [ ":fake_helper" ]
+  deps = [ ":static_tests" ]
+}
+static_library("static_tests") {
+  testonly = true
+  sources = [ "static_unittest.cc" ]
+}
+source_set("unreached_tests") {
+  testonly = true
+  sources = [ "unreached_unittest.cc" ]
+}
+source_set("elsewhere_tests") {
+  testonly = true
+  sources = [ "elsewhere_unittest.cc" ]
+}
+source_set("browser_tests") {
+  testonly = true
+  sources = [ "page_browsertest.cc" ]
+}
+executable("fake_helper") {
+  sources = [ "fake_helper.cc" ]
+}
+fuzzer_test("reached_fuzzer") {
+  sources = [ "reached_fuzzer.cc" ]
+}
+fuzzer_test("lost_fuzzer") {
+  sources = [ "lost_fuzzer.cc" ]
+}
+""",
+    "molt/molt.cc": "",
+    "molt/fake_helper.cc": "int main() {}\n",
+    "molt/listed_unittest.cc": "TEST(A, B) {}\n",
+    "molt/orphan_unittest.cc": "TEST(A, C) {}\n",
+    "molt/unreached_unittest.cc": "TEST(A, D) {}\n",
+    "molt/elsewhere_unittest.cc": "TEST(A, E) {}\n",
+    "molt/static_unittest.cc": "TEST(A, F) {}\n",
+    "molt/reached_fuzzer.cc": "int LLVMFuzzerTestOneInput() {}\n",
+    "molt/lost_fuzzer.cc": "int LLVMFuzzerTestOneInput() {}\n",
+    "molt/data_unittest.cc": "\n".join([
+        "TEST(D, Files) {",
+        "  base::FilePath root, exe;",
+        "  base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &root);",
+        "  base::PathService::Get(base::DIR_EXE, &exe);",
+        '  Read(root.AppendASCII("chrome").AppendASCII("test")',
+        '           .AppendASCII("data").AppendASCII("molt_x")',
+        '           .AppendASCII(name));',
+        '  Load("page.html");',            # in molt_x/: fine
+        '  Load("gone.html");',            # line 9: in no directory
+        '  Run(exe.AppendASCII("fake_helper"));',
+        '  Run(exe.AppendASCII("absent_helper"));',     # line 11
+        '#if BUILDFLAG(IS_WIN)',
+        '  Run(exe.AppendASCII("absent_helper.exe"));',  # Windows only
+        '#endif',
+        '  Read(root.AppendASCII("chrome/test/data/media/clip.webm"));',
+        '  Read(root.AppendASCII("chrome/test/data/other/x.txt"));',  # 16
+        "}",
+    ]),
+    "molt/page_browsertest.cc": "\n".join([
+        "IN_PROC_BROWSER_TEST_F(P, Open) {",
+        '  Navigate(GetURL("a.test", "/molt_x/page.html?q=1"));',
+        '  Navigate(GetURL("a.test", "/molt_x/missing.html"));',   # 3
+        '  late_ = std::make_unique<ControllableHttpResponse>(',
+        '      embedded_test_server(), "/molt_x/late.html");',     # handled
+        '  EXPECT_EQ(path, "/molt_x/late.html");',
+        '  Write("/tmp/scratch.bin");',                           # not served
+        "}",
+    ]),
+    "chrome/test/data/molt_x/page.html":
+        '<video src="/media/clip.webm"></video>\n'
+        '<img src="/media/missing.png">\n'                        # line 2
+        '<script>const u = new URL(location.href);</script>\n',
+}
+
+
+class TestsCheckTest(unittest.TestCase):
+    """`tests`: orphans, binaries, fuzzers, and the data tests open."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="gn-static-check-tests-"))
+        self.root = self.tmp / "tree"
+        self.src = self.tmp / "src"
+        write_tree(self.root, TESTS_TREE)
+        write_tree(self.src, TESTS_OVERLAY)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_check(self, platforms=("linux",), pinned=None):
+        tree = g.Tree(self.root, self.src)
+        ov = g.Overlay(self.src, sorted(TESTS_OVERLAY), tree)
+        if pinned is None:
+            pinned = {p for p in TESTS_TREE if not p.endswith(".gn")}
+        listing = g.SourceListing(TESTS_OVERLAY, pinned)
+        findings, stats = g.run_tests(tree, ov, list(platforms), listing,
+                                      progress=None)
+        return findings, stats
+
+    def by_where(self, findings, kind, severity="error"):
+        return {f.where: f.message for f in findings.all()
+                if f.kind == kind and f.severity == severity}
+
+    def test_kinds(self):
+        self.assertEqual(g.test_kind("a/x_unittest.cc", ""), "unit")
+        self.assertEqual(g.test_kind("a/x_test.cc", "TEST_F(A, B) {}"),
+                         "unit")
+        self.assertEqual(g.test_kind("a/x_test.cc", "int x;"), None)
+        self.assertEqual(g.test_kind("a/x_browsertest.cc", ""), "browser")
+        self.assertEqual(g.test_kind("a/x.cc", "IN_PROC_BROWSER_TEST_F(A, B)"),
+                         "browser")
+        self.assertEqual(g.test_kind("a/x_interactive_uitest.cc", ""),
+                         "interactive")
+        self.assertEqual(g.test_kind("a/x_fuzzer.cc", ""), "fuzzer")
+
+    def test_orphans(self):
+        findings, stats = self.run_check()
+        errs = self.by_where(findings, "tests")
+        self.assertIn("no target", errs["molt/orphan_unittest.cc"])
+        self.assertIn("//molt:unreached_tests (linux), which no test binary "
+                      "reaches", errs["molt/unreached_unittest.cc"])
+        self.assertIn("which only //other:other_unittests builds",
+                      errs["molt/elsewhere_unittest.cc"])
+        self.assertIn("molt_fuzzers doesn't reach", errs["//molt:lost_fuzzer"])
+        # Listed and reached: no finding. A fuzzer source is reported
+        # through its target only.
+        for ok in ("molt/listed_unittest.cc", "molt/page_browsertest.cc",
+                   "molt/reached_fuzzer.cc", "molt/lost_fuzzer.cc",
+                   "//molt:reached_fuzzer"):
+            self.assertNotIn(ok, errs)
+        warns = self.by_where(findings, "tests", "warning")
+        self.assertIn("static library //molt:static_tests",
+                      warns["molt/static_unittest.cc"])
+        self.assertEqual(stats["kinds"], {"browser": 1, "fuzzer": 2,
+                                          "unit": 6})
+
+    def test_data(self):
+        findings, _ = self.run_check(("linux", "win"))
+        errs = self.by_where(findings, "testdata")
+        self.assertIn("names gone.html, which is in none",
+                      errs["molt/data_unittest.cc:9"])
+        self.assertIn("runs absent_helper", errs["molt/data_unittest.cc:11"])
+        self.assertNotIn("molt/data_unittest.cc:10", errs)   # data_deps
+        # The Windows-only line is read on Windows only.
+        win_only = [f for f in findings.all()
+                    if f.where == "molt/data_unittest.cc:13"]
+        self.assertEqual([f.platforms for f in win_only], [["win"]])
+        # In the tree, but not in molt_ai_unittests' runtime data.
+        self.assertIn("isn't in the runtime data of //chrome/browser/"
+                      "molt_ai/test:molt_ai_unittests",
+                      errs["molt/data_unittest.cc:15"])
+        self.assertIn("neither in src/ nor in Chromium",
+                      errs["molt/data_unittest.cc:16"])
+        # Served by browser_tests (data/ = //chrome/test/data/).
+        self.assertNotIn("molt/page_browsertest.cc:2", errs)
+        self.assertIn("molt_x/missing.html",
+                      errs["molt/page_browsertest.cc:3"])
+        for handled in ("molt/page_browsertest.cc:5",
+                        "molt/page_browsertest.cc:6",
+                        "molt/page_browsertest.cc:7"):
+            self.assertNotIn(handled, errs)
+        # What a fixture page loads.
+        self.assertNotIn("chrome/test/data/molt_x/page.html:1", errs)
+        self.assertIn("/media/missing.png",
+                      errs["chrome/test/data/molt_x/page.html:2"])
+        self.assertNotIn("chrome/test/data/molt_x/page.html:3", errs)
+
+    def test_unknown_listing_warns(self):
+        # Without the pinned tree's list, a file outside src/ is unknown.
+        tree = g.Tree(self.root, self.src)
+        ov = g.Overlay(self.src, sorted(TESTS_OVERLAY), tree)
+        findings, _ = g.run_tests(tree, ov, ["linux"],
+                                  g.SourceListing(TESTS_OVERLAY, None),
+                                  progress=None)
+        warns = self.by_where(findings, "testdata", "warning")
+        self.assertIn("unknown", warns["molt/data_unittest.cc:16"])
+        self.assertNotIn("molt/data_unittest.cc:16",
+                         self.by_where(findings, "testdata"))
+
+
+class SourceScanTest(unittest.TestCase):
+    def test_cxx_literals(self):
+        code, lits = g.cxx_literals(
+            '// "in a comment"\n'
+            'a("one", "t\\"wo"); /* "c" */ b(R"x(raw "q")x", \'"\');\n'
+            'c("three");\n')
+        self.assertEqual([(ln, v) for ln, _, _, v in lits],
+                         [(2, "one"), (2, 't"wo'), (3, "three")])
+        self.assertNotIn("in a comment", code)
+        self.assertNotIn("raw", code)
+        self.assertEqual(code.count("\n"), 3)
+
+    def test_conditions(self):
+        text = "\n".join([
+            "a",                                   # 1
+            "#if BUILDFLAG(IS_WIN)",
+            "b",                                   # 3
+            "#elif BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)",
+            "c",                                   # 5
+            "#else",
+            "d",                                   # 7
+            "#endif",
+            "#if !BUILDFLAG(IS_POSIX) && defined(FOO)",
+            "e",                                   # 10
+            "#endif",
+        ])
+        conds = g.preprocessor_conditions(text)
+
+        def on(line):
+            return [p for p in ("linux", "mac", "win")
+                    if g.line_compiled(conds[line], p)]
+        self.assertEqual(on(1), ["linux", "mac", "win"])
+        self.assertEqual(on(3), ["win"])
+        self.assertEqual(on(5), ["linux", "mac"])
+        self.assertEqual(on(7), [])
+        self.assertEqual(on(10), ["win"])       # defined(FOO) unknown
+        self.assertIsNone(g.eval_condition("BUILDFLAG(ENABLE_X)", "linux"))
+        self.assertTrue(g.eval_condition("BUILDFLAG(IS_APPLE)", "mac"))
+
+    def test_page_refs(self):
+        refs = g.page_refs("chrome/test/data/d/p.html", "\n".join([
+            '<img src="/a/b.png"><script src="s.js"></script>',
+            '<a href="/not/a/load.html">x</a>',
+            '<link rel="stylesheet" href="../c.css">',
+            '<div style="background: url(\'/i/bg.png\')"></div>',
+            '<video src="https://other.test/v.webm" poster="{{x}}.png">',
+            '<script>new URL(location.href); f.src = x;</script>',
+        ]))
+        self.assertEqual(refs, [(1, "chrome/test/data/a/b.png"),
+                                (1, "chrome/test/data/d/s.js"),
+                                (3, "chrome/test/data/c.css"),
+                                (4, "chrome/test/data/i/bg.png")])
+
+    def test_listing(self):
+        ls = g.SourceListing(["a/b.txt"], {"c/d/e.txt"}, ["v8"])
+        self.assertTrue(ls.exists("a/b.txt"))
+        self.assertTrue(ls.exists("c/d/"))
+        self.assertTrue(ls.exists("c/d/e.txt"))
+        self.assertFalse(ls.exists("c/x.txt"))
+        self.assertIsNone(ls.exists("v8/x.txt"))
+        self.assertIsNone(g.SourceListing(["a/b.txt"]).exists("c/x.txt"))
+
+
+FLAG_HEADER = r"""
+#include "x/molt_x_features.h"
+#define MOLT_X_FEATURE_ENTRIES                                       \
+    {molt_x::flags::kGood, "MoltBrowser: good", "It does good.",     \
+     kOsAll, FEATURE_VALUE_TYPE(molt_x::kMoltGood)},                 \
+    {molt_x::flags::kQuiet, "MoltBrowser: quiet", "",                \
+     kOsAll, FEATURE_VALUE_TYPE(molt_x::kMoltQuiet)}
+"""
+
+FLAG_OVERLAY = {
+    "chrome/browser/about_flags.cc": "\n".join([
+        '#include "x/molt_x_about_flags.h"  // MoltBrowser',
+        "const FeatureEntry kFeatureEntries[] = {",
+        '    {"upstream-flag", "U", "u", kOsAll, SINGLE_VALUE_TYPE("u")},',
+        "    // MoltBrowser.",
+        "    MOLT_X_FEATURE_ENTRIES,",
+        "};",
+    ]),
+    "x/molt_x_about_flags.h": FLAG_HEADER,
+    "x/molt_x_features.h": "\n".join([
+        'inline constexpr char kGood[] = "molt-good";',
+        'inline constexpr char kQuiet[] = "molt-quiet";',
+    ]),
+    "x/molt_x_features.cc": "\n".join([
+        "BASE_FEATURE(kMoltGood, base::FEATURE_ENABLED_BY_DEFAULT);",
+        "BASE_FEATURE(kMoltQuiet, base::FEATURE_ENABLED_BY_DEFAULT);",
+        "BASE_FEATURE(kMoltForgotten, base::FEATURE_DISABLED_BY_DEFAULT);",
+    ]),
+    "chrome/browser/flag-metadata.json": """[
+  // A comment, and an owner path with slashes.
+  { "name": "molt-good", "owners": [ "//x/OWNERS" ],
+    "expiry_milestone": -1 },
+  { "name": "molt-quiet", "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1 },
+  { "name": "molt-gone", "owners": [ "a@b.c" ], "expiry_milestone": 160 },
+  { "name": "aaa-upstream", "owners": [ "a@b.c" ], "expiry_milestone": 160 }
+]
+""",
+    "chrome/browser/flag-never-expire-list.json":
+        '[ "molt-good", "molt-unknown" ]\n',
+    "x/OWNERS": "",
+    "x/README.md": "Turn on chrome://flags/#molt-good or #molt-typo, "
+                   "#molt-* and #molt-\nquiet\n",
+}
+
+
+class FlagsCheckTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="gn-static-check-flags-"))
+        write_tree(self.tmp / "tree", {"BUILD.gn": ""})
+        write_tree(self.tmp / "src", FLAG_OVERLAY)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_flags(self, enums=None):
+        tree = g.Tree(self.tmp / "tree", self.tmp / "src")
+        ov = g.Overlay(self.tmp / "src", sorted(FLAG_OVERLAY), tree)
+        return g.run_flags(ov, (lambda rel: enums) if enums is not None
+                           else None)
+
+    def test_uma_id(self):
+        # Values in Chromium 156's enums.xml.
+        self.assertEqual(g.uma_id("OmniboxMaxURLMatches:enabled"),
+                         -2146979021)
+        self.assertEqual(g.uma_id("GlassToolbar:enabled"), 763904037)
+        self.assertEqual(g.uma_id("GlassToolbar:disabled"), -138951938)
+
+    def test_owner_and_order_rules(self):
+        self.assertTrue(g.valid_looking_owner("a@b.com"))
+        self.assertTrue(g.valid_looking_owner("//chrome/browser/OWNERS"))
+        self.assertFalse(g.valid_looking_owner("moltbrowser"))
+        self.assertFalse(g.valid_looking_owner("a@b"))
+        self.assertFalse(g.valid_looking_owner("a@b.com,c@d.com"))
+        self.assertEqual(g.misordered(["a", "b_c", "b-d", "c"]), [])
+        self.assertEqual(g.misordered(["b", "a"]),
+                         [("b", "a"), ("a", "(start of file)")])
+        self.assertEqual(g.strip_json_comments(
+            '[ // c\n "//x/OWNERS", /* d */ 1 ]'), '[ \n "//x/OWNERS",  1 ]')
+
+    def test_flags(self):
+        line = '<int value="%d" label="MoltGood:%%s"/>'
+        enums = ("\n".join([line % g.uma_id("MoltGood:disabled") % "disabled",
+                            line % g.uma_id("MoltGood:enabled") % "enabled"])
+                 ).encode()
+        findings, stats = self.run_flags(enums)
+        msgs = [(f.where, f.message) for f in findings.errors()]
+        text = "\n".join("%s: %s" % m for m in msgs)
+        self.assertEqual(stats["entries"], 2)
+        self.assertIn("x/molt_x_about_flags.h (#molt-quiet): has no "
+                      "description", text)
+        self.assertIn("kMoltForgotten is not a chrome://flags entry", text)
+        self.assertIn("(#molt-quiet): has the owner 'moltbrowser'", text)
+        self.assertIn("'aaa-upstream' should be right after "
+                      "'(start of file)'", text)
+        self.assertIn("lists molt-unknown, which has no metadata", text)
+        self.assertIn("never expires but isn't in", text)   # molt-quiet
+        self.assertIn("names #molt-typo, which is not", text)
+        self.assertNotIn("#molt-good,", text)
+        self.assertNotIn("#molt-,", text)   # #molt-*, a name cut at the end
+        self.assertNotIn("(#molt-good)", text)
+        warns = [f.message for f in findings.all()
+                 if f.severity == "warning"]
+        self.assertTrue(any("molt-gone" in w or "not a registered" in w
+                            for w in warns))
+        enum_warn = [w for w in warns if "LoginCustomFlags" in w]
+        self.assertEqual(len(enum_warn), 1)
+        self.assertIn("MoltQuiet:enabled", enum_warn[0])
+        self.assertNotIn("MoltGood:", enum_warn[0])
+
+    def test_unregistered_macro_header(self):
+        bad = dict(FLAG_OVERLAY)
+        bad["chrome/browser/about_flags.cc"] = bad[
+            "chrome/browser/about_flags.cc"].replace(
+            '#include "x/molt_x_about_flags.h"  // MoltBrowser', "")
+        write_tree(self.tmp / "src", bad)
+        findings, _ = self.run_flags(b"")
+        self.assertTrue(any("doesn't include x/molt_x_about_flags.h"
+                            in f.message for f in findings.errors()))
 
 
 class FetchTest(unittest.TestCase):

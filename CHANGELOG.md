@@ -1534,6 +1534,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   non-Blink-usage audit. Every MoltBrowser header is now listed in its
   build target, the targets and include rules declare what they use, and
   the build-machine checklist starts with one ordered first-build list.
+- **Test and flag checks before the first build** (`gn_static_check.py
+  tests` and `flags`, in CI): every MoltBrowser test and fuzzer is built
+  by a binary that runs it, the pages and files tests open are there and
+  shipped with the test binary, and every MoltBrowser feature switch is a
+  `chrome://flags` entry with the metadata Chromium's own flag tests
+  require. Five fuzzers that no fuzzing build reached are now built, the
+  `#molt-*` flags name an owner Chromium's flag tests accept, and the
+  build-machine checklist has one ordered list of what the first build
+  after round 43 should meet.
 - **Compile check on every platform** (`tools/compile_check/`): it now
   type-checks every C, C++ and Objective-C++ file MoltBrowser adds or
   changes, and the changed headers no source includes, on each platform
