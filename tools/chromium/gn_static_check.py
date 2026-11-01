@@ -2029,8 +2029,11 @@ def test_findings(placements, configs, findings):
             else:
                 msg = "is listed in %s, which no test binary reaches " \
                       "(expected: %s)" % (listed, want)
-        findings.add(Finding("tests", "error", rel, msg,
-                             _kind_hint(p.kind)), where_all)
+        hint = _kind_hint(p.kind)
+        if set(configs) != set(DEFAULT_CONFIGS.split(",")):
+            hint += " (or it is built only in a configuration not checked " \
+                    "here: run without --platform)"
+        findings.add(Finding("tests", "error", rel, msg, hint), where_all)
 
 
 def fuzzer_target_findings(graph, overlay, ugraph, reach, findings):
@@ -2042,8 +2045,9 @@ def fuzzer_target_findings(graph, overlay, ugraph, reach, findings):
         d = "//" + bf.rsplit("/", 1)[0]
         if build_file(d) not in graph.load_build():
             continue
-        old = ugraph.load_dir(d) if (ugraph is not None and
-                                     overlay.is_upstream(bf)) else {}
+        if overlay.is_upstream(bf) and ugraph is None:
+            continue        # can't tell upstream's fuzzers from ours
+        old = ugraph.load_dir(d) if overlay.is_upstream(bf) else {}
         for lab, t in sorted(graph.load_dir(d).items()):
             if (t.template or t.type) not in FUZZER_TEMPLATES or \
                     lab in old or lab in members:
@@ -3095,7 +3099,8 @@ def run_flags(overlay, upstream_read=None):
 
 def _flag_ref_texts(overlay):
     """(path, text) of what may name a chrome://flags entry: MoltBrowser's
-    own files under src/, and the repository's docs and README."""
+    own files under src/, and the repository's docs and README (not the
+    CHANGELOG, whose history may name a flag since removed)."""
     for rel in overlay.files:
         if rel.startswith(OWN_EXCLUDE) or overlay.is_upstream(rel):
             continue
@@ -3104,7 +3109,7 @@ def _flag_ref_texts(overlay):
             yield "src/" + rel, overlay.text(rel)
     root = overlay.src.parent
     for p in sorted(list((root / "docs").rglob("*.md")) +
-                    [root / "README.md", root / "CHANGELOG.md"]):
+                    [root / "README.md"]):
         if p.is_file():
             yield p.relative_to(root).as_posix(), p.read_text(
                 errors="replace")
