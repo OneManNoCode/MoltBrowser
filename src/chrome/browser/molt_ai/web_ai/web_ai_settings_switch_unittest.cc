@@ -20,10 +20,13 @@ TEST(WebAISettingsSwitchTest, OnUnlessTheSettingsSayOff) {
   base::DictValue off;
   off.Set(kWebAIApisSettingsKey, false);
   EXPECT_FALSE(WebAIApisSwitchFrom(std::move(off)));
-  // Not a boolean: the default.
+  // Not a boolean (a hand edit): off, never on by default.
   base::DictValue odd;
   odd.Set(kWebAIApisSettingsKey, "false");
-  EXPECT_TRUE(WebAIApisSwitchFrom(std::move(odd)));
+  EXPECT_FALSE(WebAIApisSwitchFrom(std::move(odd)));
+  base::DictValue number;
+  number.Set(kWebAIApisSettingsKey, 1);
+  EXPECT_FALSE(WebAIApisSwitchFrom(std::move(number)));
 }
 
 TEST(WebAISettingsSwitchTest, AFileThatCantBeReadLeavesThemOff) {

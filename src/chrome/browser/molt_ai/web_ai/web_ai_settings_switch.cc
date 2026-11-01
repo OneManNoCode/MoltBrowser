@@ -14,7 +14,12 @@ bool WebAIApisSwitchFrom(const std::optional<base::DictValue>& settings) {
   if (!settings) {
     return false;
   }
-  return settings->FindBool(kWebAIApisSettingsKey).value_or(true);
+  const base::Value* value = settings->Find(kWebAIApisSettingsKey);
+  if (!value) {
+    return true;
+  }
+  // A hand edit that isn't true or false ("false", 0) leaves them off too.
+  return value->is_bool() && value->GetBool();
 }
 
 bool ReadWebAIApisSwitch() {
