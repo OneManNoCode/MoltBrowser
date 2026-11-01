@@ -74,6 +74,45 @@ Two presubmit checks run over the same overlay:
                with MoltBrowser's entries) over the lines MoltBrowser adds
                under third_party/blink, as Blink's presubmit runs it.
 
+Two checks of what the first real build's tests would trip on:
+  tests        Every MoltBrowser test source (a *_unittest, *_browsertest,
+               *_interactive_uitest or *_fuzzer file, or one with gtest's
+               TEST macros) is listed in a target that a binary meant to run
+               it reaches through deps in some configuration (TEST_BINARIES:
+               unit tests in molt_ai_unittests, unit_tests, blink_unittests
+               or media_unittests; browser tests in browser_tests or
+               interactive_ui_tests), and every fuzzer_test() an overlay
+               BUILD.gn adds is reached from molt_fuzzers. Orphans are named
+               with the targets that list them, or "no target"; a test in a
+               static library is a warning (the linker may drop it).
+               Then the test data each test opens, as its string literals
+               show it: PathService roots (DIR_SRC_TEST_DATA_ROOT,
+               DIR_GEN_TEST_DATA_ROOT, DIR_EXE) followed by AppendASCII()
+               of literals, a browser test's served paths ("/molt_voice/
+               x.html", from chrome/test/data), file names joined to one of
+               those directories elsewhere in the file, and what the
+               fixture pages under chrome/test/data load ("/media/
+               bigbuck.webm"). Each must exist (in src/, or in the pinned
+               commit's tree: its file list comes from
+               tools/chromium/upstream.py's cache, --chromium-cache, since
+               the release tarball leaves test data out), a generated file
+               must be some target's output, an executable next to the
+               binary must be in its runtime deps, and a file must be in the
+               runtime data (`data`, through deps and data_deps) of every
+               binary that runs the test. A line under #if BUILDFLAG(IS_*)
+               counts only on its platform.
+  flags        Every BASE_FEATURE MoltBrowser defines is a chrome://flags
+               entry (in about_flags.cc's kFeatureEntries, through a
+               MOLT_*_FEATURE_ENTRIES macro of a header it includes), with
+               a molt- name, a visible name and a description, or is in
+               NOT_FLAGS with the reason; and AboutFlagsTest's rules on
+               flag-metadata.json and flag-never-expire-list.json hold
+               (an entry per flag, valid-looking owners, never-expiring
+               flags listed, both files in order). LoginCustomFlags in
+               enums.xml (AboutFlagsHistogramTest) is a warning with the
+               missing lines, an owner's decision (BUILD_MACHINE_CHECKLIST.md
+               §11). Every #molt-... in src/ and the docs names a flag.
+
 Usage:
   tools/chromium/gn_static_check.py fetch      # stream the pin's GN files once
                                     # (kept if the tarball matches its
@@ -82,6 +121,9 @@ Usage:
                                     [--warnings] [--json OUT] [FILE...]
   tools/chromium/gn_static_check.py checkdeps [--json OUT]
   tools/chromium/gn_static_check.py blink-audit [--json OUT]
+  tools/chromium/gn_static_check.py tests [--platform CONFIGS]
+                                    [--chromium-cache DIR] [--warnings]
+  tools/chromium/gn_static_check.py flags [--chromium-cache DIR] [--warnings]
   python3 tools/chromium/gn_static_check_test.py     # the checker's tests
 
 Each command exits 1 when it finds an error. FILE... (paths under src/) limits the
@@ -550,7 +592,7 @@ class GnTarget:
     __slots__ = ("label", "type", "sources", "public", "deps", "public_deps",
                  "visibility", "testonly", "check_includes",
                  "allow_circular", "friend", "outputs", "path", "template",
-                 "data_deps")
+                 "data_deps", "data", "output_name")
 
     def __init__(self, label, ttype, path):
         self.label = label
@@ -568,6 +610,8 @@ class GnTarget:
         self.friend = []
         self.outputs = []
         self.data_deps = []
+        self.data = []                # runtime files; a directory ends in /
+        self.output_name = None
 
     def files(self):
         """[(file, is_public, is_generated)] as gn check's file map."""
@@ -634,6 +678,12 @@ def _fill(t, scope_get, path, nested_get=None):
                                if "(" not in d) if x and x != t.label]
     t.friend = [x for x in (norm_pattern(v, path)
                             for v in _strs(scope_get("friend"))) if x]
+    # Runtime data: a directory keeps its trailing "/", as gn reads it.
+    t.data = [abspath(x, path) + ("/" if x.endswith("/") else "")
+              for x in _strs(scope_get("data"))]
+    name = scope_get("output_name")
+    t.output_name = name if isinstance(name, str) and \
+        "<UNKNOWN>" not in name else None
 
 
 def _expand_output(o, src, path):
@@ -1791,6 +1841,1276 @@ def run_blink_audit(overlay, upstream_read=None):
 
 
 # ---------------------------------------------------------------------------
+# tests: MoltBrowser's test sources no test binary builds, and the data they
+# open
+
+# The binaries that run each kind of MoltBrowser test, as
+# docs/BUILD_MACHINE_CHECKLIST.md §5 runs them: its own unit tests in
+# molt_ai_unittests (or Chrome's unit_tests), the ones that need Blink's or
+# media's test environment in that suite (§5.1 runs them by name), its
+# browser tests in browser_tests (or interactive_ui_tests), and its fuzzers
+# under molt_fuzzers (tools/fuzz/molt_fuzz.py, docs/FUZZING.md). A test in
+# another suite is built but not run by the checklist: add the suite here
+# and to §5 if that is meant.
+TEST_BINARIES = {
+    "unit": ("//chrome/browser/molt_ai/test:molt_ai_unittests",
+             "//chrome/test:unit_tests",
+             "//third_party/blink/renderer/controller:blink_unittests",
+             "//media:media_unittests"),
+    "browser": ("//chrome/test:browser_tests",),
+    "interactive": ("//chrome/test:interactive_ui_tests",),
+    "fuzzer": ("//chrome/browser/molt_ai/fuzzers:molt_fuzzers",),
+}
+FUZZER_TEMPLATES = {"fuzzer_test"}
+LINK_KEYS = ("public_deps", "deps")                 # compiled into it
+RUNTIME_KEYS = ("public_deps", "deps", "data_deps")  # gn's runtime deps
+
+_TEST_MACRO = re.compile(r"^[ \t]*(?:TEST|TEST_F|TEST_P|TYPED_TEST|"
+                         r"TYPED_TEST_P|FUZZ_TEST)\s*\(", re.M)
+_BROWSER_TEST_MACRO = re.compile(r"^[ \t]*IN_PROC_BROWSER_TEST(?:_F|_P)?\s*\(",
+                                 re.M)
+
+
+def test_kind(rel, text):
+    """"unit", "browser", "interactive", "fuzzer" or None for a C++ file,
+    from its name and the test macros it uses."""
+    base = rel.rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0]
+    if stem.endswith("_fuzzer") or "LLVMFuzzerTestOneInput" in text:
+        return "fuzzer"
+    if stem.endswith("_interactive_uitest"):
+        return "interactive"
+    if stem.endswith("_browsertest") or _BROWSER_TEST_MACRO.search(text):
+        return "browser"
+    if stem.endswith("_unittest") or _TEST_MACRO.search(text):
+        return "unit"
+    return None
+
+
+def test_sources(overlay):
+    """{rel: kind} for MoltBrowser's own test sources (as own_files: not
+    the vendored trees, not another platform's files)."""
+    out = {}
+    for rel in own_files(overlay):
+        if not rel.endswith((".cc", ".mm", ".cpp")):
+            continue
+        kind = test_kind(rel, overlay.text(rel))
+        if kind:
+            out[rel] = kind
+    return out
+
+
+def closure(graph, root, keys):
+    """Every loaded target reachable from `root` through `keys`, with it."""
+    seen = {root}
+    queue = [root]
+    while queue:
+        nxt = []
+        for lab in queue:
+            t = graph.targets.get(lab)
+            if t is None:
+                continue
+            for k in keys:
+                for d in getattr(t, k):
+                    if d not in seen:
+                        seen.add(d)
+                        nxt.append(d)
+        queue = nxt
+    return seen
+
+
+class TestPlacement:
+    """Where one test source is listed and which binaries build it, per
+    configuration."""
+
+    def __init__(self, rel, kind):
+        self.rel = rel
+        self.kind = kind
+        self.owners = {}      # label -> [configs]
+        self.binaries = {}    # binary label -> [configs]
+        self.static = set()   # labels of static libraries that list it
+        self.fuzzer_targets = set()  # labels of fuzzer_test()s that list it
+
+    def run_in(self):
+        """[(config, binary)] where an expected binary builds it."""
+        want = TEST_BINARIES[self.kind]
+        return [(c, b) for b in want for c in self.binaries.get(b, [])]
+
+
+def _add(d, k, v):
+    lst = d.setdefault(k, [])
+    if v not in lst:
+        lst.append(v)
+
+
+def place_tests(graph, tests, placements):
+    """Fills `placements` ({rel: TestPlacement}) for one configuration."""
+    graph.load_build()
+    reach = {}
+    for kind in sorted({k for k in tests.values()}):
+        for b in TEST_BINARIES[kind]:
+            if b not in reach and b in graph.targets:
+                reach[b] = closure(graph, b, LINK_KEYS)
+    # Other test binaries, to say where a misplaced test runs instead.
+    others = [lab for lab, t in graph.targets.items()
+              if t.template == "test" and lab not in reach]
+    for rel, kind in sorted(tests.items()):
+        p = placements.setdefault(rel, TestPlacement(rel, kind))
+        owners = [lab for lab, _, gen in graph.owners_of("//" + rel)
+                  if not gen]
+        for lab in owners:
+            _add(p.owners, lab, graph.platform)
+            t = graph.targets.get(lab)
+            if t is not None and t.type == "static_library":
+                p.static.add(lab)
+            if t is not None and (t.template or t.type) in FUZZER_TEMPLATES:
+                p.fuzzer_targets.add(lab)
+        for b, members in reach.items():
+            if any(o in members for o in owners):
+                _add(p.binaries, b, graph.platform)
+        if owners and not p.run_in():
+            for b in others:
+                if any(o in closure_cache(graph, b) for o in owners):
+                    _add(p.binaries, b, graph.platform)
+    return reach
+
+
+def closure_cache(graph, root):
+    cache = graph.__dict__.setdefault("_link_closures", {})
+    if root not in cache:
+        cache[root] = closure(graph, root, LINK_KEYS)
+    return cache[root]
+
+
+def _kind_hint(kind):
+    return {
+        "unit": "list it in the unit_tests source_set of its directory's "
+                "BUILD.gn, one that //chrome/browser/molt_ai/test:"
+                "molt_ai_unittests depends on (chrome/browser/molt_ai/test/"
+                "BUILD.gn)",
+        "browser": "list it in a browser_tests source_set that "
+                   "//chrome/browser/molt_ai/voice:browser_tests reaches "
+                   "(//chrome/browser:core_browser_tests depends on it)",
+        "interactive": "list it in a source_set that "
+                       "//chrome/test:interactive_ui_tests reaches",
+        "fuzzer": "make it a fuzzer_test() and add it to "
+                  "//chrome/browser/molt_ai/fuzzers:molt_fuzzers (and to "
+                  "tools/fuzz/molt_fuzz.py)",
+    }[kind]
+
+
+def test_findings(placements, configs, findings):
+    """The orphans: a test source no expected binary builds in any
+    configuration checked."""
+    where_all = ",".join(configs)
+    for rel, p in sorted(placements.items()):
+        for lab in sorted(p.static):
+            findings.add(Finding(
+                "tests", "warning", rel,
+                "is in the static library %s: the linker keeps only the "
+                "objects something references, so its tests may not run"
+                % lab, "list it in a source_set"), where_all)
+        if p.run_in():
+            continue
+        if p.owners and set(p.owners) <= p.fuzzer_targets:
+            continue    # fuzzer_target_findings() names the target
+        want = ", ".join(TEST_BINARIES[p.kind])
+        if not p.owners:
+            msg = "is in no target's sources in any configuration " \
+                  "checked (no target), so no test binary builds it"
+        else:
+            listed = "; ".join("%s (%s)" % (lab, ",".join(cs))
+                               for lab, cs in sorted(p.owners.items()))
+            if p.binaries:
+                msg = "is listed in %s, which only %s builds; MoltBrowser's " \
+                      "%s tests run in %s" % (
+                          listed, ", ".join(sorted(p.binaries)), p.kind,
+                          want)
+            else:
+                msg = "is listed in %s, which no test binary reaches " \
+                      "(expected: %s)" % (listed, want)
+        findings.add(Finding("tests", "error", rel, msg,
+                             _kind_hint(p.kind)), where_all)
+
+
+def fuzzer_target_findings(graph, overlay, ugraph, reach, findings):
+    """Every fuzzer_test() an overlay BUILD.gn adds is reached from
+    molt_fuzzers (one configuration)."""
+    root = TEST_BINARIES["fuzzer"][0]
+    members = reach.get(root) or closure(graph, root, LINK_KEYS)
+    for bf in overlay_build_files(overlay):
+        d = "//" + bf.rsplit("/", 1)[0]
+        if build_file(d) not in graph.load_build():
+            continue
+        old = ugraph.load_dir(d) if (ugraph is not None and
+                                     overlay.is_upstream(bf)) else {}
+        for lab, t in sorted(graph.load_dir(d).items()):
+            if (t.template or t.type) not in FUZZER_TEMPLATES or \
+                    lab in old or lab in members:
+                continue
+            findings.add(Finding(
+                "tests", "error", lab,
+                "is a fuzzer_test() that %s doesn't reach, so no fuzzing "
+                "build builds it" % root,
+                "add it to the deps of %s (or of a group it reaches, such "
+                "as :fuzzers next to it)" % root), graph.platform)
+
+
+# --- Test data -------------------------------------------------------------
+
+# PathService keys a test reads files under, and what each root means here:
+# "src" (a path in the source tree), "gen" (under root_gen_dir), "exe" (a
+# file next to the test binary: an executable a data_deps builds).
+PATH_KEYS = {
+    "DIR_SRC_TEST_DATA_ROOT": "src", "DIR_SOURCE_ROOT": "src",
+    "DIR_GEN_TEST_DATA_ROOT": "gen", "DIR_EXE": "exe", "DIR_MODULE": "exe",
+}
+# chrome::DIR_TEST_DATA and browser tests' embedded_test_server() (which
+# InProcessBrowserTest points at chrome/test/data).
+CHROME_TEST_DATA = "chrome/test/data/"
+# File names a test names on their own, joined to a directory elsewhere in
+# the file (Fixture("youtube_home.html"), StringsPak("x_en-US.pak")).
+FIXTURE_EXT = ("html", "htm", "xhtml", "webm", "mp4", "ogv", "ogg", "wav",
+               "mp3", "pak", "pdf", "png", "jpg", "jpeg", "gif", "svg",
+               "webp", "txt")
+# What a fixture page loads from its own server.
+PAGE_EXT = ("html", "htm", "js", "css", "svg")
+_FIXTURE_NAME = re.compile(r"^[A-Za-z0-9_.\-]+\.(?:%s)$" %
+                           "|".join(FIXTURE_EXT))
+_SERVED = re.compile(r"^/[A-Za-z0-9_.\-/%~]*$")
+
+
+def cxx_literals(text):
+    """(code, literals): the source with comments and raw strings blanked
+    (offsets and lines kept), and [(line, start, end, value)] of its
+    ordinary string literals."""
+    out = list(text)
+    lits = []
+    i, n, line = 0, len(text), 1
+
+    def blank(a, b):
+        for k in range(a, b):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            line += 1
+            i += 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            line += text.count("\n", i, j)
+            blank(i, j)
+            i = j
+        elif c == "R" and text.startswith('R"', i) and \
+                (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")
+                 or text[i - 1] in "uU8L"):
+            k = text.find("(", i + 2)
+            delim = text[i + 2:k] if k >= 0 else None
+            if delim is None or len(delim) > 16 or "\n" in delim:
+                i += 1
+                continue
+            j = text.find(")" + delim + '"', k)
+            j = n if j < 0 else j + len(delim) + 2
+            line += text.count("\n", i, j)
+            blank(i, j)
+            i = j
+        elif c == '"':
+            j = i + 1
+            buf = []
+            while j < n and text[j] != '"' and text[j] != "\n":
+                if text[j] == "\\" and j + 1 < n:
+                    buf.append(text[j + 1] if text[j + 1] in "\"'\\?"
+                               else text[j:j + 2])
+                    j += 2
+                    continue
+                buf.append(text[j])
+                j += 1
+            lits.append((line, i, j + 1, "".join(buf)))
+            i = j + 1
+        elif c == "'" and not (i and (text[i - 1].isalnum() or
+                                      text[i - 1] == "_")):
+            j = i + 1
+            while j < n and text[j] != "'" and text[j] != "\n":
+                j += 2 if text[j] == "\\" else 1
+            i = j + 1
+        else:
+            i += 1
+    return "".join(out), lits
+
+
+class DataRef:
+    """A file or directory a test opens: kind "src" (//path), "gen" (under
+    root_gen_dir), "exe" (an executable next to the binary), "served" (a
+    path its test server serves from chrome/test/data) or "bare" (a file
+    name to find in one of `dirs`)."""
+
+    def __init__(self, kind, line, path, dirs=None):
+        self.kind = kind
+        self.line = line
+        self.path = path            # a directory ends in "/"
+        self.dirs = dirs or []      # for "bare": [(kind, dir)]
+
+    def __repr__(self):
+        return "<%s %s:%d>" % (self.kind, self.path, self.line)
+
+
+_PATH_GET = re.compile(r"PathService::Get\s*\(\s*(?:base::|chrome::)?"
+                       r"(DIR_\w+)\s*,\s*&\s*([A-Za-z_]\w*)\s*\)")
+_PATH_CHECKED = re.compile(r"\b([A-Za-z_]\w*)\s*=\s*(?:base::)?PathService::"
+                           r"CheckedGet\s*\(\s*(?:base::|chrome::)?(DIR_\w+)"
+                           r"\s*\)")
+_APPEND = re.compile(r'\s*\.\s*Append(?:ASCII)?\s*\(\s*(?:FILE_PATH_LITERAL'
+                     r'\s*\(\s*)?"((?:[^"\\\n]|\\.)*)"\s*\)?\s*\)')
+_APPEND_ANY = re.compile(r"\s*\.\s*Append(?:ASCII)?\s*\(")
+_HANDLED = re.compile(r"ControllableHttpResponse>?\s*\(([^;]*?)\)\s*;",
+                      re.S)
+
+
+def _join(*parts):
+    return "/".join(p.strip("/") for p in parts if p.strip("/"))
+
+
+def data_refs(rel, text, kind, served_dirs=None):
+    """[DataRef] of the files a test source opens, as far as its string
+    literals show them (see `tests` in the module docstring).
+    `served_dirs`: the first path segments under chrome/test/data (a
+    browser test's "/x/..." literal is a served path when x is one of them,
+    or when it names a page)."""
+    code, lits = cxx_literals(text)
+    roots = {}
+    for m in _PATH_GET.finditer(code):
+        key, var = m.group(1), m.group(2)
+        if key == "DIR_TEST_DATA" and "chrome::" in m.group(0):
+            roots[var] = ("src", CHROME_TEST_DATA)
+        elif key in PATH_KEYS:
+            roots[var] = (PATH_KEYS[key], "")
+    for m in _PATH_CHECKED.finditer(code):
+        var, key = m.group(1), m.group(2)
+        if key in PATH_KEYS:
+            roots[var] = (PATH_KEYS[key], "")
+
+    def line_of(pos):
+        return code.count("\n", 0, pos) + 1
+
+    refs, dirs = [], []
+    for var, (rkind, base) in sorted(roots.items()):
+        for m in re.finditer(r"\b%s\b" % re.escape(var), code):
+            pos = m.end()
+            parts = []
+            while True:
+                a = _APPEND.match(code, pos)
+                if not a:
+                    break
+                parts.append(a.group(1))
+                pos = a.end()
+            if not parts:
+                continue
+            path = _join(base, *parts)
+            ln = line_of(m.start())
+            if _APPEND_ANY.match(code, pos):
+                # A directory, joined to a name the code computes.
+                if rkind != "exe":
+                    d = path + "/"
+                    dirs.append((rkind, d))
+                    refs.append(DataRef(rkind, ln, d))
+            elif rkind == "exe":
+                if "/" not in path:
+                    refs.append(DataRef("exe", ln, path))
+            else:
+                refs.append(DataRef(rkind, ln, path))
+    in_browser = kind in ("browser", "interactive")
+    handled = set()
+    if in_browser:
+        for m in _HANDLED.finditer(code):
+            handled.update(re.findall(r'"(/[^"]*)"', m.group(1)))
+    named = set()
+    for ln, _, _, v in lits:
+        if not in_browser or v in handled:
+            continue
+        p = v.split("?", 1)[0].split("#", 1)[0]
+        if p == "/" or not _SERVED.match(p):
+            continue
+        top = p.lstrip("/").split("/", 1)[0]
+        last = p.rsplit("/", 1)[-1]
+        page = last.rsplit(".", 1)[-1].lower() in ("html", "htm") \
+            if "." in last else False
+        if not page and (served_dirs is None or top not in served_dirs):
+            continue        # "/tmp/x", "/echo": not a file it serves
+        served = CHROME_TEST_DATA + p.lstrip("/")
+        if p.endswith("/"):
+            dirs.append(("src", served))
+            refs.append(DataRef("served", ln, served))
+        elif "." in last:
+            refs.append(DataRef("served", ln, served))
+            named.add(last)
+    seen_dirs = sorted(set(dirs))
+    if seen_dirs:
+        for ln, _, _, v in lits:
+            if _FIXTURE_NAME.match(v) and v not in named:
+                refs.append(DataRef("bare", ln, v, seen_dirs))
+    return refs
+
+
+# src= and poster= attributes, <link href>, and CSS url() with a quoted or
+# slashed value (not a script's `new URL(location.href)`).
+_PAGE_REF = re.compile(r"""\b(?:[Ss][Rr][Cc]|[Pp][Oo][Ss][Tt][Ee][Rr])"""
+                       r"""\s*=\s*["']([^"']*)["']|"""
+                       r"""<[Ll][Ii][Nn][Kk]\b[^>]*?\bhref\s*=\s*"""
+                       r"""["']([^"']*)["']|"""
+                       r"""\burl\(\s*(?:["']([^"')]*)["']|([^"')\s]*/"""
+                       r"""[^"')\s]*))\s*\)""")
+
+
+def page_refs(rel, text):
+    """[(line, //path)] a fixture page under chrome/test/data loads from its
+    own server: src/poster attributes, <link href> and CSS url(), absolute
+    ("/media/x.webm", from chrome/test/data) or relative to the page;
+    another host, data: URLs and computed values are left out."""
+    out = []
+    page_dir = rel.rsplit("/", 1)[0]
+    for m in _PAGE_REF.finditer(text):
+        v = (m.group(1) or m.group(2) or m.group(3) or m.group(4) or
+             "").strip()
+        if not v or v.startswith(("//", "#", "data:", "about:", "blob:",
+                                  "javascript:", "mailto:")) or \
+                "://" in v or any(c in v for c in "{}$`+<>\\ "):
+            continue
+        v = v.split("?", 1)[0].split("#", 1)[0]
+        if "." not in v.rsplit("/", 1)[-1]:
+            continue
+        p = CHROME_TEST_DATA + v.lstrip("/") if v.startswith("/") \
+            else abspath(v, "//" + page_dir)[2:]
+        out.append((text.count("\n", 0, m.start()) + 1, p))
+    return out
+
+
+class SourceListing:
+    """Which files exist: the overlay's, and the pinned commit's (the
+    tarball's paths.txt lacks most test data, so the git tree of
+    tools/chromium/upstream.py is used when there is one). Paths inside a
+    DEPS subproject (a gitlink) are unknown."""
+
+    def __init__(self, overlay_files, pinned=None, gitlinks=()):
+        self.files = set(overlay_files)
+        self.pinned = pinned
+        self.gitlinks = tuple(g.rstrip("/") + "/" for g in gitlinks)
+        self._dirs = None
+
+    def _all_dirs(self):
+        if self._dirs is None:
+            dirs = set()
+            for src in (self.files, self.pinned or ()):
+                for f in src:
+                    i = f.rfind("/")
+                    while i > 0:
+                        d = f[:i]
+                        if d in dirs:
+                            break
+                        dirs.add(d)
+                        i = f.rfind("/", 0, i)
+            self._dirs = dirs
+        return self._dirs
+
+    def exists(self, rel):
+        """True, False, or None (can't tell)."""
+        if rel.endswith("/"):
+            if rel.rstrip("/") in self._all_dirs():
+                return True
+        elif rel in self.files or (self.pinned is not None and
+                                   rel in self.pinned):
+            return True
+        if self.pinned is None or rel.startswith(self.gitlinks):
+            return None
+        return False
+
+
+def pinned_listing(chromium_cache, log=log):
+    """(paths, gitlinks) of the pinned commit's tree from
+    tools/chromium/upstream.py's cache (it fetches the trees, about 20 MB,
+    when the cache lacks them), or (None, ()) if that fails."""
+    try:
+        u = up.Upstream(cache_dir=chromium_cache)
+        c = u.resolve(up.read_pin().revision)
+        tree = u.tree(c)
+    except (RuntimeError, SystemExit, OSError) as e:
+        log("the pinned tree's file list is unavailable (%s): test data "
+            "that isn't in src/ can't be checked" % e)
+        return None, ()
+    return ({p for p, e in tree.items() if e.type == "blob"},
+            [p for p, e in tree.items() if e.type == "commit"])
+
+
+def _covered(path, entries):
+    """Whether a runtime data list covers //path (a directory ends in /)."""
+    for e in entries:
+        if e == path or (e.endswith("/") and path.startswith(e)) or \
+                (path.endswith("/") and e.startswith(path)):
+            return True
+    return False
+
+
+# What a desktop config's preprocessor sees (BUILDFLAG(IS_...) values).
+PLATFORM_BUILDFLAGS = {
+    "linux": {"IS_LINUX", "IS_POSIX"},
+    "mac": {"IS_MAC", "IS_APPLE", "IS_POSIX"},
+    "win": {"IS_WIN"},
+}
+KNOWN_OS_FLAGS = {"IS_LINUX", "IS_POSIX", "IS_MAC", "IS_APPLE", "IS_WIN",
+                  "IS_CHROMEOS", "IS_ANDROID", "IS_IOS", "IS_FUCHSIA",
+                  "IS_OZONE_X11"}
+_DIRECTIVE = re.compile(r"^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)\b"
+                        r"(.*)$")
+_COND_TOKEN = re.compile(r"\s*(BUILDFLAG\s*\(\s*\w+\s*\)|defined\s*\(\s*\w+"
+                         r"\s*\)|\|\||&&|!|\(|\)|\w+)")
+
+
+def preprocessor_conditions(text):
+    """[conditions] per line (index = line number): the #if branches the
+    line sits in, as [(expression, wanted)] (wanted False: a branch not
+    taken before an #elif or #else)."""
+    stack, out = [], [[]]
+    for line in text.split("\n"):
+        m = _DIRECTIVE.match(line)
+        if m:
+            d, rest = m.group(1), m.group(2).split("//", 1)[0].strip()
+            if d == "if":
+                stack.append([(rest, True)])
+            elif d == "ifdef":
+                stack.append([("defined(%s)" % rest, True)])
+            elif d == "ifndef":
+                stack.append([("defined(%s)" % rest, False)])
+            elif d == "elif" and stack:
+                stack[-1] = [(e, False) for e, _ in stack[-1]] + \
+                    [(rest, True)]
+            elif d == "else" and stack:
+                stack[-1] = [(e, False) for e, _ in stack[-1]]
+            elif d == "endif" and stack:
+                stack.pop()
+        out.append([c for frame in stack for c in frame])
+    return out
+
+
+def eval_condition(expr, platform):
+    """True, False or None (unknown) for a #if expression on a desktop
+    platform: only BUILDFLAG(IS_<OS>), !, &&, || and parentheses are
+    known."""
+    toks = []
+    pos = 0
+    while pos < len(expr):
+        m = _COND_TOKEN.match(expr, pos)
+        if not m:
+            return None
+        toks.append(m.group(1))
+        pos = m.end()
+        if not expr[pos:].strip():
+            break
+    flags = PLATFORM_BUILDFLAGS.get(platform, set())
+    i = [0]
+
+    def peek():
+        return toks[i[0]] if i[0] < len(toks) else None
+
+    def atom():
+        t = peek()
+        i[0] += 1
+        if t is None:
+            raise ValueError
+        if t == "!":
+            v = atom()
+            return None if v is None else not v
+        if t == "(":
+            v = disj()
+            if peek() != ")":
+                raise ValueError
+            i[0] += 1
+            return v
+        m = re.match(r"BUILDFLAG\s*\(\s*(\w+)\s*\)", t)
+        if m:
+            name = m.group(1)
+            return (name in flags) if name in KNOWN_OS_FLAGS else None
+        if t in ("0", "1"):
+            return t == "1"
+        return None
+
+    def conj():
+        vals = [atom()]
+        while peek() == "&&":
+            i[0] += 1
+            vals.append(atom())
+        if False in vals:
+            return False
+        return None if None in vals else True
+
+    def disj():
+        vals = [conj()]
+        while peek() == "||":
+            i[0] += 1
+            vals.append(conj())
+        if True in vals:
+            return True
+        return None if None in vals else False
+
+    try:
+        v = disj()
+    except ValueError:
+        return None
+    return v if peek() is None else None
+
+
+def line_compiled(conds, platform):
+    """Whether a line under `conds` may be compiled on `platform`."""
+    for expr, wanted in conds:
+        v = eval_condition(expr, platform)
+        if v is not None and v != wanted:
+            return False
+    return True
+
+
+class RuntimeView:
+    """One configuration's runtime deps of a test binary: its data entries
+    and the executables it builds, as gn's runtime_deps collects them."""
+
+    def __init__(self, graph, binary):
+        members = closure(graph, binary, RUNTIME_KEYS)
+        self.data = set()
+        self.executables = set()
+        for lab in members:
+            t = graph.targets.get(lab)
+            if t is None:
+                continue
+            self.data.update(t.data)
+            if t.type == "executable" or t.template == "executable":
+                self.executables.add(t.output_name or lab.split(":", 1)[1])
+
+
+class TestData:
+    """The data references of the test sources, read once."""
+
+    def __init__(self, overlay, listing):
+        self.overlay = overlay
+        self.listing = listing
+        self.served_dirs = {
+            f[len(CHROME_TEST_DATA):].split("/", 1)[0]
+            for src in (listing.files, listing.pinned or ())
+            for f in src if f.startswith(CHROME_TEST_DATA)}
+        self._refs = {}
+
+    def refs(self, rel, kind):
+        if rel not in self._refs:
+            text = self.overlay.text(rel)
+            self._refs[rel] = (data_refs(rel, text, kind, self.served_dirs),
+                               preprocessor_conditions(text))
+        return self._refs[rel]
+
+
+def testdata_findings(graph, placements, data, findings):
+    """For one configuration: the data each test source opens (on this
+    platform) exists and is in the runtime data of each binary that runs
+    it here."""
+    config = graph.platform
+    os_name = parse_config(config)[0]
+    views = {}
+
+    def view(binary):
+        if binary not in views:
+            views[binary] = RuntimeView(graph, binary)
+        return views[binary]
+
+    def add(severity, where, msg, hint=""):
+        findings.add(Finding("testdata", severity, where, msg, hint), config)
+
+    for rel, p in sorted(placements.items()):
+        if p.kind == "fuzzer":
+            continue
+        bins = [b for b in TEST_BINARIES[p.kind]
+                if config in p.binaries.get(b, [])]
+        if not bins:
+            continue
+        refs, conds = data.refs(rel, p.kind)
+        for r in refs:
+            if not line_compiled(conds[r.line] if r.line < len(conds)
+                                 else [], os_name):
+                continue
+            where = "%s:%d" % (rel, r.line)
+            if r.kind == "exe":
+                name = r.path[:-4] if r.path.endswith(".exe") else r.path
+                if r.path.endswith(".exe") and os_name != "win":
+                    continue
+                lacking = [b for b in bins if name not in
+                           view(b).executables]
+                if lacking:
+                    add("error", where,
+                        "runs %s from the test binary's directory, but no "
+                        "executable of that name is in the runtime deps of "
+                        "%s" % (name, ", ".join(lacking)),
+                        "add the executable target to the test target's "
+                        "data_deps")
+                continue
+            if r.kind == "bare":
+                found, unknown = None, False
+                for dkind, d in r.dirs:
+                    if dkind == "src":
+                        e = data.listing.exists(d + r.path)
+                        if e:
+                            found = (dkind, d + r.path)
+                            break
+                        unknown = unknown or e is None
+                    elif dkind == "gen" and graph.owners_of(GEN + d + r.path):
+                        found = (dkind, d + r.path)
+                        break
+                if found is None:
+                    add("warning" if unknown else "error", where,
+                        "names %s, which is in none of the directories the "
+                        "test reads from (%s)%s" % (
+                            r.path, ", ".join(d for _, d in r.dirs),
+                            "; the pinned tree's file list is unknown (pass "
+                            "--chromium-cache)" if unknown else ""),
+                        "" if unknown else "add the file, or fix its name")
+                    continue
+                r = DataRef(found[0], r.line, found[1])
+            if r.kind == "gen":
+                path = GEN + r.path
+                if not r.path.endswith("/") and not graph.owners_of(path):
+                    add("error", where,
+                        "reads %s, which no target generates" % path,
+                        "fix the path, or depend on the target that "
+                        "generates it")
+                    continue
+            else:
+                path = "//" + r.path
+                e = data.listing.exists(r.path)
+                if e is None:
+                    add("warning", where,
+                        "reads %s, which isn't in src/; whether the pinned "
+                        "tree has it is unknown (pass --chromium-cache)"
+                        % path)
+                    continue
+                if not e:
+                    add("error", where,
+                        "reads %s, which is neither in src/ nor in Chromium "
+                        "at the pin" % path,
+                        "add the file under src/, or fix the path")
+                    continue
+            lacking = [b for b in bins if not _covered(path, view(b).data)]
+            if lacking:
+                add("error", where,
+                    "reads %s, which isn't in the runtime data of %s" % (
+                        path, ", ".join(lacking)),
+                    "list it (or its directory, ending in /) in the `data` "
+                    "of the target that lists the test")
+
+
+def page_findings(overlay, listing, findings):
+    """Fixture pages under chrome/test/data: what they load from their own
+    server is there."""
+    n = 0
+    for rel in overlay.files:
+        if not rel.startswith(CHROME_TEST_DATA) or overlay.is_upstream(rel) \
+                or rel.rsplit(".", 1)[-1].lower() not in PAGE_EXT:
+            continue
+        n += 1
+        for ln, path in page_refs(rel, overlay.text(rel)):
+            e = listing.exists(path)
+            if e is False:
+                findings.add(Finding(
+                    "testdata", "error", "%s:%d" % (rel, ln),
+                    "loads /%s, which is neither in src/ nor in Chromium at "
+                    "the pin" % path[len(CHROME_TEST_DATA):],
+                    "add the file under src/%s, or fix the path"
+                    % CHROME_TEST_DATA), "all")
+            elif e is None:
+                findings.add(Finding(
+                    "testdata", "warning", "%s:%d" % (rel, ln),
+                    "loads //%s, which isn't in src/; whether the pinned "
+                    "tree has it is unknown (pass --chromium-cache)" % path),
+                    "all")
+    return n
+
+
+def run_tests(tree, overlay, platforms, listing, upstream_tree=None,
+              extra_args=None, progress=log):
+    """The `tests` check: (Findings, stats). Each configuration's graph is
+    dropped once it has been read (about 600 MB each)."""
+    tests = test_sources(overlay)
+    findings = Findings()
+    placements = {}
+    data = TestData(overlay, listing)
+    stats = {"test_sources": len(tests), "platforms": {}}
+    for p in platforms:
+        t0 = time.time()
+        g = Graph(tree, p, extra_args)
+        ug = Graph(upstream_tree, p, extra_args) if upstream_tree else None
+        reach = place_tests(g, tests, placements)
+        fuzzer_target_findings(g, overlay, ug, reach, findings)
+        testdata_findings(g, placements, data, findings)
+        stats["platforms"][p] = {"build_files_read": len(g.files),
+                                 "seconds": round(time.time() - t0, 1)}
+        del g, ug, reach
+        if progress:
+            progress("%s: %d test sources placed, %.0f s" % (
+                p, len(tests), time.time() - t0))
+    test_findings(placements, platforms, findings)
+    stats["fixture_pages"] = page_findings(overlay, listing, findings)
+    stats["with_data"] = sum(1 for refs, _ in data._refs.values() if refs)
+    stats["kinds"] = {k: sum(1 for v in tests.values() if v == k)
+                      for k in sorted(set(tests.values()))}
+    return findings, stats
+
+
+# ---------------------------------------------------------------------------
+# flags: MoltBrowser's features and chrome://flags entries, as Chromium's
+# own flag tests read them
+
+ABOUT_FLAGS = "chrome/browser/about_flags.cc"
+FLAG_METADATA = "chrome/browser/flag-metadata.json"
+NEVER_EXPIRE = "chrome/browser/flag-never-expire-list.json"
+ENUMS_XML = "tools/metrics/histograms/enums.xml"
+# MoltBrowser features that are deliberately not chrome://flags entries.
+NOT_FLAGS = {
+    # Brings back component downloads only Google features read; switched
+    # on from the command line only (molt_component_policy.h,
+    # docs/NETWORK_TRAFFIC.md).
+    "kMoltGoogleOnlyComponents": "command line only",
+    # The black-glass toolbar's revertible switch, under the name of
+    # upstream's removed experiment (chrome/browser/ui/ui_features.cc):
+    # --disable-features=GlassToolbar.
+    "kGlassToolbar": "command line only",
+}
+_BASE_FEATURE = re.compile(r"\bBASE_FEATURE\s*\(\s*(k\w+)\s*,\s*"
+                           r'(?:"([^"]*)"\s*,\s*)?')
+_FLAG_NAME_CONST = re.compile(r'\bconstexpr\s+char\s+(k\w+)\s*\[\]\s*=\s*'
+                              r'"([^"]*)"\s*;')
+_FLAG_REF = re.compile(r"#(molt-[a-z0-9-]*[a-z0-9-])")
+
+
+def uma_id(label):
+    """flags_ui::GetSwitchUMAId(): base::HashMetricName() (the first 8
+    bytes of the MD5, big-endian) as a signed 32-bit value."""
+    import hashlib
+    v = int.from_bytes(hashlib.md5(label.encode()).digest()[:8], "big")
+    v &= 0xFFFFFFFF
+    return v - (1 << 32) if v >= (1 << 31) else v
+
+
+def strip_json_comments(text):
+    """flag-metadata.json allows // comments (Chromium's JSON reader does);
+    strings keep theirs ("//chrome/browser/OWNERS")."""
+    out, i, n, in_str = [], 0, len(text), False
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+            out.append(c)
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def valid_looking_owner(owner):
+    """components/webui/flags/flags_test_helpers.cc IsValidLookingOwner()."""
+    if "," in owner or " " in owner:
+        return False
+    at = owner.find("@")
+    if at >= 0:
+        return owner.find(".", at) >= 0
+    if owner.startswith("//"):
+        return owner.endswith("OWNERS")
+    return False
+
+
+def misordered(names):
+    """[(name, should_follow)] as EnsureNamesAreAlphabetical() reports them
+    (names compared lowercased, '_' as '-')."""
+    norm = [x.lower().replace("_", "-") for x in names]
+    back = {nm: orig for nm, orig in zip(norm, names)}
+    start = "(start of file)"
+    was = {nm: (norm[i - 1] if i else start) for i, nm in enumerate(norm)}
+    srt = sorted(norm)
+    goes = {nm: (srt[i - 1] if i else start) for i, nm in enumerate(srt)}
+    return [(back[nm], back.get(goes[nm], goes[nm])) for nm in norm
+            if was[nm] != goes[nm]]
+
+
+def _split_top(s, sep=","):
+    """Splits at `sep` outside brackets and string literals."""
+    parts, depth, cur, i, n = [], 0, [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == '"':
+            j = i + 1
+            while j < n and s[j] != '"':
+                j += 2 if s[j] == "\\" else 1
+            cur.append(s[i:j + 1])
+            i = j + 1
+            continue
+        if c in "({[":
+            depth += 1
+        elif c in ")}]":
+            depth -= 1
+        if c == sep and depth == 0:
+            parts.append("".join(cur).strip())
+            cur = []
+        else:
+            cur.append(c)
+        i += 1
+    if "".join(cur).strip():
+        parts.append("".join(cur).strip())
+    return parts
+
+
+def _concat_literal(expr):
+    """The value of adjacent string literals ("a " "b"), else None."""
+    vals = re.findall(r'"((?:[^"\\]|\\.)*)"', expr)
+    rest = re.sub(r'"((?:[^"\\]|\\.)*)"', "", expr).strip()
+    return "".join(vals) if vals and not rest else None
+
+
+class FlagEntry:
+    def __init__(self, where, internal, name, description, platforms,
+                 value):
+        self.where = where
+        self.internal = internal
+        self.name = name
+        self.description = description
+        self.platforms = platforms
+        self.value = value        # ("feature", "kMoltX") or (type, text)
+
+
+def _macro_body(text, macro):
+    """The replacement text of `#define macro` (continuations joined), or
+    None."""
+    m = re.search(r"^[ \t]*#[ \t]*define[ \t]+%s\b" % re.escape(macro), text,
+                  re.M)
+    if not m:
+        return None
+    out = []
+    for ln in text[m.end():].split("\n"):
+        s = ln.rstrip()
+        cont = s.endswith("\\")
+        out.append(s[:-1] if cont else s)
+        if not cont:
+            break
+    return " ".join(out)
+
+
+def _entries_of(body, consts, where):
+    out = []
+    code = re.sub(r"//[^\n]*", "", body)
+    for item in _split_top(code):
+        item = item.strip()
+        if not (item.startswith("{") and item.endswith("}")):
+            continue
+        f = _split_top(item[1:-1])
+        if len(f) < 5:
+            out.append(FlagEntry(where, None, None, None, None,
+                                 ("unreadable", item[:60])))
+            continue
+
+        def val(x):
+            lit = _concat_literal(x)
+            if lit is not None:
+                return lit
+            ident = x.strip().rsplit("::", 1)[-1]
+            return consts.get(ident)
+
+        v = f[4].strip()
+        m = re.match(r"FEATURE_(?:VALUE|WITH_PARAMS_VALUE)_TYPE\s*\(\s*"
+                     r"([\w:]+)", v)
+        value = ("feature", m.group(1).rsplit("::", 1)[-1]) if m else \
+            ("other", v.split("(", 1)[0])
+        out.append(FlagEntry(where, val(f[0]), val(f[1]), val(f[2]),
+                             f[3].strip(), value))
+    return out
+
+
+def run_flags(overlay, upstream_read=None):
+    """The `flags` check: (Findings, stats)."""
+    findings = Findings()
+    W = "flags"
+    src = overlay.src
+    if not (src / ABOUT_FLAGS).is_file():
+        findings.add(Finding("flags", "error", ABOUT_FLAGS,
+                             "is not in src/, so no MoltBrowser flag is "
+                             "registered"), W)
+        return findings, {}
+    about = overlay.text(ABOUT_FLAGS)
+    start = about.find("kFeatureEntries[] = {")
+    end = about.find("\n};", start)
+    entries_text = about[start:end] if start >= 0 and end > start else ""
+    includes = set(all_includes(about))
+    # Every "constexpr char kX[] = "..."" in MoltBrowser's headers (flag
+    # names), and every BASE_FEATURE MoltBrowser defines.
+    consts, features = {}, {}
+    for rel in overlay.files:
+        if not rel.endswith((".h", ".cc", ".mm")):
+            continue
+        if rel.startswith(OWN_EXCLUDE):
+            continue
+        text = overlay.text(rel)
+        upstream = overlay.is_upstream(rel)
+        up_text = None
+        if upstream and "BASE_FEATURE" in text:
+            b = overlay.upstream_bytes(rel)
+            up_text = b.decode("utf-8", "replace") if b is not None else None
+        if rel.endswith(".h"):
+            for k, v in _FLAG_NAME_CONST.findall(text):
+                if v.startswith("molt-"):
+                    consts.setdefault(k, v)
+        for m in _BASE_FEATURE.finditer(text):
+            ident = m.group(1)
+            # In an upstream file, only the features MoltBrowser added
+            # (without the upstream copy: the kMolt ones).
+            if upstream and (ident in up_text if up_text is not None
+                             else not ident.startswith("kMolt")):
+                continue
+            features[ident] = (rel, text.count("\n", 0, m.start()) + 1,
+                               m.group(2) or ident[1:])
+    entries = []
+    for macro in sorted(set(re.findall(r"\b(MOLT_\w+_FEATURE_ENTRIES)\b",
+                                       entries_text))):
+        hdr = None
+        for rel in sorted(overlay.files):
+            if rel.endswith(".h") and \
+                    re.search(r"#\s*define\s+%s\b" % macro, overlay.text(rel)):
+                hdr = rel
+                break
+        if hdr is None:
+            findings.add(Finding("flags", "error", ABOUT_FLAGS,
+                                 "uses %s, which no header in src/ defines"
+                                 % macro), W)
+            continue
+        if hdr not in includes:
+            findings.add(Finding("flags", "error", ABOUT_FLAGS,
+                                 "uses %s but doesn't include %s" % (
+                                     macro, hdr),
+                                 "include it (`// MoltBrowser`)"), W)
+        entries += _entries_of(_macro_body(overlay.text(hdr), macro), consts,
+                               hdr)
+    # Entries written into kFeatureEntries itself with a molt- name.
+    for m in re.finditer(r'\{\s*"(molt-[^"]*)"', entries_text):
+        j = entries_text.find("},", m.start())
+        entries += _entries_of(entries_text[m.start():j + 1], consts,
+                               ABOUT_FLAGS)
+    names = {}
+    flagged_features = set()
+    for e in entries:
+        if e.value[0] == "unreadable" or e.internal is None:
+            findings.add(Finding("flags", "error", e.where,
+                                 "has an entry this check can't read: %s"
+                                 % (e.value[1] if e.value[0] == "unreadable"
+                                    else "its internal name"),
+                                 "write it as the other MOLT_*_FEATURE_"
+                                 "ENTRIES entries are written"), W)
+            continue
+        names[e.internal] = e
+        where = "%s (#%s)" % (e.where, e.internal)
+        if not e.internal.startswith("molt-"):
+            findings.add(Finding("flags", "error", where,
+                                 "a MoltBrowser flag's name starts with "
+                                 "molt-"), W)
+        if "@" in e.internal:
+            findings.add(Finding("flags", "error", where,
+                                 "has '@' in its name (AboutFlagsTest."
+                                 "NoSeparators)"), W)
+        if not e.name or not e.description:
+            findings.add(Finding("flags", "error", where,
+                                 "has no %s" % ("name" if not e.name
+                                                else "description"),
+                                 "give the entry a visible name and a "
+                                 "description"), W)
+        if e.value[0] == "feature":
+            flagged_features.add(e.value[1])
+            if e.value[1] not in features:
+                findings.add(Finding("flags", "error", where,
+                                     "turns %s on and off, which no "
+                                     "BASE_FEATURE in src/ defines"
+                                     % e.value[1]), W)
+    for ident, (rel, ln, _) in sorted(features.items()):
+        if ident in flagged_features or ident in NOT_FLAGS:
+            continue
+        findings.add(Finding("flags", "error", "%s:%d" % (rel, ln),
+                             "%s is not a chrome://flags entry" % ident,
+                             "add it to the MOLT_*_FEATURE_ENTRIES of its "
+                             "area (and flag-metadata.json), or to NOT_FLAGS "
+                             "in this tool with the reason"), W)
+    # flag-metadata.json and flag-never-expire-list.json, as AboutFlagsTest
+    # reads them.
+    meta, never = None, None
+    try:
+        meta = json.loads(strip_json_comments(overlay.text(FLAG_METADATA)))
+    except (OSError, ValueError) as e:
+        findings.add(Finding("flags", "error", FLAG_METADATA,
+                             "can't be read: %s" % e), W)
+    try:
+        never = json.loads(strip_json_comments(overlay.text(NEVER_EXPIRE)))
+    except (OSError, ValueError) as e:
+        findings.add(Finding("flags", "error", NEVER_EXPIRE,
+                             "can't be read: %s" % e), W)
+    if meta is not None:
+        by_name = {}
+        for x in meta:
+            if isinstance(x, dict) and isinstance(x.get("name"), str):
+                by_name[x["name"]] = x
+        for nm in sorted(names):
+            x = by_name.get(nm)
+            where = "%s (#%s)" % (FLAG_METADATA, nm)
+            if x is None:
+                findings.add(Finding("flags", "error", where,
+                                     "has no entry (AboutFlagsTest."
+                                     "EveryFlagHasMetadata)",
+                                     "add one, in alphabetical order"), W)
+                continue
+            owners = x.get("owners") if isinstance(x.get("owners"),
+                                                   list) else []
+            if not owners:
+                findings.add(Finding("flags", "error", where,
+                                     "has no owners (AboutFlagsTest."
+                                     "EveryFlagHasNonEmptyOwners)"), W)
+            for o in owners:
+                if not isinstance(o, str) or not valid_looking_owner(o):
+                    findings.add(Finding(
+                        "flags", "error", where,
+                        "has the owner %r, which is neither an email nor "
+                        "a //path/to/OWNERS (AboutFlagsTest."
+                        "OwnersLookValid)" % (o,),
+                        "name an OWNERS file, e.g. "
+                        "//chrome/browser/molt_ai/OWNERS"), W)
+                elif o.startswith("//") and not overlay.tree.exists(o[2:]):
+                    findings.add(Finding(
+                        "flags", "warning", where,
+                        "names %s, which isn't in src/ or the tree" % o), W)
+            exp = x.get("expiry_milestone")
+            if not isinstance(exp, int) or isinstance(exp, bool):
+                findings.add(Finding("flags", "error", where,
+                                     "has no integer expiry_milestone"), W)
+            elif exp == -1 and never is not None and nm not in never:
+                findings.add(Finding("flags", "error", where,
+                                     "never expires but isn't in %s "
+                                     "(AboutFlagsTest."
+                                     "OnlyPermittedFlagsNeverExpire)"
+                                     % NEVER_EXPIRE), W)
+        for nm in sorted(by_name):
+            if nm.startswith("molt-") and nm not in names:
+                findings.add(Finding("flags", "warning",
+                                     "%s (#%s)" % (FLAG_METADATA, nm),
+                                     "is not a registered flag any more",
+                                     "remove the entry (and its "
+                                     "never-expire line)"), W)
+        for nm, after in misordered([x.get("name", "") for x in meta
+                                     if isinstance(x, dict)]):
+            findings.add(Finding("flags", "error", FLAG_METADATA,
+                                 "'%s' should be right after '%s' "
+                                 "(AboutFlagsTest."
+                                 "FlagsListedInAlphabeticalOrder)"
+                                 % (nm, after)), W)
+    if never is not None:
+        for nm, after in misordered([x for x in never
+                                     if isinstance(x, str)]):
+            findings.add(Finding("flags", "error", NEVER_EXPIRE,
+                                 "'%s' should be right after '%s' "
+                                 "(AboutFlagsTest."
+                                 "FlagsListedInAlphabeticalOrder)"
+                                 % (nm, after)), W)
+        if meta is not None:
+            known = {x.get("name") for x in meta if isinstance(x, dict)}
+            for nm in never:
+                if isinstance(nm, str) and nm.startswith("molt-") and \
+                        nm not in known:
+                    findings.add(Finding("flags", "error", NEVER_EXPIRE,
+                                         "lists %s, which has no metadata "
+                                         "(AboutFlagsTest."
+                                         "NeverExpireFlagsExist)" % nm), W)
+    # enums.xml's LoginCustomFlags (AboutFlagsHistogramTest.CheckHistograms).
+    enums = None
+    if (src / ENUMS_XML).is_file():
+        enums = overlay.text(ENUMS_XML)
+    elif upstream_read is not None:
+        b = upstream_read(ENUMS_XML)
+        enums = b.decode("utf-8", "replace") if b is not None else None
+    missing = []
+    for nm, e in sorted(names.items()):
+        if e.value[0] != "feature" or e.value[1] not in features:
+            continue
+        fname = features[e.value[1]][2]
+        for suffix in ("disabled", "enabled"):
+            label = "%s:%s" % (fname, suffix)
+            line = '<int value="%d" label="%s"/>' % (uma_id(label), label)
+            if enums is None or line not in enums:
+                missing.append(line)
+    if enums is None:
+        findings.add(Finding(
+            "flags", "warning", ENUMS_XML,
+            "couldn't be read, so LoginCustomFlags wasn't checked (pass "
+            "--chromium-cache)"), W)
+    elif missing:
+        findings.add(Finding(
+            "flags", "warning", ENUMS_XML,
+            "LoginCustomFlags lacks %d MoltBrowser entries, so "
+            "AboutFlagsHistogramTest.CheckHistograms fails (an owner's "
+            "decision: BUILD_MACHINE_CHECKLIST.md §5.3, §11). The entries:\n"
+            "      %s" % (len(missing), "\n      ".join(missing))), W)
+    # #molt-... in the docs and the code names a registered flag.
+    refs = 0
+    for rel, text in _flag_ref_texts(overlay):
+        for m in _FLAG_REF.finditer(text):
+            nm = m.group(1)
+            refs += 1
+            # "#molt-shield-*" and a name cut at a line's end name a prefix.
+            ok = nm in names or (nm.endswith("-") and
+                                 any(x.startswith(nm) for x in names))
+            if not ok:
+                findings.add(Finding(
+                    "flags", "error",
+                    "%s:%d" % (rel, text.count("\n", 0, m.start()) + 1),
+                    "names #%s, which is not a chrome://flags entry" % nm,
+                    "fix the name, or register the flag"), W)
+    return findings, {"entries": len(names), "features": len(features),
+                      "references": refs}
+
+
+def _flag_ref_texts(overlay):
+    """(path, text) of what may name a chrome://flags entry: MoltBrowser's
+    own files under src/, and the repository's docs and README."""
+    for rel in overlay.files:
+        if rel.startswith(OWN_EXCLUDE) or overlay.is_upstream(rel):
+            continue
+        if rel.endswith((".h", ".cc", ".mm", ".js", ".html", ".grd",
+                         ".grdp", ".md", ".json")):
+            yield "src/" + rel, overlay.text(rel)
+    root = overlay.src.parent
+    for p in sorted(list((root / "docs").rglob("*.md")) +
+                    [root / "README.md", root / "CHANGELOG.md"]):
+        if p.is_file():
+            yield p.relative_to(root).as_posix(), p.read_text(
+                errors="replace")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 
 
@@ -1836,7 +3156,13 @@ def main(argv=None):
     b = sub.add_parser("blink-audit", help="run Blink's "
                        "audit_non_blink_usage check over MoltBrowser's "
                        "Blink lines")
-    for x in (c, d, b):
+    t = sub.add_parser("tests", help="MoltBrowser's test sources and "
+                       "fuzzers no test binary builds, and the test data "
+                       "they open")
+    fl = sub.add_parser("flags", help="MoltBrowser's features and "
+                        "chrome://flags entries, as Chromium's flag tests "
+                        "read them")
+    for x in (c, d, b, t, fl):
         x.add_argument("--tree", help="a fetched tree or a Chromium "
                        "checkout without the overlay copied in (default: "
                        "the fetched tree of the pin)")
@@ -1844,13 +3170,15 @@ def main(argv=None):
                        help="tools/chromium/upstream.py's cache, for "
                        "upstream copies the tree lacks")
         x.add_argument("--json", help="write the findings here")
-    c.add_argument("--platform", default=DEFAULT_CONFIGS,
-                   help="configs to evaluate: linux, mac or win from "
-                   "configs/, each optionally +vulkan (molt_llama_vulkan) "
-                   "and +component (is_component_build) (default "
-                   "%(default)s)")
-    c.add_argument("--warnings", action="store_true",
-                   help="print warnings too")
+    for x in (c, t):
+        x.add_argument("--platform", default=DEFAULT_CONFIGS,
+                       help="configs to evaluate: linux, mac or win from "
+                       "configs/, each optionally +vulkan "
+                       "(molt_llama_vulkan) and +component "
+                       "(is_component_build) (default %(default)s)")
+    for x in (c, t, fl):
+        x.add_argument("--warnings", action="store_true",
+                       help="print warnings too")
     c.add_argument("files", nargs="*", help="limit the include check to "
                    "these files (paths under src/)")
     a = ap.parse_args(argv)
@@ -1879,6 +3207,44 @@ def main(argv=None):
     upstream_tree = Tree(root, None, paths)
     ov = Overlay(up.OVERLAY_DIR, files, tree,
                  _upstream_reader(a.chromium_cache))
+    if a.cmd in ("tests", "flags"):
+        if a.cmd == "flags":
+            findings, stats = run_flags(ov, _upstream_reader(a.chromium_cache))
+            summary = "%d MoltBrowser flags, %d features, %d #molt- " \
+                "references" % (stats.get("entries", 0),
+                                stats.get("features", 0),
+                                stats.get("references", 0))
+        else:
+            platforms = [p.strip() for p in a.platform.split(",")
+                         if p.strip()]
+            for p in platforms:
+                try:
+                    parse_config(p)
+                except ValueError as e:
+                    ap.error(str(e))
+            pinned, links = pinned_listing(a.chromium_cache)
+            listing = SourceListing(files, pinned, links)
+            findings, stats = run_tests(tree, ov, platforms, listing,
+                                        upstream_tree)
+            summary = "%d test sources (%s), %d with test data, %s" % (
+                stats["test_sources"],
+                ", ".join("%d %s" % (v, k)
+                          for k, v in stats["kinds"].items()),
+                stats["with_data"], ",".join(platforms))
+        shown = findings.all() if a.warnings else findings.errors()
+        for fd in shown:
+            print(fd)
+        errs = findings.errors()
+        warns = len(findings.all()) - len(errs)
+        print("%s: %s: %d errors, %d warnings%s" % (
+            a.cmd, summary, len(errs), warns,
+            "" if a.warnings or not warns else " (--warnings shows them)"))
+        if a.json:
+            Path(a.json).write_text(json.dumps(
+                {"stats": stats, "findings": [x.to_json()
+                                              for x in findings.all()]},
+                indent=1))
+        return 1 if errs else 0
     if a.cmd in ("checkdeps", "blink-audit"):
         if a.cmd == "checkdeps":
             findings, n = run_checkdeps(root, ov,
