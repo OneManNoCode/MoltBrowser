@@ -18,6 +18,7 @@
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/common/molt_regular_file.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
 #include "chrome/browser/profiles/profile.h"
 
@@ -38,22 +39,45 @@ int64_t NowUnix() {
 
 struct ReadResult {
   LearnedData data;
+  // Nothing, or a regular file, is there: changes are written.
+  bool writable = true;
 };
 
 ReadResult ReadLearningFile(const base::FilePath& path) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
   ReadResult result;
-  std::string json;
-  if (base::ReadFileToStringWithMaxSize(path, &json, kMaxLearningFileBytes)) {
-    result.data = ParseLearning(json, NowUnix());
+  // Only a regular file is opened (a FIFO's open() would hold this
+  // sequence, which blocks shutdown).
+  const MoltFileRead read = ReadMoltFile(path, kMaxLearningFileBytes,
+                                         MoltFileLinks::kFollowedWithinHome);
+  switch (read.kind) {
+    case MoltFileKind::kRegular:
+      result.data = ParseLearning(read.contents, NowUnix());
+      break;
+    case MoltFileKind::kMissing:
+    case MoltFileKind::kTooBig:
+      // Read as nothing; the next change replaces it.
+      break;
+    case MoltFileKind::kNotRegular:
+    case MoltFileKind::kUnreadable:
+      // Not ours to replace: learned this session only.
+      result.writable = false;
+      break;
   }
   return result;
 }
 
 void WriteLearningFile(const base::FilePath& path, const std::string& json) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  if (!json.empty()) {
-    base::ImportantFileWriter::WriteFileAtomically(path, json);
+  if (json.empty()) {
+    return;
+  }
+  // The file, or the regular file a link to it leads to (the link stays);
+  // never over anything else.
+  const std::optional<base::FilePath> target =
+      MoltFileWritePath(path, MoltFileLinks::kFollowedWithinHome);
+  if (target) {
+    base::ImportantFileWriter::WriteFileAtomically(*target, json);
   }
 }
 
@@ -159,7 +183,7 @@ VoiceLearning::VoiceLearning(Profile* profile)
           [](base::WeakPtr<VoiceLearning> self, ReadResult result) {
             if (self) {
               const bool learn = result.data.learn;
-              self->OnRead(std::move(result.data), learn);
+              self->OnRead(std::move(result.data), learn, result.writable);
             }
           },
           weak_factory_.GetWeakPtr()));
@@ -174,11 +198,12 @@ VoiceLearning::~VoiceLearning() {
   }
 }
 
-void VoiceLearning::OnRead(LearnedData data, bool enabled) {
+void VoiceLearning::OnRead(LearnedData data, bool enabled, bool file_writable) {
   // Nothing changes before the file came (learning waits for it, and the
   // rest is queued with WhenLoaded()).
   data_ = std::move(data);
   enabled_ = enabled;
+  file_writable_ = file_writable;
   // Loaded once the routines are listed too.
   RefreshRoutinesThen(base::BindOnce(&VoiceLearning::OnLoaded,
                                      weak_factory_.GetWeakPtr()));
@@ -469,6 +494,11 @@ void VoiceLearning::Changed() {
 }
 
 void VoiceLearning::Write() {
+  // Something that isn't a regular file is at the learning file's path:
+  // left alone.
+  if (!file_writable_) {
+    return;
+  }
   LearnedData data = data_;
   data.learn = enabled_;
   task_runner_->PostTask(FROM_HERE, base::BindOnce(&WriteLearningFile, path_,

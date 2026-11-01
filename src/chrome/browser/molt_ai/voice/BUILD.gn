@@ -780,6 +780,9 @@ source_set("voice_controller") {
     # one writer.
     "//chrome/browser/molt_ai/common:molt_settings_file",
 
+    # The learning file read and written only as a regular file.
+    "//chrome/browser/molt_ai/common:molt_regular_file",
+
     # g_browser_process: the browser's own language, voice mode's when the
     # setting names none.
     "//chrome/browser:browser_process",

@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 
+#include "base/base_paths.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -14,9 +15,16 @@
 #include "base/json/json_reader.h"
 #include "base/run_loop.h"
 #include "base/task/thread_pool.h"
+#include "base/test/scoped_path_override.h"
 #include "base/test/task_environment.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if BUILDFLAG(IS_POSIX)
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
 
 namespace molt_ai {
 namespace {
@@ -279,6 +287,101 @@ TEST_F(MoltSettingsFileTest, APostedChangeReportsBack) {
   EXPECT_EQ(result, false);
   EXPECT_EQ(Contents(), "not json");
 }
+
+#if BUILDFLAG(IS_POSIX)
+
+// A FIFO at settings.json (with no writer, its open() would wait, holding
+// the settings sequence and so shutdown): never opened, read as not a file,
+// and left alone. The readers fail closed (ReadMoltSettings() is nullopt).
+TEST_F(MoltSettingsFileTest, AFifoIsNeverOpened) {
+  ASSERT_TRUE(base::CreateDirectory(path_.DirName()));
+  ASSERT_EQ(mkfifo(path_.value().c_str(), 0600), 0);
+  base::DictValue read;
+  EXPECT_EQ(ReadMoltSettingsFileAt(path_, &read), MoltSettingsRead::kNotAFile);
+  EXPECT_FALSE(ReadMoltSettings().has_value());
+  bool called = false;
+  EXPECT_FALSE(UpdateMoltSettingsFileAt(path_, [&](base::DictValue&) {
+    called = true;
+    return true;
+  }));
+  EXPECT_FALSE(called);
+  struct stat st;
+  ASSERT_EQ(lstat(path_.value().c_str(), &st), 0);
+  EXPECT_TRUE(S_ISFIFO(st.st_mode));
+  // Nor a directory.
+  ASSERT_TRUE(base::DeleteFile(path_));
+  ASSERT_TRUE(base::CreateDirectory(path_));
+  EXPECT_EQ(ReadMoltSettingsFileAt(path_, &read), MoltSettingsRead::kNotAFile);
+  EXPECT_FALSE(
+      UpdateMoltSettingsFileAt(path_, [](base::DictValue&) { return true; }));
+  EXPECT_TRUE(base::DirectoryExists(path_));
+}
+
+// settings.json kept by a dotfile manager: a link to a file in the home
+// directory. Read through it, and written through it: the link stays, and
+// the file it points to has the change.
+TEST_F(MoltSettingsFileTest, ALinkWithinHomeIsWrittenThrough) {
+  base::ScopedPathOverride home(base::DIR_HOME, dir_.GetPath());
+  const base::FilePath dotfiles = dir_.GetPath().AppendASCII("dotfiles");
+  ASSERT_TRUE(base::CreateDirectory(dotfiles));
+  const base::FilePath target = dotfiles.AppendASCII("settings.json");
+  ASSERT_TRUE(base::WriteFile(target, "{\"max_tokens\": 512}"));
+  ASSERT_TRUE(base::CreateDirectory(path_.DirName()));
+  ASSERT_TRUE(base::CreateSymbolicLink(target, path_));
+
+  base::DictValue read;
+  ASSERT_EQ(ReadMoltSettingsFileAt(path_, &read), MoltSettingsRead::kObject);
+  EXPECT_EQ(read.FindInt("max_tokens"), 512);
+  base::DictValue changes;
+  changes.Set("voice_mode", true);
+  EXPECT_TRUE(UpdateMoltSettingsFileAt(path_, [&](base::DictValue& settings) {
+    MergeMoltSettings(settings, changes);
+    return true;
+  }));
+  // Still a link, to the same file, which has both keys.
+  base::FilePath linked;
+  ASSERT_TRUE(base::ReadSymbolicLink(path_, &linked));
+  EXPECT_EQ(linked, target);
+  std::string contents;
+  ASSERT_TRUE(base::ReadFileToString(target, &contents));
+  std::optional<base::Value> parsed =
+      base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(parsed && parsed->is_dict());
+  EXPECT_EQ(parsed->GetDict().FindInt("max_tokens"), 512);
+  EXPECT_EQ(parsed->GetDict().FindBool("voice_mode"), true);
+  // No temporary file left beside either.
+  EXPECT_EQ(FilesInDir(), 1);
+}
+
+// A link out of the home directory, or to nothing: not read, not written
+// (the readers fail closed; molt://ai-settings says so).
+TEST_F(MoltSettingsFileTest, ALinkElsewhereIsLeftAlone) {
+  const base::FilePath home_dir = dir_.GetPath().AppendASCII("home");
+  ASSERT_TRUE(base::CreateDirectory(home_dir));
+  base::ScopedPathOverride home(base::DIR_HOME, home_dir);
+  const base::FilePath outside = dir_.GetPath().AppendASCII("outside.json");
+  ASSERT_TRUE(base::WriteFile(outside, "{\"web_ai_apis\": true}"));
+  ASSERT_TRUE(base::CreateDirectory(path_.DirName()));
+  for (const base::FilePath& target :
+       {outside, dir_.GetPath().AppendASCII("gone.json")}) {
+    ASSERT_TRUE(base::CreateSymbolicLink(target, path_));
+    base::DictValue read;
+    EXPECT_EQ(ReadMoltSettingsFileAt(path_, &read),
+              MoltSettingsRead::kNotAFile);
+    EXPECT_FALSE(ReadMoltSettings().has_value());
+    EXPECT_FALSE(
+        UpdateMoltSettingsFileAt(path_, [](base::DictValue&) { return true; }));
+    base::FilePath linked;
+    ASSERT_TRUE(base::ReadSymbolicLink(path_, &linked));
+    EXPECT_EQ(linked, target);
+    ASSERT_TRUE(base::DeleteFile(path_));
+  }
+  std::string contents;
+  ASSERT_TRUE(base::ReadFileToString(outside, &contents));
+  EXPECT_EQ(contents, "{\"web_ai_apis\": true}");
+}
+
+#endif  // BUILDFLAG(IS_POSIX)
 
 }  // namespace
 }  // namespace molt_ai
