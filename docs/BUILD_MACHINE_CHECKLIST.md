@@ -940,6 +940,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `voice/voice_language_settings.cc` (new: `ReadMoltSettings()`, `DictValue::FindString`, `UpdateMoltSettings()` with a lambda, `DictValue::Remove`/`Set`), `voice/voice_controller.cc` (`g_browser_process->GetApplicationLocale()`, `GetAllBrowserWindowInterfaces()`, a language read posted to the thread pool), `voice/voice_speech.cc` (`TtsController::GetVoices(context, GURL(), &voices)`, `content::VoiceData`'s `name`/`lang`/`remote`, `TtsUtterance::SetVoiceName()`), `ui/webui/molt_ai/molt_voice_settings_handler.cc` (`voiceSettingsSetLanguage`, `VoiceSpeech::HasPlatformVoice()`), `voice/voice_session.cc` (a language check in `Start()`); the new GN edge `voice:voice_controller` → `//chrome/browser:browser_process` | type-checked against 156's headers here; the GN graph and DEPS checked statically; what only the build shows: the settings page's language menu and the browser tests' voices | second-language |
 | `voice/page_questions.cc` (new: `base::JSONReader::Read(…, JSON_PARSE_RFC, depth)` and `DictValue::FindBool`/`FindString` on the model's reply, `agent_safety::FenceUntrustedText()`), `voice/voice_page_questions.cc` (new: `BrowserAIRuntime::StreamChat()` with a `ChatPrompt`, `PromptOptions::json_schema` and a request id, `CancelRequest()`/`FinishRequest()` in a `base::ScopedClosureRunner`, `base::ThreadPool::PostTaskAndReplyWithResult` with a static member, `web_ai::PickWebModel`, two `base::OneShotTimer`s), `voice/voice_controller.cc` (a kAskPage step, `VoiceReader::ReadText()`), `voice/voice_reader.cc` (`ReadText()`); the new GN edges `voice:voice_controller` → `voice:voice_page_questions` → `//chrome/browser/molt_ai:molt_ai_runtime` and `web_ai:logic`, `voice:page_questions` → `security:agent_safety`, the DEPS rules for the two tests, and the fuzzer `voice:molt_page_questions_fuzzer` (in `molt_fuzzers`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: no cycle in `gn gen` through `molt_ai_runtime` (which `molt_ai_agents` already reaches from `voice:voice_controller`), and §5.1's browser tests | page-questions |
 | `automation/automation_storage.{h,cc}` (a directory of its own; `Take()`, `FinishTake()`, `ReturnTaken()` with `base::ReplaceFile`; moved into the new light target `automation:storage`, which `//chrome/browser/molt_ai/automation` re-exports), `voice/voice_routine_store.{h,cc}` (new: the profile's `MoltVoiceRoutines/` and the claim of older routines), `voice/voice_learning.cc` (the store on its sequence; `ClaimRoutines()`, `DeclineRoutines()`, `UndeclineRoutines()`), `voice/voice_learning_loop.cc` (the replace, claim and decline steps), `ui/webui/molt_ai/molt_ai_agent_ui.cc` (the studio finds each workflow where it is, `VoiceLearning::WhenLoaded()` before listing, three new messages), `molt_ai_automation_ui.cc` (no voice routines); the GN edges `voice:voice_controller` → `voice:voice_routine_store` → `automation:storage` (replacing `voice:voice_controller` → `//chrome/browser/molt_ai/automation`), and `voice:voice_learning_browser_tests` → `//chrome/browser:browser_process`, `//chrome/browser/profiles:profile_manager`, `:profile_test_util`, `//ui/base` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: §5.1's browser tests (two profiles; the studio opened in a tab of each), and that `automation_storage.cc` moving target leaves no link error | profile-routines |
+| `common/molt_regular_file.{h,cc}` (new: `lstat()`, `open()` with `O_NONBLOCK` and `O_NOFOLLOW`, `fstat()`, `pread()` through `base::ScopedFD` and `HANDLE_EINTR`, `base::MakeAbsoluteFilePath()`, `FilePath::IsParent()`, `base::WriteFileDescriptor()`; on Windows `base::File` with `FLAG_OPEN_ALWAYS` and `FLAG_APPEND`, `File::Read()` into `base::as_writable_byte_span()`), `common/molt_settings_file.cc` (`MoltSettingsRead::kNotAFile`, writes through `MoltFileWritePath()`), `automation/automation_storage.{h,cc}` (a lock per directory in a `base::NoDestructor<std::map<base::FilePath, std::unique_ptr<base::Lock>>>`, `base::LazyThreadPoolSequencedTaskRunner` (`SharedSequence()`), `std::optional<ScopedAllowBlockingForMolt>` beside `std::optional<base::ScopedBlockingCall>`, `base::FunctionRef` (`Update()`), `ImportantFileWriter::WriteFileAtomically()`, `base::TouchFile()`, `base::GetFileInfo()`, `base::RandUint64()`), `automation/automation_runner.cc` and `automation_scheduler_service.cc` (`Update()` with a lambda), `voice/voice_routine_store.cc` (`RecoverInterruptedClaims()`), `voice/voice_learning.{h,cc}` (`routines_task_runner()`), `voice/voice_learning_store.cc` (`std::set`), `ui/webui/molt_ai/molt_ai_agent_storage.{h,cc}` (new), `molt_ai_agent_ui.cc` (`PostTaskAndReplyWithResult()` to `VoiceLearning::routines_task_runner()` and `AutomationStorage::SharedSequence()`, replies bound to a `WeakPtr` with move-only `SaveRequest`/`Answer`), `molt_ai_settings_ui.cc` ("fileNotice"); the GN targets `common:molt_regular_file`, `ui/webui/molt_ai:agent_studio_storage` and `:browser_tests` (picked up by `voice:browser_tests`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: §5.1's `AgentStudioStorageBrowserTest` (no file I/O on the UI thread, where a browser test disallows blocking), the unit tests on the build machine's file system (a FIFO, a socket, links), and the studio in a side panel | storage-robustness |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1275,6 +1276,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `SpanishLanguageTest.*`, `SpanishNumbersTest.*`, `SpanishPhraseTablesTest.*`, `SpanishPhoneticKeyTest.*`, `SpanishGrammarTest.*`, `SpanishPhrasesTest.*`, `SpanishConfirmationWordsTest.*` (`voice_spanish_unittest.cc`), `VoiceLanguageTest.*`, `SpokenAnswersTest.*`, `VoiceLoopSpanishTest.*` (`voice_language_unittest.cc`), with English's suites unchanged; all built standalone here (ASan and UBSan) | second-language |
   | `PageQuestionsGrammarTest.*`, `PageQuestionsTextTest.*` (the page's text picked for each kind of question, its caps on hostile pages, "tell me more" giving each block once), `PageQuestionsPromptTest.*` (the schema the service takes, the fence holding whatever the page writes), `PageQuestionsAnswerTest.*` (the answer's cleaning and caps, the wake phrase withheld, malformed replies), `PageQuestionsLoopTest.*` (one step that acts on nothing, MoltNet, the reader's chunks, the session ignoring an answer's wake phrase), and the `VoiceCommandTest` cases moved from the planner; all built standalone here (ASan and UBSan, `base::Value` and `//url` through the fuzzing stand-ins) | page-questions |
   | `AutomationStorageTest.*` (new: a directory of its own; a script taken once, put back, refused when unreadable), `VoiceRoutineStoreTest.*` (new, on a temporary directory: each of two profiles lists, runs and deletes only its own; a name in use replaced only when asked, keeping its id; a name two routines answer to runs neither; routines from before profiles kept by one profile once, as they were, renamed beside its own; files that say they are another profile's change nothing), `VoiceRoutinesLogicTest.*` (five more: names with numbers, exactly one routine per name, unique names, "replace it?" and its "no", the question about older routines and its "yes" and "no"), `VoiceLearningStoreTest.DeclinedRoutines`; 129 learning tests and 15 store tests built standalone here (ASan and UBSan; the store on real files through POSIX stand-ins for `//base`'s file utilities) | profile-routines |
+  | `MoltRegularFileTest.*` (new: regular files and the cap, a FIFO, a socket, a directory, links within and outside the home directory, a dangling link, a chain of links, appends that create the file owner-only, the end of a log), `MoltSettingsFileTest.AFifoIsNeverOpened`, `.ALinkWithinHomeIsWrittenThrough`, `.ALinkElsewhereIsLeftAlone`, `AutomationStorageTest.*` (four more: scripts that aren't regular files or are too big, the audit log created and read from its end, updates from two threads, moves cut short under both names, two takes of one id), `VoiceRoutineStoreTest.*` (seven more: every point a claim can be cut short, round 43's set-aside name, a copy changed since, a move in progress, a set-aside file that isn't a routine, a link never claimed, two writers on the profile's sequence), `AgentStudioStorageTest.*` (new: each studio message where its workflow is, with the same answers and refusals), `VoiceLearningStoreTest.DeclinedRoutines` (a file full of ids); 54 built standalone here on real files (ASan and UBSan, and ThreadSanitizer) | storage-robustness |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1695,6 +1697,23 @@ extension enablement and `MediaRouterEnabled()`).
 
   If `Studio()` times out, the studio didn't load in a tab: send the log
   and whether `chrome://molt-ai-agent/` opens in a normal tab by hand.
+
+- [ ] The Agent studio's storage off the UI thread (storage-robustness):
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='AgentStudioStorageBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/studio-storage-browser-tests.log
+  ```
+  *Expected:* both pass on Linux and macOS, in a DCHECK build:
+  - `EveryStorageMessageIsAnsweredOffTheUIThread`: list, get, runs, save,
+    copy and delete of a workflow in the test's shared storage, and a
+    routine copied in under its own name ("my news (2)"), with no file
+    read or written on the UI thread (a DCHECK there would end the test).
+  - `AnswersComeFromTheStoragesSequences`: a listing isn't answered while
+    the profile's routines' sequence is held, a workflow's while the
+    shared storage's is, and both are once released.
+
+  A failed `ScopedBlockingCall` check names the call on the UI thread:
+  send the log.
 
   If the correction test times out, send the log: the script's times are
   the fake microphone's, and a slow machine may need its gaps widened.
@@ -3161,6 +3180,36 @@ activation-guard; `docs/design/TOUCHLESS_BROWSING.md` §7.5,
   "Keep here" in Agent mode) keeps it: "run my news" works in A, and B
   no longer offers it. The file has moved from `~/.moltbrowser/automations/`
   to A's `MoltVoiceRoutines/`, with the same id.
+- [ ] Kill the browser mid-claim (storage-robustness): with a routine
+  from before profiles in `~/.moltbrowser/automations/`, run the claim
+  under a debugger stopped after the rename (on `base::TouchFile()` in
+  `AutomationStorage::Take()`), or rename the file by hand to
+  `<id>.molt.0123abcd.taken`, then `kill -9` the browser.
+  *Expected:* the routine is in neither storage's listing; within a
+  minute of the file's time, reopening Agent mode offers it again
+  ("Routines from before profiles"), and the set-aside file is gone.
+  Repeat stopping after the save into the profile (before the set-aside
+  file is deleted): the profile keeps one copy and it isn't offered
+  again. `audit.log` says `claim_undone` or `voice_routine_claimed ...
+  finished after an interruption`.
+- [ ] A FIFO at `settings.json` (storage-robustness): quit, `mv
+  ~/.moltbrowser/settings.json ~/settings.bak; mkfifo
+  ~/.moltbrowser/settings.json`, start. *Expected:* the browser starts and
+  quits without hanging; `molt://ai-settings` shows the notice that the
+  file isn't a regular file and the defaults; Save changes nothing; the
+  built-in AI APIs stay off; voice mode's settings read as off. Then the
+  same with a FIFO at `<profile>/MoltVoiceLearning.json` (learning works
+  for the session, nothing is written over the FIFO) and at a `.molt` in
+  the automations directory (skipped, with a log line). Remove the FIFOs
+  and restore the file.
+- [ ] A symlinked `settings.json` (storage-robustness): `mv
+  ~/.moltbrowser/settings.json ~/dotfiles/molt-settings.json; ln -s
+  ~/dotfiles/molt-settings.json ~/.moltbrowser/settings.json`, start,
+  change a setting in `molt://ai-settings` and save. *Expected:* saved;
+  `~/.moltbrowser/settings.json` is still the link, and the change is in
+  `~/dotfiles/molt-settings.json`. A link to a file outside the home
+  folder (e.g. `/tmp/molt-settings.json`): the settings page shows the
+  notice, nothing is written, the file outside is unchanged.
 
 **Voice routines with the on-device AI's steps** (from planner-routines;
 `docs/design/TOUCHLESS_BROWSING.md` §6.8, "The planner's steps"):
