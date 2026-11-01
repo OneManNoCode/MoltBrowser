@@ -80,8 +80,7 @@ TEST(SpanishGestureWordsTest, EveryWordOfTheListIsSure) {
     const char last = word.back();
     const bool vowel =
         last == 'a' || last == 'e' || last == 'i' || last == 'o' || last == 'u';
-    const std::string plural =
-        last == 's' ? word : word + (vowel ? "s" : "es");
+    const std::string plural = last == 's' ? word : word + (vowel ? "s" : "es");
     for (const std::string& said :
          {word, plural, "di " + word, "sí, " + word, "la " + word,
           "di la " + word, word + " por favor", "vale " + word + " gracias",
@@ -136,8 +135,7 @@ TEST(SpanishGestureWordsTest, OtherLanguagesWordsAreNotWords) {
   // Spanish's in an English prompt none of English's: a prompt is heard in
   // its own language.
   EXPECT_EQ(HearConfirmationWord("harbor", kEs).kind, HeardWord::Kind::kNone);
-  EXPECT_EQ(HearConfirmationWord("umbrella", kEs).kind,
-            HeardWord::Kind::kNone);
+  EXPECT_EQ(HearConfirmationWord("umbrella", kEs).kind, HeardWord::Kind::kNone);
   EXPECT_EQ(HearConfirmationWord("manzana", kEn).kind, HeardWord::Kind::kNone);
   EXPECT_EQ(HearConfirmationWord("abre youtube", kEs).kind,
             HeardWord::Kind::kNone);
@@ -362,8 +360,8 @@ TEST(SpanishPromptsTest, Permission) {
 }
 
 TEST(SpanishPromptsTest, Dialogs) {
-  BrowserPrompt alert = Prompt(PromptKind::kAlert, kEs, "ejemplo.com",
-                               "Tu sesión va a caducar");
+  BrowserPrompt alert =
+      Prompt(PromptKind::kAlert, kEs, "ejemplo.com", "Tu sesión va a caducar");
   EXPECT_EQ(PromptSpeech(alert, ""),
             "ejemplo.com dice: Tu sesión va a caducar. Di vale para "
             "cerrarlo.");
@@ -381,8 +379,8 @@ TEST(SpanishPromptsTest, Dialogs) {
   EXPECT_EQ(ReplySpeech(closing, ParsePromptReply(closing, "entendido")),
             "Cerrado.");
 
-  BrowserPrompt confirm = Prompt(PromptKind::kConfirm, kEs, "ejemplo.com",
-                                 "¿Vaciar el carrito?");
+  BrowserPrompt confirm =
+      Prompt(PromptKind::kConfirm, kEs, "ejemplo.com", "¿Vaciar el carrito?");
   EXPECT_EQ(PromptSpeech(confirm, ""),
             "ejemplo.com pregunta: ¿Vaciar el carrito? Di sí o no.");
   confirm.text.clear();
@@ -399,8 +397,8 @@ TEST(SpanishPromptsTest, Dialogs) {
   EXPECT_EQ(ReplySpeech(asking, ParsePromptReply(asking, "sí")), "Sí.");
   EXPECT_EQ(ReplySpeech(asking, ParsePromptReply(asking, "no")), "No.");
 
-  BrowserPrompt text = Prompt(PromptKind::kTextPrompt, kEs, "ejemplo.com",
-                              "¿Tu nombre?");
+  BrowserPrompt text =
+      Prompt(PromptKind::kTextPrompt, kEs, "ejemplo.com", "¿Tu nombre?");
   EXPECT_EQ(PromptSpeech(text, ""),
             "ejemplo.com pregunta: ¿Tu nombre? Di responde y luego tu "
             "respuesta, o di no para cancelar.");
@@ -496,8 +494,8 @@ TEST(SpanishPromptsTest, DownloadsPasswordsAndSites) {
   EXPECT_EQ(ReplySpeech(saving, ParsePromptReply(saving, "luego")),
             "Ahora no.");
 
-  BrowserPrompt sites = Prompt(PromptKind::kConfirmSites, kEs, "",
-                               "a.example y b.example");
+  BrowserPrompt sites =
+      Prompt(PromptKind::kConfirmSites, kEs, "", "a.example y b.example");
   EXPECT_EQ(PromptSpeech(sites, "caracol"),
             "¿Confirmas los sitios que usa esta rutina: a.example y "
             "b.example? Para confirmarlos, di caracol. Para dejarlos sin "
@@ -532,10 +530,10 @@ TEST(SpanishPromptsTest, TheWordsChannelTexts) {
   EXPECT_EQ(WordRetiredPreface(WordRetired::kScreenShared, kEs), "");
   EXPECT_EQ(RetiredWordSpeech(PromptKind::kPermission, "tomate", kEs),
             "Esa palabra ha cambiado. Para permitirlo, di tomate.");
-  EXPECT_EQ(RetiredWordSpeech(PromptKind::kDangerousDownload,
-                              WordOnScreen(kEs), kEs),
-            "Esa palabra ha cambiado. Para conservarlo, di la palabra que "
-            "ves en la pantalla.");
+  EXPECT_EQ(
+      RetiredWordSpeech(PromptKind::kDangerousDownload, WordOnScreen(kEs), kEs),
+      "Esa palabra ha cambiado. Para conservarlo, di la palabra que "
+      "ves en la pantalla.");
   // Each text with the word has its twin without it, in Spanish too.
   BrowserPrompt prompt = Prompt(PromptKind::kPermission, kEs, "ejemplo.com");
   const std::string said = PromptSpeech(prompt, "manzana");
@@ -547,8 +545,7 @@ TEST(SpanishPromptsTest, TheWordsChannelTexts) {
 
 // The Spanish word said in passing: inside a sentence, or unsure.
 TEST(SpanishPromptsTest, TheWordSaidInPassing) {
-  const PendingPrompt prompt =
-      Waiting(PromptKind::kPermission, kEs, "manzana");
+  const PendingPrompt prompt = Waiting(PromptKind::kPermission, kEs, "manzana");
   for (std::string_view heard :
        {"la palabra es manzana", "he dicho manzana", "creo que era manzanas",
         "dije man zana, ¿no?"}) {
@@ -576,9 +573,10 @@ TEST(SpanishPromptsTest, EnglishIsUnchanged) {
             "To block it, say no.");
   prompt.what = "usar tu cámara";
   // English keeps ASCII letters only, as before.
-  EXPECT_EQ(PromptSpeech(prompt, "").rfind("example.com wants to usar tu c "
-                                           "mara.",
-                                           0),
+  EXPECT_EQ(PromptSpeech(prompt, "")
+                .rfind("example.com wants to usar tu c "
+                       "mara.",
+                       0),
             0u);
   EXPECT_EQ(PromptTimeoutSpeech(PromptKind::kPermission),
             PromptTimeoutSpeech(PromptKind::kPermission, kEn));
@@ -595,15 +593,15 @@ TEST(SpanishPromptsTest, EnglishIsUnchanged) {
 // a catalog key (an English sentence) as it is.
 TEST(SpanishPromptsTest, EveryKindAndAnswerIsSaidInSpanish) {
   const std::vector<PromptKind> kinds = {
-      PromptKind::kPermission,        PromptKind::kAlert,
-      PromptKind::kConfirm,           PromptKind::kTextPrompt,
-      PromptKind::kBeforeUnload,      PromptKind::kDangerousDownload,
-      PromptKind::kSavePassword,      PromptKind::kConfirmSites};
+      PromptKind::kPermission,   PromptKind::kAlert,
+      PromptKind::kConfirm,      PromptKind::kTextPrompt,
+      PromptKind::kBeforeUnload, PromptKind::kDangerousDownload,
+      PromptKind::kSavePassword, PromptKind::kConfirmSites};
   const std::vector<PromptAnswer> answers = {
-      PromptAnswer::kAllow,     PromptAnswer::kWrongWord,
-      PromptAnswer::kRefuse,    PromptAnswer::kAccept,
-      PromptAnswer::kDecline,   PromptAnswer::kDictate,
-      PromptAnswer::kNeedWord,  PromptAnswer::kSayAgain,
+      PromptAnswer::kAllow,    PromptAnswer::kWrongWord,
+      PromptAnswer::kRefuse,   PromptAnswer::kAccept,
+      PromptAnswer::kDecline,  PromptAnswer::kDictate,
+      PromptAnswer::kNeedWord, PromptAnswer::kSayAgain,
       PromptAnswer::kCantAllow};
   for (PromptKind kind : kinds) {
     for (bool flood : {false, true}) {

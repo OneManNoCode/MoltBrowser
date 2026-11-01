@@ -116,6 +116,16 @@ bool MatchKey(std::string_view key,
               std::array<std::string_view, 10>& args,
               size_t& arg_count,
               size_t& literal) {
+  // What comes before the key's first brace and after its last must be the
+  // text's own start and end (most keys fail here, without a copy).
+  const size_t first_brace = key.find('{');
+  const size_t last_brace = key.rfind('}');
+  if (first_brace == std::string_view::npos ||
+      last_brace == std::string_view::npos ||
+      !text.starts_with(key.substr(0, first_brace)) ||
+      !text.ends_with(key.substr(last_brace + 1))) {
+    return false;
+  }
   // The key's literal parts and the placeholders between them.
   std::array<std::string, 11> parts;
   std::array<int, 10> slots{};
@@ -192,8 +202,7 @@ bool MatchKey(std::string_view key,
 }  // namespace
 
 std::string Relocalized(Language language, std::string_view english) {
-  if (language == Language::kEnglish ||
-      english.size() > kMaxRelocalizedBytes) {
+  if (language == Language::kEnglish || english.size() > kMaxRelocalizedBytes) {
     return std::string(english);
   }
   const std::string_view whole = Translated(language, english);
@@ -221,8 +230,8 @@ std::string Relocalized(Language language, std::string_view english) {
     return std::string(english);
   }
   // Said() with the words that filled the key.
-  return Filled(best->text, std::span<const std::string_view>(
-                                best_args.data(), best_count));
+  return Filled(best->text, std::span<const std::string_view>(best_args.data(),
+                                                              best_count));
 }
 
 }  // namespace voice

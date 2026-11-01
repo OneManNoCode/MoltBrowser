@@ -384,8 +384,7 @@ constexpr SpokenAnswer kAnswers[] = {
      "El archivo {0} de {1} es peligroso, así que se ha bloqueado. Para "
      "borrarlo, di descarta. Para conservarlo de todos modos, usa la página "
      "de descargas."},
-    {"A file from {0} may be harmful.",
-     "Un archivo de {0} puede ser dañino."},
+    {"A file from {0} may be harmful.", "Un archivo de {0} puede ser dañino."},
     {"The file {0} from {1} may be harmful.",
      "El archivo {0} de {1} puede ser dañino."},
     {"To keep it, say {0}. To delete it, say discard.",
@@ -524,7 +523,8 @@ constexpr SpokenAnswer kAnswers[] = {
     // --- The listening session (voice_session.cc) ---------------------------
     {"To interrupt me, say stop, then what you want.",
      "Para interrumpirme, di para y luego lo que quieras."},
-    {"I've stopped. Now say that again.", "Me he detenido. Ahora dilo otra vez."},
+    {"I've stopped. Now say that again.",
+     "Me he detenido. Ahora dilo otra vez."},
     {"I can't use the microphone: the system's privacy settings don't let "
      "MoltBrowser use it. Allow it there, then turn voice mode on again.",
      "No puedo usar el micrófono: la configuración de privacidad del sistema "
@@ -565,7 +565,8 @@ constexpr SpokenAnswer kAnswers[] = {
     {"The page changed, so its numbers moved. Say the number you see now.",
      "La página ha cambiado, así que sus números se han movido. Di el número "
      "que ves ahora."},
-    {"I didn't hear yes, so I stopped.", "No he oído un sí, así que he parado."},
+    {"I didn't hear yes, so I stopped.",
+     "No he oído un sí, así que he parado."},
 
     // --- Routines and learning (voice_controller_logic.cc,
     // voice_learning_loop.cc, voice_routines*.cc). A routine is "la
@@ -634,8 +635,7 @@ constexpr SpokenAnswer kAnswers[] = {
      "pistas de los sitios."},
     {"forget everything I learned from you",
      "olvidar todo lo que aprendí de ti"},
-    {"I couldn't find it on this page.",
-     "No lo he encontrado en esta página."},
+    {"I couldn't find it on this page.", "No lo he encontrado en esta página."},
     {"I couldn't find {0} on this page.",
      "No he encontrado {0} en esta página."},
     {"I found more than one it on this page.",
@@ -703,7 +703,8 @@ constexpr SpokenAnswer kAnswers[] = {
     {"That's too many steps for one routine.",
      "Son demasiados pasos para una rutina."},
     {"Choose another name for it.", "Elige otro nombre para ella."},
-    {"One of the steps can't be kept.", "Uno de los pasos no se puede guardar."},
+    {"One of the steps can't be kept.",
+     "Uno de los pasos no se puede guardar."},
     {"One of the steps holds text I can't keep.",
      "Uno de los pasos tiene un texto que no puedo guardar."},
     {"One of the pages looks like it holds a password or a code, so I won't "
@@ -844,8 +845,7 @@ constexpr SpokenAnswer kAnswers[] = {
     {"Scrolling up.", "Subiendo."},
     {"Scrolling down.", "Bajando."},
     {"Using a tool of the page.", "Usando una herramienta de la página."},
-    {"Using the page's {0} tool.",
-     "Usando la herramienta {0} de la página."},
+    {"Using the page's {0} tool.", "Usando la herramienta {0} de la página."},
     {"Done.", "Hecho."},
     {"Done. {0}.", "Hecho. {0}."},
     {"I stopped. Say what can I say to hear the commands I know.",
@@ -964,7 +964,8 @@ constexpr SpokenAnswer kAnswers[] = {
     {"That's all of the page.", "Eso es toda la página."},
     {"That's all the page says about that.",
      "Eso es todo lo que dice la página sobre eso."},
-    {"The page changed, so I stopped.", "La página ha cambiado, así que he parado."},
+    {"The page changed, so I stopped.",
+     "La página ha cambiado, así que he parado."},
 
     // --- Reading aloud (voice_reader.cc, page_reading.cc) -------------------
     {"There's no text to read on this page.",

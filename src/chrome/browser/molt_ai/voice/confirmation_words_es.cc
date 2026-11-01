@@ -35,6 +35,13 @@ constexpr auto kWords = std::to_array<std::string_view>({
 // words said around them and the loop's yes and no, the wake phrase's
 // words, and the numbers a list is chosen from. "yes", "ok", "stop":
 // Spanish speakers say them too.
+//
+// From "conservalo" on, the rest of the prompts' answers' words (round 44),
+// so none is ever heard as a confirmation word: "bloquéalo", "consérvalo",
+// "de acuerdo", "me quedo". Answers that would sound like one ("guárdalo":
+// castillo's, "deniégalo": ancla's, "ciérralo": tornillo's) aren't answers
+// alone; after "no" or "de" ("no salgas", "de acuerdo") they never are
+// ("no" and "de" are answer words).
 constexpr auto kAnswerWords = std::to_array<std::string_view>({
     "si",        "no",         "vale",    "ok",       "okay",
     "para",      "alto",       "cancela", "cancelar", "bloquea",
@@ -56,20 +63,13 @@ constexpr auto kAnswerWords = std::to_array<std::string_view>({
     "nop",       "escribe",    "pagina",  "aqui",     "contrasena",
     "es",        "mi",         "eso",     "esto",     "acepta",
     "aceptar",   "deja",       "dejar",   "di",       "yes",
-    "stop",
-    // More words of the prompts' answers (voice_prompts.cc), so none is
-    // ever heard as a confirmation word: "bloquéalo", "consérvalo", "de
-    // acuerdo", "me quedo". Answers that would sound like one ("guárdalo":
-    // castillo's, "deniégalo": ancla's, "ciérralo": tornillo's) aren't
-    // answers alone; with "no" or "de" before them ("no salgas", "de
-    // acuerdo") they never are ("no" and "de" are answer words).
-    "bloquealo", "cancelalo",  "ignoralo",  "permitelo", "permitas",
-    "conserva",  "conservalo", "conservar", "conserves", "descartalo",
-    "borralo",   "eliminalo",  "recargala", "quedarse",  "quedo",
-    "entendido", "hagas",      "contesta",  "sitio",     "este",
-    "esta",      "mas",        "muchas",    "pues",      "de",
-    "lo",        "la",         "me",        "en",        "eh",
-    "em",
+    "stop",      "conservalo", "borralo", "ignoralo", "descartalo",
+    "bloquealo", "cancelalo",  "quedo",   "permitas", "permitelo",
+    "conserva",  "conservar",  "hagas",   "quedarse", "conserves",
+    "eliminalo", "recargala",  "sitio",   "contesta", "entendido",
+    "este",      "esta",       "mas",     "muchas",   "pues",
+    "de",        "lo",         "la",      "me",       "en",
+    "eh",        "em",
 });
 
 constexpr auto kLeading = std::to_array<std::string_view>(

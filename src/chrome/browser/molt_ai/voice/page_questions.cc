@@ -112,15 +112,14 @@ constexpr std::array<RelatedWords, 3> kRelated = {{
 // about what it asks, and the words its answer tends to have ("¿Quién lo
 // escribió?": "Por Ana Ruiz").
 constexpr std::string_view kStopwordsEs[] = {
-    "a",      "acerca",  "al",      "algo",   "alguna", "alguno", "como",
-    "con",    "cual",    "cuales",  "de",     "del",    "dice",   "dicen",
-    "donde",  "el",      "ella",    "ellas",  "ellos",  "en",     "es",
-    "esa",    "ese",     "eso",     "esta",   "este",   "esto",   "fue",
-    "ha",     "han",     "hay",     "la",     "las",    "le",     "les",
-    "lo",     "los",     "mas",     "me",     "menciona", "mi",   "mis",
-    "pagina", "para",    "pero",    "por",    "que",    "se",     "ser",
-    "sitio",  "sobre",   "son",     "su",     "sus",    "te",     "texto",
-    "tu",     "un",      "una",     "uno",    "web",    "y",      "ya",
+    "a",    "acerca", "al",     "algo", "alguna", "alguno", "como",  "con",
+    "cual", "cuales", "de",     "del",  "dice",   "dicen",  "donde", "el",
+    "ella", "ellas",  "ellos",  "en",   "es",     "esa",    "ese",   "eso",
+    "esta", "este",   "esto",   "fue",  "ha",     "han",    "hay",   "la",
+    "las",  "le",     "les",    "lo",   "los",    "mas",    "me",    "menciona",
+    "mi",   "mis",    "pagina", "para", "pero",   "por",    "que",   "se",
+    "ser",  "sitio",  "sobre",  "son",  "su",     "sus",    "te",    "texto",
+    "tu",   "un",     "una",    "uno",  "web",    "y",      "ya",
 };
 static_assert(std::is_sorted(std::begin(kStopwordsEs), std::end(kStopwordsEs)));
 constexpr std::array<RelatedWords, 3> kRelatedEs = {{
@@ -1021,9 +1020,9 @@ bool HoldsWakePhraseIn(std::string_view text, const LanguagePhrases& p) {
     }
     const std::string key = PhoneticKeyFor(p.language, word);
     if (p.wake_sound_margin > 0) {
-      return !key.empty() && PhoneticDistance(key, name_key,
-                                              p.wake_sound_margin) <=
-                                 p.wake_sound_margin;
+      return !key.empty() &&
+             PhoneticDistance(key, name_key, p.wake_sound_margin) <=
+                 p.wake_sound_margin;
     }
     return key == name_key;
   };
@@ -1109,8 +1108,7 @@ PageAnswer PageAnswerFromModel(std::string_view reply,
     answer.text =
         topic.empty()
             ? Said(language, "The page doesn't say.", {})
-            : Said(language,
-                   "The page doesn't seem to say anything about {0}.",
+            : Said(language, "The page doesn't seem to say anything about {0}.",
                    {topic});
     return answer;
   }

@@ -37,8 +37,8 @@ using K = VoiceCommandKind;
 constexpr size_t kMaxSaidChars = 400;
 
 // Why the planner's steps can't be kept while learning is off.
-constexpr std::string_view kLearningOff = SaidLater(
-    "the AI's steps aren't kept while Learn from what I say is off.");
+constexpr std::string_view kLearningOff =
+    SaidLater("the AI's steps aren't kept while Learn from what I say is off.");
 
 // Whether |step| is the planner's step that opens a page.
 bool OpensPage(const RoutineStep& step) {
@@ -194,7 +194,8 @@ LearningEnvironment VoiceLearningLoop::Environment(
   }
   env.unclaimed_version = learning->unclaimed_version();
   for (const RoutineStep& step : recorder_.steps()) {
-    env.this_steps.push_back(DescribeRoutineStep(step, controller_->language()));
+    env.this_steps.push_back(
+        DescribeRoutineStep(step, controller_->language()));
   }
   env.this_planned = recorder_.planned();
   env.this_refusal = Relocalized(controller_->language(), recorder_.refusal());
@@ -497,15 +498,14 @@ void VoiceLearningLoop::OnPlannerReplayed(PlannerReplay outcome) {
       p.stop_after = true;
       return;
     case PlannerReplay::kNotFound:
-      p.why = element.empty()
-                  ? Said(language, "I couldn't find it on this page.", {})
-                  : Said(language, "I couldn't find {0} on this page.",
-                         {element});
+      p.why =
+          element.empty()
+              ? Said(language, "I couldn't find it on this page.", {})
+              : Said(language, "I couldn't find {0} on this page.", {element});
       break;
     case PlannerReplay::kAmbiguous:
       p.why = element.empty()
-                  ? Said(language, "I found more than one it on this page.",
-                         {})
+                  ? Said(language, "I found more than one it on this page.", {})
                   : Said(language, "I found more than one {0} on this page.",
                          {element});
       break;
@@ -639,10 +639,9 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
                  bool deleted) {
                 if (self) {
                   const Language language = self->controller_->language();
-                  self->Say(deleted
-                                ? Said(language, "I forgot {0}.", {name})
-                                : Said(language, "I couldn't forget {0}.",
-                                       {name}),
+                  self->Say(deleted ? Said(language, "I forgot {0}.", {name})
+                                    : Said(language, "I couldn't forget {0}.",
+                                           {name}),
                             /*interrupt=*/false);
                 }
               },
@@ -650,10 +649,9 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
       return;
     case LearningOp::kForgetWord:
       Say(learning->ForgetWord(step.text)
-              ? Said(controller_->language(), "I forgot the word {0}.",
-                     {name})
-              : Said(controller_->language(),
-                     "I haven't learned the word {0}.", {name}),
+              ? Said(controller_->language(), "I forgot the word {0}.", {name})
+              : Said(controller_->language(), "I haven't learned the word {0}.",
+                     {name}),
           /*interrupt=*/false);
       return;
     case LearningOp::kForgetEverything:
@@ -704,18 +702,17 @@ void VoiceLearningLoop::SaveRoutine(const std::string& name,
             // The planner's steps: the sites it uses, which the user
             // confirms the first time it runs.
             if (result.sites.empty()) {
-              self->Say(result.replaced
-                            ? Said(language,
-                                   "Replaced {0}. Say run {0} to do it again.",
-                                   {spoken})
-                            : Said(language,
-                                   "Saved. Say run {0} to do it again.",
-                                   {spoken}),
-                        /*interrupt=*/false);
+              self->Say(
+                  result.replaced
+                      ? Said(language,
+                             "Replaced {0}. Say run {0} to do it again.",
+                             {spoken})
+                      : Said(language, "Saved. Say run {0} to do it again.",
+                             {spoken}),
+                  /*interrupt=*/false);
               return;
             }
-            const std::string sites =
-                JoinSpokenList(result.sites, language);
+            const std::string sites = JoinSpokenList(result.sites, language);
             self->Say(result.replaced
                           ? Said(language,
                                  "Replaced {0}. It uses {1}. Its sites need "
@@ -768,11 +765,10 @@ void VoiceLearningLoop::ClaimRoutines(int version) {
                         /*interrupt=*/false);
               return;
             }
-            std::string said =
-                result.kept.size() == 1
-                    ? Said(language, "Kept it here.", {})
-                    : Said(language, "Kept {0} routines here.",
-                           {std::to_string(result.kept.size())});
+            std::string said = result.kept.size() == 1
+                                   ? Said(language, "Kept it here.", {})
+                                   : Said(language, "Kept {0} routines here.",
+                                          {std::to_string(result.kept.size())});
             for (const ClaimedRoutine& kept : result.kept) {
               if (!kept.renamed_from.empty()) {
                 said += " " + Said(language,
@@ -787,8 +783,7 @@ void VoiceLearningLoop::ClaimRoutines(int version) {
               said += " " + (result.not_kept == 1
                                  ? Said(language, "{0} wasn't there any more.",
                                         {count})
-                                 : Said(language,
-                                        "{0} weren't there any more.",
+                                 : Said(language, "{0} weren't there any more.",
                                         {count}));
             }
             self->Say(said, /*interrupt=*/false);

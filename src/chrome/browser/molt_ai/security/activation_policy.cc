@@ -275,8 +275,7 @@ Question QuestionFor(Request request,
       question.said =
           clean_site.empty()
               ? voice::Said(kEn, "The page tried to download a file.", {})
-              : voice::Said(kEn,
-                            "The page tried to download a file from {0}.",
+              : voice::Said(kEn, "The page tried to download a file from {0}.",
                             {clean_site});
       question.verb = voice::SaidLater("download it");
       return question;

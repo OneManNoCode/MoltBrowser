@@ -210,8 +210,8 @@ void VoiceSession::OnSettingsChanged(const VoiceModeSettings& settings) {
     session->settings_ = settings;
     session->UpdateWordChannel();
     if (session->listening()) {
-      session->Apply(session->logic_.OnSettingsChanged(ToListening(settings, session->SpeechLanguage()),
-                                                       session->NowMs()));
+      session->Apply(session->logic_.OnSettingsChanged(
+          ToListening(settings, session->SpeechLanguage()), session->NowMs()));
     }
   }
 }
@@ -329,7 +329,8 @@ void VoiceSession::OnSettingsRead(const VoiceModeSettings& settings) {
   if (!logic_.running()) {
     return;
   }
-  Apply(logic_.OnSettingsChanged(ToListening(settings, SpeechLanguage()), NowMs()));
+  Apply(logic_.OnSettingsChanged(ToListening(settings, SpeechLanguage()),
+                                 NowMs()));
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
       base::BindOnce(&FindHelper),

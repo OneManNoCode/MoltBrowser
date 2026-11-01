@@ -162,8 +162,8 @@ std::string PermissionWhat(const std::vector<std::string>& phrases,
   std::string before;
   for (size_t i = 0; i < phrases.size(); ++i) {
     std::string phrase(Translated(language, phrases[i]));
-    const bool joined = i > 0 && phrase.rfind(shared, 0) == 0 &&
-                        before.rfind(shared, 0) == 0;
+    const bool joined =
+        i > 0 && phrase.rfind(shared, 0) == 0 && before.rfind(shared, 0) == 0;
     before = phrase;
     if (joined) {
       phrase.erase(0, shared.size());
@@ -396,8 +396,8 @@ void VoiceBrowserPrompts::Reissue(WordRetired why) {
   DrawWord(WordChannelNow(), prompt);
   if (current_->reads > kMaxWordsPerPrompt && current_->word.empty() &&
       !current_->screen_shared) {
-    prompt.preface = Said(prompt.language,
-                          "I can't take a word for this one any more.", {});
+    prompt.preface =
+        Said(prompt.language, "I can't take a word for this one any more.", {});
   }
   if (!delegate_->ReadBrowserPrompt(id, prompt, current_->word)) {
     Drop();
@@ -641,8 +641,7 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     case HearResult::kRetired:
       Finish(std::move(prompt),
              Said(language,
-                  "I can't take the word now. Use the mouse or keyboard.",
-                  {}));
+                  "I can't take the word now. Use the mouse or keyboard.", {}));
       return;
   }
 }

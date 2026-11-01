@@ -296,10 +296,10 @@ constexpr std::string_view kElementKinds[] = {
 };
 
 // What the browser says when a step of the planner's can't be kept.
-constexpr std::string_view kUnkeptSecretAddress = SaidLater(
-    "a page the AI opened looks like it holds a password or a code.");
-constexpr std::string_view kUnkeptSecretSearch = SaidLater(
-    "a search the AI made looks like it holds a password or a code.");
+constexpr std::string_view kUnkeptSecretAddress =
+    SaidLater("a page the AI opened looks like it holds a password or a code.");
+constexpr std::string_view kUnkeptSecretSearch =
+    SaidLater("a search the AI made looks like it holds a password or a code.");
 constexpr std::string_view kUnkeptCredentialField = SaidLater(
     "the AI typed into a password, card or code field, which I never keep.");
 constexpr std::string_view kUnkeptNoName = SaidLater(
@@ -996,9 +996,9 @@ BuiltRoutine BuildRoutine(std::string_view id,
   // A step of the planner's that can't be repeated: nothing is kept.
   for (const RoutineStep& step : steps) {
     if (IsUnkeptStep(step)) {
-      out.refusal = Said(
-          Language::kEnglish, "I can't remember this: {0}",
-          {step.agent.why.empty() ? kUnkeptStep : step.agent.why});
+      out.refusal =
+          Said(Language::kEnglish, "I can't remember this: {0}",
+               {step.agent.why.empty() ? kUnkeptStep : step.agent.why});
       return out;
     }
   }

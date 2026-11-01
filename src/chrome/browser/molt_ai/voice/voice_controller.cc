@@ -1720,8 +1720,8 @@ void VoiceController::PlannerSays(const std::string& text) {
   // Model output and page text: cleaned and capped, as page text is. The
   // browser's own words around them (voice_agent_speech.h) in the window's
   // language.
-  const std::string said = SpeechSafeText(Relocalized(language_, text),
-                                          kMaxPlannerSpeechChars);
+  const std::string said =
+      SpeechSafeText(Relocalized(language_, text), kMaxPlannerSpeechChars);
   if (said.empty()) {
     return;
   }

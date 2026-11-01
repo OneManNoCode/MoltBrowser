@@ -132,17 +132,17 @@ std::string ActionSpeech(std::string_view action,
     const std::string label = ReadBack(LabelOf(target));
     const std::string text = ReadBack(value);
     if (text.empty()) {
-      said = label.empty()
-                 ? std::string(SaidLater("Clearing the field."))
-                 : Said(kEn, "Clearing the field in {0}.", {label});
+      said = label.empty() ? std::string(SaidLater("Clearing the field."))
+                           : Said(kEn, "Clearing the field in {0}.", {label});
     } else {
       said = label.empty() ? Said(kEn, "Typing {0}.", {text})
                            : Said(kEn, "Typing {0} in {1}.", {text, label});
     }
   } else if (action == "SELECT") {
     const std::string label = ReadBack(LabelOf(target));
-    said = label.empty() ? Said(kEn, "Choosing {0}.", {ReadBack(value)})
-                         : Said(kEn, "Choosing {0} in {1}.", {ReadBack(value), label});
+    said = label.empty()
+               ? Said(kEn, "Choosing {0}.", {ReadBack(value)})
+               : Said(kEn, "Choosing {0} in {1}.", {ReadBack(value), label});
   } else if (action == "FILL_FORM") {
     said = SaidLater("Filling in the form.");
   } else if (action == "SCROLL") {

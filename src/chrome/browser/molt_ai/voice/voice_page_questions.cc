@@ -44,8 +44,8 @@ constexpr std::string_view kFailed =
     SaidLater("The on-device AI couldn't answer that. Try asking another way.");
 constexpr std::string_view kNoText =
     SaidLater("There's no text on this page I can answer from.");
-constexpr std::string_view kAskFirst = SaidLater(
-    "Ask me something about this page first, then say tell me more.");
+constexpr std::string_view kAskFirst =
+    SaidLater("Ask me something about this page first, then say tell me more.");
 constexpr std::string_view kNoMorePage = SaidLater("That's all of the page.");
 constexpr std::string_view kNoMoreTopic =
     SaidLater("That's all the page says about that.");

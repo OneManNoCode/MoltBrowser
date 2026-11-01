@@ -2307,13 +2307,15 @@ class Planner {
     const RoutineNameMatch in_use =
         MatchRoutineName(learning.routines, name, env_.language);
     if (in_use.count > 1) {
-      Say(Tr("You have {0} routines called {1}. Choose another name, or "
+      Say(
+          Tr("You have {0} routines called {1}. Choose another name, or "
              "rename them in Agent mode.",
              {std::to_string(in_use.count), spoken}));
       return;
     }
     if (learning.this_steps.empty()) {
-      Say(Tr("There's nothing to remember yet. Do it once, then say remember "
+      Say(
+          Tr("There's nothing to remember yet. Do it once, then say remember "
              "this as {0}.",
              {spoken}));
       return;
@@ -2355,7 +2357,8 @@ class Planner {
         MatchRoutineName(learning.routines, said, env_.language);
     const std::string* name = match.name;
     if (match.count > 1) {
-      Say(Tr("You have {0} routines called {1}. Rename one in Agent mode to "
+      Say(
+          Tr("You have {0} routines called {1}. Rename one in Agent mode to "
              "run it by voice.",
              {std::to_string(match.count), PageText(said)}));
       return;
@@ -2387,7 +2390,8 @@ class Planner {
             : RoutineNameMatch();
     const std::string* name = match.name;
     if (match.count > 1) {
-      Say(Tr("You have {0} routines called {1}. Forget the one you mean in "
+      Say(
+          Tr("You have {0} routines called {1}. Forget the one you mean in "
              "Agent mode.",
              {std::to_string(match.count), PageText(said)}));
       return;
@@ -2423,7 +2427,8 @@ class Planner {
     if (names.size() == 1) {
       Say(Tr("You have one routine: {0}. Say run, then its name.", {list}));
     } else if (more) {
-      Say(Tr("You have {0} routines: {1}, and more in Agent mode. Say run, "
+      Say(
+          Tr("You have {0} routines: {1}, and more in Agent mode. Say run, "
              "then its name.",
              {std::to_string(names.size()), list}));
     } else {
@@ -2505,8 +2510,7 @@ class Planner {
     }
     std::vector<VoiceStep> steps;
     steps.push_back(LearningStep(LearningOp::kForgetWord, said));
-    AskToConfirm(std::move(steps),
-                 Tr("forget the word {0}", {PageText(said)}));
+    AskToConfirm(std::move(steps), Tr("forget the word {0}", {PageText(said)}));
   }
 
   void ForgetLearning() {

@@ -22,7 +22,8 @@ class StudioOnlyConfirmer : public RoutineSiteConfirmer {
                     const std::vector<std::string>& sites,
                     Done done) override {
     std::move(done).Run(
-        false, std::string(SaidLater("Confirm it in the Agent studio for now.")));
+        false,
+        std::string(SaidLater("Confirm it in the Agent studio for now.")));
   }
 };
 

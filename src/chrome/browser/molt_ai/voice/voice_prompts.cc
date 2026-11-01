@@ -75,9 +75,10 @@ constexpr auto kPoliteAfter =
 // heard as a confirmation word (each word alone is in SpanishAnswerWords(),
 // or comes after "no" or "de"): unit-tested.
 constexpr auto kYesEs = std::to_array<std::string_view>(
-    {"si", "vale", "ok", "okay", "claro", "de acuerdo", "si por favor",
-     "confirma", "confirmar", "acepta", "aceptar", "esta bien", "bien",
-     "si vale", "vale si", "dale", "venga", "seguro", "sip", "si claro"});
+    {"si",         "vale",         "ok",       "okay",      "claro",
+     "de acuerdo", "si por favor", "confirma", "confirmar", "acepta",
+     "aceptar",    "esta bien",    "bien",     "si vale",   "vale si",
+     "dale",       "venga",        "seguro",   "sip",       "si claro"});
 constexpr auto kNoEs = std::to_array<std::string_view>(
     {"no", "nop", "cancela", "cancelar", "cancelalo", "no gracias",
      "no lo hagas", "no no"});
@@ -89,17 +90,16 @@ constexpr auto kDismissEs = std::to_array<std::string_view>(
     {"cancela", "cancelar", "ahora no", "luego", "mas tarde", "ignora",
      "ignorar", "ignoralo", "cierra", "cerrar"});
 constexpr auto kAllowWordsEs = std::to_array<std::string_view>(
-    {"si", "permite", "permitir", "permitelo", "permitirlo", "ok", "okay",
-     "vale", "claro", "si por favor", "si permite", "si permitelo", "acepta",
-     "aceptar", "guarda", "guardar", "conserva", "conservalo", "conservar",
-     "si conservalo"});
+    {"si",         "permite",      "permitir",   "permitelo", "permitirlo",
+     "ok",         "okay",         "vale",       "claro",     "si por favor",
+     "si permite", "si permitelo", "acepta",     "aceptar",   "guarda",
+     "guardar",    "conserva",     "conservalo", "conservar", "si conservalo"});
 constexpr auto kCloseEs = std::to_array<std::string_view>(
-    {"vale", "ok", "okay", "si", "cierra", "cerrar", "entendido",
-     "de acuerdo", "acepta", "aceptar", "no", "cancela", "cancelar"});
+    {"vale", "ok", "okay", "si", "cierra", "cerrar", "entendido", "de acuerdo",
+     "acepta", "aceptar", "no", "cancela", "cancelar"});
 constexpr auto kLeaveEs = std::to_array<std::string_view>(
     {"sal", "salir", "sal de la pagina", "salir de la pagina", "si", "si sal",
-     "recarga", "recargar", "recargala", "si recarga", "vale", "ok",
-     "okay"});
+     "recarga", "recargar", "recargala", "si recarga", "vale", "ok", "okay"});
 constexpr auto kStayEs = std::to_array<std::string_view>(
     {"quedate", "quedarme", "quedate aqui", "me quedo", "quedarse",
      "quedate en la pagina", "no", "cancela", "cancelar", "no salgas",
@@ -147,13 +147,13 @@ struct Answers {
 
 const Answers& AnswersFor(Language language) {
   static constexpr Answers kEnglish{
-      kYes,     kNo,     kBlock,   kDismiss,        kAllowWords,
-      kClose,   kLeave,  kStay,    kDiscard,        kSave,
-      kNever,   kNotNow, kDictationLeads, kPoliteBefore, kPoliteAfter};
+      kYes,   kNo,     kBlock,          kDismiss,      kAllowWords,
+      kClose, kLeave,  kStay,           kDiscard,      kSave,
+      kNever, kNotNow, kDictationLeads, kPoliteBefore, kPoliteAfter};
   static constexpr Answers kSpanish{
-      kYesEs,     kNoEs,     kBlockEs,   kDismissEs,          kAllowWordsEs,
-      kCloseEs,   kLeaveEs,  kStayEs,    kDiscardEs,          kSaveEs,
-      kNeverEs,   kNotNowEs, kDictationLeadsEs, kPoliteBeforeEs, kPoliteAfterEs};
+      kYesEs,   kNoEs,     kBlockEs,          kDismissEs,      kAllowWordsEs,
+      kCloseEs, kLeaveEs,  kStayEs,           kDiscardEs,      kSaveEs,
+      kNeverEs, kNotNowEs, kDictationLeadsEs, kPoliteBeforeEs, kPoliteAfterEs};
   switch (language) {
     case Language::kEnglish:
       break;
@@ -485,13 +485,12 @@ std::string PromptSpeechOnly(const BrowserPrompt& prompt,
     case PromptKind::kPermission: {
       const std::string what = Words(prompt.what, kMaxWhatChars, language);
       std::string out =
-          what.empty() ? Said(language, "{0} is asking for a permission.",
-                              {site})
-                       : Said(language, "{0} wants to {1}.", {site, what});
+          what.empty()
+              ? Said(language, "{0} is asking for a permission.", {site})
+              : Said(language, "{0} wants to {1}.", {site, what});
       if (!word.empty()) {
         out += " " + Said(language,
-                          "To allow it, say {0}. To block it, say no.",
-                          {word});
+                          "To allow it, say {0}. To block it, say no.", {word});
       } else if (prompt.screen_shared) {
         out += " " + Said(language,
                           "I can't take the word while your screen is "
@@ -524,8 +523,7 @@ std::string PromptSpeechOnly(const BrowserPrompt& prompt,
       return says.empty()
                  ? Said(language, "{0} asks you to confirm. Say yes or no.",
                         {site})
-                 : Said(language, "{0} asks: {1} Say yes or no.",
-                        {site, says});
+                 : Said(language, "{0} asks: {1} Say yes or no.", {site, says});
     case PromptKind::kTextPrompt:
       return prompt.flood || says.empty()
                  ? Said(language,
@@ -632,8 +630,8 @@ std::string PromptTimeoutSpeech(PromptKind kind) {
 std::string PromptTimeoutSpeech(PromptKind kind, Language language) {
   switch (kind) {
     case PromptKind::kPermission:
-      return Said(language,
-                  "No answer, so I dismissed the permission request.", {});
+      return Said(language, "No answer, so I dismissed the permission request.",
+                  {});
     case PromptKind::kDangerousDownload:
       return Said(language,
                   "No answer, so the file stays blocked. You can decide on "
@@ -715,14 +713,12 @@ std::string RetiredWordSpeech(PromptKind kind,
                               Language language) {
   switch (kind) {
     case PromptKind::kDangerousDownload:
-      return Said(language, "That word changed. To keep it, say {0}.",
-                  {word});
+      return Said(language, "That word changed. To keep it, say {0}.", {word});
     case PromptKind::kConfirmSites:
       return Said(language, "That word changed. To confirm them, say {0}.",
                   {word});
     default:
-      return Said(language, "That word changed. To allow it, say {0}.",
-                  {word});
+      return Said(language, "That word changed. To allow it, say {0}.", {word});
   }
 }
 
@@ -908,13 +904,13 @@ std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply) {
                                {})
                : sites  ? Said(language,
                                "I can't take the word while your screen is "
-                               "shared. Confirm them in the Agent studio, or "
-                               "say no.",
+                                "shared. Confirm them in the Agent studio, or "
+                                "say no.",
                                {})
                         : Said(language,
                                "I can't take the word while your screen is "
-                               "shared. Use the mouse or keyboard, or say "
-                               "no.",
+                                "shared. Use the mouse or keyboard, or say "
+                                "no.",
                                {});
       }
       return download ? Said(language,

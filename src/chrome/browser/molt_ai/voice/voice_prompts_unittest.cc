@@ -389,10 +389,11 @@ TEST(VoicePromptsTest, TheWordSaidInPassing) {
     EXPECT_FALSE(WordSaidInPassing(prompt, heard)) << heard;
   }
   // No word, nothing to retire.
+  EXPECT_FALSE(WordSaidInPassing(Waiting(PromptKind::kPermission),
+                                 "the word is "
+                                 "harbor"));
   EXPECT_FALSE(
-      WordSaidInPassing(Waiting(PromptKind::kPermission), "the word is "
-                                                          "harbor"));
-  EXPECT_FALSE(HoldsConfirmationWord("the word is harbor", "", Language::kEnglish));
+      HoldsConfirmationWord("the word is harbor", "", Language::kEnglish));
   // The word late in a long utterance still counts.
   std::string long_heard;
   for (int i = 0; i < 60; ++i) {

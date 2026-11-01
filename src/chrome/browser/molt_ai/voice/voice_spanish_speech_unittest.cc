@@ -43,19 +43,21 @@ TEST(RelocalizedTest, EnglishIsAlwaysTheTextItself) {
 TEST(RelocalizedTest, AWholeSentenceOrTheKeyItWasMadeFrom) {
   EXPECT_EQ(Relocalized(kEs, "The page tried to open another app."),
             "La página intentó abrir otra aplicación.");
-  EXPECT_EQ(Relocalized(kEs,
-                        Said(kEn, "The page tried to open a new window to {0}.",
-                             {"evil.example"})),
-            "La página intentó abrir una ventana nueva de evil.example.");
   EXPECT_EQ(
-      Relocalized(kEs, Said(kEn, "You have {0} routines called {1}. Choose "
-                                 "another name, or rename them in Agent mode.",
+      Relocalized(kEs, Said(kEn, "The page tried to open a new window to {0}.",
+                            {"evil.example"})),
+      "La página intentó abrir una ventana nueva de evil.example.");
+  EXPECT_EQ(
+      Relocalized(kEs, Said(kEn,
+                            "You have {0} routines called {1}. Choose "
+                            "another name, or rename them in Agent mode.",
                             {"2", "my news"})),
       "Tienes 2 rutinas llamadas my news. Elige otro nombre, o cámbiales el "
       "nombre en el modo agente.");
   // The words in a key's place are inserted as they are, once.
-  EXPECT_EQ(Relocalized(kEs, "Step 3 of this routine isn't one I can do by "
-                             "voice."),
+  EXPECT_EQ(Relocalized(kEs,
+                        "Step 3 of this routine isn't one I can do by "
+                        "voice."),
             "El paso 3 de esta rutina no es uno que pueda hacer por voz.");
   EXPECT_EQ(Relocalized(kEs, "Searching the web for {1}{0}."),
             "Buscando {1}{0} en la web.");
@@ -68,8 +70,9 @@ TEST(RelocalizedTest, OnlyWhatAKeyMade) {
   EXPECT_EQ(Relocalized(kEs, "Queen."), "Queen.");
   // The key with the most text of its own wins ("I stopped: {0}. Say
   // ..." over "{0}. Say ..."-like shorter ones).
-  EXPECT_EQ(Relocalized(kEs, "I stopped: no network. Say what can I say to "
-                             "hear the commands I know."),
+  EXPECT_EQ(Relocalized(kEs,
+                        "I stopped: no network. Say what can I say to "
+                        "hear the commands I know."),
             "Me he detenido: no network. Di qué puedo decir para oír las "
             "órdenes que conozco.");
   // Too long to match: as it is.
@@ -101,7 +104,8 @@ TEST(SpanishWakePhraseTest, GatedOnASpanishRecognizer) {
   }
 }
 
-// --- Routines and learning ----------------------------------------------------
+// --- Routines and learning
+// ----------------------------------------------------
 
 RoutineStep StepOf(VoiceCommand command) {
   RoutineStep step;
@@ -196,8 +200,8 @@ TEST(SpanishRoutinesTest, TheLoopsRoutineSentencesInSpanish) {
                                  ConversationState())),
             "Tienes 2 rutinas: mis noticias y trenes. Di ejecuta y luego su "
             "nombre.");
-  EXPECT_EQ(SaidIn(PlanUtterance("ejecuta la rutina del tiempo", PageMap(),
-                                 env, ConversationState())),
+  EXPECT_EQ(SaidIn(PlanUtterance("ejecuta la rutina del tiempo", PageMap(), env,
+                                 ConversationState())),
             "No tengo ninguna rutina llamada del tiempo. Di cuáles son mis "
             "rutinas.");
   env.learning.this_steps = {"abre YouTube", "busca noticias"};
@@ -208,8 +212,7 @@ TEST(SpanishRoutinesTest, TheLoopsRoutineSentencesInSpanish) {
   EXPECT_NE(said.find("Recordaré: abre YouTube y busca noticias."),
             std::string::npos)
       << said;
-  EXPECT_NE(said.find("Di sí para guardarla como el tiempo"),
-            std::string::npos)
+  EXPECT_NE(said.find("Di sí para guardarla como el tiempo"), std::string::npos)
       << said;
   // English says what it always did.
   VoiceEnvironment english = env;
@@ -230,8 +233,9 @@ TEST(SpanishGuardTest, QuestionsAndNoticesAreSaidInSpanish) {
   const activation::Question window =
       activation::QuestionFor(Request::kNewWindow, "www.evil.example", "");
   // English as it always was.
-  EXPECT_EQ(window.said, "The page tried to open a new window to "
-                         "evil.example.");
+  EXPECT_EQ(window.said,
+            "The page tried to open a new window to "
+            "evil.example.");
   EXPECT_EQ(window.verb, "open it");
   EXPECT_EQ(Relocalized(kEs, window.said),
             "La página intentó abrir una ventana nueva de evil.example.");
@@ -249,10 +253,9 @@ TEST(SpanishGuardTest, QuestionsAndNoticesAreSaidInSpanish) {
                                  Request::kPermissionPrompt, "camera")),
             "La página pidió el permiso de camera. Ahora no puedo aceptar una "
             "respuesta a eso por voz, así que lo he rechazado.");
-  for (Request request :
-       {Request::kFullScreen, Request::kClipboardWrite,
-        Request::kPictureInPicture, Request::kNewWindow, Request::kDownload,
-        Request::kExternalApp}) {
+  for (Request request : {Request::kFullScreen, Request::kClipboardWrite,
+                          Request::kPictureInPicture, Request::kNewWindow,
+                          Request::kDownload, Request::kExternalApp}) {
     const std::string english = activation::RefusalNotice(request, "");
     EXPECT_NE(Relocalized(kEs, english), english) << english;
   }

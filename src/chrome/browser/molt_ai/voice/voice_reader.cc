@@ -75,11 +75,14 @@ void VoiceReader::Run(ReadOp op,
 
     case ReadOp::kResume:
       if (!same_page) {
-        Say(Localized(language_, "There's nothing to go on with here. Say read the page."));
+        Say(Localized(
+            language_,
+            "There's nothing to go on with here. Say read the page."));
         return;
       }
       if (queue_.finished()) {
-        Say(Localized(language_, "That was the end. Say read the page to hear it again."));
+        Say(Localized(language_,
+                      "That was the end. Say read the page to hear it again."));
         return;
       }
       ReadFrom(queue_.position(), queue_.end_block(), what_);
@@ -90,7 +93,9 @@ void VoiceReader::Run(ReadOp op,
       const std::optional<std::string> text =
           SelectedText(tree, kMaxSelectionChars, ReadingLimits());
       if (!text) {
-        Say(Localized(language_, "Nothing is selected. Select some text, or say read the page."));
+        Say(Localized(
+            language_,
+            "Nothing is selected. Select some text, or say read the page."));
         return;
       }
       queue_.Start(TextDocument(*text), {0, 0}, 1);
@@ -204,13 +209,13 @@ void VoiceReader::Move(ReadingUnit unit, bool forward, int64_t page_id) {
     for (const ReadingBlock& block : document.blocks) {
       any = any || (block.kind == ReadingBlockKind::kHeading) == heading;
     }
-    Say(Localized(language_,
-                  !any      ? (heading ? "This page has no headings."
-                                       : "This page has no paragraphs.")
-                  : forward ? (heading ? "That's the last heading."
-                                       : "That's the last paragraph.")
-                            : (heading ? "That's the first heading."
-                                       : "That's the first paragraph.")));
+    Say(Localized(language_, !any ? (heading ? "This page has no headings."
+                                             : "This page has no paragraphs.")
+                             : forward
+                                 ? (heading ? "That's the last heading."
+                                            : "That's the last paragraph.")
+                                 : (heading ? "That's the first heading."
+                                            : "That's the first paragraph.")));
     return;
   }
   queue_.set_current_block(static_cast<int>(*to));
@@ -262,9 +267,9 @@ void VoiceReader::Section(std::string_view name, int64_t page_id) {
   }
   std::string sections;
   for (size_t i = 0; i < listed.size(); ++i) {
-    sections += (i ? ", " : "") +
-                SpeechSafeText(document.blocks[listed[i]].text,
-                               kMaxSpokenPageTextChars);
+    sections +=
+        (i ? ", " : "") + SpeechSafeText(document.blocks[listed[i]].text,
+                                         kMaxSpokenPageTextChars);
   }
   Say(close.empty()
           ? Said(language_,

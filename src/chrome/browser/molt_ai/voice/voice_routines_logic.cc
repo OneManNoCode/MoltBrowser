@@ -27,8 +27,8 @@ constexpr std::string_view kOrdinals[] = {
 };
 // Spanish's, masculine (what is chosen is "el primero", whatever it is).
 constexpr std::string_view kOrdinalsEs[] = {
-    "primero", "segundo", "tercero", "cuarto",  "quinto",
-    "sexto",   "séptimo", "octavo",  "noveno",  "décimo",
+    "primero", "segundo", "tercero", "cuarto", "quinto",
+    "sexto",   "séptimo", "octavo",  "noveno", "décimo",
 };
 
 // Words the user said, as part of a sentence the browser says.
@@ -171,10 +171,9 @@ std::string DescribeAgentStep(const RoutineStep& step, Language language) {
                  ? Said(language, "open a page", {})
                  : Said(language, "open {0}", {UserWords(step.host)});
     case PlannerStep::Action::kSearch:
-      return a.query.empty()
-                 ? Said(language, "search the web", {})
-                 : Said(language, "search the web for {0}",
-                        {UserWords(a.query)});
+      return a.query.empty() ? Said(language, "search the web", {})
+                             : Said(language, "search the web for {0}",
+                                    {UserWords(a.query)});
     case PlannerStep::Action::kClick:
       return Said(language, "click {0}", {element});
     case PlannerStep::Action::kType:
@@ -568,12 +567,11 @@ std::string JoinSpokenList(const std::vector<std::string>& items,
   for (size_t i = 0; i < items.size(); ++i) {
     if (i > 0) {
       // Spanish's "y" is "e" before an "i" sound ("tomate e higos").
-      const bool e = language == Language::kSpanish && i + 1 == items.size() &&
-                     (items[i].rfind("i", 0) == 0 || items[i].rfind("I", 0) == 0 ||
-                      items[i].rfind("hi", 0) == 0 ||
-                      items[i].rfind("Hi", 0) == 0) &&
-                     items[i].rfind("hie", 0) != 0 &&
-                     items[i].rfind("Hie", 0) != 0;
+      const bool e =
+          language == Language::kSpanish && i + 1 == items.size() &&
+          (items[i].rfind("i", 0) == 0 || items[i].rfind("I", 0) == 0 ||
+           items[i].rfind("hi", 0) == 0 || items[i].rfind("Hi", 0) == 0) &&
+          items[i].rfind("hie", 0) != 0 && items[i].rfind("Hie", 0) != 0;
       out += i + 1 == items.size() ? (e ? std::string(" e ") : last) : ", ";
     }
     out += items[i];
@@ -760,7 +758,8 @@ std::string RoutineRecorder::refusal() const {
   for (const RoutineStep& step : steps_) {
     if (IsUnkeptStep(step)) {
       return step.agent.why.empty()
-                 ? std::string(SaidLater("one of the AI's steps can't be repeated."))
+                 ? std::string(
+                       SaidLater("one of the AI's steps can't be repeated."))
                  : step.agent.why;
     }
   }

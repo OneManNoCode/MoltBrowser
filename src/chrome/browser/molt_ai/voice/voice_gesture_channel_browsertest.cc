@@ -285,8 +285,9 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
   const std::string word = Prompts(voice)->current_word_for_testing();
   ASSERT_TRUE(MatchConfirmationWord(word)) << word;
   voice->HandleHeardUtterance("the word is " + word, /*heard_cleanly=*/true);
-  EXPECT_TRUE(WaitForSpeech("Something else may have heard you say the word, "
-                            "so I changed it."));
+  EXPECT_TRUE(
+      WaitForSpeech("Something else may have heard you say the word, "
+                    "so I changed it."));
   const std::string next = Prompts(voice)->current_word_for_testing();
   ASSERT_TRUE(MatchConfirmationWord(next)) << next;
   EXPECT_NE(next, word);
