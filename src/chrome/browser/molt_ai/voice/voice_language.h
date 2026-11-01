@@ -61,12 +61,20 @@ struct PlatformVoice {
 // computer (never a remote one, which would send the text off it) whose
 // language is |language|, the one of |tag|'s region first ("es-MX"), then
 // any of the language, in the platform's order. nullopt when there is none:
-// the platform's default voice then reads the text, with its own
-// language's sounds, and the settings page says so.
+// a voice of this computer in another language then reads the text, with
+// its own language's sounds (PickLocalVoice()), and the settings page says
+// so.
 std::optional<size_t> PickPlatformVoice(
     const std::vector<PlatformVoice>& voices,
     Language language,
     std::string_view tag);
+
+// The voice that reads text in a language this computer has no voice for:
+// a voice on this computer (never a remote one), of |ui_locale|'s language
+// first ("en-GB": any English one), else the first, in the platform's
+// order. nullopt when the computer has none.
+std::optional<size_t> PickLocalVoice(const std::vector<PlatformVoice>& voices,
+                                     std::string_view ui_locale);
 
 }  // namespace voice
 }  // namespace molt_ai

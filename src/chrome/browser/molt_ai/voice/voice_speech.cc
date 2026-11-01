@@ -389,14 +389,22 @@ void VoiceSpeech::SpeakWithPlatform() {
     // A voice of the language on this computer (never a remote one).
     std::vector<content::VoiceData> voices;
     controller->GetVoices(context_.get(), GURL(), &voices);
-    if (const std::optional<size_t> voice = PickPlatformVoice(
-            PlatformVoices(voices), language_, language_tag_)) {
+    const std::vector<PlatformVoice> platform = PlatformVoices(voices);
+    std::optional<size_t> voice =
+        PickPlatformVoice(platform, language_, language_tag_);
+    if (!voice) {
+      if (!said_no_voice_) {
+        said_no_voice_ = true;
+        LOG(WARNING) << "[MoltVoice] no " << LanguageCode(language_)
+                     << " voice on this computer: another of its voices "
+                        "reads voice mode's answers";
+      }
+      // Named, so the speech engine doesn't pick a remote voice of the
+      // language (which would send the text off the computer).
+      voice = PickLocalVoice(platform, ui_locale_);
+    }
+    if (voice) {
       utterance->SetVoiceName(voices[*voice].name);
-    } else if (!said_no_voice_) {
-      said_no_voice_ = true;
-      LOG(WARNING) << "[MoltVoice] no " << LanguageCode(language_)
-                   << " voice on this computer: the platform's default voice "
-                      "reads voice mode's answers";
     }
   }
   utterance->SetContinuousParameters(next.rate, /*pitch=*/1.0,

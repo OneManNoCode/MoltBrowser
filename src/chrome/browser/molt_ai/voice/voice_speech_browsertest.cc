@@ -12,7 +12,8 @@
 // once; a helper that crashes or breaks the protocol is restarted, what it
 // hadn't said is said by the platform's voice, and after two failures the
 // platform's voices speak; without a bundled voice, the platform's voices
-// speak.
+// speak; a language the computer has no voice of is never read by a remote
+// voice.
 //
 // Linux and macOS: on Windows the helper's AppContainer reads only the
 // folders MoltBrowser's installer grants, which a test binary's isn't.
@@ -21,6 +22,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -34,6 +36,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_bundled.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_protocol.h"
 #include "chrome/browser/profiles/profile.h"
@@ -58,6 +61,12 @@ class RecordingTtsPlatform : public content::TtsPlatform {
   ~RecordingTtsPlatform() = default;
 
   const std::vector<std::string>& spoken() const { return spoken_; }
+  // The voice each utterance was said with.
+  const std::vector<std::string>& voices_used() const { return voices_used_; }
+  // Lists |voice| after the platform's own.
+  void AddVoice(content::VoiceData voice) {
+    extra_voices_.push_back(std::move(voice));
+  }
 
   // content::TtsPlatform:
   bool PlatformImplSupported() override { return true; }
@@ -70,6 +79,7 @@ class RecordingTtsPlatform : public content::TtsPlatform {
              const content::UtteranceContinuousParameters& params,
              base::OnceCallback<void(bool)> did_start_speaking) override {
     spoken_.push_back(utterance);
+    voices_used_.push_back(voice.name);
     std::move(did_start_speaking).Run(true);
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
@@ -92,6 +102,8 @@ class RecordingTtsPlatform : public content::TtsPlatform {
     voice.native = true;
     voice.events = {content::TTS_EVENT_START, content::TTS_EVENT_END};
     out_voices->push_back(voice);
+    out_voices->insert(out_voices->end(), extra_voices_.begin(),
+                       extra_voices_.end());
   }
   void Pause() override {}
   void Resume() override {}
@@ -107,6 +119,8 @@ class RecordingTtsPlatform : public content::TtsPlatform {
 
  private:
   std::vector<std::string> spoken_;
+  std::vector<std::string> voices_used_;
+  std::vector<content::VoiceData> extra_voices_;
 };
 
 class VoiceSpeechBrowserTest : public InProcessBrowserTest {
@@ -289,6 +303,26 @@ IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest, WithoutTheVoiceThePlatforms) {
   EXPECT_EQ("Voice mode is on.", tts_.spoken()[0]);
   EXPECT_EQ(nullptr, speech_->bundled_for_testing());
   EXPECT_FALSE(speech_->InEchoReference());
+}
+
+// A language the computer has no voice of is read by one of its own
+// voices, never by a remote voice of the language (which would send the
+// text off the computer).
+IN_PROC_BROWSER_TEST_F(VoiceSpeechBrowserTest, NeverARemoteVoice) {
+  BundledVoice::SetPathsForTesting(std::nullopt);
+  content::VoiceData remote;
+  remote.name = "Remote Spanish voice";
+  remote.lang = "es-ES";
+  remote.remote = true;
+  remote.events = {content::TTS_EVENT_START, content::TTS_EVENT_END};
+  tts_.AddVoice(remote);
+  speech_ = std::make_unique<VoiceSpeech>(browser()->GetProfile());
+  speech_->SetActive(true);
+  speech_->SetLanguage(Language::kSpanish, "en-US");
+  speech_->Speak("Hola.", 1.0, true);
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !tts_.spoken().empty(); }));
+  EXPECT_EQ("Hola.", tts_.spoken()[0]);
+  EXPECT_EQ("Fake voice", tts_.voices_used()[0]);
 }
 
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
