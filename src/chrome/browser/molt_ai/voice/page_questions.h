@@ -79,12 +79,20 @@ struct PageQuestion {
   // The question as heard ("who wrote this"), or the topic for kTopic ("the
   // battery"): speech-safe, at most kMaxPageQuestionBytes.
   std::string text;
+  // The language it was asked in: its words are matched as that language's
+  // (its own words that say nothing, "¿quién lo escribió?" -> "por"), the
+  // model is asked to answer in it, and the browser's sentences around the
+  // answer are said in it.
+  Language language = Language::kEnglish;
 };
 
 // |kind| and |text| from the grammar (VoiceCommand::page_question and
 // ::text), cleaned and capped. kMore is kept as it is (the caller looks up
 // the question it follows).
 PageQuestion MakePageQuestion(PageQuestionKind kind, std::string_view text);
+PageQuestion MakePageQuestion(PageQuestionKind kind,
+                              std::string_view text,
+                              Language language);
 
 // How much of the page goes to the model.
 struct PageTextBudget {
@@ -182,6 +190,10 @@ struct PageQuestionPrompt {
 
 // The fixed instruction the model gets.
 std::string_view PageQuestionInstruction();
+// The same for a question asked in |language|: in Spanish, also to write
+// the answer in Spanish (in the system prompt, outside the page's fence,
+// whatever the page says).
+std::string PageQuestionInstruction(Language language);
 
 // The question as it is put to the model ("What does the page say about
 // the battery?"), one line, sanitized: the user's words can't open or
@@ -234,6 +246,9 @@ std::string CleanAnswerText(std::string_view text);
 // also run together into one word ("HeyMolt", which a voice says apart),
 // and with Greek or Cyrillic letters that look like the Latin ones.
 bool HoldsWakePhrase(std::string_view text);
+// The same in |language|: English's wake phrase, and the language's own
+// ("Oye Molt", "hola mol", within its grammar's margin) in Spanish.
+bool HoldsWakePhrase(std::string_view text, Language language);
 
 }  // namespace voice
 }  // namespace molt_ai

@@ -551,6 +551,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   waits for a Spanish speech model that can be shipped with MoltBrowser;
   until then commands typed in Agent mode work, and voice mode says why
   it doesn't open the microphone. English is unchanged.
+- **Everything voice mode says, in Spanish** (round 44, spanish-prompts;
+  `docs/design/TOUCHLESS_BROWSING.md` §4.1, §7.3): the browser's prompts
+  and a page's dialogs, with Spanish confirmation words ("Para
+  permitirlo, di manzana.") and Spanish answers ("bloquéalo", "quédate",
+  "descarta", "nunca"), routines and learning ("Ejecutando mis noticias.
+  Paso 1: abre YouTube."), reading aloud, the activation guard's
+  questions, the planner's steps, and questions about the page, which the
+  on-device AI is asked to answer in Spanish. "Oye Molt" is ready as
+  Spanish's wake phrase for when Spanish can listen. As hardening, the
+  confirmation word is changed when it is said in passing (inside a
+  sentence, or unclearly) while something could record it. A check in CI
+  keeps every sentence voice mode says in the Spanish catalog. English is
+  unchanged.
 - **Voice mode learns from use, on this device** (round 41, learning;
   `docs/design/TOUCHLESS_BROWSING.md` §6.8): "remember this as my news"
   saves what you just did by voice as a routine (an Agent-mode workflow,

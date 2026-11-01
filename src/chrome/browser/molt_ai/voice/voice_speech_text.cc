@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 
 namespace molt_ai {
 namespace voice {
@@ -128,6 +129,10 @@ std::string SpokenLength(int seconds, Language language) {
 }
 
 std::string SpokenCount(std::string_view text) {
+  return SpokenCount(text, Language::kEnglish);
+}
+
+std::string SpokenCount(std::string_view text, Language language) {
   const std::string cleaned = PageText(text);
   std::optional<ParsedCount> count = ParseCount(cleaned);
   // Past a thousand trillion it is read as shown (and Scaled() can't
@@ -137,6 +142,29 @@ std::string SpokenCount(std::string_view text) {
     return cleaned;
   }
   const int64_t v = count->value;
+  if (language == Language::kSpanish) {
+    // A decimal comma, "mil" for thousands, and "de" after "millones":
+    // "1,2 millones de visualizaciones", "15 mil suscriptores".
+    auto comma = [](std::string number) {
+      std::replace(number.begin(), number.end(), '.', ',');
+      return number;
+    };
+    std::string number;
+    bool of = false;
+    if (v >= 1000000000) {
+      number = comma(Scaled(v, 1000000000)) + " mil millones";
+      of = true;
+    } else if (v >= 1000000) {
+      const std::string scaled = comma(Scaled(v, 1000000));
+      number = scaled + (scaled == "1" ? " millón" : " millones");
+      of = true;
+    } else if (v >= 10000) {
+      number = comma(Scaled(v, 1000)) + " mil";
+    } else {
+      number = std::to_string(v);
+    }
+    return number + (of ? " de " : " ") + count->unit;
+  }
   std::string number;
   if (v >= 1000000000) {
     number = Scaled(v, 1000000000) + " billion";
@@ -165,6 +193,12 @@ std::string PageText(std::string_view text) {
 
 std::string SpokenCandidate(const ChoiceCandidate& candidate,
                             Verbosity verbosity) {
+  return SpokenCandidate(candidate, verbosity, Language::kEnglish);
+}
+
+std::string SpokenCandidate(const ChoiceCandidate& candidate,
+                            Verbosity verbosity,
+                            Language language) {
   std::string out = PageText(candidate.title);
   if (const std::string* author =
           FieldOf(candidate, ChoiceFieldKind::kAuthor)) {
@@ -176,7 +210,8 @@ std::string SpokenCandidate(const ChoiceCandidate& candidate,
   if (const std::string* duration =
           FieldOf(candidate, ChoiceFieldKind::kDuration)) {
     std::optional<int> seconds = ParseDuration(*duration);
-    AppendPart(out, seconds ? SpokenDuration(*seconds) : PageText(*duration));
+    AppendPart(out, seconds ? SpokenDuration(*seconds, language)
+                            : PageText(*duration));
   }
   if (verbosity == Verbosity::kFull) {
     size_t read = 0;
@@ -192,7 +227,7 @@ std::string SpokenCandidate(const ChoiceCandidate& candidate,
           ++read;
           break;
         case ChoiceFieldKind::kCount:
-          AppendPart(out, SpokenCount(field.text));
+          AppendPart(out, SpokenCount(field.text, language));
           ++read;
           break;
         case ChoiceFieldKind::kAuthor:
@@ -203,7 +238,7 @@ std::string SpokenCandidate(const ChoiceCandidate& candidate,
     }
   }
   if (out.empty()) {
-    out = "untitled";
+    out = Localized(language, "untitled");
   }
   return out;
 }
@@ -285,7 +320,7 @@ std::vector<std::string> ListSpeech(const CandidateSet& set,
   for (size_t i = 0; i < read; ++i) {
     const ChoiceCandidate& candidate = set.candidates[i];
     sentences.push_back(std::to_string(SpokenNumber(candidate)) + ": " +
-                        SpokenCandidate(candidate, verbosity) + ".");
+                        SpokenCandidate(candidate, verbosity, language) + ".");
   }
   if (!set.empty()) {
     sentences.emplace_back(ChooseHint(language));
@@ -310,7 +345,8 @@ std::vector<std::string> OfferSpeech(const CandidateSet& subset,
     }
     sentence.append(std::to_string(SpokenNumber(subset.candidates[i])));
     sentence.append(": ");
-    sentence.append(SpokenCandidate(subset.candidates[i], Verbosity::kNormal));
+    sentence.append(
+        SpokenCandidate(subset.candidates[i], Verbosity::kNormal, language));
     sentence.append(i + 1 == subset.size() ? "?" : ",");
     sentences.push_back(std::move(sentence));
   }

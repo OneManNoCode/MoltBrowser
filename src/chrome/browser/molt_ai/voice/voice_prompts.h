@@ -56,6 +56,14 @@
 // utterance that is one of its answers answers it (ParsePromptReply());
 // anything else is a command as usual and the prompt keeps waiting until
 // its window ends.
+//
+// Each prompt is said, and its answers heard, in its language
+// (BrowserPrompt::language, PendingPrompt::language; voice_language.h):
+// every sentence is a whole one of the catalog (spoken_answers.h, English
+// as it always was), and Spanish takes Spanish answers ("bloquea",
+// "quédate", "descarta", "guarda", "nunca", "ahora no", "responde ...") and
+// Spanish's confirmation words (voice_gesture.h): "ejemplo.com quiere usar
+// tu cámara. Para permitirlo, di manzana. Para bloquearlo, di no."
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_PROMPTS_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_PROMPTS_H_
@@ -66,6 +74,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
 
 namespace molt_ai {
 namespace voice {
@@ -100,6 +110,10 @@ std::string_view PromptKindName(PromptKind kind);
 // Whether answering "allow" to |kind| needs the voice gesture.
 bool NeedsGesture(PromptKind kind);
 
+// What stands for the word in its twin, in |language|: kWordOnScreen ("the
+// word on your screen"), "la palabra que ves en la pantalla".
+std::string_view WordOnScreen(Language language);
+
 // What the browser knows about a prompt it reads (its own words and the
 // page's).
 struct BrowserPrompt {
@@ -111,11 +125,13 @@ struct BrowserPrompt {
   BrowserPrompt& operator=(BrowserPrompt&&);
 
   PromptKind kind = PromptKind::kAlert;
+  // What it is said in (the window's voice language).
+  Language language = Language::kEnglish;
   // The host the prompt is for (the requesting origin's, the dialog
   // frame's, the download's); cleaned here.
   std::string site;
-  // kPermission: what is asked, in the browser's words ("use your camera",
-  // "show notifications"); letters and spaces kept.
+  // kPermission: what is asked, in the browser's words and |language|
+  // ("use your camera", "usar tu cámara"); letters and spaces kept.
   std::string what;
   // A dialog's message, or a download's file name: page text.
   std::string text;
@@ -139,9 +155,10 @@ struct BrowserPrompt {
   std::string preface;
 };
 
-// What the browser says for |prompt|. |word| is the voice gesture's word
-// when allowing needs one and the gesture is on; empty otherwise. The same
-// with kWordOnScreen for |word| is its twin without the word.
+// What the browser says for |prompt|, in its language. |word| is the voice
+// gesture's word when allowing needs one and the gesture is on; empty
+// otherwise. The same with WordOnScreen() for |word| is its twin without
+// the word.
 std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word);
 
 // How long a prompt of |kind| waits: kPromptWindowMs for the browser's
@@ -151,26 +168,35 @@ inline constexpr int64_t kDialogWindowMs = 10 * 60 * 1000;
 int64_t PromptWindowMs(PromptKind kind);
 
 // What is said when the prompt's window ended without an answer (empty:
-// nothing).
+// nothing). Each of these has a |language| form; the one without says it
+// in English.
 std::string PromptTimeoutSpeech(PromptKind kind);
+std::string PromptTimeoutSpeech(PromptKind kind, Language language);
 
 // What is said when the word was heard but not cleanly (over the
 // browser's own voice, or while another source spoke).
 std::string NotCleanSpeech(std::string_view word);
+std::string NotCleanSpeech(std::string_view word, Language language);
 
 // Said before a prompt read again with a new word, by why the word it had
 // was retired.
 enum class WordRetired : uint8_t {
   kNotClean,       // heard, not cleanly, while something captured
+  kSaidAloud,      // said in passing (unsure, or inside a sentence) while
+                   // something captured
   kAudioCaptured,  // a microphone capture began after it was said
   kScreenShared,   // the screen or a window is captured now
   kScreenFreed,    // no longer: the prompt gets a word again
 };
 std::string WordRetiredPreface(WordRetired why);
+std::string WordRetiredPreface(WordRetired why, Language language);
 
 // What is said when a word the prompt had before was heard: |word| is its
-// word now (or kWordOnScreen).
+// word now (or WordOnScreen()).
 std::string RetiredWordSpeech(PromptKind kind, std::string_view word);
+std::string RetiredWordSpeech(PromptKind kind,
+                              std::string_view word,
+                              Language language);
 
 // What the browser says with the voice gesture's word, and its twin
 // without it (kWordOnScreen in its place).
@@ -193,6 +219,9 @@ struct PendingPrompt {
   // The browser's id for it; 0: none waits.
   int id = 0;
   PromptKind kind = PromptKind::kAlert;
+  // What it was said in: its answers are heard, and its replies said, in
+  // it.
+  Language language = Language::kEnglish;
   // The voice gesture's word, when allowing needs one and the gesture is
   // on.
   std::string word;
@@ -246,9 +275,23 @@ struct PromptReply {
   std::string text;
 };
 
-// |heard| (the wake phrase removed) while |prompt| waits.
+// |heard| (the wake phrase removed) while |prompt| waits, in its language.
 PromptReply ParsePromptReply(const PendingPrompt& prompt,
                              std::string_view heard);
+
+// Whether |heard|, said into the microphone while |prompt| waits, said its
+// word without answering the prompt with it: it holds the word inside a
+// sentence ("the word is harbor": HoldsConfirmationWord()), or sounds like
+// a confirmation word without being one for sure. When something could
+// have recorded it (WordExposed()), the word is retired
+// (WordRetired::kSaidAloud), as a word heard but not cleanly is. A word of
+// the list said as an answer (the prompt's, another, a retired one) is
+// answered as such instead (GestureBook::Hear()).
+bool WordSaidInPassing(const PendingPrompt& prompt, std::string_view heard);
+
+// Every answer |language|'s prompts take, folded ("block it", "bloquéalo"
+// as "bloquealo"): none is heard as a confirmation word (unit-tested).
+std::vector<std::string_view> PromptAnswerPhrases(Language language);
 
 // What the browser says after |reply| answered |prompt| (|reply|'s text for
 // a dictated answer: "Your answer: ... Say yes to send it, or no to

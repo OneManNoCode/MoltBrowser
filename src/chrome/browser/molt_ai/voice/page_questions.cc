@@ -15,7 +15,9 @@
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/phonetic_key.h"
+#include "chrome/browser/molt_ai/voice/phonetic_key_es.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_phrases.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
@@ -106,6 +108,31 @@ constexpr std::array<RelatedWords, 3> kRelated = {{
      {"published", "updated", "posted", "date"}},
 }};
 
+// A question asked in Spanish (folded, sorted): its words that say nothing
+// about what it asks, and the words its answer tends to have ("¿Quién lo
+// escribió?": "Por Ana Ruiz").
+constexpr std::string_view kStopwordsEs[] = {
+    "a",    "acerca", "al",     "algo", "alguna", "alguno", "como",  "con",
+    "cual", "cuales", "de",     "del",  "dice",   "dicen",  "donde", "el",
+    "ella", "ellas",  "ellos",  "en",   "es",     "esa",    "ese",   "eso",
+    "esta", "este",   "esto",   "fue",  "ha",     "han",    "hay",   "la",
+    "las",  "le",     "les",    "lo",   "los",    "mas",    "me",    "menciona",
+    "mi",   "mis",    "pagina", "para", "pero",   "por",    "que",   "se",
+    "ser",  "sitio",  "sobre",  "son",  "su",     "sus",    "te",    "texto",
+    "tu",   "un",     "una",    "uno",  "web",    "y",      "ya",
+};
+static_assert(std::is_sorted(std::begin(kStopwordsEs), std::end(kStopwordsEs)));
+constexpr std::array<RelatedWords, 3> kRelatedEs = {{
+    {{"autor", "autora", "autores", "escribio", "escrito", "escritor", "quien"},
+     {"por", "autor", "escrito", "autora"}},
+    // "€" is a currency sign, as "$" is.
+    {{"precio", "precios", "cuesta", "cuestan", "coste", "cuanto", "pagar"},
+     {"precio", "coste", "$", "eur"}},
+    {{"cuando", "fecha", "publico", "publicado", "publicada", "actualizado",
+      "actualizada"},
+     {"publicado", "actualizado", "fecha", "publicada"}},
+}};
+
 constexpr char kAnswerSchema[] =
     R"({"type":"object","properties":{"found":{"type":"boolean"},)"
     R"("answer":{"type":"string","maxLength":420}},)"
@@ -126,14 +153,18 @@ constexpr char kInstruction[] =
     "Reply only with JSON: {\"found\": true or false, \"answer\": \"your "
     "answer\"}.";
 
-constexpr char kPreface[] = "The page says: ";
-constexpr char kNotOnPage[] = "The page doesn't say.";
-constexpr char kWithheld[] =
-    "The page's text tried to make me say a voice command, so I left its "
-    "answer out.";
-constexpr char kNoAnswer[] = "I couldn't get an answer from the page.";
+// The browser's rule for a person who listens in Spanish, after the rest of
+// the system prompt (never inside the page's fence, nor next to the
+// question: the system prompt is the browser's alone).
+constexpr char kAnswerInSpanish[] =
+    "\nThe person listening speaks Spanish: write the answer in Spanish, "
+    "whatever language the page and the question are in.";
 
-bool IsStopword(std::string_view word) {
+bool IsStopword(std::string_view word, Language language) {
+  if (language == Language::kSpanish) {
+    return std::binary_search(std::begin(kStopwordsEs), std::end(kStopwordsEs),
+                              word);
+  }
   return std::binary_search(std::begin(kStopwords), std::end(kStopwords), word);
 }
 
@@ -287,6 +318,8 @@ Query QueryFor(const PageQuestion& question) {
   options.max_words = kMaxQuestionWords;
   const NormalizedText words = NormalizeSpokenText(question.text, options);
   Query query;
+  const std::array<RelatedWords, 3>& related_words =
+      question.language == Language::kSpanish ? kRelatedEs : kRelated;
   std::array<bool, kRelated.size()> related = {};
   size_t own = 0;
   std::string scratch;
@@ -295,12 +328,12 @@ Query QueryFor(const PageQuestion& question) {
     if (word.empty() || word.size() > kMaxTermBytes) {
       continue;
     }
-    for (size_t r = 0; r < kRelated.size(); ++r) {
-      for (std::string_view trigger : kRelated[r].triggers) {
+    for (size_t r = 0; r < related_words.size(); ++r) {
+      for (std::string_view trigger : related_words[r].triggers) {
         related[r] = related[r] || (!trigger.empty() && word == trigger);
       }
     }
-    if (IsStopword(word) || own >= kMaxQueryTerms) {
+    if (IsStopword(word, question.language) || own >= kMaxQueryTerms) {
       continue;
     }
     const size_t before = query.terms.size();
@@ -308,11 +341,11 @@ Query QueryFor(const PageQuestion& question) {
     own += query.terms.size() > before ? 1 : 0;
   }
   // The words the answer tends to be written in, counting for less.
-  for (size_t r = 0; r < kRelated.size(); ++r) {
+  for (size_t r = 0; r < related_words.size(); ++r) {
     if (!related[r]) {
       continue;
     }
-    for (std::string_view word : kRelated[r].related) {
+    for (std::string_view word : related_words[r].related) {
       query.Add(word, kExtraWeight);
     }
   }
@@ -594,6 +627,14 @@ PageQuestion MakePageQuestion(PageQuestionKind kind, std::string_view text) {
   return question;
 }
 
+PageQuestion MakePageQuestion(PageQuestionKind kind,
+                              std::string_view text,
+                              Language language) {
+  PageQuestion question = MakePageQuestion(kind, text);
+  question.language = language;
+  return question;
+}
+
 PageTextBudget PageTextBudgetFor(uint32_t context_tokens) {
   PageTextBudget budget;
   // The instruction, the question, the template and the answer.
@@ -734,6 +775,14 @@ std::string_view PageQuestionInstruction() {
   return kInstruction;
 }
 
+std::string PageQuestionInstruction(Language language) {
+  std::string instruction(kInstruction);
+  if (language == Language::kSpanish) {
+    instruction += kAnswerInSpanish;
+  }
+  return instruction;
+}
+
 std::string QuestionForModel(const PageQuestion& question, bool more) {
   // One line, without anything that could pass for the fence or a chat
   // template's tokens.
@@ -804,7 +853,7 @@ PageQuestionPrompt BuildPageQuestionPrompt(const PageQuestion& question,
     where = "More passages of the page:";
   }
   PageQuestionPrompt prompt;
-  prompt.system_prompt = kInstruction;
+  prompt.system_prompt = PageQuestionInstruction(question.language);
   prompt.user_message = where + "\n" + agent_safety::FenceUntrustedText(page) +
                         "\n\nQuestion: " + QuestionForModel(question, more);
   return prompt;
@@ -944,20 +993,38 @@ std::string CleanAnswerText(std::string_view text) {
   return SpeechSafeText(capped, kMaxPageAnswerChars + 1);
 }
 
-bool HoldsWakePhrase(std::string_view text) {
-  const LanguagePhrases& p = PhrasesFor(Language::kEnglish);
+namespace {
+
+// HoldsWakePhrase() for one language's wake phrase (|p|'s greetings and
+// name, its names heard as its grammar hears them: SoundsAlike() in
+// voice_command.cc).
+bool HoldsWakePhraseIn(std::string_view text, const LanguagePhrases& p) {
   // The wake phrase's last word is its name ("molt").
   const std::string_view phrase = p.default_wake_phrase;
   const std::string_view name = phrase.substr(phrase.rfind(' ') + 1);
-  const std::string name_key = PhoneticKey(name);
-  // The name, a word that sounds like it ("mold", "moult", "molts"), or one
-  // that begins with it ("moltbrowser").
+  const std::string name_key = PhoneticKeyFor(p.language, name);
+  // The name, a word that sounds like it ("mold", "moult", "molts"; in
+  // Spanish within the grammar's margin: "mol", "molde"), or one that
+  // begins with it ("moltbrowser").
   const auto is_name = [&](std::string_view word) {
     const bool near_length =
         word.size() + 1 >= name.size() && word.size() <= name.size() + 2;
-    return !name.empty() &&
-           (word.starts_with(name) || (near_length && !name_key.empty() &&
-                                       PhoneticKey(word) == name_key));
+    if (name.empty()) {
+      return false;
+    }
+    if (word.starts_with(name)) {
+      return true;
+    }
+    if (!near_length || name_key.empty()) {
+      return false;
+    }
+    const std::string key = PhoneticKeyFor(p.language, word);
+    if (p.wake_sound_margin > 0) {
+      return !key.empty() &&
+             PhoneticDistance(key, name_key, p.wake_sound_margin) <=
+                 p.wake_sound_margin;
+    }
+    return key == name_key;
   };
   // A greeting of two letters or more ("hey", "ok", "hello"; not "a",
   // which the grammar takes for a misheard "hey" but which is everywhere
@@ -997,11 +1064,26 @@ bool HoldsWakePhrase(std::string_view text) {
   return false;
 }
 
+}  // namespace
+
+bool HoldsWakePhrase(std::string_view text) {
+  return HoldsWakePhraseIn(text, PhrasesFor(Language::kEnglish));
+}
+
+bool HoldsWakePhrase(std::string_view text, Language language) {
+  // English's wake phrase is spotted in every language ("hey molt"), and
+  // the language's own as well ("oye molt").
+  return HoldsWakePhrase(text) ||
+         (language != Language::kEnglish &&
+          HoldsWakePhraseIn(text, PhrasesFor(language)));
+}
+
 PageAnswer PageAnswerFromModel(std::string_view reply,
                                const PageQuestion& question) {
+  const Language language = question.language;
   PageAnswer answer;
   answer.kind = PageAnswer::Kind::kNoAnswer;
-  answer.text = kNoAnswer;
+  answer.text = Said(language, "I couldn't get an answer from the page.", {});
   if (reply.empty() || reply.size() > kMaxModelReplyBytes) {
     return answer;
   }
@@ -1025,27 +1107,33 @@ PageAnswer PageAnswerFromModel(std::string_view reply,
             : std::string();
     answer.text =
         topic.empty()
-            ? std::string(kNotOnPage)
-            : "The page doesn't seem to say anything about " + topic + ".";
+            ? Said(language, "The page doesn't say.", {})
+            : Said(language, "The page doesn't seem to say anything about {0}.",
+                   {topic});
     return answer;
   }
-  if (HoldsWakePhrase(*text)) {
+  const std::string withheld =
+      Said(language,
+           "The page's text tried to make me say a voice command, so I left "
+           "its answer out.",
+           {});
+  if (HoldsWakePhrase(*text, language)) {
     answer.kind = PageAnswer::Kind::kWithheld;
-    answer.text = kWithheld;
+    answer.text = withheld;
     return answer;
   }
   const std::string clean = CleanAnswerText(*text);
   // Cleaning can join words ("hey **molt**"): checked again.
-  if (HoldsWakePhrase(clean)) {
+  if (HoldsWakePhrase(clean, language)) {
     answer.kind = PageAnswer::Kind::kWithheld;
-    answer.text = kWithheld;
+    answer.text = withheld;
     return answer;
   }
   if (clean.empty()) {
     return answer;
   }
   answer.kind = PageAnswer::Kind::kAnswer;
-  answer.text = kPreface + clean;
+  answer.text = Said(language, "The page says: {0}", {clean});
   return answer;
 }
 

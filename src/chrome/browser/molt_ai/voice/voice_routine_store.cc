@@ -9,6 +9,7 @@
 
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_routines.h"
 
 namespace molt_ai {
@@ -199,14 +200,17 @@ RoutineSaveResult VoiceRoutineStore::Save(const std::string& id,
   const std::vector<std::string> names = NamesOf(routines);
   const RoutineNameMatch in_use = MatchRoutineName(names, name);
   if (in_use.count > 1) {
-    return Refused("You have " + std::to_string(in_use.count) +
-                   " routines called " + name +
-                   ". Choose another name, or rename them in Agent mode.");
+    // In English: the voice loop says it in its language (Relocalized()).
+    return Refused(Said(Language::kEnglish,
+                        "You have {0} routines called {1}. Choose another "
+                        "name, or rename them in Agent mode.",
+                        {std::to_string(in_use.count), name}));
   }
   std::string save_id = id;
   if (in_use.name) {
     if (!replace) {
-      return Refused("You already have a routine called " + name + ".");
+      return Refused(Said(Language::kEnglish,
+                          "You already have a routine called {0}.", {name}));
     }
     // Replaced where it is: the same id, so the studio's card and the
     // audit log follow it.
@@ -217,7 +221,7 @@ RoutineSaveResult VoiceRoutineStore::Save(const std::string& id,
     return Refused(built.refusal);
   }
   if (!mine_.Save(*built.script)) {
-    return Refused("I couldn't save it.");
+    return Refused(std::string(SaidLater("I couldn't save it.")));
   }
   const bool draft = built.script->security.sites_unconfirmed;
   mine_.AppendAudit(

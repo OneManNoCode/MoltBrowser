@@ -588,11 +588,9 @@ primera que encaja con todo lo que dijiste.
   se pueda distribuir con MoltBrowser (las órdenes escritas funcionan).
 - **La voz propia de MoltBrowser en español**: su voz incluida lee solo
   inglés, así que en español habla una voz del sistema.
-- **Algunas respuestas** todavía se dicen en inglés: las de las rutinas y lo
-  aprendido, las de los avisos del navegador (permisos, descargas, diálogos
-  de las páginas) y las preguntas de la IA del dispositivo.
-- **La palabra de confirmación** de los avisos ("di manzana para
-  permitirlo") sigue siendo una palabra inglesa por ahora; las palabras en
-  español ya están elegidas.
-- **Las preguntas sobre la página** se entienden en español, pero la IA del
-  dispositivo puede responder en inglés.
+- **Lo que escribe la IA del dispositivo** al hacer una tarea abierta (los
+  pasos de su plan y su resultado) y los mensajes del agente web al pedir
+  confirmación pueden seguir en inglés; lo que dice el navegador alrededor
+  ya está en español.
+- **Los campos de las páginas en español** ("hace 2 años", "1,2 M de
+  visualizaciones") se leen tal como aparecen en la página.

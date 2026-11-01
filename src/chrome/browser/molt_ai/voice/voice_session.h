@@ -136,6 +136,7 @@ class VoiceSession : public VoiceController::Observer,
   void OnVoiceModeRequested(bool on) override;
   void OnVoicePageMapped(const PageMap& map) override;
   void OnVoiceControllerDestroying(VoiceController* controller) override;
+  void OnVoiceLanguageChanged(Language language) override;
 
   // VoiceListener::Delegate:
   void OnListenerReady(const HelperEvent& ready) override;
@@ -157,6 +158,8 @@ class VoiceSession : public VoiceController::Observer,
 
   void OnBrowserDidClose(BrowserWindowInterface* browser);
   bool IsMoltNet() const;
+  // The window's voice language (its notices, its wake phrases).
+  Language SpeechLanguage() const;
   void OnSettingsRead(const VoiceModeSettings& settings);
   void OnHelperFound(std::optional<VoiceListener::Paths> paths,
                      const std::string& why);

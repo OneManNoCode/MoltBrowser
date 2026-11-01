@@ -30,6 +30,10 @@ source_set("activation_policy") {
     # is in activation_policy.cc).
     "page_request_asker.h",
   ]
+
+  # Its questions and notices are whole sentences of voice mode's catalog
+  # (std-only, no deps of its own).
+  deps = [ "//chrome/browser/molt_ai/voice:spoken_choice" ]
 }
 
 # The browser's side: the tab's record (from VoicePageController's

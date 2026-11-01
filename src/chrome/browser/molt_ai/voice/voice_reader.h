@@ -98,6 +98,10 @@ class VoiceReader {
   // isn't fed any more.
   void PageChanged(int64_t page_id);
 
+  // What the reader says of its own ("That's the end of the page.") is in
+  // |language| (the window's voice language); the page's text as it is.
+  void set_language(Language language) { language_ = language; }
+
   // Forgets everything (voice mode is off).
   void Clear();
 
@@ -138,6 +142,7 @@ class VoiceReader {
   int64_t shown_page_id_ = -1;
   What what_ = What::kPage;
   double rate_ = 1.0;
+  Language language_ = Language::kEnglish;
   // The voice's ids of the chunks with it, oldest first.
   std::deque<uint64_t> ids_;
   // It was reading when Interrupt() stopped it (and nothing ran since).

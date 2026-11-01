@@ -56,6 +56,9 @@ std::string SpokenLength(int seconds, Language language);
 // A count as the page shows it ("2.1B views") said in words ("2.1 billion
 // views"); the text as it is when it isn't a count.
 std::string SpokenCount(std::string_view text);
+// The same in |language|: "2,1 mil millones de views", "15 mil
+// suscriptores" (the unit is the page's own word).
+std::string SpokenCount(std::string_view text, Language language);
 
 // "1 result" / "20 results".
 std::string CountOf(size_t n, std::string_view one, std::string_view many);
@@ -70,6 +73,11 @@ int SpokenNumber(const ChoiceCandidate& candidate);
 // counts and other details.
 std::string SpokenCandidate(const ChoiceCandidate& candidate,
                             Verbosity verbosity);
+// The same with its field words in |language| ("3 minutos", "1,2 millones
+// de visualizaciones"); the page's text as it is.
+std::string SpokenCandidate(const ChoiceCandidate& candidate,
+                            Verbosity verbosity,
+                            Language language);
 
 // A list read aloud, in chunks of at most kMaxSpeechChunkChars: "20
 // results." then, at normal verbosity, the first |normal_count| as "1:

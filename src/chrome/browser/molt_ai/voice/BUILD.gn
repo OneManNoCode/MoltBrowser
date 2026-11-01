@@ -150,6 +150,7 @@ source_set("voice_prompts_unit_tests") {
   sources = [
     "voice_gesture_channel_unittest.cc",
     "voice_gesture_unittest.cc",
+    "voice_prompts_es_unittest.cc",
     "voice_prompts_unittest.cc",
   ]
   deps = [
@@ -947,6 +948,7 @@ source_set("voice_loop_unit_tests") {
     "voice_routines_unittest.cc",
     "voice_sites_agent_safety_unittest.cc",
     "voice_sites_unittest.cc",
+    "voice_spanish_speech_unittest.cc",
     "voice_speech_text_unittest.cc",
     "voice_vocabulary_unittest.cc",
   ]
@@ -961,6 +963,9 @@ source_set("voice_loop_unit_tests") {
     ":voice_learning_store",
     ":voice_loop",
     ":voice_routine_store",
+
+    # The wake phrases' cap (voice_listener_protocol.h).
+    ":voice_listening",
     "//chrome/browser/molt_ai/automation:automation_policy",
 
     # The routine store's claims cut short (set-aside files on disk).

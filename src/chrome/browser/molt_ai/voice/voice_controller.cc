@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
@@ -443,6 +444,12 @@ void VoiceController::SetLanguage(Language language) {
   if (speech_) {
     speech_->SetLanguage(language, g_browser_process->GetApplicationLocale());
   }
+  if (reader_) {
+    reader_->set_language(language);
+  }
+  if (page_questions_) {
+    page_questions_->set_language(language);
+  }
   // A language voice mode can't listen in yet: the microphone closes, and
   // voice mode says why; typed commands go on in the language.
   if (listening_.listening && !ListeningAvailable(language)) {
@@ -450,6 +457,10 @@ void VoiceController::SetLanguage(Language language) {
     for (Observer& observer : observers_) {
       observer.OnVoiceModeRequested(false);
     }
+  }
+  // The listening session's wake phrases follow it.
+  for (Observer& observer : observers_) {
+    observer.OnVoiceLanguageChanged(language);
   }
 }
 
@@ -769,8 +780,10 @@ bool VoiceController::NumberStillOnScreen(const VoiceCommand& command,
   // longer match the page: nothing is done with a stale number.
   heard_ = SpeechSafeText(command.heard, kMaxNoticeChars);
   ShowNumbersOnPage(true);
-  SayNotice(
-      "The page changed, so its numbers moved. Say the number you see now.");
+  SayNotice(Said(language_,
+                 "The page changed, so its numbers moved. Say the number you "
+                 "see now.",
+                 {}));
   return false;
 }
 
@@ -903,6 +916,17 @@ void VoiceController::HandleUtterance(const std::string& text) {
   if (!browser_ || !VoiceModeEnabled()) {
     return;
   }
+  // Once the loop has planned it, whatever it was: one that said the
+  // waiting prompt's word in passing retires it (voice_browser_prompts.h).
+  base::ScopedClosureRunner after_planning(base::BindOnce(
+      [](base::WeakPtr<VoiceController> self, std::string heard,
+         HeardEvidence evidence) {
+        if (self && self->prompts_) {
+          self->prompts_->OnUtteranceHeard(heard, evidence);
+        }
+      },
+      weak_factory_.GetWeakPtr(), text.substr(0, kMaxUtteranceInputBytes),
+      heard_evidence_));
   // Barge-in: what was being said and done stops (the planner's run too,
   // unless this answers its question: below).
   CancelRun(/*keep_planner=*/true);
@@ -1374,8 +1398,10 @@ void VoiceController::OnPageQuestionProgress(const std::string& text) {
   if (!active_ || !speech_) {
     return;
   }
-  Say(text);
-  SetStatus(text);
+  // The browser's words (voice_page_questions.h), in the window's language.
+  const std::string said = Localized(language_, text);
+  Say(said);
+  SetStatus(said);
 }
 
 void VoiceController::OnPageAnswer(int64_t page_id,
@@ -1390,6 +1416,9 @@ void VoiceController::OnPageAnswer(int64_t page_id,
       // command.
       reader_->ReadText(text, page_id_, state_.speech_rate);
     } else {
+      // The browser's own words (a constant sentence of
+      // voice_page_questions.h, or one in the question's language).
+      text = Localized(language_, text);
       Say(text);
       SetStatus(text);
     }
@@ -1416,8 +1445,11 @@ bool VoiceController::AskAboutPageRequest(
       state_.confirm_page_id == env.page_id) {
     return false;
   }
-  VoiceTurn turn = PlanPageRequestQuestion(id, question.said, question.verb,
-                                           env, state_);
+  // The guard's words (activation_policy.h, in English) in the window's
+  // language.
+  VoiceTurn turn = PlanPageRequestQuestion(
+      id, Relocalized(language_, question.said),
+      Relocalized(language_, question.verb), env, state_);
   if (PageRequestQuestionHeld(turn.state) != id) {
     return false;
   }
@@ -1447,7 +1479,10 @@ void VoiceController::TellAboutPageRequest(const std::string& text) {
   if (!active_ || !speech_) {
     return;
   }
-  const std::string said = SpeechSafeText(text, kMaxNoticeChars);
+  // The guard's notice, or the browser's prompts' words, in the window's
+  // language (made in English where the language wasn't known).
+  const std::string said =
+      SpeechSafeText(Relocalized(language_, text), kMaxNoticeChars);
   if (said.empty()) {
     return;
   }
@@ -1531,6 +1566,10 @@ bool VoiceController::ListensForPrompts() {
   // and the confirmation word comes only from the listening session.
   return active_ && speech_ && listening_.listening && !listening_.starting &&
          !IsMoltNet();
+}
+
+Language VoiceController::VoiceLanguage() {
+  return language_;
 }
 
 bool VoiceController::ReadBrowserPrompt(int id,
@@ -1678,8 +1717,11 @@ void VoiceController::PlannerSays(const std::string& text) {
   if (!planner_running_ || !speech_) {
     return;
   }
-  // Model output and page text: cleaned and capped, as page text is.
-  const std::string said = SpeechSafeText(text, kMaxPlannerSpeechChars);
+  // Model output and page text: cleaned and capped, as page text is. The
+  // browser's own words around them (voice_agent_speech.h) in the window's
+  // language.
+  const std::string said =
+      SpeechSafeText(Relocalized(language_, text), kMaxPlannerSpeechChars);
   if (said.empty()) {
     return;
   }
@@ -1731,7 +1773,7 @@ void VoiceController::OnPlannerQuestionTimeout() {
     return;
   }
   CancelPlanner();
-  Say(kPlannerNoAnswer);
+  Say(Localized(language_, kPlannerNoAnswer));
   Idle();
 }
 

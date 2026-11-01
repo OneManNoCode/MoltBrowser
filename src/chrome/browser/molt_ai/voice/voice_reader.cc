@@ -9,6 +9,7 @@
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 
 namespace molt_ai {
@@ -53,12 +54,12 @@ void VoiceReader::Run(ReadOp op,
         return;
       }
       if (tree.nodes.empty()) {
-        Say("There's no text to read on this page.");
+        Say(Localized(language_, "There's no text to read on this page."));
         return;
       }
       ReadingDocument document = Build(tree, tree.focus);
       if (document.blocks.empty()) {
-        Say("There's no text to read on this page.");
+        Say(Localized(language_, "There's no text to read on this page."));
         return;
       }
       const size_t from =
@@ -74,11 +75,14 @@ void VoiceReader::Run(ReadOp op,
 
     case ReadOp::kResume:
       if (!same_page) {
-        Say("There's nothing to go on with here. Say read the page.");
+        Say(Localized(
+            language_,
+            "There's nothing to go on with here. Say read the page."));
         return;
       }
       if (queue_.finished()) {
-        Say("That was the end. Say read the page to hear it again.");
+        Say(Localized(language_,
+                      "That was the end. Say read the page to hear it again."));
         return;
       }
       ReadFrom(queue_.position(), queue_.end_block(), what_);
@@ -89,7 +93,9 @@ void VoiceReader::Run(ReadOp op,
       const std::optional<std::string> text =
           SelectedText(tree, kMaxSelectionChars, ReadingLimits());
       if (!text) {
-        Say("Nothing is selected. Select some text, or say read the page.");
+        Say(Localized(
+            language_,
+            "Nothing is selected. Select some text, or say read the page."));
         return;
       }
       queue_.Start(TextDocument(*text), {0, 0}, 1);
@@ -145,7 +151,7 @@ bool VoiceReader::Load(int64_t page_id,
   const PageTree tree = host_->Tree();
   ReadingDocument document = Build(tree, locate);
   if (document.blocks.empty()) {
-    Say("There's no text to read on this page.");
+    Say(Localized(language_, "There's no text to read on this page."));
     return false;
   }
   const size_t end = document.blocks.size();
@@ -177,8 +183,9 @@ void VoiceReader::ReadFrom(ReadingPosition from, size_t end_block, What what) {
   scrolled_block_ = -1;
   Feed();
   if (ids_.empty()) {
-    Say(what == What::kSection ? "That's the end of the section."
-                               : "That's the end of the page.");
+    Say(what == What::kSection
+            ? Localized(language_, "That's the end of the section.")
+            : Localized(language_, "That's the end of the page."));
   }
 }
 
@@ -202,19 +209,20 @@ void VoiceReader::Move(ReadingUnit unit, bool forward, int64_t page_id) {
     for (const ReadingBlock& block : document.blocks) {
       any = any || (block.kind == ReadingBlockKind::kHeading) == heading;
     }
-    Say(!any ? (heading ? "This page has no headings."
-                        : "This page has no paragraphs.")
-        : forward ? (heading ? "That's the last heading."
-                             : "That's the last paragraph.")
-                  : (heading ? "That's the first heading."
-                             : "That's the first paragraph."));
+    Say(Localized(language_, !any ? (heading ? "This page has no headings."
+                                             : "This page has no paragraphs.")
+                             : forward
+                                 ? (heading ? "That's the last heading."
+                                            : "That's the last paragraph.")
+                                 : (heading ? "That's the first heading."
+                                            : "That's the first paragraph.")));
     return;
   }
   queue_.set_current_block(static_cast<int>(*to));
   host_->ScrollTo(document.blocks[*to].node);
   const bool reading = was_reading_;
   if (heading) {
-    Say(MoveSpeech(document, *to));
+    Say(MoveSpeech(document, *to, language_));
     // The place is past the heading: reading goes on with what follows.
     const ReadingPosition after{*to, document.blocks[*to].text.size()};
     if (reading) {
@@ -244,10 +252,7 @@ void VoiceReader::Section(std::string_view name, int64_t page_id) {
     return;
   }
   std::vector<size_t> listed = close;
-  std::string said;
-  if (!close.empty()) {
-    said = "More than one section fits: ";
-  } else {
+  if (close.empty()) {
     for (size_t b = 0; b < document.blocks.size() &&
                        listed.size() < kMaxSectionsListed;
          ++b) {
@@ -256,18 +261,25 @@ void VoiceReader::Section(std::string_view name, int64_t page_id) {
       }
     }
     if (listed.empty()) {
-      Say("This page has no sections.");
+      Say(Localized(language_, "This page has no sections."));
       return;
     }
-    said = "There's no section called " +
-           SpeechSafeText(name, kMaxSpokenPageTextChars) + ". The sections are: ";
   }
+  std::string sections;
   for (size_t i = 0; i < listed.size(); ++i) {
-    said += (i ? ", " : "") +
-            SpeechSafeText(document.blocks[listed[i]].text,
-                           kMaxSpokenPageTextChars);
+    sections +=
+        (i ? ", " : "") + SpeechSafeText(document.blocks[listed[i]].text,
+                                         kMaxSpokenPageTextChars);
   }
-  Say(said + ". Say read the section on, then its name.");
+  Say(close.empty()
+          ? Said(language_,
+                 "There's no section called {0}. The sections are: {1}. Say "
+                 "read the section on, then its name.",
+                 {SpeechSafeText(name, kMaxSpokenPageTextChars), sections})
+          : Said(language_,
+                 "More than one section fits: {0}. Say read the section on, "
+                 "then its name.",
+                 {sections}));
 }
 
 void VoiceReader::Feed() {
@@ -294,7 +306,8 @@ void VoiceReader::ChunkStarted() {
     return;
   }
   host_->Said(chunk->text);
-  host_->Status("Reading: " + SpeechSafeText(chunk->text, kMaxStatusChars));
+  host_->Status(Said(language_, "Reading: {0}",
+                     {SpeechSafeText(chunk->text, kMaxStatusChars)}));
   const int block = static_cast<int>(chunk->at.block);
   if (block != scrolled_block_ && what_ != What::kSelection &&
       chunk->at.block < queue_.document().blocks.size()) {
@@ -325,13 +338,13 @@ void VoiceReader::OnUtteranceDone(uint64_t id, bool spoken) {
   }
   Feed();
   if (ids_.empty() && queue_.finished()) {
-    host_->Status("Done reading");
+    host_->Status(Localized(language_, "Done reading"));
     switch (what_) {
       case What::kPage:
-        Say("That's the end of the page.");
+        Say(Localized(language_, "That's the end of the page."));
         break;
       case What::kSection:
-        Say("That's the end of the section.");
+        Say(Localized(language_, "That's the end of the section."));
         break;
       case What::kParagraph:
       case What::kSelection:

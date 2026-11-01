@@ -51,6 +51,23 @@ std::string_view ListeningUnavailableNotice(Language language) {
   return "";
 }
 
+std::vector<std::string> WakePhrasesFor(Language language) {
+  switch (language) {
+    case Language::kEnglish:
+      break;
+    case Language::kSpanish:
+      if (ListeningAvailable(Language::kSpanish)) {
+        return SpanishWakePhrases();
+      }
+      break;
+  }
+  return {"hey molt"};
+}
+
+std::vector<std::string> SpanishWakePhrases() {
+  return {"oye molt", "hey molt"};
+}
+
 std::string_view LanguageDisplayName(Language language) {
   switch (language) {
     case Language::kEnglish:

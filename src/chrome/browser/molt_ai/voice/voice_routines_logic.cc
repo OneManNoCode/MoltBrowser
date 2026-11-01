@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_numbers.h"
 #include "chrome/browser/molt_ai/voice/spoken_phrases.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
@@ -24,9 +25,14 @@ constexpr std::string_view kOrdinals[] = {
     "first", "second", "third",  "fourth", "fifth",
     "sixth", "seventh", "eighth", "ninth",  "tenth",
 };
+// Spanish's, masculine (what is chosen is "el primero", whatever it is).
+constexpr std::string_view kOrdinalsEs[] = {
+    "primero", "segundo", "tercero", "cuarto", "quinto",
+    "sexto",   "séptimo", "octavo",  "noveno", "décimo",
+};
 
 // Words the user said, as part of a sentence the browser says.
-std::string Said(std::string_view text) {
+std::string UserWords(std::string_view text) {
   return SpeechSafeText(text, kMaxCommandTextBytes);
 }
 
@@ -41,117 +47,179 @@ std::string Joined(const std::vector<std::string>& words) {
   return out;
 }
 
-std::string OrdinalText(int n) {
-  if (n >= 1 && n <= static_cast<int>(std::size(kOrdinals))) {
-    return std::string(kOrdinals[n - 1]);
+std::string OrdinalText(int n, Language language) {
+  const std::span<const std::string_view> ordinals =
+      language == Language::kSpanish
+          ? std::span<const std::string_view>(kOrdinalsEs)
+          : std::span<const std::string_view>(kOrdinals);
+  if (n >= 1 && n <= static_cast<int>(ordinals.size())) {
+    return std::string(ordinals[static_cast<size_t>(n - 1)]);
   }
   return std::string();
 }
 
-std::string ChoiceText(const ChoiceRef& ref) {
+// "the live one by Queen": the words of a description, in English's order.
+std::string EnglishDescription(const ChoiceRef& ref) {
+  std::string out = "the";
+  if (ref.ordinal > 0) {
+    const std::string ordinal = OrdinalText(ref.ordinal, Language::kEnglish);
+    if (!ordinal.empty()) {
+      out += " " + ordinal;
+    }
+  }
+  if (!ref.words.empty()) {
+    out += " " + Joined(ref.words);
+  }
+  out += " one";
+  if (!ref.by_words.empty()) {
+    out += " by " + Joined(ref.by_words);
+  }
+  if (!ref.from_words.empty()) {
+    out += " from " + Joined(ref.from_words);
+  }
+  return out;
+}
+
+// "el primero en directo de Queen": Spanish's order (the user's own words
+// after the ordinal, "de" before whose and where from).
+std::string SpanishDescription(const ChoiceRef& ref) {
+  std::string out = "el";
+  if (ref.ordinal > 0) {
+    const std::string ordinal = OrdinalText(ref.ordinal, Language::kSpanish);
+    if (!ordinal.empty()) {
+      out += " " + ordinal;
+    }
+  }
+  if (!ref.words.empty()) {
+    out += " " + Joined(ref.words);
+  }
+  if (ref.ordinal <= 0 && ref.words.empty()) {
+    out += " uno";
+  }
+  if (!ref.by_words.empty()) {
+    out += " de " + Joined(ref.by_words);
+  }
+  if (!ref.from_words.empty()) {
+    out += " de " + Joined(ref.from_words);
+  }
+  return out;
+}
+
+std::string ChoiceText(const ChoiceRef& ref, Language language) {
   switch (ref.kind) {
     case ChoiceRef::Kind::kPosition: {
       if (ref.from_end) {
         if (ref.ordinal == 1) {
-          return "the last one";
+          return Said(language, "the last one", {});
         }
-        const std::string ordinal = OrdinalText(ref.ordinal);
+        const std::string ordinal = OrdinalText(ref.ordinal, language);
         return ordinal.empty()
-                   ? "number " + std::to_string(ref.ordinal) + " from the end"
-                   : "the " + ordinal + " to last one";
+                   ? Said(language, "number {0} from the end",
+                          {std::to_string(ref.ordinal)})
+                   : Said(language, "the {0} to last one", {ordinal});
       }
-      const std::string ordinal = OrdinalText(ref.ordinal);
-      return ordinal.empty() ? "number " + std::to_string(ref.ordinal)
-                             : "the " + ordinal + " one";
+      const std::string ordinal = OrdinalText(ref.ordinal, language);
+      return ordinal.empty()
+                 ? Said(language, "number {0}", {std::to_string(ref.ordinal)})
+                 : Said(language, "the {0} one", {ordinal});
     }
-    case ChoiceRef::Kind::kDescription: {
-      std::string out = "the";
-      if (ref.ordinal > 0) {
-        const std::string ordinal = OrdinalText(ref.ordinal);
-        if (!ordinal.empty()) {
-          out += " " + ordinal;
-        }
-      }
-      if (!ref.words.empty()) {
-        out += " " + Joined(ref.words);
-      }
-      out += " one";
-      if (!ref.by_words.empty()) {
-        out += " by " + Joined(ref.by_words);
-      }
-      if (!ref.from_words.empty()) {
-        out += " from " + Joined(ref.from_words);
-      }
-      return out;
-    }
+    case ChoiceRef::Kind::kDescription:
+      return language == Language::kSpanish ? SpanishDescription(ref)
+                                            : EnglishDescription(ref);
     case ChoiceRef::Kind::kNumber:
-      return "number " + std::to_string(ref.number);
+      return Said(language, "number {0}", {std::to_string(ref.number)});
     case ChoiceRef::Kind::kRelative:
     case ChoiceRef::Kind::kNone:
       break;
   }
-  return "one";
+  return Said(language, "one", {});
 }
 
-std::string_view VerbText(ChoiceVerb verb) {
+// The choice with what was done with it: "play the first one".
+std::string ChoiceStepText(ChoiceVerb verb,
+                           const std::string& choice,
+                           Language language) {
   switch (verb) {
     case ChoiceVerb::kDefault:
-      return "choose";
+      return Said(language, "choose {0}", {choice});
     case ChoiceVerb::kOpen:
-      return "open";
+      return Said(language, "open {0}", {choice});
     case ChoiceVerb::kPlay:
-      return "play";
+      return Said(language, "play {0}", {choice});
     case ChoiceVerb::kClick:
-      return "click";
+      return Said(language, "click {0}", {choice});
     case ChoiceVerb::kSelect:
-      return "select";
+      return Said(language, "select {0}", {choice});
     case ChoiceVerb::kRead:
-      return "read";
+      return Said(language, "read {0}", {choice});
     case ChoiceVerb::kDescribe:
-      return "describe";
+      return Said(language, "describe {0}", {choice});
   }
-  return "choose";
+  return Said(language, "choose {0}", {choice});
 }
 
 // The planner's step (IsAgentStep()), as the browser says it.
-std::string DescribeAgentStep(const RoutineStep& step) {
+std::string DescribeAgentStep(const RoutineStep& step, Language language) {
   const PlannerStep& a = step.agent;
+  // "the button" (the catalog has the kinds the page map says).
   const std::string element =
-      a.label.empty() ? "the " + Said(a.kind) : Said(a.label);
+      a.label.empty() ? Localized(language, "the " + UserWords(a.kind))
+                      : UserWords(a.label);
   switch (a.action) {
     case PlannerStep::Action::kNavigate:
-      return step.host.empty() ? std::string("open a page")
-                               : "open " + Said(step.host);
+      return step.host.empty()
+                 ? Said(language, "open a page", {})
+                 : Said(language, "open {0}", {UserWords(step.host)});
     case PlannerStep::Action::kSearch:
-      return a.query.empty() ? std::string("search the web")
-                             : "search the web for " + Said(a.query);
+      return a.query.empty() ? Said(language, "search the web", {})
+                             : Said(language, "search the web for {0}",
+                                    {UserWords(a.query)});
     case PlannerStep::Action::kClick:
-      return "click " + element;
+      return Said(language, "click {0}", {element});
     case PlannerStep::Action::kType:
-      return "type " +
-             (step.variable.empty() ? Said(a.text)
-                                    : std::string("what you tell me")) +
-             " in " + element;
+      return step.variable.empty()
+                 ? Said(language, "type {0} in {1}",
+                        {UserWords(a.text), element})
+                 : Said(language, "type what you tell me in {0}", {element});
     case PlannerStep::Action::kSelect:
-      return "choose " + Said(a.option) + " in " + element;
+      return Said(language, "choose {0} in {1}",
+                  {UserWords(a.option), element});
     case PlannerStep::Action::kScroll:
-      return a.direction == "up" ? "scroll up" : "scroll down";
+      return a.direction == "up" ? Said(language, "scroll up", {})
+                                 : Said(language, "scroll down", {});
     case PlannerStep::Action::kUnkept:
-      return "a step the AI took that I can't repeat";
+      return Said(language, "a step the AI took that I can't repeat", {});
     case PlannerStep::Action::kNone:
       break;
   }
-  return "a step the AI took";
+  return Said(language, "a step the AI took", {});
 }
 
-std::string ScrollText(std::string_view way, const VoiceCommand& c) {
-  std::string out = "scroll " + std::string(way);
-  if (c.scroll == ScrollAmount::kPage && c.count > 1) {
-    out += " " + std::to_string(c.count) + " pages";
-  } else if (c.scroll == ScrollAmount::kHalfPage) {
-    out += " a bit";
+enum class Way : uint8_t { kDown, kUp, kLeft, kRight };
+
+std::string ScrollText(Way way, const VoiceCommand& c, Language language) {
+  const bool pages = c.scroll == ScrollAmount::kPage && c.count > 1;
+  const bool bit = !pages && c.scroll == ScrollAmount::kHalfPage;
+  const std::string count = std::to_string(c.count);
+  switch (way) {
+    case Way::kDown:
+      return pages ? Said(language, "scroll down {0} pages", {count})
+             : bit ? Said(language, "scroll down a bit", {})
+                   : Said(language, "scroll down", {});
+    case Way::kUp:
+      return pages ? Said(language, "scroll up {0} pages", {count})
+             : bit ? Said(language, "scroll up a bit", {})
+                   : Said(language, "scroll up", {});
+    case Way::kLeft:
+      return pages ? Said(language, "scroll left {0} pages", {count})
+             : bit ? Said(language, "scroll left a bit", {})
+                   : Said(language, "scroll left", {});
+    case Way::kRight:
+      return pages ? Said(language, "scroll right {0} pages", {count})
+             : bit ? Said(language, "scroll right a bit", {})
+                   : Said(language, "scroll right", {});
   }
-  return out;
+  return Said(language, "scroll down", {});
 }
 
 }  // namespace
@@ -365,115 +433,123 @@ VoiceCommand CommandForStep(const RoutineStep& step, std::string_view value) {
 }
 
 std::string DescribeRoutineStep(const RoutineStep& step) {
+  return DescribeRoutineStep(step, Language::kEnglish);
+}
+
+std::string DescribeRoutineStep(const RoutineStep& step, Language language) {
   if (IsAgentStep(step)) {
-    return DescribeAgentStep(step);
+    return DescribeAgentStep(step, language);
   }
   const VoiceCommand& c = step.command;
-  const std::string text =
-      step.variable.empty() ? Said(c.text) : std::string("what you tell me");
+  const std::string text = step.variable.empty()
+                               ? UserWords(c.text)
+                               : Said(language, "what you tell me", {});
   const std::string site =
-      Said(c.site_words.empty() ? c.site : c.site_words);
+      UserWords(c.site_words.empty() ? c.site : c.site_words);
   switch (c.kind) {
     case K::kOpenSite:
-      return "open " + site + (c.new_tab ? " in a new tab" : "");
+      return c.new_tab ? Said(language, "open {0} in a new tab", {site})
+                       : Said(language, "open {0}", {site});
     case K::kSearch:
       switch (c.scope) {
         case SearchScope::kNamedSite:
-          return "search " + site + " for " + text;
+          return Said(language, "search {0} for {1}", {site, text});
         case SearchScope::kDefaultEngine:
-          return "search the web for " + text;
+          return Said(language, "search the web for {0}", {text});
         case SearchScope::kCurrentSite:
-          return "search this site for " + text;
+          return Said(language, "search this site for {0}", {text});
         case SearchScope::kAuto:
-          return "search for " + text;
+          return Said(language, "search for {0}", {text});
       }
-      return "search for " + text;
+      return Said(language, "search for {0}", {text});
     case K::kFindInPage:
-      return "find " + text;
+      return Said(language, "find {0}", {text});
     case K::kBack:
-      return "go back";
+      return Said(language, "go back", {});
     case K::kForward:
-      return "go forward";
+      return Said(language, "go forward", {});
     case K::kReload:
-      return "reload the page";
+      return Said(language, "reload the page", {});
     case K::kHome:
-      return "go home";
+      return Said(language, "go home", {});
     case K::kNextPage:
-      return "go to the next page";
+      return Said(language, "go to the next page", {});
     case K::kScrollDown:
-      return ScrollText("down", c);
+      return ScrollText(Way::kDown, c, language);
     case K::kScrollUp:
-      return ScrollText("up", c);
+      return ScrollText(Way::kUp, c, language);
     case K::kScrollLeft:
-      return ScrollText("left", c);
+      return ScrollText(Way::kLeft, c, language);
     case K::kScrollRight:
-      return ScrollText("right", c);
+      return ScrollText(Way::kRight, c, language);
     case K::kScrollToTop:
-      return "go to the top";
+      return Said(language, "go to the top", {});
     case K::kScrollToBottom:
-      return "go to the bottom";
+      return Said(language, "go to the bottom", {});
     case K::kZoomIn:
-      return "zoom in";
+      return Said(language, "zoom in", {});
     case K::kZoomOut:
-      return "zoom out";
+      return Said(language, "zoom out", {});
     case K::kZoomReset:
-      return "reset the zoom";
+      return Said(language, "reset the zoom", {});
     case K::kPlay:
-      return "play";
+      return Said(language, "play", {});
     case K::kPause:
-      return "pause";
+      return Said(language, "pause", {});
     case K::kResume:
-      return "resume";
+      return Said(language, "resume", {});
     case K::kVolumeUp:
-      return "louder";
+      return Said(language, "louder", {});
     case K::kVolumeDown:
-      return "quieter";
+      return Said(language, "quieter", {});
     case K::kMute:
-      return "mute";
+      return Said(language, "mute", {});
     case K::kUnmute:
-      return "unmute";
+      return Said(language, "unmute", {});
     case K::kSkipForward:
-      return c.seconds > 0 ? "skip ahead " + SpokenLength(c.seconds)
-                           : std::string("skip ahead");
+      return c.seconds > 0 ? Said(language, "skip ahead {0}",
+                                  {SpokenLength(c.seconds, language)})
+                           : Said(language, "skip ahead", {});
     case K::kSkipBack:
-      return c.seconds > 0 ? "skip back " + SpokenLength(c.seconds)
-                           : std::string("skip back");
+      return c.seconds > 0 ? Said(language, "skip back {0}",
+                                  {SpokenLength(c.seconds, language)})
+                           : Said(language, "skip back", {});
     case K::kRestart:
-      return "play from the start";
+      return Said(language, "play from the start", {});
     case K::kNextTrack:
-      return "next track";
+      return Said(language, "next track", {});
     case K::kPreviousTrack:
-      return "previous track";
+      return Said(language, "previous track", {});
     case K::kFullScreen:
-      return "full screen";
+      return Said(language, "full screen", {});
     case K::kExitFullScreen:
-      return "leave full screen";
+      return Said(language, "leave full screen", {});
     case K::kCaptionsOn:
-      return "turn on captions";
+      return Said(language, "turn on captions", {});
     case K::kCaptionsOff:
-      return "turn off captions";
+      return Said(language, "turn off captions", {});
     case K::kReadPage:
-      return "read the page";
+      return Said(language, "read the page", {});
     case K::kReadHeadings:
-      return "read the headings";
+      return Said(language, "read the headings", {});
     case K::kReadLinks:
-      return "read the links";
+      return Said(language, "read the links", {});
     case K::kReadResults:
-      return "read the results";
+      return Said(language, "read the results", {});
     case K::kReadTitle:
-      return "read the title";
+      return Said(language, "read the title", {});
     case K::kDescribeScreen:
-      return "say what's on the screen";
+      return Said(language, "say what's on the screen", {});
     case K::kChoose:
-      return std::string(VerbText(c.verb)) + " " + ChoiceText(c.choice);
+      return ChoiceStepText(c.verb, ChoiceText(c.choice, language), language);
     case K::kType:
-      return "type " + text;
+      return Said(language, "type {0}", {text});
     case K::kNewLine:
-      return "start a new line";
+      return Said(language, "start a new line", {});
     case K::kClearField:
-      return "clear the field";
+      return Said(language, "clear the field", {});
     case K::kSubmit:
-      return "submit";
+      return Said(language, "submit", {});
     default:
       break;
   }
@@ -481,10 +557,22 @@ std::string DescribeRoutineStep(const RoutineStep& step) {
 }
 
 std::string JoinSpokenList(const std::vector<std::string>& items) {
+  return JoinSpokenList(items, Language::kEnglish);
+}
+
+std::string JoinSpokenList(const std::vector<std::string>& items,
+                           Language language) {
+  const std::string last = Localized(language, " and ");
   std::string out;
   for (size_t i = 0; i < items.size(); ++i) {
     if (i > 0) {
-      out += i + 1 == items.size() ? " and " : ", ";
+      // Spanish's "y" is "e" before an "i" sound ("tomate e higos").
+      const bool e =
+          language == Language::kSpanish && i + 1 == items.size() &&
+          (items[i].rfind("i", 0) == 0 || items[i].rfind("I", 0) == 0 ||
+           items[i].rfind("hi", 0) == 0 || items[i].rfind("Hi", 0) == 0) &&
+          items[i].rfind("hie", 0) != 0 && items[i].rfind("Hie", 0) != 0;
+      out += i + 1 == items.size() ? (e ? std::string(" e ") : last) : ", ";
     }
     out += items[i];
   }
@@ -670,7 +758,8 @@ std::string RoutineRecorder::refusal() const {
   for (const RoutineStep& step : steps_) {
     if (IsUnkeptStep(step)) {
       return step.agent.why.empty()
-                 ? std::string("one of the AI's steps can't be repeated.")
+                 ? std::string(
+                       SaidLater("one of the AI's steps can't be repeated."))
                  : step.agent.why;
     }
   }

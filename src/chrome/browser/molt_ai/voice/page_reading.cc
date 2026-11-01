@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 
@@ -959,12 +960,19 @@ size_t SectionEnd(const ReadingDocument& document, size_t heading) {
 }
 
 std::string MoveSpeech(const ReadingDocument& document, size_t block) {
+  return MoveSpeech(document, block, Language::kEnglish);
+}
+
+std::string MoveSpeech(const ReadingDocument& document,
+                       size_t block,
+                       Language language) {
   if (block >= document.blocks.size()) {
     return std::string();
   }
   const ReadingBlock& b = document.blocks[block];
   if (b.kind == ReadingBlockKind::kHeading) {
-    return "Heading level " + std::to_string(b.level) + ": " + b.text + ".";
+    return Said(language, "Heading level {0}: {1}.",
+                {std::to_string(b.level), b.text});
   }
   const std::optional<ReadingChunk> chunk =
       ChunkAt(document, {block, 0}, kMaxChunkChars, block + 1);
