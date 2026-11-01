@@ -11,6 +11,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
@@ -36,8 +37,8 @@ using K = VoiceCommandKind;
 constexpr size_t kMaxSaidChars = 400;
 
 // Why the planner's steps can't be kept while learning is off.
-constexpr char kLearningOff[] =
-    "the AI's steps aren't kept while Learn from what I say is off.";
+constexpr std::string_view kLearningOff = SaidLater(
+    "the AI's steps aren't kept while Learn from what I say is off.");
 
 // Whether |step| is the planner's step that opens a page.
 bool OpensPage(const RoutineStep& step) {
@@ -161,7 +162,10 @@ bool VoiceLearningLoop::HeardWhileReading() const {
 }
 
 void VoiceLearningLoop::Say(const std::string& text, bool interrupt) {
-  const std::string said = SpeechSafeText(text, kMaxSaidChars);
+  // A constant sentence in the window's language (the others come through
+  // Said()).
+  const std::string said =
+      SpeechSafeText(Localized(controller_->language(), text), kMaxSaidChars);
   if (said.empty() || !controller_->speech_) {
     return;
   }
@@ -190,10 +194,10 @@ LearningEnvironment VoiceLearningLoop::Environment(
   }
   env.unclaimed_version = learning->unclaimed_version();
   for (const RoutineStep& step : recorder_.steps()) {
-    env.this_steps.push_back(DescribeRoutineStep(step));
+    env.this_steps.push_back(DescribeRoutineStep(step, controller_->language()));
   }
   env.this_planned = recorder_.planned();
-  env.this_refusal = recorder_.refusal();
+  env.this_refusal = Relocalized(controller_->language(), recorder_.refusal());
   env.this_version = recorder_.version();
   for (const VocabularyEntry& entry : learning->vocabulary().entries()) {
     env.words.push_back(FoldForComparison(entry.phrase));
@@ -460,7 +464,7 @@ void VoiceLearningLoop::OnPlannerCarriedOut(const PlannerStep& carried) {
                                                  page.SchemeIsHTTPOrHTTPS()
                                                      ? std::string(page.host())
                                                      : std::string())
-                         : UnkeptPlannerStep(kLearningOff);
+                         : UnkeptPlannerStep(std::string(kLearningOff));
   if (first && OpensPage(step)) {
     // A request the planner began by opening a page is a new task.
     recorder_.Clear();
@@ -482,8 +486,9 @@ void VoiceLearningLoop::OnPlannerReplayed(PlannerReplay outcome) {
   p.replaying = false;
   const RoutineStep* step =
       p.next >= 1 && p.next <= p.steps.size() ? &p.steps[p.next - 1] : nullptr;
+  const Language language = controller_->language();
   const std::string element =
-      step && !step->agent.label.empty() ? step->agent.label : "it";
+      step && !step->agent.label.empty() ? step->agent.label : std::string();
   switch (outcome) {
     case PlannerReplay::kDone:
       return;
@@ -492,13 +497,20 @@ void VoiceLearningLoop::OnPlannerReplayed(PlannerReplay outcome) {
       p.stop_after = true;
       return;
     case PlannerReplay::kNotFound:
-      p.why = "I couldn't find " + element + " on this page.";
+      p.why = element.empty()
+                  ? Said(language, "I couldn't find it on this page.", {})
+                  : Said(language, "I couldn't find {0} on this page.",
+                         {element});
       break;
     case PlannerReplay::kAmbiguous:
-      p.why = "I found more than one " + element + " on this page.";
+      p.why = element.empty()
+                  ? Said(language, "I found more than one it on this page.",
+                         {})
+                  : Said(language, "I found more than one {0} on this page.",
+                         {element});
       break;
     case PlannerReplay::kFailed:
-      p.why = "That step didn't work.";
+      p.why = Said(language, "That step didn't work.", {});
       break;
   }
   p.failed = true;
@@ -555,12 +567,13 @@ void VoiceLearningLoop::OnIdle() {
     return;
   }
   if (p.failed) {
-    StopRoutine((p.why.empty() ? std::string() : p.why + " ") + "I stopped " +
-                p.name + " at step " + std::to_string(p.next) + ".");
+    StopRoutine((p.why.empty() ? std::string() : p.why + " ") +
+                Said(controller_->language(), "I stopped {0} at step {1}.",
+                     {p.name, std::to_string(p.next)}));
     return;
   }
   if (p.stop_after) {
-    StopRoutine("I stopped " + p.name + ".");
+    StopRoutine(Said(controller_->language(), "I stopped {0}.", {p.name}));
     return;
   }
   if (p.asking_value || (p.waiting_answer && controller_->state_.confirming)) {
@@ -625,8 +638,11 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
               [](base::WeakPtr<VoiceLearningLoop> self, std::string name,
                  bool deleted) {
                 if (self) {
-                  self->Say(deleted ? "I forgot " + name + "."
-                                    : "I couldn't forget " + name + ".",
+                  const Language language = self->controller_->language();
+                  self->Say(deleted
+                                ? Said(language, "I forgot {0}.", {name})
+                                : Said(language, "I couldn't forget {0}.",
+                                       {name}),
                             /*interrupt=*/false);
                 }
               },
@@ -634,8 +650,10 @@ void VoiceLearningLoop::RunStep(const VoiceStep& step) {
       return;
     case LearningOp::kForgetWord:
       Say(learning->ForgetWord(step.text)
-              ? "I forgot the word " + name + "."
-              : "I haven't learned the word " + name + ".",
+              ? Said(controller_->language(), "I forgot the word {0}.",
+                     {name})
+              : Said(controller_->language(),
+                     "I haven't learned the word {0}.", {name}),
           /*interrupt=*/false);
       return;
     case LearningOp::kForgetEverything:
@@ -661,7 +679,8 @@ void VoiceLearningLoop::SaveRoutine(const std::string& name,
     return;
   }
   if (version != recorder_.version()) {
-    Say("What I'd remember changed. Say remember this again.",
+    Say(Said(controller_->language(),
+             "What I'd remember changed. Say remember this again.", {}),
         /*interrupt=*/false);
     return;
   }
@@ -673,23 +692,41 @@ void VoiceLearningLoop::SaveRoutine(const std::string& name,
             if (!self) {
               return;
             }
+            const Language language = self->controller_->language();
             if (!result.saved) {
-              self->Say(result.said, /*interrupt=*/false);
+              // The store's words, made in English.
+              self->Say(Relocalized(language, result.said),
+                        /*interrupt=*/false);
               return;
             }
             self->recorder_.Clear();
             const std::string spoken = PageText(name);
-            const std::string saved =
-                result.replaced ? "Replaced " + spoken : "Saved " + spoken;
             // The planner's steps: the sites it uses, which the user
             // confirms the first time it runs.
-            self->Say(result.sites.empty()
-                          ? (result.replaced ? saved : std::string("Saved")) +
-                                ". Say run " + spoken + " to do it again."
-                          : saved + ". It uses " +
-                                JoinSpokenList(result.sites) +
-                                ". Its sites need your confirmation the "
-                                "first time you run it.",
+            if (result.sites.empty()) {
+              self->Say(result.replaced
+                            ? Said(language,
+                                   "Replaced {0}. Say run {0} to do it again.",
+                                   {spoken})
+                            : Said(language,
+                                   "Saved. Say run {0} to do it again.",
+                                   {spoken}),
+                        /*interrupt=*/false);
+              return;
+            }
+            const std::string sites =
+                JoinSpokenList(result.sites, language);
+            self->Say(result.replaced
+                          ? Said(language,
+                                 "Replaced {0}. It uses {1}. Its sites need "
+                                 "your confirmation the first time you run "
+                                 "it.",
+                                 {spoken, sites})
+                          : Said(language,
+                                 "Saved {0}. It uses {1}. Its sites need "
+                                 "your confirmation the first time you run "
+                                 "it.",
+                                 {spoken, sites}),
                       /*interrupt=*/false);
           },
           weak_factory_.GetWeakPtr(), name));
@@ -704,8 +741,10 @@ void VoiceLearningLoop::ClaimRoutines(int version) {
   // kept by another profile, say), the "yes" keeps nothing.
   if (version != learning->unclaimed_version() ||
       learning->unclaimed().empty()) {
-    Say("Those routines changed since I asked. Say what are my routines "
-        "again.",
+    Say(Said(controller_->language(),
+             "Those routines changed since I asked. Say what are my routines "
+             "again.",
+             {}),
         /*interrupt=*/false);
     return;
   }
@@ -720,29 +759,37 @@ void VoiceLearningLoop::ClaimRoutines(int version) {
             if (!self) {
               return;
             }
+            const Language language = self->controller_->language();
             if (result.kept.empty()) {
-              self->Say(
-                  "I couldn't keep them here. Another profile may have "
-                  "kept them first.",
-                  /*interrupt=*/false);
+              self->Say(Said(language,
+                             "I couldn't keep them here. Another profile may "
+                             "have kept them first.",
+                             {}),
+                        /*interrupt=*/false);
               return;
             }
-            std::string said = result.kept.size() == 1
-                                   ? std::string("Kept it here.")
-                                   : "Kept " +
-                                         std::to_string(result.kept.size()) +
-                                         " routines here.";
+            std::string said =
+                result.kept.size() == 1
+                    ? Said(language, "Kept it here.", {})
+                    : Said(language, "Kept {0} routines here.",
+                           {std::to_string(result.kept.size())});
             for (const ClaimedRoutine& kept : result.kept) {
               if (!kept.renamed_from.empty()) {
-                said += " You already had a routine called " +
-                        PageText(kept.renamed_from) + ", so this one is " +
-                        PageText(kept.name) + ".";
+                said += " " + Said(language,
+                                   "You already had a routine called {0}, so "
+                                   "this one is {1}.",
+                                   {PageText(kept.renamed_from),
+                                    PageText(kept.name)});
               }
             }
             if (result.not_kept) {
-              said += " " + std::to_string(result.not_kept) +
-                      (result.not_kept == 1 ? " wasn't" : " weren't") +
-                      " there any more.";
+              const std::string count = std::to_string(result.not_kept);
+              said += " " + (result.not_kept == 1
+                                 ? Said(language, "{0} wasn't there any more.",
+                                        {count})
+                                 : Said(language,
+                                        "{0} weren't there any more.",
+                                        {count}));
             }
             self->Say(said, /*interrupt=*/false);
           },
@@ -780,11 +827,15 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
                                         std::optional<RoutineToRun> routine) {
   const std::string spoken = PageText(name);
   if (!routine) {
-    Say("I can't find the routine " + spoken + ".", /*interrupt=*/false);
+    Say(Said(controller_->language(), "I can't find the routine {0}.",
+             {spoken}),
+        /*interrupt=*/false);
     return;
   }
   if (!routine->ok) {
-    Say(routine->why, /*interrupt=*/false);
+    // ReadRoutine()'s words, made in English.
+    Say(Relocalized(controller_->language(), routine->why),
+        /*interrupt=*/false);
     return;
   }
   if (!routine->needs_sites_confirmed) {
@@ -808,8 +859,12 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
           return;
         }
         if (!confirmed) {
-          self->Say("Before " + spoken +
-                        " runs, its sites need your confirmation. " + said,
+          // The confirmer's words (voice_routine_sites.h), made in English.
+          const Language language = self->controller_->language();
+          self->Say(Said(language,
+                         "Before {0} runs, its sites need your "
+                         "confirmation. {1}",
+                         {spoken, Relocalized(language, said)}),
                     /*interrupt=*/false);
           return;
         }
@@ -829,7 +884,8 @@ void VoiceLearningLoop::OnRoutineLoaded(std::string name,
                     // The workflow confirmed, by its id.
                     self->RunRoutine(name, id);
                   } else {
-                    self->Say("I couldn't confirm its sites.",
+                    self->Say(Said(self->controller_->language(),
+                                   "I couldn't confirm its sites.", {}),
                               /*interrupt=*/false);
                   }
                 },
@@ -887,23 +943,28 @@ void VoiceLearningLoop::NextStep() {
   if (controller_->busy() || !controller_->active_) {
     return;
   }
+  const Language language = controller_->language();
   if (p.next >= p.steps.size()) {
-    const std::string done = p.name + " is done.";
+    const std::string done = Said(language, "{0} is done.", {p.name});
     playing_.reset();
     Say(done, /*interrupt=*/false);
     return;
   }
   const size_t index = p.next;
   const RoutineStep& step = p.steps[index];
-  std::string said = "Step " + std::to_string(index + 1) + ": " +
-                     DescribeRoutineStep(step) + ".";
-  if (index == 0) {
-    said = "Running " + p.name + ". " + said;
-  }
+  const std::string number = std::to_string(index + 1);
+  const std::string described = DescribeRoutineStep(step, language);
+  std::string said =
+      index == 0 ? Said(language, "Running {0}. Step {1}: {2}.",
+                        {p.name, number, described})
+                 : Said(language, "Step {0}: {1}.", {number, described});
   if (!step.variable.empty() && !p.values.count(step.variable)) {
     p.asking_value = true;
-    Say(said + " I didn't keep the text for it. Say type, then the text, or "
-               "anything else to stop.",
+    Say(said + " " +
+            Said(language,
+                 "I didn't keep the text for it. Say type, then the text, or "
+                 "anything else to stop.",
+                 {}),
         /*interrupt=*/index == 0);
     StartAnswerTimer();
     return;
@@ -912,16 +973,19 @@ void VoiceLearningLoop::NextStep() {
     ReplayStep(index, said);
     return;
   }
-  const VoiceCommand command = CommandForStep(
+  VoiceCommand command = CommandForStep(
       step, step.variable.empty() ? std::string() : p.values[step.variable]);
+  // Shown as what was heard, in the window's language.
+  command.heard = described;
   // Only on the routine's own sites.
   automation::AutomationSecurity security;
   content::WebContents* contents = controller_->ActiveContents();
   const GURL page = contents ? contents->GetLastCommittedURL() : GURL();
   if (ActsOnPage(command) && !security.AllowNavigation(p.policy, page.spec())) {
-    StopRoutine("I stopped " + p.name + ": step " +
-                std::to_string(index + 1) + " would act on " +
-                PageText(page.host()) + ", which isn't one of its sites.");
+    StopRoutine(Said(language,
+                     "I stopped {0}: step {1} would act on {2}, which isn't "
+                     "one of its sites.",
+                     {p.name, number, PageText(page.host())}));
     return;
   }
   const PageMap map = controller_->CurrentMap();
@@ -937,9 +1001,10 @@ void VoiceLearningLoop::NextStep() {
       continue;
     }
     if (!security.AllowNavigation(p.policy, target.spec())) {
-      StopRoutine("I stopped " + p.name + ": step " +
-                  std::to_string(index + 1) + " would open " +
-                  PageText(target.host()) + ", which isn't one of its sites.");
+      StopRoutine(Said(language,
+                       "I stopped {0}: step {1} would open {2}, which isn't "
+                       "one of its sites.",
+                       {p.name, number, PageText(target.host())}));
       return;
     }
   }
@@ -963,6 +1028,7 @@ void VoiceLearningLoop::NextStep() {
 void VoiceLearningLoop::ReplayStep(size_t index, const std::string& said) {
   Playing& p = *playing_;
   const RoutineStep& step = p.steps[index];
+  const Language language = controller_->language();
   // Only on the routine's own sites: the page it opens, or the page it
   // acts on.
   const bool opens = OpensPage(step);
@@ -971,9 +1037,16 @@ void VoiceLearningLoop::ReplayStep(size_t index, const std::string& said) {
   const GURL page = contents ? contents->GetLastCommittedURL() : GURL();
   const GURL target = opens ? GURL(step.url) : page;
   if (!security.AllowNavigation(p.policy, target.spec())) {
-    StopRoutine("I stopped " + p.name + ": step " + std::to_string(index + 1) +
-                (opens ? " would open " : " would act on ") +
-                PageText(target.host()) + ", which isn't one of its sites.");
+    const std::string number = std::to_string(index + 1);
+    const std::string host = PageText(target.host());
+    StopRoutine(opens ? Said(language,
+                             "I stopped {0}: step {1} would open {2}, which "
+                             "isn't one of its sites.",
+                             {p.name, number, host})
+                      : Said(language,
+                             "I stopped {0}: step {1} would act on {2}, which "
+                             "isn't one of its sites.",
+                             {p.name, number, host}));
     return;
   }
   PlannerStep replay = step.agent;
@@ -990,10 +1063,12 @@ void VoiceLearningLoop::ReplayStep(size_t index, const std::string& said) {
   const std::string name = p.name;
   Say(said, /*interrupt=*/index == 0);
   controller_->heard_ =
-      SpeechSafeText(DescribeRoutineStep(step), kMaxSaidChars);
+      SpeechSafeText(DescribeRoutineStep(step, language), kMaxSaidChars);
   // The planner may answer at once: |p| isn't used after this.
   if (!controller_->ReplayPlannerStep(replay)) {
-    StopRoutine("I can't run the AI's steps here, so I stopped " + name + ".");
+    StopRoutine(Said(language,
+                     "I can't run the AI's steps here, so I stopped {0}.",
+                     {name}));
   }
 }
 
@@ -1016,8 +1091,9 @@ void VoiceLearningLoop::StartAnswerTimer() {
 
 void VoiceLearningLoop::OnAnswerTimeout() {
   if (playing_ && (playing_->waiting_answer || playing_->asking_value)) {
-    StopRoutine("I didn't hear an answer, so I stopped " + playing_->name +
-                ".");
+    StopRoutine(Said(controller_->language(),
+                     "I didn't hear an answer, so I stopped {0}.",
+                     {playing_->name}));
   }
 }
 

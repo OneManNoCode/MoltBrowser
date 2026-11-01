@@ -43,6 +43,7 @@
 #include <vector>
 
 #include "chrome/browser/molt_ai/voice/page_map.h"
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
 
 namespace molt_ai {
 namespace voice {
@@ -232,6 +233,10 @@ size_t SectionEnd(const ReadingDocument& document, size_t heading);
 // What the browser says when it moves to block |block| ("Heading level 2:
 // History." / the paragraph's first sentence).
 std::string MoveSpeech(const ReadingDocument& document, size_t block);
+// The same in |language| (spoken_answers.h): "Título de nivel 2: Historia."
+std::string MoveSpeech(const ReadingDocument& document,
+                       size_t block,
+                       Language language);
 
 // ---------------------------------------------------------------------------
 // The reading queue

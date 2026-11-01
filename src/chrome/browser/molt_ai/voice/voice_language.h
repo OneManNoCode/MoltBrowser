@@ -42,6 +42,20 @@ bool ListeningAvailable(Language language);
 // language it can't listen in yet; "" when it can.
 std::string_view ListeningUnavailableNotice(Language language);
 
+// The wake phrases the speech helper spots (its CONFIG; at most
+// kMaxWakePhrases) for |language|: "hey molt" in English; in Spanish, once
+// voice mode can listen in it (ListeningAvailable()), SpanishWakePhrases().
+// Until then Spanish's are English's: nothing changes before a Spanish
+// recognizer is bundled.
+std::vector<std::string> WakePhrasesFor(Language language);
+
+// "oye molt" (Spanish's usual way to call an assistant), and "hey molt"
+// (TOUCHLESS_BROWSING.md §4.1). The grammar takes the other greetings
+// before "molt" ("hola", "ok": spoken_phrases_es.cc) once the helper has
+// woken; the helper isn't asked to spot them: "hola" begins much everyday
+// speech, and every phrase it spots is another way to wake it by mistake.
+std::vector<std::string> SpanishWakePhrases();
+
 // The language's name for the settings page ("English", "Español").
 std::string_view LanguageDisplayName(Language language);
 

@@ -60,6 +60,27 @@ std::string Said(Language language,
                  std::string_view english,
                  std::initializer_list<std::string_view> args);
 
+// The browser's own English sentence |english|, made by Said(kEnglish, ...)
+// where the language wasn't known (a routine's file read, the activation
+// guard's notice, a helper's reason), in |language|: the catalog's
+// sentence for it whole, else for the catalog key it was made from, with
+// the words that filled the key's placeholders. |english| as it is when
+// no key made it, and always in English. Never for page text or model
+// output: only what the browser composed from a key. At most
+// kMaxRelocalizedBytes are matched (a longer text is returned as it is);
+// linear in the text for each key.
+inline constexpr size_t kMaxRelocalizedBytes = 2048;
+std::string Relocalized(Language language, std::string_view english);
+
+// Marks |english|, a constant sentence or phrase of the browser's made
+// where the language isn't known, as one said later in the window's
+// language (Localized(), Relocalized()): the catalog's check
+// (tools/voice/check_spoken_answers.py) wants it in the catalog. Returns
+// |english|.
+constexpr std::string_view SaidLater(std::string_view english) {
+  return english;
+}
+
 }  // namespace voice
 }  // namespace molt_ai
 

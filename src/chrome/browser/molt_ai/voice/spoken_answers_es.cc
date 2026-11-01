@@ -517,6 +517,481 @@ constexpr SpokenAnswer kAnswers[] = {
     {"edit files", "editar archivos"},
     {"know when you're using your device",
      "saber cuándo estás usando tu dispositivo"},
+
+    // --- The listening session (voice_session.cc) ---------------------------
+    {"To interrupt me, say stop, then what you want.",
+     "Para interrumpirme, di para y luego lo que quieras."},
+    {"I've stopped. Now say that again.", "Me he detenido. Ahora dilo otra vez."},
+    {"I can't use the microphone: the system's privacy settings don't let "
+     "MoltBrowser use it. Allow it there, then turn voice mode on again.",
+     "No puedo usar el micrófono: la configuración de privacidad del sistema "
+     "no deja que MoltBrowser lo use. Permítelo ahí y vuelve a activar el "
+     "modo de voz."},
+    {"I can't find a microphone. Connect one, then turn voice mode on again.",
+     "No encuentro ningún micrófono. Conecta uno y vuelve a activar el modo "
+     "de voz."},
+    {"The microphone stopped working. Turn voice mode on again to try once "
+     "more.",
+     "El micrófono ha dejado de funcionar. Vuelve a activar el modo de voz "
+     "para intentarlo otra vez."},
+    {"I can't use the microphone.", "No puedo usar el micrófono."},
+    {"I can't listen: {0}.", "No puedo escuchar: {0}."},
+    {"Voice mode is on. I'm listening.",
+     "El modo de voz está activado. Te escucho."},
+    {"Voice mode is on. Say Hey Molt, then what you want.",
+     "El modo de voz está activado. Di Oye Molt y luego lo que quieras."},
+    {"Speech recognition is restarting",
+     "El reconocimiento de voz se está reiniciando"},
+    {"Speech recognition stopped working: {0}. Turn voice mode on again with "
+     "the Voice button.",
+     "El reconocimiento de voz ha dejado de funcionar: {0}. Vuelve a activar "
+     "el modo de voz con el botón Voz."},
+    // Why the speech helper can't run (voice_listener.cc), said in the
+    // sentences above.
+    {"voice mode's speech recognition isn't installed",
+     "el reconocimiento de voz del modo de voz no está instalado"},
+    {"voice mode's speech models aren't installed",
+     "los modelos de voz del modo de voz no están instalados"},
+    {"its sandbox couldn't be set up", "no se pudo preparar su aislamiento"},
+    {"it stopped answering", "dejó de responder"},
+    {"it crashed", "se cerró de forma inesperada"},
+    {"it wrote too many lines", "escribió demasiadas líneas"},
+    {"it wrote a line longer than the protocol allows",
+     "escribió una línea más larga de lo que permite el protocolo"},
+    {"it stopped reading its input", "dejó de leer su entrada"},
+    {"The page changed, so its numbers moved. Say the number you see now.",
+     "La página ha cambiado, así que sus números se han movido. Di el número "
+     "que ves ahora."},
+    {"I didn't hear yes, so I stopped.", "No he oído un sí, así que he parado."},
+
+    // --- Routines and learning (voice_controller_logic.cc,
+    // voice_learning_loop.cc, voice_routines*.cc). A routine is "la
+    // rutina"; the commands quoted are the Spanish grammar's.
+    {"I can't keep routines here.", "Aquí no puedo guardar rutinas."},
+    {"Say remember this as, then a short name for it.",
+     "Di recuerda esto como y luego un nombre corto para ello."},
+    {"You have {0} routines called {1}. Choose another name, or rename them "
+     "in Agent mode.",
+     "Tienes {0} rutinas llamadas {1}. Elige otro nombre, o cámbiales el "
+     "nombre en el modo agente."},
+    {"There's nothing to remember yet. Do it once, then say remember this as "
+     "{0}.",
+     "Todavía no hay nada que recordar. Hazlo una vez y luego di recuerda "
+     "esto como {0}."},
+    {"I can't remember this: {0}", "No puedo recordar esto: {0}"},
+    {"Remembering {0}", "Recordando {0}"},
+    {"You already have a routine called {0}.",
+     "Ya tienes una rutina llamada {0}."},
+    {"I'll remember: {0}.", "Recordaré: {0}."},
+    {"Some of these steps are the AI's, so you'll confirm the sites they use "
+     "before it runs.",
+     "Algunos de estos pasos son de la IA, así que confirmarás los sitios "
+     "que usan antes de que se ejecute."},
+    {"save it as {0}", "guardarla como {0}"},
+    {"I can't run routines here.", "Aquí no puedo ejecutar rutinas."},
+    {"You have {0} routines called {1}. Rename one in Agent mode to run it by "
+     "voice.",
+     "Tienes {0} rutinas llamadas {1}. Cámbiale el nombre a una en el modo "
+     "agente para ejecutarla por voz."},
+    {"{0} was made before routines belonged to a profile.",
+     "{0} se creó antes de que las rutinas pertenecieran a un perfil."},
+    {"You don't have any routines yet. Do something, then say remember this "
+     "as, and a name.",
+     "Todavía no tienes rutinas. Haz algo y luego di recuerda esto como y un "
+     "nombre."},
+    {"I don't have a routine called {0}. Say what are my routines.",
+     "No tengo ninguna rutina llamada {0}. Di cuáles son mis rutinas."},
+    {"Running {0}", "Ejecutando {0}"},
+    {"You have {0} routines called {1}. Forget the one you mean in Agent "
+     "mode.",
+     "Tienes {0} rutinas llamadas {1}. Olvida la que quieras en el modo "
+     "agente."},
+    {"I don't have a routine called {0}.",
+     "No tengo ninguna rutina llamada {0}."},
+    {"forget the routine {0}", "olvidar la rutina {0}"},
+    {"You have one routine: {0}. Say run, then its name.",
+     "Tienes una rutina: {0}. Di ejecuta y luego su nombre."},
+    {"You have {0} routines: {1}, and more in Agent mode. Say run, then its "
+     "name.",
+     "Tienes {0} rutinas: {1}, y más en el modo agente. Di ejecuta y luego "
+     "su nombre."},
+    {"You have {0} routines: {1}. Say run, then its name.",
+     "Tienes {0} rutinas: {1}. Di ejecuta y luego su nombre."},
+    {"Okay, I won't replace it. Say remember this as, and another name.",
+     "Vale, no la reemplazaré. Di recuerda esto como y otro nombre."},
+    {"Okay, I'll leave them for another profile. You can still keep them "
+     "here in Agent mode.",
+     "Vale, las dejo para otro perfil. Todavía puedes conservarlas aquí en el "
+     "modo agente."},
+    {"I haven't learned the word {0}.", "No he aprendido la palabra {0}."},
+    {"forget the word {0}", "olvidar la palabra {0}"},
+    {"That's your routines, the words and corrections I learned, and the "
+     "site hints.",
+     "Eso son tus rutinas, las palabras y correcciones que aprendí y las "
+     "pistas de los sitios."},
+    {"forget everything I learned from you",
+     "olvidar todo lo que aprendí de ti"},
+    {"I couldn't find it on this page.",
+     "No lo he encontrado en esta página."},
+    {"I couldn't find {0} on this page.",
+     "No he encontrado {0} en esta página."},
+    {"I found more than one it on this page.",
+     "He encontrado más de uno en esta página."},
+    {"I found more than one {0} on this page.",
+     "He encontrado más de un {0} en esta página."},
+    {"That step didn't work.", "Ese paso no ha funcionado."},
+    {"I stopped {0} at step {1}.", "He parado {0} en el paso {1}."},
+    {"I stopped {0}.", "He parado {0}."},
+    {"I forgot {0}.", "He olvidado {0}."},
+    {"I couldn't forget {0}.", "No he podido olvidar {0}."},
+    {"I forgot the word {0}.", "He olvidado la palabra {0}."},
+    {"Done. I forgot everything I learned from you.",
+     "Hecho. He olvidado todo lo que aprendí de ti."},
+    {"What I'd remember changed. Say remember this again.",
+     "Lo que iba a recordar ha cambiado. Di recuerda esto otra vez."},
+    {"Replaced {0}. Say run {0} to do it again.",
+     "He reemplazado {0}. Di ejecuta {0} para hacerlo otra vez."},
+    {"Saved. Say run {0} to do it again.",
+     "Guardada. Di ejecuta {0} para hacerlo otra vez."},
+    {"Replaced {0}. It uses {1}. Its sites need your confirmation the first "
+     "time you run it.",
+     "He reemplazado {0}. Usa {1}. Sus sitios necesitan tu confirmación la "
+     "primera vez que la ejecutes."},
+    {"Saved {0}. It uses {1}. Its sites need your confirmation the first "
+     "time you run it.",
+     "He guardado {0}. Usa {1}. Sus sitios necesitan tu confirmación la "
+     "primera vez que la ejecutes."},
+    {"Those routines changed since I asked. Say what are my routines again.",
+     "Esas rutinas han cambiado desde que pregunté. Di cuáles son mis rutinas "
+     "otra vez."},
+    {"I couldn't keep them here. Another profile may have kept them first.",
+     "No he podido conservarlas aquí. Puede que otro perfil las conservara "
+     "antes."},
+    {"Kept it here.", "La he conservado aquí."},
+    {"Kept {0} routines here.", "He conservado {0} rutinas aquí."},
+    {"You already had a routine called {0}, so this one is {1}.",
+     "Ya tenías una rutina llamada {0}, así que esta se llama {1}."},
+    {"{0} wasn't there any more.", "{0} ya no estaba."},
+    {"{0} weren't there any more.", "{0} ya no estaban."},
+    {"I can't find the routine {0}.", "No encuentro la rutina {0}."},
+    {"Before {0} runs, its sites need your confirmation. {1}",
+     "Antes de ejecutar {0}, sus sitios necesitan tu confirmación. {1}"},
+    {"I couldn't confirm its sites.", "No he podido confirmar sus sitios."},
+    {"Confirm it in the Agent studio for now.",
+     "Por ahora, confírmalo en el estudio del modo agente."},
+    {"{0} is done.", "{0} ha terminado."},
+    {"Running {0}. Step {1}: {2}.", "Ejecutando {0}. Paso {1}: {2}."},
+    {"Step {0}: {1}.", "Paso {0}: {1}."},
+    {"I didn't keep the text for it. Say type, then the text, or anything "
+     "else to stop.",
+     "No guardé el texto para eso. Di escribe y luego el texto, o cualquier "
+     "otra cosa para parar."},
+    {"I stopped {0}: step {1} would act on {2}, which isn't one of its "
+     "sites.",
+     "He parado {0}: el paso {1} actuaría en {2}, que no es uno de sus "
+     "sitios."},
+    {"I stopped {0}: step {1} would open {2}, which isn't one of its sites.",
+     "He parado {0}: el paso {1} abriría {2}, que no es uno de sus sitios."},
+    {"I can't run the AI's steps here, so I stopped {0}.",
+     "Aquí no puedo ejecutar los pasos de la IA, así que he parado {0}."},
+    {"I didn't hear an answer, so I stopped {0}.",
+     "No he oído una respuesta, así que he parado {0}."},
+    {"There's nothing to remember yet.", "Todavía no hay nada que recordar."},
+    {"That's too many steps for one routine.",
+     "Son demasiados pasos para una rutina."},
+    {"Choose another name for it.", "Elige otro nombre para ella."},
+    {"One of the steps can't be kept.", "Uno de los pasos no se puede guardar."},
+    {"One of the steps holds text I can't keep.",
+     "Uno de los pasos tiene un texto que no puedo guardar."},
+    {"One of the pages looks like it holds a password or a code, so I won't "
+     "remember it.",
+     "Una de las páginas parece contener una contraseña o un código, así que "
+     "no la recordaré."},
+    {"One of the choices looks like a code, so I won't remember it.",
+     "Una de las elecciones parece un código, así que no la recordaré."},
+    {"This routine has no steps.", "Esta rutina no tiene pasos."},
+    {"This routine is too long to run by voice.",
+     "Esta rutina es demasiado larga para ejecutarla por voz."},
+    {"Step {0} of this routine isn't one I can do by voice.",
+     "El paso {0} de esta rutina no es uno que pueda hacer por voz."},
+    {"I couldn't save it.", "No he podido guardarla."},
+    // Why a step of the AI's can't be kept (said after "No puedo recordar
+    // esto: ").
+    {"one of the AI's steps can't be repeated.",
+     "uno de los pasos de la IA no se puede repetir."},
+    {"the AI's steps aren't kept while Learn from what I say is off.",
+     "los pasos de la IA no se guardan mientras Aprender de lo que digo está "
+     "desactivado."},
+    {"a page the AI opened looks like it holds a password or a code.",
+     "una página que abrió la IA parece contener una contraseña o un "
+     "código."},
+    {"a search the AI made looks like it holds a password or a code.",
+     "una búsqueda que hizo la IA parece contener una contraseña o un "
+     "código."},
+    {"the AI typed into a password, card or code field, which I never keep.",
+     "la IA escribió en un campo de contraseña, tarjeta o código, que nunca "
+     "guardo."},
+    {"the AI used something on the page without a name, which I couldn't "
+     "find again.",
+     "la IA usó algo de la página sin nombre, que no podría volver a "
+     "encontrar."},
+    // A routine's steps as they are said ("Paso 1: abre YouTube"), as the
+    // Spanish grammar's commands.
+    {"what you tell me", "lo que me digas"},
+    {"open {0} in a new tab", "abre {0} en una pestaña nueva"},
+    {"open {0}", "abre {0}"},
+    {"search {0} for {1}", "busca {1} en {0}"},
+    {"search the web for {0}", "busca {0} en la web"},
+    {"search this site for {0}", "busca {0} en este sitio"},
+    {"search for {0}", "busca {0}"},
+    {"find {0}", "busca {0} en esta página"},
+    {"go back", "atrás"},
+    {"go forward", "adelante"},
+    {"reload the page", "recarga la página"},
+    {"go home", "ve a inicio"},
+    {"go to the next page", "ve a la página siguiente"},
+    {"scroll down", "baja"},
+    {"scroll up", "sube"},
+    {"scroll left", "desplázate a la izquierda"},
+    {"scroll right", "desplázate a la derecha"},
+    {"scroll down {0} pages", "baja {0} páginas"},
+    {"scroll up {0} pages", "sube {0} páginas"},
+    {"scroll left {0} pages", "desplázate {0} páginas a la izquierda"},
+    {"scroll right {0} pages", "desplázate {0} páginas a la derecha"},
+    {"scroll down a bit", "baja un poco"},
+    {"scroll up a bit", "sube un poco"},
+    {"scroll left a bit", "desplázate un poco a la izquierda"},
+    {"scroll right a bit", "desplázate un poco a la derecha"},
+    {"go to the top", "ve al principio"},
+    {"go to the bottom", "ve al final"},
+    {"zoom in", "acerca"},
+    {"zoom out", "aleja"},
+    {"reset the zoom", "restablece el zoom"},
+    {"play", "reproduce"},
+    {"pause", "pausa"},
+    {"resume", "reanuda"},
+    {"louder", "sube el volumen"},
+    {"quieter", "baja el volumen"},
+    {"mute", "silencia"},
+    {"unmute", "activa el sonido"},
+    {"skip ahead {0}", "adelanta {0}"},
+    {"skip ahead", "adelanta"},
+    {"skip back {0}", "retrocede {0}"},
+    {"skip back", "retrocede"},
+    {"play from the start", "empieza de nuevo"},
+    {"next track", "siguiente pista"},
+    {"previous track", "pista anterior"},
+    {"full screen", "pantalla completa"},
+    {"leave full screen", "sal de la pantalla completa"},
+    {"turn on captions", "activa los subtítulos"},
+    {"turn off captions", "quita los subtítulos"},
+    {"read the page", "lee la página"},
+    {"read the headings", "lee los títulos"},
+    {"read the links", "lee los enlaces"},
+    {"read the results", "lee los resultados"},
+    {"read the title", "lee el título"},
+    {"say what's on the screen", "di qué hay en la pantalla"},
+    {"type {0}", "escribe {0}"},
+    {"start a new line", "nueva línea"},
+    {"clear the field", "borra el campo"},
+    {"submit", "envía"},
+    {"choose {0}", "elige {0}"},
+    {"play {0}", "reproduce {0}"},
+    {"click {0}", "pulsa {0}"},
+    {"select {0}", "selecciona {0}"},
+    {"read {0}", "lee {0}"},
+    {"describe {0}", "describe {0}"},
+    {"the last one", "el último"},
+    {"number {0} from the end", "el número {0} desde el final"},
+    {"the {0} to last one", "el {0} desde el final"},
+    {"number {0}", "el número {0}"},
+    {"the {0} one", "el {0}"},
+    {"one", "uno"},
+    {"open a page", "abre una página"},
+    {"search the web", "busca en la web"},
+    {"type {0} in {1}", "escribe {0} en {1}"},
+    {"type what you tell me in {0}", "escribe lo que me digas en {0}"},
+    {"choose {0} in {1}", "elige {0} en {1}"},
+    {"a step the AI took that I can't repeat",
+     "un paso de la IA que no puedo repetir"},
+    {"a step the AI took", "un paso de la IA"},
+
+    // --- What the web agent does for voice mode (voice_agent_speech.cc) -----
+    // The plan's steps and the agent's results are the model's (in
+    // English until the planner is asked in Spanish).
+    {"Working on it.", "Me pongo con ello."},
+    {"Next, I'll {0}.", "Ahora voy a: {0}."},
+    {"I'll {0}.", "Voy a: {0}."},
+    {"That didn't work, so I'm trying another way.",
+     "Eso no ha funcionado, así que lo intento de otra forma."},
+    {"That didn't work, so I'll {0} instead.",
+     "Eso no ha funcionado, así que en su lugar voy a: {0}."},
+    {"Opening the page.", "Abriendo la página."},
+    {"Opening {0}.", "Abriendo {0}."},
+    {"Searching the web for {0}.", "Buscando {0} en la web."},
+    {"Pressing it.", "Pulsándolo."},
+    {"Pressing {0}.", "Pulsando {0}."},
+    {"Clearing the field.", "Borrando el campo."},
+    {"Clearing the field in {0}.", "Borrando el campo {0}."},
+    {"Typing {0}.", "Escribiendo {0}."},
+    {"Typing {0} in {1}.", "Escribiendo {0} en {1}."},
+    {"Choosing {0}.", "Eligiendo {0}."},
+    {"Choosing {0} in {1}.", "Eligiendo {0} en {1}."},
+    {"Filling in the form.", "Rellenando el formulario."},
+    {"Scrolling up.", "Subiendo."},
+    {"Scrolling down.", "Bajando."},
+    {"Using a tool of the page.", "Usando una herramienta de la página."},
+    {"Using the page's {0} tool.",
+     "Usando la herramienta {0} de la página."},
+    {"Done.", "Hecho."},
+    {"Done. {0}.", "Hecho. {0}."},
+    {"I stopped. Say what can I say to hear the commands I know.",
+     "Me he detenido. Di qué puedo decir para oír las órdenes que conozco."},
+    {"I stopped: {0}. Say what can I say to hear the commands I know.",
+     "Me he detenido: {0}. Di qué puedo decir para oír las órdenes que "
+     "conozco."},
+    {"I can't do that by myself yet: no on-device AI model is installed. You "
+     "can add one in the AI settings. Say what can I say to hear the "
+     "commands I know.",
+     "Todavía no puedo hacer eso yo solo: no hay ningún modelo de IA "
+     "instalado en este dispositivo. Puedes añadir uno en la configuración "
+     "de IA. Di qué puedo decir para oír las órdenes que conozco."},
+    {"The on-device AI can't run on this computer. Say what can I say to "
+     "hear the commands I know.",
+     "La IA del dispositivo no puede funcionar en este ordenador. Di qué "
+     "puedo decir para oír las órdenes que conozco."},
+    {"The on-device AI can't run on this computer: {0}. Say what can I say "
+     "to hear the commands I know.",
+     "La IA del dispositivo no puede funcionar en este ordenador: {0}. Di "
+     "qué puedo decir para oír las órdenes que conozco."},
+    {"I couldn't start the on-device AI. Say what can I say to hear the "
+     "commands I know.",
+     "No he podido iniciar la IA del dispositivo. Di qué puedo decir para "
+     "oír las órdenes que conozco."},
+    {"I couldn't start the on-device AI: {0}. Say what can I say to hear the "
+     "commands I know.",
+     "No he podido iniciar la IA del dispositivo: {0}. Di qué puedo decir "
+     "para oír las órdenes que conozco."},
+    {"There's no tab for me to work in. Say open and a site's name first.",
+     "No hay ninguna pestaña en la que trabajar. Di abre y el nombre de un "
+     "sitio primero."},
+    {"Say what can I say to hear the commands I know.",
+     "Di qué puedo decir para oír las órdenes que conozco."},
+
+    // --- What the activation guard asks and says (activation_policy.cc).
+    // What "yes" does: a window and an app are "la", a file "lo".
+    {"The page tried to open a new window.",
+     "La página intentó abrir una ventana nueva."},
+    {"The page tried to open a new window to {0}.",
+     "La página intentó abrir una ventana nueva de {0}."},
+    {"open it", "abrirla"},
+    {"The page tried to download a file.",
+     "La página intentó descargar un archivo."},
+    {"The page tried to download a file from {0}.",
+     "La página intentó descargar un archivo de {0}."},
+    {"download it", "descargarlo"},
+    {"The page tried to open another app.",
+     "La página intentó abrir otra aplicación."},
+    {"The page tried to open another app with a {0} link.",
+     "La página intentó abrir otra aplicación con un enlace {0}."},
+    {"The page asked for something.", "La página pidió algo."},
+    {"The page asked for a permission. I can't take an answer to that by "
+     "voice right now, so I turned it down.",
+     "La página pidió un permiso. Ahora no puedo aceptar una respuesta a eso "
+     "por voz, así que lo he rechazado."},
+    {"The page asked for {0} permission. I can't take an answer to that by "
+     "voice right now, so I turned it down.",
+     "La página pidió el permiso de {0}. Ahora no puedo aceptar una "
+     "respuesta a eso por voz, así que lo he rechazado."},
+    {"The page tried to go full screen. I stopped it. Say full screen if you "
+     "want it.",
+     "La página intentó ponerse en pantalla completa. Lo he impedido. Di "
+     "pantalla completa si la quieres."},
+    {"The page tried to change your clipboard. I stopped it.",
+     "La página intentó cambiar tu portapapeles. Lo he impedido."},
+    {"The page tried to open its video in a window over your other apps. I "
+     "stopped it.",
+     "La página intentó abrir su vídeo en una ventana sobre tus otras "
+     "aplicaciones. Lo he impedido."},
+    {"The page tried to open a new window. I stopped it.",
+     "La página intentó abrir una ventana nueva. Lo he impedido."},
+    {"The page tried to download a file. I stopped it.",
+     "La página intentó descargar un archivo. Lo he impedido."},
+    {"The page tried to open another app. I stopped it.",
+     "La página intentó abrir otra aplicación. Lo he impedido."},
+
+    // --- Questions about the page (page_questions.cc,
+    // voice_page_questions.cc) -----------------------------------------------
+    {"I couldn't get an answer from the page.",
+     "No he podido obtener una respuesta de la página."},
+    {"The page doesn't say.", "La página no lo dice."},
+    {"The page doesn't seem to say anything about {0}.",
+     "La página no parece decir nada sobre {0}."},
+    {"The page's text tried to make me say a voice command, so I left its "
+     "answer out.",
+     "El texto de la página intentó hacerme decir una orden de voz, así que "
+     "he omitido su respuesta."},
+    {"The page says: {0}", "La página dice: {0}"},
+    {"Let me look at the page.", "Voy a mirar la página."},
+    {"Let me look further.", "Voy a mirar más."},
+    {"Still working on it.", "Sigo con ello."},
+    {"The on-device AI isn't set up. You can download a model in settings.",
+     "La IA del dispositivo no está configurada. Puedes descargar un modelo "
+     "en la configuración."},
+    {"The on-device AI can't run on this computer, so I can't answer "
+     "questions about pages.",
+     "La IA del dispositivo no puede funcionar en este ordenador, así que no "
+     "puedo responder preguntas sobre páginas."},
+    {"I couldn't start the on-device AI. Try again in a moment, or choose "
+     "another model in settings.",
+     "No he podido iniciar la IA del dispositivo. Inténtalo de nuevo en un "
+     "momento, o elige otro modelo en la configuración."},
+    {"The on-device AI didn't answer in time, so I stopped. It may be busy, "
+     "or the page too long for this computer.",
+     "La IA del dispositivo no respondió a tiempo, así que he parado. Puede "
+     "que esté ocupada, o que la página sea demasiado larga para este "
+     "ordenador."},
+    {"The on-device AI couldn't answer that. Try asking another way.",
+     "La IA del dispositivo no ha podido responder a eso. Prueba a "
+     "preguntarlo de otra forma."},
+    {"There's no text on this page I can answer from.",
+     "No hay texto en esta página con el que pueda responder."},
+    {"Ask me something about this page first, then say tell me more.",
+     "Pregúntame algo sobre esta página primero y luego di cuéntame más."},
+    {"That's all of the page.", "Eso es toda la página."},
+    {"That's all the page says about that.",
+     "Eso es todo lo que dice la página sobre eso."},
+    {"The page changed, so I stopped.", "La página ha cambiado, así que he parado."},
+
+    // --- Reading aloud (voice_reader.cc, page_reading.cc) -------------------
+    {"There's no text to read on this page.",
+     "No hay texto que leer en esta página."},
+    {"There's nothing to go on with here. Say read the page.",
+     "Aquí no hay nada con lo que seguir. Di lee la página."},
+    {"That was the end. Say read the page to hear it again.",
+     "Eso era el final. Di lee la página para oírla otra vez."},
+    {"Nothing is selected. Select some text, or say read the page.",
+     "No hay nada seleccionado. Selecciona un texto, o di lee la página."},
+    {"That's the end of the section.", "Ese es el final de la sección."},
+    {"That's the end of the page.", "Ese es el final de la página."},
+    {"This page has no paragraphs.", "Esta página no tiene párrafos."},
+    {"That's the last heading.", "Ese es el último título."},
+    {"That's the last paragraph.", "Ese es el último párrafo."},
+    {"That's the first heading.", "Ese es el primer título."},
+    {"That's the first paragraph.", "Ese es el primer párrafo."},
+    {"This page has no sections.", "Esta página no tiene secciones."},
+    {"There's no section called {0}. The sections are: {1}. Say read the "
+     "section on, then its name.",
+     "No hay ninguna sección llamada {0}. Las secciones son: {1}. Di lee la "
+     "sección sobre y luego su nombre."},
+    {"More than one section fits: {0}. Say read the section on, then its "
+     "name.",
+     "Hay más de una sección que encaja: {0}. Di lee la sección sobre y "
+     "luego su nombre."},
+    {"Reading: {0}", "Leyendo: {0}"},
+    {"Done reading", "Lectura terminada"},
+    {"Heading level {0}: {1}.", "Título de nivel {0}: {1}."},
+    {"untitled", "sin título"},
 };
 
 }  // namespace

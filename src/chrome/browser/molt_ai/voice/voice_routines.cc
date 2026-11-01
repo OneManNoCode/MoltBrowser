@@ -11,6 +11,7 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/security/activation_policy.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_prompts.h"
 #include "url/gurl.h"
@@ -295,16 +296,17 @@ constexpr std::string_view kElementKinds[] = {
 };
 
 // What the browser says when a step of the planner's can't be kept.
-constexpr char kUnkeptSecretAddress[] =
-    "a page the AI opened looks like it holds a password or a code.";
-constexpr char kUnkeptSecretSearch[] =
-    "a search the AI made looks like it holds a password or a code.";
-constexpr char kUnkeptCredentialField[] =
-    "the AI typed into a password, card or code field, which I never keep.";
-constexpr char kUnkeptNoName[] =
+constexpr std::string_view kUnkeptSecretAddress = SaidLater(
+    "a page the AI opened looks like it holds a password or a code.");
+constexpr std::string_view kUnkeptSecretSearch = SaidLater(
+    "a search the AI made looks like it holds a password or a code.");
+constexpr std::string_view kUnkeptCredentialField = SaidLater(
+    "the AI typed into a password, card or code field, which I never keep.");
+constexpr std::string_view kUnkeptNoName = SaidLater(
     "the AI used something on the page without a name, which I couldn't "
-    "find again.";
-constexpr char kUnkeptStep[] = "one of the AI's steps can't be repeated.";
+    "find again.");
+constexpr std::string_view kUnkeptStep =
+    SaidLater("one of the AI's steps can't be repeated.");
 
 StepType StepTypeForAgent(A action) {
   switch (action) {
@@ -849,22 +851,22 @@ RoutineStep RoutineStepForPlanner(const PlannerStep& in,
       const std::string spec = url.is_valid() ? url.spec() : std::string();
       if (!IsValidUtf8(in.url) || HasTemplate(in.url) ||
           !ValidPlannerUrl(spec)) {
-        return UnkeptPlannerStep(kUnkeptStep);
+        return UnkeptPlannerStep(std::string(kUnkeptStep));
       }
       if (draft::UrlLooksSecret(in.url) || draft::UrlLooksSecret(spec)) {
-        return UnkeptPlannerStep(kUnkeptSecretAddress);
+        return UnkeptPlannerStep(std::string(kUnkeptSecretAddress));
       }
       step.url = spec;
       step.host = HostOfUrl(spec);
       if (step.host.empty()) {
-        return UnkeptPlannerStep(kUnkeptStep);
+        return UnkeptPlannerStep(std::string(kUnkeptStep));
       }
       if (in.action == A::kSearch) {
         if (!PlannerText(in.query, kMaxPlannerQueryChars, false, false)) {
-          return UnkeptPlannerStep(kUnkeptStep);
+          return UnkeptPlannerStep(std::string(kUnkeptStep));
         }
         if (goal_unscanned || looks_secret(in.query)) {
-          return UnkeptPlannerStep(kUnkeptSecretSearch);
+          return UnkeptPlannerStep(std::string(kUnkeptSecretSearch));
         }
         a.query = in.query;
       }
@@ -875,22 +877,22 @@ RoutineStep RoutineStepForPlanner(const PlannerStep& in,
     case A::kSelect: {
       step.host = HintHost(in.host.empty() ? page_host : in.host);
       if (step.host.empty() || !KnownElementKind(in.kind)) {
-        return UnkeptPlannerStep(kUnkeptStep);
+        return UnkeptPlannerStep(std::string(kUnkeptStep));
       }
       if (in.label.empty()) {
-        return UnkeptPlannerStep(kUnkeptNoName);
+        return UnkeptPlannerStep(std::string(kUnkeptNoName));
       }
       if (!PlannerText(in.label, kMaxPlannerLabelChars, false, false)) {
-        return UnkeptPlannerStep(kUnkeptStep);
+        return UnkeptPlannerStep(std::string(kUnkeptStep));
       }
       a.kind = in.kind;
       a.label = in.label;
       if (in.action == A::kSelect) {
         if (!PlannerText(in.option, kMaxPlannerOptionChars, false, false)) {
-          return UnkeptPlannerStep(kUnkeptStep);
+          return UnkeptPlannerStep(std::string(kUnkeptStep));
         }
         if (looks_secret(in.option)) {
-          return UnkeptPlannerStep(kUnkeptSecretSearch);
+          return UnkeptPlannerStep(std::string(kUnkeptSecretSearch));
         }
         a.option = in.option;
         return step;
@@ -902,10 +904,10 @@ RoutineStep RoutineStepForPlanner(const PlannerStep& in,
                                               : c);
         }
         if (in.credential_field || type == "password") {
-          return UnkeptPlannerStep(kUnkeptCredentialField);
+          return UnkeptPlannerStep(std::string(kUnkeptCredentialField));
         }
         if (!PlannerText(in.text, kMaxPlannerTextChars, true, true)) {
-          return UnkeptPlannerStep(kUnkeptStep);
+          return UnkeptPlannerStep(std::string(kUnkeptStep));
         }
         // Withheld, as a draft withholds it: asked for at each run.
         const std::string plain_label = draft::WithoutHiddenChars(in.label);
@@ -922,14 +924,14 @@ RoutineStep RoutineStepForPlanner(const PlannerStep& in,
       step.host = HintHost(in.host.empty() ? page_host : in.host);
       a.direction = in.direction == "up" ? "up" : "down";
       if (in.direction != "up" && in.direction != "down") {
-        return UnkeptPlannerStep(kUnkeptStep);
+        return UnkeptPlannerStep(std::string(kUnkeptStep));
       }
       return step;
     case A::kNone:
     case A::kUnkept:
       break;
   }
-  return UnkeptPlannerStep(kUnkeptStep);
+  return UnkeptPlannerStep(std::string(kUnkeptStep));
 }
 
 bool RoutineSitesConfirmed(const automation::Script& script) {
@@ -978,25 +980,25 @@ BuiltRoutine BuildRoutine(std::string_view id,
                           int64_t now_unix) {
   BuiltRoutine out;
   if (steps.empty()) {
-    out.refusal = "There's nothing to remember yet.";
+    out.refusal = SaidLater("There's nothing to remember yet.");
     return out;
   }
   if (steps.size() > kMaxRoutineSteps) {
-    out.refusal = "That's too many steps for one routine.";
+    out.refusal = SaidLater("That's too many steps for one routine.");
     return out;
   }
   const std::string display = RoutineDisplayName(name);
   if (display.empty() || display != name || HasTemplate(display) ||
       automation::agent_draft::TextLooksSecret(display)) {
-    out.refusal = "Choose another name for it.";
+    out.refusal = SaidLater("Choose another name for it.");
     return out;
   }
   // A step of the planner's that can't be repeated: nothing is kept.
   for (const RoutineStep& step : steps) {
     if (IsUnkeptStep(step)) {
-      out.refusal =
-          "I can't remember this: " +
-          (step.agent.why.empty() ? std::string(kUnkeptStep) : step.agent.why);
+      out.refusal = Said(
+          Language::kEnglish, "I can't remember this: {0}",
+          {step.agent.why.empty() ? kUnkeptStep : step.agent.why});
       return out;
     }
   }
@@ -1052,7 +1054,7 @@ BuiltRoutine BuildRoutine(std::string_view id,
       }
       Step st = PlannerStepToWorkflowStep(step);
       if (!PlannerStepFromWorkflowStep(st)) {
-        out.refusal = "One of the steps can't be kept.";
+        out.refusal = SaidLater("One of the steps can't be kept.");
         return out;
       }
       script.steps.push_back(std::move(st));
@@ -1060,14 +1062,14 @@ BuiltRoutine BuildRoutine(std::string_view id,
     }
     if (HasTemplate(c.text) || HasTemplate(c.whole_query) ||
         HasTemplate(c.site_words) || HasTemplate(step.url)) {
-      out.refusal = "One of the steps holds text I can't keep.";
+      out.refusal = SaidLater("One of the steps holds text I can't keep.");
       return out;
     }
     if (c.kind == K::kOpenSite && !step.url.empty() &&
         automation::agent_draft::UrlLooksSecret(step.url)) {
-      out.refusal =
+      out.refusal = SaidLater(
           "One of the pages looks like it holds a password or a code, so I "
-          "won't remember it.";
+          "won't remember it.");
       return out;
     }
     if (c.kind == K::kOpenSite && !step.url.empty() &&
@@ -1099,15 +1101,15 @@ BuiltRoutine BuildRoutine(std::string_view id,
         }
       }
       if (automation::agent_draft::TextLooksSecret(words)) {
-        out.refusal =
-            "One of the choices looks like a code, so I won't remember it.";
+        out.refusal = SaidLater(
+            "One of the choices looks like a code, so I won't remember it.");
         return out;
       }
     }
     base::DictValue voice = VoiceCommandToDict(step);
     // Everything stored must read back.
     if (!VoiceCommandFromDict(voice)) {
-      out.refusal = "One of the steps can't be kept.";
+      out.refusal = SaidLater("One of the steps can't be kept.");
       return out;
     }
     Step st;
@@ -1148,17 +1150,19 @@ BuiltRoutine BuildRoutine(std::string_view id,
 ReadRoutineResult ReadRoutine(const automation::Script& script) {
   ReadRoutineResult result;
   if (script.steps.empty()) {
-    result.why = "This routine has no steps.";
+    result.why = SaidLater("This routine has no steps.");
     return result;
   }
   if (script.steps.size() > kMaxRoutineSteps) {
-    result.why = "This routine is too long to run by voice.";
+    result.why = SaidLater("This routine is too long to run by voice.");
     return result;
   }
   for (size_t i = 0; i < script.steps.size(); ++i) {
     const Step& st = script.steps[i];
-    const std::string why = "Step " + std::to_string(i + 1) +
-                            " of this routine isn't one I can do by voice.";
+    const std::string why =
+        Said(Language::kEnglish,
+             "Step {0} of this routine isn't one I can do by voice.",
+             {std::to_string(i + 1)});
     const base::DictValue* extra = st.extra.GetIfDict();
     const base::DictValue* voice =
         extra ? extra->FindDict(automation::kVoiceStepKey) : nullptr;

@@ -3,7 +3,10 @@
 
 #include "chrome/browser/molt_ai/voice/voice_routine_sites.h"
 
+#include <string>
 #include <utility>
+
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 
 namespace molt_ai {
 namespace voice {
@@ -18,7 +21,8 @@ class StudioOnlyConfirmer : public RoutineSiteConfirmer {
                     const std::string& routine_name,
                     const std::vector<std::string>& sites,
                     Done done) override {
-    std::move(done).Run(false, "Confirm it in the Agent studio for now.");
+    std::move(done).Run(
+        false, std::string(SaidLater("Confirm it in the Agent studio for now.")));
   }
 };
 

@@ -4,15 +4,21 @@
 #include "chrome/browser/molt_ai/agents/voice_agent_speech.h"
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 
 namespace molt_ai {
 namespace voice_agent {
 
 namespace {
 
-// What follows a failure: what the user can do instead.
-constexpr char kWhatICanDo[] =
-    "Say what can I say to hear the commands I know.";
+using voice::Said;
+using voice::SaidLater;
+
+// Said in English, with whole sentences of the catalog
+// (voice/spoken_answers.h): the voice loop says them in its language
+// (VoiceController::PlannerSays(), voice::Relocalized()). A failure is
+// followed by what the user can do instead ("Say what can I say ...").
+constexpr voice::Language kEn = voice::Language::kEnglish;
 
 std::string Spoken(std::string_view text) {
   return voice::SpeechSafeText(text, kMaxSpokenChars);
@@ -87,7 +93,7 @@ std::string ReadBack(std::string_view text) {
 }  // namespace
 
 std::string StartSpeech() {
-  return "Working on it.";
+  return std::string(SaidLater("Working on it."));
 }
 
 std::string PlanStepSpeech(std::string_view goal, int index, int count) {
@@ -95,15 +101,17 @@ std::string PlanStepSpeech(std::string_view goal, int index, int count) {
   if (step.empty()) {
     return std::string();
   }
-  return Spoken((index > 1 ? "Next, I'll " : "I'll ") + step + ".");
+  return Spoken(index > 1 ? Said(kEn, "Next, I'll {0}.", {step})
+                          : Said(kEn, "I'll {0}.", {step}));
 }
 
 std::string ReplanSpeech(std::string_view goal) {
   const std::string step = WithoutFinalStop(LowerFirst(Spoken(goal)));
   if (step.empty()) {
-    return "That didn't work, so I'm trying another way.";
+    return std::string(
+        SaidLater("That didn't work, so I'm trying another way."));
   }
-  return Spoken("That didn't work, so I'll " + step + " instead.");
+  return Spoken(Said(kEn, "That didn't work, so I'll {0} instead.", {step}));
 }
 
 std::string ActionSpeech(std::string_view action,
@@ -112,31 +120,38 @@ std::string ActionSpeech(std::string_view action,
   std::string said;
   if (action == "NAVIGATE") {
     const std::string host = HostOf(target);
-    said = host.empty() ? "Opening the page." : "Opening " + host + ".";
+    said = host.empty() ? std::string(SaidLater("Opening the page."))
+                        : Said(kEn, "Opening {0}.", {host});
   } else if (action == "SEARCH") {
-    said = "Searching the web for " + ReadBack(target) + ".";
+    said = Said(kEn, "Searching the web for {0}.", {ReadBack(target)});
   } else if (action == "CLICK") {
     const std::string label = ReadBack(LabelOf(target));
-    said = label.empty() ? "Pressing it." : "Pressing " + label + ".";
+    said = label.empty() ? std::string(SaidLater("Pressing it."))
+                         : Said(kEn, "Pressing {0}.", {label});
   } else if (action == "TYPE") {
     const std::string label = ReadBack(LabelOf(target));
-    const std::string in = label.empty() ? std::string() : " in " + label;
     const std::string text = ReadBack(value);
-    said = text.empty() ? "Clearing the field" + in + "."
-                        : "Typing " + text + in + ".";
+    if (text.empty()) {
+      said = label.empty()
+                 ? std::string(SaidLater("Clearing the field."))
+                 : Said(kEn, "Clearing the field in {0}.", {label});
+    } else {
+      said = label.empty() ? Said(kEn, "Typing {0}.", {text})
+                           : Said(kEn, "Typing {0} in {1}.", {text, label});
+    }
   } else if (action == "SELECT") {
     const std::string label = ReadBack(LabelOf(target));
-    said = "Choosing " + ReadBack(value) +
-           (label.empty() ? std::string() : " in " + label) + ".";
+    said = label.empty() ? Said(kEn, "Choosing {0}.", {ReadBack(value)})
+                         : Said(kEn, "Choosing {0} in {1}.", {ReadBack(value), label});
   } else if (action == "FILL_FORM") {
-    said = "Filling in the form.";
+    said = SaidLater("Filling in the form.");
   } else if (action == "SCROLL") {
-    said =
-        value == "up" || target == "up" ? "Scrolling up." : "Scrolling down.";
+    const bool up = value == "up" || target == "up";
+    said = up ? SaidLater("Scrolling up.") : SaidLater("Scrolling down.");
   } else if (action == "CALL_TOOL") {
     const std::string name = ReadBack(LabelOf(target));
-    said = name.empty() ? "Using a tool of the page."
-                        : "Using the page's " + name + " tool.";
+    said = name.empty() ? std::string(SaidLater("Using a tool of the page."))
+                        : Said(kEn, "Using the page's {0} tool.", {name});
   }
   return Spoken(said);
 }
@@ -175,35 +190,59 @@ std::string QuestionWhat(std::string_view message) {
 std::string ResultSpeech(bool success, std::string_view result) {
   const std::string text = WithoutFinalStop(Spoken(result));
   if (success) {
-    return Spoken(text.empty() ? std::string("Done.") : "Done. " + text + ".");
+    return Spoken(text.empty() ? std::string(SaidLater("Done."))
+                               : Said(kEn, "Done. {0}.", {text}));
   }
   return Spoken(
-      (text.empty() ? std::string("I stopped.") : "I stopped: " + text + ".") +
-      " " + kWhatICanDo);
+      text.empty()
+          ? Said(kEn,
+                 "I stopped. Say what can I say to hear the commands I know.",
+                 {})
+          : Said(kEn,
+                 "I stopped: {0}. Say what can I say to hear the commands I "
+                 "know.",
+                 {text}));
 }
 
 std::string NoPlannerSpeech(NoPlanner reason, std::string_view detail) {
   const std::string why = WithoutFinalStop(Spoken(detail));
   switch (reason) {
     case NoPlanner::kNoModel:
-      return Spoken(
-          std::string("I can't do that by myself yet: no on-device AI model "
-                      "is installed. You can add one in the AI settings. ") +
-          kWhatICanDo);
+      return Spoken(Said(kEn,
+                         "I can't do that by myself yet: no on-device AI "
+                         "model is installed. You can add one in the AI "
+                         "settings. Say what can I say to hear the commands "
+                         "I know.",
+                         {}));
     case NoPlanner::kUnsupported:
-      return Spoken("The on-device AI can't run on this computer" +
-                    (why.empty() ? std::string() : ": " + why) + ". " +
-                    kWhatICanDo);
+      return Spoken(why.empty()
+                        ? Said(kEn,
+                               "The on-device AI can't run on this computer. "
+                               "Say what can I say to hear the commands I "
+                               "know.",
+                               {})
+                        : Said(kEn,
+                               "The on-device AI can't run on this computer: "
+                               "{0}. Say what can I say to hear the commands "
+                               "I know.",
+                               {why}));
     case NoPlanner::kLoadFailed:
-      return Spoken("I couldn't start the on-device AI" +
-                    (why.empty() ? std::string() : ": " + why) + ". " +
-                    kWhatICanDo);
+      return Spoken(why.empty()
+                        ? Said(kEn,
+                               "I couldn't start the on-device AI. Say what "
+                               "can I say to hear the commands I know.",
+                               {})
+                        : Said(kEn,
+                               "I couldn't start the on-device AI: {0}. Say "
+                               "what can I say to hear the commands I know.",
+                               {why}));
     case NoPlanner::kNoPage:
-      return Spoken(
-          std::string("There's no tab for me to work in. Say open "
-                      "and a site's name first."));
+      return Spoken(Said(kEn,
+                         "There's no tab for me to work in. Say open and a "
+                         "site's name first.",
+                         {}));
   }
-  return Spoken(kWhatICanDo);
+  return Spoken(SaidLater("Say what can I say to hear the commands I know."));
 }
 
 }  // namespace voice_agent

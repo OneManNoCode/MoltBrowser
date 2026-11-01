@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "chrome/browser/molt_ai/security/page_request_asker.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 
 namespace molt_ai {
 namespace activation {
@@ -251,32 +252,44 @@ std::string SchemeForSpeech(std::string_view scheme) {
   return Keep(scheme, "+-.", kMaxSchemeChars);
 }
 
+// The questions and notices are said in English here, with whole sentences
+// of the catalog (voice/spoken_answers.h): voice mode says them in its
+// language (VoiceController::AskAboutPageRequest(), voice::Relocalized()).
 Question QuestionFor(Request request,
                      std::string_view site,
                      std::string_view scheme) {
+  constexpr voice::Language kEn = voice::Language::kEnglish;
   const std::string clean_site = SiteForSpeech(site);
-  const std::string to_site = clean_site.empty() ? "" : " to " + clean_site;
-  const std::string from_site =
-      clean_site.empty() ? "" : " from " + clean_site;
   Question question;
   question.request = request;
   switch (request) {
     case Request::kNewWindow:
-      question.said = "The page tried to open a new window" + to_site + ".";
-      question.verb = "open it";
+      question.said =
+          clean_site.empty()
+              ? voice::Said(kEn, "The page tried to open a new window.", {})
+              : voice::Said(kEn, "The page tried to open a new window to {0}.",
+                            {clean_site});
+      question.verb = voice::SaidLater("open it");
       return question;
     case Request::kDownload:
-      question.said = "The page tried to download a file" + from_site + ".";
-      question.verb = "download it";
+      question.said =
+          clean_site.empty()
+              ? voice::Said(kEn, "The page tried to download a file.", {})
+              : voice::Said(kEn,
+                            "The page tried to download a file from {0}.",
+                            {clean_site});
+      question.verb = voice::SaidLater("download it");
       return question;
     case Request::kExternalApp: {
       const std::string clean_scheme = SchemeForSpeech(scheme);
       question.said =
           clean_scheme.empty()
-              ? std::string("The page tried to open another app.")
-              : "The page tried to open another app with a " + clean_scheme +
-                    " link.";
-      question.verb = "open it";
+              ? voice::Said(kEn, "The page tried to open another app.", {})
+              : voice::Said(kEn,
+                            "The page tried to open another app with a {0} "
+                            "link.",
+                            {clean_scheme});
+      question.verb = voice::SaidLater("open it");
       return question;
     }
     case Request::kPermissionPrompt:
@@ -286,37 +299,51 @@ Question QuestionFor(Request request,
       break;
   }
   // Never asked about: refused or shown as usual.
-  question.said = "The page asked for something.";
-  question.verb = "allow it";
+  question.said = voice::SaidLater("The page asked for something.");
+  question.verb = voice::SaidLater("allow it");
   return question;
 }
 
 std::string RefusalNotice(Request request, std::string_view what) {
+  constexpr voice::Language kEn = voice::Language::kEnglish;
   switch (request) {
     case Request::kPermissionPrompt: {
       // The prompt's subject is the browser's word for it; cleaned anyway.
       const std::string clean = Keep(what, " -", 40);
-      const std::string asked =
-          clean.empty() ? std::string("The page asked for a permission.")
-                        : "The page asked for " + clean + " permission.";
-      return asked +
-             " I can't take an answer to that by voice right now, so I "
-             "turned it down.";
+      return clean.empty()
+                 ? voice::Said(kEn,
+                               "The page asked for a permission. I can't "
+                               "take an answer to that by voice right now, so "
+                               "I turned it down.",
+                               {})
+                 : voice::Said(kEn,
+                               "The page asked for {0} permission. I can't "
+                               "take an answer to that by voice right now, so "
+                               "I turned it down.",
+                               {clean});
     }
     case Request::kFullScreen:
-      return "The page tried to go full screen. I stopped it. Say full "
-             "screen if you want it.";
+      return voice::Said(kEn,
+                         "The page tried to go full screen. I stopped it. Say "
+                         "full screen if you want it.",
+                         {});
     case Request::kClipboardWrite:
-      return "The page tried to change your clipboard. I stopped it.";
+      return voice::Said(
+          kEn, "The page tried to change your clipboard. I stopped it.", {});
     case Request::kPictureInPicture:
-      return "The page tried to open its video in a window over your other "
-             "apps. I stopped it.";
+      return voice::Said(kEn,
+                         "The page tried to open its video in a window over "
+                         "your other apps. I stopped it.",
+                         {});
     case Request::kNewWindow:
-      return "The page tried to open a new window. I stopped it.";
+      return voice::Said(
+          kEn, "The page tried to open a new window. I stopped it.", {});
     case Request::kDownload:
-      return "The page tried to download a file. I stopped it.";
+      return voice::Said(
+          kEn, "The page tried to download a file. I stopped it.", {});
     case Request::kExternalApp:
-      return "The page tried to open another app. I stopped it.";
+      return voice::Said(
+          kEn, "The page tried to open another app. I stopped it.", {});
   }
   return std::string();
 }

@@ -172,6 +172,8 @@ class VoiceController : public VoicePlanner::Delegate,
     virtual void OnVoicePageMapped(const PageMap& map) {}
     // The window is closing: stop observing |controller|.
     virtual void OnVoiceControllerDestroying(VoiceController* controller) {}
+    // The window's voice language changed (SetLanguage()).
+    virtual void OnVoiceLanguageChanged(Language language) {}
   };
 
   // What the listening side (voice_session.h) shows in the caption bar.

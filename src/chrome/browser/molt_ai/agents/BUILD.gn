@@ -156,7 +156,12 @@ source_set("voice_agent_speech") {
     "voice_agent_speech.h",
   ]
 
-  deps = [ "//chrome/browser/molt_ai/voice:page_map" ]
+  deps = [
+    "//chrome/browser/molt_ai/voice:page_map",
+
+    # Its sentences are the catalog's (spoken_answers.h).
+    "//chrome/browser/molt_ai/voice:spoken_choice",
+  ]
 }
 
 # The on-device planner's steps in routines taught by voice
