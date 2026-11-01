@@ -489,6 +489,37 @@ TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
   }
 }
 
+// A press that doesn't navigate may still load a new document in the tab
+// (a player inside a link, a page that navigates as its video starts):
+// that document is the page the press led to, so the page the user was on
+// isn't skipped; what the new document adds for itself still is.
+TEST(ActivationPolicyTest, ANewDocumentAfterAPressThatDoesntNavigate) {
+  for (Intent intent : {Intent::kFullScreen, Intent::kCopy,
+                        Intent::kOpenInNewTab, Intent::kPlayInPlace}) {
+    TabRecord tab;
+    NoteAction(tab, 1000, intent);
+    EXPECT_FALSE(NoteHistoryEntry(tab, 1100, /*new_document=*/true));
+    EXPECT_TRUE(NoteHistoryEntry(tab, 1200, /*new_document=*/false));
+    EXPECT_TRUE(NoteHistoryEntry(tab, 1300, /*new_document=*/true));
+  }
+  // An entry the document added for itself first: a trap; the new
+  // document after it is the page's own too.
+  TabRecord trap;
+  NoteAction(trap, 1000, Intent::kPlayInPlace);
+  EXPECT_TRUE(NoteHistoryEntry(trap, 1100, /*new_document=*/false));
+  EXPECT_TRUE(NoteHistoryEntry(trap, 1200, /*new_document=*/true));
+  // After the action's window, a new document is the page's own.
+  TabRecord late;
+  NoteAction(late, 1000, Intent::kPlayInPlace);
+  EXPECT_TRUE(
+      NoteHistoryEntry(late, 1000 + kActingWindowMs, /*new_document=*/true));
+  // The user's own input: nothing is skipped.
+  TabRecord own;
+  NoteAction(own, 1000, Intent::kPlayInPlace);
+  NoteUserInput(own);
+  EXPECT_FALSE(NoteHistoryEntry(own, 1100, /*new_document=*/true));
+}
+
 // "play" of the player on the page (a trap entry the page adds as it
 // starts is no page the user asked for): "go back" leaves the page in one.
 TEST(ActivationPolicyTest, PlayingInPlaceLeadsToNoPage) {

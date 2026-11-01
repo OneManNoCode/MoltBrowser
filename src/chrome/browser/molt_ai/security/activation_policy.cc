@@ -77,7 +77,7 @@ bool IsActing(const TabRecord& tab, int64_t now_ms) {
   return now_ms <= from || now_ms - from < tab.window_ms;
 }
 
-bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms) {
+bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms, bool new_document) {
   // The page's activation is the user's own (or there was none).
   if (tab.action_ms < 0 || tab.user_input) {
     return false;
@@ -87,11 +87,15 @@ bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms) {
     ++tab.history_entries;
   }
   // Pressing full screen, copying, opening a link in a new tab, or playing
-  // the player on the page doesn't navigate the tab: no entry is the page
-  // the user asked for.
+  // the player on the page doesn't navigate the tab: no entry the document
+  // adds for itself is the page the user asked for. A new document the
+  // press led to (a player inside a link) is, as for any action: the page
+  // the user was on isn't skipped.
   const bool may_navigate =
-      tab.intent != Intent::kFullScreen && tab.intent != Intent::kCopy &&
-      tab.intent != Intent::kOpenInNewTab && tab.intent != Intent::kPlayInPlace;
+      new_document ||
+      (tab.intent != Intent::kFullScreen && tab.intent != Intent::kCopy &&
+       tab.intent != Intent::kOpenInNewTab &&
+       tab.intent != Intent::kPlayInPlace);
   // The page the action led to is what the user asked for.
   return !(acting && may_navigate && tab.history_entries == 1);
 }

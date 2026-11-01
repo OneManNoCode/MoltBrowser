@@ -16,7 +16,9 @@
 //   - full screen nobody asked for is refused, and said; full screen asked
 //     for is not;
 //   - full screen the page hands to a window it opened (postMessage's
-//     capability delegation) is refused too.
+//     capability delegation) is refused too;
+//   - "play" of a video that loads another page: "go back" from there
+//     returns to the user's page.
 
 #include <memory>
 #include <optional>
@@ -757,6 +759,49 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardLateServerBrowserTest,
                               content::EXECUTE_SCRIPT_NO_USER_GESTURE));
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return page_->GetLastCommittedURL().ref() == "a"; }));
+  content::NavigationController& history = page_->GetController();
+  const int offset = ActivationGuard::VoiceBackOffset(page_);
+  content::NavigationEntry* back =
+      history.GetEntryAtIndex(history.GetLastCommittedEntryIndex() + offset);
+  ASSERT_TRUE(back);
+  EXPECT_EQ(back->GetURL(), users_page);
+}
+
+// "Play" of the video on the page, which loads another page as it starts
+// (a player inside a link, a page that navigates on play): that page is the
+// one the press led to, so voice mode's "go back" from it returns to the
+// user's page, not past it.
+IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
+                       GoingBackAfterPlayThatLoadedAPageReturnsToTheUsersPage) {
+  // A page before the user's (the first entry is never skipped).
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("localhost", "/title1.html")));
+  OpenPage();
+  const GURL users_page = page_->GetLastCommittedURL();
+  ASSERT_TRUE(
+      content::ExecJs(page_.get(),
+                      "const clip = document.getElementById('clip');"
+                      "const away = () => location.assign('/title2.html');"
+                      "clip.addEventListener('click', away, {once: true});"
+                      "clip.addEventListener('play', away, {once: true});",
+                      content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kVoiceMode);
+  std::optional<voice::PageNodeHandle> clip;
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    const voice::PageMap map = controller->BuildMap();
+    if (map.media.empty()) {
+      return false;
+    }
+    clip = map.media.front().handle;
+    return true;
+  }));
+  ASSERT_EQ(controller->PlayMedia(*clip), ActionResult::kDone);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return page_->GetLastCommittedURL().path() == "/title2.html"; }));
+  ASSERT_TRUE(content::WaitForLoadStop(page_));
+
   content::NavigationController& history = page_->GetController();
   const int offset = ActivationGuard::VoiceBackOffset(page_);
   content::NavigationEntry* back =

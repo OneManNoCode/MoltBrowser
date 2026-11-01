@@ -249,7 +249,12 @@ void ActivationGuard::NoteHistoryEntry(content::NavigationHandle* navigation,
   }
   // As of when its navigation began: the page an action led to, from a
   // server that answers late, is still that page.
-  if (!activation::NoteHistoryEntry(record_, started_ms.value_or(NowMs())) ||
+  // A new document in the main frame, or an entry a document added for
+  // itself (same-document) or a frame's.
+  const bool new_document =
+      navigation->IsInPrimaryMainFrame() && !navigation->IsSameDocument();
+  if (!activation::NoteHistoryEntry(record_, started_ms.value_or(NowMs()),
+                                    new_document) ||
       from_id == 0) {
     return;
   }

@@ -49,7 +49,12 @@
 // page the user asked for): NoteHistoryEntry(). An action whose intent
 // never navigates the tab (full screen, a copy, a link opened in a new
 // tab, "play" of a player already on the page) leads to no such page:
-// every entry the page adds after it is skippable. Otherwise, at 156, the
+// every entry the page adds after it in its own document is skippable. A
+// new document the tab's main frame loads in the action's window is the
+// page the action led to after all (a player inside a link, a page that
+// navigates as its video starts): as for any action, the first entry is
+// the user's, so "go back" returns to the page the user was on. Otherwise,
+// at 156, the
 // browser can't tell the page the action led to from an entry the page
 // adds for itself in the same click (both are the page's script, with the
 // action's activation; see TOUCHLESS_BROWSING.md §7.5), so the first one
@@ -135,9 +140,13 @@ bool IsActing(const TabRecord& tab, int64_t now_ms);
 // The page added a session history entry (not a replacement, not a move
 // back or forward) by a navigation that began at |now_ms| (it may commit
 // later: a server that answers late doesn't make the page an action led to
-// one the page added on its own). Returns whether the entry it was added
-// from counts as skippable for voice mode's "go back" (above).
-bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms);
+// one the page added on its own). |new_document|: the entry is a new
+// document in the tab's main frame (not one the document added for
+// itself, nor a frame's). Returns whether the entry it was added from
+// counts as skippable for voice mode's "go back" (above).
+bool NoteHistoryEntry(TabRecord& tab,
+                      int64_t now_ms,
+                      bool new_document = false);
 
 // When each of a tab's navigations in flight began (by navigation id), for
 // NoteHistoryEntry(); one not remembered is judged by when it commits. At
