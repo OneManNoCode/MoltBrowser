@@ -673,6 +673,11 @@ std::string WordRetiredPreface(WordRetired why, Language language) {
                   "I couldn't be sure that was you, and something else may "
                   "have heard the word, so I changed it.",
                   {});
+    case WordRetired::kSaidAloud:
+      return Said(language,
+                  "Something else may have heard you say the word, so I "
+                  "changed it.",
+                  {});
     case WordRetired::kAudioCaptured:
       return Said(language,
                   "Something started using a microphone, so I changed the "
@@ -684,6 +689,21 @@ std::string WordRetiredPreface(WordRetired why, Language language) {
       return Said(language, "Your screen is no longer shared.", {});
   }
   return std::string();
+}
+
+bool WordSaidInPassing(const PendingPrompt& prompt, std::string_view heard) {
+  if (prompt.word.empty()) {
+    return false;
+  }
+  switch (HearConfirmationWord(heard, prompt.language).kind) {
+    case HeardWord::Kind::kWord:
+      return false;
+    case HeardWord::Kind::kUnsure:
+      return true;
+    case HeardWord::Kind::kNone:
+      return HoldsConfirmationWord(heard, prompt.word, prompt.language);
+  }
+  return false;
 }
 
 std::string RetiredWordSpeech(PromptKind kind, std::string_view word) {

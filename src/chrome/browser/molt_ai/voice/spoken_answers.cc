@@ -104,7 +104,7 @@ namespace {
 
 // A key matches only with this much of its own text (not "{0}."): the
 // words it names are the browser's.
-constexpr size_t kMinKeyLiteralBytes = 12;
+constexpr size_t kMinKeyLiteralBytes = 5;
 
 // The words |text| has where |key| has its placeholders, when |text| is
 // |key| with words in them: each placeholder takes the shortest text before

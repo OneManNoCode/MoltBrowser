@@ -518,6 +518,28 @@ void VoiceBrowserPrompts::Answer(const VoiceStep& step,
   }
 }
 
+void VoiceBrowserPrompts::OnUtteranceHeard(const std::string& heard,
+                                           const HeardEvidence& evidence) {
+  // Only what was said aloud can have been recorded; a word answered with
+  // (allowed, refused, retired) is AnswerWithWord()'s.
+  if (!evidence.from_microphone || !current_ || !current_->needs_word ||
+      current_->word.empty()) {
+    return;
+  }
+  PendingPrompt pending;
+  pending.kind = current_->kind;
+  pending.language = current_->prompt.language;
+  pending.word = current_->word;
+  if (!WordSaidInPassing(pending, heard)) {
+    return;
+  }
+  WordChannel heard_aloud;
+  heard_aloud.said = true;
+  if (WordExposed(heard_aloud, Inputs())) {
+    Reissue(WordRetired::kSaidAloud);
+  }
+}
+
 void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
                                          const HeardEvidence& evidence) {
   if (!current_->gesture_id) {

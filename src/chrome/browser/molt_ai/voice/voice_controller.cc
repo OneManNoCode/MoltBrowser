@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
@@ -915,6 +916,17 @@ void VoiceController::HandleUtterance(const std::string& text) {
   if (!browser_ || !VoiceModeEnabled()) {
     return;
   }
+  // Once the loop has planned it, whatever it was: one that said the
+  // waiting prompt's word in passing retires it (voice_browser_prompts.h).
+  base::ScopedClosureRunner after_planning(base::BindOnce(
+      [](base::WeakPtr<VoiceController> self, std::string heard,
+         HeardEvidence evidence) {
+        if (self && self->prompts_) {
+          self->prompts_->OnUtteranceHeard(heard, evidence);
+        }
+      },
+      weak_factory_.GetWeakPtr(), text.substr(0, kMaxUtteranceInputBytes),
+      heard_evidence_));
   // Barge-in: what was being said and done stops (the planner's run too,
   // unless this answers its question: below).
   CancelRun(/*keep_planner=*/true);

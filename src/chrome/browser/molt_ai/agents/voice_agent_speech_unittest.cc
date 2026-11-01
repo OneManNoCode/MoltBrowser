@@ -6,6 +6,7 @@
 #include <string>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace molt_ai {
@@ -122,7 +123,41 @@ TEST(VoiceAgentSpeechTest, ModelAndPageTextIsSpokenSafely) {
     ExpectSpeakable(said);
     EXPECT_EQ(said.find('\n'), std::string::npos);
     EXPECT_EQ(said.find("\xE2\x80\xAE"), std::string::npos);
+    // Said in Spanish by the voice loop: the words in it are inserted as
+    // they are, already speakable.
+    const std::string spanish =
+        voice::Relocalized(voice::Language::kSpanish, said);
+    EXPECT_EQ(spanish.find('\n'), std::string::npos);
+    EXPECT_EQ(spanish.find("\xE2\x80\xAE"), std::string::npos);
+    EXPECT_EQ(voice::SpeechSafeText(spanish, 2 * kMaxSpokenChars), spanish);
   }
+}
+
+// Written in English from the catalog's sentences: the voice loop says
+// them in the window's language (VoiceController::PlannerSays()), the
+// model's and the page's words in them as they are.
+TEST(VoiceAgentSpeechTest, SaidInSpanishByTheVoiceLoop) {
+  constexpr voice::Language kEs = voice::Language::kSpanish;
+  EXPECT_EQ(voice::Relocalized(kEs, StartSpeech()), "Me pongo con ello.");
+  EXPECT_EQ(voice::Relocalized(kEs, PlanStepSpeech("Search the site", 1, 2)),
+            "Voy a: search the site.");
+  EXPECT_EQ(voice::Relocalized(kEs, PlanStepSpeech("Open the cart", 2, 2)),
+            "Ahora voy a: open the cart.");
+  EXPECT_EQ(voice::Relocalized(
+                kEs, ActionSpeech("TYPE", "input \"To\" (text field)", "Lyon")),
+            "Escribiendo Lyon en To.");
+  EXPECT_EQ(voice::Relocalized(kEs, ActionSpeech("SCROLL", "down", "")),
+            "Bajando.");
+  EXPECT_EQ(voice::Relocalized(kEs, ResultSpeech(false, "the page timed out")),
+            "Me he detenido: the page timed out. Di qué puedo decir para oír "
+            "las órdenes que conozco.");
+  EXPECT_EQ(voice::Relocalized(kEs, NoPlannerSpeech(NoPlanner::kNoPage, "")),
+            "No hay ninguna pestaña en la que trabajar. Di abre y el nombre "
+            "de un sitio primero.");
+  // English as it always was.
+  EXPECT_EQ(voice::Relocalized(voice::Language::kEnglish,
+                               PlanStepSpeech("Search the site", 1, 2)),
+            "I'll search the site.");
 }
 
 }  // namespace

@@ -131,6 +131,17 @@ HeardWord HearConfirmationWord(std::string_view heard);
 // "s" or "es" ("camiones").
 HeardWord HearConfirmationWord(std::string_view heard, Language language);
 
+// Whether |heard| holds the confirmation word |word| of |language|
+// anywhere in it, whatever else it says ("the word is harbor", "i said
+// harbour i think"): one of its words is |word|, its plural or it split in
+// two, or sounds like it within the phonetic key's bound plus
+// kSureSoundAlikeMargin. What a recording of the utterance could answer
+// the prompt with. Reads at most kMaxHeldWordScanBytes of |heard|.
+inline constexpr size_t kMaxHeldWordScanBytes = 1024;
+bool HoldsConfirmationWord(std::string_view heard,
+                           std::string_view word,
+                           Language language);
+
 // The index of the confirmation word |heard| is for sure (kWord), or
 // nullopt.
 std::optional<size_t> MatchConfirmationWord(std::string_view heard);

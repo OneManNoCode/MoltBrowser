@@ -182,6 +182,8 @@ std::string NotCleanSpeech(std::string_view word, Language language);
 // was retired.
 enum class WordRetired : uint8_t {
   kNotClean,       // heard, not cleanly, while something captured
+  kSaidAloud,      // said in passing (unsure, or inside a sentence) while
+                   // something captured
   kAudioCaptured,  // a microphone capture began after it was said
   kScreenShared,   // the screen or a window is captured now
   kScreenFreed,    // no longer: the prompt gets a word again
@@ -276,6 +278,16 @@ struct PromptReply {
 // |heard| (the wake phrase removed) while |prompt| waits, in its language.
 PromptReply ParsePromptReply(const PendingPrompt& prompt,
                              std::string_view heard);
+
+// Whether |heard|, said into the microphone while |prompt| waits, said its
+// word without answering the prompt with it: it holds the word inside a
+// sentence ("the word is harbor": HoldsConfirmationWord()), or sounds like
+// a confirmation word without being one for sure. When something could
+// have recorded it (WordExposed()), the word is retired
+// (WordRetired::kSaidAloud), as a word heard but not cleanly is. A word of
+// the list said as an answer (the prompt's, another, a retired one) is
+// answered as such instead (GestureBook::Hear()).
+bool WordSaidInPassing(const PendingPrompt& prompt, std::string_view heard);
 
 // Every answer |language|'s prompts take, folded ("block it", "bloquéalo"
 // as "bloquealo"): none is heard as a confirmation word (unit-tested).

@@ -137,6 +137,14 @@ class VoiceBrowserPrompts
   // utterance was heard.
   void Answer(const VoiceStep& step, const HeardEvidence& evidence);
 
+  // Utterance |heard| (|evidence|: from the microphone or typed), once the
+  // loop has planned it. One that said the waiting prompt's word in passing
+  // (WordSaidInPassing(): inside a sentence, or unsure which word) while
+  // something could have recorded it retires the word: the prompt is read
+  // again with a new one, as for a word heard but not cleanly.
+  void OnUtteranceHeard(const std::string& heard,
+                        const HeardEvidence& evidence);
+
   // Whether prompts on the attached tab are read and answered by voice
   // now (the activation guard leaves prompts raised while acting to it).
   bool TakesPromptsByVoice();

@@ -365,6 +365,44 @@ TEST(VoicePromptsTest, WhyTheWordIsShownAndWhyItChanged) {
   EXPECT_FALSE(WordRetiredPreface(WordRetired::kScreenFreed).empty());
 }
 
+// The word said in a sentence, or sounding like a word of the list without
+// being one for sure, answers nothing: it is said in passing, and retired
+// when something could have recorded it (VoiceBrowserPrompts).
+TEST(VoicePromptsTest, TheWordSaidInPassing) {
+  const PendingPrompt prompt = Waiting(PromptKind::kPermission, "harbor");
+  for (std::string_view heard :
+       {"the word is harbor", "i said harbor", "its harbor i think",
+        "Harbour, I said.", "the word is harbors", "um the word is har bor",
+        "is it harbor or something", "pardon"}) {
+    EXPECT_TRUE(WordSaidInPassing(prompt, heard)) << heard;
+    EXPECT_EQ(Answer(prompt, heard) == PromptAnswer::kAllow, false) << heard;
+  }
+  // An answer with a word of the list is the prompt's to hear (the word,
+  // another one, a sound-alike for sure); anything without the word isn't
+  // in passing.
+  const std::string another = AnotherWord("harbor");
+  for (std::string_view heard :
+       {std::string_view("harbor"), std::string_view("yes harbor please"),
+        std::string_view("harbour"), std::string_view(another),
+        std::string_view("no"), std::string_view("open youtube"),
+        std::string_view("the word is falcon"), std::string_view("")}) {
+    EXPECT_FALSE(WordSaidInPassing(prompt, heard)) << heard;
+  }
+  // No word, nothing to retire.
+  EXPECT_FALSE(
+      WordSaidInPassing(Waiting(PromptKind::kPermission), "the word is "
+                                                          "harbor"));
+  EXPECT_FALSE(HoldsConfirmationWord("the word is harbor", "", Language::kEnglish));
+  // The word late in a long utterance still counts.
+  std::string long_heard;
+  for (int i = 0; i < 60; ++i) {
+    long_heard += "and then ";
+  }
+  EXPECT_TRUE(HoldsConfirmationWord(long_heard + "harbor", "harbor",
+                                    Language::kEnglish));
+  EXPECT_FALSE(WordRetiredPreface(WordRetired::kSaidAloud).empty());
+}
+
 TEST(VoicePromptsTest, WindowsAndTimeouts) {
   EXPECT_EQ(PromptWindowMs(PromptKind::kPermission), kPromptWindowMs);
   EXPECT_EQ(PromptWindowMs(PromptKind::kDangerousDownload), kPromptWindowMs);

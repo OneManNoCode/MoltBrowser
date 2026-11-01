@@ -428,6 +428,9 @@ constexpr SpokenAnswer kAnswers[] = {
      "the word, so I changed it.",
      "No he podido asegurarme de que fueras tú, y puede que otra cosa haya "
      "oído la palabra, así que la he cambiado."},
+    {"Something else may have heard you say the word, so I changed it.",
+     "Puede que otra cosa te haya oído decir la palabra, así que la he "
+     "cambiado."},
     {"Something started using a microphone, so I changed the word.",
      "Algo ha empezado a usar un micrófono, así que he cambiado la "
      "palabra."},

@@ -316,6 +316,9 @@ source_set("unit_tests") {
     # for the page map's observation.
     "//chrome/browser/molt_ai/voice:page_map",
     "//chrome/browser/molt_ai/voice:page_map_test_support",
+
+    # What the voice loop says in Spanish (voice_agent_speech_unittest.cc).
+    "//chrome/browser/molt_ai/voice:spoken_choice",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/security:agent_safety",
     "//chrome/services/molt_ai/inference/engine:image_input",

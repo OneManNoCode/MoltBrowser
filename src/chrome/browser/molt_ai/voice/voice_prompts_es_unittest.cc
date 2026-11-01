@@ -545,6 +545,27 @@ TEST(SpanishPromptsTest, TheWordsChannelTexts) {
   EXPECT_EQ(twin.find("manzana"), std::string::npos);
 }
 
+// The Spanish word said in passing: inside a sentence, or unsure.
+TEST(SpanishPromptsTest, TheWordSaidInPassing) {
+  const PendingPrompt prompt =
+      Waiting(PromptKind::kPermission, kEs, "manzana");
+  for (std::string_view heard :
+       {"la palabra es manzana", "he dicho manzana", "creo que era manzanas",
+        "dije man zana, ¿no?"}) {
+    EXPECT_TRUE(WordSaidInPassing(prompt, heard)) << heard;
+  }
+  for (std::string_view heard :
+       {"manzana", "di la manzana por favor", "tomate", "no", "abre youtube",
+        "la palabra es tomate"}) {
+    EXPECT_FALSE(WordSaidInPassing(prompt, heard)) << heard;
+  }
+  // Heard in the prompt's language: English's "harbor" holds nothing.
+  EXPECT_FALSE(HoldsConfirmationWord("the word is harbor", "manzana", kEs));
+  EXPECT_EQ(WordRetiredPreface(WordRetired::kSaidAloud, kEs),
+            "Puede que otra cosa te haya oído decir la palabra, así que la he "
+            "cambiado.");
+}
+
 // English is exactly as it was, whatever Spanish has: every kind and
 // answer, said in English, is the catalog's key itself.
 TEST(SpanishPromptsTest, EnglishIsUnchanged) {

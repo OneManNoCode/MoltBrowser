@@ -103,12 +103,14 @@ size_t TrailingAt(Words trailing,
   return 0;
 }
 
-std::vector<std::string> SplitFolded(std::string_view heard) {
-  const std::string folded = FoldForComparison(
-      heard.substr(0, std::min(heard.size(), kMaxHeardBytes)));
+std::vector<std::string> SplitFolded(std::string_view heard,
+                                     size_t max_bytes = kMaxHeardBytes,
+                                     size_t max_words = kMaxHeardWords) {
+  const std::string folded =
+      FoldForComparison(heard.substr(0, std::min(heard.size(), max_bytes)));
   std::vector<std::string> words;
   size_t start = 0;
-  while (start < folded.size() && words.size() <= kMaxHeardWords) {
+  while (start < folded.size() && words.size() <= max_words) {
     size_t space = folded.find(' ', start);
     if (space == std::string::npos) {
       space = folded.size();
@@ -289,6 +291,54 @@ HeardWord HearConfirmationWord(std::string_view heard) {
 
 HeardWord HearConfirmationWord(std::string_view heard, Language language) {
   return HearIn(TableFor(language), heard);
+}
+
+bool HoldsConfirmationWord(std::string_view heard,
+                           std::string_view word,
+                           Language language) {
+  const WordTable table = TableFor(language);
+  const std::string word_key = PhoneticKeyFor(language, word);
+  if (word.empty() || word_key.empty()) {
+    return false;
+  }
+  // Within the bound plus the margin: what would be the word, or unsure
+  // between it and another.
+  const auto sounds_like = [&](const std::string& key) {
+    if (key.empty()) {
+      return false;
+    }
+    const int bound = PhoneticBound(std::max(key.size(), word_key.size())) +
+                      kSureSoundAlikeMargin;
+    return PhoneticDistance(key, word_key, bound) <= bound;
+  };
+  // Every word (a byte cap, not a word cap: the word may come late).
+  const std::vector<std::string> words =
+      SplitFolded(heard, kMaxHeldWordScanBytes, kMaxHeldWordScanBytes);
+  for (size_t i = 0; i < words.size(); ++i) {
+    const std::string& one = words[i];
+    if (one == word) {
+      return true;
+    }
+    if (std::optional<size_t> plural = Plural(table, one);
+        plural && table.words[*plural] == word) {
+      return true;
+    }
+    if (sounds_like(PhoneticKeyFor(language, one))) {
+      return true;
+    }
+    if (i + 1 < words.size()) {
+      const std::string& next = words[i + 1];
+      if (one + next == word) {
+        return true;
+      }
+      const std::string a = PhoneticKeyFor(language, one);
+      const std::string b = PhoneticKeyFor(language, next);
+      if (!a.empty() && !b.empty() && sounds_like(JoinPhoneticKeys(a, b))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 std::string_view GestureActionName(GestureAction action) {
