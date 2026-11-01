@@ -3,11 +3,14 @@
 
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
+#include <stdint.h>
+
 #include <ctime>
 #include <map>
 #include <memory>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 #include "base/base_paths.h"
@@ -20,6 +23,7 @@
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
+#include "base/rand_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
@@ -42,7 +46,8 @@ constexpr char kAutomationsSubdir[] = "automations";
 constexpr char kArtifactsSubdir[] = "artifacts";
 constexpr char kAuditLogName[] = "audit.log";
 constexpr char kScriptExt[] = ".molt";
-// A script taken to be moved (Take()): no longer listed or loaded.
+// A script taken to be moved (Take()): no longer listed or loaded. Set
+// aside as <id>.molt.<token>.taken (round 43: <id>.molt.taken).
 constexpr char kTakenExt[] = ".taken";
 // A script id, at most.
 constexpr size_t kMaxIdBytes = 128;
@@ -128,6 +133,49 @@ std::string NowISO8601() {
   return std::string(buf);
 }
 
+// 16 random hex digits: a set-aside file's name of its own.
+std::string RandomToken() {
+  uint64_t bits = base::RandUint64();
+  std::string token;
+  for (int i = 0; i < 16; ++i) {
+    token += "0123456789abcdef"[bits & 0xf];
+    bits >>= 4;
+  }
+  return token;
+}
+
+// The id of the script a set-aside file holds: "<id>.molt.<token>.taken"
+// (a token of 1 to 32 lowercase hex digits), or round 43's
+// "<id>.molt.taken";
+// nullopt for any other name.
+std::optional<std::string> SetAsideIdOf(const std::string& name) {
+  const size_t dot = name.find('.');
+  if (dot == std::string::npos)
+    return std::nullopt;
+  const std::string id = name.substr(0, dot);
+  if (!IsValidScriptId(id))
+    return std::nullopt;
+  const std::string rest = name.substr(dot);
+  const std::string head = std::string(kScriptExt) + ".";
+  if (rest == std::string(kScriptExt) + kTakenExt)
+    return id;
+  if (rest.size() <= head.size() + std::string_view(kTakenExt).size() ||
+      rest.compare(0, head.size(), head) != 0 ||
+      !base::EndsWith(rest, kTakenExt, base::CompareCase::SENSITIVE)) {
+    return std::nullopt;
+  }
+  const std::string token =
+      rest.substr(head.size(), rest.size() - head.size() -
+                                   std::string_view(kTakenExt).size());
+  if (token.size() > 32)
+    return std::nullopt;
+  for (char c : token) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+      return std::nullopt;
+  }
+  return id;
+}
+
 // Whether a script set aside at |set_aside| may still be moving in another
 // browser (within the grace period, by this clock).
 bool MayStillBeMoving(base::Time set_aside, base::Time now) {
@@ -193,9 +241,14 @@ base::FilePath AutomationStorage::GetScriptPath(const std::string& id) const {
       base::FilePath::FromUTF8Unsafe(id + kScriptExt));
 }
 
-base::FilePath AutomationStorage::GetTakenPath(const std::string& id) const {
-  return GetAutomationsDir().Append(
-      base::FilePath::FromUTF8Unsafe(id + kScriptExt + kTakenExt));
+base::FilePath AutomationStorage::NewSetAsidePath(const std::string& id) const {
+  return GetAutomationsDir().Append(base::FilePath::FromUTF8Unsafe(
+      id + kScriptExt + "." + RandomToken() + kTakenExt));
+}
+
+bool AutomationStorage::IsSetAsideHere(const SetAside& set_aside) const {
+  return set_aside.file.DirName() == GetAutomationsDir() &&
+         SetAsideIdOf(set_aside.file.BaseName().AsUTF8Unsafe()) == set_aside.id;
 }
 
 base::FilePath AutomationStorage::GetAuditLogPath() const {
@@ -344,8 +397,11 @@ bool AutomationStorage::SaveLocked(const Script& script) {
   return WriteScriptJsonLocked(GetScriptPath(script.id), json);
 }
 
-bool AutomationStorage::Update(const std::string& id, ScriptChange change) {
+bool AutomationStorage::Update(const std::string& script_id,
+                               ScriptChange change) {
   BlockingScope blocking(*this);
+  // A copy: |script_id| may be a field of what |change| changes.
+  const std::string id = script_id;
   if (!IsValidScriptId(id))
     return false;
   bool saved = false;
@@ -412,71 +468,93 @@ bool AutomationStorage::Delete(const std::string& id) {
 
 std::optional<Script> AutomationStorage::Take(const std::string& id) {
   BlockingScope blocking(*this);
-  if (!IsValidScriptId(id))
+  if (!IsValidScriptId(id) || taken_.count(id))
     return std::nullopt;
-  const base::FilePath taken = GetTakenPath(id);
-  if (!Taking::Get().Start(taken))
+  // A name of this Take()'s own: never over another set-aside file (of a
+  // move another browser is making, or one cut short).
+  const SetAside set_aside{id, NewSetAsidePath(id)};
+  if (!Taking::Get().Start(set_aside.file))
     return std::nullopt;
   base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
-  // Only a script's regular file, and never over one set aside before (a
-  // move another browser is making, or one cut short, which
-  // InterruptedTakes() reports).
+  // Only a script's regular file: never a link (renaming one would move
+  // the link, and reading it would read whatever it points to).
   if (MoltFileKindAt(GetScriptPath(id), MoltFileLinks::kNotFollowed) !=
           MoltFileKind::kRegular ||
-      MoltFileKindAt(taken, MoltFileLinks::kNotFollowed) !=
+      MoltFileKindAt(set_aside.file, MoltFileLinks::kNotFollowed) !=
           MoltFileKind::kMissing) {
-    Taking::Get().Stop(taken);
+    Taking::Get().Stop(set_aside.file);
     return std::nullopt;
   }
   // One rename: a second taker (another profile, another browser on the
   // same home directory) finds the file gone.
-  if (!base::ReplaceFile(GetScriptPath(id), taken, nullptr)) {
-    Taking::Get().Stop(taken);
+  if (!base::ReplaceFile(GetScriptPath(id), set_aside.file, nullptr)) {
+    Taking::Get().Stop(set_aside.file);
     return std::nullopt;
   }
   // Set aside now: InterruptedTakes() leaves it to its taker for a while.
   const base::Time now = base::Time::Now();
-  base::TouchFile(taken, now, now);
-  std::optional<base::DictValue> parsed = ReadScriptDict(taken);
+  base::TouchFile(set_aside.file, now, now);
+  std::optional<base::DictValue> parsed = ReadScriptDict(set_aside.file);
   std::optional<Script> script;
   if (parsed) {
     AutomationSecurity::ScrubPlaintextSecrets(*parsed);
     script = Script::FromJSON(*parsed);
   }
   if (!script) {
-    ReturnTakenLocked(id);
+    ReturnSetAsideLocked(set_aside);
     return std::nullopt;
   }
+  taken_[id] = set_aside.file;
   // Known by its file's name, whatever the file says.
   script->id = id;
   return script;
 }
 
 void AutomationStorage::FinishTake(const std::string& id) {
-  BlockingScope blocking(*this);
-  if (!IsValidScriptId(id))
+  auto it = taken_.find(id);
+  if (it == taken_.end())
     return;
-  const base::FilePath taken = GetTakenPath(id);
-  {
-    base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
-    base::DeleteFile(taken);
-  }
-  Taking::Get().Stop(taken);
-  AppendAudit(id, "moved", "");
+  const SetAside set_aside{id, it->second};
+  taken_.erase(it);
+  FinishSetAside(set_aside);
 }
 
 bool AutomationStorage::ReturnTaken(const std::string& id) {
-  BlockingScope blocking(*this);
-  if (!IsValidScriptId(id))
+  auto it = taken_.find(id);
+  if (it == taken_.end())
     return false;
-  base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
-  return ReturnTakenLocked(id);
+  const SetAside set_aside{id, it->second};
+  taken_.erase(it);
+  return ReturnSetAside(set_aside);
 }
 
-bool AutomationStorage::ReturnTakenLocked(const std::string& id) {
-  const base::FilePath taken = GetTakenPath(id);
+void AutomationStorage::FinishSetAside(const SetAside& set_aside) {
+  BlockingScope blocking(*this);
+  if (!IsSetAsideHere(set_aside))
+    return;
+  {
+    base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+    if (MoltFileKindAt(set_aside.file, MoltFileLinks::kNotFollowed) ==
+        MoltFileKind::kRegular) {
+      base::DeleteFile(set_aside.file);
+    }
+  }
+  Taking::Get().Stop(set_aside.file);
+  AppendAudit(set_aside.id, "moved", "");
+}
+
+bool AutomationStorage::ReturnSetAside(const SetAside& set_aside) {
+  BlockingScope blocking(*this);
+  if (!IsSetAsideHere(set_aside))
+    return false;
+  base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+  return ReturnSetAsideLocked(set_aside);
+}
+
+bool AutomationStorage::ReturnSetAsideLocked(const SetAside& set_aside) {
+  const std::string& id = set_aside.id;
   bool returned = false;
-  if (MoltFileKindAt(taken, MoltFileLinks::kNotFollowed) ==
+  if (MoltFileKindAt(set_aside.file, MoltFileLinks::kNotFollowed) ==
       MoltFileKind::kRegular) {
     // Back under its id, or the first free one after it: never over a
     // script saved under that id meanwhile.
@@ -488,56 +566,56 @@ bool AutomationStorage::ReturnTakenLocked(const std::string& id) {
     }
     if (MoltFileKindAt(GetScriptPath(back), MoltFileLinks::kNotFollowed) ==
         MoltFileKind::kMissing) {
-      returned = base::ReplaceFile(taken, GetScriptPath(back), nullptr);
+      returned =
+          base::ReplaceFile(set_aside.file, GetScriptPath(back), nullptr);
       if (returned && back != id) {
-        LOG(WARNING) << "[Automation] " << id << kScriptExt << kTakenExt
+        LOG(WARNING) << "[Automation] "
+                     << set_aside.file.BaseName().AsUTF8Unsafe()
                      << " returned as " << back << kScriptExt;
       }
     }
   }
-  Taking::Get().Stop(taken);
+  Taking::Get().Stop(set_aside.file);
   return returned;
 }
 
-std::vector<std::string> AutomationStorage::InterruptedTakes() {
+std::vector<AutomationStorage::SetAside> AutomationStorage::InterruptedTakes() {
   BlockingScope blocking(*this);
-  std::vector<std::string> out;
+  std::vector<SetAside> out;
   const base::FilePath dir = GetAutomationsDir();
   if (!base::DirectoryExists(dir))
     return out;
-  const std::string suffix = std::string(kScriptExt) + kTakenExt;
   const base::Time now = base::Time::Now();
   base::FileEnumerator e(dir, /*recursive=*/false, base::FileEnumerator::FILES,
-                         FILE_PATH_LITERAL("*.molt.taken"));
+                         FILE_PATH_LITERAL("*.taken"));
   for (base::FilePath path = e.Next(); !path.empty(); path = e.Next()) {
-    const std::string name = path.BaseName().AsUTF8Unsafe();
-    if (name.size() <= suffix.size())
-      continue;
-    const std::string id = name.substr(0, name.size() - suffix.size());
+    std::optional<std::string> id =
+        SetAsideIdOf(path.BaseName().AsUTF8Unsafe());
     base::File::Info info;
-    if (!IsValidScriptId(id) || Taking::Get().Has(path) ||
+    if (!id || Taking::Get().Has(path) ||
         MoltFileKindAt(path, MoltFileLinks::kNotFollowed) !=
             MoltFileKind::kRegular ||
         !base::GetFileInfo(path, &info) ||
         MayStillBeMoving(info.last_modified, now)) {
       continue;
     }
-    out.push_back(id);
+    out.push_back({*id, path});
   }
   return out;
 }
 
-std::optional<Script> AutomationStorage::ReadTaken(const std::string& id) {
+std::optional<Script> AutomationStorage::ReadSetAside(
+    const SetAside& set_aside) {
   BlockingScope blocking(*this);
-  if (!IsValidScriptId(id))
+  if (!IsSetAsideHere(set_aside))
     return std::nullopt;
-  std::optional<base::DictValue> parsed = ReadScriptDict(GetTakenPath(id));
+  std::optional<base::DictValue> parsed = ReadScriptDict(set_aside.file);
   if (!parsed)
     return std::nullopt;
   AutomationSecurity::ScrubPlaintextSecrets(*parsed);
   std::optional<Script> script = Script::FromJSON(*parsed);
   if (script)
-    script->id = id;
+    script->id = set_aside.id;
   return script;
 }
 

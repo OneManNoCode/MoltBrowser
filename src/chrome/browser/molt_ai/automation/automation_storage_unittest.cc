@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -43,6 +44,21 @@ Script Named(const std::string& id, const std::string& name) {
   step.target = "https://news.example/";
   script.steps.push_back(std::move(step));
   return script;
+}
+
+// The files a Take() set |id| aside as, in |dir|.
+std::vector<base::FilePath> SetAsideFiles(const base::FilePath& dir,
+                                          const std::string& id) {
+  std::vector<base::FilePath> out;
+  base::FileEnumerator files(dir, /*recursive=*/false,
+                             base::FileEnumerator::FILES,
+                             FILE_PATH_LITERAL("*.taken"));
+  for (base::FilePath file = files.Next(); !file.empty(); file = files.Next()) {
+    if (file.BaseName().AsUTF8Unsafe().rfind(id + ".molt.", 0) == 0) {
+      out.push_back(file);
+    }
+  }
+  return out;
 }
 
 TEST(AutomationStorageTest, ADirectoryOfItsOwn) {
@@ -102,7 +118,7 @@ TEST(AutomationStorageTest, TakeRefusesWhatItCantRead) {
   EXPECT_FALSE(shared.Take("broken"));
   // Left as it was.
   EXPECT_TRUE(base::PathExists(dir.AppendASCII("broken.molt")));
-  EXPECT_FALSE(base::PathExists(dir.AppendASCII("broken.molt.taken")));
+  EXPECT_TRUE(SetAsideFiles(dir, "broken").empty());
   // Nor ids that aren't file names.
   EXPECT_FALSE(shared.Take("../broken"));
   EXPECT_FALSE(shared.Take(""));
@@ -266,47 +282,90 @@ TEST(AutomationStorageTest, MovesCutShortAreReported) {
   for (const char* id : {"voice_1", "voice_2", "voice_3", "voice_4"}) {
     ASSERT_TRUE(shared.Save(Named(id, id)));
   }
-  // Set aside by a browser that ended: long ago, just now (maybe another
-  // browser's, moving it now), and "in the future" (a clock set back).
+  // Set aside by a browser that ended: long ago (under round 43's name and
+  // this round's), just now (maybe another browser's, moving it now), and
+  // "in the future" (a clock set back).
   const base::Time now = base::Time::Now();
   const struct {
     const char* id;
+    const char* set_aside_as;
     base::Time when;
-  } set_aside[] = {{"voice_1", now - base::Minutes(10)},
-                   {"voice_2", now},
-                   {"voice_3", now + base::Minutes(60)}};
+  } set_aside[] = {
+      {"voice_1", "voice_1.molt.taken", now - base::Minutes(10)},
+      {"voice_2", "voice_2.molt.0123456789abcdef.taken", now},
+      {"voice_3", "voice_3.molt.42.taken", now + base::Minutes(60)}};
   for (const auto& entry : set_aside) {
-    const base::FilePath taken =
-        dir.AppendASCII(std::string(entry.id) + ".molt.taken");
+    const base::FilePath taken = dir.AppendASCII(entry.set_aside_as);
     ASSERT_TRUE(base::ReplaceFile(
         dir.AppendASCII(std::string(entry.id) + ".molt"), taken, nullptr));
     ASSERT_TRUE(base::TouchFile(taken, entry.when, entry.when));
   }
+  // Names that aren't a set-aside file's: never reported.
+  for (const char* name : {"x.taken", "a.b.molt.taken", "c.molt.XYZ.taken",
+                           "d.molt..taken", "e.json.taken"}) {
+    ASSERT_TRUE(base::WriteFile(dir.AppendASCII(name), "{}"));
+  }
   // Being moved in this browser: never reported, however old.
   ASSERT_TRUE(shared.Take("voice_4"));
-  const base::FilePath taken4 = dir.AppendASCII("voice_4.molt.taken");
-  ASSERT_TRUE(base::TouchFile(taken4, now - base::Minutes(10),
+  std::vector<base::FilePath> taken4 = SetAsideFiles(dir, "voice_4");
+  ASSERT_EQ(taken4.size(), 1u);
+  ASSERT_TRUE(base::TouchFile(taken4[0], now - base::Minutes(10),
                               now - base::Minutes(10)));
 
-  std::vector<std::string> interrupted = shared.InterruptedTakes();
-  std::sort(interrupted.begin(), interrupted.end());
-  EXPECT_EQ(interrupted, (std::vector<std::string>{"voice_1", "voice_3"}));
-  std::optional<Script> read = shared.ReadTaken("voice_1");
+  std::vector<AutomationStorage::SetAside> interrupted =
+      shared.InterruptedTakes();
+  std::sort(interrupted.begin(), interrupted.end(),
+            [](const auto& a, const auto& b) { return a.id < b.id; });
+  ASSERT_EQ(interrupted.size(), 2u);
+  EXPECT_EQ(interrupted[0].id, "voice_1");
+  EXPECT_EQ(interrupted[0].file, dir.AppendASCII("voice_1.molt.taken"));
+  EXPECT_EQ(interrupted[1].id, "voice_3");
+  std::optional<Script> read = shared.ReadSetAside(interrupted[0]);
   ASSERT_TRUE(read);
   EXPECT_EQ(read->id, "voice_1");
-  // Not taken again while set aside.
-  ASSERT_TRUE(shared.Save(Named("voice_1", "saved since")));
-  EXPECT_FALSE(shared.Take("voice_1"));
+  // Only a set-aside file of this storage, under its own id.
+  EXPECT_FALSE(shared.ReadSetAside({"voice_3", interrupted[0].file}));
+  EXPECT_FALSE(shared.ReadSetAside(
+      {"voice_1", temp.GetPath().AppendASCII("voice_1.molt.taken")}));
   // Put back: never over the script saved under its id since, but beside
   // it.
-  EXPECT_TRUE(shared.ReturnTaken("voice_1"));
+  ASSERT_TRUE(shared.Save(Named("voice_1", "saved since")));
+  EXPECT_TRUE(shared.ReturnSetAside(interrupted[0]));
   std::optional<Script> beside = shared.Load("voice_1_");
   ASSERT_TRUE(beside);
   EXPECT_EQ(beside->name, "voice_1");
   EXPECT_EQ(shared.Load("voice_1")->name, "saved since");
   shared.FinishTake("voice_4");
-  EXPECT_FALSE(base::PathExists(taken4));
-  EXPECT_EQ(shared.InterruptedTakes(), std::vector<std::string>{"voice_3"});
+  EXPECT_FALSE(base::PathExists(taken4[0]));
+  shared.FinishSetAside(interrupted[1]);
+  EXPECT_TRUE(SetAsideFiles(dir, "voice_3").empty());
+  EXPECT_TRUE(shared.InterruptedTakes().empty());
+}
+
+// A script of the same id saved and taken by another browser while one is
+// set aside: set aside beside it under a name of its own, never over it.
+TEST(AutomationStorageTest, TwoTakesOfOneIdNeverReplaceEachOther) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const base::FilePath dir = temp.GetPath().AppendASCII("automations");
+  AutomationStorage first(dir);
+  AutomationStorage second(dir);
+  ASSERT_TRUE(first.Save(Named("voice_5", "first")));
+  std::optional<Script> one = first.Take("voice_5");
+  ASSERT_TRUE(one);
+  EXPECT_FALSE(first.Take("voice_5"));
+  ASSERT_TRUE(second.Save(Named("voice_5", "second")));
+  std::optional<Script> two = second.Take("voice_5");
+  ASSERT_TRUE(two);
+  EXPECT_EQ(one->name, "first");
+  EXPECT_EQ(two->name, "second");
+  EXPECT_EQ(SetAsideFiles(dir, "voice_5").size(), 2u);
+  // Each finishes or returns its own.
+  first.FinishTake("voice_5");
+  ASSERT_EQ(SetAsideFiles(dir, "voice_5").size(), 1u);
+  EXPECT_TRUE(second.ReturnTaken("voice_5"));
+  EXPECT_TRUE(SetAsideFiles(dir, "voice_5").empty());
+  EXPECT_EQ(first.Load("voice_5")->name, "second");
 }
 
 }  // namespace

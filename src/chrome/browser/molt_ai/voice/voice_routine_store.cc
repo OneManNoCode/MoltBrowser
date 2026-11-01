@@ -154,18 +154,19 @@ std::vector<RoutineSummary> VoiceRoutineStore::Unclaimed() {
 }
 
 int VoiceRoutineStore::RecoverInterruptedClaims() {
-  const std::vector<std::string> interrupted = shared_.InterruptedTakes();
+  const std::vector<AutomationStorage::SetAside> interrupted =
+      shared_.InterruptedTakes();
   if (interrupted.empty()) {
     return 0;
   }
   const std::vector<Script> routines = Routines();
   int settled = 0;
-  for (const std::string& id : interrupted) {
-    std::optional<Script> set_aside = shared_.ReadTaken(id);
+  for (const AutomationStorage::SetAside& set_aside : interrupted) {
+    std::optional<Script> script = shared_.ReadSetAside(set_aside);
     const Script* copy = nullptr;
-    if (set_aside) {
+    if (script) {
       for (const Script& routine : routines) {
-        if (IsClaimedCopy(routine, *set_aside)) {
+        if (IsClaimedCopy(routine, *script)) {
           copy = &routine;
           break;
         }
@@ -174,14 +175,15 @@ int VoiceRoutineStore::RecoverInterruptedClaims() {
     if (copy) {
       // Saved here before the claim was cut short: finished as it would
       // have been.
-      shared_.FinishTake(id);
+      shared_.FinishSetAside(set_aside);
       mine_.AppendAudit(copy->id, "voice_routine_claimed",
                         "from before routines belonged to a profile, "
                         "finished after an interruption");
       ++settled;
-    } else if (shared_.ReturnTaken(id)) {
+    } else if (shared_.ReturnSetAside(set_aside)) {
       // Not here (or unreadable): offered again, never given silently.
-      shared_.AppendAudit(id, "claim_undone", "interrupted, put back");
+      shared_.AppendAudit(set_aside.id, "claim_undone",
+                          "interrupted, put back");
       ++settled;
     }
   }

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <optional>
+#include <set>
 #include <utility>
 
 #include "base/json/json_reader.h"
@@ -221,9 +222,11 @@ LearnedData ParseLearning(std::string_view json, int64_t now_unix) {
 bool AddDeclinedRoutines(std::vector<std::string>& declined,
                          const std::vector<std::string>& ids) {
   bool changed = false;
+  // Repeats found in a set: a file may list many ids (as many as fit in
+  // kMaxLearningFileBytes) before the cap drops the oldest.
+  std::set<std::string> listed(declined.begin(), declined.end());
   for (const std::string& id : ids) {
-    if (!IsRoutineId(id) ||
-        std::find(declined.begin(), declined.end(), id) != declined.end()) {
+    if (!IsRoutineId(id) || !listed.insert(id).second) {
       continue;
     }
     declined.push_back(id);

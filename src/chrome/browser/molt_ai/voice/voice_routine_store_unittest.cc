@@ -16,6 +16,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -28,6 +29,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
@@ -303,19 +305,36 @@ TEST_F(VoiceRoutineStoreTest, NamesForWhatTheStudioBringsIn) {
 }
 
 // --- A claim cut short (round 44) ------------------------------------------
-// A claim: Take() renames <id>.molt to <id>.molt.taken (1), the routine is
-// saved in the profile (2, a temporary file then a rename), FinishTake()
-// deletes the set-aside file (3). The browser may end between any two.
+// A claim: Take() renames <id>.molt aside, to <id>.molt.<token>.taken (1),
+// the routine is saved in the profile (2, a temporary file then a rename),
+// FinishTake() deletes the set-aside file (3). The browser may end between
+// any two. Round 43's browser set it aside as <id>.molt.taken.
 
-// What a claim set aside, as the browser left it when it ended |ago|.
-void LeaveSetAside(const base::FilePath& shared_dir,
-                   const std::string& id,
-                   const std::string& contents,
-                   base::TimeDelta ago) {
-  const base::FilePath taken = shared_dir.AppendASCII(id + ".molt.taken");
-  ASSERT_TRUE(base::WriteFile(taken, contents));
+// What a claim set aside, as the browser left it when it ended |ago|; its
+// file (round 43's name when |round_43|).
+base::FilePath LeaveSetAside(const base::FilePath& shared_dir,
+                             const std::string& id,
+                             const std::string& contents,
+                             base::TimeDelta ago,
+                             bool round_43 = false) {
+  const base::FilePath taken = shared_dir.AppendASCII(
+      id + (round_43 ? ".molt.taken" : ".molt.5eed0ff1ce5eed00.taken"));
+  EXPECT_TRUE(base::WriteFile(taken, contents));
   const base::Time when = base::Time::Now() - ago;
-  ASSERT_TRUE(base::TouchFile(taken, when, when));
+  EXPECT_TRUE(base::TouchFile(taken, when, when));
+  return taken;
+}
+
+// The set-aside files in |shared_dir|.
+int SetAsideCount(const base::FilePath& shared_dir) {
+  int count = 0;
+  base::FileEnumerator files(shared_dir, /*recursive=*/false,
+                             base::FileEnumerator::FILES,
+                             FILE_PATH_LITERAL("*.taken"));
+  for (base::FilePath file = files.Next(); !file.empty(); file = files.Next()) {
+    ++count;
+  }
+  return count;
 }
 
 std::string Contents(const base::FilePath& path) {
@@ -351,38 +370,45 @@ TEST_F(VoiceRoutineStoreTest, IsClaimedCopyComparesAllButNameAndId) {
 }
 
 // Cut short after (1), or during (2): the profile doesn't have it. Put back
-// in the shared storage, offered again, and claimed as ever.
+// in the shared storage, offered again, and claimed as ever (round 43's
+// name too).
 TEST_F(VoiceRoutineStoreTest, AClaimCutShortBeforeItsSaveIsPutBack) {
-  SaveOld("voice_1700000000_1", "my news");
-  const base::FilePath shared_dir = shared_root_.AppendASCII("automations");
-  const base::FilePath file = shared_dir.AppendASCII("voice_1700000000_1.molt");
-  const std::string original = Contents(file);
-  ASSERT_TRUE(base::DeleteFile(file));
-  LeaveSetAside(shared_dir, "voice_1700000000_1", original, base::Minutes(5));
-  // (2): a temporary file of the save that never finished.
-  ASSERT_TRUE(base::CreateDirectory(ProfileDir("Default")));
-  ASSERT_TRUE(base::WriteFile(
-      ProfileDir("Default").AppendASCII(".org.chromium.Chromium.cut123"),
-      original.substr(0, original.size() / 2)));
-  // Neither storage lists it until it is settled.
-  EXPECT_TRUE(shared_.ListIds().empty());
+  for (bool round_43 : {false, true}) {
+    SCOPED_TRACE(round_43);
+    const std::string id = round_43 ? "voice_43" : "voice_44";
+    SaveOld(id, "my news");
+    const base::FilePath shared_dir = shared_root_.AppendASCII("automations");
+    const base::FilePath file = shared_dir.AppendASCII(id + ".molt");
+    const std::string original = Contents(file);
+    ASSERT_TRUE(base::DeleteFile(file));
+    const base::FilePath taken =
+        LeaveSetAside(shared_dir, id, original, base::Minutes(5), round_43);
+    // (2): a temporary file of the save that never finished.
+    ASSERT_TRUE(base::CreateDirectory(ProfileDir("Default")));
+    ASSERT_TRUE(base::WriteFile(
+        ProfileDir("Default").AppendASCII(".org.chromium.Chromium.cut123"),
+        original.substr(0, original.size() / 2)));
+    // Neither storage lists it until it is settled.
+    EXPECT_TRUE(shared_.ListIds().empty());
 
-  VoiceRoutineStore store = Profile1();
-  EXPECT_TRUE(store.Summaries().empty());
-  const std::vector<RoutineSummary> offered = store.Unclaimed();
-  ASSERT_EQ(Names(offered), std::vector<std::string>{"my news"});
-  EXPECT_EQ(offered[0].id, "voice_1700000000_1");
-  // As it was, never in this profile without a "keep".
-  EXPECT_EQ(Contents(file), original);
-  EXPECT_FALSE(base::PathExists(
-      shared_dir.AppendASCII("voice_1700000000_1.molt.taken")));
-  EXPECT_TRUE(store.Summaries().empty());
-  // Another profile is offered it too, and a claim keeps it once.
-  VoiceRoutineStore second(ProfileDir("Profile 2"), shared_root_);
-  EXPECT_EQ(Names(second.Unclaimed()), std::vector<std::string>{"my news"});
-  ClaimResult kept = store.Claim({"voice_1700000000_1"});
-  ASSERT_EQ(kept.kept.size(), 1u);
-  EXPECT_TRUE(second.Unclaimed().empty());
+    VoiceRoutineStore store = Profile1();
+    EXPECT_TRUE(store.Summaries().empty());
+    const std::vector<RoutineSummary> offered = store.Unclaimed();
+    ASSERT_EQ(Names(offered), std::vector<std::string>{"my news"});
+    EXPECT_EQ(offered[0].id, id);
+    // As it was, never in this profile without a "keep".
+    EXPECT_EQ(Contents(file), original);
+    EXPECT_FALSE(base::PathExists(taken));
+    EXPECT_TRUE(store.Summaries().empty());
+    // Another profile is offered it too, and a claim keeps it once.
+    VoiceRoutineStore second(ProfileDir("Profile 2"), shared_root_);
+    EXPECT_EQ(Names(second.Unclaimed()), std::vector<std::string>{"my news"});
+    ClaimResult kept = store.Claim({id});
+    ASSERT_EQ(kept.kept.size(), 1u);
+    EXPECT_TRUE(second.Unclaimed().empty());
+    EXPECT_EQ(SetAsideCount(shared_dir), 0);
+    store.DeleteAll();
+  }
 }
 
 // Cut short after (2): the profile has it, as the claim saved it (here
@@ -398,11 +424,13 @@ TEST_F(VoiceRoutineStoreTest, AClaimCutShortAfterItsSaveIsFinished) {
   ASSERT_EQ(kept.kept.size(), 1u);
   EXPECT_EQ(kept.kept[0].id, "voice_1_");
   EXPECT_EQ(kept.kept[0].name, "My News (2)");
+  EXPECT_EQ(SetAsideCount(shared_dir), 0);
   // As the browser would have left it had it ended before (3).
-  LeaveSetAside(shared_dir, "voice_1", original, base::Minutes(5));
+  const base::FilePath taken =
+      LeaveSetAside(shared_dir, "voice_1", original, base::Minutes(5));
 
   EXPECT_TRUE(store.Unclaimed().empty());
-  EXPECT_FALSE(base::PathExists(shared_dir.AppendASCII("voice_1.molt.taken")));
+  EXPECT_FALSE(base::PathExists(taken));
   EXPECT_TRUE(shared_.ListIds().empty());
   EXPECT_EQ(store.Summaries().size(), 2u);
   // Settled once: nothing more to do.
@@ -438,16 +466,21 @@ TEST_F(VoiceRoutineStoreTest, AMoveInProgressIsLeftAlone) {
   const base::FilePath file3 = shared_dir.AppendASCII("voice_3.molt");
   const std::string original = Contents(file3);
   ASSERT_TRUE(base::DeleteFile(file3));
-  LeaveSetAside(shared_dir, "voice_3", original, base::Seconds(0));
+  const base::FilePath taken3 =
+      LeaveSetAside(shared_dir, "voice_3", original, base::Seconds(0));
   // This browser's own move, however old its file looks.
   ASSERT_TRUE(shared_.Take("voice_4"));
-  const base::FilePath taken4 = shared_dir.AppendASCII("voice_4.molt.taken");
+  base::FileEnumerator files(shared_dir, /*recursive=*/false,
+                             base::FileEnumerator::FILES,
+                             FILE_PATH_LITERAL("voice_4.molt.*.taken"));
+  const base::FilePath taken4 = files.Next();
+  ASSERT_FALSE(taken4.empty());
   const base::Time old = base::Time::Now() - base::Minutes(10);
   ASSERT_TRUE(base::TouchFile(taken4, old, old));
 
   VoiceRoutineStore store = Profile1();
   EXPECT_TRUE(store.Unclaimed().empty());
-  EXPECT_TRUE(base::PathExists(shared_dir.AppendASCII("voice_3.molt.taken")));
+  EXPECT_TRUE(base::PathExists(taken3));
   EXPECT_TRUE(base::PathExists(taken4));
   ASSERT_TRUE(shared_.ReturnTaken("voice_4"));
   EXPECT_EQ(Names(store.Unclaimed()), std::vector<std::string>{"weather"});
@@ -463,7 +496,8 @@ TEST_F(VoiceRoutineStoreTest, ASetAsideFileThatIsntARoutineIsPutBack) {
   Script workflow;
   workflow.id = "wf_3";
   workflow.name = "Prices";
-  LeaveSetAside(shared_dir, "wf_3", workflow.ToJSONString(), base::Minutes(5));
+  LeaveSetAside(shared_dir, "wf_3", workflow.ToJSONString(), base::Minutes(5),
+                /*round_43=*/true);
   VoiceRoutineStore store = Profile1();
   EXPECT_TRUE(store.Unclaimed().empty());
   EXPECT_EQ(Contents(shared_dir.AppendASCII("broken.molt")),
@@ -471,7 +505,36 @@ TEST_F(VoiceRoutineStoreTest, ASetAsideFileThatIsntARoutineIsPutBack) {
   EXPECT_EQ(shared_.ListIds().size(), 2u);
   EXPECT_TRUE(shared_.Load("wf_3"));
   EXPECT_TRUE(store.Summaries().empty());
+  EXPECT_EQ(SetAsideCount(shared_dir), 0);
 }
+
+#if BUILDFLAG(IS_POSIX)
+// A link named as a routine in the shared storage (to another profile's
+// routine, say): never offered, claimed, moved or read.
+TEST_F(VoiceRoutineStoreTest, ALinkIsNeverClaimed) {
+  VoiceRoutineStore second(ProfileDir("Profile 2"), shared_root_);
+  ASSERT_TRUE(
+      second.Save("voice_7", "their news", MyNews(), false, kNow).saved);
+  ASSERT_TRUE(shared_.EnsureDirectory());
+  const base::FilePath shared_dir = shared_root_.AppendASCII("automations");
+  const base::FilePath target =
+      ProfileDir("Profile 2").AppendASCII("voice_7.molt");
+  const base::FilePath link = shared_dir.AppendASCII("voice_7.molt");
+  ASSERT_TRUE(base::CreateSymbolicLink(target, link));
+
+  VoiceRoutineStore store = Profile1();
+  EXPECT_TRUE(store.Unclaimed().empty());
+  ClaimResult claimed = store.Claim({"voice_7"});
+  EXPECT_TRUE(claimed.kept.empty());
+  EXPECT_EQ(claimed.not_kept, 1);
+  EXPECT_TRUE(store.Summaries().empty());
+  base::FilePath linked;
+  ASSERT_TRUE(base::ReadSymbolicLink(link, &linked));
+  EXPECT_EQ(linked, target);
+  EXPECT_EQ(SetAsideCount(shared_dir), 0);
+  EXPECT_EQ(Names(second.Summaries()), std::vector<std::string>{"their news"});
+}
+#endif  // BUILDFLAG(IS_POSIX)
 
 // The profile's routines on one sequence: the Agent studio's change and
 // voice mode's, posted together, never interleave (a routine named twice

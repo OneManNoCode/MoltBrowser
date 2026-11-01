@@ -41,6 +41,7 @@
 
 #include <stddef.h>
 
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -128,27 +129,38 @@ class AutomationStorage {
   // Moving a script to another storage, once (a voice routine a profile
   // claims). Take() renames <id>.molt aside in one step, so of two takers
   // only one gets it, and returns it read as Load() reads it (its secrets
-  // scrubbed in what it returns); nullopt when it is gone, taken already,
-  // being taken, not a regular file or unreadable, and then it stays as it
-  // was. After a Take(), FinishTake() deletes it once it is saved
-  // elsewhere, or ReturnTaken() puts it back: as <id>.molt, or, when a
-  // script of that id was saved meanwhile, under the first free id made by
-  // adding "_" (never over another file).
+  // scrubbed in what it returns); nullopt when it is gone, being taken in
+  // this browser, not a regular file (a link is never taken, nor read) or
+  // unreadable, and then it stays as it was. Each Take() sets it aside
+  // under a name of its own, <id>.molt.<random>.taken, so a script saved
+  // under that id meanwhile and taken by another browser is set aside
+  // beside it, never over it. After a Take(), this storage's FinishTake()
+  // deletes it once it is saved elsewhere, or ReturnTaken() puts it back:
+  // as <id>.molt, or, when a script of that id was saved meanwhile, under
+  // the first free id made by adding "_" (never over another file).
   std::optional<Script> Take(const std::string& id);
   void FinishTake(const std::string& id);
   bool ReturnTaken(const std::string& id);
 
+  // A script set aside by a Take(): its id and its file.
+  struct SetAside {
+    std::string id;
+    base::FilePath file;
+  };
   // Moves cut short (the browser ended between a Take() and its
-  // FinishTake() or ReturnTaken()): the ids of the scripts set aside that
-  // no Take() in this browser is moving now and that were set aside at
-  // least kTakenGracePeriod ago (by the clock; one set aside "in the
-  // future" counts as cut short). Each is then finished or returned by the
-  // caller, which knows whether its move was saved
+  // FinishTake() or ReturnTaken()): the scripts set aside (round 43's
+  // <id>.molt.taken too) that no Take() in this browser is moving now and
+  // that were set aside at least kTakenGracePeriod ago (by the clock; one
+  // set aside "in the future" counts as cut short). Each is then finished
+  // or returned by the caller, which knows whether its move was saved
   // (VoiceRoutineStore::RecoverInterruptedClaims()).
-  std::vector<std::string> InterruptedTakes();
+  std::vector<SetAside> InterruptedTakes();
   // A script set aside, read as Take() read it; nullopt when it isn't a
   // regular file or can't be read.
-  std::optional<Script> ReadTaken(const std::string& id);
+  std::optional<Script> ReadSetAside(const SetAside& set_aside);
+  // As FinishTake() and ReturnTaken(), for a move cut short.
+  void FinishSetAside(const SetAside& set_aside);
+  bool ReturnSetAside(const SetAside& set_aside);
 
   // The promoteTrust path: sets the stored script's trust level and writes
   // a "trust_changed" audit line. Callers are UI handlers acting on a user
@@ -185,7 +197,10 @@ class AutomationStorage {
   base::FilePath GetRoot() const;
   base::FilePath GetAutomationsDir() const;
   base::FilePath GetScriptPath(const std::string& id) const;
-  base::FilePath GetTakenPath(const std::string& id) const;
+  // A new set-aside file for |id|: <id>.molt.<random>.taken.
+  base::FilePath NewSetAsidePath(const std::string& id) const;
+  // Whether |set_aside| names a set-aside file of this directory.
+  bool IsSetAsideHere(const SetAside& set_aside) const;
   base::FilePath GetAuditLogPath() const;
   // The script file at |path| read and parsed (a regular file, capped);
   // nullopt otherwise, with a log line for a file skipped.
@@ -198,11 +213,14 @@ class AutomationStorage {
   // Under the directory's lock: Save()'s write.
   bool SaveLocked(const Script& script);
   // Under the directory's lock: ReturnTaken()'s rename.
-  bool ReturnTakenLocked(const std::string& id);
+  bool ReturnSetAsideLocked(const SetAside& set_aside);
 
   base::FilePath root_override_;
   // A storage of its own: its files are here.
   base::FilePath directory_;
+  // The scripts this storage took and hasn't finished or returned yet: id
+  // -> its set-aside file.
+  std::map<std::string, base::FilePath> taken_;
 };
 
 }  // namespace automation
