@@ -150,6 +150,7 @@ source_set("voice_prompts_unit_tests") {
   sources = [
     "voice_gesture_channel_unittest.cc",
     "voice_gesture_unittest.cc",
+    "voice_prompts_es_unittest.cc",
     "voice_prompts_unittest.cc",
   ]
   deps = [

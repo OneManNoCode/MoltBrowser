@@ -19,6 +19,7 @@
 #include "chrome/browser/download/download_item_warning_data.h"
 #include "chrome/browser/download/download_ui_model.h"
 #include "chrome/browser/molt_ai/security/activation_policy.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_capture_watch.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/page_action/page_action_controller.h"
@@ -103,16 +104,18 @@ void ProcessAsTheBubbleDoes(download::DownloadItem* item,
   DownloadCommands(model->GetWeakPtr()).ExecuteCommand(command);
 }
 
-std::string Reply(PromptKind kind, PromptAnswer answer) {
+std::string Reply(PromptKind kind, PromptAnswer answer, Language language) {
   PendingPrompt pending;
   pending.kind = kind;
+  pending.language = language;
   PromptReply reply;
   reply.answer = answer;
   return ReplySpeech(pending, reply);
 }
 
 // What a permission prompt asks, in the browser's words ("use your
-// camera"); empty for what has none.
+// camera"); empty for what has none. Each is a phrase of the catalog
+// (spoken_answers.h): PermissionWhat() says it in the prompt's language.
 std::string PermissionPhrase(permissions::RequestType type) {
   switch (type) {
     case permissions::RequestType::kCameraStream:
@@ -146,6 +149,28 @@ std::string PermissionPhrase(permissions::RequestType type) {
     default:
       return std::string();
   }
+}
+
+// What a prompt asks for, from its PermissionPhrase()s, in |language|:
+// "use your camera and microphone", "usar tu cámara y tu micrófono".
+std::string PermissionWhat(const std::vector<std::string>& phrases,
+                           Language language) {
+  // The verb two phrases share is said once.
+  const std::string_view shared =
+      language == Language::kSpanish ? "usar " : "use your ";
+  std::string what;
+  std::string before;
+  for (size_t i = 0; i < phrases.size(); ++i) {
+    std::string phrase(Translated(language, phrases[i]));
+    const bool joined = i > 0 && phrase.rfind(shared, 0) == 0 &&
+                        before.rfind(shared, 0) == 0;
+    before = phrase;
+    if (joined) {
+      phrase.erase(0, shared.size());
+    }
+    what += (i == 0 ? std::string() : Localized(language, " and ")) + phrase;
+  }
+  return what;
 }
 
 }  // namespace
@@ -262,6 +287,8 @@ int VoiceBrowserPrompts::Begin(Source source,
   if (!delegate_->ListensForPrompts()) {
     return 0;
   }
+  // Said, and its word drawn and heard, in the window's language.
+  prompt.language = delegate_->VoiceLanguage();
   // A newer prompt takes the place of the one waiting; that one's window
   // or dialog stays as it is.
   Drop();
@@ -345,7 +372,7 @@ void VoiceBrowserPrompts::DrawWord(const WordChannel& channel,
   }
   // Locked out: no word; voice can only refuse.
   std::optional<GesturePrompt> gesture =
-      gestures_.Begin(current.binding, NowMs());
+      gestures_.Begin(current.binding, prompt.language, NowMs());
   if (!gesture) {
     current.gesture_id = 0;
     return;
@@ -365,11 +392,12 @@ void VoiceBrowserPrompts::Reissue(WordRetired why) {
   }
   const int id = current_->id;
   BrowserPrompt prompt = current_->prompt;
-  prompt.preface = WordRetiredPreface(why);
+  prompt.preface = WordRetiredPreface(why, prompt.language);
   DrawWord(WordChannelNow(), prompt);
   if (current_->reads > kMaxWordsPerPrompt && current_->word.empty() &&
       !current_->screen_shared) {
-    prompt.preface = "I can't take a word for this one any more.";
+    prompt.preface = Said(prompt.language,
+                          "I can't take a word for this one any more.", {});
   }
   if (!delegate_->ReadBrowserPrompt(id, prompt, current_->word)) {
     Drop();
@@ -437,7 +465,8 @@ void VoiceBrowserPrompts::OnTimeout(int id) {
     AnswerPermission(*prompt, PromptAnswer::kDecline, nullptr);
   }
   const PromptKind kind = prompt->kind;
-  Finish(std::move(prompt), PromptTimeoutSpeech(kind));
+  const Language language = prompt->prompt.language;
+  Finish(std::move(prompt), PromptTimeoutSpeech(kind, language));
 }
 
 void VoiceBrowserPrompts::Answer(const VoiceStep& step,
@@ -495,6 +524,8 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     Drop();
     return;
   }
+  // The prompt's language: its word was drawn, and is heard, in it.
+  const Language language = current_->prompt.language;
   VoiceGesture gesture;
   const HearResult heard = gestures_.Hear(current_->gesture_id, step.text,
                                           evidence, NowMs(), &gesture);
@@ -510,15 +541,16 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
       return;
     }
     // It keeps waiting.
-    delegate_->SayWordAboutBrowserPrompt(WordText{
-        NotCleanSpeech(current_->word), NotCleanSpeech(kWordOnScreen)});
+    delegate_->SayWordAboutBrowserPrompt(
+        WordText{NotCleanSpeech(current_->word, language),
+                 NotCleanSpeech(WordOnScreen(language), language)});
     return;
   }
   if (heard == HearResult::kRetired) {
     // The word it had before: it keeps waiting for the new one.
-    delegate_->SayWordAboutBrowserPrompt(
-        WordText{RetiredWordSpeech(current_->kind, current_->word),
-                 RetiredWordSpeech(current_->kind, kWordOnScreen)});
+    delegate_->SayWordAboutBrowserPrompt(WordText{
+        RetiredWordSpeech(current_->kind, current_->word, language),
+        RetiredWordSpeech(current_->kind, WordOnScreen(language), language)});
     return;
   }
   if (heard == HearResult::kUnsure) {
@@ -527,6 +559,7 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     again.answer = PromptAnswer::kSayAgain;
     PendingPrompt pending;
     pending.kind = current_->kind;
+    pending.language = language;
     delegate_->SayAboutBrowserPrompt(ReplySpeech(pending, again));
     return;
   }
@@ -548,9 +581,9 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
               gestures_.Consume(gesture, prompt->binding, NowMs());
           base::OnceCallback<void(bool)> done = std::move(prompt->done);
           Finish(std::move(prompt),
-                 confirmed
-                     ? Reply(PromptKind::kConfirmSites, PromptAnswer::kAllow)
-                     : std::string("I couldn't confirm them."));
+                 confirmed ? Reply(PromptKind::kConfirmSites,
+                                   PromptAnswer::kAllow, language)
+                           : Said(language, "I couldn't confirm them.", {}));
           if (done) {
             std::move(done).Run(confirmed);
           }
@@ -564,11 +597,13 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
       return;
     }
     case HearResult::kWrongWord: {
-      std::string said = Reply(prompt->kind, PromptAnswer::kWrongWord);
+      std::string said =
+          Reply(prompt->kind, PromptAnswer::kWrongWord, language);
       if (gestures_.LockedOut(NowMs())) {
-        said +=
-            " That's twice: for the next ten minutes, allow things with the "
-            "mouse or keyboard.";
+        said += " " + Said(language,
+                           "That's twice: for the next ten minutes, allow "
+                           "things with the mouse or keyboard.",
+                           {});
       }
       if (prompt->source == Source::kPermission) {
         AnswerPermission(*prompt, PromptAnswer::kDecline, nullptr);
@@ -583,7 +618,9 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     case HearResult::kLockedOut:
     case HearResult::kRetired:
       Finish(std::move(prompt),
-             "I can't take the word now. Use the mouse or keyboard.");
+             Said(language,
+                  "I can't take the word now. Use the mouse or keyboard.",
+                  {}));
       return;
   }
 }
@@ -650,14 +687,7 @@ void VoiceBrowserPrompts::ReadPermissionPrompt() {
     }
   }
   // "use your camera and microphone".
-  for (size_t i = 0; i < phrases.size(); ++i) {
-    std::string phrase = phrases[i];
-    if (i > 0 && phrase.rfind("use your ", 0) == 0 &&
-        phrases[i - 1].rfind("use your ", 0) == 0) {
-      phrase.erase(0, 9);
-    }
-    prompt.what += (i == 0 ? "" : " and ") + phrase;
-  }
+  prompt.what = PermissionWhat(phrases, delegate_->VoiceLanguage());
   const uintptr_t request =
       reinterpret_cast<uintptr_t>(permissions_->Requests().front().get());
   if (Begin(Source::kPermission, std::move(prompt), PermissionBinding()) &&
@@ -684,7 +714,7 @@ std::string VoiceBrowserPrompts::AnswerPermission(const Current& prompt,
       if (!gesture || !binding ||
           !gestures_.Consume(*gesture, *binding, NowMs())) {
         permissions_->Dismiss(options);
-        return "I couldn't allow it.";
+        return Said(prompt.prompt.language, "I couldn't allow it.", {});
       }
       // For this visit where Chromium has temporary grants for all of it,
       // as the prompt's "Allow this time".
@@ -696,10 +726,11 @@ std::string VoiceBrowserPrompts::AnswerPermission(const Current& prompt,
       }
       if (temporary) {
         permissions_->AcceptThisTime(options);
-        return "Allowed for this visit.";
+        return Said(prompt.prompt.language, "Allowed for this visit.", {});
       }
       permissions_->Accept(options);
-      return Reply(PromptKind::kPermission, PromptAnswer::kAllow);
+      return Reply(PromptKind::kPermission, PromptAnswer::kAllow,
+                   prompt.prompt.language);
     }
     case PromptAnswer::kRefuse:
       permissions_->Deny(options);
@@ -854,10 +885,14 @@ std::string VoiceBrowserPrompts::AnswerDownload(const Current& prompt,
       // one click, whatever was minted.
       if (!gesture || !KeepableByVoice(*model) ||
           !gestures_.Consume(*gesture, KeepBinding(item), NowMs())) {
-        return "I couldn't keep it. You can decide on the downloads page.";
+        return Said(prompt.prompt.language,
+                    "I couldn't keep it. You can decide on the downloads "
+                    "page.",
+                    {});
       }
       ProcessAsTheBubbleDoes(item, model.get(), DownloadCommands::KEEP);
-      return Reply(PromptKind::kDangerousDownload, PromptAnswer::kAllow);
+      return Reply(PromptKind::kDangerousDownload, PromptAnswer::kAllow,
+                   prompt.prompt.language);
     case PromptAnswer::kRefuse:
       ProcessAsTheBubbleDoes(item, model.get(), DownloadCommands::DISCARD);
       return std::string();
@@ -985,10 +1020,11 @@ bool VoiceBrowserPrompts::ConfirmDraftSites(
       clean.push_back(std::move(spoken));
     }
   }
+  const std::string and_word = Localized(delegate_->VoiceLanguage(), " and ");
   for (size_t i = 0; i < clean.size(); ++i) {
-    prompt.text += (i == 0                  ? ""
-                    : i + 1 == clean.size() ? " and "
-                                            : ", ") +
+    prompt.text += (i == 0                  ? std::string()
+                    : i + 1 == clean.size() ? and_word
+                                            : std::string(", ")) +
                    clean[i];
   }
   const int id = Begin(Source::kSites, std::move(prompt),

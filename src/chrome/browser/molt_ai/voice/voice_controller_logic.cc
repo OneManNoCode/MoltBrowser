@@ -827,6 +827,7 @@ class Planner {
     pending = PendingPrompt();
     pending.id = id;
     pending.kind = prompt.kind;
+    pending.language = prompt.language;
     pending.word = gesture ? std::string(word) : std::string();
     pending.malicious = prompt.malicious;
     pending.screen_shared = gesture && prompt.screen_shared;
@@ -834,8 +835,9 @@ class Planner {
     Status(prompt.kind == PromptKind::kPermission ? "Permission request"
                                                   : "Waiting for your answer");
     SayWithWord(PromptSpeech(prompt, pending.word),
-                PromptSpeech(prompt, pending.word.empty() ? std::string_view()
-                                                          : kWordOnScreen));
+                PromptSpeech(prompt, pending.word.empty()
+                                         ? std::string_view()
+                                         : WordOnScreen(prompt.language)));
   }
 
   // Says |said|, which holds the waiting prompt's word, and keeps it with

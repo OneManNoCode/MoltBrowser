@@ -31,7 +31,7 @@ constexpr auto kWords = std::to_array<std::string_view>({
     "melocoton", "halcon",   "tornillo",  "pulsera",     "salchicha",
 });
 
-// The answers of the Spanish prompts (voice_prompts.h's, in Spanish), the
+// The answers of the Spanish prompts (voice_prompts.cc's), the
 // words said around them and the loop's yes and no, the wake phrase's
 // words, and the numbers a list is chosen from. "yes", "ok", "stop":
 // Spanish speakers say them too.
@@ -57,6 +57,19 @@ constexpr auto kAnswerWords = std::to_array<std::string_view>({
     "es",        "mi",         "eso",     "esto",     "acepta",
     "aceptar",   "deja",       "dejar",   "di",       "yes",
     "stop",
+    // More words of the prompts' answers (voice_prompts.cc), so none is
+    // ever heard as a confirmation word: "bloquéalo", "consérvalo", "de
+    // acuerdo", "me quedo". Answers that would sound like one ("guárdalo":
+    // castillo's, "deniégalo": ancla's, "ciérralo": tornillo's) aren't
+    // answers alone; with "no" or "de" before them ("no salgas", "de
+    // acuerdo") they never are ("no" and "de" are answer words).
+    "bloquealo", "cancelalo",  "ignoralo",  "permitelo", "permitas",
+    "conserva",  "conservalo", "conservar", "conserves", "descartalo",
+    "borralo",   "eliminalo",  "recargala", "quedarse",  "quedo",
+    "entendido", "hagas",      "contesta",  "sitio",     "este",
+    "esta",      "mas",        "muchas",    "pues",      "de",
+    "lo",        "la",         "me",        "en",        "eh",
+    "em",
 });
 
 constexpr auto kLeading = std::to_array<std::string_view>(

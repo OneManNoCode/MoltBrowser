@@ -16,7 +16,11 @@
 //   - The words: ConfirmationWords(), short everyday nouns that no two of
 //     which the phonetic key (phonetic_key.h) takes for each other or for
 //     the answers and numbers voice mode understands ("no", "block",
-//     "stay", "four"...).
+//     "stay", "four"...). Each language has its own
+//     (ConfirmationWords(Language)): Spanish's are
+//     confirmation_words_es.h's, heard with Spanish's phonetic key
+//     (phonetic_key_es.h), its answers and the words said around them. A
+//     prompt is heard in the language its word was drawn in.
 //   - The choice: uniform over the list (the caller's random source; the
 //     browser's is base::RandUint64()), never one of the last
 //     kRecentWordsAvoided words, so a recording of an earlier answer never
@@ -55,6 +59,8 @@
 #include <string_view>
 #include <vector>
 
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
+
 namespace molt_ai {
 namespace voice {
 
@@ -80,10 +86,16 @@ inline constexpr size_t kMaxHeardWords = 6;
 
 // The confirmation words, lower-case ASCII.
 std::span<const std::string_view> ConfirmationWords();
+// |language|'s: ConfirmationWords() in English, SpanishConfirmationWords()
+// (folded: "platano") in Spanish.
+std::span<const std::string_view> ConfirmationWords(Language language);
 
 // The words voice mode's answers and numbers use ("yes", "no", "block",
 // "leave", "one" ... "twelve"): no confirmation word may sound like one.
 std::span<const std::string_view> AnswerWords();
+// |language|'s ("si", "no", "bloquear", "salir", "uno" ... "doce" in
+// Spanish).
+std::span<const std::string_view> AnswerWords(Language language);
 
 // Whether the phonetic key could take |a| for |b|: their keys are equal or
 // within PhoneticBound() of each other, plus |margin| half-edits (the list's
@@ -112,10 +124,18 @@ struct HeardWord {
   size_t index = 0;
 };
 HeardWord HearConfirmationWord(std::string_view heard);
+// The same in |language|: its words, heard with its phonetic key
+// (PhoneticKeyFor()), the words said around them and its answers. In
+// Spanish, "si", "vale", "ok", "di" or an article before the word ("la
+// manzana") and "por favor", "porfa" or "gracias" after it; a plural adds
+// "s" or "es" ("camiones").
+HeardWord HearConfirmationWord(std::string_view heard, Language language);
 
 // The index of the confirmation word |heard| is for sure (kWord), or
 // nullopt.
 std::optional<size_t> MatchConfirmationWord(std::string_view heard);
+std::optional<size_t> MatchConfirmationWord(std::string_view heard,
+                                            Language language);
 
 // ---------------------------------------------------------------------------
 // Prompts and gestures
@@ -158,6 +178,8 @@ struct GesturePrompt {
 
   int id = 0;
   std::string word;
+  // The language |word| was drawn in, and what is heard is heard in.
+  Language language = Language::kEnglish;
   GestureBinding binding;
   int64_t expires_ms = 0;
   // The words this prompt had before (Begin() for the same binding while
@@ -215,6 +237,11 @@ class GestureBook {
   // because something may have heard or seen it: the prompt is begun again
   // with a new word).
   std::optional<GesturePrompt> Begin(GestureBinding binding, int64_t now_ms);
+  // The same with a word of |language|'s list, which Hear() then hears in
+  // |language|.
+  std::optional<GesturePrompt> Begin(GestureBinding binding,
+                                     Language language,
+                                     int64_t now_ms);
 
   // |heard| while prompt |id| waits. kMinted fills |gesture| and closes the
   // prompt; kWrongWord (another word, heard cleanly and for sure) closes it
@@ -241,8 +268,10 @@ class GestureBook {
   bool LockedOut(int64_t now_ms) const;
 
  private:
-  // Never a recent word, nor one of |retired|.
-  std::string PickWord(const std::vector<std::string>& retired);
+  // A word of |language|'s list: never a recent word, nor one of
+  // |retired|.
+  std::string PickWord(const std::vector<std::string>& retired,
+                       Language language);
   void Expire(int64_t now_ms);
 
   std::function<uint64_t()> random_;

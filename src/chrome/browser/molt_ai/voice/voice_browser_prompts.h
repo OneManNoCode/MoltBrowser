@@ -99,6 +99,9 @@ class VoiceBrowserPrompts
     // Voice mode is on and listens to the microphone in this window (not
     // only typed text, not a MoltNet window): prompts are read.
     virtual bool ListensForPrompts() = 0;
+    // The language prompts are read in, their words drawn in and their
+    // answers heard in (the window's voice language, voice_language.h).
+    virtual Language VoiceLanguage() = 0;
     // Reads |prompt| as prompt |id| (PlanBrowserPrompt()), |word| the
     // voice gesture's word or empty. False if it can't now.
     virtual bool ReadBrowserPrompt(int id,

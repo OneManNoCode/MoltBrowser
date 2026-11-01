@@ -329,6 +329,194 @@ constexpr SpokenAnswer kAnswers[] = {
     {"I can only open web pages.", "Solo puedo abrir páginas web."},
     {"There's no tab to do that in.", "No hay ninguna pestaña donde hacerlo."},
     {"I can't do that here.", "No puedo hacer eso aquí."},
+
+    // --- The browser's prompts and a page's dialogs (voice_prompts.cc,
+    // voice_browser_prompts.cc). The answers quoted are the ones
+    // ParsePromptReply() takes in Spanish; "la palabra" (the confirmation
+    // word) is feminine, a permission or a file is "lo", the sites "los".
+    {"Permission request", "Solicitud de permiso"},
+    {"Waiting for your answer", "Esperando tu respuesta"},
+    {"Checking the word", "Comprobando la palabra"},
+    {"the word on your screen", "la palabra que ves en la pantalla"},
+    {"I don't say the word aloud while another program could hear it.",
+     "No digo la palabra en voz alta mientras otro programa pueda oírla."},
+    {"{0} is asking for a permission.", "{0} pide un permiso."},
+    {"{0} wants to {1}.", "{0} quiere {1}."},
+    {"To allow it, say {0}. To block it, say no.",
+     "Para permitirlo, di {0}. Para bloquearlo, di no."},
+    {"I can't take the word while your screen is shared, so to allow it, "
+     "use the mouse or keyboard. To block it, say no.",
+     "No puedo aceptar la palabra mientras compartes la pantalla, así que "
+     "para permitirlo usa el ratón o el teclado. Para bloquearlo, di no."},
+    {"To block it, say no. To allow it, use the mouse or keyboard.",
+     "Para bloquearlo, di no. Para permitirlo, usa el ratón o el teclado."},
+    {"{0} shows another message. Say OK to close it.",
+     "{0} muestra otro mensaje. Di vale para cerrarlo."},
+    {"{0} shows a message. Say OK to close it.",
+     "{0} muestra un mensaje. Di vale para cerrarlo."},
+    {"{0} says: {1} Say OK to close it.",
+     "{0} dice: {1} Di vale para cerrarlo."},
+    {"{0} asks another question. Say yes or no.",
+     "{0} hace otra pregunta. Di sí o no."},
+    {"{0} asks you to confirm. Say yes or no.",
+     "{0} te pide que confirmes. Di sí o no."},
+    {"{0} asks: {1} Say yes or no.", "{0} pregunta: {1} Di sí o no."},
+    {"{0} asks for an answer. Say answer, then your answer, or say no to "
+     "cancel.",
+     "{0} pide una respuesta. Di responde y luego tu respuesta, o di no "
+     "para cancelar."},
+    {"{0} asks: {1} Say answer, then your answer, or say no to cancel.",
+     "{0} pregunta: {1} Di responde y luego tu respuesta, o di no para "
+     "cancelar."},
+    {"Reload {0}? Changes you made may not be saved. Say reload or stay.",
+     "¿Recargar {0}? Puede que no se guarden los cambios que hiciste. Di "
+     "recarga o quédate."},
+    {"Leave {0}? Changes you made may not be saved. Say leave or stay.",
+     "¿Salir de {0}? Puede que no se guarden los cambios que hiciste. Di "
+     "sal o quédate."},
+    {"A file from {0} is dangerous, so it was blocked. To delete it, say "
+     "discard. To keep it anyway, use the downloads page.",
+     "Un archivo de {0} es peligroso, así que se ha bloqueado. Para "
+     "borrarlo, di descarta. Para conservarlo de todos modos, usa la página "
+     "de descargas."},
+    {"The file {0} from {1} is dangerous, so it was blocked. To delete it, "
+     "say discard. To keep it anyway, use the downloads page.",
+     "El archivo {0} de {1} es peligroso, así que se ha bloqueado. Para "
+     "borrarlo, di descarta. Para conservarlo de todos modos, usa la página "
+     "de descargas."},
+    {"A file from {0} may be harmful.",
+     "Un archivo de {0} puede ser dañino."},
+    {"The file {0} from {1} may be harmful.",
+     "El archivo {0} de {1} puede ser dañino."},
+    {"To keep it, say {0}. To delete it, say discard.",
+     "Para conservarlo, di {0}. Para borrarlo, di descarta."},
+    {"I can't take the word while your screen is shared. To delete it, say "
+     "discard. To keep it, use the downloads page.",
+     "No puedo aceptar la palabra mientras compartes la pantalla. Para "
+     "borrarlo, di descarta. Para conservarlo, usa la página de "
+     "descargas."},
+    {"To delete it, say discard. To keep it, use the downloads page.",
+     "Para borrarlo, di descarta. Para conservarlo, usa la página de "
+     "descargas."},
+    {"Save your password for {0}? Say save, never, or not now.",
+     "¿Guardar tu contraseña de {0}? Di guarda, nunca o ahora no."},
+    {"Confirm the sites this routine uses?",
+     "¿Confirmas los sitios que usa esta rutina?"},
+    {"Confirm the sites this routine uses: {0}?",
+     "¿Confirmas los sitios que usa esta rutina: {0}?"},
+    {"To confirm them, say {0}. To leave them unconfirmed, say no.",
+     "Para confirmarlos, di {0}. Para dejarlos sin confirmar, di no."},
+    {"I can't take the word while your screen is shared. Confirm them in "
+     "the Agent studio, or say no.",
+     "No puedo aceptar la palabra mientras compartes la pantalla. "
+     "Confírmalos en el estudio del modo agente, o di no."},
+    {"Confirm them in the Agent studio, or say no.",
+     "Confírmalos en el estudio del modo agente, o di no."},
+    {"No answer, so I dismissed the permission request.",
+     "No has respondido, así que he descartado la solicitud de permiso."},
+    {"No answer, so the file stays blocked. You can decide on the downloads "
+     "page.",
+     "No has respondido, así que el archivo sigue bloqueado. Puedes decidir "
+     "en la página de descargas."},
+    {"No answer, so the sites stay unconfirmed.",
+     "No has respondido, así que los sitios siguen sin confirmar."},
+    {"I couldn't be sure that was you. When it's quiet and I've finished "
+     "speaking, say {0}.",
+     "No he podido asegurarme de que fueras tú. Cuando haya silencio y yo "
+     "haya terminado de hablar, di {0}."},
+    {"I couldn't be sure that was you, and something else may have heard "
+     "the word, so I changed it.",
+     "No he podido asegurarme de que fueras tú, y puede que otra cosa haya "
+     "oído la palabra, así que la he cambiado."},
+    {"Something started using a microphone, so I changed the word.",
+     "Algo ha empezado a usar un micrófono, así que he cambiado la "
+     "palabra."},
+    {"Your screen is no longer shared.", "Ya no compartes la pantalla."},
+    {"That word changed. To keep it, say {0}.",
+     "Esa palabra ha cambiado. Para conservarlo, di {0}."},
+    {"That word changed. To confirm them, say {0}.",
+     "Esa palabra ha cambiado. Para confirmarlos, di {0}."},
+    {"That word changed. To allow it, say {0}.",
+     "Esa palabra ha cambiado. Para permitirlo, di {0}."},
+    {"Kept the file.", "He conservado el archivo."},
+    {"Confirmed.", "Confirmado."},
+    {"Allowed.", "Permitido."},
+    {"That wasn't the word, so I didn't keep the file.",
+     "Esa no era la palabra, así que no he conservado el archivo."},
+    {"That wasn't the word, so I turned it down.",
+     "Esa no era la palabra, así que lo he rechazado."},
+    {"Deleted the file.", "He borrado el archivo."},
+    {"I won't offer to save passwords for this site.",
+     "No volveré a ofrecerte guardar contraseñas de este sitio."},
+    {"Blocked.", "Bloqueado."},
+    {"Closed.", "Cerrado."},
+    {"Yes.", "Sí."},
+    {"Sent.", "Enviado."},
+    {"Leaving.", "Saliendo."},
+    {"Saved.", "Guardado."},
+    {"No.", "No."},
+    {"Staying on the page.", "Me quedo en la página."},
+    {"Not now.", "Ahora no."},
+    {"Dismissed.", "Descartado."},
+    {"Left unconfirmed.", "Sin confirmar."},
+    {"Your answer: {0}. Say yes to send it, or no to cancel.",
+     "Tu respuesta: {0}. Di sí para enviarla, o no para cancelar."},
+    {"To keep it, say {0}.", "Para conservarlo, di {0}."},
+    {"To confirm them, say {0}.", "Para confirmarlos, di {0}."},
+    {"To allow it, say {0}.", "Para permitirlo, di {0}."},
+    {"I didn't catch that. Say the word again.",
+     "No te he entendido. Di la palabra otra vez."},
+    {"I can't keep a dangerous file by voice. Use the downloads page, or say "
+     "discard.",
+     "No puedo conservar un archivo peligroso por voz. Usa la página de "
+     "descargas, o di descarta."},
+    {"I can't take the word while your screen is shared. Use the downloads "
+     "page, or say discard.",
+     "No puedo aceptar la palabra mientras compartes la pantalla. Usa la "
+     "página de descargas, o di descarta."},
+    {"I can't take the word while your screen is shared. Use the mouse or "
+     "keyboard, or say no.",
+     "No puedo aceptar la palabra mientras compartes la pantalla. Usa el "
+     "ratón o el teclado, o di no."},
+    {"I can't keep it by voice right now. Use the downloads page, or say "
+     "discard.",
+     "Ahora no puedo conservarlo por voz. Usa la página de descargas, o di "
+     "descarta."},
+    {"I can't allow that by voice right now. Use the mouse or keyboard, or "
+     "say no.",
+     "Ahora no puedo permitirlo por voz. Usa el ratón o el teclado, o di "
+     "no."},
+    {"I can't take a word for this one any more.",
+     "Ya no puedo aceptar una palabra para esto."},
+    {"I couldn't confirm them.", "No he podido confirmarlos."},
+    {"That's twice: for the next ten minutes, allow things with the mouse or "
+     "keyboard.",
+     "Ya van dos veces: durante los próximos diez minutos, permite las cosas "
+     "con el ratón o el teclado."},
+    {"I can't take the word now. Use the mouse or keyboard.",
+     "Ahora no puedo aceptar la palabra. Usa el ratón o el teclado."},
+    {"I couldn't allow it.", "No he podido permitirlo."},
+    {"Allowed for this visit.", "Permitido durante esta visita."},
+    {"I couldn't keep it. You can decide on the downloads page.",
+     "No he podido conservarlo. Puedes decidir en la página de descargas."},
+    // What a permission prompt asks (PermissionPhrase()): "{0} quiere ...".
+    {"use your camera", "usar tu cámara"},
+    {"use your microphone", "usar tu micrófono"},
+    {"know your location", "saber tu ubicación"},
+    {"show notifications", "mostrar notificaciones"},
+    {"see what you copy to the clipboard",
+     "ver lo que copias en el portapapeles"},
+    {"control your MIDI devices", "controlar tus dispositivos MIDI"},
+    {"use its cookies on other sites", "usar sus cookies en otros sitios"},
+    {"download several files", "descargar varios archivos"},
+    {"reach devices on your local network",
+     "acceder a dispositivos de tu red local"},
+    {"use your motion sensors", "usar tus sensores de movimiento"},
+    {"manage windows on all your screens",
+     "gestionar ventanas en todas tus pantallas"},
+    {"edit files", "editar archivos"},
+    {"know when you're using your device",
+     "saber cuándo estás usando tu dispositivo"},
 };
 
 }  // namespace

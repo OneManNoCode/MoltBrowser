@@ -11,6 +11,7 @@
 
 #include "chrome/browser/molt_ai/security/activation_policy.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
@@ -61,21 +62,136 @@ constexpr auto kNever = std::to_array<std::string_view>(
 constexpr auto kNotNow = std::to_array<std::string_view>(
     {"not now", "no", "no thanks", "no thank you", "cancel", "later",
      "not now thanks"});
+constexpr auto kDictationLeads = std::to_array<std::string_view>(
+    {"answer ", "type ", "my answer is ", "the answer is ", "reply "});
+constexpr auto kPoliteBefore =
+    std::to_array<std::string_view>({"please ", "um ", "uh "});
+constexpr auto kPoliteAfter =
+    std::to_array<std::string_view>({" please", " thanks", " thank you"});
+
+// Spanish's (folded: no accents, "si" for "sí"), as a Spanish speaker
+// answers: the familiar imperative ("bloquea", "quédate"), the infinitive
+// ("bloquear") and the imperative with its object ("bloquéalo"). None is
+// heard as a confirmation word (each word alone is in SpanishAnswerWords(),
+// or comes after "no" or "de"): unit-tested.
+constexpr auto kYesEs = std::to_array<std::string_view>(
+    {"si", "vale", "ok", "okay", "claro", "de acuerdo", "si por favor",
+     "confirma", "confirmar", "acepta", "aceptar", "esta bien", "bien",
+     "si vale", "vale si", "dale", "venga", "seguro", "sip", "si claro"});
+constexpr auto kNoEs = std::to_array<std::string_view>(
+    {"no", "nop", "cancela", "cancelar", "cancelalo", "no gracias",
+     "no lo hagas", "no no"});
+constexpr auto kBlockEs = std::to_array<std::string_view>(
+    {"no", "bloquea", "bloquear", "bloquealo", "bloquearlo", "deniega",
+     "denegar", "no lo permitas", "no permitir", "no permitas", "no gracias",
+     "nop", "nunca"});
+constexpr auto kDismissEs = std::to_array<std::string_view>(
+    {"cancela", "cancelar", "ahora no", "luego", "mas tarde", "ignora",
+     "ignorar", "ignoralo", "cierra", "cerrar"});
+constexpr auto kAllowWordsEs = std::to_array<std::string_view>(
+    {"si", "permite", "permitir", "permitelo", "permitirlo", "ok", "okay",
+     "vale", "claro", "si por favor", "si permite", "si permitelo", "acepta",
+     "aceptar", "guarda", "guardar", "conserva", "conservalo", "conservar",
+     "si conservalo"});
+constexpr auto kCloseEs = std::to_array<std::string_view>(
+    {"vale", "ok", "okay", "si", "cierra", "cerrar", "entendido",
+     "de acuerdo", "acepta", "aceptar", "no", "cancela", "cancelar"});
+constexpr auto kLeaveEs = std::to_array<std::string_view>(
+    {"sal", "salir", "sal de la pagina", "salir de la pagina", "si", "si sal",
+     "recarga", "recargar", "recargala", "si recarga", "vale", "ok",
+     "okay"});
+constexpr auto kStayEs = std::to_array<std::string_view>(
+    {"quedate", "quedarme", "quedate aqui", "me quedo", "quedarse",
+     "quedate en la pagina", "no", "cancela", "cancelar", "no salgas",
+     "no recargues", "no me quedo aqui"});
+constexpr auto kDiscardEs = std::to_array<std::string_view>(
+    {"descarta", "descartar", "descartalo", "borra", "borrar", "borralo",
+     "elimina", "eliminar", "eliminalo", "no", "no lo conserves",
+     "no lo guardes", "cancela", "cancelar"});
+constexpr auto kSaveEs = std::to_array<std::string_view>(
+    {"guarda", "guardar", "si", "guarda la contrasena", "guardar contrasena",
+     "si guarda", "vale", "ok", "okay"});
+constexpr auto kNeverEs = std::to_array<std::string_view>(
+    {"nunca", "nunca guardar", "no guardar nunca", "nunca la guardes",
+     "nunca para este sitio"});
+constexpr auto kNotNowEs = std::to_array<std::string_view>(
+    {"ahora no", "no", "no gracias", "cancela", "cancelar", "luego",
+     "mas tarde", "ahora no gracias"});
+constexpr auto kDictationLeadsEs = std::to_array<std::string_view>(
+    {"responde ", "respuesta ", "escribe ", "contesta ", "mi respuesta es ",
+     "la respuesta es "});
+constexpr auto kPoliteBeforeEs =
+    std::to_array<std::string_view>({"por favor ", "eh ", "em ", "pues "});
+constexpr auto kPoliteAfterEs = std::to_array<std::string_view>(
+    {" por favor", " gracias", " porfa", " muchas gracias"});
+
+// The answers a language takes to the prompts.
+struct Answers {
+  Phrases yes;
+  Phrases no;
+  Phrases block;
+  Phrases dismiss;
+  Phrases allow;
+  Phrases close;
+  Phrases leave;
+  Phrases stay;
+  Phrases discard;
+  Phrases save;
+  Phrases never;
+  Phrases not_now;
+  // What a dictated answer starts with ("answer ").
+  Phrases dictation;
+  Phrases polite_before;
+  Phrases polite_after;
+};
+
+const Answers& AnswersFor(Language language) {
+  static constexpr Answers kEnglish{
+      kYes,     kNo,     kBlock,   kDismiss,        kAllowWords,
+      kClose,   kLeave,  kStay,    kDiscard,        kSave,
+      kNever,   kNotNow, kDictationLeads, kPoliteBefore, kPoliteAfter};
+  static constexpr Answers kSpanish{
+      kYesEs,     kNoEs,     kBlockEs,   kDismissEs,          kAllowWordsEs,
+      kCloseEs,   kLeaveEs,  kStayEs,    kDiscardEs,          kSaveEs,
+      kNeverEs,   kNotNowEs, kDictationLeadsEs, kPoliteBeforeEs, kPoliteAfterEs};
+  switch (language) {
+    case Language::kEnglish:
+      break;
+    case Language::kSpanish:
+      return kSpanish;
+  }
+  return kEnglish;
+}
+
+}  // namespace
+
+std::vector<std::string_view> PromptAnswerPhrases(Language language) {
+  const Answers& a = AnswersFor(language);
+  std::vector<std::string_view> all;
+  for (Phrases phrases :
+       {a.yes, a.no, a.block, a.dismiss, a.allow, a.close, a.leave, a.stay,
+        a.discard, a.save, a.never, a.not_now}) {
+    all.insert(all.end(), phrases.begin(), phrases.end());
+  }
+  return all;
+}
+
+namespace {
 
 bool In(Phrases phrases, std::string_view phrase) {
   return std::find(phrases.begin(), phrases.end(), phrase) != phrases.end();
 }
 
 // |heard| folded, without "please" at either end.
-std::string Folded(std::string_view heard) {
+std::string Folded(std::string_view heard, const Answers& answers) {
   std::string folded = FoldForComparison(
       heard.substr(0, std::min(heard.size(), kMaxAnswerScanBytes)));
-  for (std::string_view polite : {"please ", "um ", "uh "}) {
+  for (std::string_view polite : answers.polite_before) {
     while (folded.rfind(polite, 0) == 0) {
       folded.erase(0, polite.size());
     }
   }
-  for (std::string_view polite : {" please", " thanks", " thank you"}) {
+  for (std::string_view polite : answers.polite_after) {
     if (folded.size() > polite.size() &&
         folded.compare(folded.size() - polite.size(), polite.size(), polite) ==
             0) {
@@ -85,8 +201,16 @@ std::string Folded(std::string_view heard) {
   return folded;
 }
 
-// Lower-case letters and single spaces of the browser's own words.
-std::string Words(std::string_view text, size_t max) {
+// Lower-case letters and single spaces of the browser's own words. In
+// Spanish, its letters with accents too ("usar tu cámara"): any character
+// beyond ASCII of the text made speech-safe first.
+std::string Words(std::string_view text, size_t max, Language language) {
+  const bool beyond_ascii = language != Language::kEnglish;
+  const std::string safe =
+      beyond_ascii ? SpeechSafeText(text, max) : std::string();
+  if (beyond_ascii) {
+    text = safe;
+  }
   std::string out;
   for (char c : text) {
     if (out.size() >= max) {
@@ -95,10 +219,29 @@ std::string Words(std::string_view text, size_t max) {
     if (c >= 'A' && c <= 'Z') {
       c = static_cast<char>(c - 'A' + 'a');
     }
-    if (c >= 'a' && c <= 'z') {
+    if ((c >= 'a' && c <= 'z') ||
+        (beyond_ascii && (static_cast<unsigned char>(c) & 0x80))) {
       out.push_back(c);
     } else if (!out.empty() && out.back() != ' ') {
       out.push_back(' ');
+    }
+  }
+  if (beyond_ascii) {
+    // Never part of a character: a cut one is dropped whole.
+    size_t lead = out.size();
+    while (lead > 0 &&
+           (static_cast<unsigned char>(out[lead - 1]) & 0xC0) == 0x80) {
+      --lead;
+    }
+    if (lead > 0 && (static_cast<unsigned char>(out[lead - 1]) & 0x80)) {
+      const unsigned char first = static_cast<unsigned char>(out[lead - 1]);
+      const size_t length = first >= 0xF0   ? 4
+                            : first >= 0xE0 ? 3
+                            : first >= 0xC0 ? 2
+                                            : 1;
+      if (out.size() - (lead - 1) < length) {
+        out.resize(lead - 1);
+      }
     }
   }
   while (!out.empty() && out.back() == ' ') {
@@ -107,18 +250,25 @@ std::string Words(std::string_view text, size_t max) {
   return out;
 }
 
-std::string Site(const BrowserPrompt& prompt) {
+// The site's name; "This page" without one (lower case where Spanish says
+// it inside a sentence: "¿Salir de esta página?").
+std::string Site(const BrowserPrompt& prompt, bool inside = false) {
   const std::string site = activation::SiteForSpeech(prompt.site);
-  return site.empty() ? std::string("This page") : site;
+  if (!site.empty()) {
+    return site;
+  }
+  if (inside && prompt.language == Language::kSpanish) {
+    return "esta página";
+  }
+  return Localized(prompt.language, "This page");
 }
 
 // The dictated answer: what follows "answer" or "type" in |heard|, as said.
 std::optional<std::string> Dictated(std::string_view heard,
-                                    const std::string& folded) {
-  static constexpr std::array<std::string_view, 5> kLeads = {
-      "answer ", "type ", "my answer is ", "the answer is ", "reply "};
+                                    const std::string& folded,
+                                    const Answers& answers) {
   size_t words = 0;
-  for (std::string_view lead : kLeads) {
+  for (std::string_view lead : answers.dictation) {
     if (folded.rfind(lead, 0) == 0 && folded.size() > lead.size()) {
       words = static_cast<size_t>(std::count(lead.begin(), lead.end(), ' '));
       break;
@@ -156,10 +306,11 @@ PromptReply Reply(PromptAnswer answer) {
   return reply;
 }
 
-// The gesture's word, another one, one not for sure, or none.
+// The gesture's word, another one, one not for sure, or none: heard in the
+// prompt's language.
 std::optional<PromptAnswer> WordAnswer(const PendingPrompt& prompt,
                                        std::string_view heard) {
-  const HeardWord word = HearConfirmationWord(heard);
+  const HeardWord word = HearConfirmationWord(heard, prompt.language);
   if (word.kind == HeardWord::Kind::kNone) {
     return std::nullopt;
   }
@@ -169,7 +320,7 @@ std::optional<PromptAnswer> WordAnswer(const PendingPrompt& prompt,
   if (word.kind == HeardWord::Kind::kUnsure) {
     return PromptAnswer::kSayAgain;
   }
-  return ConfirmationWords()[word.index] == prompt.word
+  return ConfirmationWords(prompt.language)[word.index] == prompt.word
              ? PromptAnswer::kAllow
              : PromptAnswer::kWrongWord;
 }
@@ -244,6 +395,10 @@ bool NeedsGesture(PromptKind kind) {
          kind == PromptKind::kConfirmSites;
 }
 
+std::string_view WordOnScreen(Language language) {
+  return Translated(language, kWordOnScreen);
+}
+
 int64_t PromptWindowMs(PromptKind kind) {
   switch (kind) {
     case PromptKind::kAlert:
@@ -290,12 +445,6 @@ const std::string* WordTextTwin(const PendingPrompt& prompt,
 
 namespace {
 
-// Why the word was shown, not said: once per window.
-constexpr char kShownOnlyWhy[] =
-    " I don't say the word aloud while another program could hear it.";
-constexpr char kScreenSharedNoWord[] =
-    "I can't take the word while your screen is shared";
-
 std::string PromptSpeechOnly(const BrowserPrompt& prompt,
                              std::string_view word);
 
@@ -307,7 +456,11 @@ std::string PromptSpeech(const BrowserPrompt& prompt, std::string_view word) {
     return out;
   }
   if (!word.empty() && prompt.explain_shown_only && NeedsGesture(prompt.kind)) {
-    out += kShownOnlyWhy;
+    // Why the word was shown, not said: once per window.
+    out += " " + Said(prompt.language,
+                      "I don't say the word aloud while another program "
+                      "could hear it.",
+                      {});
   }
   const std::string preface = SpeechSafeText(prompt.preface, 200);
   return preface.empty() ? out : preface + " " + out;
@@ -317,6 +470,7 @@ namespace {
 
 std::string PromptSpeechOnly(const BrowserPrompt& prompt,
                              std::string_view word) {
+  const Language language = prompt.language;
   const std::string site = Site(prompt);
   const std::string text = SpeechSafeText(prompt.text, kMaxDialogSpokenChars);
   // The page's text ends with the site's sentence; the browser's words
@@ -329,93 +483,139 @@ std::string PromptSpeechOnly(const BrowserPrompt& prompt,
                                  : ".");
   switch (prompt.kind) {
     case PromptKind::kPermission: {
-      const std::string what = Words(prompt.what, kMaxWhatChars);
-      std::string out = what.empty() ? site + " is asking for a permission."
-                                     : site + " wants to " + what + ".";
+      const std::string what = Words(prompt.what, kMaxWhatChars, language);
+      std::string out =
+          what.empty() ? Said(language, "{0} is asking for a permission.",
+                              {site})
+                       : Said(language, "{0} wants to {1}.", {site, what});
       if (!word.empty()) {
-        out +=
-            " To allow it, say " + std::string(word) + ". To block it, say no.";
+        out += " " + Said(language,
+                          "To allow it, say {0}. To block it, say no.",
+                          {word});
       } else if (prompt.screen_shared) {
-        out += " " + std::string(kScreenSharedNoWord) +
-               ", so to allow it, use the mouse or keyboard. To block it, "
-               "say no.";
+        out += " " + Said(language,
+                          "I can't take the word while your screen is "
+                          "shared, so to allow it, use the mouse or "
+                          "keyboard. To block it, say no.",
+                          {});
       } else {
-        out +=
-            " To block it, say no. To allow it, use the mouse or "
-            "keyboard.";
+        out += " " + Said(language,
+                          "To block it, say no. To allow it, use the mouse "
+                          "or keyboard.",
+                          {});
       }
       return out;
     }
     case PromptKind::kAlert:
       if (prompt.flood) {
-        return site + " shows another message. Say OK to close it.";
+        return Said(language, "{0} shows another message. Say OK to close it.",
+                    {site});
       }
-      return says.empty() ? site + " shows a message. Say OK to close it."
-                          : site + " says: " + says + " Say OK to close it.";
+      return says.empty()
+                 ? Said(language, "{0} shows a message. Say OK to close it.",
+                        {site})
+                 : Said(language, "{0} says: {1} Say OK to close it.",
+                        {site, says});
     case PromptKind::kConfirm:
       if (prompt.flood) {
-        return site + " asks another question. Say yes or no.";
+        return Said(language, "{0} asks another question. Say yes or no.",
+                    {site});
       }
-      return says.empty() ? site + " asks you to confirm. Say yes or no."
-                          : site + " asks: " + says + " Say yes or no.";
-    case PromptKind::kTextPrompt: {
-      const std::string ask = prompt.flood || says.empty()
-                                  ? site + " asks for an answer."
-                                  : site + " asks: " + says;
-      return ask + " Say answer, then your answer, or say no to cancel.";
-    }
-    case PromptKind::kBeforeUnload:
+      return says.empty()
+                 ? Said(language, "{0} asks you to confirm. Say yes or no.",
+                        {site})
+                 : Said(language, "{0} asks: {1} Say yes or no.",
+                        {site, says});
+    case PromptKind::kTextPrompt:
+      return prompt.flood || says.empty()
+                 ? Said(language,
+                        "{0} asks for an answer. Say answer, then your "
+                        "answer, or say no to cancel.",
+                        {site})
+                 : Said(language,
+                        "{0} asks: {1} Say answer, then your answer, or say "
+                        "no to cancel.",
+                        {site, says});
+    case PromptKind::kBeforeUnload: {
+      const std::string named = Site(prompt, /*inside=*/true);
       return prompt.reload
-                 ? "Reload " + site +
-                       "? Changes you made may not be saved. Say reload or "
-                       "stay."
-                 : "Leave " + site +
-                       "? Changes you made may not be saved. Say leave or "
-                       "stay.";
+                 ? Said(language,
+                        "Reload {0}? Changes you made may not be saved. Say "
+                        "reload or stay.",
+                        {named})
+                 : Said(language,
+                        "Leave {0}? Changes you made may not be saved. Say "
+                        "leave or stay.",
+                        {named});
+    }
     case PromptKind::kDangerousDownload: {
+      const std::string from = Site(prompt, /*inside=*/true);
       const std::string name =
           SpeechSafeText(prompt.text, kMaxFileNameSpokenChars);
-      const std::string file =
-          name.empty() ? std::string("A file") : "The file " + name;
       if (prompt.malicious) {
-        return file + " from " + site +
-               " is dangerous, so it was blocked. To delete it, say "
-               "discard. To keep it anyway, use the downloads page.";
+        return name.empty()
+                   ? Said(language,
+                          "A file from {0} is dangerous, so it was blocked. "
+                          "To delete it, say discard. To keep it anyway, use "
+                          "the downloads page.",
+                          {from})
+                   : Said(language,
+                          "The file {0} from {1} is dangerous, so it was "
+                          "blocked. To delete it, say discard. To keep it "
+                          "anyway, use the downloads page.",
+                          {name, from});
       }
-      std::string out = file + " from " + site + " may be harmful.";
+      std::string out =
+          name.empty()
+              ? Said(language, "A file from {0} may be harmful.", {from})
+              : Said(language, "The file {0} from {1} may be harmful.",
+                     {name, from});
       if (!word.empty()) {
-        out += " To keep it, say " + std::string(word) +
-               ". To delete it, say discard.";
+        out += " " + Said(language,
+                          "To keep it, say {0}. To delete it, say discard.",
+                          {word});
       } else if (prompt.screen_shared) {
-        out += " " + std::string(kScreenSharedNoWord) +
-               ". To delete it, say discard. To keep it, use the downloads "
-               "page.";
+        out += " " + Said(language,
+                          "I can't take the word while your screen is "
+                          "shared. To delete it, say discard. To keep it, "
+                          "use the downloads page.",
+                          {});
       } else {
-        out +=
-            " To delete it, say discard. To keep it, use the downloads "
-            "page.";
+        out += " " + Said(language,
+                          "To delete it, say discard. To keep it, use the "
+                          "downloads page.",
+                          {});
       }
       return out;
     }
     case PromptKind::kSavePassword:
-      return "Save your password for " + site +
-             "? Say save, never, or not now.";
+      return Said(language,
+                  "Save your password for {0}? Say save, never, or not now.",
+                  {Site(prompt, /*inside=*/true)});
     case PromptKind::kConfirmSites: {
       // The sites, each already a cleaned host ("a.example and b.example");
       // cleaned again here.
       const std::string sites =
           SpeechSafeText(prompt.text, kMaxDialogSpokenChars);
       std::string out =
-          sites.empty() ? std::string("Confirm the sites this routine uses?")
-                        : "Confirm the sites this routine uses: " + sites + "?";
+          sites.empty()
+              ? Said(language, "Confirm the sites this routine uses?", {})
+              : Said(language, "Confirm the sites this routine uses: {0}?",
+                     {sites});
       if (!word.empty()) {
-        out += " To confirm them, say " + std::string(word) +
-               ". To leave them unconfirmed, say no.";
+        out += " " + Said(language,
+                          "To confirm them, say {0}. To leave them "
+                          "unconfirmed, say no.",
+                          {word});
       } else if (prompt.screen_shared) {
-        out += " " + std::string(kScreenSharedNoWord) +
-               ". Confirm them in the Agent studio, or say no.";
+        out += " " + Said(language,
+                          "I can't take the word while your screen is "
+                          "shared. Confirm them in the Agent studio, or say "
+                          "no.",
+                          {});
       } else {
-        out += " Confirm them in the Agent studio, or say no.";
+        out += " " + Said(language,
+                          "Confirm them in the Agent studio, or say no.", {});
       }
       return out;
     }
@@ -426,14 +626,21 @@ std::string PromptSpeechOnly(const BrowserPrompt& prompt,
 }  // namespace
 
 std::string PromptTimeoutSpeech(PromptKind kind) {
+  return PromptTimeoutSpeech(kind, Language::kEnglish);
+}
+
+std::string PromptTimeoutSpeech(PromptKind kind, Language language) {
   switch (kind) {
     case PromptKind::kPermission:
-      return "No answer, so I dismissed the permission request.";
+      return Said(language,
+                  "No answer, so I dismissed the permission request.", {});
     case PromptKind::kDangerousDownload:
-      return "No answer, so the file stays blocked. You can decide on the "
-             "downloads page.";
+      return Said(language,
+                  "No answer, so the file stays blocked. You can decide on "
+                  "the downloads page.",
+                  {});
     case PromptKind::kConfirmSites:
-      return "No answer, so the sites stay unconfirmed.";
+      return Said(language, "No answer, so the sites stay unconfirmed.", {});
     case PromptKind::kAlert:
     case PromptKind::kConfirm:
     case PromptKind::kTextPrompt:
@@ -445,91 +652,119 @@ std::string PromptTimeoutSpeech(PromptKind kind) {
 }
 
 std::string NotCleanSpeech(std::string_view word) {
-  return "I couldn't be sure that was you. When it's quiet and I've "
-         "finished speaking, say " +
-         std::string(word) + ".";
+  return NotCleanSpeech(word, Language::kEnglish);
+}
+
+std::string NotCleanSpeech(std::string_view word, Language language) {
+  return Said(language,
+              "I couldn't be sure that was you. When it's quiet and I've "
+              "finished speaking, say {0}.",
+              {word});
 }
 
 std::string WordRetiredPreface(WordRetired why) {
+  return WordRetiredPreface(why, Language::kEnglish);
+}
+
+std::string WordRetiredPreface(WordRetired why, Language language) {
   switch (why) {
     case WordRetired::kNotClean:
-      return "I couldn't be sure that was you, and something else may have "
-             "heard the word, so I changed it.";
+      return Said(language,
+                  "I couldn't be sure that was you, and something else may "
+                  "have heard the word, so I changed it.",
+                  {});
     case WordRetired::kAudioCaptured:
-      return "Something started using a microphone, so I changed the word.";
+      return Said(language,
+                  "Something started using a microphone, so I changed the "
+                  "word.",
+                  {});
     case WordRetired::kScreenShared:
       return std::string();
     case WordRetired::kScreenFreed:
-      return "Your screen is no longer shared.";
+      return Said(language, "Your screen is no longer shared.", {});
   }
   return std::string();
 }
 
 std::string RetiredWordSpeech(PromptKind kind, std::string_view word) {
-  const std::string say = " say " + std::string(word) + ".";
+  return RetiredWordSpeech(kind, word, Language::kEnglish);
+}
+
+std::string RetiredWordSpeech(PromptKind kind,
+                              std::string_view word,
+                              Language language) {
   switch (kind) {
     case PromptKind::kDangerousDownload:
-      return "That word changed. To keep it," + say;
+      return Said(language, "That word changed. To keep it, say {0}.",
+                  {word});
     case PromptKind::kConfirmSites:
-      return "That word changed. To confirm them," + say;
+      return Said(language, "That word changed. To confirm them, say {0}.",
+                  {word});
     default:
-      return "That word changed. To allow it," + say;
+      return Said(language, "That word changed. To allow it, say {0}.",
+                  {word});
   }
 }
 
 PromptReply ParsePromptReply(const PendingPrompt& prompt,
                              std::string_view heard) {
-  const std::string folded = Folded(heard);
+  const Answers& answers = AnswersFor(prompt.language);
+  const std::string folded = Folded(heard, answers);
   if (folded.empty()) {
     return PromptReply();
   }
   switch (prompt.kind) {
     case PromptKind::kPermission:
-      if (In(kBlock, folded)) {
+      if (In(answers.block, folded)) {
         return Reply(PromptAnswer::kRefuse);
       }
-      if (In(kDismiss, folded)) {
+      if (In(answers.dismiss, folded)) {
         return Reply(PromptAnswer::kDecline);
       }
       if (std::optional<PromptAnswer> word = WordAnswer(prompt, heard)) {
         return Reply(*word);
       }
-      if (In(kAllowWords, folded)) {
+      if (In(answers.allow, folded)) {
         return Reply(prompt.word.empty() ? PromptAnswer::kCantAllow
                                          : PromptAnswer::kNeedWord);
       }
       return PromptReply();
     case PromptKind::kAlert:
-      return In(kClose, folded) ? Reply(PromptAnswer::kAccept) : PromptReply();
+      return In(answers.close, folded) ? Reply(PromptAnswer::kAccept)
+                                       : PromptReply();
     case PromptKind::kConfirm:
-      if (In(kYes, folded)) {
+      if (In(answers.yes, folded)) {
         return Reply(PromptAnswer::kAccept);
       }
-      return In(kNo, folded) ? Reply(PromptAnswer::kDecline) : PromptReply();
+      return In(answers.no, folded) ? Reply(PromptAnswer::kDecline)
+                                    : PromptReply();
     case PromptKind::kTextPrompt: {
-      if (std::optional<std::string> text = Dictated(heard, folded)) {
+      if (std::optional<std::string> text = Dictated(heard, folded, answers)) {
         PromptReply reply = Reply(PromptAnswer::kDictate);
         reply.text = std::move(*text);
         return reply;
       }
-      if (In(kYes, folded)) {
+      if (In(answers.yes, folded)) {
         return Reply(PromptAnswer::kAccept);
       }
-      return In(kNo, folded) ? Reply(PromptAnswer::kDecline) : PromptReply();
+      return In(answers.no, folded) ? Reply(PromptAnswer::kDecline)
+                                    : PromptReply();
     }
     case PromptKind::kBeforeUnload:
-      if (In(kLeave, folded)) {
+      if (In(answers.leave, folded)) {
         return Reply(PromptAnswer::kAccept);
       }
-      return In(kStay, folded) ? Reply(PromptAnswer::kDecline) : PromptReply();
+      return In(answers.stay, folded) ? Reply(PromptAnswer::kDecline)
+                                      : PromptReply();
     case PromptKind::kDangerousDownload:
-      if (In(kDiscard, folded)) {
+      if (In(answers.discard, folded)) {
         return Reply(PromptAnswer::kRefuse);
       }
       if (prompt.malicious) {
         // Never kept by voice: no word was offered.
-        if (HearConfirmationWord(heard).kind != HeardWord::Kind::kNone ||
-            In(kAllowWords, folded)) {
+        if (HearConfirmationWord(heard, prompt.language).kind !=
+                HeardWord::Kind::kNone ||
+            In(answers.allow, folded)) {
           return Reply(PromptAnswer::kCantAllow);
         }
         return PromptReply();
@@ -537,113 +772,139 @@ PromptReply ParsePromptReply(const PendingPrompt& prompt,
       if (std::optional<PromptAnswer> word = WordAnswer(prompt, heard)) {
         return Reply(*word);
       }
-      if (In(kAllowWords, folded)) {
+      if (In(answers.allow, folded)) {
         return Reply(prompt.word.empty() ? PromptAnswer::kCantAllow
                                          : PromptAnswer::kNeedWord);
       }
       return PromptReply();
     case PromptKind::kConfirmSites:
-      if (In(kNo, folded) || In(kDismiss, folded)) {
+      if (In(answers.no, folded) || In(answers.dismiss, folded)) {
         return Reply(PromptAnswer::kDecline);
       }
       if (std::optional<PromptAnswer> word = WordAnswer(prompt, heard)) {
         return Reply(*word);
       }
-      if (In(kYes, folded) || In(kAllowWords, folded)) {
+      if (In(answers.yes, folded) || In(answers.allow, folded)) {
         return Reply(prompt.word.empty() ? PromptAnswer::kCantAllow
                                          : PromptAnswer::kNeedWord);
       }
       return PromptReply();
     case PromptKind::kSavePassword:
-      if (In(kSave, folded)) {
+      if (In(answers.save, folded)) {
         return Reply(PromptAnswer::kAccept);
       }
-      if (In(kNever, folded)) {
+      if (In(answers.never, folded)) {
         return Reply(PromptAnswer::kRefuse);
       }
-      return In(kNotNow, folded) ? Reply(PromptAnswer::kDecline)
-                                 : PromptReply();
+      return In(answers.not_now, folded) ? Reply(PromptAnswer::kDecline)
+                                         : PromptReply();
   }
   return PromptReply();
 }
 
 std::string ReplySpeech(const PendingPrompt& prompt, const PromptReply& reply) {
+  const Language language = prompt.language;
   const bool download = prompt.kind == PromptKind::kDangerousDownload;
   const bool sites = prompt.kind == PromptKind::kConfirmSites;
   switch (reply.answer) {
     case PromptAnswer::kNone:
       return std::string();
     case PromptAnswer::kAllow:
-      return download ? "Kept the file." : sites ? "Confirmed." : "Allowed.";
+      return download ? Said(language, "Kept the file.", {})
+             : sites  ? Said(language, "Confirmed.", {})
+                      : Said(language, "Allowed.", {});
     case PromptAnswer::kWrongWord:
-      return download ? "That wasn't the word, so I didn't keep the file."
-                      : "That wasn't the word, so I turned it down.";
+      return download ? Said(language,
+                             "That wasn't the word, so I didn't keep the "
+                             "file.",
+                             {})
+                      : Said(language,
+                             "That wasn't the word, so I turned it down.", {});
     case PromptAnswer::kRefuse:
       switch (prompt.kind) {
         case PromptKind::kDangerousDownload:
-          return "Deleted the file.";
+          return Said(language, "Deleted the file.", {});
         case PromptKind::kSavePassword:
-          return "I won't offer to save passwords for this site.";
+          return Said(language,
+                      "I won't offer to save passwords for this site.", {});
         default:
-          return "Blocked.";
+          return Said(language, "Blocked.", {});
       }
     case PromptAnswer::kAccept:
       switch (prompt.kind) {
         case PromptKind::kAlert:
-          return "Closed.";
+          return Said(language, "Closed.", {});
         case PromptKind::kConfirm:
-          return "Yes.";
+          return Said(language, "Yes.", {});
         case PromptKind::kTextPrompt:
-          return "Sent.";
+          return Said(language, "Sent.", {});
         case PromptKind::kBeforeUnload:
-          return "Leaving.";
+          return Said(language, "Leaving.", {});
         case PromptKind::kSavePassword:
-          return "Saved.";
+          return Said(language, "Saved.", {});
         default:
-          return "Okay.";
+          return Said(language, "Okay.", {});
       }
     case PromptAnswer::kDecline:
       switch (prompt.kind) {
         case PromptKind::kConfirm:
-          return "No.";
+          return Said(language, "No.", {});
         case PromptKind::kTextPrompt:
-          return "Cancelled.";
+          return Said(language, "Cancelled.", {});
         case PromptKind::kBeforeUnload:
-          return "Staying on the page.";
+          return Said(language, "Staying on the page.", {});
         case PromptKind::kSavePassword:
-          return "Not now.";
+          return Said(language, "Not now.", {});
         case PromptKind::kPermission:
-          return "Dismissed.";
+          return Said(language, "Dismissed.", {});
         case PromptKind::kConfirmSites:
-          return "Left unconfirmed.";
+          return Said(language, "Left unconfirmed.", {});
         default:
-          return "Okay.";
+          return Said(language, "Okay.", {});
       }
     case PromptAnswer::kDictate:
-      return "Your answer: " +
-             SpeechSafeText(reply.text, kMaxDialogSpokenChars) +
-             ". Say yes to send it, or no to cancel.";
+      return Said(language,
+                  "Your answer: {0}. Say yes to send it, or no to cancel.",
+                  {SpeechSafeText(reply.text, kMaxDialogSpokenChars)});
     case PromptAnswer::kNeedWord:
-      return download ? "To keep it, say " + prompt.word + "."
-             : sites  ? "To confirm them, say " + prompt.word + "."
-                      : "To allow it, say " + prompt.word + ".";
+      return download ? Said(language, "To keep it, say {0}.", {prompt.word})
+             : sites
+                 ? Said(language, "To confirm them, say {0}.", {prompt.word})
+                 : Said(language, "To allow it, say {0}.", {prompt.word});
     case PromptAnswer::kSayAgain:
-      return "I didn't catch that. Say the word again.";
+      return Said(language, "I didn't catch that. Say the word again.", {});
     case PromptAnswer::kCantAllow:
       if (download && prompt.malicious) {
-        return "I can't keep a dangerous file by voice. Use the downloads "
-               "page, or say discard.";
+        return Said(language,
+                    "I can't keep a dangerous file by voice. Use the "
+                    "downloads page, or say discard.",
+                    {});
       }
       if (prompt.screen_shared) {
-        return std::string(kScreenSharedNoWord) +
-               (download ? ". Use the downloads page, or say discard."
-                : sites  ? ". Confirm them in the Agent studio, or say no."
-                         : ". Use the mouse or keyboard, or say no.");
+        return download ? Said(language,
+                               "I can't take the word while your screen is "
+                               "shared. Use the downloads page, or say "
+                               "discard.",
+                               {})
+               : sites  ? Said(language,
+                               "I can't take the word while your screen is "
+                               "shared. Confirm them in the Agent studio, or "
+                               "say no.",
+                               {})
+                        : Said(language,
+                               "I can't take the word while your screen is "
+                               "shared. Use the mouse or keyboard, or say "
+                               "no.",
+                               {});
       }
-      return download ? "I can't keep it by voice right now. Use the "
-                        "downloads page, or say discard."
-                      : "I can't allow that by voice right now. Use "
-                        "the mouse or keyboard, or say no.";
+      return download ? Said(language,
+                             "I can't keep it by voice right now. Use the "
+                             "downloads page, or say discard.",
+                             {})
+                      : Said(language,
+                             "I can't allow that by voice right now. Use the "
+                             "mouse or keyboard, or say no.",
+                             {});
   }
   return std::string();
 }
@@ -652,9 +913,11 @@ std::string ReplySpeechWithoutWord(const PendingPrompt& prompt,
                                    const PromptReply& reply) {
   PendingPrompt twin;
   twin.kind = prompt.kind;
+  twin.language = prompt.language;
   twin.malicious = prompt.malicious;
   twin.screen_shared = prompt.screen_shared;
-  twin.word = prompt.word.empty() ? std::string() : kWordOnScreen;
+  twin.word = prompt.word.empty() ? std::string()
+                                  : std::string(WordOnScreen(prompt.language));
   return ReplySpeech(twin, reply);
 }
 

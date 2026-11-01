@@ -397,6 +397,7 @@ class VoiceController : public VoicePlanner::Delegate,
 
   // VoiceBrowserPrompts::Delegate:
   bool ListensForPrompts() override;
+  Language VoiceLanguage() override;
   bool ReadBrowserPrompt(int id,
                          const BrowserPrompt& prompt,
                          const std::string& word) override;

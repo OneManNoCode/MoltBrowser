@@ -1533,6 +1533,10 @@ bool VoiceController::ListensForPrompts() {
          !IsMoltNet();
 }
 
+Language VoiceController::VoiceLanguage() {
+  return language_;
+}
+
 bool VoiceController::ReadBrowserPrompt(int id,
                                         const BrowserPrompt& prompt,
                                         const std::string& word) {
