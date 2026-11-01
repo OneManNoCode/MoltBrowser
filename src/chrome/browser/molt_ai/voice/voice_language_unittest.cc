@@ -72,6 +72,24 @@ TEST(VoiceLanguageTest, PlatformTagAndVoice) {
   EXPECT_FALSE(PickPlatformVoice({}, Language::kSpanish, "es"));
 }
 
+// Without a voice of the language: a voice of the computer, the browser's
+// language's first; never a remote one, however well it matches.
+TEST(VoiceLanguageTest, LocalVoiceWithoutOneOfTheLanguage) {
+  const std::vector<PlatformVoice> voices = {
+      {"Cloud Spanish", "es-ES", true}, {"Cloud English", "en-US", true},
+      {"Anna", "de-DE", false},         {"Daniel", "en_GB", false},
+      {"Samantha", "en-US", false},
+  };
+  EXPECT_EQ(PickLocalVoice(voices, "en-US"), 3u);
+  EXPECT_EQ(PickLocalVoice(voices, "EN"), 3u);
+  EXPECT_EQ(PickLocalVoice(voices, "de"), 2u);
+  // No voice of the browser's language: the first of the computer's.
+  EXPECT_EQ(PickLocalVoice(voices, "fr-FR"), 2u);
+  EXPECT_EQ(PickLocalVoice(voices, ""), 2u);
+  EXPECT_FALSE(PickLocalVoice({{"Cloud", "es-ES", true}}, "es"));
+  EXPECT_FALSE(PickLocalVoice({}, "en-US"));
+}
+
 // --- What the browser says -------------------------------------------------
 
 TEST(SpokenAnswersTest, EnglishIsTheSentenceItself) {

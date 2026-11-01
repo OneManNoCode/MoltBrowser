@@ -137,11 +137,11 @@ bool IsAlwaysHeardCommand(std::string_view text) {
   }
 }
 
-bool TakenOverOwnVoice(std::string_view text) {
-  // As the browser reads a list: a bare number or description chooses.
-  ParseContext context;
-  context.expecting_choice = true;
-  const VoiceCommand command = ParseVoiceCommand(text, context);
+namespace {
+
+// Whether |command| stays with what the browser reads or does
+// (TakenOverOwnVoice()).
+bool StaysWithWhatIsRead(const VoiceCommand& command) {
   switch (command.kind) {
     case VoiceCommandKind::kChoose:
       // A place in the list ("the third one", "number four", "the next
@@ -175,6 +175,29 @@ bool TakenOverOwnVoice(std::string_view text) {
     default:
       return true;
   }
+}
+
+}  // namespace
+
+bool TakenOverOwnVoice(std::string_view text) {
+  // As the browser reads a list: a bare number or description chooses.
+  ParseContext list;
+  list.expecting_choice = true;
+  const VoiceCommand in_list = ParseVoiceCommand(text, list);
+  if (!StaysWithWhatIsRead(in_list)) {
+    return false;
+  }
+  // And as it reads anything else: the loop parses it in its own context,
+  // where "open three" opens a site called "three". A bare number with no
+  // list ("three") goes to the planner as nothing but that number.
+  const VoiceCommand plain = ParseVoiceCommand(text, ParseContext());
+  if (plain.kind == VoiceCommandKind::kUnknown &&
+      in_list.kind == VoiceCommandKind::kChoose &&
+      in_list.choice.kind == ChoiceRef::Kind::kNumber &&
+      in_list.verb == ChoiceVerb::kDefault) {
+    return true;
+  }
+  return StaysWithWhatIsRead(plain);
 }
 
 ListeningSettings::ListeningSettings() = default;

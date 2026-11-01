@@ -531,6 +531,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   speaking whenever its voice plays, also while it waits for a page, so
   what it says then is never taken for the user's words; and the built-in
   AI APIs stay off while `settings.json` can't be read.
+- Hardening (security review of round 43, `docs/SECURITY_REVIEWS.md`):
+  in voice mode (preview), "go back" after "play" or "full screen" that
+  loaded another page returns to the page you were on; a command said
+  over voice mode's voice that would open a site without a list being
+  read ("open three") waits until it has stopped; and a language your
+  computer has no voice for is read by one of its own voices, never a
+  remote one.
 
 ### Privacy
 - **Voice mode in Spanish** (round 43, second-language;
