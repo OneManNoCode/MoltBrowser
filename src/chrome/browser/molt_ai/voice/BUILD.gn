@@ -959,8 +959,14 @@ source_set("voice_loop_unit_tests") {
     ":voice_routine_store",
     "//chrome/browser/molt_ai/automation:automation_policy",
 
+    # The routine store's claims cut short (set-aside files on disk).
+    "//chrome/browser/molt_ai/automation:storage",
+
     # The stored pages, read from the source tree.
     "//base",
+
+    # Two writers on the profile's routines' sequence (TaskEnvironment).
+    "//base/test:test_support",
 
     # Every URL the loop builds passes agent_safety's navigation check.
     "//chrome/browser/molt_ai/security:agent_safety",

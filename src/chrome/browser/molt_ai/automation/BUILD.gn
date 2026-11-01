@@ -100,8 +100,14 @@ source_set("storage") {
     "automation_storage.h",
   ]
 
-  # ScopedAllowBlockingForMolt (molt_blocking_scope.h).
-  deps = [ "//chrome/browser/molt_ai/common" ]
+  deps = [
+    # ScopedAllowBlockingForMolt (molt_blocking_scope.h), for the callers
+    # still on the UI thread.
+    "//chrome/browser/molt_ai/common",
+
+    # A .molt and audit.log read and written only as regular files.
+    "//chrome/browser/molt_ai/common:molt_regular_file",
+  ]
 
   public_deps = [
     ":automation_policy",
@@ -241,6 +247,9 @@ source_set("unit_tests") {
     ":storage",
     ":tool_steps",
     "//base",
+
+    # The storage's updates from two threads (TaskEnvironment).
+    "//base/test:test_support",
 
     # Every schema the runner builds must be accepted by the inference
     # service's converter; the tests run the real one (std-only).
