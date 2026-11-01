@@ -20,8 +20,13 @@
 // profiles (Get() is null there): nothing is learned there, and nothing
 // learned is used there.
 //
-// File I/O runs on one sequence (MayBlock); changes are written a moment
-// later, the whole file atomically. UI thread.
+// File I/O runs on one sequence (MayBlock), the profile's routines' and
+// learning file's (routines_task_runner(), shared with the Agent studio);
+// changes are written a moment later, the whole file atomically. The
+// learning file is read only when it is a regular file, or a link to one
+// inside the home directory, which is then written through (a FIFO or
+// anything else there is never opened, nor written over:
+// molt_ai/common/molt_regular_file.h). UI thread.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_LEARNING_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_LEARNING_H_
@@ -95,6 +100,12 @@ class VoiceLearning : public base::SupportsUserData::Data {
   // VoiceRoutineStore on them.
   const base::FilePath& routines_dir() const { return routines_dir_; }
   const base::FilePath& shared_root() const { return automations_root_; }
+  // The one sequence for the profile's routines' directory (and its
+  // learning file): voice mode reads and changes them here, and so does the
+  // Agent studio, so no two read-modify-writes of them interleave.
+  const scoped_refptr<base::SequencedTaskRunner>& routines_task_runner() const {
+    return task_runner_;
+  }
 
   // Learning; nothing while !enabled().
   void NoteName(std::string_view phrase);
@@ -160,7 +171,7 @@ class VoiceLearning : public base::SupportsUserData::Data {
  private:
   explicit VoiceLearning(Profile* profile);
 
-  void OnRead(LearnedData data, bool enabled);
+  void OnRead(LearnedData data, bool enabled, bool file_writable);
   void OnLoaded();
   // Lists the routines again, then runs |done|.
   void RefreshRoutinesThen(base::OnceClosure done);
@@ -179,6 +190,10 @@ class VoiceLearning : public base::SupportsUserData::Data {
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   bool loaded_ = false;
   bool enabled_ = true;
+  // The learning file is missing or a regular file (or a link followed to
+  // one): written. Anything else there is left alone (learning then lasts
+  // until the browser closes).
+  bool file_writable_ = true;
   LearnedData data_;
   std::vector<RoutineSummary> routines_;
   std::vector<RoutineSummary> all_unclaimed_;

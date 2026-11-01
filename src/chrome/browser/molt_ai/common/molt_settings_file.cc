@@ -20,6 +20,7 @@
 #include "base/task/lazy_thread_pool_task_runner.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
+#include "chrome/browser/molt_ai/common/molt_regular_file.h"
 
 namespace molt_ai {
 
@@ -64,16 +65,22 @@ scoped_refptr<base::SequencedTaskRunner> MoltSettingsFileTaskRunner() {
 MoltSettingsRead ReadMoltSettingsFileAt(const base::FilePath& path,
                                         base::DictValue* out) {
   *out = base::DictValue();
-  if (!base::PathExists(path)) {
-    return MoltSettingsRead::kMissing;
-  }
-  std::string contents;
-  if (!base::ReadFileToStringWithMaxSize(path, &contents,
-                                         kMaxMoltSettingsFileBytes)) {
-    return MoltSettingsRead::kNotAnObject;
+  // Only a regular file is opened (a FIFO would hold this sequence).
+  const MoltFileRead read = ReadMoltFile(path, kMaxMoltSettingsFileBytes,
+                                         MoltFileLinks::kFollowedWithinHome);
+  switch (read.kind) {
+    case MoltFileKind::kMissing:
+      return MoltSettingsRead::kMissing;
+    case MoltFileKind::kNotRegular:
+      return MoltSettingsRead::kNotAFile;
+    case MoltFileKind::kTooBig:
+    case MoltFileKind::kUnreadable:
+      return MoltSettingsRead::kNotAnObject;
+    case MoltFileKind::kRegular:
+      break;
   }
   std::optional<base::Value> parsed =
-      base::JSONReader::Read(contents, base::JSON_ALLOW_TRAILING_COMMAS);
+      base::JSONReader::Read(read.contents, base::JSON_ALLOW_TRAILING_COMMAS);
   if (!parsed || !parsed->is_dict()) {
     return MoltSettingsRead::kNotAnObject;
   }
@@ -87,11 +94,15 @@ std::optional<base::DictValue> ReadMoltSettings() {
     return std::nullopt;
   }
   base::DictValue settings;
-  if (ReadMoltSettingsFileAt(*path, &settings) ==
-      MoltSettingsRead::kNotAnObject) {
-    return std::nullopt;
+  switch (ReadMoltSettingsFileAt(*path, &settings)) {
+    case MoltSettingsRead::kMissing:
+    case MoltSettingsRead::kObject:
+      return settings;
+    case MoltSettingsRead::kNotAnObject:
+    case MoltSettingsRead::kNotAFile:
+      return std::nullopt;
   }
-  return settings;
+  return std::nullopt;
 }
 
 void MergeMoltSettings(base::DictValue& settings,
@@ -126,8 +137,8 @@ void MergeMoltSettingsForm(base::DictValue& settings,
 bool UpdateMoltSettingsFileAt(const base::FilePath& path,
                               MoltSettingsUpdate update) {
   base::DictValue settings;
-  if (ReadMoltSettingsFileAt(path, &settings) ==
-      MoltSettingsRead::kNotAnObject) {
+  const MoltSettingsRead read = ReadMoltSettingsFileAt(path, &settings);
+  if (read != MoltSettingsRead::kMissing && read != MoltSettingsRead::kObject) {
     // Left for the user to fix.
     return false;
   }
@@ -148,8 +159,15 @@ bool UpdateMoltSettingsFileAt(const base::FilePath& path,
   if (!base::DirectoryExists(dir) && !base::CreateDirectory(dir)) {
     return false;
   }
+  // The file itself, or the regular file a link to it leads to (the link
+  // stays); nothing written when something else is there now.
+  const std::optional<base::FilePath> target =
+      MoltFileWritePath(path, MoltFileLinks::kFollowedWithinHome);
+  if (!target) {
+    return false;
+  }
   // A temporary file next to it, then a rename: never half a file.
-  return base::ImportantFileWriter::WriteFileAtomically(path, json);
+  return base::ImportantFileWriter::WriteFileAtomically(*target, json);
 }
 
 bool UpdateMoltSettings(MoltSettingsUpdate update) {

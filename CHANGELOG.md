@@ -1365,6 +1365,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and §7.5.
 
 ### Fixed
+- **Workflows, routines and settings files hold up to crashes, odd files
+  and a busy window** (round 44, storage-robustness). A routine being kept
+  from before profiles when the browser closed is put back to be offered
+  again (or finished, if the profile already has it), never lost and never
+  given to a profile without asking. The Agent studio reads and saves on
+  background sequences, the profile's shared with voice mode, so the
+  window never waits on the disk and two changes to a routine never mix.
+  `settings.json`, the voice learning file and the `.molt` files are read
+  only when they are regular files of a sane size: a pipe, a device or a
+  folder in their place is left alone (the settings page says so) instead
+  of holding up shutdown. A `settings.json` kept by a dotfile manager, a
+  link to a file in your home folder, stays a link. The automation audit
+  log is now created when missing.
 - **A Windows clock set before 1970 no longer ends the browser** when an
   automation writes its audit timestamp (it records the epoch instead), and
   a schedule whose time can't be converted has no next run.

@@ -377,6 +377,24 @@ repo/
   settle (waits for load after click/type). `AutomationScheduler` runs workflows
   on a cron/interval; `AutomationStorage` persists one `.molt` JSON per workflow
   under `~/.moltbrowser/automations/`.
+- **Storage (round 44).** A `.molt` (and `audit.log`) is read only when it
+  is a regular file, never through a link, of at most 8 MiB
+  (`molt_ai/common/molt_regular_file.h`); anything else is skipped with a
+  log line and never written over. Writes are atomic
+  (`ImportantFileWriter`). Every change to a directory's scripts holds that
+  directory's lock, and `Update()` is a read-modify-write under it. The
+  Agent studio does its storage work off the UI thread
+  (`ui/webui/molt_ai/molt_ai_agent_storage.*`), on one sequence per
+  directory: the profile's routines' (VoiceLearning's, shared with voice
+  mode) and `AutomationStorage::SharedSequence()`; a storage made with a
+  directory checks that it may block. The runner, the scheduler and its
+  service, the recorder, the run window, `molt://ai-automation` and the AI
+  chat's saves still use the default storage on the UI thread, with
+  `ScopedAllowBlockingForMolt`. A claim of a routine from before profiles
+  sets it aside under a name of its own (`<id>.molt.<token>.taken`); one
+  cut short by a crash is finished or put back at the next listing
+  (`VoiceRoutineStore::RecoverInterruptedClaims()`,
+  `docs/design/TOUCHLESS_BROWSING.md` §6.8).
 - UI is the studio at `molt://ai-agent`, hosted in the side panel
   (`molt_ai/side_panel/agent_side_panel_web_view`), sharing one `kContent` panel
   with AI chat (opening one swaps the other).
@@ -505,3 +523,12 @@ built-in AI APIs' switch) goes through `molt_ai/common/molt_settings_file.h`:
 a read-modify-write of named keys on one sequence, written atomically (a
 temporary file, then a rename). A file over 1 MiB, or one that isn't a JSON
 object, is left alone for the user to fix, and the change reports failure.
+Only a regular file is opened (`molt_ai/common/molt_regular_file.h`): a
+FIFO, device or directory at the path is never opened (its `open()` could
+hold the settings sequence, which must finish before shutdown) and is left
+alone the same way. Links: a `settings.json` that is a link to a regular
+file inside the home directory (a dotfile manager's) is read and written
+through, so it stays a link; a link elsewhere, to anything else or to
+nothing is neither read nor written, and the readers fail closed.
+`molt://ai-settings` says which case it is. The profile's
+`MoltVoiceLearning.json` follows the same rules.

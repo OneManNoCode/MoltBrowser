@@ -19,6 +19,13 @@
 //   - Readers may read from any thread that may block: a write is a rename,
 //     so they see the old file or the new one. Reading on the sequence also
 //     sees every change posted before.
+//   - Only a regular file is read or written (molt_regular_file.h): a FIFO,
+//     a device or a directory at the path is never opened (a FIFO's open()
+//     would hold the sequence, and shutdown with it), and is left alone as
+//     a file that isn't a JSON object is. A link to a regular file inside
+//     the user's home directory (a dotfile manager's) is read and written
+//     through, so it stays a link; a link elsewhere, to anything else or to
+//     nothing is not read or written. molt://ai-settings says so.
 //
 // Writers: voice_session_settings.h, voice_reading_settings.h,
 // voice_language_settings.h,
@@ -59,16 +66,19 @@ scoped_refptr<base::SequencedTaskRunner> MoltSettingsFileTaskRunner();
 enum class MoltSettingsRead {
   kMissing,      // no file: the defaults apply, and a change creates it
   kObject,       // a JSON object of at most kMaxMoltSettingsFileBytes
-  kNotAnObject,  // anything else: left alone
+  kNotAnObject,  // a file that isn't one (or is bigger): left alone
+  kNotAFile,     // not a regular file, nor a link one may follow (above):
+                 // left alone, never opened
 };
 
 // Blocking. Reads |path| into |out| (cleared unless kObject). JSON with
-// trailing commas is accepted, as the user may have edited it.
+// trailing commas is accepted, as the user may have edited it. Never opens
+// anything but a regular file.
 MoltSettingsRead ReadMoltSettingsFileAt(const base::FilePath& path,
                                         base::DictValue* out);
 
 // Blocking. The settings: empty when the file is missing, nullopt when it
-// isn't a JSON object or there is no home directory.
+// isn't a JSON object, isn't a regular file, or there is no home directory.
 std::optional<base::DictValue> ReadMoltSettings();
 
 // |changes|' keys set over |settings| (a key whose value is none is
@@ -87,10 +97,11 @@ void MergeMoltSettingsForm(base::DictValue& settings,
                            const base::DictValue& fields);
 
 // Blocking: reads |path|, lets |update| change the settings (empty when the
-// file is missing) and writes them atomically, creating the directory if
-// needed. False, and nothing written, when the file isn't a JSON object,
-// |update| returns false, the settings written would be over
-// kMaxMoltSettingsFileBytes, or the write fails. Run on
+// file is missing) and writes them atomically (through a link it may
+// follow), creating the directory if needed. False, and nothing written,
+// when the file isn't a JSON object or a regular file, |update| returns
+// false, the settings written would be over kMaxMoltSettingsFileBytes, or
+// the write fails. Run on
 // MoltSettingsFileTaskRunner(), or in a test on a file of its own.
 using MoltSettingsUpdate = base::FunctionRef<bool(base::DictValue& settings)>;
 bool UpdateMoltSettingsFileAt(const base::FilePath& path,

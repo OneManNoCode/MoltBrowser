@@ -107,13 +107,28 @@ ClaimResult::~ClaimResult() = default;
 ClaimResult::ClaimResult(ClaimResult&&) = default;
 ClaimResult& ClaimResult::operator=(ClaimResult&&) = default;
 
+bool IsClaimedCopy(const Script& copy, const Script& set_aside) {
+  // Its id, or its id followed by "_" only.
+  if (set_aside.id.empty() || copy.id.size() < set_aside.id.size() ||
+      copy.id.compare(0, set_aside.id.size(), set_aside.id) != 0 ||
+      copy.id.find_first_not_of('_', set_aside.id.size()) !=
+          std::string::npos) {
+    return false;
+  }
+  // Every other field the same, as the files hold them.
+  base::DictValue a = copy.ToJSON();
+  base::DictValue b = set_aside.ToJSON();
+  for (base::DictValue* d : {&a, &b}) {
+    d->Remove("id");
+    d->Remove("name");
+  }
+  return a == b;
+}
+
 VoiceRoutineStore::VoiceRoutineStore(const base::FilePath& routines_dir,
                                      const base::FilePath& shared_root)
-    : mine_(routines_dir) {
-  if (!shared_root.empty()) {
-    shared_.SetRootForTesting(shared_root);
-  }
-}
+    : mine_(routines_dir),
+      shared_(AutomationStorage::SharedDirectory(shared_root)) {}
 
 VoiceRoutineStore::~VoiceRoutineStore() = default;
 
@@ -130,11 +145,49 @@ std::vector<RoutineSummary> VoiceRoutineStore::Summaries() {
 }
 
 std::vector<RoutineSummary> VoiceRoutineStore::Unclaimed() {
+  RecoverInterruptedClaims();
   std::vector<RoutineSummary> out;
   for (const Script& script : VoiceRoutinesIn(shared_)) {
     out.push_back(SummaryOf(script));
   }
   return out;
+}
+
+int VoiceRoutineStore::RecoverInterruptedClaims() {
+  const std::vector<AutomationStorage::SetAside> interrupted =
+      shared_.InterruptedTakes();
+  if (interrupted.empty()) {
+    return 0;
+  }
+  const std::vector<Script> routines = Routines();
+  int settled = 0;
+  for (const AutomationStorage::SetAside& set_aside : interrupted) {
+    std::optional<Script> script = shared_.ReadSetAside(set_aside);
+    const Script* copy = nullptr;
+    if (script) {
+      for (const Script& routine : routines) {
+        if (IsClaimedCopy(routine, *script)) {
+          copy = &routine;
+          break;
+        }
+      }
+    }
+    if (copy) {
+      // Saved here before the claim was cut short: finished as it would
+      // have been.
+      shared_.FinishSetAside(set_aside);
+      mine_.AppendAudit(copy->id, "voice_routine_claimed",
+                        "from before routines belonged to a profile, "
+                        "finished after an interruption");
+      ++settled;
+    } else if (shared_.ReturnSetAside(set_aside)) {
+      // Not here (or unreadable): offered again, never given silently.
+      shared_.AppendAudit(set_aside.id, "claim_undone",
+                          "interrupted, put back");
+      ++settled;
+    }
+  }
+  return settled;
 }
 
 RoutineSaveResult VoiceRoutineStore::Save(const std::string& id,
@@ -249,6 +302,9 @@ void VoiceRoutineStore::DeleteAll() {
 }
 
 ClaimResult VoiceRoutineStore::Claim(const std::vector<std::string>& ids) {
+  // A routine left set aside by a claim cut short is put back (or finished)
+  // first, so that it can be claimed now.
+  RecoverInterruptedClaims();
   ClaimResult result;
   std::vector<std::string> names = NamesOf(Routines());
   const std::vector<std::string> listed = mine_.ListIds();
