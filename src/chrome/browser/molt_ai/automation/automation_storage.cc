@@ -146,8 +146,7 @@ std::string RandomToken() {
 
 // The id of the script a set-aside file holds: "<id>.molt.<token>.taken"
 // (a token of 1 to 32 lowercase hex digits), or round 43's
-// "<id>.molt.taken";
-// nullopt for any other name.
+// "<id>.molt.taken"; nullopt for any other name.
 std::optional<std::string> SetAsideIdOf(const std::string& name) {
   const size_t dot = name.find('.');
   if (dot == std::string::npos)
