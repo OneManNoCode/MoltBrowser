@@ -151,7 +151,10 @@ def cmd_run(args):
                                    loopback=not args.no_loopback,
                                    sandbox=not args.no_sandbox,
                                    model_available=args.model,
-                                   extra_flags=args.browser_flag or [])
+                                   extra_flags=args.browser_flag or [],
+                                   voices=[v for v in args.voices.split(",") if v] or None,
+                                   speeds=[float(x) for x in args.speeds.split(",") if x]
+                                   or None)
             if audio == "pulse" and pulse is None:
                 if not audio_path.pulse_available():
                     log("PulseAudio isn't installed: skipping %s" % spec)
@@ -175,7 +178,9 @@ def cmd_run(args):
             xvfb.terminate()
     meta = {"browser": exe, "bundle": bundle, "speech": speech,
             "kit_version": KIT_VERSION, "runs": args.runs,
-            "speech_manifest_inputs": _manifest_inputs(speech)}
+            "speech_manifest_inputs": _manifest_inputs(speech),
+            "speech_check": _speech_check_summary(os.path.join(report_dir,
+                                                               "speech-check.json"))}
     rep = report.build(runs, meta, gate_latency=args.gate_latency)
     report.write(report_dir, rep)
     print("report: %s/report.md" % report_dir)
@@ -184,6 +189,23 @@ def cmd_run(args):
     if not runs:
         return 2
     return 0 if rep["ok"] else 1
+
+
+def _speech_check_summary(path):
+    """What check-speech found per voice (left in the report directory by
+    ci_run.sh): a wake phrase the recognizer misses explains a wake-mode
+    run's "not heard"."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            res = json.load(f)
+    except (OSError, ValueError):
+        return None
+    out = {}
+    for name, s in res.get("sets", {}).items():
+        out[name] = {"exact": s.get("exact"), "wer": s.get("wer")}
+    for key, w in res.get("wake", {}).items():
+        out.setdefault(key + "/clean", {})["woke"] = "%d/%d" % (w["woke"], w["n"])
+    return out
 
 
 def _manifest_inputs(speech):
@@ -247,6 +269,10 @@ def main(argv=None):
                    help="an on-device AI model is installed (runs the model scenarios)")
     s.add_argument("--gate-latency", action="store_true")
     s.add_argument("--browser-flag", action="append", help="one more browser flag")
+    s.add_argument("--voices", default="",
+                   help="the voices the scenarios rotate through (default all: "
+                        "ljspeech,libritts-m,libritts-f)")
+    s.add_argument("--speeds", default="", help="and the speeds (default 1,1.25)")
     s = sub.add_parser("serve")
     s.add_argument("--port", type=int, default=0)
     s.add_argument("--dir", default=os.path.join(os.getcwd(), "voice-e2e-serve"))

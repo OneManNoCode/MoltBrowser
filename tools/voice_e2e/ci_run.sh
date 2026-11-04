@@ -23,6 +23,7 @@
 #   VOICE_E2E_RUNS          the runs (default
 #                           pulse:clean,pulse:music10,file:clean,typed)
 #   VOICE_E2E_SCENARIOS     scenario ids to run (default all)
+#   VOICE_E2E_VOICES        the voices to rotate through (default all three)
 #   VOICE_E2E_DATA          the voices' download directory (default
 #                           ~/.cache/moltbrowser-voice-e2e)
 #   VOICE_E2E_SPEECH_CHECK  0 to skip the recognizer check (default 1)
@@ -34,7 +35,7 @@
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
-  sed -n '2,32p' "$0"
+  sed -n '2,33p' "$0"
   exit 2
 fi
 OUT_DIR="$(cd "$1" && pwd)"
@@ -114,6 +115,7 @@ fi
 args=(run --browser "$BROWSER" --bundle "$BUNDLE_DIR" --speech "$SPEECH_DIR"
       --report "$REPORT_DIR" --runs "$RUNS")
 [[ -n "${VOICE_E2E_SCENARIOS:-}" ]] && args+=(--scenarios "$VOICE_E2E_SCENARIOS")
+[[ -n "${VOICE_E2E_VOICES:-}" ]] && args+=(--voices "$VOICE_E2E_VOICES")
 [[ "${VOICE_E2E_MODEL:-0}" == 1 ]] && args+=(--model)
 args+=("${SANDBOX_FLAGS[@]}")
 log "running: ${args[*]}"

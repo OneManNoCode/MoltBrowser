@@ -1474,6 +1474,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and ONNX Runtime from pinned sources into one executable, with its three
   models (about 80 MB, bundled only with `MOLT_BUNDLE_SPEECH=1` for now); a
   new fuzzer covers what the browser sends it.
+- **Voice mode end to end** (`tools/voice_e2e/`, `docs/VOICE_E2E.md`): a
+  kit that speaks to a built browser through a virtual microphone and
+  checks what happens: 92 scenarios over every core task of touchless
+  browsing (the owner's song scenario with "Hey Molt" and always
+  listening, forms, a shop up to its confirmation, webmail, media,
+  bookmarks, windows, prompts answered by their confirmation word, and
+  page audio, replayed words and trap history entries that must not
+  act), on local copies of the sites, with speech rendered by two pinned
+  offline voices at two speeds, quiet and with music, through PulseAudio
+  or Chromium's file capture, and typed for comparison. It reports
+  success, what was heard against what was said, and the time from the
+  end of speech to the action, against Phase 1's exit. The browser writes
+  what voice mode heard and said only with a test switch
+  (`--molt-voice-test-log`), never a confirmation word, and nothing from
+  MoltNet windows.
 - **Voice bench** (`tools/voice_bench/`, `docs/VOICE_BENCH.md`): a
   reproducible kit that measures open-source, on-device speech engines for
   touchless browsing (wake phrase, end of speech, streaming and

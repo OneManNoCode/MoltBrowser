@@ -91,6 +91,12 @@ class ReportTest(unittest.TestCase):
         self.assertFalse(rep["ok"])
         self.assertIn("2400 ms", rep["reasons"][0])
 
+    def test_speech_check_section(self):
+        meta = {"speech_check": {"libritts-f@1/clean": {"exact": 0.79, "wer": 0.115,
+                                                        "woke": "0/138"}}}
+        md = report.markdown(report.build([run("typed", [scenario("go-1")])], meta))
+        self.assertIn("| libritts-f@1/clean | 79% | 12% | 0/138 |", md)
+
     def test_write(self):
         rep = report.build([run("typed", [scenario("go-1")])], {})
         with tempfile.TemporaryDirectory() as d:

@@ -787,6 +787,8 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - **Accessibility checks** (axe-core) on MoltBrowser's own pages in the WebUI test suite.
 - **Sessions with users with disabilities** each phase. Their success and their words decide what is next.
 
+The synthetic speech set, the end-to-end runs and the security tests are the spoken test kit, `tools/voice_e2e/` ([VOICE_E2E.md](../VOICE_E2E.md), round 45): 92 scenarios on local copies of the sites, spoken by pinned offline voices through a virtual microphone (PulseAudio, or Chromium's file capture), in quiet and with music, with what voice mode heard and said read from a test-only log; it reports Phase 1's exit, and runs against the build on the CI machine.
+
 ## 13. Risks
 
 - **Latency on modest machines:** the planner is slow on a CPU, so the direct-command grammar has to cover the common cases.

@@ -180,6 +180,18 @@ def markdown(report):
             "(a trusted event, or a new document's start), for passed direct commands; "
             "the target is %d ms on the minimum hardware, and this machine isn't it." %
             LATENCY_TARGET_MS, ""]
+    check = meta.get("speech_check")
+    if check:
+        out += ["The rendered speech through the bundle's recognizer (check-speech): "
+                "utterances heard exactly, word error rate, and how often \"Hey Molt\" "
+                "woke it. A voice whose wake phrase doesn't wake it fails every "
+                "wake-mode step as \"not heard\".", "",
+                "| Voice, speed, condition | Exact | WER | Woke |", "|---|---|---|---|"]
+        for name in sorted(check):
+            c = check[name]
+            out.append("| %s | %s | %s | %s |" % (name, _rate(c.get("exact")),
+                                                  _rate(c.get("wer")), c.get("woke", "-")))
+        out.append("")
     for run in report["runs"]:
         s = run["summary"]
         out += ["## %s" % run["label"], ""]

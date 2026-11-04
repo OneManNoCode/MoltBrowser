@@ -1672,6 +1672,22 @@ extension enablement and `MediaRouterEnabled()`).
     error".
   - `NeverListensInMoltNetWindows`: no helper looked for, no microphone,
     "Voice mode is off in MoltNet windows.".
+- [ ] Voice mode's test log (voice-e2e; docs/VOICE_E2E.md, "Seeing what
+  voice mode heard and said"): `VoiceTestLogLinesTest.*` in
+  `molt_ai_unittests` (7 tests: the masked confirmation words, the JSON,
+  the lines for what changed), and in the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceTestLogBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/voice-test-log-browser-tests.log
+  ```
+  *Expected:* all 3 pass: `LogsWhatWasHeardAndSaid` (the start line with
+  the grammar's names, the typed utterance understood as `open_site`,
+  "VideoSite is open.", activity lines), `NeverLogsAConfirmationWord`
+  ("harbor", "maple", "lanterns" only as `[word]`), and
+  `NothingFromMoltNetWindows`. Then start the browser by hand with
+  `--molt-voice-test-log=/tmp/voice.jsonl`, type "open YouTube" in Agent
+  mode's voice field, and check the file holds JSON lines only and is
+  readable by you alone (`ls -l`); without the switch, no file.
 - [ ] The browser's prompts and a page's dialogs by voice (voice-gesture):
   `chrome/test/data/molt_voice/prompts.html` (new) with a fake TTS
   platform; the test plays the listening session's part
@@ -4517,6 +4533,45 @@ sinkhole answers every request with a 503.
 - [ ] Send back both runs' `report.json` (and `report.md`) with the build's
   version, and the list of NETWORK_TRAFFIC.md rows the capture confirmed,
   so that their confidence can become **Captured**.
+
+### 8.4 Voice mode end to end (Linux) (voice-e2e)
+
+The spoken test kit (docs/VOICE_E2E.md): touchless browsing's Phase 1 exit
+measured against the build before the owner starts testing. On GitHub's
+Linux runner from the build workflow's last stage, or on the Linux build
+machine; it needs `chrome`, `scripts/bundle-speech.sh --build-only --parts
+speech,voice` (§3.4, §3.5) and about 3 hours.
+
+- [ ] Run it:
+  ```bash
+  tools/voice_e2e/ci_run.sh chromium/src/out/MoltBrowser \
+    .molt-speech-cache/build/linux-x64 ~/molt-v0.3.0/voice-e2e 2>&1 | tee ~/molt-v0.3.0/voice-e2e.log
+  ```
+  *Expected:* `render.log` ends "against tools/voice_e2e/render_hashes.json:
+  20 the same, 0 different" (a different CPU may give a few different sets:
+  note them, it isn't a failure); `speech-check.md` within a few points of
+  docs/VOICE_E2E.md's table; then four runs (`pulse/clean`,
+  `pulse/music10`, `file/clean`, `typed`). Every scenario starts with
+  voice mode listening (a scenario whose error is "voice mode didn't start
+  listening" means the helper didn't start: its `browser.log` has the
+  `[MoltVoice]` lines).
+- [ ] Read `report.md`. *Expected* for Phase 1's exit: in `pulse/clean` and
+  `pulse/music10`, 90% or more of the tasks pass, the owner's scenario
+  passes in both modes, and no security scenario acts. Before that holds:
+  - a task that fails in a spoken run but passes `typed` is recognition
+    (its "heard" against "said"; the voices whose "Hey Molt" doesn't wake
+    the spotter fail every wake-mode step as "not heard");
+  - one that fails typed too is the action (its screenshot, and its
+    expectation's detail);
+  - "not in the grammar yet" names a command the build doesn't have under
+    that name: compare with `docs/VOICE_COMMANDS.md` and fix the scenario's
+    `needs` (tools/voice_e2e/scenarios/) if the grammar calls it otherwise.
+- [ ] The latency line: the median from the end of speech to the action
+  for direct commands. *Expected:* under 1.5 s on the build machine (the
+  CI runner is slower than the minimum hardware; note both).
+- [ ] Send back `report.json`, `report.md`, `speech-check.json` and the
+  `runs/*/*/` directories of failed scenarios (each has the test log, the
+  browser's log and a screenshot).
 
 ## 9. Vulkan: the hardware matrix before the switch can go on
 
