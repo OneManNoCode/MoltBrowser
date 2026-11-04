@@ -76,6 +76,8 @@ constexpr int kMaxHistoryEntries = 50;
 // A menu's items are read once it has opened (a submenu opens from the
 // press that asked for it).
 constexpr base::TimeDelta kMenuSettle = base::Milliseconds(150);
+// How recent the closed tab's entry is, to be the one voice mode closed.
+constexpr base::TimeDelta kJustClosed = base::Seconds(3);
 
 // MoltBrowser's AI settings page, and its sections.
 constexpr char kAISettingsURL[] = "chrome://molt-ai-settings/";
@@ -714,8 +716,13 @@ void VoiceBrowserActions::NoteTabClosed() {
   if (!service || service->entries().empty()) {
     return;
   }
+  // Only the entry this close made: a tab whose page asks before it closes
+  // (beforeunload) isn't closed yet, and the newest entry is then another
+  // tab's, closed earlier.
   const sessions::tab_restore::Entry& newest = *service->entries().front();
-  if (newest.type == sessions::tab_restore::TAB) {
+  const base::TimeDelta age = base::Time::Now() - newest.timestamp;
+  if (newest.type == sessions::tab_restore::TAB && age >= base::TimeDelta() &&
+      age < kJustClosed) {
     closed_by_voice_ = newest.id;
   }
 }

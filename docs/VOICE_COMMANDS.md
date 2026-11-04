@@ -939,7 +939,7 @@ said.
 - `(open | show | go to) [me] [the | my] (privacy | security | privacy and security) settings`
 - `(open | show | go to) [me] [the] (ai | molt ai | assistant) settings`
 - `(open | show | go to) [me] [the] (voice mode | voice | voice control) settings`
-- `(open | show | go to) [me] [the] (moltnet | molt net | tor) settings`
+- `(open | show | go to) [me] [the] (moltnet | molt net | mold net | tor) settings`
 - `(open | show | go to) [me] [the] [browser | browsers | molt browser | moltbrowser] settings`
 - `(browser | browsers) settings`
 
@@ -963,8 +963,8 @@ said.
 
 - `(open | new | start | create) [a] [new] (private | incognito) window`
 - `(private | incognito) window`
-- `(open | new | start | create) [a] [new] (moltnet | molt net | tor) window`
-- `(moltnet | molt net) window`
+- `(open | new | start | create) [a] [new] (moltnet | molt net | mold net | tor) window`
+- `(moltnet | molt net | mold net) window`
 - `(open | start | create) [a] new window`
 - `(new window | open [a] window | open another window)`
 
@@ -979,11 +979,11 @@ said.
 
 **Ask the on-device AI a question. Its answer is read to you, and nothing is done because of it.** For example: "ask the AI how far away is the moon".
 
-- `ask (the ai | ai | the assistant | the ai assistant | molt ai | the chat | the ai chat) [about | whether | if] {query}`
+- `ask (the ai | ai | the assistant | the ai assistant | molt ai | the chat | the ai chat | the eye | the a chat) [about | whether | if] {query}`
 
 **Open the AI chat beside the page.** For example: "open the AI chat".
 
-- `(open | show | start) [me] [the] (ai chat | ai | chat | assistant | ai assistant | ai panel | chat panel)`
+- `(open | show | start) [me] [the] (ai chat | ai | chat | assistant | ai assistant | ai panel | chat panel | a chat | eye chat)`
 
 **Hear the browser's own buttons (the toolbar, the tabs, the bookmarks bar, the side panel), to press one by number or name.** For example: "show the browser's buttons".
 

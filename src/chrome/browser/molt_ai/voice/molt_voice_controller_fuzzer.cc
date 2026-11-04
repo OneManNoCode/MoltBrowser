@@ -15,7 +15,8 @@
 //   byte 1   bits 0-1 the active tab (of up to four), bit 2 a question
 //            expires before the next utterance, bits 3-4 reading aloud
 //            (none, reading, stopped), bit 5 a site skill names parts (the
-//            first items of each kind, whatever they are)
+//            first items of each kind, whatever they are), bit 6 voice mode
+//            in Spanish (the grammar's and the answers' language)
 //   lines    "> utterance"; "? words" (the planner asks the user to
 //            confirm them, voice_planner.h); "T title"; "H text" (a heading);
 //            "L label" (a new list); "% k text" (the browser reads its prompt
@@ -56,6 +57,7 @@
 #include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
@@ -327,7 +329,9 @@ void CheckTurn(const VoiceTurn& turn,
   for (const VoiceStep& step : turn.steps) {
     if (env.moltnet) {
       CHECK(step.kind == VoiceStepKind::kSpeak);
-      CHECK_EQ(step.text, "Voice mode is off in MoltNet windows.");
+      CHECK_EQ(step.text,
+               molt_ai::voice::Localized(
+                   env.language, "Voice mode is off in MoltNet windows."));
     }
     switch (step.kind) {
       case VoiceStepKind::kSpeak:
@@ -560,6 +564,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                        : static_cast<int>((more_bits & 0x03) % env.tabs.size());
   env.page_id = 1;
   env.now_ms = 1000;
+  env.language = (more_bits & 0x40) ? molt_ai::voice::Language::kSpanish
+                                    : molt_ai::voice::Language::kEnglish;
   using Reading = molt_ai::voice::VoiceEnvironment::Reading;
   env.reading = (more_bits & 0x18) == 0x08   ? Reading::kReading
                 : (more_bits & 0x18) == 0x10 ? Reading::kStopped

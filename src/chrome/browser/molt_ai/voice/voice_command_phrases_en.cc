@@ -203,9 +203,10 @@ constexpr CommandPattern kPatterns[] = {
     {K::kOpenSettings,
      "(open|show|go to) [me] [the] (voice mode|voice|voice control) settings",
      C::kAlways, V::kSettingsVoice},
+    // "Mold net": how the bundled English recognizer hears "MoltNet".
     {K::kOpenSettings,
-     "(open|show|go to) [me] [the] (moltnet|molt net|tor) settings", C::kAlways,
-     V::kSettingsMoltNet},
+     "(open|show|go to) [me] [the] (moltnet|molt net|mold net|tor) settings",
+     C::kAlways, V::kSettingsMoltNet},
     {K::kOpenSettings,
      "(open|show|go to) [me] [the] [browser|browsers|molt browser|"
      "moltbrowser] settings"},
@@ -217,22 +218,26 @@ constexpr CommandPattern kPatterns[] = {
     {K::kNewWindow, "(private|incognito) window", C::kAlways,
      V::kWindowPrivate},
     {K::kNewWindow,
-     "(open|new|start|create) [a] [new] (moltnet|molt net|tor) window",
+     "(open|new|start|create) [a] [new] (moltnet|molt net|mold net|tor) "
+     "window",
      C::kAlways, V::kWindowMoltNet},
-    {K::kNewWindow, "(moltnet|molt net) window", C::kAlways, V::kWindowMoltNet},
+    {K::kNewWindow, "(moltnet|molt net|mold net) window", C::kAlways,
+     V::kWindowMoltNet},
     {K::kNewWindow, "(open|start|create) [a] new window"},
     {K::kNewWindow, "(new window|open [a] window|open another window)"},
     {K::kCloseWindow, "close [this|the|current] window"},
     {K::kSwitchWindow,
      "(switch|go|move|change|jump) to [the] (other|next|previous|last) window"},
     {K::kSwitchWindow, "(other|next) window"},
-    // The AI chat.
+    // The AI chat. "The eye" and "a chat": how the bundled English
+    // recognizer hears "the AI" and "AI chat" (neither does more than ask
+    // the on-device model or open its panel).
     {K::kAskAI,
      "ask (the ai|ai|the assistant|the ai assistant|molt ai|the chat|the ai "
-     "chat) [about|whether|if] {query}"},
+     "chat|the eye|the a chat) [about|whether|if] {query}"},
     {K::kOpenAIChat,
      "(open|show|start) [me] [the] (ai chat|ai|chat|assistant|ai assistant|"
-     "ai panel|chat panel)"},
+     "ai panel|chat panel|a chat|eye chat)"},
     // The browser's own buttons and menus.
     {K::kShowBrowserButtons,
      "(show|read|list|tell me) [me] [the] (browser|browsers|toolbar|"

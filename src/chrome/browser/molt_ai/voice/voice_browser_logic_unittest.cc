@@ -278,6 +278,15 @@ TEST(VoiceBrowserGrammarTest, TheirFields) {
             SettingsPage::kMoltNet);
   EXPECT_EQ(Parse("new private window").window, WindowKind::kPrivate);
   EXPECT_EQ(Parse("new moltnet window").window, WindowKind::kMoltNet);
+  // As the bundled English recognizer hears them.
+  EXPECT_EQ(Parse("open a new mold net window").window, WindowKind::kMoltNet);
+  EXPECT_EQ(Parse("open mold net settings").settings_page,
+            SettingsPage::kMoltNet);
+  EXPECT_EQ(Parse("ask the eye how far is the moon").kind, CK::kAskAI);
+  EXPECT_EQ(Parse("ask the eye how far is the moon").text,
+            "how far is the moon");
+  EXPECT_EQ(Parse("open the a chat").kind, CK::kOpenAIChat);
+  EXPECT_EQ(Parse("open the eye chat").kind, CK::kOpenAIChat);
   EXPECT_EQ(Parse("new window").window, WindowKind::kNormal);
   EXPECT_TRUE(Parse("turn on always listening").on);
   EXPECT_FALSE(Parse("turn off always listening").on);
