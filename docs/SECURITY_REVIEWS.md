@@ -57,12 +57,18 @@ run on the build machine.
 
 **Findings.** 11 in round 44's code: 2 low and 9 informational (local
 files written by the same user, usability, what later work covers).
-Fixed: both low and one informational; the others are tracked
-privately. Also closed: 8 findings of earlier reviews, in the voice
-channel.
+Fixed: both low and three informational (two of them in the same
+round's storage work); the others are tracked privately. Also closed: 8
+findings of earlier reviews, in the voice channel.
 
 **Fixed.**
 
+- The Agent studio's answers reach only the page that asked: one that
+  arrives after the page reloaded is dropped
+  (`ui/webui/molt_ai/molt_ai_agent_ui.cc`).
+- A routine set aside during a claim is always returned to the shared
+  storage, under a fresh name when every simple one is taken
+  (`automation/automation_storage.cc`).
 - A sentence the browser made in English and says in the voice's language
   (`Relocalized()`) is said from the key that made it only when that key
   is clear: words in a placeholder (a page's label, model output) that make
