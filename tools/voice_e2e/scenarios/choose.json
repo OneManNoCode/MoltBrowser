@@ -1,0 +1,69 @@
+{
+ "group": "choose",
+ "about": "Choose (TOUCHLESS_BROWSING.md §2): by number, by name, by position, with a readback when it's unclear; the numbers overlay.",
+ "scenarios": [
+  {
+   "id": "choose-by-number",
+   "title": "Play a result by its number",
+   "task": "choose",
+   "start": {"url": "https://www.youtube.com/results?search_query=Bohemian+Rhapsody"},
+   "steps": [
+    {"say": "play number seven", "needs": ["choose"],
+     "expect": [{"query": {"v": "video7"}}, {"media": {"paused": false}}]}
+   ]
+  },
+  {
+   "id": "choose-by-name",
+   "title": "Play a result by what it says",
+   "task": "choose",
+   "start": {"url": "https://www.youtube.com/results?search_query=Bohemian+Rhapsody"},
+   "steps": [
+    {"say": "play the one by Pentatonix", "needs": ["choose"],
+     "expect": [{"query": {"v": "video9"}}]}
+   ]
+  },
+  {
+   "id": "choose-by-position",
+   "title": "Play the last one",
+   "task": "choose",
+   "start": {"url": "https://www.youtube.com/results?search_query=Bohemian+Rhapsody"},
+   "steps": [
+    {"say": "play the last one", "needs": ["choose"], "expect": [{"query": {"v": "video20"}}]}
+   ]
+  },
+  {
+   "id": "choose-readback",
+   "title": "An unclear choice is read back, and answered by number",
+   "task": "choose",
+   "start": {"url": "https://www.youtube.com/results?search_query=Bohemian+Rhapsody"},
+   "steps": [
+    {"say": "play the live one by Queen", "needs": ["choose"],
+     "expect": [{"said_has": "Did you mean"}, {"path": "/results"}]},
+    {"say": "number two", "answer": true, "expect": [{"query": {"v": "video4"}}]}
+   ]
+  },
+  {
+   "id": "choose-after-list",
+   "title": "Hear the results, then say a bare number",
+   "task": "choose",
+   "start": {"url": "https://www.youtube.com/results?search_query=Bohemian+Rhapsody"},
+   "steps": [
+    {"say": "read the results", "needs": ["read_results"],
+     "expect": [{"said_re": "^20 results\\.|^20 items\\."}]},
+    {"say": "three", "answer": true, "expect": [{"query": {"v": "video3"}}]}
+   ]
+  },
+  {
+   "id": "choose-numbers",
+   "title": "Show and hide the numbers",
+   "task": "choose",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "show numbers", "needs": ["show_numbers"],
+     "expect": [{"heard_intent": "show_numbers"}]},
+    {"say": "hide numbers", "needs": ["hide_numbers"],
+     "expect": [{"heard_intent": "hide_numbers"}]}
+   ]
+  }
+ ]
+}

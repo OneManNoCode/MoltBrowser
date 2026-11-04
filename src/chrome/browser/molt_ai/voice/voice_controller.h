@@ -135,6 +135,7 @@ class VoicePageController;
 class VoicePageQuestions;
 class VoiceReader;
 class VoiceSpeech;
+class VoiceTestLog;
 
 // What voice mode is doing, for the caption bar (§5.1).
 enum class VoiceActivity {
@@ -527,6 +528,8 @@ class VoiceController : public VoicePlanner::Delegate,
   std::unique_ptr<VoiceLearningLoop> learning_;
   // Questions about the page (voice_page_questions.h).
   std::unique_ptr<VoicePageQuestions> page_questions_;
+  // The test log, with --molt-voice-test-log only (voice_test_log.h).
+  std::unique_ptr<VoiceTestLog> test_log_;
   base::RepeatingClosure idle_for_testing_;
   base::WeakPtrFactory<VoiceController> run_weak_factory_{this};
   base::WeakPtrFactory<VoiceController> weak_factory_{this};

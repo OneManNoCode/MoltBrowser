@@ -43,6 +43,9 @@ specific_include_rules = {
   r"voice_page_questions_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
+  r"voice_test_log_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
   # The answer's schema is one the inference service's converter takes
   # (std-only).
   r"page_questions_unittest\.cc": [

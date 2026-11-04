@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<!-- A page with a player inside a cross-site frame (frames.test, the
+     player from player.test/embed): the frame tells this page what its
+     player does (window.__moltFrameMedia, which the kit reads). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cooking show</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<main>
+  <h1>Cooking show</h1>
+  <iframe src="https://player.test/embed" title="Video player" width="680"
+          height="460" allow="fullscreen; autoplay"></iframe>
+  <p>Tonight: bread with seeds.</p>
+</main>
+<script>kit.listenToFrame('https://player.test');</script>
+</body>
+</html>

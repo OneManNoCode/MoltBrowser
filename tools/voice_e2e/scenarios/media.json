@@ -1,0 +1,142 @@
+{
+ "group": "media",
+ "about": "Media (TOUCHLESS_BROWSING.md §2): play, pause, volume (by step and to a level), mute, seek, speed, captions, full screen, next, the ad's skip button, and a player inside a cross-site frame.",
+ "scenarios": [
+  {
+   "id": "media-play-pause",
+   "title": "Play, pause and resume",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false, "muted": false}}]},
+    {"say": "pause", "needs": ["pause"],
+     "expect": [{"media": {"paused": true}}, {"said": "Paused."}]},
+    {"say": "resume", "needs": ["resume"], "expect": [{"media": {"paused": false}}]}
+   ]
+  },
+  {
+   "id": "media-louder-quieter",
+   "title": "Louder, then much quieter",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "louder", "needs": ["volume_up"], "expect": [{"media": {"volume": [0.72, 1.0]}}]},
+    {"say": "much quieter", "needs": ["volume_down"],
+     "expect": [{"media": {"volume": [0.0, 0.69]}}]}
+   ]
+  },
+  {
+   "id": "media-volume-level",
+   "title": "Set the volume to a level",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "set the volume to 50 percent", "needs": ["set_volume"],
+     "expect": [{"media": {"volume": [0.45, 0.55]}}]},
+    {"say": "maximum volume", "needs": ["set_volume"],
+     "expect": [{"media": {"volume": [0.95, 1.0]}}]},
+    {"say": "set the volume to half", "needs": ["set_volume"],
+     "expect": [{"media": {"volume": [0.45, 0.55]}}]}
+   ]
+  },
+  {
+   "id": "media-mute",
+   "title": "Mute and unmute",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "mute", "needs": ["mute"],
+     "expect": [{"js": "(() => { const v = document.querySelector('video'); return v.muted || v.volume === 0; })()"}]},
+    {"say": "unmute", "needs": ["unmute"],
+     "expect": [{"js": "(() => { const v = document.querySelector('video'); return !v.muted && v.volume > 0; })()"}]}
+   ]
+  },
+  {
+   "id": "media-seek",
+   "title": "Skip ahead a minute, go back 30 seconds, play from the beginning",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "skip ahead one minute", "needs": ["skip_forward"],
+     "expect": [{"media": {"time_min": 55}}]},
+    {"say": "go back 30 seconds", "needs": ["skip_back"],
+     "expect": [{"media": {"time_max": 50}}]},
+    {"say": "play from the beginning", "needs": ["restart"],
+     "expect": [{"media": {"time_max": 12}}]}
+   ]
+  },
+  {
+   "id": "media-speed",
+   "title": "Play faster, then normal speed",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "play faster", "needs": ["speed_up"],
+     "expect": [{"js": "document.querySelector('video').playbackRate > 1"}]},
+    {"say": "normal speed", "needs": ["normal_speed"], "expect": [{"media": {"rate": 1}}]}
+   ]
+  },
+  {
+   "id": "media-captions",
+   "title": "Captions on and off",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "turn on captions", "needs": ["captions_on"], "expect": [{"media": {"captions": true}}]},
+    {"say": "captions off", "needs": ["captions_off"], "expect": [{"media": {"captions": false}}]}
+   ]
+  },
+  {
+   "id": "media-full-screen",
+   "title": "Full screen and back",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "full screen", "needs": ["full_screen"], "expect": [{"media": {"fullscreen": true}}]},
+    {"say": "exit full screen", "needs": ["exit_full_screen"],
+     "expect": [{"media": {"fullscreen": false}}]}
+   ]
+  },
+  {
+   "id": "media-next-video",
+   "title": "The next video",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "next video", "needs": ["next_track"], "expect": [{"query": {"v": "video5"}}]}
+   ]
+  },
+  {
+   "id": "media-skip-ad",
+   "title": "Skip the ad once the player lets you",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video1&ad=1"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "skip the ad", "pause": 2.0, "needs": ["skip_ad"],
+     "expect": [{"js": "kit.state.adSkipped === true"}]}
+   ]
+  },
+  {
+   "id": "media-in-frame",
+   "title": "A player inside a cross-site frame: play, pause, skip ahead, full screen",
+   "task": "media",
+   "start": {"url": "https://frames.test/"},
+   "steps": [
+    {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
+    {"say": "pause", "needs": ["pause"], "expect": [{"media": {"paused": true}}]},
+    {"say": "skip ahead one minute", "needs": ["skip_forward"],
+     "expect": [{"media": {"time_min": 55}}]},
+    {"say": "full screen", "needs": ["full_screen"], "expect": [{"media": {"fullscreen": true}}]}
+   ]
+  }
+ ]
+}

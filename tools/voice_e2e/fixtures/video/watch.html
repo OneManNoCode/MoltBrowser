@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<!-- The video site's watch page (www.youtube.com/watch?v=...): the player
+     (kit.js: play, mute, volume, seek, captions, speed, next, full screen;
+     no autoplay, so voice mode's click starts it with sound), the title,
+     and related videos. ?ad=1 starts with an ad whose skip button shows
+     after 3 s. The song is the kit's synthesized music, 3 minutes long. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YouTube</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<ytd-app>
+<div id="masthead-container">
+  <a id="logo" href="/" aria-label="YouTube Home">YouTube</a>
+  <form id="search-form" action="/results" role="search">
+    <input id="search" name="search_query" type="text" role="combobox"
+           aria-label="Search" placeholder="Search" autocomplete="off">
+    <button id="search-icon-legacy" aria-label="Search">Search</button>
+  </form>
+</div>
+<div id="columns">
+  <div id="primary">
+    <div id="player"></div>
+    <h1 id="title" class="ytd-watch-metadata"></h1>
+  </div>
+  <div id="secondary">
+    <h2>Up next</h2>
+    <div id="related"></div>
+  </div>
+</div>
+</ytd-app>
+<script>
+  'use strict';
+  const NAMES = {
+    video1: 'Queen – Bohemian Rhapsody (Official Video Remastered)',
+    video3: 'Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)',
+    video4: 'Queen - Bohemian Rhapsody (Live Aid 1985)',
+    video9: 'Bohemian Rhapsody - Pentatonix',
+    video12: 'Queen - Bohemian Rhapsody (Live at Wembley Stadium 1986)',
+    video20: 'Bohemian Rhapsody but it\'s lofi',
+  };
+  const v = kit.param('v') || 'video1';
+  const n = Number((v.match(/\d+$/) || ['1'])[0]);
+  const title = NAMES[v] || ('Video ' + v);
+  document.title = title + ' - YouTube';
+  document.getElementById('title').textContent = title;
+  const nextUrl = '/watch?v=video' + (n + 1);
+  kit.player(document.getElementById('player'), {
+    src: '/_kit/song.wav', captions: '/_kit/captions.vtt', next: nextUrl,
+    ad: kit.param('ad') === '1'});
+  const related = document.getElementById('related');
+  for (let k = 1; k <= 3; ++k) {
+    related.append(kit.el('h3', {}, kit.el('a', {href: '/watch?v=video' + (n + k)},
+                                           'Related video ' + (n + k))));
+  }
+</script>
+</body>
+</html>

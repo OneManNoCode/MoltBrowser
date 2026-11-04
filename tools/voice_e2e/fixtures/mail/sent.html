@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- Sent (mail.test/sent): what was sent, in window.sent. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sent - Post</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+</head>
+<body>
+<main>
+  <h1>Your message was sent</h1>
+  <p><a href="/">Back to the inbox</a></p>
+</main>
+<script>
+  const p = new URLSearchParams(location.search);
+  window.sent = {to: p.get('to'), subject: p.get('subject'), body: p.get('body')};
+</script>
+</body>
+</html>

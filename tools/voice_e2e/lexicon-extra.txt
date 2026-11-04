@@ -1,0 +1,6 @@
+# Pronunciations the voices' lexicon (sherpa-onnx's lexicon-en-us.txt)
+# lacks for the end-to-end kit's words, in its format: word || phones
+# (espeak-style IPA, a stress mark before the stressed vowel). render.py
+# reads these first, then tools/voice_bench/testset/lexicon-extra.txt.
+browser's || b ɹˈ a ʊ z ɚ z
+moltnet || mˈ o ʊ l t n ɛ t

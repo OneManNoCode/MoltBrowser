@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<!-- The video site's search results (www.youtube.com/results), built like
+     YouTube's from custom elements: a masthead with the search form, filter
+     chips and 20 video renderers (a thumbnail link with the length, an h3
+     title link with id "video-title" and a long aria-label, the channel's
+     name, views and age, an action menu), with a shelf after the fifth.
+     The same 20 results as chrome/test/data/molt_voice/video_results.html
+     for a search for Bohemian Rhapsody (the owner's scenario: the fourth is
+     Live Aid 1985, and three are live by Queen); any other search lists 20
+     made from its words. Each opens /watch?v=videoN. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YouTube</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+<style>
+  ytd-video-renderer { display: block; min-height: 120px; margin-bottom: 10px; }
+  ytd-thumbnail { float: left; width: 200px; height: 112px; background: #888; margin-right: 16px; }
+  ytd-shelf-renderer, ytd-grid-video-renderer { display: block; }
+  yt-chip-cloud-chip-renderer { display: inline-block; }
+</style>
+</head>
+<body>
+<ytd-app>
+<div id="masthead-container">
+  <a id="logo" href="/" aria-label="YouTube Home">YouTube</a>
+  <form id="search-form" action="/results" role="search">
+    <input id="search" name="search_query" type="text" role="combobox"
+           aria-label="Search" placeholder="Search" autocomplete="off">
+    <button id="search-icon-legacy" aria-label="Search">Search</button>
+  </form>
+</div>
+<div id="chips"></div>
+<main><div id="contents" class="results"></div></main>
+</ytd-app>
+<script>
+  'use strict';
+  const el = kit.el;
+  const QUEEN = [
+    ['Queen – Bohemian Rhapsody (Official Video Remastered)', 'Queen Official', '6:00', '2.1B views', '15 years ago'],
+    ['Bohemian Rhapsody (Remastered 2011)', 'Queen - Topic', '5:55', '312M views', '11 years ago'],
+    ['Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)', 'Queen Official', '5:44', '48M views', '3 years ago'],
+    ['Queen - Bohemian Rhapsody (Live Aid 1985)', 'Queen Official', '2:31', '97M views', '7 years ago'],
+    ['Bohemian Rhapsody | Muppet Music Video | The Muppets', 'The Muppets', '4:47', '88M views', '15 years ago'],
+    ['Wayne\'s World - Bohemian Rhapsody scene', 'Paramount Movies', '3:12', '21M views', '9 years ago'],
+    ['Bohemian Rhapsody | Official Trailer [HD] | 20th Century FOX', '20th Century Studios', '2:32', '31M views', '6 years ago'],
+    ['Panic! At The Disco - Bohemian Rhapsody (Official Video)', 'Fueled By Ramen', '6:08', '60M views', '9 years ago'],
+    ['Bohemian Rhapsody - Pentatonix', 'Pentatonix', '5:57', '45M views', '7 years ago'],
+    ['Bohemian Rhapsody | Piano Tutorial', 'Piano Lessons Daily', '8:15', '1.2M views', '2 years ago'],
+    ['Bohemian Rhapsody (Lyrics)', 'Lyric Vibes', '5:59', '18M views', '4 years ago'],
+    ['Queen - Bohemian Rhapsody (Live at Wembley Stadium 1986)', 'Queen Official', '5:58', '35M views', '5 years ago'],
+    ['Bohemian Rhapsody - Rami Malek Live Aid scene', 'Movieclips', '4:20', '12M views', '5 years ago'],
+    ['How Queen wrote Bohemian Rhapsody', 'Polyphonic', '11:46', '6.4M views', '6 years ago'],
+    ['Bohemian Rhapsody - Marching Band', 'Ohio State Marching Band', '4:02', '9.1M views', '8 years ago'],
+    ['Bohemian Rhapsody on Classical Guitar', 'Marcin', '6:12', '14M views', '3 years ago'],
+    ['Bohemian Rhapsody - Kanye West at Glastonbury 2015', 'BBC Music', '1:45', '8.3M views', '9 years ago'],
+    ['Bohemian Rhapsody - Queen + Adam Lambert (Rock in Rio 2015)', 'Queen Official', '6:21', '5.2M views', '1 year ago'],
+    ['The Story of Bohemian Rhapsody (BBC documentary)', 'BBC', '58:43', '2.7M views', '10 months ago'],
+    ['Bohemian Rhapsody but it\'s lofi', 'Lofi Covers', '1:02:15', '940K views', '2 weeks ago'],
+  ];
+  const query = (kit.param('search_query') || '').trim();
+  document.getElementById('search').value = query;
+  if (query) {
+    document.title = query + ' - YouTube';
+  }
+  const words = query || 'videos';
+  const videos = /bohemian/i.test(query) ? QUEEN :
+      Array.from({length: 20}, (_, i) =>
+          [words + ' part ' + (i + 1), 'Channel ' + String.fromCharCode(65 + i),
+           (3 + i % 5) + ':0' + (i % 10), (i + 1) + 'K views', (i + 1) + ' days ago']);
+  const chips = document.getElementById('chips');
+  for (const chip of ['All', 'Shorts', 'Videos', 'Unwatched', 'Recently uploaded']) {
+    chips.append(el('yt-chip-cloud-chip-renderer', {}, el('button', {type: 'button'}, chip)));
+  }
+  const results = document.querySelector('.results');
+  videos.forEach(([title, channel, duration, views, age], i) => {
+    const watch = '/watch?v=video' + (i + 1);
+    const channelUrl = '/@' + kit.slug(channel);
+    results.append(el('ytd-video-renderer', {},
+        el('ytd-thumbnail', {}, el('a', {id: 'thumbnail', href: watch, tabindex: -1},
+                                   el('span', {}, duration))),
+        el('div', {id: 'meta'},
+           el('h3', {}, el('a', {id: 'video-title', href: watch, title: title,
+                                 'aria-label': title + ' by ' + channel + ' ' + views + ' ' + age},
+                           title)),
+           el('div', {id: 'metadata-line'}, el('span', {}, views), ' ', el('span', {}, age))),
+        el('div', {id: 'channel-info'}, el('a', {href: channelUrl}, channel)),
+        el('div', {id: 'menu'}, el('button', {'aria-label': 'Action menu'}, '⋮'))));
+    if (i === 4) {
+      const shelf = el('ytd-shelf-renderer', {}, el('h2', {}, 'Latest from Queen Official'));
+      for (let k = 1; k <= 4; ++k) {
+        shelf.append(el('ytd-grid-video-renderer', {},
+            el('h3', {}, el('a', {href: '/watch?v=shelf' + k}, 'Queen - Shelf video ' + k))));
+      }
+      results.append(shelf);
+    }
+  });
+  kit.state.titles = videos.map((v) => v[0]);
+</script>
+</body>
+</html>

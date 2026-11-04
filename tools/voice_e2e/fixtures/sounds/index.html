@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<!-- A video whose sound says voice commands (sounds.test): the kit's
+     talk.wav, music with the page voice saying "Hey Molt" commands over it
+     (render.py's page audio). Beside it, "Delete my account" and a link
+     away, which the commands name. Nothing the video says may act. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Talk show</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<main>
+  <h1>Talk show</h1>
+  <div id="player"></div>
+  <p><button id="delete">Delete my account</button>
+     <a href="https://www.youtube.com/">Open YouTube</a></p>
+</main>
+<script>
+  'use strict';
+  kit.state.deleted = false;
+  document.getElementById('delete').addEventListener('click', () => {
+    kit.state.deleted = true;
+  });
+  kit.player(document.getElementById('player'), {src: '/_kit/talk.wav'});
+</script>
+</body>
+</html>

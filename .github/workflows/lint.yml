@@ -49,6 +49,12 @@ name: Lint
 #     hotword and SentencePiece/ONNX readers, safe unpacking and the pinned
 #     manifest; shellcheck on its script (blocking; the measurements
 #     themselves download engines, see docs/VOICE_BENCH.md)
+#   * the voice end-to-end kit (tools/voice_e2e/): its scenarios, their
+#     expectations, the test log reader, the report, the fixture server,
+#     the speech renderer's determinism (with a stand-in voice) and the
+#     runner against a stand-in browser over the DevTools pipe; shellcheck
+#     on its script (blocking; the suite itself runs against a build, see
+#     docs/VOICE_E2E.md)
 #   * fuzz smoke: the libFuzzer targets that need no //base (std, zlib and
 #     llama tiers) built with clang + ASan/UBSan and run over their seed
 #     corpora with a fixed seed and run count (tools/fuzz/molt_fuzz.py;
@@ -324,6 +330,24 @@ jobs:
           shellcheck tools/voice_bench/*.sh
       - name: tools/voice_bench tests (no downloads, no engines)
         run: python3 -I tools/voice_bench/voice_bench_test.py -v
+
+  voice-e2e-kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck tools/voice_e2e
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck tools/voice_e2e/*.sh
+      - name: numpy, pinned by hash (the renderer's and the mixes' tests)
+        run: python3 -I -c "import numpy" 2>/dev/null || python3 -m pip install --user --require-hashes -r tools/voice_bench/requirements.txt
+      - name: The scenarios load
+        run: python3 -I tools/voice_e2e/run_e2e.py list
+      - name: tools/voice_e2e tests (no browser, no downloads)
+        run: python3 -I -m unittest discover -s tools/voice_e2e/tests -t tools/voice_e2e -v
 
   fuzz-smoke:
     runs-on: ubuntu-latest

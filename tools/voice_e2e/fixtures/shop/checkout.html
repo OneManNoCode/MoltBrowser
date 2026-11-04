@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- The shop's checkout (shop.test/checkout): name, street and town, a
+     delivery choice, and "Place order" (voice mode asks before it presses
+     it). The order goes to /done. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Checkout - Corner Shop</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/shop.js"></script>
+</head>
+<body>
+<header>
+  <h1>Checkout</h1>
+  <nav><a href="/">Shop</a> <a id="cart-link" href="/cart">Cart (0)</a></nav>
+</header>
+<main>
+  <form id="order" action="/done" method="get">
+    <label for="name">Full name</label>
+    <input id="name" name="name" autocomplete="off">
+    <label for="street">Street</label>
+    <input id="street" name="street" autocomplete="off">
+    <label for="town">Town</label>
+    <input id="town" name="town" autocomplete="off">
+    <fieldset>
+      <legend>Delivery</legend>
+      <label><input type="radio" name="delivery" value="standard" checked> Standard delivery</label>
+      <label><input type="radio" name="delivery" value="express"> Express delivery</label>
+    </fieldset>
+    <button id="place" type="submit">Place order</button>
+  </form>
+</main>
+<script>shop.show();</script>
+</body>
+</html>

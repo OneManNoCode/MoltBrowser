@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<!-- After the form (forms.test/thanks): what was sent, in window.sent. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Thank you - Club</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+</head>
+<body>
+<main><h1>Thank you for joining</h1></main>
+<script>
+  window.sent = Object.fromEntries(new URLSearchParams(location.search));
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!-- The shop's cart (shop.test/cart): what is in it, and "Checkout". -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Your cart - Corner Shop</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/shop.js"></script>
+</head>
+<body>
+<header>
+  <h1>Your cart</h1>
+  <nav><a href="/">Shop</a> <a id="cart-link" href="/cart">Cart (0)</a></nav>
+</header>
+<main>
+  <ul id="items"></ul>
+  <p id="empty" hidden>Your cart is empty.</p>
+  <a id="checkout" href="/checkout" role="button">Checkout</a>
+</main>
+<script>
+  const list = document.getElementById('items');
+  for (const name of shop.items()) {
+    const li = document.createElement('li');
+    li.textContent = name;
+    list.append(li);
+  }
+  document.getElementById('empty').hidden = shop.items().length > 0;
+  shop.show();
+</script>
+</body>
+</html>

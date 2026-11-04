@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!-- A page that pushes trap history entries (trap.test): ten entries as it
+     loads, and one more each second for five seconds, without any user
+     activation, so that "go back" would stay on it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A quiz you will love</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+</head>
+<body>
+<main>
+  <h1>A quiz you will love</h1>
+  <p>Question one: how many wheels does a tram have?</p>
+</main>
+<script>
+  'use strict';
+  for (let i = 1; i <= 10; ++i) {
+    history.pushState({i}, '', '?q=' + i);
+  }
+  let more = 0;
+  const timer = setInterval(() => {
+    history.pushState({more}, '', '?more=' + (++more));
+    if (more >= 5) {
+      clearInterval(timer);
+    }
+  }, 1000);
+  window.addEventListener('popstate', () => {
+    history.pushState({again: true}, '', '?again=1');
+  });
+</script>
+</body>
+</html>
