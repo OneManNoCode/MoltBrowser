@@ -72,6 +72,8 @@ chrome/browser/flag-never-expire-list.json.patch
 chrome/browser/gcm/gcm_profile_service_factory.cc.patch
 chrome/browser/gcm/instance_id/instance_id_profile_service_factory.cc.patch
 chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc.patch
+chrome/browser/media/BUILD.gn.patch
+chrome/browser/media/cast_mirroring_service_host.cc.patch
 chrome/browser/media/chrome_media_session_client.cc.patch
 chrome/browser/media/media_engagement_service.cc.patch
 chrome/browser/media/router/BUILD.gn.patch
