@@ -265,6 +265,12 @@ class VoiceController : public VoicePlanner::Delegate,
   Language language() const { return language_; }
   void SetLanguage(Language language);
   static void SetLanguageForAll(Language language);
+  // Whether language() is known yet: SetLanguage() has run (the setting is
+  // read on a worker when the window's voice mode is made). Until then the
+  // listening session doesn't open the microphone (voice_session.h).
+  bool language_known() const { return language_known_; }
+  // Tests: as before the setting was read.
+  void ForgetLanguageForTesting() { language_known_ = false; }
 
   // The listening side's part of the caption, and whether it listens
   // (VoiceEnvironment::listening).
@@ -470,8 +476,9 @@ class VoiceController : public VoicePlanner::Delegate,
   base::TimeTicks last_commit_;
 
   ConversationState state_;
-  // The window's language (SetLanguage()).
+  // The window's language (SetLanguage()), and whether it was set.
   Language language_ = Language::kEnglish;
+  bool language_known_ = false;
   std::deque<VoiceStep> pending_;
   // The run the steps belong to: a new utterance or a stop starts another,
   // and callbacks of an earlier run are dropped.

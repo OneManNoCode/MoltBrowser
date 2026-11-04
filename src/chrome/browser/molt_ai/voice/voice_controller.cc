@@ -323,10 +323,10 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
           },
           weak_factory_.GetWeakPtr()));
   // The language voice mode understands and speaks (a setting; else the
-  // browser's own language).
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ReadVoiceLanguageSetting),
+  // browser's own language). On settings.json's own sequence, so a change
+  // the settings page writes meanwhile is never undone by this read.
+  MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadVoiceLanguageSetting),
       base::BindOnce(
           [](base::WeakPtr<VoiceController> self, std::string stored) {
             if (self) {
@@ -441,6 +441,7 @@ bool VoiceController::SpeechInEchoReference() const {
 
 void VoiceController::SetLanguage(Language language) {
   language_ = language;
+  language_known_ = true;
   if (speech_) {
     speech_->SetLanguage(language, g_browser_process->GetApplicationLocale());
   }
