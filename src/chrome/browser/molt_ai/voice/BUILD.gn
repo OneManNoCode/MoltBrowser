@@ -50,6 +50,9 @@ source_set("unit_tests") {
 
     # Voice mode's language as a setting.
     ":voice_language_unit_tests",
+
+    # The end-to-end kit's test log: its lines, never a confirmation word.
+    ":voice_test_log_unit_tests",
     "//testing/gtest",
   ]
 }
@@ -561,6 +564,9 @@ source_set("browser_tests") {
     # Questions about the page, with a scripted model.
     ":voice_page_questions_browser_tests",
 
+    # The end-to-end kit's test log (--molt-voice-test-log).
+    ":voice_test_log_browser_tests",
+
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
 
@@ -738,6 +744,10 @@ source_set("voice_controller") {
     "voice_speech.h",
     "voice_speech_bundled.cc",
     "voice_speech_bundled.h",
+
+    # The end-to-end kit's log, with its test switch only.
+    "voice_test_log.cc",
+    "voice_test_log.h",
   ]
 
   public_deps = [
@@ -769,6 +779,9 @@ source_set("voice_controller") {
     # The reader takes the site's skill for the page (site_skills.h).
     ":site_skills",
     ":voice_page",
+
+    # The test log's lines (voice_test_log.h).
+    ":voice_test_log_lines",
 
     # Questions about the page, answered by the on-device model.
     ":voice_page_questions",
@@ -1324,4 +1337,60 @@ source_set("voice_session_browser_tests") {
   ]
 
   data_deps = [ ":molt_fake_speech_helper" ]
+}
+
+# --- The end-to-end spoken test kit's log (tools/voice_e2e/,
+# docs/VOICE_E2E.md) ----------------------------------------------------------
+
+# The lines voice_test_log.h writes with --molt-voice-test-log: what was
+# heard and understood, what was said, the activity and the prompts, as
+# JSON, with every confirmation word masked. Std-only: molt_ai_unittests
+# and a standalone harness build the same code.
+source_set("voice_test_log_lines") {
+  sources = [
+    "voice_test_log_lines.cc",
+    "voice_test_log_lines.h",
+  ]
+  deps = [
+    # CleanSpokenText(), NormalizeSpokenText(), FoldForComparison().
+    ":spoken_choice",
+
+    # The confirmation words (voice_gesture.h).
+    ":voice_prompts",
+  ]
+}
+
+# Picked up by :unit_tests.
+source_set("voice_test_log_unit_tests") {
+  testonly = true
+  sources = [ "voice_test_log_lines_unittest.cc" ]
+  deps = [
+    ":spoken_choice",
+    ":voice_prompts",
+    ":voice_test_log_lines",
+    "//testing/gtest",
+  ]
+}
+
+# The switch in a real browser: the lines written, no confirmation word,
+# nothing from a MoltNet window. Picked up by :browser_tests.
+source_set("voice_test_log_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_test_log_browsertest.cc" ]
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_loop",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+  ]
 }

@@ -34,6 +34,7 @@
 #include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech.h"
+#include "chrome/browser/molt_ai/voice/voice_test_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -339,6 +340,8 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
   planner_ = CreateVoiceAgentPlanner();
   learning_ = std::make_unique<VoiceLearningLoop>(this);
   page_questions_ = std::make_unique<VoicePageQuestions>();
+  // The end-to-end kit's log: only with its test switch.
+  test_log_ = VoiceTestLog::MaybeCreate(this, IsMoltNet());
 }
 
 VoiceController::~VoiceController() {
@@ -648,6 +651,9 @@ VoiceActivity VoiceController::activity() const {
 
 void VoiceController::NotifyCaption() {
   const VoiceActivity now = activity();
+  if (test_log_) {
+    test_log_->OnLoop(now, listening_.listening, listening_.waiting, state_);
+  }
   for (Observer& observer : observers_) {
     observer.OnVoiceCaption(now, heard_, status_);
   }
@@ -944,6 +950,9 @@ void VoiceController::HandleUtterance(const std::string& text) {
   // As PlanUtterance() does, with the numbers on screen checked between.
   const ParseContext context = ContextFor(state_, map, env);
   VoiceCommand command = ParseVoiceCommand(utterance, context);
+  if (test_log_) {
+    test_log_->OnHeard(utterance, command.kind, heard_evidence_, state_);
+  }
   // Learning (§6.8): corrections, and the routine that runs.
   std::optional<VoiceCommand> learned =
       learning_->BeforePlanning(utterance, std::move(command), context);
