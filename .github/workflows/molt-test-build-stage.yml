@@ -24,6 +24,10 @@ on:
       run_tests:
         type: boolean
         default: true
+      recheck:
+        description: 'Only rebuild the steps the restored build failed, then stop'
+        type: boolean
+        default: false
     outputs:
       status:
         description: 'complete, errors or partial'
@@ -109,8 +113,13 @@ jobs:
       - name: gn gen
         run: tools/ci/molt_test_build.sh gen
 
+      - name: Recheck what failed
+        if: inputs.recheck
+        run: tools/ci/molt_test_build.sh recheck "$RUNNER_TEMP/parts"
+
       - name: Build
         id: build
+        if: ${{ !inputs.recheck }}
         run: |
           set -euo pipefail
           # 355 minutes per job: keep 45 for saving and uploading, and 80
@@ -124,7 +133,7 @@ jobs:
       - name: Tests
         id: tests
         if: >-
-          inputs.run_tests && inputs.stage > 1 &&
+          inputs.run_tests &&
           steps.build.outputs.status != 'partial'
         run: |
           set -euo pipefail
@@ -186,6 +195,7 @@ jobs:
           path: |
             molt-save/manifest.txt.zst
             molt-save/status
+            molt-save/*.txt
           retention-days: 14
       - name: Upload part 00
         if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 0
@@ -272,3 +282,15 @@ jobs:
         run: |
           echo "::error::the out dir needs more than 10 parts; add upload steps"
           exit 1
+
+      # Last, so the job log ends with them (the log is readable through the
+      # API, the artifacts' storage may not be).
+      - name: Build errors
+        if: always()
+        run: tools/ci/molt_test_build.sh failures
+
+      - name: Test failures
+        if: always() && steps.tests.outputs.ran == 'true'
+        run: |
+          cat "$RUNNER_TEMP/reports/summary.md" 2>/dev/null || true
+          head -c 200000 "$RUNNER_TEMP/reports/failures.md" 2>/dev/null || true

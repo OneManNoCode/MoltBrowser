@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstddef>
 #include <map>
+#include <ratio>
 #include <set>
 #include <string>
 #include <string_view>

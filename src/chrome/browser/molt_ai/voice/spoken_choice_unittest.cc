@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <ratio>
 #include <string>
 #include <string_view>
 #include <vector>

@@ -45,6 +45,10 @@ source_set("lib") {
   # Without PDF support it fails every call.
   if (enable_pdf) {
     deps += [ "//third_party/pdfium" ]
+
+    # PDFium's own headers include each other from its root
+    # ("public/cpp/fpdf_deleters.h"), as //pdf's code relies on.
+    configs += [ "//pdf:pdfium_includes" ]
   }
 
   visibility = [

@@ -131,7 +131,9 @@ extra_kv = { allow_unsafe = true }
 [crate.aho-corasick]
 group = 'safe'
 allow_first_party_usage = false
-extra_kv = { allow_unsafe = false }
+# MoltBrowser: MoltShield's adblock engine builds it (through regex), which
+# Chromium's own browser doesn't; its automata are `unsafe trait`s.
+extra_kv = { allow_unsafe = true }
 
 [crate.android_system_properties]
 extra_kv = { allow_unsafe = true }
@@ -1438,6 +1440,11 @@ extra_kv = { allow_unsafe = true }
 # patches/flatbuffers-v25/0001-Add-LICENSE.patch adds upstream's Apache-2.0
 # LICENSE so README.chromium / about:credits have one.
 license_files = ["LICENSE"]
+# Its build script only turns on nightly-only features when rustc says it is
+# nightly, which Chromium's toolchain does; the stable code paths are the
+# ones to build (rustc_version is a build-only dependency).
+remove_build_rs = true
+remove_deps = ['rustc_version']
 extra_kv = { allow_unsafe = true }
 
 [crate.form_urlencoded]
