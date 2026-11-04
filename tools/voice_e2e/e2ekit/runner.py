@@ -226,7 +226,9 @@ class Runner(object):
     def run_scenario(self, sc, mode, index):
         voice, speed = self.voice_for(index)
         res = {"id": sc.id, "title": sc.title, "task": sc.task, "mode": mode,
-               "counts": sc.counts, "voice": voice, "speed": speed, "steps": [],
+               "counts": sc.counts, "steps": [],
+               "voice": None if self.config.typed else voice,
+               "speed": None if self.config.typed else speed,
                "needs": sc.needs(), "status": "passed", "reason": ""}
         why = unmet(sc.all_requirements(), self.config, self.pulse is not None)
         if why:

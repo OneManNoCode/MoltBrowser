@@ -208,9 +208,10 @@ def markdown(report):
         out.append("")
         out += ["| Scenario | Mode | Voice | Result | Why |", "|---|---|---|---|---|"]
         for sc in run["scenarios"]:
-            out.append("| %s | %s | %s@%s | %s | %s |" % (
-                sc["id"], sc["mode"], sc["voice"], sc["speed"], sc["status"],
-                _cell(sc.get("reason", ""))))
+            out.append("| %s | %s | %s | %s | %s |" % (
+                sc["id"], sc["mode"],
+                "%s@%s" % (sc["voice"], sc["speed"]) if sc.get("voice") else "typed",
+                sc["status"], _cell(sc.get("reason", ""))))
         failed = [sc for sc in run["scenarios"] if sc["status"] not in ("passed", "skipped")]
         if failed:
             out += ["", "### What went wrong", ""]

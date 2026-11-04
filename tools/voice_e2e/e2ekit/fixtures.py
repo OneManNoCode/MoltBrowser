@@ -239,7 +239,8 @@ def make_cert(out_dir):
 
 def write_media(out_dir, page_clips, log=print):
     """song.wav (three minutes of the kit's synthesized music) and talk.wav
-    (music with |page_clips| said over it, one every 8 s from 6 s on), in
+    (90 s of music with |page_clips| said over it, one every 8 s from 6 s
+    on), in
     |out_dir|. Needs numpy (tools/voice_bench/audio.py)."""
     from . import render
     audio = render._audio()
@@ -253,7 +254,7 @@ def write_media(out_dir, page_clips, log=print):
     talk = os.path.join(out_dir, "talk.wav")
     if page_clips and not os.path.exists(talk):
         rng = audio.rng_for("e2e-talk")
-        n = 60 * render.SR
+        n = 90 * render.SR  # longer than a scenario watches it: it never ends
         y = audio.synth_music(n, rng) * audio.db_to_gain(-30)
         at = 6 * render.SR
         for path in page_clips:
