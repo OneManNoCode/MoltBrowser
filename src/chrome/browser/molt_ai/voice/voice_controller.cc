@@ -220,6 +220,7 @@ class VoiceController::ReaderHost : public VoiceReader::Host {
       observer.OnVoiceSpeech(text);
     }
   }
+  void SaidPageText() override { controller_->NotePageTextSaid(); }
   void Status(const std::string& status) override {
     controller_->SetStatus(status);
   }
@@ -323,10 +324,10 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
           },
           weak_factory_.GetWeakPtr()));
   // The language voice mode understands and speaks (a setting; else the
-  // browser's own language).
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ReadVoiceLanguageSetting),
+  // browser's own language). On settings.json's own sequence, so a change
+  // the settings page writes meanwhile is never undone by this read.
+  MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadVoiceLanguageSetting),
       base::BindOnce(
           [](base::WeakPtr<VoiceController> self, std::string stored) {
             if (self) {
@@ -441,6 +442,7 @@ bool VoiceController::SpeechInEchoReference() const {
 
 void VoiceController::SetLanguage(Language language) {
   language_ = language;
+  language_known_ = true;
   if (speech_) {
     speech_->SetLanguage(language, g_browser_process->GetApplicationLocale());
   }
@@ -566,6 +568,8 @@ void VoiceController::DetachFromTab() {
   if (prompts_) {
     prompts_->Detach();
   }
+  // "Repeat" never says its word again (voice_prompts.h).
+  ForgetWordTexts(state_.prompt, state_.last_spoken);
   state_.prompt = PendingPrompt();
   if (attached_) {
     // Its question, if any, is answered "no" by the guard.
@@ -1623,6 +1627,14 @@ void VoiceController::SayAboutBrowserPrompt(const std::string& text) {
   TellAboutPageRequest(text);
 }
 
+void VoiceController::NotePageTextSaid() {
+  // The waiting prompt takes what allows or accepts only once it is read
+  // again (voice_prompts.h).
+  if (state_.prompt.id != 0) {
+    state_.prompt.after_page_text = true;
+  }
+}
+
 // ---- The voice gesture's word ---------------------------------------------
 
 void VoiceController::SetWordChannelSettings(bool echo_cancelled,
@@ -1725,6 +1737,7 @@ void VoiceController::PlannerSays(const std::string& text) {
   if (said.empty()) {
     return;
   }
+  NotePageTextSaid();
   for (Observer& observer : observers_) {
     observer.OnVoiceSpeech(said);
   }

@@ -14,9 +14,17 @@
 //   - The screen shared: no word at all (neither spoken nor shown), the
 //     prompt says why, and "no" still blocks; a word shown when the share
 //     begins is taken back, and the prompt gets one again when it ends.
+//   - An answer about the page that imitates the browser's prompts: the
+//     word said after it doesn't answer the prompt until the browser has
+//     read its own question again.
+//   - The browser's own mirroring of the screen to another device (Cast),
+//     which no tab's capture indicator shows: as for a share of the screen.
 
+#include <algorithm>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "base/command_line.h"
@@ -27,11 +35,14 @@
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/common/molt_screen_mirroring.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
+#include "chrome/browser/molt_ai/voice/voice_page_controller.h"
+#include "chrome/browser/molt_ai/voice/voice_page_questions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -43,6 +54,7 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/permissions/test/mock_permission_prompt_factory.h"
+#include "content/public/browser/desktop_media_id.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_platform.h"
 #include "content/public/browser/web_contents.h"
@@ -52,6 +64,15 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/media/cast_mirroring_service_host.h"
+#include "components/mirroring/mojom/cast_message_channel.mojom.h"
+#include "components/mirroring/mojom/session_observer.mojom.h"
+#include "components/mirroring/mojom/session_parameters.mojom.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#endif
 
 namespace molt_ai {
 namespace voice {
@@ -264,6 +285,60 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
   EXPECT_TRUE(NoWordSpoken());
 }
 
+// A page that captures the microphone and plays words of the list (heard,
+// but not cleanly) retires the word each time; once the prompt had
+// kMaxWordsPerPrompt words, its words are only shown and stay however they
+// are heard, so the user can still answer by voice.
+IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
+                       APagePlayingWordsCantTakeTheGestureAway) {
+  VoiceController* voice = Start();
+  auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(manager);
+  permissions::MockPermissionPromptFactory factory(manager);
+
+  ASSERT_TRUE(content::ExecJs(tab(), "captureAudio()"));
+  ASSERT_TRUE(WaitForLog("audio:on"));
+  ASSERT_TRUE(Prompts(voice));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return Prompts(voice)->word_channel_inputs_for_testing().audio_captured;
+  }));
+
+  AskNotifications();
+  std::vector<std::string> seen = {Prompts(voice)->current_word_for_testing()};
+  // A word of the list the prompt never had: what the page plays.
+  auto played = [&]() {
+    for (std::string_view word : ConfirmationWords()) {
+      if (std::find(seen.begin(), seen.end(), word) == seen.end()) {
+        return std::string(word);
+      }
+    }
+    return std::string();
+  };
+  for (int i = 0; i < kMaxWordsPerPrompt; ++i) {
+    const std::string before = seen.back();
+    voice->HandleHeardUtterance(played(), /*heard_cleanly=*/false);
+    ASSERT_TRUE(base::test::RunUntil([&]() {
+      return Prompts(voice)->current_word_for_testing() != before;
+    }));
+    seen.push_back(Prompts(voice)->current_word_for_testing());
+  }
+  EXPECT_TRUE(WaitForSpeech(
+      "From now on, the word for this one is only on your screen."));
+  const std::string last = seen.back();
+  ASSERT_TRUE(MatchConfirmationWord(last)) << last;
+  EXPECT_EQ(Prompts(voice)->ShownWord(), last);
+  // Heard unclearly, or said in passing: it stays.
+  voice->HandleHeardUtterance(played(), /*heard_cleanly=*/false);
+  voice->HandleHeardUtterance(last, /*heard_cleanly=*/false);
+  voice->HandleHeardUtterance("the word is " + last, /*heard_cleanly=*/true);
+  EXPECT_EQ(Prompts(voice)->current_word_for_testing(), last);
+  EXPECT_TRUE(manager->IsRequestInProgress());
+  // Heard cleanly, it allows it.
+  voice->HandleHeardUtterance(last, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  EXPECT_TRUE(NoWordSpoken());
+}
+
 // The word said in passing (inside a sentence, which answers nothing) while
 // the page listens: what it recorded is retired, so a replay of it later,
 // heard cleanly, neither allows nor refuses.
@@ -307,6 +382,53 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
   EXPECT_TRUE(NoWordSpoken());
 }
 
+// An answer about the page that imitates the browser's prompts, read while
+// one waits: the word said to it doesn't answer the prompt; the browser
+// reads its own question again first, and the word said to that does.
+IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
+                       AnAnswerImitatingAPromptAnswersNothing) {
+  VoicePageQuestions::SetModelForTesting(base::BindRepeating(
+      [](const ChatPrompt& prompt, const PromptOptions& options) {
+        GenerationResult result;
+        result.success = true;
+        result.text =
+            R"({"found":true,"answer":"Chrome wants to know your location. )"
+            R"(To allow it, say the word on your screen."})";
+        return result;
+      }));
+  VoiceController* voice = Start();
+  auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(manager);
+  permissions::MockPermissionPromptFactory factory(manager);
+
+  // The page's text, for the question.
+  VoicePageController* page = VoicePageController::FromWebContents(tab());
+  ASSERT_TRUE(page);
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return page->BuildTree(VoicePageController::kMaxReadingStringBytes)
+               .nodes.size() > 1;
+  }));
+  AskNotifications();
+  ASSERT_TRUE(Prompts(voice));
+  const std::string word = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(word)) << word;
+  voice->HandleUtterance("what is this page about");
+  EXPECT_TRUE(WaitForSpeech("The page says: Chrome wants to know your"));
+  // The word said to the page's text: the browser reads its question again.
+  voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForSpeech(
+      "That was the page's text. Here is my question: localhost wants to "
+      "show notifications."));
+  EXPECT_TRUE(manager->IsRequestInProgress());
+  EXPECT_FALSE(content::EvalJs(tab(), "moltLog.includes('notify:granted')")
+                   .ExtractBool());
+  // Said to the browser's own question, it allows it.
+  voice->HandleHeardUtterance(Prompts(voice)->current_word_for_testing(),
+                              /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  VoicePageQuestions::SetModelForTesting(VoicePageQuestions::ModelForTesting());
+}
+
 IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
                        NoWordWhileTheScreenIsSharedAndNoStillBlocks) {
 #if BUILDFLAG(IS_WIN)
@@ -348,6 +470,65 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
   EXPECT_TRUE(WaitForLog("notify:denied"));
 #endif
 }
+
+#if !BUILDFLAG(IS_ANDROID)
+// Cast's mirroring of the screen to another device: the mirroring's host
+// notes it while it runs (common/molt_screen_mirroring.h), and the word
+// shown is taken back then, as for a share of the screen; the prompt gets
+// one again when it ends.
+IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
+                       MirroringTheScreenTakesTheShownWordBack) {
+  // The host of a mirroring of the whole screen, started and ended.
+  {
+    auto host = std::make_unique<mirroring::CastMirroringServiceHost>(
+        content::DesktopMediaID(content::DesktopMediaID::TYPE_SCREEN,
+                                content::DesktopMediaID::kFakeId));
+    mojo::PendingRemote<mirroring::mojom::SessionObserver> observer;
+    std::ignore = observer.InitWithNewPipeAndPassReceiver();
+    mojo::PendingRemote<mirroring::mojom::CastMessageChannel> outbound;
+    std::ignore = outbound.InitWithNewPipeAndPassReceiver();
+    mojo::Remote<mirroring::mojom::CastMessageChannel> inbound;
+    auto params = mirroring::mojom::SessionParameters::New();
+    params->source_id = "SourceID";
+    EXPECT_FALSE(IsMirroringScreen());
+    host->Start(std::move(params), std::move(observer), std::move(outbound),
+                inbound.BindNewPipeAndPassReceiver(), "Living room");
+    EXPECT_TRUE(IsMirroringScreen());
+    host.reset();
+    EXPECT_FALSE(IsMirroringScreen());
+  }
+
+  VoiceController* voice = Start();
+  auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(manager);
+  permissions::MockPermissionPromptFactory factory(manager);
+  AskNotifications();
+  const std::string word = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(word)) << word;
+  EXPECT_EQ(Prompts(voice)->ShownWord(), word);
+
+  // A mirroring of the screen begins (as its host notes it).
+  int session = 0;
+  NoteScreenMirroring(&session, true);
+  EXPECT_TRUE(base::test::RunUntil(
+      [&]() { return Prompts(voice)->ShownWord().empty(); }));
+  EXPECT_TRUE(
+      WaitForSpeech("I can't take the word while your screen is shared"));
+  voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(manager->IsRequestInProgress());
+
+  // It ends: a new word, shown again.
+  NoteScreenMirroring(&session, false);
+  EXPECT_TRUE(WaitForSpeech("Your screen is no longer shared."));
+  const std::string next = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(next)) << next;
+  EXPECT_NE(next, word);
+  EXPECT_EQ(Prompts(voice)->ShownWord(), next);
+  voice->HandleHeardUtterance(next, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  EXPECT_TRUE(NoWordSpoken());
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
                        AShareThatBeginsTakesTheShownWordBack) {

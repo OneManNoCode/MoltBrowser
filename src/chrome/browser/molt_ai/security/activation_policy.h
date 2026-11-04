@@ -49,7 +49,13 @@
 // page the user asked for): NoteHistoryEntry(). An action whose intent
 // never navigates the tab (full screen, a copy, a link opened in a new
 // tab, "play" of a player already on the page) leads to no such page:
-// every entry the page adds after it in its own document is skippable. A
+// every entry the page adds after it in its own document is skippable. So
+// does a press of a plain button or another control that isn't a link
+// (kPressButton): it may submit a form or run a script that loads a new
+// document, which is the page it led to, but an entry its page adds in its
+// own document is the page's, so "go back" leaves the page in one, as if
+// the page had added none (a single-page site's view changed by a button,
+// not a link, is left the same way). A
 // new document the tab's main frame loads in the action's window is the
 // page the action led to after all (a player inside a link, a page that
 // navigates as its video starts): as for any action, the first entry is
@@ -97,6 +103,10 @@ enum class Intent : uint8_t {
   // it is (its player may go full screen, as for kPlayMedia), and leads to
   // no page of its own.
   kPlayInPlace,
+  // A press of a plain button, or another control that isn't a link (nor
+  // inside one): decided as kNone, but an entry its page adds in its own
+  // document is no page the user asked for (above).
+  kPressButton,
 };
 
 // Who answers questions for the tab: voice mode on it, else a web agent

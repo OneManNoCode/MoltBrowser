@@ -44,8 +44,10 @@
 // while one is, the prompt has no word. A word that went out through a
 // channel that stopped being private (a capture began), or that was heard
 // but not cleanly while something captured, is retired: the prompt is read
-// again with a new word (at most kMaxWordsPerPrompt), and hearing the old
-// one is neither the word nor a miss.
+// again with a new word, and hearing the old one is neither the word nor a
+// miss. After kMaxWordsPerPrompt words its words are only shown, and a word
+// heard unclearly or said in passing no longer retires them
+// (LastWordsChannel()): a page can't take the gesture away by playing words.
 //
 // MoltNet windows: voice mode is off there, so nothing is read (the
 // delegate says the window doesn't listen).
@@ -209,6 +211,9 @@ class VoiceBrowserPrompts
     bool screen_shared = false;
     // Times the prompt was read (its first word and each one after).
     int reads = 0;
+    // Past kMaxWordsPerPrompt: its words are only shown
+    // (LastWordsChannel()).
+    bool last_words = false;
     // What was read, to read it again with a new word.
     BrowserPrompt prompt;
     // kPermission: the requests asked about (the first one's address,
@@ -260,12 +265,18 @@ class VoiceBrowserPrompts
 
   // The word (kAllow or kWrongWord) to the current prompt.
   void AnswerWithWord(const VoiceStep& step, const HeardEvidence& evidence);
+  // An answer that allows or accepts, said after page text
+  // (voice_prompts.h): the prompt is read again (with a new word when the
+  // word was said where something captures).
+  void ReadAgainAfterPageText(const VoiceStep& step,
+                              const HeardEvidence& evidence);
 
   // What decides the channel now: the delegate's and the captures.
   WordChannelInputs Inputs();
   // Gives the current prompt a word through |channel| (none when it isn't
-  // available, the gesture is locked out or the prompt had its last
-  // word); fills |prompt|'s screen_shared and explain_shown_only.
+  // available or the gesture is locked out; only shown once it had
+  // kMaxWordsPerPrompt); fills |prompt|'s screen_shared and
+  // explain_shown_only.
   void DrawWord(const WordChannel& channel, BrowserPrompt& prompt);
   // The current prompt's word is retired (|why|): read again with a new
   // one, or without.

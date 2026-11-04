@@ -810,5 +810,67 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
   EXPECT_EQ(back->GetURL(), users_page);
 }
 
+// A plain button pressed for the user (not a link) whose page adds entries
+// of its own in its document right after: voice mode's "go back" leaves the
+// page in one, as if it had added none. A link whose page adds one (a
+// single-page site's view) is still the page the user asked for.
+IN_PROC_BROWSER_TEST_F(ActivationGuardBrowserTest,
+                       TrapEntriesAfterAPlainButtonCostNoExtraBack) {
+  const GURL before =
+      embedded_test_server()->GetURL("localhost", "/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), before));
+  OpenPage();
+  const GURL users_page = page_->GetLastCommittedURL();
+  ASSERT_TRUE(content::ExecJs(page_.get(),
+                              "const trap = document.createElement('button');"
+                              "trap.textContent = 'Subscribe';"
+                              "trap.addEventListener('click', () => {"
+                              "  history.pushState({}, '', '#trap1');"
+                              "  history.pushState({}, '', '#trap2');"
+                              "});"
+                              "document.querySelector('main').append(trap);",
+                              content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+
+  voice::VoicePageController* controller = HoldPage();
+  UseAsker(activation::Asker::kVoiceMode);
+  const std::optional<voice::PageItem> trap =
+      WaitForItem(controller, voice::ItemKind::kButton, "Subscribe");
+  ASSERT_TRUE(trap);
+  ASSERT_EQ(controller->Press(trap->handle), ActionResult::kDone);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return page_->GetLastCommittedURL().ref() == "trap2"; }));
+  content::NavigationController& history = page_->GetController();
+  int offset = ActivationGuard::VoiceBackOffset(page_);
+  content::NavigationEntry* back =
+      history.GetEntryAtIndex(history.GetLastCommittedEntryIndex() + offset);
+  ASSERT_TRUE(back);
+  EXPECT_EQ(back->GetURL(), before);
+
+  // A link: the view it shows is the page the user asked for.
+  OpenPage();
+  ASSERT_TRUE(
+      content::ExecJs(page_.get(),
+                      "const view = document.createElement('a');"
+                      "view.href = '#view'; view.textContent = 'Next view';"
+                      "view.addEventListener('click', (event) => {"
+                      "  event.preventDefault();"
+                      "  history.pushState({}, '', '#view');"
+                      "});"
+                      "document.querySelector('main').append(view);",
+                      content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+  const GURL second_page = page_->GetLastCommittedURL();
+  const std::optional<voice::PageItem> view =
+      WaitForItem(controller, voice::ItemKind::kLink, "Next view");
+  ASSERT_TRUE(view);
+  ASSERT_EQ(controller->Press(view->handle), ActionResult::kDone);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return page_->GetLastCommittedURL().ref() == "view"; }));
+  offset = ActivationGuard::VoiceBackOffset(page_);
+  back = history.GetEntryAtIndex(history.GetLastCommittedEntryIndex() + offset);
+  ASSERT_TRUE(back);
+  EXPECT_EQ(back->GetURL(), second_page);
+  EXPECT_EQ(second_page, users_page);
+}
+
 }  // namespace
 }  // namespace molt_ai

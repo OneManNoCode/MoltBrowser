@@ -1485,6 +1485,107 @@ TEST(VoiceControllerLogicTest, WhatIsSaidWithTheWordKeepsItsTwin) {
   EXPECT_TRUE(c.state().prompt.word_texts.empty());
 }
 
+// Page text said after a prompt was read (an answer about the page that
+// imitates the browser's prompts, a reading), or being read as the answer
+// is said: what allows or accepts asks the browser to read its own question
+// again first; a refusal is taken at once.
+TEST(VoiceControllerLogicTest, AnAnswerAfterPageTextWaitsForThePromptAgain) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  c.state() =
+      PlanBrowserPrompt(24, Permission(), "harbor", c.env(), c.state()).state;
+  c.state().prompt.after_page_text = true;
+  VoiceTurn turn = c.Say("harbor");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPromptAnswer}));
+  const VoiceStep* again = Find(turn, K::kPromptAnswer);
+  EXPECT_TRUE(again->flag);
+  EXPECT_EQ(again->index, 24);
+  EXPECT_EQ(again->prompt_answer, PromptAnswer::kAllow);
+  EXPECT_EQ(Said(turn), "");
+  EXPECT_EQ(BrowserPromptHeld(c.state(), c.env().now_ms), 24);
+  // Read again, it takes the word.
+  c.state() =
+      PlanBrowserPrompt(24, Permission(), "harbor", c.env(), c.state()).state;
+  EXPECT_FALSE(c.state().prompt.after_page_text);
+  turn = c.Say("harbor");
+  ASSERT_TRUE(Find(turn, K::kPromptAnswer));
+  EXPECT_FALSE(Find(turn, K::kPromptAnswer)->flag);
+  // "No" refuses at once.
+  c.state().prompt.after_page_text = true;
+  turn = c.Say("no");
+  ASSERT_TRUE(Find(turn, K::kPromptAnswer));
+  EXPECT_FALSE(Find(turn, K::kPromptAnswer)->flag);
+  EXPECT_EQ(Find(turn, K::kPromptAnswer)->prompt_answer, PromptAnswer::kRefuse);
+
+  // A dialog's "yes", said while the page is being read.
+  Conversation d(BuildPageMap(ShopPage(false)), Env());
+  d.state() = PlanBrowserPrompt(25, Dialog(PromptKind::kConfirm, "Sure?"), "",
+                                d.env(), d.state())
+                  .state;
+  d.env().reading = VoiceEnvironment::Reading::kReading;
+  turn = d.Say("yes");
+  ASSERT_TRUE(Find(turn, K::kPromptAnswer));
+  EXPECT_TRUE(Find(turn, K::kPromptAnswer)->flag);
+  EXPECT_EQ(Find(turn, K::kPromptAnswer)->prompt_answer, PromptAnswer::kAccept);
+  EXPECT_EQ(BrowserPromptHeld(d.state(), d.env().now_ms), 25);
+  d.env().reading = VoiceEnvironment::Reading::kNone;
+  turn = d.Say("yes");
+  EXPECT_FALSE(Find(turn, K::kPromptAnswer)->flag);
+  EXPECT_EQ(BrowserPromptHeld(d.state(), d.env().now_ms), 0);
+
+  EXPECT_TRUE(AllowsOrAccepts(PromptAnswer::kAllow));
+  EXPECT_TRUE(AllowsOrAccepts(PromptAnswer::kWrongWord));
+  EXPECT_TRUE(AllowsOrAccepts(PromptAnswer::kAccept));
+  EXPECT_FALSE(AllowsOrAccepts(PromptAnswer::kRefuse));
+  EXPECT_FALSE(AllowsOrAccepts(PromptAnswer::kDecline));
+  EXPECT_FALSE(AllowsOrAccepts(PromptAnswer::kDictate));
+  EXPECT_EQ(PageTextPreface(Language::kSpanish),
+            "Eso era el texto de la página. Esta es mi pregunta:");
+}
+
+// A prompt that goes without words (answered by a click, its tab left, its
+// window over): "repeat" says what it said with its word only as the twin.
+TEST(VoiceControllerLogicTest, RepeatAfterThePromptWentSaysTheTwin) {
+  const std::string with_word =
+      "maps.example wants to use your location. To allow it, say harbor. To "
+      "block it, say no.";
+  const std::string twin =
+      "maps.example wants to use your location. To allow it, say the word "
+      "on your screen. To block it, say no.";
+  // Closed by a click: the browser says nothing.
+  {
+    Conversation c(BuildPageMap(ShopPage(false)), Env());
+    c.state() =
+        PlanBrowserPrompt(21, Permission(), "harbor", c.env(), c.state()).state;
+    c.state() = PlanBrowserPromptGone(21, "", c.env(), c.state()).state;
+    const VoiceTurn turn = c.Say("repeat");
+    EXPECT_EQ(Said(turn), twin);
+    EXPECT_EQ(Said(turn).find("harbor"), std::string::npos);
+  }
+  // Its window over: the next command finds it gone.
+  {
+    Conversation c(BuildPageMap(ShopPage(false)), Env());
+    c.state() =
+        PlanBrowserPrompt(22, Permission(), "harbor", c.env(), c.state()).state;
+    c.env().now_ms += kPromptWindowMs;
+    EXPECT_EQ(Said(c.Say("repeat")), twin);
+  }
+  // While it waits, "repeat" says it with its word (the glue says the
+  // twin wherever the word can't be said).
+  {
+    Conversation c(BuildPageMap(ShopPage(false)), Env());
+    c.state() =
+        PlanBrowserPrompt(23, Permission(), "harbor", c.env(), c.state()).state;
+    EXPECT_EQ(Said(c.Say("repeat")), with_word);
+  }
+  // The helper on its own.
+  PendingPrompt prompt;
+  prompt.word = "harbor";
+  NoteWordText(prompt, WordText{with_word, twin});
+  std::vector<std::string> spoken = {"Scrolled down.", with_word};
+  ForgetWordTexts(prompt, spoken);
+  EXPECT_EQ(spoken, (std::vector<std::string>{"Scrolled down.", twin}));
+}
+
 TEST(VoiceControllerLogicTest, NoWordWhileTheScreenIsShared) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   BrowserPrompt prompt = Permission();

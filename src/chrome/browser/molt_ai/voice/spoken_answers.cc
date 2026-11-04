@@ -110,12 +110,15 @@ constexpr size_t kMinKeyLiteralBytes = 5;
 // |key| with words in them: each placeholder takes the shortest text before
 // the key's next literal part, the last one takes what is left before the
 // key's end. Placeholders as Said() reads them; "{{" is "{". |literal| is
-// how much of |key| is its own text.
+// how much of |key| is its own text; |leading| and |trailing| how much of
+// it comes before its first placeholder and after its last.
 bool MatchKey(std::string_view key,
               std::string_view text,
               std::array<std::string_view, 10>& args,
               size_t& arg_count,
-              size_t& literal) {
+              size_t& literal,
+              size_t& leading,
+              size_t& trailing) {
   // What comes before the key's first brace and after its last must be the
   // text's own start and end (most keys fail here, without a copy).
   const size_t first_brace = key.find('{');
@@ -155,6 +158,8 @@ bool MatchKey(std::string_view key,
   for (size_t i = 0; i <= slot_count; ++i) {
     literal += parts[i].size();
   }
+  leading = parts[0].size();
+  trailing = parts[slot_count].size();
   if (literal < kMinKeyLiteralBytes) {
     return false;
   }
@@ -214,19 +219,40 @@ std::string Relocalized(Language language, std::string_view english) {
   std::array<std::string_view, 10> best_args;
   size_t best_count = 0;
   size_t best_literal = 0;
+  size_t best_leading = 0;
+  size_t best_trailing = 0;
+  // The most text of their own any key that fits begins and ends with.
+  size_t most_leading = 0;
+  size_t most_trailing = 0;
   for (const SpokenAnswer& answer : SpokenAnswers(language)) {
     std::array<std::string_view, 10> args;
     size_t count = 0;
     size_t literal = 0;
-    if (MatchKey(answer.english, english, args, count, literal) &&
-        literal > best_literal) {
+    size_t leading = 0;
+    size_t trailing = 0;
+    if (!MatchKey(answer.english, english, args, count, literal, leading,
+                  trailing)) {
+      continue;
+    }
+    most_leading = std::max(most_leading, leading);
+    most_trailing = std::max(most_trailing, trailing);
+    if (literal > best_literal) {
       best = &answer;
       best_args = args;
       best_count = count;
       best_literal = literal;
+      best_leading = leading;
+      best_trailing = trailing;
     }
   }
-  if (!best) {
+  // Words in a placeholder (a page's title, a site's label, model output)
+  // can make another key fit too, one with more text of its own whose
+  // start or end isn't the browser's ("Pressing {0}." with a label holding
+  // "says: ... Say OK to close it."). Unless the best fit also begins and
+  // ends with the most of its own text of every key that fits, which key
+  // made it can't be told: the text is said as it is, in English, rather
+  // than as another of the browser's sentences.
+  if (!best || best_leading < most_leading || best_trailing < most_trailing) {
     return std::string(english);
   }
   // Said() with the words that filled the key.

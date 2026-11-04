@@ -430,6 +430,12 @@ constexpr SpokenAnswer kAnswers[] = {
     {"Something else may have heard you say the word, so I changed it.",
      "Puede que otra cosa te haya oído decir la palabra, así que la he "
      "cambiado."},
+    {"That was the page's text. Here is my question:",
+     "Eso era el texto de la página. Esta es mi pregunta:"},
+    {"That was the page's text, and something else may have heard the word, "
+     "so I changed it. Here is my question:",
+     "Eso era el texto de la página, y puede que otra cosa haya oído la "
+     "palabra, así que la he cambiado. Esta es mi pregunta:"},
     {"Something started using a microphone, so I changed the word.",
      "Algo ha empezado a usar un micrófono, así que he cambiado la "
      "palabra."},
@@ -490,6 +496,8 @@ constexpr SpokenAnswer kAnswers[] = {
      "no."},
     {"I can't take a word for this one any more.",
      "Ya no puedo aceptar una palabra para esto."},
+    {"From now on, the word for this one is only on your screen.",
+     "A partir de ahora, la palabra para esto solo está en tu pantalla."},
     {"I couldn't confirm them.", "No he podido confirmarlos."},
     {"That's twice: for the next ten minutes, allow things with the mouse or "
      "keyboard.",

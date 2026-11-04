@@ -538,6 +538,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   read ("open three") waits until it has stopped; and a language your
   computer has no voice for is read by one of its own voices, never a
   remote one.
+- Hardening (security review of round 44, `docs/SECURITY_REVIEWS.md`):
+  in voice mode (preview), the confirmation word is never shown while
+  Cast mirrors your screen; an answer to one of the browser's prompts
+  said after the page's text was read out waits until the browser has
+  read its own question again; a prompt whose word kept changing is
+  still answered by voice (its last words are only shown); "repeat"
+  never says the word of a prompt that is gone; "go back" after a voice
+  press of a plain button leaves the page in one; the microphone waits
+  for voice mode's language at startup; and a reading that mentions a
+  word like "Molt" no longer keeps your wake phrase out.
 
 ### Privacy
 - **Voice mode in Spanish** (round 43, second-language;

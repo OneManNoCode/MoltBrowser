@@ -305,6 +305,7 @@ void VoiceReader::ChunkStarted() {
   if (!chunk) {
     return;
   }
+  host_->SaidPageText();
   host_->Said(chunk->text);
   host_->Status(Said(language_, "Reading: {0}",
                      {SpeechSafeText(chunk->text, kMaxStatusChars)}));

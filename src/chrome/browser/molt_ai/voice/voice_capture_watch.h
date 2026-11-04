@@ -16,6 +16,10 @@
 //     tab's capture shows only the tab's page (the caption bar is the
 //     browser's, outside it) and hears only the tab's sound, so it isn't
 //     counted.
+//   - The browser's own mirroring of the screen or a window to another
+//     device (Cast's desktop mirroring, which registers with no capture
+//     indicator): the screen, as for a capture of it
+//     (common/molt_screen_mirroring.h).
 //   - Looked at when the watch starts (every frame of every renderer
 //     process, so a capture begun before voice mode is seen too) and again
 //     whenever the indicator says a capture began or ended; |changed| runs
@@ -34,6 +38,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
+#include "chrome/browser/molt_ai/common/molt_screen_mirroring.h"
 
 namespace content {
 class WebContents;
@@ -42,7 +47,8 @@ class WebContents;
 namespace molt_ai {
 namespace voice {
 
-class VoiceCaptureWatch : public MediaStreamCaptureIndicator::Observer {
+class VoiceCaptureWatch : public MediaStreamCaptureIndicator::Observer,
+                          public ScreenMirroringObserver {
  public:
   explicit VoiceCaptureWatch(base::RepeatingClosure changed);
   VoiceCaptureWatch(const VoiceCaptureWatch&) = delete;
@@ -73,6 +79,9 @@ class VoiceCaptureWatch : public MediaStreamCaptureIndicator::Observer {
                                   bool is_capturing_window) override;
   void OnIsCapturingDisplayChanged(content::WebContents* web_contents,
                                    bool is_capturing_display) override;
+
+  // ScreenMirroringObserver:
+  void OnScreenMirroringChanged() override;
 
   base::RepeatingClosure changed_;
   scoped_refptr<MediaStreamCaptureIndicator> indicator_;

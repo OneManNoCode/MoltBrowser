@@ -148,6 +148,35 @@ TEST(VoiceGestureChannelTest, AWordThatWentOutIsExposedByALaterCapture) {
   EXPECT_TRUE(WordExposed(chosen, anyway));
 }
 
+// A prompt's last words (after kMaxWordsPerPrompt): only shown, never said,
+// whatever would say them; said only where the screen is shared and the
+// setting says so (nothing could be shown then). A capture of a microphone
+// that begins doesn't expose them; one of the screen does.
+TEST(VoiceGestureChannelTest, LastWordsAreOnlyShown) {
+  for (bool anyway : {false, true}) {
+    WordChannelInputs inputs = Private();
+    inputs.say_aloud_anyway = anyway;
+    const WordChannel last = LastWordsChannel(DecideWordChannel(inputs));
+    EXPECT_TRUE(last.available);
+    EXPECT_TRUE(last.shown);
+    EXPECT_FALSE(last.said);
+    EXPECT_FALSE(last.privately);
+    WordChannelInputs captured = inputs;
+    captured.audio_captured = true;
+    EXPECT_FALSE(WordExposed(last, captured));
+    captured.screen_captured = true;
+    EXPECT_TRUE(WordExposed(last, captured));
+  }
+  WordChannelInputs shared = Private();
+  shared.screen_captured = true;
+  EXPECT_EQ(LastWordsChannel(DecideWordChannel(shared)),
+            DecideWordChannel(shared));
+  shared.say_aloud_anyway = true;
+  EXPECT_EQ(LastWordsChannel(DecideWordChannel(shared)),
+            DecideWordChannel(shared));
+  EXPECT_TRUE(LastWordsChannel(DecideWordChannel(shared)).said);
+}
+
 TEST(VoiceGestureChannelTest, OnlyAWordOfLettersIsShown) {
   EXPECT_EQ(ShownWordText("harbor"), "harbor");
   EXPECT_EQ(ShownWordText(""), "");

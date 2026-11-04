@@ -27,6 +27,17 @@ source_set("molt_regular_file") {
   public_deps = [ "//base" ]
 }
 
+# The browser's own mirroring of the screen or a window to another device
+# (Cast's desktop mirroring, which chrome/browser/media's hook notes), for
+# voice mode's capture watch (molt_screen_mirroring.h). base only.
+source_set("screen_mirroring") {
+  sources = [
+    "molt_screen_mirroring.cc",
+    "molt_screen_mirroring.h",
+  ]
+  public_deps = [ "//base" ]
+}
+
 # ~/.moltbrowser/settings.json's one writer: every change a read-modify-write
 # on one sequence, written atomically (molt_settings_file.h).
 source_set("molt_settings_file") {
@@ -212,6 +223,7 @@ source_set("unit_tests") {
     "helper_sandbox_unittest.cc",
     "helper_sandbox_win_policy_unittest.cc",
     "molt_regular_file_unittest.cc",
+    "molt_screen_mirroring_unittest.cc",
     "molt_settings_file_unittest.cc",
     "molt_user_click_unittest.cc",
   ]
@@ -220,6 +232,7 @@ source_set("unit_tests") {
     ":helper_limits",
     ":molt_regular_file",
     ":molt_settings_file",
+    ":screen_mirroring",
     ":helper_output",
     ":helper_resident",
     ":helper_sandbox",

@@ -234,7 +234,9 @@ class VoicePageController
 
   // Accessibility actions on a node of the last map. |intent| is what the
   // user asked the press for, when it was full screen or playing media (the
-  // activation guard lets the page go full screen then).
+  // activation guard lets the page go full screen then). A press without
+  // one of something that isn't a link (nor inside one) is noted as a
+  // plain button's (activation::Intent::kPressButton).
   ActionResult Press(const PageNodeHandle& target,
                      activation::Intent intent = activation::Intent::kNone);
   ActionResult Focus(const PageNodeHandle& target);

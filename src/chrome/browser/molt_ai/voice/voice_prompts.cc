@@ -443,6 +443,18 @@ const std::string* WordTextTwin(const PendingPrompt& prompt,
   return nullptr;
 }
 
+void ForgetWordTexts(const PendingPrompt& prompt,
+                     std::vector<std::string>& spoken) {
+  for (std::string& text : spoken) {
+    for (const WordText& word_text : prompt.word_texts) {
+      if (text == word_text.said) {
+        text = word_text.without;
+        break;
+      }
+    }
+  }
+}
+
 namespace {
 
 std::string PromptSpeechOnly(const BrowserPrompt& prompt,
@@ -664,6 +676,28 @@ std::string WordRetiredPreface(WordRetired why) {
   return WordRetiredPreface(why, Language::kEnglish);
 }
 
+bool AllowsOrAccepts(PromptAnswer answer) {
+  switch (answer) {
+    case PromptAnswer::kAllow:
+    case PromptAnswer::kWrongWord:
+    case PromptAnswer::kAccept:
+      return true;
+    case PromptAnswer::kNone:
+    case PromptAnswer::kRefuse:
+    case PromptAnswer::kDecline:
+    case PromptAnswer::kDictate:
+    case PromptAnswer::kNeedWord:
+    case PromptAnswer::kSayAgain:
+    case PromptAnswer::kCantAllow:
+      return false;
+  }
+  return false;
+}
+
+std::string PageTextPreface(Language language) {
+  return Said(language, "That was the page's text. Here is my question:", {});
+}
+
 std::string WordRetiredPreface(WordRetired why, Language language) {
   switch (why) {
     case WordRetired::kNotClean:
@@ -685,6 +719,11 @@ std::string WordRetiredPreface(WordRetired why, Language language) {
       return std::string();
     case WordRetired::kScreenFreed:
       return Said(language, "Your screen is no longer shared.", {});
+    case WordRetired::kAfterPageText:
+      return Said(language,
+                  "That was the page's text, and something else may have "
+                  "heard the word, so I changed it. Here is my question:",
+                  {});
   }
   return std::string();
 }

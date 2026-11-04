@@ -473,8 +473,9 @@ TEST(ActivationPolicyTest, NavigationStartsKeepTheMainFrames) {
 // An action that never navigates the tab leads to no page of its own:
 // an entry the page adds after it, first or not, is skippable.
 TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
-  for (Intent intent : {Intent::kFullScreen, Intent::kCopy,
-                        Intent::kOpenInNewTab, Intent::kPlayInPlace}) {
+  for (Intent intent :
+       {Intent::kFullScreen, Intent::kCopy, Intent::kOpenInNewTab,
+        Intent::kPlayInPlace, Intent::kPressButton}) {
     TabRecord tab;
     NoteAction(tab, 1000, intent);
     EXPECT_TRUE(NoteHistoryEntry(tab, 1100));
@@ -494,8 +495,9 @@ TEST(ActivationPolicyTest, NoPageAskedForByAnActionThatDoesntNavigate) {
 // that document is the page the press led to, so the page the user was on
 // isn't skipped; what the new document adds for itself still is.
 TEST(ActivationPolicyTest, ANewDocumentAfterAPressThatDoesntNavigate) {
-  for (Intent intent : {Intent::kFullScreen, Intent::kCopy,
-                        Intent::kOpenInNewTab, Intent::kPlayInPlace}) {
+  for (Intent intent :
+       {Intent::kFullScreen, Intent::kCopy, Intent::kOpenInNewTab,
+        Intent::kPlayInPlace, Intent::kPressButton}) {
     TabRecord tab;
     NoteAction(tab, 1000, intent);
     EXPECT_FALSE(NoteHistoryEntry(tab, 1100, /*new_document=*/true));
@@ -533,6 +535,30 @@ TEST(ActivationPolicyTest, PlayingInPlaceLeadsToNoPage) {
   EXPECT_EQ(Decide(tab, 1100, Request::kNewWindow, Asker::kVoiceMode), kAsk);
   EXPECT_EQ(Decide(tab, 1100, Request::kClipboardWrite, Asker::kVoiceMode),
             kRefuseAndTell);
+}
+
+// A plain button pressed (not a link): an entry its page adds in its own
+// document right after is the page's (a trap costs no extra "go back"); a
+// form it submits is the page the user asked for; its page's requests are
+// decided as for any press.
+TEST(ActivationPolicyTest, APlainButtonLeadsToNoEntryOfItsDocument) {
+  TabRecord trap;
+  NoteAction(trap, 1000, Intent::kPressButton);
+  EXPECT_TRUE(NoteHistoryEntry(trap, 1010));
+  EXPECT_TRUE(NoteHistoryEntry(trap, 1020));
+  TabRecord form;
+  NoteAction(form, 1000, Intent::kPressButton);
+  EXPECT_FALSE(NoteHistoryEntry(form, 1500, /*new_document=*/true));
+  EXPECT_TRUE(NoteHistoryEntry(form, 1600));
+  TabRecord asks;
+  NoteAction(asks, 1000, Intent::kPressButton);
+  TabRecord plain;
+  NoteAction(plain, 1000, Intent::kNone);
+  for (Request request : kAllRequests) {
+    EXPECT_EQ(Decide(asks, 1100, request, Asker::kVoiceMode),
+              Decide(plain, 1100, request, Asker::kVoiceMode))
+        << RequestName(request);
+  }
 }
 
 TEST(ActivationPolicyTest, Names) {

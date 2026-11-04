@@ -87,16 +87,18 @@ bool NoteHistoryEntry(TabRecord& tab, int64_t now_ms, bool new_document) {
   if (tab.history_entries < 1000) {
     ++tab.history_entries;
   }
-  // Pressing full screen, copying, opening a link in a new tab, or playing
-  // the player on the page doesn't navigate the tab: no entry the document
-  // adds for itself is the page the user asked for. A new document the
-  // press led to (a player inside a link) is, as for any action: the page
-  // the user was on isn't skipped.
+  // Pressing full screen, copying, opening a link in a new tab, playing
+  // the player on the page, or pressing a plain button (not a link) doesn't
+  // navigate the tab within its document: no entry the document adds for
+  // itself is the page the user asked for. A new document the press led to
+  // (a player inside a link, a form's button) is, as for any action: the
+  // page the user was on isn't skipped.
   const bool may_navigate =
       new_document ||
       (tab.intent != Intent::kFullScreen && tab.intent != Intent::kCopy &&
        tab.intent != Intent::kOpenInNewTab &&
-       tab.intent != Intent::kPlayInPlace);
+       tab.intent != Intent::kPlayInPlace &&
+       tab.intent != Intent::kPressButton);
   // The page the action led to is what the user asked for.
   return !(acting && may_navigate && tab.history_entries == 1);
 }

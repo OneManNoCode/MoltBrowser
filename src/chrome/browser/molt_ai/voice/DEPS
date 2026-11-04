@@ -25,6 +25,8 @@ specific_include_rules = {
   ],
   r"voice_gesture_channel_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
+    # Cast's mirroring of the screen, started by the test.
+    "+components/mirroring/mojom",
   ],
   r"voice_learning_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
