@@ -337,6 +337,8 @@ TEST(AutomationStorageTest, MovesCutShortAreReported) {
   std::optional<Script> beside = shared.Load("voice_1_");
   ASSERT_TRUE(beside);
   EXPECT_EQ(beside->name, "voice_1");
+  // Known by its file's name: two scripts, never two of one id.
+  EXPECT_EQ(beside->id, "voice_1_");
   EXPECT_EQ(shared.Load("voice_1")->name, "saved since");
   shared.FinishTake("voice_4");
   EXPECT_FALSE(base::PathExists(taken4[0]));

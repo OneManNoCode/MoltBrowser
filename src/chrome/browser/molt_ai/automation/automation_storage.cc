@@ -419,7 +419,14 @@ std::optional<Script> AutomationStorage::Load(const std::string& id) {
     }
     dict = std::move(now);
   }
-  return Script::FromJSON(*dict);
+  std::optional<Script> script = Script::FromJSON(*dict);
+  // Known by its file's name, whatever the file says (one put back beside
+  // another of its id, one copied by hand): never two listed under one id,
+  // nor a save of one written over the other.
+  if (script) {
+    script->id = id;
+  }
+  return script;
 }
 
 bool AutomationStorage::Save(const Script& script) {

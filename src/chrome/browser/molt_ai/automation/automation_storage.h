@@ -124,7 +124,8 @@ class AutomationStorage {
   // Load one script by id. Returns nullopt if the file doesn't exist or is
   // malformed. A file that still holds a plaintext password value (written
   // before secret steps existed) is scrubbed and rewritten in place first
-  // (AutomationSecurity::ScrubPlaintextSecrets).
+  // (AutomationSecurity::ScrubPlaintextSecrets). The script's id is |id|
+  // (its file's name), whatever the file says.
   std::optional<Script> Load(const std::string& id);
 
   // Save (create or overwrite). Returns true if the file was successfully
