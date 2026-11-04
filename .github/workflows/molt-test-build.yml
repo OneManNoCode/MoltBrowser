@@ -12,12 +12,18 @@
 # It is a component build with DCHECKs on: a test build, not a release.
 # Releases are built by release-*.yml and signed offline.
 #
-# Trigger: Actions > "MoltBrowser test build" > Run workflow, or
-#   gh workflow run molt-test-build.yml -f resume_run=<run id>
+# Trigger: Actions > "MoltBrowser test build" > Run workflow
+# (gh workflow run molt-test-build.yml -f resume_run=<run id>), or a push
+# to a claude/ branch that changes .github/molt-test-build.json, whose
+# fields are the same inputs: {"resume_run": "<run id or empty>",
+# "run_tests": true}.
 
 name: MoltBrowser test build
 
 on:
+  push:
+    branches: ['claude/**']
+    paths: ['.github/molt-test-build.json']
   workflow_dispatch:
     inputs:
       resume_run:
@@ -38,49 +44,83 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      resume_run: ${{ steps.config.outputs.resume_run }}
+      run_tests: ${{ steps.config.outputs.run_tests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: .github
+      - name: Inputs
+        id: config
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_RESUME: ${{ inputs.resume_run }}
+          IN_TESTS: ${{ inputs.run_tests }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = push ]; then
+            RESUME="$(jq -r '.resume_run // ""' .github/molt-test-build.json)"
+            TESTS="$(jq -r 'if .run_tests == false then "false" else "true" end' .github/molt-test-build.json)"
+          else
+            RESUME="$IN_RESUME"; TESTS="$IN_TESTS"
+          fi
+          if [ -n "$RESUME" ] && ! [[ "$RESUME" =~ ^[0-9]+$ ]]; then
+            echo "::error::resume_run must be a run id"; exit 1
+          fi
+          echo "resume_run=$RESUME" >> "$GITHUB_OUTPUT"
+          echo "run_tests=$TESTS" >> "$GITHUB_OUTPUT"
+          echo "resume_run='$RESUME' run_tests=$TESTS"
+
   stage-1:
+    needs: config
     uses: ./.github/workflows/molt-test-build-stage.yml
     with:
       stage: 1
-      resume_run: ${{ inputs.resume_run }}
-      run_tests: ${{ inputs.run_tests }}
+      resume_run: ${{ needs.config.outputs.resume_run }}
+      run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
 
   stage-2:
-    needs: stage-1
+    needs: [config, stage-1]
     if: >-
       needs.stage-1.outputs.status == 'partial' ||
-      (inputs.run_tests && needs.stage-1.outputs.tested != 'true')
+      (needs.config.outputs.run_tests == 'true' && needs.stage-1.outputs.tested != 'true')
     uses: ./.github/workflows/molt-test-build-stage.yml
     with:
       stage: 2
-      run_tests: ${{ inputs.run_tests }}
+      run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
 
   stage-3:
-    needs: stage-2
+    needs: [config, stage-2]
     if: >-
       needs.stage-2.outputs.status == 'partial' ||
-      (inputs.run_tests && needs.stage-2.outputs.tested != 'true')
+      (needs.config.outputs.run_tests == 'true' && needs.stage-2.outputs.tested != 'true')
     uses: ./.github/workflows/molt-test-build-stage.yml
     with:
       stage: 3
-      run_tests: ${{ inputs.run_tests }}
+      run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
 
   stage-4:
-    needs: stage-3
+    needs: [config, stage-3]
     if: >-
       needs.stage-3.outputs.status == 'partial' ||
-      (inputs.run_tests && needs.stage-3.outputs.tested != 'true')
+      (needs.config.outputs.run_tests == 'true' && needs.stage-3.outputs.tested != 'true')
     uses: ./.github/workflows/molt-test-build-stage.yml
     with:
       stage: 4
-      run_tests: ${{ inputs.run_tests }}
+      run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
 
   stage-5:
-    needs: stage-4
+    needs: [config, stage-4]
     if: >-
       needs.stage-4.outputs.status == 'partial' ||
-      (inputs.run_tests && needs.stage-4.outputs.tested != 'true')
+      (needs.config.outputs.run_tests == 'true' && needs.stage-4.outputs.tested != 'true')
     uses: ./.github/workflows/molt-test-build-stage.yml
     with:
       stage: 5
-      run_tests: ${{ inputs.run_tests }}
+      run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
