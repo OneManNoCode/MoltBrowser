@@ -21,6 +21,17 @@ import speech_helper_check as shc  # noqa: E402
 import voice_bench_lib as vbl  # noqa: E402
 
 
+def letter_distance(a, b):
+    """Levenshtein distance between two words."""
+    prev = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, y in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (x != y))
+        prev = cur
+    return prev[-1]
+
+
 class _Args(object):
     def __init__(self, helper, models):
         self.helper = helper
@@ -36,7 +47,11 @@ class Ears(object):
     def start(self):
         self.h = shc.Helper(self.args)
         shc.ready(self.h)
-        self.h.send(shc.config({"wake_required": False}))
+        # The words are hotwords for the kit's ears (never for the
+        # browser's: a helper someone took over would know the word).
+        # The recognizer's vocabulary is cased: "Harbor" as well as "harbor".
+        hot = sorted(set(self.words) | {w.capitalize() for w in self.words})
+        self.h.send(shc.config({"wake_required": False, "hotwords": hot}))
         return self
 
     def transcribe(self, pcm, settle=0.8, wait=20.0):
@@ -63,14 +78,34 @@ class Ears(object):
 
     def find_word(self, text):
         """The confirmation word |text| gives ("... say harbor"), if any:
-        the last word of the list in it."""
+        the last word of the list in it, else what follows the last "say"
+        (one word, or two run together: "rick it") when exactly one word of
+        the list is nearest to it, within a third of its letters (at least
+        two). The browser's voice and the recognizer both mangle a lone
+        noun ("harbot", "tarbon"); the list's words are far apart."""
         found = None
-        for w in vbl.normalize(text).split():
+        heard = vbl.normalize(text).split()
+        for w in heard:
             if w in self.words:
                 found = w
             elif w.endswith("s") and w[:-1] in self.words:
                 found = w[:-1]
-        return found
+        if found:
+            return found
+        says = [i for i, w in enumerate(heard) if w == "say"]
+        start = says[-1] + 1 if says else 0
+        tries = heard[start:start + 1] + (
+            ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
+        if not says and len(heard) > 2:
+            return None
+        best = None
+        for t in tries:
+            scored = sorted((letter_distance(t, c), c) for c in self.words)
+            d, c = scored[0]
+            if d <= max(2, len(c) // 3) and (len(scored) < 2 or scored[1][0] > d):
+                if best is None or d < best[0]:
+                    best = (d, c)
+        return best[1] if best else None
 
     def stop(self):
         if self.h:

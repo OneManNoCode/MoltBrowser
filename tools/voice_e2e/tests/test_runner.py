@@ -129,7 +129,7 @@ class RunnerTest(unittest.TestCase):
         from stub_tts import StubTts
         import voice_bench_lib as vbl
         texts = scen.utterances(self.scs)
-        words = {w for t in texts + [render.WAKE_PHRASE] + render.gesture_words()
+        words = {w for t in texts + [render.WAKE_PHRASE, render.REPEAT] + render.gesture_words()
                  for w in vbl.tts_words(render.tts_text(t))}
         speech = os.path.join(self.d, "speech")
         render.render_all(StubTts(speech, words), speech, texts, voices=render.VOICES[:1],

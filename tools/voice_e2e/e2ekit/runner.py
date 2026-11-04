@@ -37,6 +37,7 @@ POLL_S = 0.2
 FILE_LEAD_S = 6.0
 FILE_GAP_S = 9.0
 DEFAULT_QUIET_S = 8.0
+WORD_TRIES = 3
 
 
 class RunConfig(object):
@@ -382,20 +383,32 @@ class Runner(object):
         return t_end, step.value if step.action == "say" else step.action
 
     def word_wav(self, step, i, plan, tlog, world):
-        """The confirmation word the browser gave, heard from its speech."""
+        """The confirmation word the browser gave, heard from its speech as
+        the user hears it; when it isn't clear, the kit says "repeat" (the
+        browser says the prompt again, word and all) and listens again, as
+        a user would, WORD_TRIES times in all."""
         opened = [e for e in tlog.events(0) if e["e"] == "prompt" and e.get("op") == "open"]
         since = opened[-1]["ts"] - 0.5 if opened else time.time() - 20
         if not self.ears:
             raise RuntimeError("no recognizer to hear the confirmation word with")
-        pcm = audio_path.read_pcm_since(plan["recording"], plan["rec_t0"], since)
-        heard = self.ears.transcribe(pcm)
-        word = self.ears.find_word(heard)
-        plan.setdefault("heard_browser", []).append(heard)
-        if not word:
-            raise StepFailed("didn't hear a confirmation word in the browser's speech "
-                             "(heard %r)" % heard[:200])
         voice, speed = plan.get("voice_speed", (self.config.voices[0], 1.0))
-        return render.clip_path(self.speech, voice, speed, word)
+        heard_all = []
+        for attempt in range(WORD_TRIES):
+            if attempt:
+                since = time.time()
+                (self.player or self.pulse).play(
+                    render.clip_path(self.speech, voice, speed, render.REPEAT))
+                self.wait_idle(tlog)
+            pcm = audio_path.read_pcm_since(plan["recording"], plan["rec_t0"], since)
+            heard = self.ears.transcribe(pcm)
+            heard_all.append(heard)
+            word = self.ears.find_word(heard)
+            if word:
+                plan.setdefault("heard_browser", []).extend(heard_all)
+                return render.clip_path(self.speech, voice, speed, word)
+        plan.setdefault("heard_browser", []).extend(heard_all)
+        raise StepFailed("didn't hear a confirmation word in the browser's speech "
+                         "(heard %s)" % "; ".join(repr(h[:120]) for h in heard_all))
 
     # ---- one step -------------------------------------------------------------
 

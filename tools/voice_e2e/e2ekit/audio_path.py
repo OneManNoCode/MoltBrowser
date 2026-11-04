@@ -28,11 +28,13 @@ import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 import wave
 
 from . import render
 
+MAX_SOCKET_PATH = 100
 ECHO_DB = -6.0
 PCM_RATE = 16000
 FILE_RATE = 44100  # the fake capture device's rate (leakkit/micinput.py)
@@ -58,6 +60,12 @@ class Pulse(object):
         self.recorder = None
         self.bed = None
         self.socket = os.path.join(self.dir, "runtime", "native")
+        if len(self.socket) > MAX_SOCKET_PATH:
+            # A Unix socket's path has a small limit (108 bytes on Linux).
+            self._short = tempfile.mkdtemp(prefix="molt-pa-")
+            self.socket = os.path.join(self._short, "native")
+        else:
+            self._short = None
 
     def env(self):
         """The environment a client (the browser, paplay) needs."""
@@ -109,7 +117,8 @@ class Pulse(object):
                 break
             time.sleep(0.1)
         else:
-            raise AudioError("pulseaudio didn't start")
+            self.stop()
+            raise AudioError("pulseaudio didn't start; see %s/pulse.log" % self.dir)
         if self.loopback:
             r = self._pactl("load-module", "module-loopback", "source=molt_out.monitor",
                             "sink=molt_mic_in", "latency_msec=30",
@@ -170,6 +179,9 @@ class Pulse(object):
         if self.proc:
             _kill_group(self.proc)
             self.proc = None
+        if self._short:
+            shutil.rmtree(self._short, ignore_errors=True)
+            self._short = None
 
 
 def _kill_group(proc):

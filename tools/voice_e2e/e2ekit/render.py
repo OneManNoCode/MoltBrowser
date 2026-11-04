@@ -61,6 +61,8 @@ RUNTIME_ARTIFACT = "sherpa-onnx-linux-x64"
 PAGE_VOICE = ("libritts-p", "tts-piper-en_US-libritts_r-medium-int8",
               "en_US-libritts_r-medium.onnx", 700)
 WAKE_PHRASE = "Hey Molt"
+# Said when the kit didn't hear a prompt's word: the browser says it again.
+REPEAT = "repeat"
 NOISE_SCALE = "1e-30"
 SPEECH_DB = -26.0
 # Conditions: name -> (kind, SNR dB).
@@ -101,7 +103,7 @@ def tts_text(text):
 def texts_for(utterances, page_texts=()):
     """{id: text} for everything a user says, and the page texts apart."""
     user = {}
-    for t in list(utterances) + [WAKE_PHRASE] + gesture_words():
+    for t in list(utterances) + [WAKE_PHRASE, REPEAT] + gesture_words():
         user.setdefault(clip_id(t), t)
     page = {clip_id(t): t for t in page_texts}
     return user, page

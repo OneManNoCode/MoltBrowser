@@ -100,6 +100,8 @@ def run(speech_dir, bundle, utterances, conditions=("clean", "pink10", "music10"
             log("%-22s utterances %3d/%3d exact, WER %.1f%%; words %d/%d"
                 % (name, exact, n, 100.0 * errs / max(1, total), ok, len(words)))
         # The wake phrase before each utterance, clean.
+        if "clean" not in conditions:
+            continue
         h = _helper(bundle, True)
         woke = right = 0
         import numpy as np
