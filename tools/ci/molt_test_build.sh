@@ -23,6 +23,8 @@
 #   build MINUTES T...   ninja -k 0 on the targets until done or MINUTES pass
 #   save DIR             the out dir as parts in DIR, with the manifest
 #   test DIR             MoltBrowser's unit and browser tests; reports in DIR
+#   failures             the failed build steps and what they printed
+#   recheck DIR          rebuild only the steps the restored build failed
 #
 # The out dir is chromium/src/out/MoltCI: a component build with DCHECKs on
 # (developer and test configuration, not a release build).
@@ -215,6 +217,10 @@ cmd_build() {
   grep -E '^FAILED: ' "$log" 2>/dev/null | sort -u > "$STATE/failed-steps.txt" || true
   grep -E 'error:|undefined symbol|duplicate symbol' "$log" 2>/dev/null \
     | sort | uniq -c | sort -rn | head -400 > "$STATE/errors.txt" || true
+  # Each failed step with what it printed, up to the next step's line.
+  awk '/^FAILED: /{p=1; n=0} p&&/^\[[0-9]+\/[0-9]+\] /{p=0}
+       p{print; if (++n > 60) {print "  ..."; p=0}}' "$log" 2>/dev/null \
+    | head -1500 > "$STATE/failures.txt" || true
   local progress
   progress="$(grep -oE '^\[[0-9]+/[0-9]+\]' "$log" 2>/dev/null | tail -1 || true)"
   say "Build status: $status ${progress} ($(wc -l < "$STATE/failed-steps.txt") failed steps)"
@@ -247,6 +253,9 @@ cmd_save() {
     | split -b 3800M -d -a 2 - "$dir/molt-out.tar.zst."
   zstd -q -f "$STATE/manifest.txt" -o "$dir/manifest.txt.zst"
   cp "$STATE/status" "$dir/status" 2>/dev/null || true
+  for f in failed-steps.txt errors.txt failures.txt; do
+    cp "$STATE/$f" "$dir/$f" 2>/dev/null || true
+  done
   ls -l "$dir"
   df -h / | tail -1
 }
@@ -308,9 +317,50 @@ cmd_test() {
   return 0
 }
 
+# The steps that failed in the restored build, rebuilt on their own: a fix
+# is checked in minutes instead of after a whole stage.
+cmd_recheck() {
+  local dir="$1" ninja rc
+  if [ ! -s "$dir/failed-steps.txt" ]; then
+    say "The restored build recorded no failed steps"
+    output recheck none
+    return 0
+  fi
+  cp "$dir/failed-steps.txt" "$STATE/previous-failed-steps.txt"
+  local targets=()
+  # "FAILED: [code=1] obj/a.o obj/b.o" -> obj/a.o obj/b.o
+  mapfile -t targets < <(sed -E 's/^FAILED: //; s/\[code=[0-9]+\] //' \
+    "$dir/failed-steps.txt" | tr ' ' '\n' | sed '/^$/d' | sort -u)
+  say "Rebuilding the ${#targets[@]} outputs that failed: ${targets[*]}"
+  ninja="$(ninja_bin)"
+  cd "$SRC"
+  set +e
+  "$ninja" -C "$OUT_REL" -k 0 "${targets[@]}" > "$STATE/ninja.log" 2>&1
+  rc=$?
+  set -e
+  tail -5 "$STATE/ninja.log"
+  grep -E '^FAILED: ' "$STATE/ninja.log" | sort -u > "$STATE/failed-steps.txt" || true
+  awk '/^FAILED: /{p=1; n=0} p&&/^\[[0-9]+\/[0-9]+\] /{p=0}
+       p{print; if (++n > 60) {print "  ..."; p=0}}' "$STATE/ninja.log" \
+    | head -1500 > "$STATE/failures.txt" || true
+  if [ "$rc" -eq 0 ]; then output recheck fixed; else output recheck failing; fi
+  say "Recheck: ninja exit $rc, $(wc -l < "$STATE/failed-steps.txt") still failing"
+}
+
+cmd_failures() {
+  if [ -s "$STATE/failures.txt" ]; then
+    echo "==> $(wc -l < "$STATE/failed-steps.txt") failed steps:"
+    cat "$STATE/failed-steps.txt"
+    echo "==> What they printed:"
+    cat "$STATE/failures.txt"
+  else
+    echo "==> No failed build steps."
+  fi
+}
+
 main() {
   local c="${1:-}"
-  [ -n "$c" ] || { sed -n '16,26p' "$0"; exit 2; }
+  [ -n "$c" ] || { sed -n "16,28p" "$0"; exit 2; }
   shift
   case "$c" in
     deps) cmd_deps ;;
@@ -322,6 +372,8 @@ main() {
     build) cmd_build "$@" ;;
     save) cmd_save "$@" ;;
     test) cmd_test "$@" ;;
+    failures) cmd_failures ;;
+    recheck) cmd_recheck "$@" ;;
     *) echo "unknown command: $c"; exit 2 ;;
   esac
 }
