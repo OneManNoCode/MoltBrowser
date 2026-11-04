@@ -124,3 +124,104 @@ jobs:
     with:
       stage: 5
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+
+  # The speech and voice helpers with their models (scripts/bundle-speech.sh),
+  # for the spoken end-to-end suite. Built once per change to their sources.
+  speech-bundle:
+    needs: config
+    if: needs.config.outputs.run_tests == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Cached bundle
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .molt-speech-cache/build/linux-x64
+          key: molt-speech-bundle-${{ hashFiles('scripts/bundle-speech.sh', 'src/chrome/browser/molt_ai/voice/speech_helper/**', 'src/chrome/browser/molt_ai/voice/voice_helper/**') }}
+      - name: Build the speech and voice helpers
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: scripts/bundle-speech.sh --build-only --parts speech,voice --jobs 4
+      - name: Upload the bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-speech-bundle
+          path: |
+            .molt-speech-cache/build/linux-x64/speech/
+            .molt-speech-cache/build/linux-x64/voice/
+          retention-days: 14
+
+  # The spoken end-to-end suite (tools/voice_e2e, docs/VOICE_E2E.md) on the
+  # build the stage that ran the tests saved. It needs no Chromium checkout:
+  # the out dir of a component build runs on its own.
+  voice-e2e:
+    needs: [config, speech-bundle, stage-1, stage-2, stage-3, stage-4, stage-5]
+    if: >-
+      always() && !cancelled() && needs.speech-bundle.result == 'success' &&
+      contains(needs.*.outputs.tested, 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      GH_TOKEN: ${{ github.token }}
+      T1: ${{ needs.stage-1.outputs.tested }}
+      T2: ${{ needs.stage-2.outputs.tested }}
+      T3: ${{ needs.stage-3.outputs.tested }}
+      T4: ${{ needs.stage-4.outputs.tested }}
+      T5: ${{ needs.stage-5.outputs.tested }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: The tested build and the speech bundle
+        run: |
+          set -euo pipefail
+          STAGE=""
+          for n in 1 2 3 4 5; do
+            v="T$n"; [ "${!v}" = true ] && STAGE=$n
+          done
+          echo "Build of stage $STAGE"
+          mkdir -p "$RUNNER_TEMP/parts" "$RUNNER_TEMP/tree" "$RUNNER_TEMP/bundle"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --pattern "molt-s${STAGE}-p*" --dir "$RUNNER_TEMP/parts"
+          find "$RUNNER_TEMP/parts" -mindepth 2 -type f -exec mv -t "$RUNNER_TEMP/parts" {} +
+          sudo apt-get install -y -q --no-install-recommends zstd
+          cat "$RUNNER_TEMP"/parts/molt-out.tar.zst.* | zstd -d -q -T0 | tar -x -C "$RUNNER_TEMP/tree"
+          rm -rf "$RUNNER_TEMP/parts"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name molt-speech-bundle --dir "$RUNNER_TEMP/bundle"
+          chmod +x "$RUNNER_TEMP"/bundle/speech/molt-speech "$RUNNER_TEMP"/bundle/voice/molt-voice 2>/dev/null || true
+          ls "$RUNNER_TEMP/tree/out/MoltCI/chrome" "$RUNNER_TEMP/bundle"
+      - name: The spoken suite
+        id: e2e
+        run: |
+          set +e
+          tools/voice_e2e/ci_run.sh "$RUNNER_TEMP/tree/out/MoltCI" \
+            "$RUNNER_TEMP/bundle" "$RUNNER_TEMP/e2e-report"
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          if [ -f "$RUNNER_TEMP/e2e-report/report.md" ]; then
+            cat "$RUNNER_TEMP/e2e-report/report.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit 0
+      - name: Reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-voice-e2e-report
+          path: ${{ runner.temp }}/e2e-report/
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Phase 1's exit
+        env:
+          RC: ${{ steps.e2e.outputs.rc }}
+        run: |
+          case "$RC" in
+            0) echo "Phase 1's exit is met." ;;
+            1) echo "::error::the spoken suite ran but didn't meet Phase 1's exit (report.md)"; exit 1 ;;
+            *) echo "::error::the spoken suite couldn't run (rc $RC)"; exit 1 ;;
+          esac
