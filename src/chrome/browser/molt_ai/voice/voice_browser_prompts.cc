@@ -477,6 +477,10 @@ void VoiceBrowserPrompts::Answer(const VoiceStep& step,
   if (!current_ || step.index != current_->id) {
     return;  // a prompt that went meanwhile
   }
+  if (step.flag) {
+    ReadAgainAfterPageText(step, evidence);
+    return;
+  }
   switch (step.prompt_answer) {
     case PromptAnswer::kAllow:
     case PromptAnswer::kWrongWord:
@@ -541,6 +545,40 @@ void VoiceBrowserPrompts::OnUtteranceHeard(const std::string& heard,
   if (WordExposed(heard_aloud, Inputs())) {
     Reissue(WordRetired::kSaidAloud);
   }
+}
+
+void VoiceBrowserPrompts::ReadAgainAfterPageText(
+    const VoiceStep& step,
+    const HeardEvidence& evidence) {
+  // A word of the list said aloud where something could have recorded it:
+  // a new one, as for a word heard unclearly.
+  const bool word = step.prompt_answer == PromptAnswer::kAllow ||
+                    step.prompt_answer == PromptAnswer::kWrongWord;
+  if (word && evidence.from_microphone && current_->needs_word &&
+      !current_->word.empty() && !current_->last_words) {
+    WordChannel heard_aloud;
+    heard_aloud.said = true;
+    if (WordExposed(heard_aloud, Inputs())) {
+      Reissue(WordRetired::kAfterPageText);
+      return;
+    }
+  }
+  // Its own words again, with the same word.
+  const int id = current_->id;
+  BrowserPrompt prompt = current_->prompt;
+  prompt.preface = PageTextPreface(prompt.language);
+  prompt.explain_shown_only = false;
+  if (!delegate_->ReadBrowserPrompt(id, prompt, current_->word)) {
+    Drop();
+    return;
+  }
+  if (!current_ || current_->id != id) {
+    return;
+  }
+  current_->timer.Start(FROM_HERE,
+                        base::Milliseconds(PromptWindowMs(current_->kind)),
+                        base::BindOnce(&VoiceBrowserPrompts::OnTimeout,
+                                       weak_factory_.GetWeakPtr(), id));
 }
 
 void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,

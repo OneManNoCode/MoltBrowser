@@ -220,6 +220,7 @@ class VoiceController::ReaderHost : public VoiceReader::Host {
       observer.OnVoiceSpeech(text);
     }
   }
+  void SaidPageText() override { controller_->NotePageTextSaid(); }
   void Status(const std::string& status) override {
     controller_->SetStatus(status);
   }
@@ -1626,6 +1627,14 @@ void VoiceController::SayAboutBrowserPrompt(const std::string& text) {
   TellAboutPageRequest(text);
 }
 
+void VoiceController::NotePageTextSaid() {
+  // The waiting prompt takes what allows or accepts only once it is read
+  // again (voice_prompts.h).
+  if (state_.prompt.id != 0) {
+    state_.prompt.after_page_text = true;
+  }
+}
+
 // ---- The voice gesture's word ---------------------------------------------
 
 void VoiceController::SetWordChannelSettings(bool echo_cancelled,
@@ -1728,6 +1737,7 @@ void VoiceController::PlannerSays(const std::string& text) {
   if (said.empty()) {
     return;
   }
+  NotePageTextSaid();
   for (Observer& observer : observers_) {
     observer.OnVoiceSpeech(said);
   }

@@ -47,6 +47,7 @@ class FakeHost : public VoiceReader::Host {
     return next_id_;
   }
   void Said(const std::string& text) override { said_.push_back(text); }
+  void SaidPageText() override { ++page_text_; }
   void Status(const std::string& status) override { status_ = status; }
   void ScrollTo(const PageNodeHandle& node) override {
     scrolled_.push_back(node);
@@ -90,9 +91,15 @@ class FakeHost : public VoiceReader::Host {
   const std::string& status() const { return status_; }
   const std::vector<PageNodeHandle>& scrolled() const { return scrolled_; }
   double rate() const { return rate_; }
+  int TakePageText() {
+    const int page_text = page_text_;
+    page_text_ = 0;
+    return page_text;
+  }
 
  private:
   PageTree tree_;
+  int page_text_ = 0;
   uint64_t next_id_ = 0;
   std::vector<std::pair<uint64_t, std::string>> queued_;
   std::vector<std::string> said_;
@@ -126,6 +133,28 @@ TEST(VoiceReaderTest, ReadsThePageAChunkAhead) {
   EXPECT_EQ(said.substr(said.size() - 27), "That's the end of the page.");
   EXPECT_EQ(reader.StateFor(kPage), Reading::kNone);
   EXPECT_EQ(host.status(), "Done reading");
+}
+
+// Each chunk is the page's text (the browser's prompts wait to be read
+// again after it, voice_prompts.h); what the reader says of its own isn't.
+TEST(VoiceReaderTest, EachChunkIsNotedAsThePagesText) {
+  FakeHost host(Fixture("wikipedia_article.html"));
+  VoiceReader reader(&host);
+  reader.Run(ReadOp::kPage, "", kPage, 1.0);
+  EXPECT_EQ(host.TakePageText(), 1);
+  host.FinishOne(reader);
+  EXPECT_EQ(host.TakePageText(), 1);
+  host.FinishAll(reader);
+  EXPECT_GT(host.TakePageText(), 0);
+  EXPECT_NE(host.TakeSaid().find("That's the end of the page."),
+            std::string::npos);
+  // Nothing left to read: only the reader's own words.
+  reader.Run(ReadOp::kResume, "", kPage, 1.0);
+  host.FinishAll(reader);
+  EXPECT_EQ(host.TakePageText(), 0);
+  // An answer about the page is the page's text too.
+  reader.ReadText("The page says: it is about a band.", kPage, 1.0);
+  EXPECT_EQ(host.TakePageText(), 1);
 }
 
 TEST(VoiceReaderTest, StopKeepsThePlaceAndContinueGoesOn) {

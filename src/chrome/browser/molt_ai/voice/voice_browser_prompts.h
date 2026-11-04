@@ -265,6 +265,11 @@ class VoiceBrowserPrompts
 
   // The word (kAllow or kWrongWord) to the current prompt.
   void AnswerWithWord(const VoiceStep& step, const HeardEvidence& evidence);
+  // An answer that allows or accepts, said after page text
+  // (voice_prompts.h): the prompt is read again (with a new word when the
+  // word was said where something captures).
+  void ReadAgainAfterPageText(const VoiceStep& step,
+                              const HeardEvidence& evidence);
 
   // What decides the channel now: the delegate's and the captures.
   WordChannelInputs Inputs();

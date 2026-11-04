@@ -892,6 +892,19 @@ class Planner {
     VoiceStep step = Step(VoiceStepKind::kPromptAnswer);
     step.index = prompt.id;
     step.prompt_answer = reply.answer;
+    // Page text came after the prompt, or was being read as this was said:
+    // what allows or accepts may be meant for page text that imitated a
+    // prompt. The browser reads its own question again first
+    // (voice_prompts.h).
+    if (AllowsOrAccepts(reply.answer) &&
+        (prompt.after_page_text ||
+         env_.reading == VoiceEnvironment::Reading::kReading)) {
+      step.text = command.heard;
+      step.flag = true;
+      Status("Waiting for your answer");
+      Add(std::move(step));
+      return true;
+    }
     switch (reply.answer) {
       case PromptAnswer::kNone:
         return false;

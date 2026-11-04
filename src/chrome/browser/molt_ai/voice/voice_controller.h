@@ -410,6 +410,9 @@ class VoiceController : public VoicePlanner::Delegate,
                          const BrowserPrompt& prompt,
                          const std::string& word) override;
   void EndBrowserPrompt(int id, const std::string& said) override;
+  // Page-derived speech (a reading's chunk, an answer about the page, the
+  // planner's words) starts being said (PendingPrompt::after_page_text).
+  void NotePageTextSaid();
   void SayAboutBrowserPrompt(const std::string& text) override;
   void SayWordAboutBrowserPrompt(const WordText& text) override;
   WordChannelInputs WordChannelInputsNow() override;

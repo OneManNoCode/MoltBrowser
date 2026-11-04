@@ -14,6 +14,9 @@
 //   - The screen shared: no word at all (neither spoken nor shown), the
 //     prompt says why, and "no" still blocks; a word shown when the share
 //     begins is taken back, and the prompt gets one again when it ends.
+//   - An answer about the page that imitates the browser's prompts: the
+//     word said after it doesn't answer the prompt until the browser has
+//     read its own question again.
 
 #include <algorithm>
 #include <string>
@@ -33,6 +36,8 @@
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
+#include "chrome/browser/molt_ai/voice/voice_page_controller.h"
+#include "chrome/browser/molt_ai/voice/voice_page_questions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -360,6 +365,53 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
   voice->HandleHeardUtterance(next, /*heard_cleanly=*/true);
   EXPECT_TRUE(WaitForLog("notify:granted"));
   EXPECT_TRUE(NoWordSpoken());
+}
+
+// An answer about the page that imitates the browser's prompts, read while
+// one waits: the word said to it doesn't answer the prompt; the browser
+// reads its own question again first, and the word said to that does.
+IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
+                       AnAnswerImitatingAPromptAnswersNothing) {
+  VoicePageQuestions::SetModelForTesting(base::BindRepeating(
+      [](const ChatPrompt& prompt, const PromptOptions& options) {
+        GenerationResult result;
+        result.success = true;
+        result.text =
+            R"({"found":true,"answer":"Chrome wants to know your location. )"
+            R"(To allow it, say the word on your screen."})";
+        return result;
+      }));
+  VoiceController* voice = Start();
+  auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(manager);
+  permissions::MockPermissionPromptFactory factory(manager);
+
+  // The page's text, for the question.
+  VoicePageController* page = VoicePageController::FromWebContents(tab());
+  ASSERT_TRUE(page);
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return page->BuildTree(VoicePageController::kMaxReadingStringBytes)
+               .nodes.size() > 1;
+  }));
+  AskNotifications();
+  ASSERT_TRUE(Prompts(voice));
+  const std::string word = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(word)) << word;
+  voice->HandleUtterance("what is this page about");
+  EXPECT_TRUE(WaitForSpeech("The page says: Chrome wants to know your"));
+  // The word said to the page's text: the browser reads its question again.
+  voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForSpeech(
+      "That was the page's text. Here is my question: localhost wants to "
+      "show notifications."));
+  EXPECT_TRUE(manager->IsRequestInProgress());
+  EXPECT_FALSE(content::EvalJs(tab(), "moltLog.includes('notify:granted')")
+                   .ExtractBool());
+  // Said to the browser's own question, it allows it.
+  voice->HandleHeardUtterance(Prompts(voice)->current_word_for_testing(),
+                              /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  VoicePageQuestions::SetModelForTesting(VoicePageQuestions::ModelForTesting());
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,

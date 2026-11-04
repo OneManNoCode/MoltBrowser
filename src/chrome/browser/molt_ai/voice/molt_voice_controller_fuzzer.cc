@@ -36,7 +36,8 @@
 // are in range; MoltNet only ever hears that voice mode is off; a held
 // confirmation holds only page actions, words or the planner's "yes" (to a
 // numbered question); offered choices stay within kMaxCloseChoices; what
-// "repeat" keeps stays within its cap.
+// "repeat" keeps stays within its cap; a prompt read again first (an answer
+// said while the page was read) is answered only by what allows or accepts.
 
 #include <cstddef>
 #include <cstdint>
@@ -412,6 +413,12 @@ void CheckTurn(const VoiceTurn& turn,
         step.prompt_answer == molt_ai::voice::PromptAnswer::kWrongWord) {
       CHECK(molt_ai::voice::NeedsGesture(state.prompt.kind));
       CHECK(!state.prompt.word.empty());
+    }
+    // Read again first (said while page text was read): only what allows
+    // or accepts, and the prompt still waits for it.
+    if (step.kind == VoiceStepKind::kPromptAnswer && step.flag) {
+      CHECK(molt_ai::voice::AllowsOrAccepts(step.prompt_answer));
+      CHECK_EQ(state.prompt.id, step.index);
     }
   }
   CHECK(state.prompt.id >= 0);
