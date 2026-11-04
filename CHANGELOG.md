@@ -1398,7 +1398,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   read never holds up quitting (a home folder on a network drive that
   stopped answering no longer hangs it). Two workflows saved at the same
   moment, in one browser or two sharing a home folder, never replace each
-  other, and a temporary file left by a crash mid-save is cleaned up. On
+  other, and a temporary file left by a crash mid-save is cleaned up; a
+  workflow put back after a move that was cut short always finds a name of
+  its own, and the Agent studio, reloaded while it waits for an answer,
+  only shows its own. On
   Windows a linked `settings.json` stays a link, and a linked workflow is
   never followed. Browser tests use a home folder of their own. A routine
   name that sounds like another in Spanish ("noticias" and "las noticias")
