@@ -278,6 +278,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
          &AgentStudioHandler::HandleShowDeclinedRoutines);
   }
 
+  void OnJavascriptDisallowed() override {
+    // The page reloaded or went: its answers on their way are dropped (the
+    // new page's callback ids start again from the same names).
+    reply_factory_.InvalidateWeakPtrs();
+  }
+
  private:
   // The page's callback id (args[0]); none when it sent no string.
   using CallbackId = std::optional<std::string>;
@@ -427,7 +433,15 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   }
   AnswerCallback Resolver(const base::ListValue& args) {
     return base::BindOnce(&AgentStudioHandler::ResolveAnswer,
-                          weak_factory_.GetWeakPtr(), CallbackIdOf(args));
+                          reply_factory_.GetWeakPtr(), CallbackIdOf(args));
+  }
+  // The page's answer to the message |args| came with, later: dropped if
+  // that page is gone (a reload restarts its callback ids, so an old
+  // answer would resolve another request of the new page).
+  using Reply = base::OnceCallback<void(base::DictValue)>;
+  Reply ReplyTo(const base::ListValue& args) {
+    return base::BindOnce(&AgentStudioHandler::Resolve,
+                          reply_factory_.GetWeakPtr(), CallbackIdOf(args));
   }
 
   // -------- messages --------
@@ -443,7 +457,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
               self->HandleListWorkflows(args);
             }
           },
-          weak_factory_.GetWeakPtr(), args.Clone()));
+          reply_factory_.GetWeakPtr(), args.Clone()));
       return;
     }
     // The profile's routines on their sequence, then the shared storage's
@@ -461,7 +475,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         routines, Learning()->routines_read_task_runner(), FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::ListRoutines, places),
         base::BindOnce(&AgentStudioHandler::OnRoutinesListed,
-                       weak_factory_.GetWeakPtr(), places, CallbackIdOf(args)));
+                       reply_factory_.GetWeakPtr(), places,
+                       CallbackIdOf(args)));
   }
   void OnRoutinesListed(StudioPlaces places,
                         CallbackId callback_id,
@@ -472,7 +487,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         base::BindOnce(&molt_ai::agent_studio::ListSharedWorkflows,
                        std::move(places)),
         base::BindOnce(&AgentStudioHandler::OnWorkflowsListed,
-                       weak_factory_.GetWeakPtr(), std::move(callback_id),
+                       reply_factory_.GetWeakPtr(), std::move(callback_id),
                        std::move(listing)));
   }
   void OnWorkflowsListed(CallbackId callback_id,
@@ -598,7 +613,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
               self->ResolveJavascriptCallback(base::Value(callback_id),
                                               base::Value(std::move(done)));
             },
-            weak_factory_.GetWeakPtr(), args[0].GetString()));
+            reply_factory_.GetWeakPtr(), args[0].GetString()));
   }
 
   // "Not mine": [cb, [id, ...]] -> {ok}. They aren't offered here again;
@@ -686,7 +701,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
                          id),
           base::BindOnce(&AgentStudioHandler::SaveInRoutines,
                          weak_factory_.GetWeakPtr(), places, std::move(request),
-                         CallbackIdOf(args)));
+                         Resolver(args)));
       return;
     }
     if (routines) {
@@ -695,20 +710,21 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           base::BindOnce(&molt_ai::agent_studio::RoutinesHold, places, id),
           base::BindOnce(&AgentStudioHandler::SaveInShared,
                          weak_factory_.GetWeakPtr(), places, std::move(request),
-                         CallbackIdOf(args)));
+                         Resolver(args)));
       return;
     }
-    SaveInShared(places, std::move(request), CallbackIdOf(args),
-                 Holds::kNothing);
+    SaveInShared(places, std::move(request), Resolver(args), Holds::kNothing);
   }
+  // |done| is the page's answer, made when the message came (Resolver()):
+  // dropped if that page reloaded meanwhile.
   void SaveInRoutines(StudioPlaces places,
                       SaveRequest request,
-                      CallbackId callback_id,
+                      AnswerCallback done,
                       Holds in_shared_storage) {
     scoped_refptr<base::SequencedTaskRunner> routines =
         RoutinesSequence(places);
     if (!routines) {
-      Resolve(callback_id, base::DictValue());
+      std::move(done).Run(Answer());
       return;
     }
     routines->PostTaskAndReplyWithResult(
@@ -716,22 +732,18 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         base::BindOnce(&molt_ai::agent_studio::SaveRoutine, places,
                        std::move(request), in_shared_storage),
         base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
-                       base::BindOnce(&AgentStudioHandler::ResolveAnswer,
-                                      weak_factory_.GetWeakPtr(),
-                                      std::move(callback_id))));
+                       std::move(done)));
   }
   void SaveInShared(StudioPlaces places,
                     SaveRequest request,
-                    CallbackId callback_id,
+                    AnswerCallback done,
                     Holds in_routines) {
     AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
         FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::SaveSharedWorkflow,
                        std::move(places), std::move(request), in_routines),
         base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
-                       base::BindOnce(&AgentStudioHandler::ResolveAnswer,
-                                      weak_factory_.GetWeakPtr(),
-                                      std::move(callback_id))));
+                       std::move(done)));
   }
 
   // The frames of other sites the user let offer their tools to the
@@ -832,10 +844,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     request.id = args[1].GetString();
     AnswerAbout(request,
                 base::BindOnce(&AgentStudioHandler::OnRunChecked,
-                               weak_factory_.GetWeakPtr(), CallbackIdOf(args),
+                               weak_factory_.GetWeakPtr(), ReplyTo(args),
                                request.id, std::move(overrides), minimize));
   }
-  void OnRunChecked(CallbackId callback_id,
+  void OnRunChecked(Reply reply,
                     std::string id,
                     std::map<std::string, std::string> overrides,
                     bool minimize,
@@ -849,7 +861,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       // 'run-progress' is future work — the popup window shows live steps.)
       PollRunResult(id, before, /*attempts=*/80);
     }
-    Resolve(callback_id, std::move(answer.out));
+    std::move(reply).Run(std::move(answer.out));
   }
 
   void PollRunResult(const std::string& id, int64_t before, int attempts) {
@@ -986,12 +998,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
                        molt_ai::agent_studio::NewWorkflowId() + "_rec",
                        recorded_ids_),
         base::BindOnce(&AgentStudioHandler::OnRecordingIdMinted,
-                       weak_factory_.GetWeakPtr(), CallbackIdOf(args),
+                       weak_factory_.GetWeakPtr(), ReplyTo(args),
                        std::move(*draft)));
   }
-  void OnRecordingIdMinted(CallbackId callback_id,
-                           Script draft,
-                           std::string id) {
+  void OnRecordingIdMinted(Reply reply, Script draft, std::string id) {
     // Another stopRecording minted it meanwhile.
     while (recorded_ids_.count(id)) {
       id += "_";
@@ -1006,7 +1016,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     }
     base::DictValue out;
     out.Set("draft", std::move(json));
-    Resolve(callback_id, std::move(out));
+    std::move(reply).Run(std::move(out));
   }
 
   void HandleSaveSchedule(const base::ListValue& args) {
@@ -1057,9 +1067,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     request.trigger = trig;
     AnswerAbout(std::move(request),
                 base::BindOnce(&AgentStudioHandler::OnScheduleSaved,
-                               weak_factory_.GetWeakPtr(), CallbackIdOf(args)));
+                               weak_factory_.GetWeakPtr(), ReplyTo(args)));
   }
-  void OnScheduleSaved(CallbackId callback_id, Answer answer) {
+  void OnScheduleSaved(Reply reply, Answer answer) {
     if (answer.trigger) {
       if (Profile* p = profile()) {
         if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p)) {
@@ -1073,7 +1083,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       answer.out.Set("nextFire",
                      next.is_null() ? 0.0 : next.InSecondsFSinceUnixEpoch());
     }
-    Resolve(callback_id, std::move(answer.out));
+    std::move(reply).Run(std::move(answer.out));
   }
 
   // The studio's Trust / Undo control: [callback_id, id, "approved" |
@@ -1203,6 +1213,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   std::map<std::string, std::string> shown_questions_;
 
   base::WeakPtrFactory<AgentStudioHandler> weak_factory_{this};
+  // For the page's answers only (ReplyTo(), Resolver()): invalidated when
+  // the page goes or reloads, so an answer meant for the old page never
+  // resolves the new page's request of the same callback id. The work they
+  // follow (a save, a run) is bound to |weak_factory_| and still done.
+  base::WeakPtrFactory<AgentStudioHandler> reply_factory_{this};
 };
 
 // ---------------------------------------------------------------------------
