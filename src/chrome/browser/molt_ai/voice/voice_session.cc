@@ -61,6 +61,7 @@ ListeningSettings ToListening(const VoiceModeSettings& settings,
   listening.always_listening = settings.always_listening;
   listening.wake_phrases = WakePhrasesFor(language);
   listening.vad_silence_ms = kDefaultVadSilenceMs;
+  listening.language = language;
   return listening;
 }
 
