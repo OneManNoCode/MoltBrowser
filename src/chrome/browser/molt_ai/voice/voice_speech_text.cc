@@ -38,15 +38,25 @@ std::string Scaled(int64_t value, int64_t scale) {
   return out;
 }
 
-const std::string* FieldOf(const ChoiceCandidate& candidate,
-                           ChoiceFieldKind kind) {
+const ChoiceField* FieldWith(const ChoiceCandidate& candidate,
+                             ChoiceFieldKind kind) {
   for (const ChoiceField& field : candidate.fields) {
     if (field.kind == kind && !field.text.empty()) {
-      return &field.text;
+      return &field;
     }
   }
   return nullptr;
 }
+
+const std::string* FieldOf(const ChoiceCandidate& candidate,
+                           ChoiceFieldKind kind) {
+  const ChoiceField* field = FieldWith(candidate, kind);
+  return field ? &field->text : nullptr;
+}
+
+// A duration read by the page map is at most this long (ParseDuration()'s
+// own limit): anything else is read again.
+constexpr int64_t kMaxReadSeconds = 1000 * 3600;
 
 // The units of time a length is said in.
 struct TimeWords {
@@ -133,8 +143,21 @@ std::string SpokenCount(std::string_view text) {
 }
 
 std::string SpokenCount(std::string_view text, Language language) {
+  return SpokenCountOf(text, -1, std::string_view(), language);
+}
+
+std::string SpokenCountOf(std::string_view text,
+                          int64_t value,
+                          std::string_view unit,
+                          Language language) {
   const std::string cleaned = PageText(text);
-  std::optional<ParsedCount> count = ParseCount(cleaned);
+  // Read as the page map read it (in the page's language), else again.
+  std::optional<ParsedCount> count;
+  if (value >= 0) {
+    count = ParsedCount{value, std::string(unit)};
+  } else {
+    count = ParseCount(cleaned);
+  }
   // Past a thousand trillion it is read as shown (and Scaled() can't
   // overflow).
   if (!count || count->value <= 0 || count->value > kMaxScaledCount ||
@@ -207,11 +230,15 @@ std::string SpokenCandidate(const ChoiceCandidate& candidate,
                  FieldOf(candidate, ChoiceFieldKind::kSource)) {
     AppendPart(out, PageText(*source));
   }
-  if (const std::string* duration =
-          FieldOf(candidate, ChoiceFieldKind::kDuration)) {
-    std::optional<int> seconds = ParseDuration(*duration);
+  if (const ChoiceField* duration =
+          FieldWith(candidate, ChoiceFieldKind::kDuration)) {
+    // As the page map read it (in the page's language), else again.
+    std::optional<int> seconds =
+        duration->value >= 0 && duration->value <= kMaxReadSeconds
+            ? std::optional<int>(static_cast<int>(duration->value))
+            : ParseDuration(duration->text);
     AppendPart(out, seconds ? SpokenDuration(*seconds, language)
-                            : PageText(*duration));
+                            : PageText(duration->text));
   }
   if (verbosity == Verbosity::kFull) {
     size_t read = 0;
@@ -227,7 +254,8 @@ std::string SpokenCandidate(const ChoiceCandidate& candidate,
           ++read;
           break;
         case ChoiceFieldKind::kCount:
-          AppendPart(out, SpokenCount(field.text, language));
+          AppendPart(out, SpokenCountOf(field.text, field.value, field.unit,
+                                        language));
           ++read;
           break;
         case ChoiceFieldKind::kAuthor:

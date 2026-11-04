@@ -19,6 +19,7 @@
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_SPEECH_TEXT_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -59,6 +60,13 @@ std::string SpokenCount(std::string_view text);
 // The same in |language|: "2,1 mil millones de views", "15 mil
 // suscriptores" (the unit is the page's own word).
 std::string SpokenCount(std::string_view text, Language language);
+// The same with the count as the page map read it in the page's language
+// (ChoiceField::value and unit: "1,2 M de visualizaciones" on a Spanish
+// page), or, when |value| is negative, read again from |text| in English.
+std::string SpokenCountOf(std::string_view text,
+                          int64_t value,
+                          std::string_view unit,
+                          Language language);
 
 // "1 result" / "20 results".
 std::string CountOf(size_t n, std::string_view one, std::string_view many);

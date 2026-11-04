@@ -203,6 +203,105 @@ TEST(PageMapTextTest, RecognizesDates) {
   }
 }
 
+// A page's fields in its own language: Spanish words on a Spanish page,
+// whichever language voice mode speaks.
+TEST(PageMapTextTest, ReadsSpanishFieldsInSpanish) {
+  constexpr FieldLanguage es = FieldLanguage::kSpanish;
+  EXPECT_EQ(FieldLanguageOf("es"), es);
+  EXPECT_EQ(FieldLanguageOf("es-419"), es);
+  EXPECT_EQ(FieldLanguageOf("ES_mx"), es);
+  EXPECT_EQ(FieldLanguageOf("en-US"), FieldLanguage::kEnglish);
+  EXPECT_EQ(FieldLanguageOf(""), FieldLanguage::kEnglish);
+  EXPECT_EQ(FieldLanguageOf("est"), FieldLanguage::kEnglish);
+
+  EXPECT_EQ(ParseDuration("6:07", es), 367);
+  EXPECT_EQ(ParseDuration("1:02:03", es), 3723);
+  EXPECT_EQ(ParseDuration("6 minutos y 7 segundos", es), 367);
+  EXPECT_EQ(ParseDuration("1 hora, 2 minutos y 3 segundos", es), 3723);
+  EXPECT_EQ(ParseDuration("1 h 2 min", es), 3720);
+  EXPECT_EQ(ParseDuration("45 seg", es), 45);
+  EXPECT_EQ(ParseDuration("PT6M7S", es), 367);
+  for (const char* not_one :
+       {"", "6", "6 manzanas", "7 segundos y 6 minutos", "6 minutes",
+        "Bohemian Rhapsody", "y 6 minutos"}) {
+    EXPECT_FALSE(ParseDuration(not_one, es).has_value()) << not_one;
+  }
+
+  struct Count {
+    const char* text;
+    int64_t value;
+    const char* unit;
+  };
+  for (const Count& c : std::initializer_list<Count>{
+           {"1,2 M de visualizaciones", 1200000, "visualizaciones"},
+           {"1.2 M de vistas", 1200000, "vistas"},
+           {"2,1 mil M de visualizaciones", 2100000000, "visualizaciones"},
+           {"2,1 mil millones de visualizaciones", 2100000000,
+            "visualizaciones"},
+           {"310 M de visualizaciones", 310000000, "visualizaciones"},
+           {"15 mil visualizaciones", 15000, "visualizaciones"},
+           {"15 k suscriptores", 15000, "suscriptores"},
+           {"1.234 visualizaciones", 1234, "visualizaciones"},
+           {"1.234.567 suscriptores", 1234567, "suscriptores"},
+           {"1,234 vistas", 1234, "vistas"},
+           {"3 millones de reproducciones", 3000000, "reproducciones"},
+           {"1 mill. de vistas", 1000000, "vistas"},
+           {"120 me gusta", 120, "me gusta"},
+           {"8 v\xC3\xAD"
+            "deos",
+            8,
+            "v\xC3\xAD"
+            "deos"},
+           {"Sin visualizaciones", 0, "visualizaciones"},
+       }) {
+    std::optional<ParsedCount> count = ParseCount(c.text, es);
+    ASSERT_TRUE(count) << c.text;
+    EXPECT_EQ(count->value, c.value) << c.text;
+    EXPECT_EQ(count->unit, c.unit) << c.text;
+  }
+  for (const char* not_one :
+       {"", "visualizaciones", "1,2 M", "1234",
+        "hace 3 d\xC3\xAD"
+        "as",
+        "6 minutos", "5 a\xC3\xB1os", "1,2345 vistas",
+        "12 grandes rojas vistas", "1,2 M de", "2.1B views!"}) {
+    EXPECT_FALSE(ParseCount(not_one, es).has_value()) << not_one;
+  }
+
+  for (const char* date : {"hace 15 a\xC3\xB1os", "hace 1 a\xC3\xB1o",
+                           "hace una hora", "hace un mes", "hace 3 semanas",
+                           "hace 2 d\xC3\xAD"
+                           "as",
+                           "Emitido hace 2 a\xC3\xB1os",
+                           "Transmitido hace 5 d\xC3\xAD"
+                           "as",
+                           "ayer", "Hoy", "la semana pasada", "el mes pasado",
+                           "5 ene 2024", "5 de enero de 2024", "enero de 2024",
+                           "Publicado el 5 de enero de 2024", "31 dic.",
+                           "2024-01-05", "05/01/2024"}) {
+    EXPECT_TRUE(LooksLikeDate(date, es)) << date;
+  }
+  for (const char* not_one :
+       {"", "mayo", "2024", "5", "15 a\xC3\xB1os", "hace", "1,2 M de vistas",
+        "6:07", "ene feb 2024", "Queen Official", "hace mucho tiempo",
+        "15 years ago"}) {
+    EXPECT_FALSE(LooksLikeDate(not_one, es)) << not_one;
+  }
+}
+
+// An English page reads as it always has, whatever its words look like in
+// Spanish.
+TEST(PageMapTextTest, EnglishFieldsReadAsBefore) {
+  EXPECT_EQ(ParseCount("1,234 views")->value, 1234);
+  EXPECT_EQ(ParseCount("1.5 million plays")->value, 1500000);
+  EXPECT_FALSE(ParseCount("1,2 M de visualizaciones").has_value());
+  EXPECT_FALSE(LooksLikeDate("hace 2 a\xC3\xB1os"));
+  EXPECT_FALSE(ParseDuration("6 minutos y 7 segundos").has_value());
+  EXPECT_EQ(
+      ParseDuration("1 hour, 2 minutes and 3 seconds", FieldLanguage::kEnglish),
+      3723);
+}
+
 TEST(PageMapTextTest, RecognizesAddresses) {
   EXPECT_TRUE(LooksLikeAddress("https://en.wikipedia.org/wiki/Queen"));
   EXPECT_TRUE(LooksLikeAddress("http://example.com"));

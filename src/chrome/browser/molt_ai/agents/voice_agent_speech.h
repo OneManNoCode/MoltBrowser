@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace molt_ai {
 namespace voice_agent {
@@ -77,6 +78,43 @@ enum class NoPlanner {
   kNoPage,       // no tab to work in
 };
 std::string NoPlannerSpeech(NoPlanner reason, std::string_view detail);
+
+// ---- The web agent's own questions (WebAgent::ConfirmRequest::spoken) ----
+// What voice mode asks before an action of the web agent's, after "Say yes
+// to ", built where the agent composes its question (web_agent.cc): each a
+// whole sentence of the catalog in English (voice/spoken_answers.h), which
+// the voice loop says in its language (VoiceController::PlannerAsks(),
+// voice::Relocalized()), "abrir el sitio evil.example" in Spanish. In
+// English each is QuestionWhat() of the agent's message, but that a site
+// opened is "the site" and a click with no label says none (never the
+// model's selector). Origins are said without their scheme; a page's label
+// is one phrase (its punctuation said as spaces).
+//   OpenQuestion("https://evil.example")    -> "open the site evil.example"
+//   ContinueQuestion("http://x.test")            -> "keep working on x.test
+//                                                    (the page moved there)"
+//   ClickQuestion("Pay now", {"submits a form on https://shop.example"})
+//       -> "click the one labelled Pay now, it submits a form on
+//           shop.example"
+//   FieldQuestion(false, "password", "https://x.test")
+//       -> "type into a password field on x.test"
+// A click's effects are agent_page_map::CheckClick()'s ("opens <origin>",
+// "submits a form on|to <origin>"); ClickQuestion() returns "" for any
+// other, and the caller asks QuestionWhat() of the message instead.
+std::string OpenQuestion(std::string_view origin);
+std::string ContinueQuestion(std::string_view origin);
+std::string ClickQuestion(std::string_view label,
+                          const std::vector<std::string>& effects);
+// A sensitive field typed into (|fill| false) or filled in a form fill
+// (|fill| true): |field| is agent_safety::FieldKindLabel()'s ("password",
+// "payment card", "one-time code", "form"); "" for another.
+std::string FieldQuestion(bool fill,
+                          std::string_view field,
+                          std::string_view origin);
+// A site's tool the page offers, called (its name is page text): of the
+// page, or of another site's frame on |origin|.
+std::string ToolQuestion(std::string_view name,
+                         bool other_site,
+                         std::string_view origin);
 
 }  // namespace voice_agent
 }  // namespace molt_ai

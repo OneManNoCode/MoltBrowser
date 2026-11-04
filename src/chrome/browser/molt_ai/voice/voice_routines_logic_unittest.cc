@@ -366,6 +366,45 @@ TEST(VoiceRoutinesLogicTest, UniqueNames) {
             "x (" + std::to_string(kMaxRoutineNameCopies) + ")");
 }
 
+// A name clashes with another when it does in any language voice mode
+// speaks, whichever the user speaks now: saved, renamed and flagged so.
+TEST(VoiceRoutinesLogicTest, NamesClashInEveryLanguage) {
+  // In Spanish only: "noticias" and "las noticias" are one name there.
+  const std::vector<std::string> spanish = {"las noticias", "trenes"};
+  EXPECT_EQ(MatchRoutineName(spanish, "noticias").count, 0u);
+  RoutineNameMatch match = MatchRoutineNameInAnyLanguage(spanish, "noticias");
+  EXPECT_EQ(match.count, 1u);
+  ASSERT_TRUE(match.name);
+  EXPECT_EQ(*match.name, "las noticias");
+  EXPECT_EQ(UniqueRoutineName(spanish, "noticias"), "noticias (2)");
+  EXPECT_EQ(UniqueRoutineName(spanish, "mis noticias"), "mis noticias (2)");
+  // Spanish numbers: "noticias dos" is "noticias (2)" there.
+  EXPECT_EQ(
+      MatchRoutineNameInAnyLanguage({"noticias dos"}, "noticias (2)").count,
+      1u);
+  EXPECT_EQ(UniqueRoutineName({"noticias dos"}, "noticias (2)"),
+            "noticias (3)");
+  // Two that clash in Spanish only are two names to flag.
+  EXPECT_EQ(
+      MatchRoutineNameInAnyLanguage({"noticias", "las noticias"}, "noticias")
+          .count,
+      2u);
+  // English: its results as they were.
+  const std::vector<std::string> english = {"my news", "The News", "trains"};
+  EXPECT_EQ(MatchRoutineNameInAnyLanguage(english, "news").count, 2u);
+  match = MatchRoutineNameInAnyLanguage(english, "trains");
+  ASSERT_TRUE(match.name);
+  EXPECT_EQ(*match.name, "trains");
+  EXPECT_EQ(MatchRoutineNameInAnyLanguage(english, "weather").count, 0u);
+  EXPECT_EQ(MatchRoutineNameInAnyLanguage(english, "").count, 0u);
+  EXPECT_EQ(MatchRoutineNameInAnyLanguage({"my news"}, "my news two").count,
+            0u);
+  EXPECT_EQ(UniqueRoutineName({"my news", "my news (2)"}, "news two"),
+            "news two (2)");
+  // A word only one language drops makes no clash in the other.
+  EXPECT_EQ(MatchRoutineNameInAnyLanguage({"my news"}, "mi news").count, 0u);
+}
+
 TEST(VoiceRoutinesLogicTest, ANameInUseIsReplacedOnYes) {
   const PageMap map;
   VoiceEnvironment env = Env();

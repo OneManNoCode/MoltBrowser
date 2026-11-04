@@ -138,6 +138,12 @@ struct ChoiceField {
   // As shown on screen (page text: any bytes; invalid UTF-8, control and
   // bidi characters are read around).
   std::string text;
+  // A count's value and unit, or a duration's seconds (no unit), as the
+  // page map read them in the page's language ("1,2 M de
+  // visualizaciones": 1200000, "visualizaciones"); -1 when it didn't, and
+  // the text is read again to say it.
+  int64_t value = -1;
+  std::string unit;
 };
 
 // One item the user can choose. The page map fills these in reading order

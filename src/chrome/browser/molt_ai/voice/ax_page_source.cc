@@ -342,6 +342,9 @@ PageTree BuildPageTree(const AXFrameTree& main,
     return page;
   }
   page.title = Prefix(main.tree->data().title, limits.max_string_bytes);
+  // The document's language (its lang, inherited from the root), which its
+  // fields are read in. A tag is short.
+  page.language = Prefix(main.tree->root()->GetLanguage(), 35);
 
   // The focused frame (the browser names it in the top-level tree's data)
   // and its focused node.

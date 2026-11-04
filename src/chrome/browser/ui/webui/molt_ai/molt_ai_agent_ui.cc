@@ -495,10 +495,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
               });
     for (const auto& s : scripts) {
       base::DictValue d = WorkflowSummary(s);
-      // A name another of the profile's routines answers to too: voice
-      // mode runs neither until one is renamed.
+      // A name another of the profile's routines answers to too, in any
+      // language voice mode speaks: voice mode runs neither until one is
+      // renamed.
       if (molt_ai::automation::HasVoiceSteps(s) &&
-          molt_ai::voice::MatchRoutineName(voice_names, s.name).count > 1) {
+          molt_ai::voice::MatchRoutineNameInAnyLanguage(voice_names, s.name)
+                  .count > 1) {
         d.Set("nameClash", true);
       }
       list.Append(std::move(d));

@@ -681,7 +681,16 @@ class Converter {
 PageTree PageTreeFromHtml(std::string_view html) {
   std::string title;
   const std::vector<DomNode> dom = ParseHtml(html, &title);
-  return Converter(dom).Convert(title);
+  PageTree tree = Converter(dom).Convert(title);
+  // The document's language, as the accessibility tree gives it: <html
+  // lang>.
+  for (size_t child : dom[0].children) {
+    if (!dom[child].text && dom[child].tag == "html") {
+      tree.language = dom[child].AttrOr("lang");
+      break;
+    }
+  }
+  return tree;
 }
 
 }  // namespace test

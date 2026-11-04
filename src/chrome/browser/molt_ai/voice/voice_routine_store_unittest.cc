@@ -161,6 +161,41 @@ TEST_F(VoiceRoutineStoreTest, ANameInUseIsReplacedOnlyWhenAsked) {
   EXPECT_EQ(store.Summaries().size(), 2u);
 }
 
+// A name is in use when it clashes in any language voice mode speaks:
+// "noticias" is "las noticias" in Spanish, so it is replaced only when
+// asked, and a routine kept beside it is renamed. English names keep their
+// English reading.
+TEST_F(VoiceRoutineStoreTest, NamesClashInEveryLanguage) {
+  VoiceRoutineStore store = Profile1();
+  ASSERT_TRUE(
+      store.Save("voice_1", "las noticias", MyNews(), false, kNow).saved);
+  RoutineSaveResult again =
+      store.Save("voice_2", "noticias", Pause(), false, kNow + 5);
+  EXPECT_FALSE(again.saved);
+  EXPECT_EQ(again.said, "You already have a routine called noticias.");
+  RoutineSaveResult replaced =
+      store.Save("voice_2", "noticias", Pause(), true, kNow + 5);
+  ASSERT_TRUE(replaced.saved);
+  EXPECT_TRUE(replaced.replaced);
+  ASSERT_EQ(store.Summaries().size(), 1u);
+  EXPECT_EQ(store.Summaries()[0].id, "voice_1");
+  EXPECT_EQ(store.Summaries()[0].name, "noticias");
+  // One from before profiles kept beside it: renamed.
+  SaveOld("voice_7", "las noticias");
+  ClaimResult kept = store.Claim({"voice_7"});
+  ASSERT_EQ(kept.kept.size(), 1u);
+  EXPECT_EQ(kept.kept[0].name, "las noticias (2)");
+  EXPECT_EQ(kept.kept[0].renamed_from, "las noticias");
+  // Spanish numbers too: "noticias dos" is "noticias (2)" in Spanish.
+  EXPECT_FALSE(
+      store.Save("voice_8", "noticias dos", Pause(), false, kNow).saved);
+  // English as before.
+  ASSERT_TRUE(store.Save("voice_3", "the weather", Pause(), false, kNow).saved);
+  EXPECT_FALSE(store.Save("voice_4", "weather", Pause(), false, kNow).saved);
+  ASSERT_TRUE(store.Save("voice_5", "trains", Pause(), false, kNow).saved);
+  EXPECT_EQ(store.Summaries().size(), 4u);
+}
+
 TEST_F(VoiceRoutineStoreTest, ANameTwoRoutinesAnswerToRunsNeither) {
   VoiceRoutineStore store = Profile1();
   ASSERT_TRUE(store.Save("voice_1", "my news", MyNews(), false, kNow).saved);

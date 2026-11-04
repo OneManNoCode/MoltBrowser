@@ -198,7 +198,9 @@ RoutineSaveResult VoiceRoutineStore::Save(const std::string& id,
                                           int64_t now_unix) {
   std::vector<Script> routines = Routines();
   const std::vector<std::string> names = NamesOf(routines);
-  const RoutineNameMatch in_use = MatchRoutineName(names, name);
+  // In use in any language voice mode speaks: never a second routine that
+  // answers to the same words in one of them.
+  const RoutineNameMatch in_use = MatchRoutineNameInAnyLanguage(names, name);
   if (in_use.count > 1) {
     // In English: the voice loop says it in its language (Relocalized()).
     return Refused(Said(Language::kEnglish,

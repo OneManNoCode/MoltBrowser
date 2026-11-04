@@ -276,9 +276,10 @@ bool LooksLikeChannelUrl(std::string_view url) {
 }
 
 // Text that is a field value rather than a name: a duration, count or date.
-bool IsFieldLike(std::string_view text) {
-  return ParseDuration(text).has_value() || ParseCount(text).has_value() ||
-         LooksLikeDate(text);
+bool IsFieldLike(std::string_view text, FieldLanguage language) {
+  return ParseDuration(text, language).has_value() ||
+         ParseCount(text, language).has_value() ||
+         LooksLikeDate(text, language);
 }
 
 class Builder {
@@ -286,7 +287,10 @@ class Builder {
   Builder(const PageTree& tree,
           const PageMapLimits& limits,
           const PageMapHints* hints)
-      : tree_(&tree), limits_(limits), hints_(hints) {}
+      : tree_(&tree),
+        limits_(limits),
+        hints_(hints),
+        fields_(FieldLanguageOf(tree.language)) {}
 
   PageMap Build() {
     if (!tree_->nodes.empty()) {
@@ -1197,7 +1201,7 @@ class Builder {
         const std::string& shown =
             text.empty() ? map_.items[item_of_[link]].label : text;
         const size_t length = CountCodePoints(shown);
-        if (length >= 2 && length > best && !IsFieldLike(shown)) {
+        if (length >= 2 && length > best && !IsFieldLike(shown, fields_)) {
           best = length;
           primary = link;
         }
@@ -1279,7 +1283,8 @@ class Builder {
           if (!visible && text.empty()) {
             text = SpeechSafeText(item.label, kMaxEntryFieldChars);
           }
-          if (text.empty() || IsFieldLike(text) || LooksLikeAddress(text) ||
+          if (text.empty() || IsFieldLike(text, fields_) ||
+              LooksLikeAddress(text) ||
               (pass == 1 && CountCodePoints(text) > 60)) {
             continue;
           }
@@ -1323,7 +1328,7 @@ class Builder {
       }
       // The site named in a result's main link ("Wikipedia").
       if (entry.channel.empty() && primary != kNoPos && run.link == primary &&
-          !IsFieldLike(text) && !LooksLikeAddress(text)) {
+          !IsFieldLike(text, fields_) && !LooksLikeAddress(text)) {
         seen.push_back(folded);
         entry.channel = std::move(text);
         continue;
@@ -1334,17 +1339,17 @@ class Builder {
       }
       seen.push_back(folded);
       if (entry.duration_seconds < 0) {
-        if (std::optional<int> seconds = ParseDuration(text)) {
+        if (std::optional<int> seconds = ParseDuration(text, fields_)) {
           entry.duration_seconds = *seconds;
           entry.duration = std::move(text);
           continue;
         }
       }
-      if (entry.date.empty() && LooksLikeDate(text)) {
+      if (entry.date.empty() && LooksLikeDate(text, fields_)) {
         entry.date = std::move(text);
         continue;
       }
-      if (std::optional<ParsedCount> count = ParseCount(text)) {
+      if (std::optional<ParsedCount> count = ParseCount(text, fields_)) {
         if (entry.counts.size() < kMaxEntryCounts) {
           entry.counts.push_back({count->value, count->unit, std::move(text)});
         }
@@ -1380,6 +1385,8 @@ class Builder {
   const PageMapLimits limits_;
   // Outlives the builder too; null without hints.
   MOLT_RAW_PTR_EXCLUSION const PageMapHints* const hints_;
+  // The words the page's fields are read with (its language).
+  const FieldLanguage fields_;
   PageMap map_;
   size_t work_ = 0;
 

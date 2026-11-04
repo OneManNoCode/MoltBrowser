@@ -143,6 +143,15 @@ void RoutineNames(std::string_view input) {
   const std::string unique = molt_ai::voice::UniqueRoutineName(names, said);
   CHECK(unique.empty() ||
         molt_ai::voice::MatchRoutineName(names, unique).count == 0);
+  // Nor in any language voice mode speaks; and that match counts the
+  // English one's names at least.
+  CHECK(unique.empty() ||
+        molt_ai::voice::MatchRoutineNameInAnyLanguage(names, unique).count ==
+            0);
+  const molt_ai::voice::RoutineNameMatch any =
+      molt_ai::voice::MatchRoutineNameInAnyLanguage(names, said);
+  CHECK_GE(any.count, match.count);
+  CHECK_EQ(any.name != nullptr, any.count == 1);
   std::vector<std::string> declined;
   molt_ai::voice::AddDeclinedRoutines(declined, names);
   for (const std::string& id : declined) {
