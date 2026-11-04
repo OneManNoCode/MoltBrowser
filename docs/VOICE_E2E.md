@@ -350,21 +350,27 @@ can't run the browser. What ran:
   (Kroko EN, every utterance counting, as in always-listening mode),
   `check-speech`:
 
-<!-- speech check: filled from check-speech -->
-| Voice, speed | Condition | Utterances exact | WER | Words right | "Hey Molt" woke it |
-|---|---|---|---|---|---|
-| ljspeech@1 | clean | 51% (70/138) | 23.7% | 18/40 | 138/138 |
-| ljspeech@1.25 | clean | 54% (75/138) | 21.5% | 16/40 | 138/138 |
-| libritts-m@1 | clean | 86% (119/138) | 7.2% | 37/40 | 138/138 |
-| libritts-m@1.25 | clean | 86% (119/138) | 6.7% | 35/40 | 0/138 |
-| libritts-f@1 | clean | 79% (109/138) | 11.5% | 35/40 | 0/138 |
-| libritts-f@1.25 | clean | 70% (96/138) | 17.7% | 32/40 | 0/138 |
+| Voice, speed | Clean: exact | WER | Words right | Music 10 dB: exact | WER | Words right | "Hey Molt" woke it (clean) |
+|---|---|---|---|---|---|---|---|
+| ljspeech@1 | 51% (70/138) | 23.7% | 18/40 | 52% (72/138) | 24.6% | 15/40 | 138/138 |
+| ljspeech@1.25 | 54% (75/138) | 21.5% | 16/40 | 57% (79/138) | 21.3% | 14/40 | 138/138 |
+| libritts-m@1 | 86% (119/138) | 7.2% | 37/40 | 85% (117/138) | 8.4% | 39/40 | 138/138 |
+| libritts-m@1.25 | 86% (119/138) | 6.7% | 35/40 | 82% (113/138) | 8.1% | 37/40 | 0/138 |
+| libritts-f@1 | 79% (109/138) | 11.5% | 35/40 | 74% (102/138) | 15.6% | 33/40 | 0/138 |
+| libritts-f@1.25 | 70% (96/138) | 17.7% | 32/40 | 69% (95/138) | 16.7% | 30/40 | 0/138 |
 
   "Exact" is the whole transcript equal to the utterance after the voice
   bench's normalization; the grammar takes many near misses (sound-alike
   numbers, fillers), so it is a lower bound on what voice mode
-  understands. After "Hey Molt", ljspeech's commands came out right 71
-  and 72 times of 138, libritts-m@1's 115.
+  understands. "Words right": the 40 confirmation words said alone. After
+  "Hey Molt", ljspeech's commands came out right 71 and 72 times of 138,
+  libritts-m@1's 115. Music 10 dB under the speech costs little (one to
+  four points); the voice matters far more. (`check-speech` also measures
+  pink noise at 10 dB; it wasn't run here for lack of time.)
+- **The command line**, against the stand-in browser: `run_e2e.py run`
+  made the certificate, wrote the media, served the sites, started Xvfb,
+  copied the bundle next to the "browser", ran the stand-in scenarios
+  typed and wrote the report (exit 1, three of five passed, as built).
 
 What this says before the build runs:
 
