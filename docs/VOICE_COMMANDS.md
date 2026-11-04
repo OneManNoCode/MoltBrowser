@@ -32,8 +32,8 @@ Voice mode is a preview, behind a flag.
 
 Voice mode can also be offered the first time MoltBrowser runs, so a
 person who can only speak can start at once: with
-`--enable-features=MoltVoiceModeAtFirstRun` (off until the owner decides
-to ship it on), voice mode starts listening in the first window of the
+`chrome://flags/#molt-voice-mode-at-first-run` also on (off until the
+owner decides to ship it on), voice mode starts listening in the first window of the
 browser's first run and, a few seconds after its own greeting, says "This
 is MoltBrowser's voice mode, on because this is the browser's first run.
 Say Hey Molt, then what you want, or what can I say. To turn it off, say

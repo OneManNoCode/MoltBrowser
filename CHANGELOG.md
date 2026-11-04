@@ -1391,7 +1391,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   over", "next match", punctuation said while typing ("comma", "period"),
   a known site's name on its own, and "where am I?" and "what can I say?"
   for what you are in. Voice mode can be offered at first run (built, off
-  until switched on). Details: `docs/VOICE_COMMANDS.md`,
+  until switched on at `chrome://flags/#molt-voice-mode-at-first-run`). Details: `docs/VOICE_COMMANDS.md`,
   `docs/design/TOUCHLESS_BROWSING.md` §2.
 
 ### Fixed

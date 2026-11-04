@@ -26,15 +26,17 @@ namespace molt_ai::voice {
 
 BASE_DECLARE_FEATURE(kMoltVoiceMode);
 
-// Voice mode offered at the browser's first run (voice_first_run.h), behind
-// #molt-voice-mode: off until the owner decides
+// Voice mode offered at the browser's first run (voice_first_run.h), with
+// #molt-voice-mode also on: off until the owner decides
 // (docs/design/TOUCHLESS_BROWSING.md §11, decision 5);
+// chrome://flags/#molt-voice-mode-at-first-run or
 // --enable-features=MoltVoiceModeAtFirstRun turns it on.
 BASE_DECLARE_FEATURE(kMoltVoiceModeAtFirstRun);
 
 namespace flags {
-// The chrome://flags internal name.
+// The chrome://flags internal names.
 inline constexpr char kVoiceMode[] = "molt-voice-mode";
+inline constexpr char kVoiceModeAtFirstRun[] = "molt-voice-mode-at-first-run";
 }  // namespace flags
 
 bool VoiceModeEnabled();
@@ -49,7 +51,15 @@ bool VoiceModeEnabled();
      "\"play the fourth one\") in the Agent mode panel; the browser does it " \
      "on the page and says the answer aloud. The browser can't hear you "     \
      "yet. Off in MoltNet windows.",                                          \
-     kOsDesktop, FEATURE_VALUE_TYPE(molt_ai::voice::kMoltVoiceMode)}
+     kOsDesktop, FEATURE_VALUE_TYPE(molt_ai::voice::kMoltVoiceMode)},         \
+    {molt_ai::voice::flags::kVoiceModeAtFirstRun,                             \
+     "MoltBrowser: voice mode at first run (preview)",                        \
+     "With voice mode also on, the browser's first run starts voice mode "    \
+     "in its first window and says how to use it, so a person who can only "  \
+     "speak can start at once. Settings are left as they were. Off in "       \
+     "MoltNet windows.",                                                      \
+     kOsDesktop,                                                              \
+     FEATURE_VALUE_TYPE(molt_ai::voice::kMoltVoiceModeAtFirstRun)}
 // clang-format on
 
 #endif  // CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_FEATURES_H_

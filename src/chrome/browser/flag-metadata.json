@@ -7207,6 +7207,13 @@
     "expiry_milestone": -1
   },
   {
+    // MoltBrowser: voice mode offered at the browser's first run; kept
+    // until the owner decides whether it ships on.
+    "name": "molt-voice-mode-at-first-run",
+    "owners": [ "//chrome/browser/molt_ai/OWNERS" ],
+    "expiry_milestone": -1
+  },
+  {
     "name": "most-visited-tiles-customization",
     "owners": [ "clank-start@google.com", "huangs@google.com" ],
     "expiry_milestone": 145

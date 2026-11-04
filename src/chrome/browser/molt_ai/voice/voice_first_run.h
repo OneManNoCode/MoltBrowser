@@ -4,7 +4,8 @@
 // Voice mode offered at the browser's first run
 // (docs/design/TOUCHLESS_BROWSING.md §3, principle 1: "That includes ...
 // first-run"; §10, Phase 1): behind chrome://flags/#molt-voice-mode, and off
-// until the owner decides (kMoltVoiceModeAtFirstRun, §11 decision 5).
+// until the owner decides (chrome://flags/#molt-voice-mode-at-first-run,
+// kMoltVoiceModeAtFirstRun, §11 decision 5).
 //
 // With both on, on the browser's first run, in its first normal window
 // (never a MoltNet one): voice mode starts listening there and says what it

@@ -8,7 +8,10 @@ entiende directamente, sin su modelo de IA, y que funcionan al momento,
 incluso en un ordenador lento. Lo demás que digas va a la IA del
 dispositivo, que intenta entender qué quieres a partir de la página.
 
-El modo de voz es una vista previa, detrás de una opción experimental.
+El modo de voz es una vista previa, detrás de una opción experimental. Con
+`chrome://flags/#molt-voice-mode-at-first-run` también activada (está
+desactivada hasta que se decida), el modo de voz empieza a escuchar en la
+primera ventana la primera vez que se abre el navegador y dice cómo usarlo.
 
 ## El español en el modo de voz
 
