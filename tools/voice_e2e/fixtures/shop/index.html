@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!-- A shop (shop.test): three products with "Add to cart", and the cart's
+     link with its count. The cart is kept in sessionStorage, so it lasts
+     through the cart, checkout and order pages. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Corner Shop</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/shop.js"></script>
+</head>
+<body>
+<header>
+  <h1>Corner Shop</h1>
+  <nav><a href="/">Shop</a> <a id="cart-link" href="/cart">Cart (0)</a></nav>
+</header>
+<main>
+  <section class="card" aria-labelledby="kettle">
+    <h2 id="kettle">Steel kettle</h2>
+    <p>One and a half litres. 29 euros.</p>
+    <button data-product="Steel kettle">Add kettle to cart</button>
+  </section>
+  <section class="card" aria-labelledby="toaster">
+    <h2 id="toaster">Two-slice toaster</h2>
+    <p>Six settings. 35 euros.</p>
+    <button data-product="Two-slice toaster">Add toaster to cart</button>
+  </section>
+  <section class="card" aria-labelledby="mug">
+    <h2 id="mug">Blue mug</h2>
+    <p>Holds a large coffee. 9 euros.</p>
+    <button data-product="Blue mug">Add mug to cart</button>
+  </section>
+</main>
+<script>
+  for (const b of document.querySelectorAll('button[data-product]')) {
+    b.addEventListener('click', () => shop.add(b.dataset.product));
+  }
+  shop.show();
+</script>
+</body>
+</html>

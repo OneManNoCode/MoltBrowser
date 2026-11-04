@@ -1,0 +1,112 @@
+{
+ "group": "prompts",
+ "about": "The browser's prompts and a page's dialogs, answered by voice (TOUCHLESS_BROWSING.md §2, §7.3): a permission allowed with its confirmation word (heard from the browser's own speech) and refused with no; a download the page tried after voice mode's click; confirm(), alert(), prompt() and leaving unsaved changes. Prompts are read only while the microphone listens, so these need it.",
+ "scenarios": [
+  {
+   "id": "prompt-permission-allow",
+   "title": "Allow a location request by its confirmation word",
+   "task": "prompts",
+   "requires": ["microphone"],
+   "start": {"url": "https://prompts.test/", "settings": {"voice_say_word_aloud": true}},
+   "steps": [
+    {"say": "click share my location", "needs": ["choose"],
+     "expect": [{"prompt": "open", "kind": "permission"}]},
+    {"say_word": true, "answer": true, "name": "first-word", "pause": 1.0,
+     "expect": [{"prompt": "close"}, {"js": "kit.state.geo", "is": "granted"}]}
+   ]
+  },
+  {
+   "id": "prompt-permission-block",
+   "title": "Refuse a location request with no",
+   "task": "prompts",
+   "requires": ["microphone"],
+   "start": {"url": "https://prompts.test/"},
+   "steps": [
+    {"say": "click share my location", "needs": ["choose"],
+     "expect": [{"prompt": "open", "kind": "permission"}]},
+    {"say": "no", "answer": true, "pause": 1.0, "needs": ["no"],
+     "expect": [{"prompt": "close"}, {"js": "kit.state.geo", "is": "denied"}]}
+   ]
+  },
+  {
+   "id": "prompt-notifications-allow",
+   "title": "Allow notifications by the confirmation word",
+   "task": "prompts",
+   "requires": ["microphone"],
+   "start": {"url": "https://prompts.test/", "settings": {"voice_say_word_aloud": true}},
+   "steps": [
+    {"say": "click show notifications", "needs": ["choose"],
+     "expect": [{"prompt": "open", "kind": "permission"}]},
+    {"say_word": true, "answer": true, "pause": 1.0,
+     "expect": [{"prompt": "close"}, {"js": "kit.state.notifications", "is": "granted"}]}
+   ]
+  },
+  {
+   "id": "prompt-download",
+   "title": "A download the page tried after voice mode's click, kept on yes",
+   "task": "prompts",
+   "start": {"url": "https://files.test/"},
+   "steps": [
+    {"say": "click download the report", "needs": ["choose"], "expect": [{"confirm": "open"}]},
+    {"say": "yes", "answer": true, "needs": ["yes"], "expect": [{"file": "report.txt"}]}
+   ]
+  },
+  {
+   "id": "prompt-dialog-confirm",
+   "title": "A page's confirm() answered yes",
+   "task": "prompts",
+   "requires": ["microphone"],
+   "start": {"url": "https://dialogs.test/"},
+   "steps": [
+    {"say": "click empty the cart", "needs": ["choose"],
+     "expect": [{"prompt": "open", "kind": "confirm"}, {"said_has": "Empty the cart?"}]},
+    {"say": "yes", "answer": true, "pause": 1.0, "needs": ["yes"],
+     "expect": [{"prompt": "close"}, {"js": "kit.state.emptied", "is": true}]}
+   ]
+  },
+  {
+   "id": "prompt-dialog-alert",
+   "title": "A page's alert() heard and closed",
+   "task": "prompts",
+   "requires": ["microphone"],
+   "start": {"url": "https://dialogs.test/"},
+   "steps": [
+    {"say": "click say hello", "needs": ["choose"],
+     "expect": [{"prompt": "open", "kind": "alert"}, {"said_has": "Hello from the page."}]},
+    {"say": "okay", "answer": true, "pause": 1.0,
+     "expect": [{"prompt": "close"}, {"js": "kit.state.helloClosed", "is": true}]}
+   ]
+  },
+  {
+   "id": "prompt-dialog-text",
+   "title": "A page's prompt() answered by voice",
+   "task": "prompts",
+   "requires": ["microphone"],
+   "start": {"url": "https://dialogs.test/"},
+   "steps": [
+    {"say": "click name a colour", "needs": ["choose"],
+     "expect": [{"prompt": "open", "kind": "prompt"}]},
+    {"say": "answer blue", "answer": true, "pause": 1.0, "expect": [{"said_re": "(?i)blue"}]},
+    {"say": "yes", "answer": true, "needs": ["yes"],
+     "expect": [{"prompt": "close"}, {"js": "(kit.state.colour || '').toLowerCase()", "is": "blue"}]}
+   ]
+  },
+  {
+   "id": "prompt-leave-unsaved",
+   "title": "Leaving unsaved changes: stay",
+   "task": "prompts",
+   "requires": ["microphone"],
+   "start": {"url": "https://dialogs.test/"},
+   "steps": [
+    {"say": "click write a note", "needs": ["choose"], "expect": [{"path": "/unsaved"}]},
+    {"say": "click note", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "note"}]},
+    {"say": "type buy bread", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('note').value.length > 0"}]},
+    {"say": "go back", "needs": ["back"], "expect": [{"prompt": "open", "kind": "beforeunload"}]},
+    {"say": "stay", "answer": true, "pause": 1.0,
+     "expect": [{"prompt": "close"}, {"path": "/unsaved"}]}
+   ]
+  }
+ ]
+}

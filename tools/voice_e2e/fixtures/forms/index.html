@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- A form (forms.test): a text field, two checkboxes, a list to choose
+     from, radio buttons and "Submit", then a long part to scroll through.
+     It counts its loads (sessionStorage) for "reload". -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign up - Club</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<style>#tall { height: 3000px; border-top: 1px solid #ccc; }</style>
+</head>
+<body>
+<main>
+  <h1>Join the walking club</h1>
+  <p>This page has been loaded <span id="loads">0</span> times.</p>
+  <form id="signup" action="/thanks" method="get">
+    <label for="name">Your name</label>
+    <input id="name" name="name" autocomplete="off">
+    <label><input id="news" type="checkbox" name="news"> Send me the newsletter</label>
+    <label><input id="terms" type="checkbox" name="terms"> I agree to the rules</label>
+    <label for="country">Country</label>
+    <select id="country" name="country">
+      <option value="">Choose a country</option>
+      <option value="fr">France</option>
+      <option value="es">Spain</option>
+      <option value="it">Italy</option>
+      <option value="de">Germany</option>
+    </select>
+    <fieldset>
+      <legend>How should we contact you?</legend>
+      <label><input type="radio" name="contact" value="phone"> By phone</label>
+      <label><input type="radio" name="contact" value="letter"> By letter</label>
+      <label><input type="radio" name="contact" value="none" checked> Not at all</label>
+    </fieldset>
+    <button id="submit" type="submit">Submit</button>
+  </form>
+  <h2>Our walks</h2>
+  <div id="tall"><p>Every Sunday we walk along the river.</p></div>
+  <p id="bottom">The end of the page.</p>
+</main>
+<script>
+  const n = Number(sessionStorage.getItem('loads') || '0') + 1;
+  sessionStorage.setItem('loads', String(n));
+  document.getElementById('loads').textContent = String(n);
+</script>
+</body>
+</html>

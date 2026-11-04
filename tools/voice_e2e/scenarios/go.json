@@ -1,0 +1,124 @@
+{
+ "group": "go",
+ "about": "Go somewhere (TOUCHLESS_BROWSING.md §2): open a site by name or address, search, go back and forward, reload, open, close and switch tabs.",
+ "scenarios": [
+  {
+   "id": "go-open-by-name",
+   "title": "Open a site by its name",
+   "task": "go",
+   "start": {"url": "about:blank"},
+   "steps": [
+    {"say": "open Wikipedia", "needs": ["open_site"],
+     "expect": [{"host": "en.wikipedia.org"}, {"said": "Wikipedia is open."}]}
+   ]
+  },
+  {
+   "id": "go-open-by-address",
+   "title": "Open a site by its spoken address",
+   "task": "go",
+   "start": {"url": "about:blank"},
+   "steps": [
+    {"say": "go to news dot test", "needs": ["open_site"], "expect": [{"host": "news.test"}]}
+   ]
+  },
+  {
+   "id": "go-unknown-name",
+   "title": "A name the browser doesn't know is searched for, never made a domain",
+   "task": "go",
+   "start": {"url": "about:blank"},
+   "steps": [
+    {"say": "open Netflix", "needs": ["open_site"],
+     "expect": [{"url_has": "q=Netflix"}, {"said_has": "I don't know a site called Netflix"}]}
+   ]
+  },
+  {
+   "id": "go-search-web",
+   "title": "Search the web",
+   "task": "go",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "search the web for trams in Lyon", "needs": ["search"],
+     "expect": [{"url_has": "q=trams"}, {"said_re": "results\\."}]}
+   ]
+  },
+  {
+   "id": "go-search-site",
+   "title": "Search with the site's own search box",
+   "task": "go",
+   "start": {"url": "https://www.youtube.com/"},
+   "steps": [
+    {"say": "search for Queen", "needs": ["search"],
+     "expect": [{"path": "/results"}, {"query": {"search_query": "Queen"}}]}
+   ]
+  },
+  {
+   "id": "go-back-forward",
+   "title": "Follow a link, go back, go forward",
+   "task": "go",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "open trams return to Lyon", "needs": ["choose"], "expect": [{"path": "/story"}]},
+    {"say": "go back", "needs": ["back"], "expect": [{"path": "/"}, {"host": "news.test"}]},
+    {"say": "go forward", "needs": ["forward"], "expect": [{"path": "/story"}]}
+   ]
+  },
+  {
+   "id": "go-reload",
+   "title": "Reload the page",
+   "task": "go",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "reload", "needs": ["reload"],
+     "expect": [{"js": "document.getElementById('loads').textContent", "is": "2"}]}
+   ]
+  },
+  {
+   "id": "go-new-tab",
+   "title": "Open a new tab",
+   "task": "go",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "open a new tab", "needs": ["new_tab"], "expect": [{"tabs": 2}]}
+   ]
+  },
+  {
+   "id": "go-open-in-new-tab",
+   "title": "Open a site in a new tab",
+   "task": "go",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "open Wikipedia in a new tab", "needs": ["open_site"],
+     "expect": [{"tabs": 2}, {"host": "en.wikipedia.org"}]}
+   ]
+  },
+  {
+   "id": "go-switch-tabs",
+   "title": "Switch tabs by number and to the previous one",
+   "task": "go",
+   "start": {"url": "https://news.test/", "tabs": ["https://shop.test/"]},
+   "steps": [
+    {"say": "switch to tab 2", "needs": ["switch_tab"], "expect": [{"host": "shop.test"}]},
+    {"say": "previous tab", "needs": ["switch_tab"], "expect": [{"host": "news.test"}]}
+   ]
+  },
+  {
+   "id": "go-close-tab",
+   "title": "Close this tab",
+   "task": "go",
+   "start": {"url": "https://news.test/", "tabs": ["https://shop.test/"]},
+   "steps": [
+    {"say": "close this tab", "needs": ["close_tab"], "expect": [{"tabs": 1}]}
+   ]
+  },
+  {
+   "id": "go-site-name-alone",
+   "title": "A built-in site's name on its own opens it",
+   "task": "go",
+   "start": {"url": "about:blank"},
+   "steps": [
+    {"say": "YouTube", "needs": ["open_site"],
+     "expect": [{"host": "www.youtube.com"}, {"said_has": "YouTube"}]}
+   ]
+  }
+ ]
+}
