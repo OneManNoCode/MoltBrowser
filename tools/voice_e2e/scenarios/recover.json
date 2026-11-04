@@ -1,0 +1,116 @@
+{
+ "group": "recover",
+ "about": "Recover (TOUCHLESS_BROWSING.md §2): stop, cancel, no, what can I say, where am I, repeat, a correction, undo, start over.",
+ "scenarios": [
+  {
+   "id": "recover-cancel",
+   "title": "Cancel a purchase the browser asked about",
+   "task": "recover",
+   "start": {"url": "https://shop.test/checkout"},
+   "steps": [
+    {"say": "click place order", "needs": ["choose"], "expect": [{"confirm": "open"}]},
+    {"say": "cancel", "answer": true, "needs": ["cancel"],
+     "expect": [{"confirm": "close"}, {"no_action": true, "quiet": 6}]}
+   ]
+  },
+  {
+   "id": "recover-no",
+   "title": "Say no to a purchase",
+   "task": "recover",
+   "start": {"url": "https://shop.test/checkout"},
+   "steps": [
+    {"say": "click place order", "needs": ["choose"], "expect": [{"confirm": "open"}]},
+    {"say": "no", "answer": true, "needs": ["no"],
+     "expect": [{"said": "Okay, I won't."}, {"path": "/checkout"}]}
+   ]
+  },
+  {
+   "id": "recover-help",
+   "title": "What can I say",
+   "task": "recover",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "what can I say", "needs": ["help"], "expect": [{"said_re": ".{30,}"}]}
+   ]
+  },
+  {
+   "id": "recover-where",
+   "title": "Where am I",
+   "task": "recover",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "where am I", "needs": ["where_am_i"],
+     "expect": [{"said_re": "(?i)trams return to lyon|daily news|news dot test"}]}
+   ]
+  },
+  {
+   "id": "recover-repeat",
+   "title": "Say that again",
+   "task": "recover",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "read the title", "needs": ["read_title"],
+     "expect": [{"said_has": "Trams return to Lyon"}]},
+    {"say": "repeat", "needs": ["repeat"], "expect": [{"said_has": "Trams return to Lyon"}]}
+   ]
+  },
+  {
+   "id": "recover-correction",
+   "title": "No, I said ...",
+   "task": "recover",
+   "start": {"url": "about:blank"},
+   "steps": [
+    {"say": "open Wikipedia", "needs": ["open_site"], "expect": [{"host": "en.wikipedia.org"}]},
+    {"say": "no, I said YouTube", "answer": true, "needs": ["correction"],
+     "expect": [{"host": "www.youtube.com"}]}
+   ]
+  },
+  {
+   "id": "recover-undo-typing",
+   "title": "Undo what voice mode typed",
+   "task": "recover",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "click your name", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "name"}]},
+    {"say": "type hello", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('name').value.toLowerCase()", "is": "hello"}]},
+    {"say": "undo", "needs": ["undo"],
+     "expect": [{"js": "document.getElementById('name').value", "is": ""},
+                {"said_re": "(?i)undo|took back|removed"}]}
+   ]
+  },
+  {
+   "id": "recover-undo-close",
+   "title": "Undo closing a tab",
+   "task": "recover",
+   "start": {"url": "https://news.test/", "tabs": ["https://shop.test/"]},
+   "steps": [
+    {"say": "close this tab", "needs": ["close_tab"], "expect": [{"tabs": 1}]},
+    {"say": "undo", "needs": ["undo"], "expect": [{"tabs": 2}]}
+   ]
+  },
+  {
+   "id": "recover-undo-navigation",
+   "title": "Undo going somewhere",
+   "task": "recover",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "open Wikipedia", "needs": ["open_site"], "expect": [{"host": "en.wikipedia.org"}]},
+    {"say": "undo", "needs": ["undo"], "expect": [{"host": "news.test"}]}
+   ]
+  },
+  {
+   "id": "recover-start-over",
+   "title": "Start over drops the question and listens again",
+   "task": "recover",
+   "start": {"url": "https://www.youtube.com/results?search_query=Bohemian+Rhapsody"},
+   "steps": [
+    {"say": "play the live one by Queen", "needs": ["choose"],
+     "expect": [{"said_has": "Did you mean"}]},
+    {"say": "start over", "answer": true, "needs": ["start_over"],
+     "expect": [{"heard_intent": "start_over"}, {"no_action": true, "quiet": 5}]}
+   ]
+  }
+ ]
+}

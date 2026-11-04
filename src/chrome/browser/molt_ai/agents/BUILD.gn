@@ -254,6 +254,10 @@ source_set("browser_tests") {
     ":features",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
 

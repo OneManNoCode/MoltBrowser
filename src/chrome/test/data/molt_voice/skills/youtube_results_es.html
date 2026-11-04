@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<!-- YouTube's search results for "bohemian rhapsody" in Spanish (desktop, es-ES, 2026): the masthead's search form, filter chips and four video renderers, with the fields as the Spanish page shows them ("1,2 M de visualizaciones", "hace 15 años", "15 mil visualizaciones", "1.234 visualizaciones").
+     A reduced copy of youtube_results.html in Spanish that keeps the
+     structure the browser reads (roles, names, ids, classes, link targets);
+     every text but titles, names and fields is a stand-in. See
+     docs/design/VOICE_SKILLS.md, "Refreshing a site's test pages". -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>bohemian rhapsody - YouTube</title>
+</head>
+<body>
+<ytd-app>
+<div id="masthead-container">
+<ytd-masthead id="masthead">
+  <a id="logo" href="youtube_home.html" title="Página principal de YouTube" aria-label="Página principal de YouTube"><span>YouTube</span></a>
+  <yt-searchbox>
+    <form id="search-form" action="youtube_results_es.html" role="search">
+      <input id="search" name="search_query" type="text" role="combobox" aria-label="Buscar" placeholder="Buscar" autocomplete="off">
+      <button id="search-icon-legacy" aria-label="Buscar"><yt-icon></yt-icon></button>
+    </form>
+  </yt-searchbox>
+  <a id="sign-in" href="#signin" aria-label="Iniciar sesión">Iniciar sesión</a>
+</ytd-masthead>
+</div>
+<ytd-page-manager id="page-manager"><ytd-search>
+<div id="container">
+<ytd-search-header-renderer>
+  <yt-chip-cloud-renderer>
+    <yt-chip-cloud-chip-renderer><button aria-label="Todo" aria-pressed="true">Todo</button></yt-chip-cloud-chip-renderer>
+    <yt-chip-cloud-chip-renderer><button aria-label="Vídeos">Vídeos</button></yt-chip-cloud-chip-renderer>
+  </yt-chip-cloud-renderer>
+  <button id="filter-button" aria-label="Filtros de búsqueda">Filtros</button>
+</ytd-search-header-renderer>
+<ytd-two-column-search-results-renderer><div id="primary"><ytd-section-list-renderer><div id="contents">
+<ytd-item-section-renderer><div id="contents">
+<ytd-video-renderer class="style-scope ytd-item-section-renderer">
+<div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" class="yt-simple-endpoint" href="youtube_watch.html?v=v1" tabindex="-1"><img alt="">
+    <ytd-thumbnail-overlay-time-status-renderer><badge-shape><div class="badge-shape-wiz__text">5:59</div></badge-shape></ytd-thumbnail-overlay-time-status-renderer>
+  </a></ytd-thumbnail>
+  <div class="text-wrapper">
+    <div id="meta">
+      <div id="title-wrapper">
+        <h3 class="title-and-badge style-scope ytd-video-renderer">
+          <a id="video-title" class="yt-simple-endpoint style-scope ytd-video-renderer" title="Queen – Bohemian Rhapsody (Official Video Remastered)" href="youtube_watch.html?v=v1" aria-label="Queen – Bohemian Rhapsody (Official Video Remastered) de Queen Official 2.100 millones de visualizaciones hace 15 años 5 minutos y 59 segundos"><yt-formatted-string class="style-scope ytd-video-renderer">Queen – Bohemian Rhapsody (Official Video Remastered)</yt-formatted-string></a>
+        </h3>
+        <ytd-menu-renderer><yt-icon-button><button id="button" aria-label="Menú de acciones"><yt-icon></yt-icon></button></yt-icon-button></ytd-menu-renderer>
+      </div>
+      <ytd-video-meta-block><div id="metadata"><div id="metadata-line"><span class="inline-metadata-item">2,1 mil M de visualizaciones</span><span class="inline-metadata-item">hace 15 años</span></div></div></ytd-video-meta-block>
+    </div>
+    <div id="channel-info">
+      <a id="channel-thumbnail" href="/@QueenOfficial" aria-label="Ir al canal Queen Official"><img alt=""></a>
+      <ytd-channel-name id="channel-name"><div id="container"><div id="text-container"><yt-formatted-string id="text" title="Queen Official"><a class="yt-simple-endpoint" href="/@QueenOfficial">Queen Official</a></yt-formatted-string></div></div></ytd-channel-name>
+    </div>
+    <yt-formatted-string class="metadata-snippet-text">Una descripción de muestra del vídeo.</yt-formatted-string>
+  </div>
+</div>
+</ytd-video-renderer>
+<ytd-video-renderer class="style-scope ytd-item-section-renderer">
+<div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" class="yt-simple-endpoint" href="youtube_watch.html?v=v2" tabindex="-1"><img alt="">
+    <ytd-thumbnail-overlay-time-status-renderer><badge-shape><div class="badge-shape-wiz__text">5:55</div></badge-shape></ytd-thumbnail-overlay-time-status-renderer>
+  </a></ytd-thumbnail>
+  <div class="text-wrapper">
+    <div id="meta">
+      <div id="title-wrapper">
+        <h3 class="title-and-badge style-scope ytd-video-renderer">
+          <a id="video-title" class="yt-simple-endpoint style-scope ytd-video-renderer" title="Bohemian Rhapsody (Remastered 2011)" href="youtube_watch.html?v=v2" aria-label="Bohemian Rhapsody (Remastered 2011) de Queen - Topic 310 millones de visualizaciones hace 9 años 5 minutos y 55 segundos"><yt-formatted-string class="style-scope ytd-video-renderer">Bohemian Rhapsody (Remastered 2011)</yt-formatted-string></a>
+        </h3>
+        <ytd-menu-renderer><yt-icon-button><button id="button" aria-label="Menú de acciones"><yt-icon></yt-icon></button></yt-icon-button></ytd-menu-renderer>
+      </div>
+      <ytd-video-meta-block><div id="metadata"><div id="metadata-line"><span class="inline-metadata-item">310 M de visualizaciones</span><span class="inline-metadata-item">hace 9 años</span></div></div></ytd-video-meta-block>
+    </div>
+    <div id="channel-info">
+      <a id="channel-thumbnail" href="/channel/UCq" aria-label="Ir al canal Queen - Topic"><img alt=""></a>
+      <ytd-channel-name id="channel-name"><div id="container"><div id="text-container"><yt-formatted-string id="text" title="Queen - Topic"><a class="yt-simple-endpoint" href="/channel/UCq">Queen - Topic</a></yt-formatted-string></div></div></ytd-channel-name>
+    </div>
+    <yt-formatted-string class="metadata-snippet-text">Una descripción de muestra del vídeo.</yt-formatted-string>
+  </div>
+</div>
+</ytd-video-renderer>
+<ytd-video-renderer class="style-scope ytd-item-section-renderer">
+<div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" class="yt-simple-endpoint" href="youtube_watch.html?v=v3" tabindex="-1"><img alt="">
+    <ytd-thumbnail-overlay-time-status-renderer><badge-shape><div class="badge-shape-wiz__text">4:12</div></badge-shape></ytd-thumbnail-overlay-time-status-renderer>
+  </a></ytd-thumbnail>
+  <div class="text-wrapper">
+    <div id="meta">
+      <div id="title-wrapper">
+        <h3 class="title-and-badge style-scope ytd-video-renderer">
+          <a id="video-title" class="yt-simple-endpoint style-scope ytd-video-renderer" title="Bohemian Rhapsody en guitarra clásica" href="youtube_watch.html?v=v3" aria-label="Bohemian Rhapsody en guitarra clásica de Guitarra Clásica 15 mil visualizaciones hace 2 semanas 4 minutos y 12 segundos"><yt-formatted-string class="style-scope ytd-video-renderer">Bohemian Rhapsody en guitarra clásica</yt-formatted-string></a>
+        </h3>
+        <ytd-menu-renderer><yt-icon-button><button id="button" aria-label="Menú de acciones"><yt-icon></yt-icon></button></yt-icon-button></ytd-menu-renderer>
+      </div>
+      <ytd-video-meta-block><div id="metadata"><div id="metadata-line"><span class="inline-metadata-item">15 mil visualizaciones</span><span class="inline-metadata-item">hace 2 semanas</span></div></div></ytd-video-meta-block>
+    </div>
+    <div id="channel-info">
+      <a id="channel-thumbnail" href="/@GuitarraClasica" aria-label="Ir al canal Guitarra Clásica"><img alt=""></a>
+      <ytd-channel-name id="channel-name"><div id="container"><div id="text-container"><yt-formatted-string id="text" title="Guitarra Clásica"><a class="yt-simple-endpoint" href="/@GuitarraClasica">Guitarra Clásica</a></yt-formatted-string></div></div></ytd-channel-name>
+    </div>
+    <yt-formatted-string class="metadata-snippet-text">Una descripción de muestra del vídeo.</yt-formatted-string>
+  </div>
+</div>
+</ytd-video-renderer>
+<ytd-video-renderer class="style-scope ytd-item-section-renderer">
+<div id="dismissible">
+  <ytd-thumbnail><a id="thumbnail" class="yt-simple-endpoint" href="youtube_watch.html?v=v4" tabindex="-1"><img alt="">
+    <ytd-thumbnail-overlay-time-status-renderer><badge-shape><div class="badge-shape-wiz__text">1:02:03</div></badge-shape></ytd-thumbnail-overlay-time-status-renderer>
+  </a></ytd-thumbnail>
+  <div class="text-wrapper">
+    <div id="meta">
+      <div id="title-wrapper">
+        <h3 class="title-and-badge style-scope ytd-video-renderer">
+          <a id="video-title" class="yt-simple-endpoint style-scope ytd-video-renderer" title="Queen en directo: el concierto entero" href="youtube_watch.html?v=v4" aria-label="Queen en directo: el concierto entero de Archivo Musical 1234 visualizaciones Emitido hace 1 día 1 hora, 2 minutos y 3 segundos"><yt-formatted-string class="style-scope ytd-video-renderer">Queen en directo: el concierto entero</yt-formatted-string></a>
+        </h3>
+        <ytd-menu-renderer><yt-icon-button><button id="button" aria-label="Menú de acciones"><yt-icon></yt-icon></button></yt-icon-button></ytd-menu-renderer>
+      </div>
+      <ytd-video-meta-block><div id="metadata"><div id="metadata-line"><span class="inline-metadata-item">1.234 visualizaciones</span><span class="inline-metadata-item">Emitido hace 1 día</span></div></div></ytd-video-meta-block>
+    </div>
+    <div id="channel-info">
+      <a id="channel-thumbnail" href="/@ArchivoMusical" aria-label="Ir al canal Archivo Musical"><img alt=""></a>
+      <ytd-channel-name id="channel-name"><div id="container"><div id="text-container"><yt-formatted-string id="text" title="Archivo Musical"><a class="yt-simple-endpoint" href="/@ArchivoMusical">Archivo Musical</a></yt-formatted-string></div></div></ytd-channel-name>
+    </div>
+    <yt-formatted-string class="metadata-snippet-text">Una descripción de muestra del vídeo.</yt-formatted-string>
+  </div>
+</div>
+</ytd-video-renderer>
+</div></ytd-item-section-renderer>
+<ytd-continuation-item-renderer><tp-yt-paper-spinner aria-label="Cargando más resultados"></tp-yt-paper-spinner></ytd-continuation-item-renderer>
+</div></ytd-section-list-renderer></div></ytd-two-column-search-results-renderer>
+</div>
+</ytd-search></ytd-page-manager>
+</ytd-app>
+</body>
+</html>

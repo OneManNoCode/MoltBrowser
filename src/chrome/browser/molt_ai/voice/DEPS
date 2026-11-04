@@ -25,6 +25,8 @@ specific_include_rules = {
   ],
   r"voice_gesture_channel_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
+    # Cast's mirroring of the screen, started by the test.
+    "+components/mirroring/mojom",
   ],
   r"voice_learning_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
@@ -39,6 +41,12 @@ specific_include_rules = {
     "+content/public/browser/tts_controller.h",
   ],
   r"voice_page_questions_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  r"voice_test_log_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  r"voice_browser_actions_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
   # The answer's schema is one the inference service's converter takes

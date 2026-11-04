@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!-- A page's dialogs (dialogs.test): "Empty the cart" asks confirm(),
+     "Say hello" shows alert(), "Name a colour" asks prompt(); the answers
+     are kept in window.kit.state. /unsaved has a beforeunload handler. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dialogs</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<main>
+  <h1>Your cart has two items</h1>
+  <button id="empty">Empty the cart</button>
+  <button id="hello">Say hello</button>
+  <button id="colour">Name a colour</button>
+  <p><a href="/unsaved">Write a note</a></p>
+  <p id="status" role="status"></p>
+</main>
+<script>
+  'use strict';
+  const state = kit.state;
+  const status = document.getElementById('status');
+  document.getElementById('empty').addEventListener('click', () => {
+    state.emptied = confirm('Empty the cart?');
+    status.textContent = state.emptied ? 'The cart is empty.' : 'Kept.';
+  });
+  document.getElementById('hello').addEventListener('click', () => {
+    alert('Hello from the page.');
+    state.helloClosed = true;
+  });
+  document.getElementById('colour').addEventListener('click', () => {
+    state.colour = prompt('What is your favourite colour?', '');
+    status.textContent = 'Colour: ' + state.colour;
+  });
+</script>
+</body>
+</html>

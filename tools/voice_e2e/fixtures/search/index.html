@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!-- A search engine, served as www.google.com, duckduckgo.com, www.bing.com
+     and search.brave.com (so whichever is the default search engine, it is
+     this): the home page is a search form; with ?q= (at / or /search) it
+     lists ten results for the words, the first ones on the kit's other
+     sites. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Search</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<header>
+  <form id="search-form" action="/search" role="search">
+    <input id="q" name="q" type="search" aria-label="Search" autocomplete="off">
+    <button type="submit" aria-label="Search">Search</button>
+  </form>
+</header>
+<main id="main"></main>
+<script>
+  'use strict';
+  const el = kit.el;
+  const q = (kit.param('q') || '').trim();
+  document.getElementById('q').value = q;
+  const main = document.getElementById('main');
+  if (q) {
+    document.title = q + ' - Search';
+    const SITES = [
+      ['Daily News: trams return to Lyon', 'https://news.test/story'],
+      ['Weather in Lyon this week', 'https://news.test/weather'],
+      ['Corner Shop: kettles and teapots', 'https://shop.test/'],
+      ['Wikipedia: ' + q, 'https://en.wikipedia.org/wiki/Search'],
+    ];
+    main.append(el('h1', {}, 'Results for ' + q));
+    const list = el('div', {id: 'rso', role: 'list'});
+    for (let i = 0; i < 10; ++i) {
+      const [title, href] = i < SITES.length ? SITES[i] :
+          [q + ': result ' + (i + 1), 'https://news.test/story?r=' + (i + 1)];
+      list.append(el('div', {'class': 'g', role: 'listitem'},
+          el('h3', {}, el('a', {href: href}, title)),
+          el('cite', {}, new URL(href).host),
+          el('p', {}, 'A page about ' + q + '.')));
+    }
+    main.append(list);
+  } else {
+    main.append(el('h1', {}, 'Search the web'));
+  }
+</script>
+</body>
+</html>

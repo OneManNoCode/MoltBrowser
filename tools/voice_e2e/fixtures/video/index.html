@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!-- The video site's home page, served as www.youtube.com: a masthead with
+     a search form (role=search, an ARIA combobox with id "search" and a
+     "Search" button, as the browser's YouTube skill looks for), a guide
+     and a few recommended videos. The search goes to /results. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YouTube</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<ytd-app>
+<div id="masthead-container">
+  <a id="logo" href="/" aria-label="YouTube Home">YouTube</a>
+  <form id="search-form" action="/results" role="search">
+    <input id="search" name="search_query" type="text" role="combobox"
+           aria-label="Search" placeholder="Search" autocomplete="off">
+    <button id="search-icon-legacy" aria-label="Search">Search</button>
+  </form>
+</div>
+<nav aria-label="Guide">
+  <a href="/">Home</a> <a href="/?feed=shorts">Shorts</a>
+  <a href="/?feed=subscriptions">Subscriptions</a>
+</nav>
+<main>
+  <h2>Recommended</h2>
+  <div id="contents">
+    <ytd-rich-item-renderer><h3><a id="video-title-link" href="/watch?v=rec1"
+      title="Lo-fi beats to study to">Lo-fi beats to study to</a></h3></ytd-rich-item-renderer>
+    <ytd-rich-item-renderer><h3><a id="video-title-link" href="/watch?v=rec2"
+      title="How bridges are built">How bridges are built</a></h3></ytd-rich-item-renderer>
+    <ytd-rich-item-renderer><h3><a id="video-title-link" href="/watch?v=rec3"
+      title="Ten minute morning stretch">Ten minute morning stretch</a></h3></ytd-rich-item-renderer>
+  </div>
+</main>
+</ytd-app>
+</body>
+</html>

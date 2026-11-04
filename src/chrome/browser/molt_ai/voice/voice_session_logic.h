@@ -111,6 +111,8 @@
 #include <string_view>
 #include <vector>
 
+#include "chrome/browser/molt_ai/voice/spoken_text.h"
+
 namespace molt_ai {
 namespace voice {
 
@@ -186,6 +188,9 @@ struct ListeningSettings {
   // ReduceSpeechPhrase() forms ("hey molt").
   std::vector<std::string> wake_phrases;
   int vad_silence_ms = 500;
+  // The language the user speaks to voice mode in: what is said over its
+  // own voice is parsed in it (TakenOverOwnVoice()).
+  Language language = Language::kEnglish;
 };
 
 // What to do after an event. Only what changed is set.
@@ -388,8 +393,10 @@ class VoiceSessionLogic {
 };
 
 // Whether |text| is one of the commands that always count: stop, stop
-// talking, cancel, turn off voice mode.
+// talking, cancel, turn off voice mode. Parsed in |language| (English
+// without it), as the loop parses it ("para", "cancela").
 bool IsAlwaysHeardCommand(std::string_view text);
+bool IsAlwaysHeardCommand(std::string_view text, Language language);
 
 // Whether |text|, said over voice mode's own voice without the wake phrase
 // (barge-in), may run before the voice has stopped: everything but what
@@ -399,7 +406,9 @@ bool IsAlwaysHeardCommand(std::string_view text);
 // The loop parses it later in its own context, so it must stay so whether
 // a list is being read or not ("open three" chooses from a list, and opens
 // a site called "three" without one); a bare number is let through.
+// Parsed in |language|, as the loop parses it ("el tercero", "abre tres").
 bool TakenOverOwnVoice(std::string_view text);
+bool TakenOverOwnVoice(std::string_view text, Language language);
 
 }  // namespace voice
 }  // namespace molt_ai

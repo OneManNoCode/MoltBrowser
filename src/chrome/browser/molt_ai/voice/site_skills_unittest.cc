@@ -249,6 +249,58 @@ TEST(SiteSkillsTest, YouTubeResults) {
       << all;
 }
 
+// YouTube in Spanish (<html lang="es">): the fields read in the page's
+// language, and said in the voice's: "1,2 millones de visualizaciones" in
+// Spanish, "1.2 million visualizaciones" in English.
+TEST(SiteSkillsTest, YouTubeResultsInSpanish) {
+  const PageTree tree = Fixture("youtube_results_es.html");
+  EXPECT_EQ(tree.language, "es");
+  SkillReport report;
+  const PageMap map = MapWith(tree, "youtube", "/results", &report);
+  ASSERT_TRUE(map.site.results);
+  const PageList& results = map.lists[0];
+  ASSERT_EQ(results.entries.size(), 4u);
+
+  const PageListEntry& first = results.entries[0];
+  EXPECT_EQ(first.channel, "Queen Official");
+  EXPECT_EQ(first.duration_seconds, 359);
+  EXPECT_EQ(first.date, "hace 15 a\xC3\xB1os");
+  ASSERT_EQ(first.counts.size(), 1u);
+  EXPECT_EQ(first.counts[0].value, 2100000000);
+  EXPECT_EQ(first.counts[0].unit, "visualizaciones");
+  EXPECT_EQ(results.entries[1].counts[0].value, 310000000);
+  EXPECT_EQ(results.entries[1].date, "hace 9 a\xC3\xB1os");
+  EXPECT_EQ(results.entries[2].counts[0].value, 15000);
+  EXPECT_EQ(results.entries[2].date, "hace 2 semanas");
+  const PageListEntry& last = results.entries[3];
+  EXPECT_EQ(last.duration_seconds, 3723);
+  EXPECT_EQ(last.date,
+            "Emitido hace 1 d\xC3\xAD"
+            "a");
+  ASSERT_EQ(last.counts.size(), 1u);
+  EXPECT_EQ(last.counts[0].value, 1234);
+  // No field is taken for a detail.
+  for (const PageListEntry& entry : results.entries) {
+    for (const std::string& text : entry.texts) {
+      EXPECT_EQ(text.find("visualizaciones"), std::string::npos) << text;
+      EXPECT_EQ(text.find("hace "), std::string::npos) << text;
+    }
+  }
+
+  // Said with the numbers the page means, in either voice.
+  const CandidateSet set = CandidatesFromList(map, results, false);
+  ASSERT_EQ(set.candidates.size(), 4u);
+  const std::string spanish =
+      SpokenCandidate(set.candidates[0], Verbosity::kFull, Language::kSpanish);
+  EXPECT_NE(spanish.find("2,1 mil millones de visualizaciones"),
+            std::string::npos)
+      << spanish;
+  EXPECT_NE(spanish.find("hace 15 a\xC3\xB1os"), std::string::npos) << spanish;
+  const std::string english =
+      SpokenCandidate(set.candidates[3], Verbosity::kFull, Language::kEnglish);
+  EXPECT_NE(english.find("1234 visualizaciones"), std::string::npos) << english;
+}
+
 TEST(SiteSkillsTest, YouTubeWithoutTheSkill) {
   // The generic map on the same page: its results list may differ, and the
   // site's parts are left empty.

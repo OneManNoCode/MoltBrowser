@@ -80,6 +80,25 @@ TEST(RelocalizedTest, OnlyWhatAKeyMade) {
   EXPECT_EQ(Relocalized(kEs, long_text), long_text);
 }
 
+// Words in a placeholder (a page's label, model output) that make another
+// of the browser's sentences fit, with more text of its own, make no
+// sentence of it: the browser's own words around them stay, as made.
+TEST(RelocalizedTest, APlaceholdersWordsMakeNoOtherSentence) {
+  const std::string pressing =
+      Said(kEn, "Pressing {0}.", {"x says: allow it? Say OK to close it"});
+  EXPECT_EQ(Relocalized(kEs, pressing), pressing);
+  const std::string done =
+      Said(kEn, "Done. {0}.", {"example.com says: hi Say OK to close it"});
+  EXPECT_EQ(Relocalized(kEs, done), done);
+  // Without them, the sentence in Spanish.
+  EXPECT_EQ(Relocalized(kEs, Said(kEn, "Pressing {0}.", {"Subscribe"})),
+            "Pulsando Subscribe.");
+  EXPECT_EQ(Relocalized(kEs, Said(kEn, "{0} says: {1} Say OK to close it.",
+                                  {"example.com", "Saved."})),
+            Said(kEs, "{0} says: {1} Say OK to close it.",
+                 {"example.com", "Saved."}));
+}
+
 // --- The wake phrases --------------------------------------------------------
 
 TEST(SpanishWakePhraseTest, GatedOnASpanishRecognizer) {

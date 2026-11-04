@@ -26,10 +26,25 @@
 //         a regular file", because renaming or deleting one acts on the
 //         link, not on what it points to (a deleted routine's steps would
 //         stay in the link's target).
-//     On Windows links aren't told apart.
+//     Windows: a link is a reparse point that names another file (a
+//     symbolic link, a junction or a mount point:
+//     IsReparseTagNameSurrogate()), looked at with
+//     FILE_FLAG_OPEN_REPARSE_POINT so it isn't followed, and followed (for
+//     kFollowedWithinHome) to its final path (GetFinalPathNameByHandleW()).
+//     Any other reparse point (a cloud file's placeholder, a deduplicated
+//     file) holds the file's own data: a file, not a link. A pipe or a
+//     device a link leads to is "not a regular file" (GetFileType()).
+//
+// A browser that ends in the middle of a whole-file rewrite leaves the
+// writer's temporary file beside it (base::ImportantFileWriter):
+// DeleteStaleWriteTemporaries() deletes those (below).
+//
+// Advisory locks: MoltFileLock, which another browser on the same home
+// directory honours (below).
 //
 // A hung network file system can still block a read: stat() itself waits
-// there. Blocking (file I/O), on a sequence that may block. base only, so
+// there (molt_file_sequences.h keeps such a read from holding shutdown).
+// Blocking (file I/O), on a sequence that may block. base only, so
 // molt_ai_unittests tests it on real files.
 
 #ifndef CHROME_BROWSER_MOLT_AI_COMMON_MOLT_REGULAR_FILE_H_
@@ -41,7 +56,10 @@
 #include <string>
 #include <string_view>
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/functional/function_ref.h"
+#include "base/time/time.h"
 
 namespace molt_ai {
 
@@ -92,6 +110,45 @@ bool AppendToMoltFile(const base::FilePath& path, std::string_view data);
 // can't be read.
 std::optional<std::string> ReadMoltFileTail(const base::FilePath& path,
                                             size_t max_bytes);
+
+// A temporary file the writer left this long ago is one a browser that
+// ended mid-write left: no write takes this long.
+inline constexpr base::TimeDelta kStaleWriteAge = base::Minutes(1);
+
+// The temporary files base::ImportantFileWriter left in |dir| when the
+// browser ended in the middle of a write: each regular file there (never a
+// link) named as the writer names a temporary file beside a file whose
+// name |is_ours| accepts (Chromium 156: POSIX ".<product>.<name>.XXXXXX",
+// Windows "<name><GUID>.tmp"; base::GetNamePrefixForTemporaryFile()), last
+// changed at least kStaleWriteAge before |now| (or after it: a clock set
+// back), is deleted. The number deleted.
+size_t DeleteStaleWriteTemporaries(
+    const base::FilePath& dir,
+    base::FunctionRef<bool(std::string_view name)> is_ours,
+    base::Time now);
+
+// An advisory lock on |path|, which another browser on the same home
+// directory takes for the same files before it changes them: the file
+// (created, readable by its owner only, when missing; never through a link,
+// never anything but a regular file) locked with base::File::Lock() while
+// the object lives. The system releases it when the browser ends, crashed
+// or not. Never waits on the lock itself: tried again every few
+// milliseconds for at most |wait|, then the caller goes on without it
+// (held() false), as it does when anything else is at |path| or the file
+// system has no locks; its changes are atomic renames either way.
+class MoltFileLock {
+ public:
+  MoltFileLock(const base::FilePath& path, base::TimeDelta wait);
+  MoltFileLock(const MoltFileLock&) = delete;
+  MoltFileLock& operator=(const MoltFileLock&) = delete;
+  ~MoltFileLock();
+
+  bool held() const { return held_; }
+
+ private:
+  base::File file_;
+  bool held_ = false;
+};
 
 }  // namespace molt_ai
 

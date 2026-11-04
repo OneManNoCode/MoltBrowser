@@ -495,6 +495,10 @@ EOF
     -Donnxruntime_DISABLE_GENERATION_OPS=ON
     -Donnxruntime_DISABLE_FLOAT8_TYPES=ON
     -Donnxruntime_DISABLE_FLOAT4_TYPES=ON
+    # ONNX Runtime makes its targets' warnings errors; a newer compiler's
+    # new warning (GCC 15 in libstdc++'s own <unicode.h>) mustn't stop the
+    # bundle, so they stay warnings (CMake 3.24+).
+    --compile-no-warning-as-error
   )
   case "$OS" in
     mac) ort_flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0) ;;

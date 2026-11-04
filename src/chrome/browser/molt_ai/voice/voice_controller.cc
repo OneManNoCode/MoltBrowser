@@ -34,6 +34,7 @@
 #include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech.h"
+#include "chrome/browser/molt_ai/voice/voice_test_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -220,6 +221,7 @@ class VoiceController::ReaderHost : public VoiceReader::Host {
       observer.OnVoiceSpeech(text);
     }
   }
+  void SaidPageText() override { controller_->NotePageTextSaid(); }
   void Status(const std::string& status) override {
     controller_->SetStatus(status);
   }
@@ -323,10 +325,10 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
           },
           weak_factory_.GetWeakPtr()));
   // The language voice mode understands and speaks (a setting; else the
-  // browser's own language).
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ReadVoiceLanguageSetting),
+  // browser's own language). On settings.json's own sequence, so a change
+  // the settings page writes meanwhile is never undone by this read.
+  MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadVoiceLanguageSetting),
       base::BindOnce(
           [](base::WeakPtr<VoiceController> self, std::string stored) {
             if (self) {
@@ -339,6 +341,10 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
   planner_ = CreateVoiceAgentPlanner();
   learning_ = std::make_unique<VoiceLearningLoop>(this);
   page_questions_ = std::make_unique<VoicePageQuestions>();
+  // The end-to-end kit's log: only with its test switch.
+  test_log_ = VoiceTestLog::MaybeCreate(this, IsMoltNet());
+  // The rest of the browser by voice (voice_browser_actions.h).
+  browser_actions_ = std::make_unique<VoiceBrowserActions>(browser, this);
 }
 
 VoiceController::~VoiceController() {
@@ -441,6 +447,7 @@ bool VoiceController::SpeechInEchoReference() const {
 
 void VoiceController::SetLanguage(Language language) {
   language_ = language;
+  language_known_ = true;
   if (speech_) {
     speech_->SetLanguage(language, g_browser_process->GetApplicationLocale());
   }
@@ -509,6 +516,10 @@ void VoiceController::CancelRun(bool keep_planner) {
   if (page_questions_) {
     page_questions_->Cancel();
   }
+  // So does what the rest of the browser was doing (a list, the AI).
+  if (browser_actions_) {
+    browser_actions_->Cancel();
+  }
   pending_.clear();
   wait_.reset();
   quiet_timer_.Stop();
@@ -566,6 +577,8 @@ void VoiceController::DetachFromTab() {
   if (prompts_) {
     prompts_->Detach();
   }
+  // "Repeat" never says its word again (voice_prompts.h).
+  ForgetWordTexts(state_.prompt, state_.last_spoken);
   state_.prompt = PendingPrompt();
   if (attached_) {
     // Its question, if any, is answered "no" by the guard.
@@ -624,7 +637,8 @@ void VoiceController::SetIdleCallbackForTesting(
 bool VoiceController::busy() const {
   return !pending_.empty() || wait_ || submitting_ ||
          (planner_running_ && planner_question_ == 0) ||
-         (page_questions_ && page_questions_->running());
+         (page_questions_ && page_questions_->running()) ||
+         (browser_actions_ && browser_actions_->busy());
 }
 
 VoiceActivity VoiceController::activity() const {
@@ -648,6 +662,9 @@ VoiceActivity VoiceController::activity() const {
 
 void VoiceController::NotifyCaption() {
   const VoiceActivity now = activity();
+  if (test_log_) {
+    test_log_->OnLoop(now, listening_.listening, listening_.waiting, state_);
+  }
   for (Observer& observer : observers_) {
     observer.OnVoiceCaption(now, heard_, status_);
   }
@@ -899,6 +916,10 @@ VoiceEnvironment VoiceController::Environment() {
   if (learning_ && !env.moltnet) {
     env.learning = learning_->Environment(env.host);
   }
+  // Bookmarks, windows, an open menu (voice_browser_actions.h).
+  if (browser_actions_ && !env.moltnet) {
+    env.browser = browser_actions_->Environment();
+  }
   return env;
 }
 
@@ -944,6 +965,9 @@ void VoiceController::HandleUtterance(const std::string& text) {
   // As PlanUtterance() does, with the numbers on screen checked between.
   const ParseContext context = ContextFor(state_, map, env);
   VoiceCommand command = ParseVoiceCommand(utterance, context);
+  if (test_log_) {
+    test_log_->OnHeard(utterance, command.kind, heard_evidence_, state_);
+  }
   // Learning (§6.8): corrections, and the routine that runs.
   std::optional<VoiceCommand> learned =
       learning_->BeforePlanning(utterance, std::move(command), context);
@@ -1264,6 +1288,8 @@ bool VoiceController::RunStep(const VoiceStep& step) {
           Fail(StepFailure::kNoTab);
           return false;
         }
+        // "Undo" reopens this very tab (voice_browser_actions.h).
+        browser_actions_->NoteTabClosed();
         return true;
       }
       if (!tabs || step.index < 0 || step.index >= tabs->count()) {
@@ -1278,6 +1304,7 @@ bool VoiceController::RunStep(const VoiceStep& step) {
         tabs->CloseWebContentsAt(
             step.index, TabCloseTypes::CLOSE_USER_GESTURE |
                             TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
+        browser_actions_->NoteTabClosed();
       }
       return true;
     }
@@ -1362,8 +1389,83 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       // The steps go on (there are none after it); the answer comes later.
       AskAboutPage(step);
       return true;
+
+    case VoiceStepKind::kBrowserAction: {
+      // The rest of the browser (voice_browser_actions.h): done now, or it
+      // says when (BrowserActionDone(), BrowserItemsReady()).
+      const VoiceBrowserActions::Result result =
+          browser_actions_->Run(step, run_);
+      switch (result.outcome) {
+        case VoiceBrowserActions::Outcome::kDone:
+          return true;
+        case VoiceBrowserActions::Outcome::kPending:
+          return false;
+        case VoiceBrowserActions::Outcome::kFailed:
+          Fail(result.failure);
+          return false;
+      }
+      return true;
+    }
   }
   return true;
+}
+
+// ---- The rest of the browser ----------------------------------------------
+
+void VoiceController::BrowserActionSays(const std::string& text) {
+  if (!active_ || text.empty()) {
+    return;
+  }
+  Say(text);
+  SetStatus(text);
+  // "Repeat" says it again.
+  state_.last_spoken = {text};
+}
+
+void VoiceController::BrowserActionReads(const std::string& text) {
+  if (!active_ || text.empty()) {
+    return;
+  }
+  // Model output: read as page text is, a chunk at a time, each said to the
+  // observers (the listening session) as it starts; never a command.
+  reader_->ReadText(text, page_id_, state_.speech_rate);
+  state_.last_spoken = {text};
+}
+
+void VoiceController::BrowserActionDone(int run) {
+  if (run != run_) {
+    return;
+  }
+  // The steps go on from a task, as after a submit.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&VoiceController::RunSteps,
+                                run_weak_factory_.GetWeakPtr()));
+}
+
+void VoiceController::BrowserItemsReady(int run,
+                                        const VoiceStep& asked,
+                                        std::vector<BrowserItem> items) {
+  if (run != run_) {
+    return;
+  }
+  VoiceTurn turn =
+      PlanBrowserItems(asked, std::move(items), Environment(), state_);
+  if (!turn.status.empty()) {
+    status_ = turn.status;
+  }
+  RunTurn(std::move(turn));
+}
+
+content::WebContents* VoiceController::BrowserActionContents() {
+  return ActiveContents();
+}
+
+VoicePageController* VoiceController::BrowserActionPage() {
+  return ActivePage();
+}
+
+Language VoiceController::BrowserActionLanguage() {
+  return language_;
 }
 
 // ---- Questions about the page -----------------------------------------------
@@ -1623,6 +1725,14 @@ void VoiceController::SayAboutBrowserPrompt(const std::string& text) {
   TellAboutPageRequest(text);
 }
 
+void VoiceController::NotePageTextSaid() {
+  // The waiting prompt takes what allows or accepts only once it is read
+  // again (voice_prompts.h).
+  if (state_.prompt.id != 0) {
+    state_.prompt.after_page_text = true;
+  }
+}
+
 // ---- The voice gesture's word ---------------------------------------------
 
 void VoiceController::SetWordChannelSettings(bool echo_cancelled,
@@ -1725,6 +1835,7 @@ void VoiceController::PlannerSays(const std::string& text) {
   if (said.empty()) {
     return;
   }
+  NotePageTextSaid();
   for (Observer& observer : observers_) {
     observer.OnVoiceSpeech(said);
   }
@@ -1743,9 +1854,10 @@ void VoiceController::PlannerAsks(int question, const std::string& what) {
     return;
   }
   // Asked as the loop asks before pressing Buy, and answered only by a
-  // "yes" or "no" heard in that context.
-  VoiceTurn turn =
-      PlanPlannerQuestion(question, what, Environment(), state_);
+  // "yes" or "no" heard in that context. The agent's question is made from
+  // the catalog's English (voice_agent_speech.h): in the window's language.
+  VoiceTurn turn = PlanPlannerQuestion(question, Relocalized(language_, what),
+                                       Environment(), state_);
   if (PlannerQuestionHeld(turn.state) != question) {
     CancelPlanner();
     Idle();

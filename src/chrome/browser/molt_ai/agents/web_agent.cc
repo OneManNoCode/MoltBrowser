@@ -20,6 +20,7 @@
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
 #include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/agents/frame_tools.h"
+#include "chrome/browser/molt_ai/agents/voice_agent_speech.h"
 #include "chrome/browser/molt_ai/security/activation_guard.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
@@ -532,7 +533,8 @@ void WebAgent::DispatchAction() {
           "CONTINUE",
           "Keep working on " + current.Serialize() + " (the page moved there)",
           base::BindOnce(&WebAgent::AllowOriginAndDispatch,
-                         weak_factory_.GetWeakPtr(), current));
+                         weak_factory_.GetWeakPtr(), current),
+          voice_agent::ContinueQuestion(current.Serialize()));
       return;
     }
     action_origin_ = current;
@@ -599,7 +601,8 @@ void WebAgent::DoNavigate(const std::string& spec) {
   }
   RequestConfirmation("NAVIGATE", "Open " + origin.Serialize(),
                       base::BindOnce(&WebAgent::AllowOriginAndLoad,
-                                     weak_factory_.GetWeakPtr(), origin, url));
+                                     weak_factory_.GetWeakPtr(), origin, url),
+                      voice_agent::OpenQuestion(origin.Serialize()));
 }
 
 void WebAgent::AllowOriginAndLoad(const url::Origin& origin, const GURL& url) {
@@ -710,12 +713,13 @@ void WebAgent::OnClickProbed(std::vector<ElementProbe> probes) {
   }
   std::string what = p.label.empty() ? pending_step_.target
                                      : agent_page_map::QuotedLabel(p.label);
+  std::string spoken = voice_agent::ClickQuestion(what, question.effects);
   RequestConfirmation(
       "CLICK",
       "Click " + what + " — it " + base::JoinString(question.effects, " and "),
-      base::BindOnce(&WebAgent::AllowOriginAndClick,
-                     weak_factory_.GetWeakPtr(),
-                     std::move(question.new_origin)));
+      base::BindOnce(&WebAgent::AllowOriginAndClick, weak_factory_.GetWeakPtr(),
+                     std::move(question.new_origin)),
+      std::move(spoken));
 }
 
 void WebAgent::AllowOriginAndClick(std::optional<url::Origin> origin) {
@@ -780,9 +784,13 @@ void WebAgent::OnTypeProbed(std::vector<ElementProbe> probes) {
   if (agent_safety::IsSensitive(p.field_kind)) {
     RequestConfirmation(
         "TYPE",
-        "Type into a " + std::string(agent_safety::FieldKindLabel(p.field_kind)) +
+        "Type into a " +
+            std::string(agent_safety::FieldKindLabel(p.field_kind)) +
             " field on " + CurrentOriginText(),
-        base::BindOnce(&WebAgent::TypeNow, weak_factory_.GetWeakPtr()));
+        base::BindOnce(&WebAgent::TypeNow, weak_factory_.GetWeakPtr()),
+        voice_agent::FieldQuestion(
+            /*fill=*/false, agent_safety::FieldKindLabel(p.field_kind),
+            CurrentOriginText()));
     return;
   }
   TypeNow();
@@ -873,7 +881,10 @@ void WebAgent::OnFillFormProbed(FieldList fields,
         "Fill a " + std::string(agent_safety::FieldKindLabel(sensitive)) +
             " field on " + CurrentOriginText(),
         base::BindOnce(&WebAgent::FillNow, weak_factory_.GetWeakPtr(),
-                       std::move(keep), std::move(note)));
+                       std::move(keep), std::move(note)),
+        voice_agent::FieldQuestion(/*fill=*/true,
+                                   agent_safety::FieldKindLabel(sensitive),
+                                   CurrentOriginText()));
     return;
   }
   FillNow(std::move(keep), std::move(note));
@@ -970,7 +981,9 @@ void WebAgent::DoCallTool() {
   if (check.ask) {
     RequestConfirmation(
         "CALL_TOOL", check.message,
-        base::BindOnce(&WebAgent::CallToolNow, weak_factory_.GetWeakPtr()));
+        base::BindOnce(&WebAgent::CallToolNow, weak_factory_.GetWeakPtr()),
+        voice_agent::ToolQuestion(action_tool_.name, action_tool_.cross_origin,
+                                  action_origin_.Serialize()));
     return;
   }
   CallToolNow();
@@ -1074,10 +1087,10 @@ void WebAgent::OnPageObserved(const StructuredPage& page) {
     if (IsWebOrigin(current) && !IsOriginAllowed(current)) {
       RequestConfirmation(
           "CONTINUE",
-          "Keep working on " + current.Serialize() +
-              " (the page moved there)",
+          "Keep working on " + current.Serialize() + " (the page moved there)",
           base::BindOnce(&WebAgent::AllowOriginAndContinue,
-                         weak_factory_.GetWeakPtr(), current, page));
+                         weak_factory_.GetWeakPtr(), current, page),
+          voice_agent::ContinueQuestion(current.Serialize()));
       return;
     }
   }
@@ -1422,7 +1435,8 @@ std::string WebAgent::CurrentOriginText() const {
 
 void WebAgent::RequestConfirmation(const std::string& action,
                                    const std::string& message,
-                                   base::OnceClosure on_allow) {
+                                   base::OnceClosure on_allow,
+                                   std::string spoken) {
   if (cancelled_) return;
   if (!confirm_cb_) {
     // No way to ask the user: fail closed.
@@ -1438,6 +1452,7 @@ void WebAgent::RequestConfirmation(const std::string& action,
   req.id = pending_confirm_id_;
   req.action = action;
   req.message = message;
+  req.spoken = std::move(spoken);
   confirm_cb_.Run(req);
 }
 
@@ -1842,12 +1857,13 @@ void WebAgent::DoPageMapClick(const agent_actions::ObservedElement& element) {
       target.probe.label.empty()
           ? pending_step_.target
           : agent_page_map::QuotedLabel(target.probe.label);
+  std::string spoken = voice_agent::ClickQuestion(what, question.effects);
   RequestConfirmation(
       "CLICK",
       "Click " + what + " — it " + base::JoinString(question.effects, " and "),
-      base::BindOnce(&WebAgent::AllowOriginAndPress,
-                     weak_factory_.GetWeakPtr(),
-                     std::move(question.new_origin)));
+      base::BindOnce(&WebAgent::AllowOriginAndPress, weak_factory_.GetWeakPtr(),
+                     std::move(question.new_origin)),
+      std::move(spoken));
 }
 
 void WebAgent::AllowOriginAndPress(std::optional<url::Origin> origin) {

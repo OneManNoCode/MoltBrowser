@@ -23,6 +23,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
@@ -124,6 +125,11 @@ constexpr char kYouTubeHost[] = "youtube.test";
 constexpr char kWikipediaHost[] = "wikipedia.test";
 
 class VoiceSkillsBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  public:
   VoiceSkillsBrowserTest() { features_.InitAndEnableFeature(kMoltVoiceMode); }
 

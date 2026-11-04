@@ -1,0 +1,209 @@
+{
+ "group": "act",
+ "about": "Act on a page (TOUCHLESS_BROWSING.md §2): press buttons, follow links, fill forms by dictation, check boxes, choose options, scroll, zoom; a shop up to its confirmation and webmail.",
+ "scenarios": [
+  {
+   "id": "act-press-button",
+   "title": "Press a button",
+   "task": "act",
+   "start": {"url": "https://shop.test/"},
+   "steps": [
+    {"say": "click add kettle to cart", "needs": ["choose"],
+     "expect": [{"js": "shop.items().length", "is": 1}, {"said_has": "Pressed"}]}
+   ]
+  },
+  {
+   "id": "act-follow-link",
+   "title": "Follow a link",
+   "task": "act",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "click sport", "needs": ["choose"], "expect": [{"path": "/sport"}]}
+   ]
+  },
+  {
+   "id": "act-dictate",
+   "title": "Choose a field and dictate into it",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "click your name", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "name"}]},
+    {"say": "type Ada Lovelace", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('name').value.toLowerCase()",
+                 "is": "ada lovelace"}]}
+   ]
+  },
+  {
+   "id": "act-edit-dictation",
+   "title": "Delete the last word, clear the field, read it back",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "click your name", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "name"}]},
+    {"say": "type hello there", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('name').value.toLowerCase().trim()",
+                 "is": "hello there"}]},
+    {"say": "delete the last word", "needs": ["delete_last_word"],
+     "expect": [{"js": "document.getElementById('name').value.toLowerCase().trim()",
+                 "is": "hello"}]},
+    {"say": "read it back", "needs": ["read_back"], "expect": [{"said_re": "(?i)hello"}]},
+    {"say": "clear the field", "needs": ["clear_field"],
+     "expect": [{"js": "document.getElementById('name').value", "is": ""}]}
+   ]
+  },
+  {
+   "id": "act-punctuation",
+   "title": "Spoken punctuation while dictating",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "click your name", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "name"}]},
+    {"say": "type hello comma world period", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('name').value.toLowerCase()",
+                 "is": "hello, world."}]}
+   ]
+  },
+  {
+   "id": "act-checkbox",
+   "title": "Check a box",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "check send me the newsletter", "needs": ["choose"],
+     "expect": [{"js": "document.getElementById('news').checked", "is": true}]}
+   ]
+  },
+  {
+   "id": "act-select",
+   "title": "Choose an option of a list",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "click country", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "country"}]},
+    {"say": "choose France", "needs": ["choose"],
+     "expect": [{"js": "document.getElementById('country').value", "is": "fr"}]}
+   ]
+  },
+  {
+   "id": "act-radio",
+   "title": "Choose a radio button",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "select by letter", "needs": ["choose"],
+     "expect": [{"js": "document.querySelector('input[name=contact]:checked').value",
+                 "is": "letter"}]}
+   ]
+  },
+  {
+   "id": "act-scroll",
+   "title": "Scroll down, to the bottom and back to the top",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "scroll down", "needs": ["scroll_down"], "expect": [{"js": "window.scrollY > 100"}]},
+    {"say": "scroll to the bottom", "needs": ["scroll_to_bottom"],
+     "expect": [{"js": "window.innerHeight + window.scrollY >= document.body.scrollHeight - 8"}]},
+    {"say": "scroll to the top", "needs": ["scroll_to_top"],
+     "expect": [{"js": "window.scrollY", "is": 0}]}
+   ]
+  },
+  {
+   "id": "act-zoom",
+   "title": "Zoom in and back",
+   "task": "act",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "zoom in", "needs": ["zoom_in"], "expect": [{"js": "window.devicePixelRatio > 1.05"}]},
+    {"say": "reset zoom", "needs": ["zoom_reset"],
+     "expect": [{"js": "Math.abs(window.devicePixelRatio - 1) < 0.02"}]}
+   ]
+  },
+  {
+   "id": "act-send-form",
+   "title": "Fill a form and send it, after a spoken yes",
+   "task": "act",
+   "start": {"url": "https://forms.test/"},
+   "steps": [
+    {"say": "click your name", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "name"}]},
+    {"say": "type Grace Hopper", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('name').value.toLowerCase()",
+                 "is": "grace hopper"}]},
+    {"say": "click submit", "needs": ["choose"],
+     "expect": [{"confirm": "open"}, {"path": "/"}]},
+    {"say": "yes", "answer": true, "needs": ["yes"],
+     "expect": [{"path": "/thanks"},
+                {"js": "window.sent.name.toLowerCase()", "is": "grace hopper"}]}
+   ]
+  },
+  {
+   "id": "act-shop-checkout",
+   "title": "Add to the cart, check out, and place the order after a spoken yes",
+   "task": "act",
+   "start": {"url": "https://shop.test/"},
+   "steps": [
+    {"say": "click add toaster to cart", "needs": ["choose"],
+     "expect": [{"js": "shop.items().length", "is": 1}]},
+    {"say": "click cart", "needs": ["choose"], "expect": [{"path": "/cart"}]},
+    {"say": "click checkout", "needs": ["choose"], "expect": [{"path": "/checkout"}]},
+    {"say": "click full name", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "name"}]},
+    {"say": "type Alan Turing", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('name').value.toLowerCase()",
+                 "is": "alan turing"}]},
+    {"say": "click town", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "town"}]},
+    {"say": "type Lyon", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('town').value.toLowerCase()", "is": "lyon"}]},
+    {"say": "select express delivery", "needs": ["choose"],
+     "expect": [{"js": "document.querySelector('input[name=delivery]:checked').value",
+                 "is": "express"}]},
+    {"say": "click place order", "needs": ["choose"],
+     "expect": [{"confirm": "open"}, {"path": "/checkout"}]},
+    {"say": "yes", "answer": true, "needs": ["yes"],
+     "expect": [{"path": "/done"}, {"js": "window.order.items.length", "is": 1},
+                {"js": "window.order.delivery", "is": "express"}]}
+   ]
+  },
+  {
+   "id": "act-mail-read",
+   "title": "Open a message in the inbox and hear it",
+   "task": "act",
+   "start": {"url": "https://mail.test/"},
+   "steps": [
+    {"say": "open lunch on Friday", "needs": ["choose"],
+     "expect": [{"path": "/message"}, {"query": {"id": "1"}}]},
+    {"say": "read the page", "needs": ["read_page"],
+     "expect": [{"said_has": "Shall we meet at noon"}]}
+   ]
+  },
+  {
+   "id": "act-mail-compose",
+   "title": "Write a message and send it after a spoken yes",
+   "task": "act",
+   "start": {"url": "https://mail.test/"},
+   "steps": [
+    {"say": "click compose", "needs": ["choose"], "expect": [{"path": "/compose"}]},
+    {"say": "click subject", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "subject"}]},
+    {"say": "type lunch on Friday", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('subject').value.toLowerCase()",
+                 "is": "lunch on friday"}]},
+    {"say": "click message", "needs": ["choose"],
+     "expect": [{"js": "document.activeElement.id", "is": "body"}]},
+    {"say": "type see you at noon", "needs": ["type"],
+     "expect": [{"js": "document.getElementById('body').value.toLowerCase()",
+                 "is": "see you at noon"}]},
+    {"say": "click send", "needs": ["choose"], "expect": [{"confirm": "open"}]},
+    {"say": "yes", "answer": true, "needs": ["yes"],
+     "expect": [{"path": "/sent"}, {"js": "window.sent.body.toLowerCase()",
+                                    "is": "see you at noon"}]}
+   ]
+  }
+ ]
+}

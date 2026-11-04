@@ -61,6 +61,7 @@ ListeningSettings ToListening(const VoiceModeSettings& settings,
   listening.always_listening = settings.always_listening;
   listening.wake_phrases = WakePhrasesFor(language);
   listening.vad_silence_ms = kDefaultVadSilenceMs;
+  listening.language = language;
   return listening;
 }
 
@@ -209,7 +210,7 @@ void VoiceSession::OnSettingsChanged(const VoiceModeSettings& settings) {
     }
     session->settings_ = settings;
     session->UpdateWordChannel();
-    if (session->listening()) {
+    if (session->logic_.running()) {
       session->Apply(session->logic_.OnSettingsChanged(
           ToListening(settings, session->SpeechLanguage()), session->NowMs()));
     }
@@ -276,6 +277,12 @@ void VoiceSession::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
+void VoiceSession::NotifySessionChanged() {
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSessionChanged(this);
+  }
+}
+
 // ---- Starting and stopping --------------------------------------------------
 
 bool VoiceSession::Start() {
@@ -291,6 +298,16 @@ bool VoiceSession::Start() {
         Said(SpeechLanguage(), "Voice mode is off in MoltNet windows.", {}));
     return false;
   }
+  // The window's language isn't known yet: listening starts once it is
+  // (OnVoiceLanguageChanged()), so the microphone never opens in another.
+  if (!controller_->language_known()) {
+    if (!start_pending_) {
+      start_pending_ = true;
+      NotifySessionChanged();
+    }
+    return true;
+  }
+  start_pending_ = false;
   // No recognizer for voice mode's language yet (voice_language.h): it says
   // so, in that language, and the microphone stays closed.
   if (!ListeningAvailable(controller_->language())) {
@@ -368,6 +385,11 @@ void VoiceSession::Stop() {
 }
 
 void VoiceSession::StopSession(bool stop_voice_mode) {
+  if (start_pending_) {
+    // It never started, and won't once the language is known.
+    start_pending_ = false;
+    NotifySessionChanged();
+  }
   if (!logic_.running()) {
     if (stop_voice_mode && controller_ && !problem_.empty()) {
       // A problem left on screen goes with voice mode.
@@ -596,9 +618,17 @@ void VoiceSession::OnVoiceControllerDestroying(VoiceController* controller) {
 }
 
 void VoiceSession::OnVoiceLanguageChanged(Language language) {
+  // Known now: listening starts as asked, in it (or says why it can't).
+  if (start_pending_) {
+    start_pending_ = false;
+    if (!Start()) {
+      NotifySessionChanged();
+    }
+    return;
+  }
   // The wake phrases are the language's (a language voice mode can't listen
   // in closes the microphone instead: VoiceController::SetLanguage()).
-  if (listening() && ListeningAvailable(language)) {
+  if (logic_.running() && ListeningAvailable(language)) {
     Apply(logic_.OnSettingsChanged(ToListening(settings_, language), NowMs()));
     SendConfig();
   }

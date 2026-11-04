@@ -57,6 +57,10 @@ class VoiceReader {
     virtual uint64_t Speak(const std::string& text, double rate) = 0;
     // |text| starts being said now (a chunk, or the reader's own words).
     virtual void Said(const std::string& text) = 0;
+    // What starts being said now is the page's text (a chunk), not the
+    // reader's own words: the browser's prompts take what allows or
+    // accepts only once they are read again (voice_prompts.h).
+    virtual void SaidPageText() {}
     // The caption bar's status.
     virtual void Status(const std::string& status) = 0;
     // Scrolls |node| into view, so the screen follows the reading.

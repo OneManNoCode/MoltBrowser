@@ -217,6 +217,10 @@ struct PageTree {
   std::vector<PageNode> nodes;
   // The page's title (the top-level document's).
   std::string title;
+  // The top-level document's language tag ("es", "en-US"; its lang, as
+  // the accessibility tree gives it): the words its fields are read with
+  // (page_map_text.h's FieldLanguageOf()). Empty: English.
+  std::string language;
   // The focused node, if any.
   PageNodeHandle focus;
   // The text selection, if any.

@@ -31,6 +31,7 @@
 #include "ui/accessibility/ax_location_and_scroll_updates.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_data.h"
 #include "ui/accessibility/ax_tree_update.h"
@@ -681,6 +682,13 @@ bool IsSelectRole(PageRole role) {
 
 }  // namespace
 
+content::RenderFrameHost* VoicePageController::FrameOf(
+    const PageNodeHandle& target,
+    ActionResult* error) {
+  std::optional<Target> found = Resolve(target, error);
+  return found ? found->frame.get() : nullptr;
+}
+
 std::vector<std::string> VoicePageController::OptionsOf(
     const PageNodeHandle& select) {
   ActionResult error;
@@ -732,6 +740,23 @@ VoicePageController::ActionResult VoicePageController::SelectOption(
   return ActionResult::kNoSuchOption;
 }
 
+namespace {
+
+// Whether |node| is a link or inside one (a span in an <a>): pressing it
+// follows the link.
+bool InLink(const ui::AXNode* node) {
+  for (size_t depth = 0;
+       node && depth <= VoicePageController::kMaxInspectAncestors;
+       ++depth, node = node->parent()) {
+    if (ui::IsLink(node->GetRole())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
 VoicePageController::ActionResult VoicePageController::Press(
     const PageNodeHandle& target,
     activation::Intent intent) {
@@ -749,6 +774,11 @@ VoicePageController::ActionResult VoicePageController::Press(
   // assistive technology.
   ui::AXActionData data;
   data.action = ax::mojom::Action::kDoDefault;
+  // Not a link, nor inside one: a plain button, whose page's entries in its
+  // own document are the page's (activation_policy.h).
+  if (intent == activation::Intent::kNone && !InLink(found->node)) {
+    intent = activation::Intent::kPressButton;
+  }
   return Perform(*found, data, intent);
 }
 

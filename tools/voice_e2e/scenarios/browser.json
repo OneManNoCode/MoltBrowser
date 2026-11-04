@@ -1,0 +1,150 @@
+{
+ "group": "browser",
+ "about": "Run the browser itself (TOUCHLESS_BROWSING.md §2): bookmarks, history, downloads, settings, windows, the AI chat, the browser's menus and buttons, find's next match. Most of these commands are this round's (voice-complete): their \"needs\" name the commands as the grammar is expected to call them, so a build without one reports it as not in the grammar yet.",
+ "scenarios": [
+  {
+   "id": "browser-bookmarks",
+   "title": "Bookmark this page, open the bookmarks, open a bookmark by name",
+   "task": "browser",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "bookmark this page", "needs": ["bookmark_page"],
+     "expect": [{"said_re": "(?i)bookmark"}]},
+    {"say": "open my bookmarks", "needs": ["list_bookmarks"],
+     "expect": [{"url_has": "chrome://bookmarks"}]},
+    {"say": "open the bookmark trams return to Lyon", "needs": ["open_bookmark"],
+     "expect": [{"host": "news.test"}, {"path": "/story"}]}
+   ]
+  },
+  {
+   "id": "browser-history",
+   "title": "Show the history",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "click sport", "needs": ["choose"], "expect": [{"path": "/sport"}]},
+    {"say": "show my history", "needs": ["list_history"],
+     "expect": [{"url_has": "chrome://history"}]}
+   ]
+  },
+  {
+   "id": "browser-reopen-tab",
+   "title": "Close a tab, then reopen it",
+   "task": "browser",
+   "start": {"url": "https://news.test/", "tabs": ["https://shop.test/"]},
+   "steps": [
+    {"say": "switch to tab 2", "needs": ["switch_tab"], "expect": [{"host": "shop.test"}]},
+    {"say": "close this tab", "needs": ["close_tab"], "expect": [{"tabs": 1}]},
+    {"say": "reopen the closed tab", "needs": ["reopen_tab"],
+     "expect": [{"tabs": 2}, {"host": "shop.test"}]}
+   ]
+  },
+  {
+   "id": "browser-downloads",
+   "title": "Show the downloads",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "show my downloads", "needs": ["list_downloads"],
+     "expect": [{"url_has": "chrome://downloads"}]}
+   ]
+  },
+  {
+   "id": "browser-settings",
+   "title": "Open settings, then voice mode's settings",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "open settings", "needs": ["open_settings"],
+     "expect": [{"url_has": "settings"}]},
+    {"say": "open voice mode settings", "needs": ["open_settings"],
+     "expect": [{"url_has": "molt-ai-settings"}]}
+   ]
+  },
+  {
+   "id": "browser-new-window",
+   "title": "A new window; voice mode stays in its own",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "new window", "needs": ["new_window"], "expect": [{"windows": 2}]},
+    {"say": "click sport", "needs": ["choose"], "expect": [{"path": "/sport"}]}
+   ]
+  },
+  {
+   "id": "browser-private-window",
+   "title": "A new private window",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "new private window", "needs": ["new_window"],
+     "expect": [{"windows": 2}]}
+   ]
+  },
+  {
+   "id": "browser-moltnet-window",
+   "title": "A new MoltNet window only opens; voice mode never listens there",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "new MoltNet window", "needs": ["new_window"],
+     "expect": [{"windows": 2}]},
+    {"say": "scroll down", "needs": ["scroll_down"],
+     "expect": [{"js": "window.scrollY > 0"}]}
+   ]
+  },
+  {
+   "id": "browser-ai-chat",
+   "title": "Open the AI chat",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "open the AI chat", "needs": ["open_ai_chat"],
+     "expect": [{"target": "molt-ai-chat"}]}
+   ]
+  },
+  {
+   "id": "browser-ask-ai",
+   "title": "Ask the on-device AI a question",
+   "task": "browser",
+   "requires": ["model"],
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "ask the AI what is a tram", "needs": ["ask_ai"], "timeout": 90,
+     "expect": [{"said_re": "(?i)tram"}]}
+   ]
+  },
+  {
+   "id": "browser-menu",
+   "title": "Open the browser's menu and hear what it holds",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "open the menu", "needs": ["open_menu"],
+     "expect": [{"said_re": "(?i)new tab|history|settings|bookmarks"}]},
+    {"say": "cancel", "answer": true, "needs": ["cancel"], "expect": [{"host": "news.test"}]}
+   ]
+  },
+  {
+   "id": "browser-buttons",
+   "title": "Hear the browser's own buttons",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "show the browser's buttons", "needs": ["show_browser_buttons"],
+     "expect": [{"said_re": "(?i)back|reload|menu"}]}
+   ]
+  },
+  {
+   "id": "browser-find-next",
+   "title": "Find on the page, then the next match",
+   "task": "browser",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "find tram on this page", "needs": ["find_in_page"],
+     "expect": [{"said_re": "(?i)tram|found|match"}]},
+    {"say": "next match", "needs": ["next_match"], "expect": [{"said_re": "(?i)2|second|match"}]}
+   ]
+  }
+ ]
+}

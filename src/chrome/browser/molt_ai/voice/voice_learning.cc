@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/files/file_util.h"
@@ -18,6 +20,7 @@
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/common/molt_file_sequences.h"
 #include "chrome/browser/molt_ai/common/molt_regular_file.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
 #include "chrome/browser/profiles/profile.h"
@@ -45,6 +48,12 @@ struct ReadResult {
 
 ReadResult ReadLearningFile(const base::FilePath& path) {
   base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
+  // The writer's temporary files a browser that ended mid-write left
+  // beside it (molt_regular_file.h).
+  const std::string name = path.BaseName().AsUTF8Unsafe();
+  DeleteStaleWriteTemporaries(
+      path.DirName(), [&name](std::string_view of) { return of == name; },
+      base::Time::Now());
   ReadResult result;
   // Only a regular file is opened (a FIFO's open() would hold this
   // sequence, which blocks shutdown).
@@ -174,10 +183,12 @@ VoiceLearning* VoiceLearning::Get(Profile* profile) {
 VoiceLearning::VoiceLearning(Profile* profile)
     : path_(profile->GetPath().AppendASCII(kVoiceLearningFileName)),
       routines_dir_(VoiceRoutinesDir(profile->GetPath())),
-      task_runner_(base::ThreadPool::CreateSequencedTaskRunner(
-          {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
-           base::TaskShutdownBehavior::BLOCK_SHUTDOWN})) {
-  task_runner_->PostTaskAndReplyWithResult(
+      task_runner_(
+          base::ThreadPool::CreateSequencedTaskRunner(MoltFileChangeTraits())),
+      read_task_runner_(
+          base::ThreadPool::CreateSequencedTaskRunner(MoltFileReadTraits())) {
+  // A read (nothing was posted before it): shutdown never waits for it.
+  read_task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE, base::BindOnce(&ReadLearningFile, path_),
       base::BindOnce(
           [](base::WeakPtr<VoiceLearning> self, ReadResult result) {
@@ -383,8 +394,10 @@ void VoiceLearning::RefreshRoutines() {
 }
 
 void VoiceLearning::RefreshRoutinesThen(base::OnceClosure done) {
-  task_runner_->PostTaskAndReplyWithResult(
-      FROM_HERE,
+  // A listing: after the changes posted before, on the read sequence
+  // (claims cut short it settles take only crash-safe steps).
+  PostReadAfterChanges(
+      task_runner_, read_task_runner_, FROM_HERE,
       base::BindOnce(&ListBlocking, routines_dir_, automations_root_),
       base::BindOnce(
           [](base::WeakPtr<VoiceLearning> self, base::OnceClosure done,

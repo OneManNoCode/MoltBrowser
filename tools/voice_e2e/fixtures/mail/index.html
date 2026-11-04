@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!-- A webmail inbox (mail.test): a "Compose" button and five messages, each
+     a link to /message?id=N. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox - Post</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+</head>
+<body>
+<header>
+  <h1>Inbox</h1>
+  <a id="compose" href="/compose" role="button">Compose</a>
+</header>
+<main>
+  <table aria-label="Messages">
+    <thead><tr><th>From</th><th>Subject</th><th>Received</th></tr></thead>
+    <tbody>
+      <tr><td>Grace Hopper</td><td><a href="/message?id=1">Lunch on Friday</a></td><td>9:12</td></tr>
+      <tr><td>Alan Turing</td><td><a href="/message?id=2">The chess problem</a></td><td>8:40</td></tr>
+      <tr><td>Library</td><td><a href="/message?id=3">Your books are due</a></td><td>Yesterday</td></tr>
+      <tr><td>Ada Lovelace</td><td><a href="/message?id=4">Notes on the engine</a></td><td>Monday</td></tr>
+      <tr><td>Bakery</td><td><a href="/message?id=5">Bread of the week</a></td><td>Sunday</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

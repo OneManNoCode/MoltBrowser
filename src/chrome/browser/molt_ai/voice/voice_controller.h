@@ -115,6 +115,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/security/page_request_asker.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
+#include "chrome/browser/molt_ai/voice/voice_browser_actions.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
@@ -135,6 +136,7 @@ class VoicePageController;
 class VoicePageQuestions;
 class VoiceReader;
 class VoiceSpeech;
+class VoiceTestLog;
 
 // What voice mode is doing, for the caption bar (§5.1).
 enum class VoiceActivity {
@@ -146,7 +148,8 @@ enum class VoiceActivity {
 
 class VoiceController : public VoicePlanner::Delegate,
                         public activation::PageRequestAsker,
-                        public VoiceBrowserPrompts::Delegate {
+                        public VoiceBrowserPrompts::Delegate,
+                        public VoiceBrowserActions::Delegate {
  public:
   DECLARE_USER_DATA(VoiceController);
 
@@ -265,6 +268,12 @@ class VoiceController : public VoicePlanner::Delegate,
   Language language() const { return language_; }
   void SetLanguage(Language language);
   static void SetLanguageForAll(Language language);
+  // Whether language() is known yet: SetLanguage() has run (the setting is
+  // read on a worker when the window's voice mode is made). Until then the
+  // listening session doesn't open the microphone (voice_session.h).
+  bool language_known() const { return language_known_; }
+  // Tests: as before the setting was read.
+  void ForgetLanguageForTesting() { language_known_ = false; }
 
   // The listening side's part of the caption, and whether it listens
   // (VoiceEnvironment::listening).
@@ -404,6 +413,9 @@ class VoiceController : public VoicePlanner::Delegate,
                          const BrowserPrompt& prompt,
                          const std::string& word) override;
   void EndBrowserPrompt(int id, const std::string& said) override;
+  // Page-derived speech (a reading's chunk, an answer about the page, the
+  // planner's words) starts being said (PendingPrompt::after_page_text).
+  void NotePageTextSaid();
   void SayAboutBrowserPrompt(const std::string& text) override;
   void SayWordAboutBrowserPrompt(const WordText& text) override;
   WordChannelInputs WordChannelInputsNow() override;
@@ -434,6 +446,18 @@ class VoiceController : public VoicePlanner::Delegate,
   bool AnswersPlannerQuestion(const VoiceCommand& command,
                               const PageMap& map,
                               const VoiceEnvironment& env) const;
+
+  // VoiceBrowserActions::Delegate (the rest of the browser,
+  // voice_browser_actions.h):
+  void BrowserActionSays(const std::string& text) override;
+  void BrowserActionReads(const std::string& text) override;
+  void BrowserActionDone(int run) override;
+  void BrowserItemsReady(int run,
+                         const VoiceStep& asked,
+                         std::vector<BrowserItem> items) override;
+  content::WebContents* BrowserActionContents() override;
+  VoicePageController* BrowserActionPage() override;
+  Language BrowserActionLanguage() override;
 
   // Questions about the page (voice_page_questions.h): a kAskPage step is
   // asked of the on-device model; its answer is read as page text is.
@@ -470,8 +494,9 @@ class VoiceController : public VoicePlanner::Delegate,
   base::TimeTicks last_commit_;
 
   ConversationState state_;
-  // The window's language (SetLanguage()).
+  // The window's language (SetLanguage()), and whether it was set.
   Language language_ = Language::kEnglish;
+  bool language_known_ = false;
   std::deque<VoiceStep> pending_;
   // The run the steps belong to: a new utterance or a stop starts another,
   // and callbacks of an earlier run are dropped.
@@ -517,6 +542,12 @@ class VoiceController : public VoicePlanner::Delegate,
   std::unique_ptr<VoiceLearningLoop> learning_;
   // Questions about the page (voice_page_questions.h).
   std::unique_ptr<VoicePageQuestions> page_questions_;
+  // The test log, with --molt-voice-test-log only (voice_test_log.h).
+  std::unique_ptr<VoiceTestLog> test_log_;
+  // Bookmarks, history, downloads, settings, windows, the AI chat, the
+  // browser's own buttons, the page's media element
+  // (voice_browser_actions.h).
+  std::unique_ptr<VoiceBrowserActions> browser_actions_;
   base::RepeatingClosure idle_for_testing_;
   base::WeakPtrFactory<VoiceController> run_weak_factory_{this};
   base::WeakPtrFactory<VoiceController> weak_factory_{this};

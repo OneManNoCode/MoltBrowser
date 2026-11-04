@@ -481,7 +481,8 @@ TEST(SpanishGrammarTest, ViewingAndMedia) {
   c = Parse("adelanta");
   EXPECT_EQ(c.kind, VoiceCommandKind::kSkipForward);
   EXPECT_EQ(c.seconds, 0);
-  EXPECT_EQ(Kind("empieza de nuevo"), "restart");
+  EXPECT_EQ(Kind("empieza de nuevo"), "start_over");
+  EXPECT_EQ(Kind("desde el principio"), "restart");
   EXPECT_EQ(Kind("siguiente canción"), "next_track");
   EXPECT_EQ(Kind("vídeo anterior"), "previous_track");
   EXPECT_EQ(Kind("pantalla completa"), "full_screen");

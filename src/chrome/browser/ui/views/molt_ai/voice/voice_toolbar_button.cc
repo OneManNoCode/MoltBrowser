@@ -7,7 +7,10 @@
 #include <string>
 
 #include "base/functional/bind.h"
+#include "chrome/browser/molt_ai/voice/voice_first_run.h"
+#include "chrome/browser/molt_ai/voice/voice_window_listening.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/views/molt_ai/voice/voice_browser_ui_views.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/gfx/text_constants.h"
@@ -31,11 +34,17 @@ VoiceToolbarButton::VoiceToolbarButton(BrowserWindowInterface* browser)
   GetViewAccessibility().SetCheckedState(ax::mojom::CheckedState::kFalse);
   SetTooltipText(u"Voice mode — listen for “Hey Molt” in this window");
   SetHorizontalAlignment(gfx::ALIGN_CENTER);
+  // The browser's own buttons and menus, by voice (voice_browser_ui.h).
+  VoiceBrowserUiViews::EnsureInstalled();
+  InstallWindowListening();
   session_ = VoiceSession::GetOrCreateForBrowser(browser);
   if (session_) {
     session_->AddObserver(this);
   }
   Update();
+  // At the browser's first run, voice mode is offered here when the owner
+  // turns that on (voice_first_run.h).
+  MaybeOfferVoiceModeAtFirstRun(browser);
 }
 
 VoiceToolbarButton::~VoiceToolbarButton() {

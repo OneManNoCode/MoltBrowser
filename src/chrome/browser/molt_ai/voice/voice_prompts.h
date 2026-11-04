@@ -57,6 +57,15 @@
 // anything else is a command as usual and the prompt keeps waiting until
 // its window ends.
 //
+// Page text read aloud (a reading, an answer about the page, the web
+// agent's planner's words) can imitate the browser's prompts ("Chrome wants
+// to know your location. To allow it, say the word on your screen."). Once
+// some was said after a prompt was read (PendingPrompt::after_page_text),
+// or while it is being read, an answer that allows or accepts
+// (AllowsOrAccepts()) doesn't answer the prompt: the browser reads its own
+// question again, after "That was the page's text." (PageTextPreface()),
+// and the answer said to that is taken. "No" always refuses at once.
+//
 // Each prompt is said, and its answers heard, in its language
 // (BrowserPrompt::language, PendingPrompt::language; voice_language.h):
 // every sentence is a whole one of the catalog (spoken_answers.h, English
@@ -187,6 +196,7 @@ enum class WordRetired : uint8_t {
   kAudioCaptured,  // a microphone capture began after it was said
   kScreenShared,   // the screen or a window is captured now
   kScreenFreed,    // no longer: the prompt gets a word again
+  kAfterPageText,  // said after page text, while something captured
 };
 std::string WordRetiredPreface(WordRetired why);
 std::string WordRetiredPreface(WordRetired why, Language language);
@@ -238,6 +248,9 @@ struct PendingPrompt {
   // kTextPrompt: what the user dictated, waiting for "yes".
   std::string answer_text;
   int64_t expires_ms = 0;
+  // Page text was said since it was read (above): what allows or accepts
+  // waits for it to be read again.
+  bool after_page_text = false;
 };
 
 // Whether |prompt| waits at |now_ms|.
@@ -254,6 +267,13 @@ void NoteWordText(PendingPrompt& prompt, WordText text);
 const std::string* WordTextTwin(const PendingPrompt& prompt,
                                 std::string_view said);
 
+// |prompt| no longer waits (answered, closed by a click, gone with its
+// page, its window over, another in its place): each of |spoken| (what
+// "repeat" says again) that it said with its word becomes that text's twin,
+// so a word gone with its prompt is never said again, nor passed on.
+void ForgetWordTexts(const PendingPrompt& prompt,
+                     std::vector<std::string>& spoken);
+
 enum class PromptAnswer : uint8_t {
   kNone,       // not an answer: a command as usual
   kAllow,      // the gesture's word: allow, keep
@@ -268,6 +288,14 @@ enum class PromptAnswer : uint8_t {
 };
 
 std::string_view PromptAnswerName(PromptAnswer answer);
+
+// Whether |answer| allows or accepts: a word of the list (the prompt's or
+// another), "yes", "OK", "leave", "save", sending prompt()'s answer.
+bool AllowsOrAccepts(PromptAnswer answer);
+
+// Said before a prompt read again because page text came after it ("That
+// was the page's text. Here is my question:").
+std::string PageTextPreface(Language language);
 
 struct PromptReply {
   PromptAnswer answer = PromptAnswer::kNone;

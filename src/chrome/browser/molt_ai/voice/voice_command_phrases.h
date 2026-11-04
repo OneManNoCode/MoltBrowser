@@ -22,6 +22,8 @@
 //     {seconds?}  the same, or nothing (the player's default step)
 //     {level}     a volume: 0-10 on a scale of ten, "N percent", "half",
 //                 "max"
+//     {speed}     a playback speed: "1.5", "one point five", "one and a
+//                 half", "2x", "two times", "double", "half"
 //     {pages?}    a scroll amount ("a page", "half a page", "a bit",
 //                 "3 pages"), or nothing
 //     {position}  a choice by position, number or relation ("the fourth
@@ -90,6 +92,20 @@ enum class PatternVariant : uint8_t {
   kAskTopic,
   kAskQuestion,
   kAskMore,
+  // kOpenSettings's page (SettingsPage; none: the main page).
+  kSettingsPrivacy,
+  kSettingsAI,
+  kSettingsVoice,
+  kSettingsMoltNet,
+  // kNewWindow's kind (WindowKind; none: a normal window).
+  kWindowPrivate,
+  kWindowMoltNet,
+  // kAlwaysListening off (none: on).
+  kOff,
+  // kProtectedSetting's setting (none: the word aloud).
+  kWorkflowTrust,
+  // kOpenDownload: the newest one ("the last download").
+  kNewest,
 };
 
 struct CommandPattern {

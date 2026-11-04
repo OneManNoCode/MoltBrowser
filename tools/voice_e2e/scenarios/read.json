@@ -1,0 +1,108 @@
+{
+ "group": "read",
+ "about": "Read (TOUCHLESS_BROWSING.md §2): the page, its title, headings and links, a section, what's on the screen, find text, the selection; and stopping a reading.",
+ "scenarios": [
+  {
+   "id": "read-title",
+   "title": "Read the page's title",
+   "task": "read",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "read the title", "needs": ["read_title"],
+     "expect": [{"said_has": "Trams return to Lyon"}]}
+   ]
+  },
+  {
+   "id": "read-headings",
+   "title": "Read the headings",
+   "task": "read",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "read the headings", "needs": ["read_headings"],
+     "expect": [{"said_has": "Transport"}, {"said_has": "Timetable"}]}
+   ]
+  },
+  {
+   "id": "read-page",
+   "title": "Read the page aloud",
+   "task": "read",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "read the page", "needs": ["read_page"],
+     "expect": [{"said_has": "The city opens a new tram line"}]}
+   ]
+  },
+  {
+   "id": "read-section",
+   "title": "Read one section by its heading",
+   "task": "read",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "read the section on timetable", "needs": ["read_section"],
+     "expect": [{"said_has": "The first tram leaves at five"}]}
+   ]
+  },
+  {
+   "id": "read-links",
+   "title": "Read the links",
+   "task": "read",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "read the links", "needs": ["read_links"], "expect": [{"said_has": "Sport"}]}
+   ]
+  },
+  {
+   "id": "read-screen",
+   "title": "What's on the screen",
+   "task": "read",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "what's on the screen", "needs": ["describe_screen"],
+     "expect": [{"said_re": "(?i)daily news|trams"}]}
+   ]
+  },
+  {
+   "id": "read-find",
+   "title": "Find words on the page",
+   "task": "read",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "find timetable on this page", "needs": ["find_in_page"],
+     "expect": [{"said_re": "(?i)timetable|found|match"}]}
+   ]
+  },
+  {
+   "id": "read-next-heading",
+   "title": "Move to the next heading",
+   "task": "read",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "next heading", "needs": ["next_heading"],
+     "expect": [{"said_re": "(?i)trams return|transport"}]}
+   ]
+  },
+  {
+   "id": "read-selection",
+   "title": "Read the selected text",
+   "task": "read",
+   "start": {"url": "https://news.test/story",
+             "js": "getSelection().selectAllChildren(document.getElementById('transport'))"},
+   "steps": [
+    {"say": "read the selection", "needs": ["read_selection"],
+     "expect": [{"said_has": "every six minutes"}]}
+   ]
+  },
+  {
+   "id": "read-stop",
+   "title": "Stop a reading in the middle",
+   "task": "read",
+   "start": {"url": "https://news.test/story"},
+   "steps": [
+    {"say": "read the page", "needs": ["read_page"],
+     "expect": [{"said_has": "The city opens a new tram line"}]},
+    {"say": "stop", "barge_in": true, "pause": 1.0, "needs": ["stop"], "answer": true,
+     "expect": [{"said_none": "the last one at midnight", "quiet": 10}]}
+   ]
+  }
+ ]
+}

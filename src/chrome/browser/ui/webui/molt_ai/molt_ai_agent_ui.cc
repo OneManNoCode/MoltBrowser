@@ -57,6 +57,7 @@
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
+#include "chrome/browser/molt_ai/common/molt_file_sequences.h"
 #include "chrome/browser/molt_ai/common/molt_regular_file.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
@@ -277,6 +278,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
          &AgentStudioHandler::HandleShowDeclinedRoutines);
   }
 
+  void OnJavascriptDisallowed() override {
+    // The page reloaded or went: its answers on their way are dropped (the
+    // new page's callback ids start again from the same names).
+    reply_factory_.InvalidateWeakPtrs();
+  }
+
  private:
   // The page's callback id (args[0]); none when it sent no string.
   using CallbackId = std::optional<std::string>;
@@ -287,16 +294,16 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         web_ui()->GetWebContents()->GetBrowserContext());
   }
 
-  // The profile's automation service's shared storage, which the runner
-  // and the scheduler use on the UI thread. The studio itself only takes
-  // its directory (Places()) and never reads or writes through it here.
-  AutomationStorage* storage() {
+  // The profile's automation service's shared storage directory (the
+  // runner's and the scheduler's); empty without the service (as in
+  // browser tests). No I/O.
+  base::FilePath storage_dir() {
     if (Profile* p = profile()) {
       if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p)) {
-        return svc->storage();
+        return svc->storage_dir();
       }
     }
-    return nullptr;
+    return base::FilePath();
   }
 
   // The profile's voice routines (voice_learning.h); null off the record,
@@ -322,8 +329,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       places.routines_dir = learning->routines_dir();
       places.shared_root = learning->shared_root();
     }
-    if (AutomationStorage* st = storage()) {
-      places.shared_dir = st->directory();
+    if (base::FilePath dir = storage_dir(); !dir.empty()) {
+      places.shared_dir = dir;
     } else if (learning && !learning->shared_root().empty()) {
       places.shared_dir =
           AutomationStorage::SharedDirectory(learning->shared_root());
@@ -426,7 +433,15 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   }
   AnswerCallback Resolver(const base::ListValue& args) {
     return base::BindOnce(&AgentStudioHandler::ResolveAnswer,
-                          weak_factory_.GetWeakPtr(), CallbackIdOf(args));
+                          reply_factory_.GetWeakPtr(), CallbackIdOf(args));
+  }
+  // The page's answer to the message |args| came with, later: dropped if
+  // that page is gone (a reload restarts its callback ids, so an old
+  // answer would resolve another request of the new page).
+  using Reply = base::OnceCallback<void(base::DictValue)>;
+  Reply ReplyTo(const base::ListValue& args) {
+    return base::BindOnce(&AgentStudioHandler::Resolve,
+                          reply_factory_.GetWeakPtr(), CallbackIdOf(args));
   }
 
   // -------- messages --------
@@ -442,7 +457,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
               self->HandleListWorkflows(args);
             }
           },
-          weak_factory_.GetWeakPtr(), args.Clone()));
+          reply_factory_.GetWeakPtr(), args.Clone()));
       return;
     }
     // The profile's routines on their sequence, then the shared storage's
@@ -454,20 +469,25 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       OnRoutinesListed(places, CallbackIdOf(args), RoutinesListing());
       return;
     }
-    routines->PostTaskAndReplyWithResult(
-        FROM_HERE, base::BindOnce(&molt_ai::agent_studio::ListRoutines, places),
+    // Reads: after the changes posted before, on the read sequences, which
+    // never hold shutdown.
+    molt_ai::PostReadAfterChanges(
+        routines, Learning()->routines_read_task_runner(), FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::ListRoutines, places),
         base::BindOnce(&AgentStudioHandler::OnRoutinesListed,
-                       weak_factory_.GetWeakPtr(), places, CallbackIdOf(args)));
+                       reply_factory_.GetWeakPtr(), places,
+                       CallbackIdOf(args)));
   }
   void OnRoutinesListed(StudioPlaces places,
                         CallbackId callback_id,
                         RoutinesListing listing) {
-    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
-        FROM_HERE,
+    molt_ai::PostReadAfterChanges(
+        AutomationStorage::SharedSequence(),
+        AutomationStorage::SharedReadSequence(), FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::ListSharedWorkflows,
                        std::move(places)),
         base::BindOnce(&AgentStudioHandler::OnWorkflowsListed,
-                       weak_factory_.GetWeakPtr(), std::move(callback_id),
+                       reply_factory_.GetWeakPtr(), std::move(callback_id),
                        std::move(listing)));
   }
   void OnWorkflowsListed(CallbackId callback_id,
@@ -490,10 +510,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
               });
     for (const auto& s : scripts) {
       base::DictValue d = WorkflowSummary(s);
-      // A name another of the profile's routines answers to too: voice
-      // mode runs neither until one is renamed.
+      // A name another of the profile's routines answers to too, in any
+      // language voice mode speaks: voice mode runs neither until one is
+      // renamed.
       if (molt_ai::automation::HasVoiceSteps(s) &&
-          molt_ai::voice::MatchRoutineName(voice_names, s.name).count > 1) {
+          molt_ai::voice::MatchRoutineNameInAnyLanguage(voice_names, s.name)
+                  .count > 1) {
         d.Set("nameClash", true);
       }
       list.Append(std::move(d));
@@ -591,7 +613,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
               self->ResolveJavascriptCallback(base::Value(callback_id),
                                               base::Value(std::move(done)));
             },
-            weak_factory_.GetWeakPtr(), args[0].GetString()));
+            reply_factory_.GetWeakPtr(), args[0].GetString()));
   }
 
   // "Not mine": [cb, [id, ...]] -> {ok}. They aren't offered here again;
@@ -679,7 +701,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
                          id),
           base::BindOnce(&AgentStudioHandler::SaveInRoutines,
                          weak_factory_.GetWeakPtr(), places, std::move(request),
-                         CallbackIdOf(args)));
+                         Resolver(args)));
       return;
     }
     if (routines) {
@@ -688,20 +710,21 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           base::BindOnce(&molt_ai::agent_studio::RoutinesHold, places, id),
           base::BindOnce(&AgentStudioHandler::SaveInShared,
                          weak_factory_.GetWeakPtr(), places, std::move(request),
-                         CallbackIdOf(args)));
+                         Resolver(args)));
       return;
     }
-    SaveInShared(places, std::move(request), CallbackIdOf(args),
-                 Holds::kNothing);
+    SaveInShared(places, std::move(request), Resolver(args), Holds::kNothing);
   }
+  // |done| is the page's answer, made when the message came (Resolver()):
+  // dropped if that page reloaded meanwhile.
   void SaveInRoutines(StudioPlaces places,
                       SaveRequest request,
-                      CallbackId callback_id,
+                      AnswerCallback done,
                       Holds in_shared_storage) {
     scoped_refptr<base::SequencedTaskRunner> routines =
         RoutinesSequence(places);
     if (!routines) {
-      Resolve(callback_id, base::DictValue());
+      std::move(done).Run(Answer());
       return;
     }
     routines->PostTaskAndReplyWithResult(
@@ -709,22 +732,18 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         base::BindOnce(&molt_ai::agent_studio::SaveRoutine, places,
                        std::move(request), in_shared_storage),
         base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
-                       base::BindOnce(&AgentStudioHandler::ResolveAnswer,
-                                      weak_factory_.GetWeakPtr(),
-                                      std::move(callback_id))));
+                       std::move(done)));
   }
   void SaveInShared(StudioPlaces places,
                     SaveRequest request,
-                    CallbackId callback_id,
+                    AnswerCallback done,
                     Holds in_routines) {
     AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
         FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::SaveSharedWorkflow,
                        std::move(places), std::move(request), in_routines),
         base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
-                       base::BindOnce(&AgentStudioHandler::ResolveAnswer,
-                                      weak_factory_.GetWeakPtr(),
-                                      std::move(callback_id))));
+                       std::move(done)));
   }
 
   // The frames of other sites the user let offer their tools to the
@@ -799,7 +818,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AllowJavascript();
     // Runs need the profile's automation service (the run window and the
     // poll for its result).
-    if (args.size() < 2 || !args[1].is_string() || !storage()) {
+    if (args.size() < 2 || !args[1].is_string() || storage_dir().empty()) {
       base::DictValue out;
       out.Set("ok", false);
       ResolveDict(args, std::move(out));
@@ -825,10 +844,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     request.id = args[1].GetString();
     AnswerAbout(request,
                 base::BindOnce(&AgentStudioHandler::OnRunChecked,
-                               weak_factory_.GetWeakPtr(), CallbackIdOf(args),
+                               weak_factory_.GetWeakPtr(), ReplyTo(args),
                                request.id, std::move(overrides), minimize));
   }
-  void OnRunChecked(CallbackId callback_id,
+  void OnRunChecked(Reply reply,
                     std::string id,
                     std::map<std::string, std::string> overrides,
                     bool minimize,
@@ -842,7 +861,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       // 'run-progress' is future work — the popup window shows live steps.)
       PollRunResult(id, before, /*attempts=*/80);
     }
-    Resolve(callback_id, std::move(answer.out));
+    std::move(reply).Run(std::move(answer.out));
   }
 
   void PollRunResult(const std::string& id, int64_t before, int attempts) {
@@ -862,9 +881,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       }
       ++attempts;
     }
-    // The workflow as stored, read on the shared storage's sequence.
-    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
-        FROM_HERE,
+    // The workflow as stored, read on the shared storage's read sequence
+    // (after the run's own stats, posted before).
+    molt_ai::PostReadAfterChanges(
+        AutomationStorage::SharedSequence(),
+        AutomationStorage::SharedReadSequence(), FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::LoadSharedWorkflow, Places(),
                        id),
         base::BindOnce(&AgentStudioHandler::OnRunPolled,
@@ -977,12 +998,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
                        molt_ai::agent_studio::NewWorkflowId() + "_rec",
                        recorded_ids_),
         base::BindOnce(&AgentStudioHandler::OnRecordingIdMinted,
-                       weak_factory_.GetWeakPtr(), CallbackIdOf(args),
+                       weak_factory_.GetWeakPtr(), ReplyTo(args),
                        std::move(*draft)));
   }
-  void OnRecordingIdMinted(CallbackId callback_id,
-                           Script draft,
-                           std::string id) {
+  void OnRecordingIdMinted(Reply reply, Script draft, std::string id) {
     // Another stopRecording minted it meanwhile.
     while (recorded_ids_.count(id)) {
       id += "_";
@@ -997,13 +1016,13 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     }
     base::DictValue out;
     out.Set("draft", std::move(json));
-    Resolve(callback_id, std::move(out));
+    std::move(reply).Run(std::move(out));
   }
 
   void HandleSaveSchedule(const base::ListValue& args) {
     AllowJavascript();
     if (args.size() < 3 || !args[1].is_string() || !args[2].is_dict() ||
-        !storage()) {
+        storage_dir().empty()) {
       base::DictValue out;
       out.Set("ok", false);
       ResolveDict(args, std::move(out));
@@ -1048,9 +1067,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     request.trigger = trig;
     AnswerAbout(std::move(request),
                 base::BindOnce(&AgentStudioHandler::OnScheduleSaved,
-                               weak_factory_.GetWeakPtr(), CallbackIdOf(args)));
+                               weak_factory_.GetWeakPtr(), ReplyTo(args)));
   }
-  void OnScheduleSaved(CallbackId callback_id, Answer answer) {
+  void OnScheduleSaved(Reply reply, Answer answer) {
     if (answer.trigger) {
       if (Profile* p = profile()) {
         if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p)) {
@@ -1064,7 +1083,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       answer.out.Set("nextFire",
                      next.is_null() ? 0.0 : next.InSecondsFSinceUnixEpoch());
     }
-    Resolve(callback_id, std::move(answer.out));
+    std::move(reply).Run(std::move(answer.out));
   }
 
   // The studio's Trust / Undo control: [callback_id, id, "approved" |
@@ -1194,6 +1213,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   std::map<std::string, std::string> shown_questions_;
 
   base::WeakPtrFactory<AgentStudioHandler> weak_factory_{this};
+  // For the page's answers only (ReplyTo(), Resolver()): invalidated when
+  // the page goes or reloads, so an answer meant for the old page never
+  // resolves the new page's request of the same callback id. The work they
+  // follow (a save, a run) is bound to |weak_factory_| and still done.
+  base::WeakPtrFactory<AgentStudioHandler> reply_factory_{this};
 };
 
 // ---------------------------------------------------------------------------
@@ -3537,17 +3561,17 @@ h2[tabindex="-1"]:focus{outline:none!important}
     content::WebContents* wc = wc_getter.Run();
     Profile* p =
         wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
-    AutomationStorage* st = nullptr;
+    base::FilePath storage_dir;
     if (p) {
       if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p))
-        st = svc->storage();
+        storage_dir = svc->storage_dir();
     }
-    if (!st) {
+    if (storage_dir.empty()) {
       std::move(callback).Run(empty());
       return;
     }
     // Where its run left it (no I/O here: read on the pool below).
-    base::FilePath dir = st->ArtifactsDir(script_id);
+    base::FilePath dir = AutomationStorage(storage_dir).ArtifactsDir(script_id);
     base::FilePath path = dir.Append(base::FilePath::FromUTF8Unsafe(filename));
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},

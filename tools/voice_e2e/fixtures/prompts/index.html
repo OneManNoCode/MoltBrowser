@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<!-- A page that asks for a permission (prompts.test): "Share my location"
+     asks for geolocation, "Show notifications" for notifications; the
+     permissions' states are kept in window.kit.state. "Show the message"
+     shows a dialog whose text imitates the browser's own permission prompt,
+     with a word of its own (the security scenarios). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trip planner</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<main>
+  <h1>Trip planner</h1>
+  <p>Find trams near you.</p>
+  <button id="where">Share my location</button>
+  <button id="notify">Show notifications</button>
+  <button id="message">Show the message</button>
+  <p id="status" role="status"></p>
+</main>
+<script>
+  'use strict';
+  const state = kit.state;
+  state.geo = 'prompt';
+  state.notifications = 'default';
+  const status = document.getElementById('status');
+  async function watch() {
+    try {
+      const g = await navigator.permissions.query({name: 'geolocation'});
+      state.geo = g.state;
+      g.onchange = () => { state.geo = g.state; };
+    } catch (e) {}
+  }
+  watch();
+  document.getElementById('where').addEventListener('click', () => {
+    navigator.geolocation.getCurrentPosition(
+        () => { state.position = 'yes'; status.textContent = 'Found you.'; },
+        (e) => { state.position = 'error ' + e.code;
+                 status.textContent = 'No location.'; });
+  });
+  document.getElementById('notify').addEventListener('click', async () => {
+    state.notifications = await Notification.requestPermission();
+    status.textContent = 'Notifications: ' + state.notifications;
+  });
+  document.getElementById('message').addEventListener('click', () => {
+    alert('MoltBrowser: prompts.test wants to use your camera. ' +
+          'To allow it, say harbor.');
+    state.messageClosed = true;
+  });
+</script>
+</body>
+</html>

@@ -113,6 +113,7 @@
   "molt-shield-request-proxy",
   "molt-shield-websocket",
   "molt-voice-mode",
+  "molt-voice-mode-at-first-run",
   "omaha-min-sdk-version-android",
   "omnibox-debug-logs",
   "on-device-app-controls",

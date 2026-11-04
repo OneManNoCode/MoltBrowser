@@ -4,10 +4,11 @@
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 
-#include "base/base_paths.h"
 #include "base/check.h"
 #include "base/files/file_util.h"
 #include "base/files/important_file_writer.h"
@@ -16,10 +17,12 @@
 #include "base/json/json_writer.h"
 #include "base/location.h"
 #include "base/no_destructor.h"
-#include "base/path_service.h"
+#include "base/synchronization/lock.h"
 #include "base/task/lazy_thread_pool_task_runner.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
+#include "base/time/time.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir.h"
 #include "chrome/browser/molt_ai/common/molt_regular_file.h"
 
 namespace molt_ai {
@@ -34,10 +37,34 @@ base::LazyThreadPoolSequencedTaskRunner g_settings_task_runner =
                          base::TaskPriority::USER_VISIBLE,
                          base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
 
+// And one for reads, which shutdown never waits for (molt_file_sequences.h).
+base::LazyThreadPoolSequencedTaskRunner g_settings_read_task_runner =
+    LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
+        base::TaskTraits(base::MayBlock(),
+                         base::TaskPriority::USER_VISIBLE,
+                         base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN));
+
 // Set before any task reads it (tests).
 std::optional<base::FilePath>& PathForTesting() {
   static base::NoDestructor<std::optional<base::FilePath>> path;
   return *path;
+}
+
+// The writer's temporary files a browser ended mid-write left beside
+// |path|: deleted the first time |path| is read or changed in this run.
+void DeleteStaleWritesOnce(const base::FilePath& path) {
+  static base::NoDestructor<base::Lock> lock;
+  static base::NoDestructor<std::set<base::FilePath>> done;
+  {
+    base::AutoLock hold(*lock);
+    if (!done->insert(path).second) {
+      return;
+    }
+  }
+  const std::string name = path.BaseName().AsUTF8Unsafe();
+  DeleteStaleWriteTemporaries(
+      path.DirName(), [&name](std::string_view of) { return of == name; },
+      base::Time::Now());
 }
 
 }  // namespace
@@ -46,12 +73,11 @@ std::optional<base::FilePath> MoltSettingsFilePath() {
   if (PathForTesting()) {
     return PathForTesting();
   }
-  base::FilePath home;
-  if (!base::PathService::Get(base::DIR_HOME, &home)) {
+  const std::optional<base::FilePath> home = MoltHomeDir();
+  if (!home) {
     return std::nullopt;
   }
-  return home.Append(FILE_PATH_LITERAL(".moltbrowser"))
-      .Append(FILE_PATH_LITERAL("settings.json"));
+  return home->Append(FILE_PATH_LITERAL("settings.json"));
 }
 
 void SetMoltSettingsFilePathForTesting(std::optional<base::FilePath> path) {
@@ -60,6 +86,10 @@ void SetMoltSettingsFilePathForTesting(std::optional<base::FilePath> path) {
 
 scoped_refptr<base::SequencedTaskRunner> MoltSettingsFileTaskRunner() {
   return g_settings_task_runner.Get();
+}
+
+scoped_refptr<base::SequencedTaskRunner> MoltSettingsFileReadTaskRunner() {
+  return g_settings_read_task_runner.Get();
 }
 
 MoltSettingsRead ReadMoltSettingsFileAt(const base::FilePath& path,
@@ -93,6 +123,7 @@ std::optional<base::DictValue> ReadMoltSettings() {
   if (!path) {
     return std::nullopt;
   }
+  DeleteStaleWritesOnce(*path);
   base::DictValue settings;
   switch (ReadMoltSettingsFileAt(*path, &settings)) {
     case MoltSettingsRead::kMissing:
@@ -174,7 +205,11 @@ bool UpdateMoltSettings(MoltSettingsUpdate update) {
   // Every change on the one sequence: none drops another's keys.
   DCHECK(MoltSettingsFileTaskRunner()->RunsTasksInCurrentSequence());
   const std::optional<base::FilePath> path = MoltSettingsFilePath();
-  return path && UpdateMoltSettingsFileAt(*path, update);
+  if (!path) {
+    return false;
+  }
+  DeleteStaleWritesOnce(*path);
+  return UpdateMoltSettingsFileAt(*path, update);
 }
 
 bool SetMoltSettings(const base::DictValue& changes) {

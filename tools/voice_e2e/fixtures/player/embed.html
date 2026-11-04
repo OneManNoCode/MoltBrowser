@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- An embedded player (player.test/embed), framed by frames.test. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Player</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/kit.js"></script>
+</head>
+<body>
+<div id="player"></div>
+<script>
+  'use strict';
+  const video = kit.player(document.getElementById('player'), {
+    src: '/_kit/song.wav', captions: '/_kit/captions.vtt'});
+  kit.reportToParent(video, 'https://frames.test');
+</script>
+</body>
+</html>

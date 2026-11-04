@@ -81,6 +81,28 @@ source_set("views") {
   ]
 }
 
+# The browser's own buttons and menus as voice mode reads and presses them
+# (chrome/browser/molt_ai/voice/voice_browser_ui.h): the window's views and
+# its open menu, by their accessibility data; installed by the Voice button.
+source_set("browser_ui") {
+  sources = [
+    "voice_browser_ui_views.cc",
+    "voice_browser_ui_views.h",
+  ]
+
+  public_deps = [ "//chrome/browser/molt_ai/voice:voice_controller" ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/voice:voice_loop",
+    "//chrome/browser/ui/browser_window",
+    "//ui/accessibility",
+    "//ui/accessibility:ax_base",
+    "//ui/base",
+    "//ui/views",
+  ]
+}
+
 # The toolbar's Voice button: listening on and off for its window
 # (chrome/browser/molt_ai/voice/voice_session.h), made by ToolbarView's hook
 # (chrome/browser/ui/views/toolbar/toolbar_view.cc).
@@ -99,6 +121,10 @@ source_set("toolbar_button") {
   ]
 
   deps = [
+    # The browser's own buttons by voice, and voice mode moving between
+    # windows with the microphone: installed with the first Voice button.
+    ":browser_ui",
+    "//chrome/browser/molt_ai/voice:voice_window_listening",
     "//chrome/browser/ui/browser_window",
     "//ui/accessibility:ax_base",
     "//ui/gfx",
@@ -135,6 +161,10 @@ source_set("browser_tests") {
     ":views",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/molt_ai/voice:page_map",
     "//chrome/browser/molt_ai/voice:voice_page",
     "//chrome/browser/ui",

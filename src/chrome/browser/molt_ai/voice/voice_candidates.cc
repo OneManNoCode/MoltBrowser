@@ -13,11 +13,16 @@ namespace {
 
 void AddField(ChoiceCandidate& candidate,
               ChoiceFieldKind kind,
-              const std::string& text) {
+              const std::string& text,
+              int64_t value = -1,
+              const std::string& unit = std::string()) {
   if (text.empty() || candidate.fields.size() >= kMaxChoiceFields) {
     return;
   }
   candidate.fields.emplace_back(kind, text);
+  // As the page map read it, in the page's language.
+  candidate.fields.back().value = value;
+  candidate.fields.back().unit = unit;
 }
 
 void Add(CandidateSet& set, ChoiceCandidate candidate, CandidateTarget target) {
@@ -118,9 +123,11 @@ CandidateSet CandidatesFromList(const PageMap& map,
     candidate.title = entry.title;
     AddField(candidate, ChoiceFieldKind::kAuthor, entry.channel);
     AddField(candidate, ChoiceFieldKind::kDate, entry.date);
-    AddField(candidate, ChoiceFieldKind::kDuration, entry.duration);
+    AddField(candidate, ChoiceFieldKind::kDuration, entry.duration,
+             entry.duration_seconds);
     for (const EntryCount& count_field : entry.counts) {
-      AddField(candidate, ChoiceFieldKind::kCount, count_field.text);
+      AddField(candidate, ChoiceFieldKind::kCount, count_field.text,
+               count_field.value, count_field.unit);
     }
     for (const std::string& text : entry.texts) {
       AddField(candidate, ChoiceFieldKind::kDetail, text);

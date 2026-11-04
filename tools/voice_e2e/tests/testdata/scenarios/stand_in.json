@@ -1,0 +1,73 @@
+{
+ "group": "stand-in",
+ "about": "Scenarios for the runner's tests against tests/fake_browser.py: one that passes, one a command the stand-in's grammar lacks, one that fails, one that watches for nothing, and one that needs the microphone's word.",
+ "scenarios": [
+  {
+   "id": "t-owner",
+   "title": "Open, search, play the fourth, pause",
+   "task": "owner",
+   "start": {"url": "about:blank"},
+   "steps": [
+    {"say": "open YouTube", "needs": ["open_site"], "timeout": 5,
+     "expect": [{"host": "www.youtube.com"}, {"said": "YouTube is open."}]},
+    {"say": "search for Bohemian Rhapsody", "needs": ["search"], "timeout": 5,
+     "expect": [{"path": "/results"}, {"query": {"search_query": "Bohemian Rhapsody"}},
+                {"said_re": "^20 results\\."}]},
+    {"say": "play the fourth one", "needs": ["choose"], "timeout": 5,
+     "expect": [{"query": {"v": "video4"}}, {"media": {"paused": false}}]},
+    {"say": "pause", "needs": ["pause"], "timeout": 5,
+     "expect": [{"media": {"paused": true}}, {"said": "Paused."}]}
+   ]
+  },
+  {
+   "id": "t-cart",
+   "title": "Press a button",
+   "task": "act",
+   "start": {"url": "https://shop.test/"},
+   "steps": [
+    {"say": "click add kettle to cart", "needs": ["choose"], "timeout": 5,
+     "expect": [{"js": "shop.items().length", "is": 1}, {"said_has": "Pressed"}]}
+   ]
+  },
+  {
+   "id": "t-missing",
+   "title": "A command the grammar doesn't have yet",
+   "task": "browser",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"say": "bookmark this page", "needs": ["bookmark_page"], "timeout": 3,
+     "expect": [{"said_re": "(?i)bookmarked"}]}
+   ]
+  },
+  {
+   "id": "t-fails",
+   "title": "A step whose outcome never comes",
+   "task": "media",
+   "start": {"url": "https://www.youtube.com/watch?v=video4"},
+   "steps": [
+    {"say": "louder", "needs": ["volume_up"], "timeout": 2,
+     "expect": [{"media": {"volume": [0.72, 1.0]}}]},
+    {"say": "pause", "needs": ["pause"], "expect": [{"media": {"paused": true}}]}
+   ]
+  },
+  {
+   "id": "t-quiet",
+   "title": "Nothing happens while the page is left alone",
+   "task": "security",
+   "start": {"url": "https://news.test/"},
+   "steps": [
+    {"wait": 2, "expect": [{"no_action": true, "quiet": 2}]}
+   ]
+  },
+  {
+   "id": "t-word",
+   "title": "Needs the microphone's word",
+   "task": "prompts",
+   "start": {"url": "https://prompts.test/"},
+   "steps": [
+    {"say": "click share my location", "expect": [{"prompt": "open"}]},
+    {"say_word": true, "answer": true, "expect": [{"prompt": "close"}]}
+   ]
+  }
+ ]
+}

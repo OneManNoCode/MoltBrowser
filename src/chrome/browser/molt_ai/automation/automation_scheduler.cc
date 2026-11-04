@@ -15,6 +15,7 @@
 #include "base/strings/string_split.h"
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 
 namespace molt_ai {
@@ -158,8 +159,8 @@ base::Time AutomationScheduler::NextFireTime(const Trigger& trigger,
 AutomationScheduler::AutomationScheduler() = default;
 AutomationScheduler::~AutomationScheduler() { Stop(); }
 
-void AutomationScheduler::SetStorage(AutomationStorage* storage) {
-  storage_ = storage;
+void AutomationScheduler::SetStorageDir(const base::FilePath& dir) {
+  storage_dir_ = dir;
 }
 
 void AutomationScheduler::SetFireCallback(ScheduledFireCallback cb) {
@@ -176,11 +177,10 @@ void AutomationScheduler::Start() {
   heartbeat_.Start(FROM_HERE, base::Seconds(60),
                    base::BindRepeating(&AutomationScheduler::Tick,
                                         weak_factory_.GetWeakPtr()));
-  // Defer the first Tick: it calls AutomationStorage::ListAll() which
-  // does blocking disk I/O. If Start() is invoked from a startup-time
-  // KeyedService construction, blocking is disallowed and we'd FATAL.
-  // A 3s delay is well past PreMainMessageLoopRun; cron schedules don't
-  // care about sub-minute precision on the very first scan.
+  // Defer the first Tick, which lists the workflows (on the storage's read
+  // sequence): a 3s delay is well past PreMainMessageLoopRun; cron
+  // schedules don't care about sub-minute precision on the very first
+  // scan.
   base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&AutomationScheduler::Tick, weak_factory_.GetWeakPtr()),
@@ -207,10 +207,34 @@ void AutomationScheduler::TickForTesting(base::Time now) {
 }
 
 void AutomationScheduler::ArmNext(base::Time now) {
-  if (!storage_)
+  if (storage_dir_.empty())
     return;
+  // One listing at a time: a second one waits for the first, so that a
+  // catch-up the first fires (its last_fired_unix written first) isn't
+  // fired again by the second.
+  if (listing_) {
+    list_again_ = true;
+    return;
+  }
+  listing_ = true;
+  PostSharedRead(storage_dir_, base::BindOnce([](AutomationStorage& storage) {
+                   return storage.ListAll();
+                 }),
+                 base::BindOnce(&AutomationScheduler::OnListed,
+                                weak_factory_.GetWeakPtr(), now));
+}
 
-  std::vector<Script> scripts = storage_->ListAll();
+void AutomationScheduler::OnListed(base::Time now,
+                                   std::vector<Script> scripts) {
+  listing_ = false;
+  if (!started_)
+    return;
+  if (list_again_) {
+    // Asked again while this one was read: the newer one decides.
+    list_again_ = false;
+    ArmNext(base::Time::Now());
+    return;
+  }
   base::Time soonest;
   std::string soonest_script_id;
 
@@ -276,15 +300,29 @@ void AutomationScheduler::ArmNext(base::Time now) {
       base::BindOnce(
           [](base::WeakPtr<AutomationScheduler> self,
              const std::string& script_id) {
-            if (!self || !self->storage_) return;
+            if (!self || self->storage_dir_.empty())
+              return;
             // Re-load the script from disk so we get the freshest copy.
             // (Script is move-only because Step contains base::Value.)
-            auto script = self->storage_->Load(script_id);
-            if (script && self->fire_cb_)
-              self->fire_cb_.Run(*script, base::Time::Now());
-            self->Tick();
+            PostSharedRead(
+                self->storage_dir_,
+                base::BindOnce(
+                    [](const std::string& id, AutomationStorage& storage) {
+                      return storage.Load(id);
+                    },
+                    script_id),
+                base::BindOnce(&AutomationScheduler::OnTimerScriptLoaded,
+                               self));
           },
           weak_factory_.GetWeakPtr(), soonest_script_id));
+}
+
+void AutomationScheduler::OnTimerScriptLoaded(std::optional<Script> script) {
+  if (!started_)
+    return;
+  if (script && fire_cb_)
+    fire_cb_.Run(*script, base::Time::Now());
+  Tick();
 }
 
 }  // namespace automation

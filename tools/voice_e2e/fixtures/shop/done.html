@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!-- The shop's confirmation (shop.test/done). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Order confirmed - Corner Shop</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+<script src="/_kit/shop.js"></script>
+</head>
+<body>
+<main>
+  <h1>Thank you</h1>
+  <p id="confirmation">Your order is confirmed.</p>
+  <p>It goes to <span id="to"></span>.</p>
+</main>
+<script>
+  const p = new URLSearchParams(location.search);
+  document.getElementById('to').textContent =
+      [p.get('name'), p.get('street'), p.get('town')].filter(Boolean).join(', ');
+  window.order = {name: p.get('name'), street: p.get('street'),
+                  town: p.get('town'), delivery: p.get('delivery'),
+                  items: shop.items()};
+</script>
+</body>
+</html>

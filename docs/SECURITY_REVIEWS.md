@@ -4,6 +4,126 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-11-04: round 44 (November 2026)
+
+**Scope.** The code of round 44, which each of its four workstreams had
+reviewed only on its own side, and the places where the integrator joined
+them; and the voice channel's findings left open by earlier reviews:
+
+1. Regular files and links (`common/molt_regular_file.*`,
+   `molt_settings_file.*`, the learning file, `AutomationStorage`'s reads
+   and writes): the time between looking at a path and opening it, a link
+   in a parent directory, how a link "inside the home directory" is
+   decided, the size caps, what is opened checked again, and the
+   temporary file and rename of every rewrite.
+2. Claims settled after a crash (`RecoverInterruptedClaims()`,
+   `IsClaimedCopy()`, `InterruptedTakes()`, the set-aside names, the
+   one-minute window, a clock set back): another profile, a second browser
+   on the same home directory, or a file in the shared directory.
+3. The Agent studio off the UI thread (`molt_ai_agent_storage.*`, the
+   handler in `molt_ai_agent_ui.cc`, `AutomationStorage::Update()` and its
+   per-directory lock, `SharedSequence()`): replies in flight when the page
+   or the handler goes, the lock against the runner and the scheduler, and
+   every message's checks and clicks.
+4. Spanish everywhere (`spoken_answers*`' `Said()`, `SaidLater()` and
+   `Relocalized()`, the Spanish catalog, the gesture's Spanish tables,
+   `voice_prompts*`, `page_questions*`, the wake phrases): page-derived
+   words in a sentence said again in the voice's language, Spanish page
+   text heard as an answer, the page questions' Spanish instruction and
+   the fence, and a language change mid-prompt, mid-reading and
+   mid-gesture.
+5. The word said in passing (`WordSaidInPassing()`,
+   `VoiceBrowserPrompts::OnUtteranceHeard()` after the loop plans each
+   utterance): its order against the prompt's own handling, and whether a
+   page can keep a word alive or retire words without end.
+6. Build readiness: the `gn-static-check` CI job (the release tarball and
+   its SHA-256, the caches, pull requests from forks) and what
+   `gn_static_check.py` runs of the repository's content.
+7. The integrator's fixes of round 44 (harnesses) and the round 43 entry
+   below.
+
+**Method.** Each candidate traced from its attacker (a web page, its
+audio, its text read aloud or given to the on-device model, a page
+capturing a microphone or the screen, a Cast receiver, a file in a
+storage directory, another profile, a second browser, a pull request)
+through MoltBrowser's code and the upstream Chromium 156 code at the
+pinned revision (Cast's mirroring host and what registers with the
+media stream capture indicator, the session history intervention). Fixes
+tested with the std-only unit tests built standalone (system gtest, ASan
+and UBSan), the voice controller fuzzer, and the static checks
+(`gn_static_check.py`, checkdeps, the Spanish catalog's check); the
+changed C++ was compiled against Chromium 156's headers; the browser tests
+run on the build machine.
+
+**Findings.** 11 in round 44's code: 2 low and 9 informational (local
+files written by the same user, usability, what later work covers).
+Fixed: both low and three informational (two of them in the same
+round's storage work); the others are tracked privately. Also closed: 8
+findings of earlier reviews, in the voice channel.
+
+**Fixed.**
+
+- The Agent studio's answers reach only the page that asked: one that
+  arrives after the page reloaded is dropped
+  (`ui/webui/molt_ai/molt_ai_agent_ui.cc`).
+- A routine set aside during a claim is always returned to the shared
+  storage, under a fresh name when every simple one is taken
+  (`automation/automation_storage.cc`).
+- A sentence the browser made in English and says in the voice's language
+  (`Relocalized()`) is said from the key that made it only when that key
+  is clear: words in a placeholder (a page's label, model output) that make
+  another of the browser's sentences fit no longer drop the browser's own
+  words around them (`voice/spoken_answers.cc`).
+- What is said over voice mode's own voice, and the commands that always
+  count, are parsed in the language the session listens in
+  (`TakenOverOwnVoice()`, `IsAlwaysHeardCommand()`).
+- The window's voice language is read on `settings.json`'s own sequence,
+  so a change the settings page writes meanwhile is never undone by it.
+
+Closed from earlier reviews:
+
+- Cast's mirroring of the screen or a window counts as a capture of the
+  screen: the confirmation word isn't shown while it runs
+  (`common/molt_screen_mirroring.h`, noted by Cast's mirroring host).
+- The microphone waits for the window's voice language at startup
+  (`VoiceController::language_known()`).
+- Barge-in works in Spanish as in English (above).
+- A prompt whose words were retired again and again gets words that are
+  only shown and stay however they are heard, so it can always be answered
+  by voice (`LastWordsChannel()`).
+- "Repeat" after a prompt went says what it said with its word only
+  without it (`ForgetWordTexts()`).
+- A reading that mentions a word like the wake phrase's name no longer
+  keeps the user's wake phrase out: only the phrase, or a sound-alike of
+  the whole phrase, in what the browser is saying when it is heard does
+  (`VoiceSessionLogic::SaidWakePhrase()`).
+- After page text was read (a reading, an answer about the page, the
+  planner's words), an answer that allows or accepts waits for the
+  browser to read its own question again ("That was the page's text. Here
+  is my question: ..."; `PendingPrompt::after_page_text`).
+- Entries a page adds in its own document after a voice press of a plain
+  button (not a link) are skippable for "go back"
+  (`activation::Intent::kPressButton`).
+
+**Tests added.**
+
+- `voice_spanish_speech_unittest.cc`: a placeholder's words make no other
+  sentence. `voice_session_logic_unittest.cc`: barge-in and the
+  always-heard commands in Spanish; a word like the wake word in a
+  reading, the phrase earlier in a long reading, across two texts.
+  `voice_controller_logic_unittest.cc`: "repeat" after the prompt went; an
+  answer after page text waits for the prompt again.
+  `voice_gesture_channel_unittest.cc`: the last words are only shown.
+  `voice_reader_unittest.cc`: each chunk is noted as the page's text.
+  `activation_policy_unittest.cc`: a plain button.
+  `molt_screen_mirroring_unittest.cc`.
+- Browser tests: `VoiceGestureChannelBrowserTest`'s
+  `MirroringTheScreenTakesTheShownWordBack`,
+  `APagePlayingWordsCantTakeTheGestureAway` and
+  `AnAnswerImitatingAPromptAnswersNothing`;
+  `VoiceSessionBrowserTest.TheMicrophoneWaitsForTheVoiceLanguage`;
+  `ActivationGuardBrowserTest.TrapEntriesAfterAPlainButtonCostNoExtraBack`.
+
 ## 2026-11-01: round 43 (November 2026)
 
 **Scope.** The code of round 43, which each of its four workstreams had

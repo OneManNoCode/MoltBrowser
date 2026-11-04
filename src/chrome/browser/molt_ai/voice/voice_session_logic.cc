@@ -39,12 +39,43 @@ std::string SaidWords(std::string_view text) {
   return words;
 }
 
+// Whether |word| sounds like the folded name |name| (the wake phrase's
+// last word): it is the name, about as long with its phonetic key ("mold"
+// and "moult" for "molt"), or begins with it ("moltbrowser", "molts").
+bool SoundsLikeName(std::string_view word,
+                    std::string_view name,
+                    std::string_view key) {
+  if (word.size() >= name.size() && word.substr(0, name.size()) == name) {
+    return true;
+  }
+  // A sound-alike is about as long as the name ("mold", "mould").
+  const bool near_length =
+      word.size() + 1 >= name.size() && word.size() <= name.size() + 2;
+  return near_length && PhoneticKey(word) == key;
+}
+
+// Whether |word| sounds like the folded |first|, the wake phrase's word
+// before its name: it is that word, or its key is within a vowel or an "h"
+// of it ("hay", "hi", "a" or "eh" for "hey").
+bool SoundsLikeFirst(std::string_view word,
+                     std::string_view first,
+                     std::string_view first_key) {
+  if (word == first) {
+    return true;
+  }
+  const std::string key = PhoneticKey(word);
+  return !key.empty() && !first_key.empty() &&
+         PhoneticDistance(key, first_key, 1) <= 1;
+}
+
 // Whether the folded words |haystack| hold a sound-alike of the folded
-// wake phrase |phrase|: a word that sounds like its last word, the name
-// ("mold" and "moult" for "molt": one phonetic key), or one that begins
-// with the name right after the phrase's word before it ("hey
-// moltbrowser", "hay molts"). Only for names of four letters or more,
-// whose keys are specific enough.
+// wake phrase |phrase| as the speech helper's spotter could hear it: the
+// phrase's word before its name (or one that sounds like it) right before
+// the name or a word that sounds like it ("hey mold", "hay moult", "hey
+// moltbrowser"). The name, or a word like it, on its own ("black mold",
+// "birds molt") is not the phrase. A phrase of one word: that word or one
+// like it. Only for names of four letters or more, whose keys are specific
+// enough.
 bool SaysSoundAlike(std::string_view haystack, std::string_view phrase) {
   const size_t space = phrase.rfind(' ');
   const std::string_view name =
@@ -66,18 +97,9 @@ bool SaysSoundAlike(std::string_view haystack, std::string_view phrase) {
       end = haystack.size();
     }
     const std::string_view word = haystack.substr(start, end - start);
-    // A sound-alike is about as long as the name ("mold", "mould").
-    const bool near_length =
-        word.size() + 1 >= name.size() && word.size() <= name.size() + 2;
-    if (near_length && PhoneticKey(word) == key) {
-      return true;
-    }
-    const bool after_first =
-        !first.empty() && !previous.empty() &&
-        (previous == first ||
-         (!first_key.empty() && PhoneticKey(previous) == first_key));
-    if (after_first && word.size() > name.size() &&
-        word.substr(0, name.size()) == name) {
+    if (SoundsLikeName(word, name, key) &&
+        (first.empty() ||
+         (!previous.empty() && SoundsLikeFirst(previous, first, first_key)))) {
       return true;
     }
     previous = word;
@@ -126,7 +148,13 @@ std::string_view SessionStateName(SessionState state) {
 }
 
 bool IsAlwaysHeardCommand(std::string_view text) {
-  switch (ParseVoiceCommand(text, ParseContext()).kind) {
+  return IsAlwaysHeardCommand(text, Language::kEnglish);
+}
+
+bool IsAlwaysHeardCommand(std::string_view text, Language language) {
+  ParseContext context;
+  context.language = language;
+  switch (ParseVoiceCommand(text, context).kind) {
     case VoiceCommandKind::kStop:
     case VoiceCommandKind::kStopSpeaking:
     case VoiceCommandKind::kCancel:
@@ -142,6 +170,12 @@ namespace {
 // Whether |command| stays with what the browser reads or does
 // (TakenOverOwnVoice()).
 bool StaysWithWhatIsRead(const VoiceCommand& command) {
+  // The browser's own actions (windows, settings, downloads, bookmarks,
+  // the AI, its menus, starting over) wait for the browser to be quiet,
+  // as opening a site does.
+  if (ActsOnTheBrowser(command.kind)) {
+    return false;
+  }
   switch (command.kind) {
     case VoiceCommandKind::kChoose:
       // A place in the list ("the third one", "number four", "the next
@@ -180,9 +214,14 @@ bool StaysWithWhatIsRead(const VoiceCommand& command) {
 }  // namespace
 
 bool TakenOverOwnVoice(std::string_view text) {
+  return TakenOverOwnVoice(text, Language::kEnglish);
+}
+
+bool TakenOverOwnVoice(std::string_view text, Language language) {
   // As the browser reads a list: a bare number or description chooses.
   ParseContext list;
   list.expecting_choice = true;
+  list.language = language;
   const VoiceCommand in_list = ParseVoiceCommand(text, list);
   if (!StaysWithWhatIsRead(in_list)) {
     return false;
@@ -190,7 +229,9 @@ bool TakenOverOwnVoice(std::string_view text) {
   // And as it reads anything else: the loop parses it in its own context,
   // where "open three" opens a site called "three". A bare number with no
   // list ("three") goes to the planner as nothing but that number.
-  const VoiceCommand plain = ParseVoiceCommand(text, ParseContext());
+  ParseContext own;
+  own.language = language;
+  const VoiceCommand plain = ParseVoiceCommand(text, own);
   if (plain.kind == VoiceCommandKind::kUnknown &&
       in_list.kind == VoiceCommandKind::kChoose &&
       in_list.choice.kind == ChoiceRef::Kind::kNumber &&
@@ -390,7 +431,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   wake_until_ms_ = 0;
   bool take = false;
   if (!text.empty()) {
-    if (IsAlwaysHeardCommand(text)) {
+    if (IsAlwaysHeardCommand(text, settings_.language)) {
       take = true;
     } else if (OtherSpeechSince(utterance.begun_ms)) {
       // Another source spoke while this was said: it may be what was heard.
@@ -406,7 +447,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       take = confidence >= kMinConfidenceWithoutWake &&
              !EchoOfBrowser(text, utterance.begun_ms);
       // What needs the browser quiet stops it and is asked for again.
-      if (take && !TakenOverOwnVoice(text)) {
+      if (take && !TakenOverOwnVoice(text, settings_.language)) {
         take = false;
         actions.say_again = true;
         actions.stop_speech = activity_ == BrowserActivity::kSpeaking;
@@ -704,22 +745,36 @@ bool VoiceSessionLogic::SaidLately(int64_t noted_ms, int64_t at_ms) const {
 }
 
 bool VoiceSessionLogic::SaidWakePhrase(int64_t now_ms) const {
-  for (const auto& [when, words] : said_) {
+  // What the browser was saying when the phrase was heard: the last text it
+  // began before then, the one before it (a phrase may run from one into
+  // the next) and any begun since. A sound-alike said earlier in a long
+  // reading doesn't keep the user's own wake phrase out for all of it.
+  size_t from = 0;
+  for (size_t i = 0; i < said_.size(); ++i) {
+    if (said_[i].first <= now_ms) {
+      from = i == 0 ? 0 : i - 1;
+    }
+  }
+  std::string previous;
+  for (size_t i = from; i < said_.size(); ++i) {
+    const auto& [when, words] = said_[i];
     if (!SaidLately(when, now_ms)) {
+      previous.clear();
       continue;
     }
+    // Across the seam with the text before it.
+    const std::string joined =
+        previous.empty() ? words : previous + " " + words;
     for (const std::string& phrase : settings_.wake_phrases) {
       const std::string folded = FoldForComparison(phrase);
-      const size_t space = folded.rfind(' ');
-      const std::string_view name =
-          space == std::string::npos
-              ? std::string_view(folded)
-              : std::string_view(folded).substr(space + 1);
-      if (HasWords(words, folded) || HasWords(words, name) ||
-          SaysSoundAlike(words, folded)) {
+      if (HasWords(joined, folded) || SaysSoundAlike(joined, folded)) {
         return true;
       }
     }
+    // The text's last word, for the seam with the next one.
+    const size_t last_space = words.rfind(' ');
+    previous =
+        last_space == std::string::npos ? words : words.substr(last_space + 1);
   }
   return false;
 }

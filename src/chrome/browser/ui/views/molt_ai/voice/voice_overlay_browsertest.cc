@@ -31,6 +31,7 @@
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -77,6 +78,11 @@ constexpr char kResultsPath[] = "/molt_voice/video_results.html";
 constexpr char kSearchPath[] = "/molt_voice/search_results.html";
 
 class VoiceOverlayBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  public:
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();

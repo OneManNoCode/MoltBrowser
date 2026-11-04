@@ -10,14 +10,21 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "base/base_paths.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/test/scoped_path_override.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif
 
 #if BUILDFLAG(IS_POSIX)
 #include <sys/socket.h>
@@ -234,6 +241,175 @@ TEST_F(MoltRegularFileTest, LinksAreFollowedOnlyWithinHomeAndWhereAllowed) {
 }
 
 #endif  // BUILDFLAG(IS_POSIX)
+
+// The writer's temporary file for |name| in |dir|, as Chromium names it
+// (base::CreateAndOpenTemporaryFileInDir() with the name as the prefix),
+// last changed |age| ago.
+base::FilePath WriteTemporary(const base::FilePath& dir,
+                              const std::string& name,
+                              base::TimeDelta age) {
+  base::FilePath temporary;
+  base::File file = base::CreateAndOpenTemporaryFileInDir(
+      dir, &temporary, /*additional_flags=*/0,
+      base::FilePath::FromUTF8Unsafe(name).value());
+  EXPECT_TRUE(file.IsValid());
+  file.Close();
+  const base::Time when = base::Time::Now() - age;
+  EXPECT_TRUE(base::TouchFile(temporary, when, when));
+  return temporary;
+}
+
+// A crash between the temporary file and the rename leaves the former:
+// only those of the files asked for, a minute old, regular, are deleted.
+TEST_F(MoltRegularFileTest, OnlyStaleTemporariesOfOurFilesAreDeleted) {
+  const base::FilePath stale =
+      WriteTemporary(home_, "settings.json", base::Minutes(5));
+  const base::FilePath fresh =
+      WriteTemporary(home_, "settings.json", base::Seconds(2));
+  const base::FilePath other =
+      WriteTemporary(home_, "Preferences", base::Minutes(5));
+  // A file of that name the user keeps is no temporary file.
+  const base::FilePath kept = InHome("settings.json.bak");
+  ASSERT_TRUE(base::WriteFile(kept, "{}"));
+  ASSERT_TRUE(base::WriteFile(InHome("settings.json"), "{}"));
+
+  const auto settings = [](std::string_view name) {
+    return name == "settings.json";
+  };
+  EXPECT_EQ(DeleteStaleWriteTemporaries(home_, settings, base::Time::Now()),
+            1u);
+  EXPECT_FALSE(base::PathExists(stale));
+  EXPECT_TRUE(base::PathExists(fresh));
+  EXPECT_TRUE(base::PathExists(other));
+  EXPECT_TRUE(base::PathExists(kept));
+  EXPECT_EQ(Contents(InHome("settings.json")), "{}");
+  // A minute later, the one written meanwhile too; a clock set back counts
+  // as late.
+  EXPECT_EQ(DeleteStaleWriteTemporaries(home_, settings,
+                                        base::Time::Now() + base::Minutes(2)),
+            1u);
+  EXPECT_FALSE(base::PathExists(fresh));
+  const base::FilePath future =
+      WriteTemporary(home_, "settings.json", -base::Minutes(10));
+  EXPECT_EQ(DeleteStaleWriteTemporaries(home_, settings, base::Time::Now()),
+            1u);
+  EXPECT_FALSE(base::PathExists(future));
+  EXPECT_TRUE(base::PathExists(other));
+  // Nothing there, or no directory: nothing.
+  EXPECT_EQ(
+      DeleteStaleWriteTemporaries(InHome("none"), settings, base::Time::Now()),
+      0u);
+}
+
+// The lock file: created, regular, held while the lock lives, and taken
+// again after it.
+TEST_F(MoltRegularFileTest, ALockFileIsTakenAndGiven) {
+  const base::FilePath path = InHome(".storage.lock");
+  {
+    MoltFileLock lock(path, base::Milliseconds(50));
+    EXPECT_TRUE(lock.held());
+    EXPECT_EQ(MoltFileKindAt(path, MoltFileLinks::kNotFollowed),
+              MoltFileKind::kRegular);
+  }
+  MoltFileLock again(path, base::Milliseconds(50));
+  EXPECT_TRUE(again.held());
+  // No directory: no lock, and no wait.
+  MoltFileLock none(InHome("none/.storage.lock"), base::Seconds(5));
+  EXPECT_FALSE(none.held());
+}
+
+#if BUILDFLAG(IS_POSIX)
+
+// Anything but a regular file at the lock's path is never opened: the
+// caller goes on without the lock, at once.
+TEST_F(MoltRegularFileTest, ALockIsNeverAFifoOrALink) {
+  const base::FilePath fifo = InHome(".storage.lock");
+  ASSERT_EQ(mkfifo(fifo.value().c_str(), 0600), 0);
+  MoltFileLock on_fifo(fifo, base::Seconds(5));
+  EXPECT_FALSE(on_fifo.held());
+
+  const base::FilePath target = InHome("target");
+  ASSERT_TRUE(base::WriteFile(target, ""));
+  const base::FilePath link = InHome("link.lock");
+  ASSERT_TRUE(base::CreateSymbolicLink(target, link));
+  MoltFileLock on_link(link, base::Seconds(5));
+  EXPECT_FALSE(on_link.held());
+}
+
+#endif  // BUILDFLAG(IS_POSIX)
+
+#if BUILDFLAG(IS_WIN)
+
+// A symbolic link (a name-surrogate reparse point) is told apart as POSIX
+// tells a link apart: never followed for the files moved by name, followed
+// within the home directory for settings.json and the learning file.
+// Creating one needs Developer Mode or the privilege: skipped without.
+bool MakeLink(const base::FilePath& target,
+              const base::FilePath& link,
+              bool directory) {
+  return ::CreateSymbolicLinkW(
+             link.value().c_str(), target.value().c_str(),
+             SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE |
+                 (directory ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0)) != 0;
+}
+
+TEST_F(MoltRegularFileTest, ReparsePointsAreLinks) {
+  const base::FilePath dotfiles = InHome("dotfiles");
+  ASSERT_TRUE(base::CreateDirectory(dotfiles));
+  const base::FilePath target = dotfiles.AppendASCII("settings.json");
+  ASSERT_TRUE(base::WriteFile(target, "{\"voice_mode\": true}"));
+  const base::FilePath link = InHome("settings.json");
+  if (!MakeLink(target, link, /*directory=*/false)) {
+    GTEST_SKIP() << "symbolic links can't be made here";
+  }
+
+  // Within the home directory, for the files rewritten whole: followed.
+  MoltFileRead read =
+      ReadMoltFile(link, 64, MoltFileLinks::kFollowedWithinHome);
+  EXPECT_EQ(read.kind, MoltFileKind::kRegular);
+  EXPECT_EQ(read.contents, "{\"voice_mode\": true}");
+  // A write goes to the file the link names (its final path, long names
+  // and all), and the link stays.
+  std::optional<base::FilePath> write =
+      MoltFileWritePath(link, MoltFileLinks::kFollowedWithinHome);
+  ASSERT_TRUE(write);
+  ASSERT_TRUE(base::WriteFile(*write, "{\"voice_mode\": false}"));
+  EXPECT_EQ(Contents(target), "{\"voice_mode\": false}");
+  EXPECT_EQ(MoltFileKindAt(link, MoltFileLinks::kNotFollowed),
+            MoltFileKind::kNotRegular);
+  // Never for the files moved and deleted by name (a .molt, audit.log).
+  EXPECT_EQ(ReadMoltFile(link, 64, MoltFileLinks::kNotFollowed).kind,
+            MoltFileKind::kNotRegular);
+  EXPECT_FALSE(MoltFileWritePath(link, MoltFileLinks::kNotFollowed));
+  EXPECT_FALSE(AppendToMoltFile(link, "line\n"));
+  EXPECT_FALSE(ReadMoltFileTail(link, 64));
+  EXPECT_EQ(Contents(target), "{\"voice_mode\": false}");
+
+  // Outside the home directory, to nothing, or to a directory: neither.
+  const base::FilePath outside = elsewhere_.AppendASCII("settings.json");
+  ASSERT_TRUE(base::WriteFile(outside, "{}"));
+  const base::FilePath out_link = InHome("out.json");
+  ASSERT_TRUE(MakeLink(outside, out_link, /*directory=*/false));
+  EXPECT_EQ(MoltFileKindAt(out_link, MoltFileLinks::kFollowedWithinHome),
+            MoltFileKind::kNotRegular);
+  EXPECT_FALSE(MoltFileWritePath(out_link, MoltFileLinks::kFollowedWithinHome));
+  const base::FilePath dangling = InHome("dangling.json");
+  ASSERT_TRUE(MakeLink(dotfiles.AppendASCII("gone.json"), dangling, false));
+  EXPECT_EQ(MoltFileKindAt(dangling, MoltFileLinks::kFollowedWithinHome),
+            MoltFileKind::kNotRegular);
+  const base::FilePath dir_link = InHome("dir.json");
+  ASSERT_TRUE(MakeLink(dotfiles, dir_link, /*directory=*/true));
+  EXPECT_EQ(MoltFileKindAt(dir_link, MoltFileLinks::kFollowedWithinHome),
+            MoltFileKind::kNotRegular);
+  EXPECT_EQ(MoltFileKindAt(dir_link, MoltFileLinks::kNotFollowed),
+            MoltFileKind::kNotRegular);
+
+  // The lock file is never one either.
+  MoltFileLock on_link(link, base::Milliseconds(50));
+  EXPECT_FALSE(on_link.held());
+}
+
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace
 }  // namespace molt_ai

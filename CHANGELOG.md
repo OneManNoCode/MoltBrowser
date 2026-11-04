@@ -538,6 +538,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   read ("open three") waits until it has stopped; and a language your
   computer has no voice for is read by one of its own voices, never a
   remote one.
+- Hardening (security review of round 44, `docs/SECURITY_REVIEWS.md`):
+  in voice mode (preview), the confirmation word is never shown while
+  Cast mirrors your screen; an answer to one of the browser's prompts
+  said after the page's text was read out waits until the browser has
+  read its own question again; a prompt whose word kept changing is
+  still answered by voice (its last words are only shown); "repeat"
+  never says the word of a prompt that is gone; "go back" after a voice
+  press of a plain button leaves the page in one; the microphone waits
+  for voice mode's language at startup; and a reading that mentions a
+  word like "Molt" no longer keeps your wake phrase out.
 
 ### Privacy
 - **Voice mode in Spanish** (round 43, second-language;
@@ -1376,6 +1386,23 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   has stopped, and "play" no longer lets a page's history entry cost an
   extra "go back". Details: `docs/design/TOUCHLESS_BROWSING.md` §6.6, §7.3
   and §7.5.
+- **Touchless browsing: the whole browser by voice** (preview, behind
+  `chrome://flags/#molt-voice-mode`), in English and Spanish. Bookmarks
+  ("bookmark this page", "open my bookmarks"), history ("show my history",
+  "reopen the closed tab"), downloads ("open the last download", never a
+  file that could run programs), settings ("open privacy settings"; always
+  listening by voice after a "yes", while what weakens a protection stays
+  a click), windows ("new private window", "switch to the other window";
+  voice mode never listens in MoltNet), the AI chat ("ask the AI ...",
+  answered aloud and never acted on), and the browser's own buttons and
+  menus ("open the menu", then "click Settings"; never a permission's or a
+  download's warning). Also the volume to a level, the playback speed and
+  captions on any player, "undo" for what voice mode did last, "start
+  over", "next match", punctuation said while typing ("comma", "period"),
+  a known site's name on its own, and "where am I?" and "what can I say?"
+  for what you are in. Voice mode can be offered at first run (built, off
+  until switched on at `chrome://flags/#molt-voice-mode-at-first-run`). Details: `docs/VOICE_COMMANDS.md`,
+  `docs/design/TOUCHLESS_BROWSING.md` §2.
 
 ### Fixed
 - **Workflows, routines and settings files hold up to crashes, odd files
@@ -1391,6 +1418,23 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   of holding up shutdown. A `settings.json` kept by a dotfile manager, a
   link to a file in your home folder, stays a link. The automation audit
   log is now created when missing.
+- **Workflows and settings: never on the window's thread, safe with two
+  browsers, and voice mode's names and a page's numbers in Spanish too**
+  (round 45). `molt://ai-automation`, the AI chat's saves, recordings,
+  runs and the scheduler read and write workflows in the background, and a
+  read never holds up quitting (a home folder on a network drive that
+  stopped answering no longer hangs it). Two workflows saved at the same
+  moment, in one browser or two sharing a home folder, never replace each
+  other, and a temporary file left by a crash mid-save is cleaned up; a
+  workflow put back after a move that was cut short always finds a name of
+  its own, and the Agent studio, reloaded while it waits for an answer,
+  only shows its own. On
+  Windows a linked `settings.json` stays a link, and a linked workflow is
+  never followed. Browser tests use a home folder of their own. A routine
+  name that sounds like another in Spanish ("noticias" and "las noticias")
+  counts as taken; the web agent's questions are asked in Spanish; and a
+  Spanish page's views, dates and lengths ("1,2 M de visualizaciones",
+  "hace 2 años") are read as the numbers they are.
 - **A Windows clock set before 1970 no longer ends the browser** when an
   automation writes its audit timestamp (it records the epoch instead), and
   a schedule whose time can't be converted has no next run.
@@ -1482,6 +1526,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and ONNX Runtime from pinned sources into one executable, with its three
   models (about 80 MB, bundled only with `MOLT_BUNDLE_SPEECH=1` for now); a
   new fuzzer covers what the browser sends it.
+- **Voice mode end to end** (`tools/voice_e2e/`, `docs/VOICE_E2E.md`): a
+  kit that speaks to a built browser through a virtual microphone and
+  checks what happens: 92 scenarios over every core task of touchless
+  browsing (the owner's song scenario with "Hey Molt" and always
+  listening, forms, a shop up to its confirmation, webmail, media,
+  bookmarks, windows, prompts answered by their confirmation word, and
+  page audio, replayed words and trap history entries that must not
+  act), on local copies of the sites, with speech rendered by two pinned
+  offline voices at two speeds, quiet and with music, through PulseAudio
+  or Chromium's file capture, and typed for comparison. It reports
+  success, what was heard against what was said, and the time from the
+  end of speech to the action, against Phase 1's exit. The browser writes
+  what voice mode heard and said only with a test switch
+  (`--molt-voice-test-log`), never a confirmation word, and nothing from
+  MoltNet windows.
 - **Voice bench** (`tools/voice_bench/`, `docs/VOICE_BENCH.md`): a
   reproducible kit that measures open-source, on-device speech engines for
   touchless browsing (wake phrase, end of speech, streaming and

@@ -16,6 +16,10 @@
 //   sherpa_bench kws     --list L --threads N <model flags> --keywords F
 //                        [--kws-threshold 0.25] [--kws-score 1.0]
 //   sherpa_bench tts     --list L --threads N <tts flags>
+//                        [--noise-scale 0.667] [--noise-scale-w 0.8]
+//                        (VITS and Matcha's sampling; 1e-30 for both makes
+//                         a voice deterministic, as tools/voice_e2e renders:
+//                         sherpa-onnx's C API takes 0 for its default)
 //   sherpa_bench listen  --list L --threads N --listen-engine kws|stream
 //                        <model flags> [--vad F] [--keywords F]
 //                        (real time, with sleeps: CPU used while listening)
@@ -222,6 +226,8 @@ typedef struct Options {
   int tokens_from_buffer;
   const char *provider;
   const char *listen_engine;
+  // TTS sampling noise; negative: the defaults below.
+  float noise_scale, noise_scale_w;
 } Options;
 
 static const char *Need(int argc, char **argv, int *i) {
@@ -242,6 +248,8 @@ static void ParseOptions(int argc, char **argv, Options *o) {
   o->kws_score = 1.0f;
   o->kws_trailing_blanks = 1;
   o->provider = "cpu";
+  o->noise_scale = -1.0f;
+  o->noise_scale_w = -1.0f;
   if (argc < 2)
     Die("usage: sherpa_bench info|offline|stream|kws|tts|listen ...", 0);
   o->mode = argv[1];
@@ -272,6 +280,7 @@ static void ParseOptions(int argc, char **argv, Options *o) {
     STR("--vocoder", vocoder)
     INT("--tokens-from-buffer", tokens_from_buffer)
     STR("--listen-engine", listen_engine)
+    FLT("--noise-scale", noise_scale) FLT("--noise-scale-w", noise_scale_w)
     if (!strcmp(a, "--provider-config")) {
       static char provider[4096];
       snprintf(provider, sizeof(provider), "cpu:%s", Need(argc, argv, &i));
@@ -819,15 +828,17 @@ static int RunTts(const Options *o) {
     c.model.vits.model = o->model;
     c.model.vits.tokens = o->tokens;
     c.model.vits.lexicon = o->lexicon;
-    c.model.vits.noise_scale = 0.667f;
-    c.model.vits.noise_scale_w = 0.8f;
+    c.model.vits.noise_scale = o->noise_scale >= 0 ? o->noise_scale : 0.667f;
+    c.model.vits.noise_scale_w =
+        o->noise_scale_w >= 0 ? o->noise_scale_w : 0.8f;
     c.model.vits.length_scale = 1.0f;
   } else if (!strcmp(kind, "matcha")) {
     c.model.matcha.acoustic_model = o->model;
     c.model.matcha.vocoder = o->vocoder;
     c.model.matcha.tokens = o->tokens;
     c.model.matcha.lexicon = o->lexicon;
-    c.model.matcha.noise_scale = 0.667f;
+    c.model.matcha.noise_scale =
+        o->noise_scale >= 0 ? o->noise_scale : 0.667f;
     c.model.matcha.length_scale = 1.0f;
   } else {
     Die("tts needs --kind kokoro|vits|matcha", 0);

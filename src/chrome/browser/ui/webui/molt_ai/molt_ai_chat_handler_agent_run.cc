@@ -25,12 +25,13 @@
 #include <string_view>
 #include <utility>
 
+#include "base/functional/bind.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/agent_run_draft.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
+#include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
-#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
@@ -58,6 +59,20 @@ constexpr char kRunGone[] =
 
 int64_t NowUnix() {
   return static_cast<int64_t>(std::time(nullptr));
+}
+
+// On the shared storage's sequence: the draft saved as a new workflow, and
+// the audit line; the id it was saved under.
+std::optional<std::string> SaveDraft(molt_ai::automation::Script script,
+                                     AutomationStorage& storage) {
+  // A new workflow: CASUAL, whatever it says (it says CASUAL).
+  AutomationSecurity::ClampTrustForSave(script, /*existing=*/nullptr);
+  std::optional<std::string> id = storage.SaveNew(std::move(script));
+  if (id) {
+    storage.AppendAudit(*id, "draft_from_agent_run",
+                        "casual, sites unconfirmed");
+  }
+  return id;
 }
 
 // The browser's record of a step, in the converter's terms. Nothing the
@@ -93,6 +108,7 @@ RunStep ToRunStep(const molt_ai::WebAgent::Step& step) {
 int MoltAIChatHandler::BeginAgentRunRecord(const std::string& goal,
                                            content::WebContents* target) {
   agent_run_ = molt_ai::automation::agent_draft::Run();
+  agent_run_saving_ = false;
   agent_run_.goal = goal;
   if (target) {
     agent_run_.start_url = target->GetLastCommittedURL().spec();
@@ -144,6 +160,7 @@ void MoltAIChatHandler::FinishAgentRunRecord(int run_id,
 
 void MoltAIChatHandler::ForgetAgentRun() {
   agent_run_ = molt_ai::automation::agent_draft::Run();
+  agent_run_saving_ = false;
   ++agent_run_id_;
 }
 
@@ -203,37 +220,51 @@ void MoltAIChatHandler::HandleSaveAgentRun(const base::ListValue& args) {
     return;
   }
 
-  molt_ai::automation::Script& script = *draft.script;
-  bool saved = false;
-  {
-    ScopedAllowBlockingForMolt allow_blocking;
-    AutomationStorage storage;
-    if (storage.EnsureDirectory()) {
-      std::string id = "agent_" + base::NumberToString(NowUnix());
-      while (storage.Load(id)) {
-        id += "_";
-      }
-      script.id = id;
-      // A new workflow: CASUAL, whatever it says (it says CASUAL).
-      AutomationSecurity::ClampTrustForSave(script, /*existing=*/nullptr);
-      saved = storage.Save(script);
-      if (saved) {
-        storage.AppendAudit(script.id, "draft_from_agent_run",
-                            "casual, sites unconfirmed");
-      }
-    }
-  }
-  if (!saved) {
-    reply("Couldn\xE2\x80\x99t save the workflow.");
+  // One save at a time (a second click while it is written saves nothing).
+  if (agent_run_saving_) {
+    reply(kRunGone);
     return;
   }
-  // Saved once: the run's record (typed text included) is dropped.
-  ForgetAgentRun();
-  out.Set("success", true);
-  out.Set("id", script.id);
-  out.Set("name", script.name);
-  out.Set("message", draft.message);
-  reply(std::string_view());
+  agent_run_saving_ = true;
+  molt_ai::automation::Script& script = *draft.script;
+  script.id = "agent_" + base::NumberToString(NowUnix());
+  std::string name = script.name;
+  // On the shared storage's sequence, under that id or the first free one
+  // after it, picked under the storage's lock.
+  molt_ai::automation::PostSharedChange(
+      AutomationStorage::SharedDirectory(),
+      base::BindOnce(&SaveDraft, std::move(script)),
+      base::BindOnce(&MoltAIChatHandler::OnAgentRunSaved,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id, *run_id,
+                     std::move(name), std::move(draft.message)));
+}
+
+void MoltAIChatHandler::OnAgentRunSaved(const std::string& callback_id,
+                                        int run_id,
+                                        std::string name,
+                                        std::string message,
+                                        std::optional<std::string> script_id) {
+  if (run_id == agent_run_id_) {
+    agent_run_saving_ = false;
+    if (script_id) {
+      // Saved once: the run's record (typed text included) is dropped.
+      ForgetAgentRun();
+    }
+  }
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+  base::DictValue out;
+  out.Set("success", script_id.has_value());
+  if (!script_id) {
+    out.Set("error", "Couldn\xE2\x80\x99t save the workflow.");
+  } else {
+    out.Set("id", *script_id);
+    out.Set("name", name);
+    out.Set("message", message);
+  }
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
 }
 
 // ------------------------------------------------------------------

@@ -121,8 +121,9 @@ class VoiceSession : public VoiceController::Observer,
   // window (the caption bar goes); typed commands start it again.
   void Stop();
   void Toggle();
-  // Listening, or getting ready to.
-  bool listening() const { return logic_.running(); }
+  // Listening, or getting ready to (waiting for the window's voice
+  // language to be known first).
+  bool listening() const { return logic_.running() || start_pending_; }
   SessionState state() const { return logic_.state(); }
 
   void AddObserver(Observer* observer);
@@ -158,6 +159,7 @@ class VoiceSession : public VoiceController::Observer,
 
   void OnBrowserDidClose(BrowserWindowInterface* browser);
   bool IsMoltNet() const;
+  void NotifySessionChanged();
   // The window's voice language (its notices, its wake phrases).
   Language SpeechLanguage() const;
   void OnSettingsRead(const VoiceModeSettings& settings);
@@ -222,6 +224,10 @@ class VoiceSession : public VoiceController::Observer,
   std::vector<base::WeakPtr<content::WebContents>> ducked_;
   // "Voice mode is on" was said in this session.
   bool announced_ = false;
+  // Start() waits for the window's voice language (read on a worker when its
+  // voice mode is made): the microphone never opens in a language voice mode
+  // can't listen in, not even until the setting is read.
+  bool start_pending_ = false;
   base::OneShotTimer tick_timer_;
   base::RepeatingTimer poll_timer_;
   base::ObserverList<Observer> observers_;

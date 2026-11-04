@@ -95,6 +95,7 @@
 #include "chrome/browser/molt_ai/security/activation_policy.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
+#include "chrome/browser/molt_ai/voice/voice_browser_types.h"
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_hints.h"
@@ -172,6 +173,8 @@ enum class VoiceStepKind : uint8_t {
   // is the question as heard, or its topic; |index| its PageQuestionKind.
   // Nothing on the page is acted on.
   kAskPage,
+  // The rest of the browser (voice_browser_types.h): |browser_action|.
+  kBrowserAction,
 };
 
 // What a kRead step asks of the reader.
@@ -252,6 +255,8 @@ struct VoiceStep {
   ReadOp read = ReadOp::kPage;
   // kPromptAnswer.
   PromptAnswer prompt_answer = PromptAnswer::kNone;
+  // kBrowserAction.
+  BrowserAction browser_action = BrowserAction::kNone;
   int count = 1;
   int index = 0;
   int seconds = 0;
@@ -344,6 +349,9 @@ struct VoiceEnvironment {
   // Learning (§6.8): the routines, what "remember this" would save, the
   // learned words and the site's hint. Empty in MoltNet windows.
   LearningEnvironment learning;
+  // The rest of the browser: bookmarks, windows, settings, an open menu
+  // (voice_browser_types.h).
+  BrowserEnvironment browser;
 };
 
 // What the user and the browser said so far that matters for what comes
@@ -409,6 +417,10 @@ struct ConversationState {
   // answer (voice_prompts.h); id 0 for none. It belongs to the tab, not to
   // a page: the browser ends it (PlanBrowserPromptGone()).
   PendingPrompt prompt;
+
+  // The rest of the browser: its list read last, the last find's matches,
+  // undo, the sites opened by voice (voice_browser_types.h).
+  BrowserConversation browser;
 };
 
 // One turn of the conversation.
@@ -511,6 +523,15 @@ VoiceTurn PlanBrowserPromptGone(int id,
 
 // The browser's prompt |state| holds and that waits at |now_ms|, or 0.
 int BrowserPromptHeld(const ConversationState& state, int64_t now_ms);
+
+// The browser's list the glue gathered for |asked|, the kBrowserAction step
+// that asked for it: read aloud to choose from, or the entry it names
+// opened, or the close ones offered (voice_browser_logic.h). Nothing in a
+// MoltNet window.
+VoiceTurn PlanBrowserItems(const VoiceStep& asked,
+                           std::vector<BrowserItem> items,
+                           const VoiceEnvironment& env,
+                           const ConversationState& state);
 
 // Whether |command| is an answer to the browser's prompt |state| holds.
 // While the loop waits for a "yes" to a question it asked after the

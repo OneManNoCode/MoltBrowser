@@ -3,6 +3,10 @@
 
 #include "chrome/browser/molt_ai/agents/voice_agent_speech.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/spoken_answers.h"
 
@@ -243,6 +247,153 @@ std::string NoPlannerSpeech(NoPlanner reason, std::string_view detail) {
                          {}));
   }
   return Spoken(SaidLater("Say what can I say to hear the commands I know."));
+}
+
+// ---- The web agent's own questions ----------------------------------------
+
+namespace {
+
+// "https://shop.example" -> "shop.example" (as QuestionWhat() says it).
+std::string WithoutScheme(std::string_view origin) {
+  for (std::string_view scheme : {"https://", "http://"}) {
+    if (origin.substr(0, scheme.size()) == scheme) {
+      origin.remove_prefix(scheme.size());
+      break;
+    }
+  }
+  return Spoken(origin);
+}
+
+// The page's label of a click (QuotedLabel()'s "Pay now", between quotes),
+// as one phrase: its punctuation said as spaces. "" for a target that
+// isn't a quoted label (the model's selector: never said).
+std::string ClickLabel(std::string_view what) {
+  if (what.size() < 2 || what.front() != '"' || what.back() != '"') {
+    return std::string();
+  }
+  std::string label(what.substr(1, what.size() - 2));
+  for (char& c : label) {
+    if (c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?' ||
+        c == '"') {
+      c = ' ';
+    }
+  }
+  return Spoken(label);
+}
+
+// |effect|'s origin when it starts with |head|.
+bool EffectOf(std::string_view effect,
+              std::string_view head,
+              std::string* origin) {
+  if (effect.substr(0, head.size()) != head) {
+    return false;
+  }
+  *origin = WithoutScheme(effect.substr(head.size()));
+  return !origin->empty();
+}
+
+}  // namespace
+
+std::string OpenQuestion(std::string_view origin) {
+  return Spoken(Said(kEn, "open the site {0}", {WithoutScheme(origin)}));
+}
+
+std::string ContinueQuestion(std::string_view origin) {
+  return Spoken(Said(kEn, "keep working on {0} (the page moved there)",
+                     {WithoutScheme(origin)}));
+}
+
+std::string ClickQuestion(std::string_view label,
+                          const std::vector<std::string>& effects) {
+  std::string opens;
+  std::string form;
+  bool form_to = false;
+  for (const std::string& effect : effects) {
+    std::string origin;
+    if (EffectOf(effect, "opens ", &origin) && opens.empty()) {
+      opens = std::move(origin);
+    } else if (EffectOf(effect, "submits a form on ", &origin) &&
+               form.empty()) {
+      form = std::move(origin);
+    } else if (EffectOf(effect, "submits a form to ", &origin) &&
+               form.empty()) {
+      form = std::move(origin);
+      form_to = true;
+    } else {
+      return std::string();
+    }
+  }
+  if (opens.empty() && form.empty()) {
+    return std::string();
+  }
+  const std::string name = ClickLabel(label);
+  std::string said;
+  if (!name.empty()) {
+    if (!opens.empty() && !form.empty()) {
+      said = form_to ? Said(kEn,
+                            "click the one labelled {0}, it opens {1} and "
+                            "submits a form to {2}",
+                            {name, opens, form})
+                     : Said(kEn,
+                            "click the one labelled {0}, it opens {1} and "
+                            "submits a form on {2}",
+                            {name, opens, form});
+    } else if (!opens.empty()) {
+      said =
+          Said(kEn, "click the one labelled {0}, it opens {1}", {name, opens});
+    } else {
+      said = form_to ? Said(kEn,
+                            "click the one labelled {0}, it submits a form "
+                            "to {1}",
+                            {name, form})
+                     : Said(kEn,
+                            "click the one labelled {0}, it submits a form "
+                            "on {1}",
+                            {name, form});
+    }
+  } else if (!opens.empty() && !form.empty()) {
+    said = form_to ? Said(kEn, "click, it opens {0} and submits a form to {1}",
+                          {opens, form})
+                   : Said(kEn, "click, it opens {0} and submits a form on {1}",
+                          {opens, form});
+  } else if (!opens.empty()) {
+    said = Said(kEn, "click, it opens {0}", {opens});
+  } else {
+    said = form_to ? Said(kEn, "click, it submits a form to {0}", {form})
+                   : Said(kEn, "click, it submits a form on {0}", {form});
+  }
+  return Spoken(said);
+}
+
+std::string FieldQuestion(bool fill,
+                          std::string_view field,
+                          std::string_view origin) {
+  const std::string where = WithoutScheme(origin);
+  std::string said;
+  if (field == "password") {
+    said = fill ? Said(kEn, "fill a password field on {0}", {where})
+                : Said(kEn, "type into a password field on {0}", {where});
+  } else if (field == "payment card") {
+    said = fill ? Said(kEn, "fill a payment card field on {0}", {where})
+                : Said(kEn, "type into a payment card field on {0}", {where});
+  } else if (field == "one-time code") {
+    said = fill ? Said(kEn, "fill a one-time code field on {0}", {where})
+                : Said(kEn, "type into a one-time code field on {0}", {where});
+  } else if (field == "form") {
+    said = fill ? Said(kEn, "fill a form field on {0}", {where})
+                : Said(kEn, "type into a form field on {0}", {where});
+  }
+  return said.empty() ? said : Spoken(said);
+}
+
+std::string ToolQuestion(std::string_view name,
+                         bool other_site,
+                         std::string_view origin) {
+  const std::string tool = Spoken(name);
+  return Spoken(
+      other_site ? Said(kEn, "use another site's {0} tool, in a frame on {1}",
+                        {tool, WithoutScheme(origin)})
+                 : Said(kEn, "use the page's {0} tool", {tool}));
 }
 
 }  // namespace voice_agent

@@ -65,8 +65,11 @@ std::string Said(Language language,
 // guard's notice, a helper's reason), in |language|: the catalog's
 // sentence for it whole, else for the catalog key it was made from, with
 // the words that filled the key's placeholders. |english| as it is when
-// no key made it, and always in English. Never for page text or model
-// output: only what the browser composed from a key. At most
+// no key made it, when which key made it can't be told (another key, with
+// more text of its own, fits because of what is in a placeholder, but
+// doesn't start and end the text as much as one that also fits), and
+// always in English. Never for page text or model output alone: only what
+// the browser composed from a key. At most
 // kMaxRelocalizedBytes are matched (a longer text is returned as it is);
 // linear in the text for each key.
 inline constexpr size_t kMaxRelocalizedBytes = 2048;

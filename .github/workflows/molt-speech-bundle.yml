@@ -1,0 +1,57 @@
+# The speech and voice helpers with their models (scripts/bundle-speech.sh),
+# for the spoken end-to-end suite of molt-test-build.yml, which calls this
+# workflow. It also runs on its own when the bundle's sources change on a
+# claude/ branch, so a fix to them is checked (and cached) without a
+# Chromium build.
+# Copyright 2026 GenEye AI Labs Inc.
+
+name: MoltBrowser speech bundle
+
+on:
+  workflow_call:
+  push:
+    branches: ['claude/**']
+    paths:
+      - 'scripts/bundle-speech.sh'
+      - 'src/chrome/browser/molt_ai/voice/speech_helper/**'
+      - 'src/chrome/browser/molt_ai/voice/voice_helper/**'
+      - '.github/workflows/molt-speech-bundle.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Cached bundle
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .molt-speech-cache/build/linux-x64
+          key: molt-speech-bundle-${{ hashFiles('scripts/bundle-speech.sh', 'src/chrome/browser/molt_ai/voice/speech_helper/**', 'src/chrome/browser/molt_ai/voice/voice_helper/**') }}
+      - name: Build the speech and voice helpers
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          c++ --version | head -1
+          cmake --version | head -1
+          if ! scripts/bundle-speech.sh --build-only --parts speech,voice --jobs 4; then
+            for f in .molt-speech-cache/build/linux-x64/*.log; do
+              echo "::group::$f"; tail -60 "$f"; echo "::endgroup::"
+            done
+            exit 1
+          fi
+      - name: Upload the bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-speech-bundle
+          path: |
+            .molt-speech-cache/build/linux-x64/speech/
+            .molt-speech-cache/build/linux-x64/voice/
+          retention-days: 14

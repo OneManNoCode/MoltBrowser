@@ -45,6 +45,7 @@
 #include "chrome/browser/molt_ai/common/molt_settings_file.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_language.h"
 #include "chrome/browser/molt_ai/voice/voice_listener.h"
 #include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_session_logic.h"
@@ -423,6 +424,46 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, AnErrorLineEndsTheHelper) {
                 "Speech recognition stopped working: it reported an error"),
             std::string::npos)
       << tts_.AllSpoken();
+}
+
+// Listening asked for before the window's voice language is known (as with
+// the browser at startup, the setting read on a worker): the microphone
+// waits for it, so it never opens in a language voice mode can't listen in.
+IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
+                       TheMicrophoneWaitsForTheVoiceLanguage) {
+  Script("ready\n");
+  VoiceController* controller =
+      VoiceController::GetOrCreateForBrowser(browser());
+  ASSERT_TRUE(controller);
+  ASSERT_TRUE(session());
+  ASSERT_TRUE(
+      base::test::RunUntil([&]() { return controller->language_known(); }));
+  controller->ForgetLanguageForTesting();
+  ASSERT_TRUE(session()->Start());
+  EXPECT_TRUE(session()->listening());
+  // No helper was looked for, so no microphone was opened.
+  Wait(base::Milliseconds(500));
+  EXPECT_FALSE(session()->listener_for_testing());
+  // Spanish, which voice mode can't listen in yet: it never opens.
+  controller->SetLanguage(Language::kSpanish);
+  EXPECT_FALSE(session()->listening());
+  Wait(base::Milliseconds(500));
+  EXPECT_FALSE(session()->listener_for_testing());
+  // Stopped while it waits: it doesn't start once the language is known.
+  controller->ForgetLanguageForTesting();
+  ASSERT_TRUE(session()->Start());
+  session()->Stop();
+  EXPECT_FALSE(session()->listening());
+  controller->SetLanguage(Language::kEnglish);
+  Wait(base::Milliseconds(500));
+  EXPECT_FALSE(session()->listener_for_testing());
+  // English: it listens once the language is known.
+  controller->ForgetLanguageForTesting();
+  ASSERT_TRUE(session()->Start());
+  controller->SetLanguage(Language::kEnglish);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return session()->listener_for_testing() != nullptr; }));
+  EXPECT_TRUE(session()->listening());
 }
 
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)

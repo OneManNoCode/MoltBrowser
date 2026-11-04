@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!-- A note with unsaved changes (dialogs.test/unsaved): once something is
+     typed, leaving asks first (beforeunload). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A note</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+</head>
+<body>
+<main>
+  <h1>A note</h1>
+  <label for="note">Note</label>
+  <textarea id="note" rows="4" cols="40"></textarea>
+</main>
+<script>
+  'use strict';
+  const note = document.getElementById('note');
+  window.addEventListener('beforeunload', (e) => {
+    if (note.value) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+</script>
+</body>
+</html>

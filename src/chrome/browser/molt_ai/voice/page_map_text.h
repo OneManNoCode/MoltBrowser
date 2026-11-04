@@ -8,7 +8,12 @@
 // Every string here comes from a web page, so it is untrusted: it may be
 // invalid UTF-8, hold control, bidi or invisible characters, or be very
 // long. The parsers are linear scanners (no std::regex on page content) and
-// read a bounded prefix of their input. English words only for now.
+// read a bounded prefix of their input.
+//
+// Fields are read in the page's language (FieldLanguageOf() of the
+// document's lang, never the voice's): English's words, or Spanish's
+// ("hace 2 años", "1,2 M de visualizaciones", "6 minutos y 7 segundos").
+// English is the default, and reads exactly as it always has.
 //
 // Std-only; unit-tested in molt_ai_unittests (page_map_text_unittest.cc)
 // and fuzzed with the page map (molt_page_map_fuzzer).
@@ -55,25 +60,46 @@ std::optional<std::string> TypedText(std::string_view text,
 // character counts once).
 size_t CountCodePoints(std::string_view utf8);
 
+// The words a page's fields are read with.
+enum class FieldLanguage {
+  kEnglish,
+  kSpanish,
+};
+// The page's language tag ("es", "es-419", "ES_mx", any case) as field
+// words: Spanish for Spanish, English for anything else (or none).
+FieldLanguage FieldLanguageOf(std::string_view language_tag);
+
 // A duration as pages show one: "6:07", "1:02:03", "6 minutes, 7
-// seconds", "1 hr 2 min", "PT6M7S". The whole of |text| must be the
-// duration (spaces at either end aside). Seconds, at most 1000 hours.
-std::optional<int> ParseDuration(std::string_view text);
+// seconds", "1 hr 2 min", "PT6M7S"; in Spanish "6 minutos y 7 segundos",
+// "1 h 2 min". The whole of |text| must be the duration (spaces at either
+// end aside). Seconds, at most 1000 hours.
+std::optional<int> ParseDuration(
+    std::string_view text,
+    FieldLanguage language = FieldLanguage::kEnglish);
 
 // A count: a number, an optional multiplier ("K", "M", "B", "thousand",
 // "million", "billion") and a unit of one or two words that isn't a unit of
-// time: "2.1B views", "1,234 subscribers", "12K likes", "No views".
+// time: "2.1B views", "1,234 subscribers", "12K likes", "No views". In
+// Spanish: a decimal comma or point, "." or "," between groups of three,
+// "k", "mil", "M", "mill.", "millones", "mil M" and "mil millones", "de"
+// before the unit, and "Sin" for none: "1,2 M de visualizaciones", "15 mil
+// suscriptores", "1.234 vistas", "Sin visualizaciones".
 struct ParsedCount {
   int64_t value = 0;
   // The unit in lower case, with one space between two words ("views").
   std::string unit;
 };
-std::optional<ParsedCount> ParseCount(std::string_view text);
+std::optional<ParsedCount> ParseCount(
+    std::string_view text,
+    FieldLanguage language = FieldLanguage::kEnglish);
 
 // Whether |text| is a date as pages show one, and nothing else: "15 years
 // ago", "Streamed 2 years ago", "yesterday", "Jan 5, 2024", "5 January
-// 2024", "2024-01-05", "1/5/2024".
-bool LooksLikeDate(std::string_view text);
+// 2024", "2024-01-05", "1/5/2024". In Spanish: "hace 2 años", "Emitido
+// hace 3 días", "ayer", "la semana pasada", "5 ene 2024", "5 de enero de
+// 2024", "05/01/2024".
+bool LooksLikeDate(std::string_view text,
+                   FieldLanguage language = FieldLanguage::kEnglish);
 
 // Whether |text| reads as a web address ("https://...", "www....", or a
 // breadcrumb such as "en.wikipedia.org › wiki"), which isn't worth

@@ -4,10 +4,15 @@
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 
 #include <cstdint>  // for int64_t — required on Linux under -fmodules
+#include <map>
 #include <memory>
+#include <optional>
+#include <string>
+#include <utility>
 
 #include <ctime>
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
@@ -15,6 +20,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
+#include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -28,9 +34,9 @@
 #include "content/public/browser/web_contents.h"
 #include "ui/base/base_window.h"
 #include "ui/base/mojom/window_show_state.mojom.h"
-#include "ui/gfx/geometry/rect.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -44,14 +50,13 @@ class BackgroundRunHolder {
  public:
   BackgroundRunHolder(BrowserWindowInterface* browser,
                       molt_ai::BrowserAIRuntime* ai_runtime,
-                      std::unique_ptr<AutomationStorage> storage,
+                      const base::FilePath& storage_dir,
                       content::WebContents* contents)
       : browser_(browser->GetWeakPtr()),
         ai_runtime_(ai_runtime),
-        storage_(std::move(storage)),
         runner_(std::make_unique<AutomationRunner>(contents,
-                                                    ai_runtime_.get(),
-                                                    storage_.get())) {}
+                                                   ai_runtime_.get(),
+                                                   storage_dir)) {}
 
   void Start(Script script, size_t start_index) {
     // Register with the Agent Inbox so the side panel can show a live
@@ -118,21 +123,24 @@ class BackgroundRunHolder {
   // completes; owning the runtime here meant a background run that finished
   // while a load/generation task was still in flight freed it under the task.
   raw_ptr<molt_ai::BrowserAIRuntime> ai_runtime_;
-  std::unique_ptr<AutomationStorage> storage_;
   std::unique_ptr<AutomationRunner> runner_;
   int64_t inbox_id_ = 0;
 };
 
-}  // namespace
-
-void RunScriptInBackgroundBrowser(
-    Profile* profile,
-    const Script& script,
-    bool minimize,
-    size_t start_index,
-    const std::map<std::string, std::string>& variable_overrides) {
+// The run, once its workflow was read again on the storage's sequence.
+void StartBackgroundRun(base::WeakPtr<Profile> weak_profile,
+                        base::FilePath storage_dir,
+                        std::string id,
+                        bool minimize,
+                        size_t start_index,
+                        std::map<std::string, std::string> variable_overrides,
+                        std::optional<Script> fresh) {
+  Profile* profile = weak_profile.get();
   if (!profile) {
-    LOG(WARNING) << "[MoltAutomation] no profile, skipping background run";
+    return;
+  }
+  if (!fresh) {
+    LOG(WARNING) << "[MoltAutomation] failed to reload script id=" << id;
     return;
   }
 
@@ -143,8 +151,8 @@ void RunScriptInBackgroundBrowser(
   GURL start_url("about:blank");
   // An unconfirmed draft (a web agent run, agent_run_draft.h) opens nothing:
   // the runner refuses it on about:blank, and the studio hears why.
-  for (const auto& step : script.steps) {
-    if (script.security.sites_unconfirmed || HasVoiceSteps(script))
+  for (const auto& step : fresh->steps) {
+    if (fresh->security.sites_unconfirmed || HasVoiceSteps(*fresh))
       break;
     if (step.type == StepType::NAVIGATE && !step.target.empty()) {
       GURL g(step.target);
@@ -196,16 +204,6 @@ void RunScriptInBackgroundBrowser(
   // per-run instance, which could be freed under an in-flight background task.
   molt_ai::BrowserAIRuntime* ai_runtime = &molt_ai::BrowserAIRuntime::GetInstance();
   ai_runtime->Initialize();
-  auto storage = std::make_unique<AutomationStorage>();
-  storage->EnsureDirectory();
-
-  // Script is move-only, so we reload a fresh copy from disk by id.
-  auto fresh = storage->Load(script.id);
-  if (!fresh) {
-    LOG(WARNING) << "[MoltAutomation] failed to reload script id=" << script.id;
-    browser->GetWindow()->Close();
-    return;
-  }
 
   // MoltBrowser: apply one-off run-time variable overrides ("Run with these
   // values" from the studio) ON TOP of the saved defaults, after the reload so
@@ -216,9 +214,37 @@ void RunScriptInBackgroundBrowser(
   }
 
   // The holder self-destructs when the run finishes.
-  auto* holder = new BackgroundRunHolder(browser, ai_runtime,
-                                         std::move(storage), contents);
+  auto* holder =
+      new BackgroundRunHolder(browser, ai_runtime, storage_dir, contents);
   holder->Start(std::move(*fresh), start_index);
+}
+
+}  // namespace
+
+void RunScriptInBackgroundBrowser(
+    Profile* profile,
+    const Script& script,
+    bool minimize,
+    size_t start_index,
+    const std::map<std::string, std::string>& variable_overrides) {
+  if (!profile) {
+    LOG(WARNING) << "[MoltAutomation] no profile, skipping background run";
+    return;
+  }
+  // Script is move-only, so we reload a fresh copy from disk by id: on the
+  // shared storage's read sequence, after the changes posted before (the
+  // scheduler's last_fired_unix among them), never on the UI thread. The
+  // run window opens once it is read.
+  const base::FilePath storage_dir = AutomationStorage::SharedDirectory();
+  PostSharedRead(
+      storage_dir,
+      base::BindOnce(
+          [](const std::string& id, AutomationStorage& storage) {
+            return storage.Load(id);
+          },
+          script.id),
+      base::BindOnce(&StartBackgroundRun, profile->GetWeakPtr(), storage_dir,
+                     script.id, minimize, start_index, variable_overrides));
 }
 
 }  // namespace automation

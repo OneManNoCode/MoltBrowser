@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/rust/chromium_crates_io/gnrt_config.toml b/third_party/rust/chromium_crates_io/gnrt_config.toml
-index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92c85b02ca 100644
+index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..ddb2a9fdb7c91ee91d171ed5b71f8f6c6ea8745d 100644
 --- a/third_party/rust/chromium_crates_io/gnrt_config.toml
 +++ b/third_party/rust/chromium_crates_io/gnrt_config.toml
 @@ -120,6 +120,9 @@ extra_kv = { allow_unsafe = true }
@@ -184,7 +184,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  # TODO: Remove multiple versions of the `diplomat` crate:
  # diplomat@0.15.0, diplomat@0.16.0
  [crate.diplomat]
-@@ -330,9 +422,25 @@ extra_kv = { allow_unsafe = false }
+@@ -330,9 +422,28 @@ extra_kv = { allow_unsafe = false }
  extra_input_roots = ["../README.md"]
  extra_kv = { allow_unsafe = false }
  
@@ -197,6 +197,9 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
 +# MoltBrowser: upstream stopped vendoring encoding_rs at 152; anydoc's
 +# tree (anydoc, calamine, codepage, lopdf, quick-xml) still needs it.
 +[crate.encoding_rs]
++# "(Apache-2.0 OR MIT) AND BSD-3-Clause": the BSD part is the WHATWG
++# licence of the encoding data.
++license_files = ["LICENSE-APACHE", "LICENSE-WHATWG"]
 +extra_kv = { allow_unsafe = true }
 +
 +[crate.env_filter]
@@ -210,7 +213,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.equivalent.extra_kv]
  allow_unsafe = false
  
-@@ -344,6 +452,9 @@ extra_kv = { allow_unsafe = true }
+@@ -344,6 +455,9 @@ extra_kv = { allow_unsafe = true }
  [crate.extended]
  extra_kv = { allow_unsafe = false }
  
@@ -220,7 +223,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.fastbloom]
  extra_input_roots = ["../README.md"]
  extra_kv = { allow_unsafe = false }
-@@ -378,6 +489,9 @@ configs_to_remove = ['//build/config/compiler:default_optimization']
+@@ -378,6 +492,9 @@ configs_to_remove = ['//build/config/compiler:default_optimization']
  configs_to_add = ['//build/config/compiler:optimize']
  allow_unsafe = true
  
@@ -230,7 +233,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.foldhash.extra_kv]
  allow_unsafe = true
  
-@@ -390,6 +504,9 @@ allow_first_party_usage = false
+@@ -390,6 +507,9 @@ allow_first_party_usage = false
  remove_deps = ['winapi']
  extra_kv = { allow_unsafe = true }
  
@@ -240,7 +243,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.getrandom]
  group = 'safe'
  allow_first_party_usage = false
-@@ -562,6 +679,12 @@ extra_kv = { allow_unsafe = false }
+@@ -562,6 +682,12 @@ extra_kv = { allow_unsafe = false }
  [crate.indexmap.extra_kv]
  allow_unsafe = true
  
@@ -253,7 +256,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.itertools]
  extra_kv = { allow_unsafe = true }
  
-@@ -571,6 +694,22 @@ allow_unsafe = true
+@@ -571,6 +697,22 @@ allow_unsafe = true
  [crate.ixdtf.extra_kv]
  allow_unsafe = false
  
@@ -276,7 +279,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.jpeg-encoder]
  extra_kv = { allow_unsafe = true }
  
-@@ -653,9 +792,16 @@ extra_kv = { allow_unsafe = true }
+@@ -653,9 +795,16 @@ extra_kv = { allow_unsafe = true }
  [crate.log.extra_kv]
  allow_unsafe = true
  
@@ -293,7 +296,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.memchr.extra_kv]
  allow_unsafe = true
  
-@@ -693,12 +839,19 @@ group = 'test'
+@@ -693,12 +842,19 @@ group = 'test'
  allow_first_party_usage = false
  extra_kv = { allow_unsafe = true }
  
@@ -313,7 +316,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.num-derive]
  extra_kv = { allow_unsafe = false }
  
-@@ -730,6 +883,10 @@ extra_kv = { allow_unsafe = true }
+@@ -730,6 +886,10 @@ extra_kv = { allow_unsafe = true }
  [crate.once_cell]
  extra_kv = { allow_unsafe = true }
  
@@ -324,7 +327,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.ordered-float]
  extra_kv = { allow_unsafe = true }
  
-@@ -739,6 +896,9 @@ extra_kv = { allow_unsafe = true }
+@@ -739,6 +899,9 @@ extra_kv = { allow_unsafe = true }
  [crate.parking_lot_core]
  extra_kv = { allow_unsafe = true }
  
@@ -334,7 +337,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.png.extra_kv]
  allow_unsafe = false
  # Web tests (aka WPT tests, also formerly known as Layout Tests) require fast
-@@ -756,6 +916,9 @@ extra_kv = { allow_unsafe = true }
+@@ -756,6 +919,9 @@ extra_kv = { allow_unsafe = true }
  [crate.potential_utf.extra_kv]
  allow_unsafe = true
  
@@ -344,7 +347,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.primal-check]
  extra_kv = { allow_unsafe = false }
  
-@@ -778,12 +941,34 @@ extra_kv = { allow_unsafe = true }
+@@ -778,12 +944,34 @@ extra_kv = { allow_unsafe = true }
  allow_unsafe = false
  cpp_api_from_rust = true
  
@@ -380,7 +383,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.read-fonts]
  extra_input_roots = ['../generated', '../data/generated']
  extra_kv = { allow_unsafe = false }
-@@ -795,8 +980,11 @@ extra_kv = { allow_unsafe = true }
+@@ -795,8 +983,11 @@ extra_kv = { allow_unsafe = true }
  [crate.ref-cast-impl]
  extra_kv = { allow_unsafe = false }
  
@@ -393,7 +396,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  allow_first_party_usage = false
  extra_kv = { allow_unsafe = true }
  
-@@ -864,6 +1052,9 @@ extra_kv = { allow_unsafe = false }
+@@ -864,6 +1055,9 @@ extra_kv = { allow_unsafe = false }
  [crate.sfv]
  extra_kv = { allow_unsafe = false }
  
@@ -403,7 +406,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.shared-brotli-patch-decoder]
  extra_kv = { allow_unsafe = true, extra_deps = ["//third_party/brotli:dec"] }
  remove_build_rs = true
-@@ -906,6 +1097,9 @@ allow_unsafe = true
+@@ -906,6 +1100,9 @@ allow_unsafe = true
  [crate.strength_reduce]
  extra_kv = { allow_unsafe = false }
  
@@ -413,7 +416,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.strsim.extra_kv]
  allow_unsafe = false
  
-@@ -975,11 +1169,24 @@ allow_unsafe = false
+@@ -975,11 +1172,24 @@ allow_unsafe = false
  [crate.termcolor.extra_kv]
  allow_unsafe = false
  
@@ -440,7 +443,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  extra_kv = { allow_unsafe = false }
  
  [crate.timezone_provider]
-@@ -989,12 +1196,21 @@ extra_kv = { allow_unsafe = true }
+@@ -989,12 +1199,21 @@ extra_kv = { allow_unsafe = true }
  [crate.tinystr.extra_kv]
  allow_unsafe = true
  
@@ -462,7 +465,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.tuple_list]
  extra_kv = { allow_unsafe = false }
  
-@@ -1015,6 +1231,9 @@ extra_kv = { allow_unsafe = true }
+@@ -1015,6 +1234,9 @@ extra_kv = { allow_unsafe = true }
  allow_first_party_usage = false
  extra_kv = { allow_unsafe = true }
  
@@ -472,7 +475,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.typewit]
  allow_first_party_usage = false
  extra_kv = { allow_unsafe = true }
-@@ -1025,9 +1244,18 @@ extra_input_roots = ["../README.md"]
+@@ -1025,9 +1247,18 @@ extra_input_roots = ["../README.md"]
  allow_first_party_usage = false
  extra_kv = { allow_unsafe = true }
  
@@ -491,7 +494,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.unicode-width.extra_kv]
  allow_unsafe = false
  
-@@ -1052,6 +1280,9 @@ license_files = ["LICENSE-APACHE"]
+@@ -1052,6 +1283,9 @@ license_files = ["LICENSE-APACHE"]
  # Crate exists to encapsulate common UTF8 decoding code
  allow_unsafe = true
  
@@ -501,7 +504,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.uuid]
  extra_kv = { allow_unsafe = true }
  
-@@ -1068,6 +1299,12 @@ group = 'test'
+@@ -1068,6 +1302,12 @@ group = 'test'
  allow_first_party_usage = false
  extra_kv = { allow_unsafe = true }
  
@@ -514,7 +517,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.wide]
  group = 'test'
  allow_first_party_usage = false
-@@ -1160,6 +1397,9 @@ allow_unsafe = false
+@@ -1160,6 +1400,9 @@ allow_unsafe = false
  extra_input_roots = ['../README.md']
  extra_kv = { allow_unsafe = true }
  
@@ -524,7 +527,7 @@ index 1a7fbb295e26a6b7ea39fb0c4d5424b5c231d931..31a30bd4d7522a93ebf37ed9268eff92
  [crate.zmij]
  extra_kv = { allow_unsafe = true }
  
-@@ -1172,3 +1412,60 @@ extra_kv = { allow_unsafe = false }
+@@ -1172,3 +1415,60 @@ extra_kv = { allow_unsafe = false }
  
  [crate.zune-jpeg]
  extra_kv = { allow_unsafe = true }

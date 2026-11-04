@@ -100,7 +100,7 @@ BrowserWindowInterface* MoltVoiceSettingsHandler::Window() {
 void MoltVoiceSettingsHandler::ResolveWithState(
     std::string callback_id,
     std::optional<std::string> error) {
-  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+  molt_ai::PostReadMoltSettings(
       FROM_HERE, base::BindOnce(&molt_ai::voice::ReadVoiceModeSettings),
       base::BindOnce(&MoltVoiceSettingsHandler::OnRead,
                      weak_factory_.GetWeakPtr(), std::move(callback_id),
@@ -113,8 +113,8 @@ void MoltVoiceSettingsHandler::OnRead(std::string callback_id,
   if (!IsJavascriptAllowed()) {
     return;
   }
-  // Then the language (the same sequence: it sees every change before).
-  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+  // Then the language (after every change posted before).
+  molt_ai::PostReadMoltSettings(
       FROM_HERE, base::BindOnce(&molt_ai::voice::ReadVoiceLanguageSetting),
       base::BindOnce(&MoltVoiceSettingsHandler::OnLanguageRead,
                      weak_factory_.GetWeakPtr(), std::move(callback_id),
@@ -286,10 +286,23 @@ const char kVoiceSettingsJs[] = R"JS(
   'use strict';
   var section = document.getElementById('voiceSection');
   if (!section) return;
+  // molt://ai-settings/?section=voice (voice mode's "open voice mode
+  // settings"): the section, once it shows.
+  var scrollToSection =
+      new URLSearchParams(window.location.search).get('section') === 'voice';
 
   function render(s) {
     if (!s || typeof s !== 'object') return;
     section.hidden = s.available !== true;
+    if (scrollToSection && !section.hidden) {
+      scrollToSection = false;
+      section.scrollIntoView({block: 'start'});
+      var heading = section.querySelector('h2');
+      if (heading) {
+        heading.setAttribute('tabindex', '-1');
+        heading.focus({preventScroll: true});
+      }
+    }
     document.getElementById('voiceEnabled').checked = s.enabled === true;
     document.getElementById('voiceAlwaysListening').checked =
         s.alwaysListening === true;
