@@ -777,6 +777,10 @@ source_set("voice_controller") {
     # (MediaStreamCaptureIndicator), for the voice gesture's word.
     "//chrome/browser/media/webrtc",
 
+    # And the browser's own mirroring of the screen (Cast), which that
+    # record doesn't hold.
+    "//chrome/browser/molt_ai/common:screen_mirroring",
+
     # The voice helper: the bundled copy only, under the resident sandbox.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_resident",
@@ -1005,6 +1009,12 @@ source_set("voice_prompts_browser_tests") {
   deps = [
     ":features",
     ":voice_controller",
+
+    # Cast's mirroring of the screen, as voice mode's capture watch sees it.
+    "//chrome/browser/media",
+    "//chrome/browser/molt_ai/common:screen_mirroring",
+    "//components/mirroring/mojom:common",
+    "//mojo/public/cpp/bindings",
 
     # An answer about the page that imitates a prompt (a scripted model).
     ":voice_page",

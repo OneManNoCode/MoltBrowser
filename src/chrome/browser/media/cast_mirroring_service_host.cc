@@ -23,6 +23,7 @@
 #include "chrome/browser/media/router/media_router_feature.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
+#include "chrome/browser/molt_ai/common/molt_screen_mirroring.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -190,7 +191,10 @@ CastMirroringServiceHost::CastMirroringServiceHost(
     Observe(GetContents(source_media_id_.web_contents_id));
 }
 
-CastMirroringServiceHost::~CastMirroringServiceHost() = default;
+CastMirroringServiceHost::~CastMirroringServiceHost() {
+  // MoltBrowser: its mirroring of the screen or a window, if any, ends.
+  molt_ai::NoteScreenMirroring(this, false);
+}
 
 void CastMirroringServiceHost::Start(
     mojom::SessionParametersPtr session_params,
@@ -235,6 +239,13 @@ void CastMirroringServiceHost::Start(
 
   sink_name_ = base::UTF8ToUTF16(
       base::TrimWhitespaceASCII(sink_name, base::TrimPositions::TRIM_ALL));
+  // MoltBrowser: the screen or a window mirrored to another device, which
+  // no tab's capture indicator shows, is a capture of it to voice mode
+  // (molt_ai/common/molt_screen_mirroring.h).
+  if (source_media_id_.type == content::DesktopMediaID::TYPE_SCREEN ||
+      source_media_id_.type == content::DesktopMediaID::TYPE_WINDOW) {
+    molt_ai::NoteScreenMirroring(this, true);
+  }
   ShowCaptureIndicator();
 }
 

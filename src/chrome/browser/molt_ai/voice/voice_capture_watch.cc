@@ -26,10 +26,13 @@ VoiceCaptureWatch::VoiceCaptureWatch(base::RepeatingClosure changed)
   if (indicator_) {
     observation_.Observe(indicator_.get());
   }
+  AddScreenMirroringObserver(this);
   Refresh();
 }
 
-VoiceCaptureWatch::~VoiceCaptureWatch() = default;
+VoiceCaptureWatch::~VoiceCaptureWatch() {
+  RemoveScreenMirroringObserver(this);
+}
 
 void VoiceCaptureWatch::Refresh() {
   bool audio = false;
@@ -56,7 +59,8 @@ void VoiceCaptureWatch::Refresh() {
     }
   }
   audio_captured_ = audio;
-  screen_captured_ = screen;
+  // The browser's own mirroring of the screen or a window counts too.
+  screen_captured_ = screen || IsMirroringScreen();
 }
 
 void VoiceCaptureWatch::RefreshAndReport() {
@@ -114,6 +118,14 @@ void VoiceCaptureWatch::OnIsCapturingDisplayChanged(
     content::WebContents* web_contents,
     bool is_capturing_display) {
   if (is_capturing_display) {
+    Began(/*audio=*/false);
+  } else {
+    Ended();
+  }
+}
+
+void VoiceCaptureWatch::OnScreenMirroringChanged() {
+  if (IsMirroringScreen()) {
     Began(/*audio=*/false);
   } else {
     Ended();

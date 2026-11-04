@@ -462,6 +462,9 @@ source_set("impl") {
     deps += [
       "//chrome/browser/media/router:media_router_feature",
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
+
+      # MoltBrowser: the screen mirrored, for voice mode's capture watch.
+      "//chrome/browser/molt_ai/common:screen_mirroring",
       "//chrome/browser/net",
       "//chrome/browser/ui/tab_sharing",
       "//chrome/browser/ui/tabs:tab_strip",

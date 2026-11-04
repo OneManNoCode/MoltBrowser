@@ -17,10 +17,14 @@
 //   - An answer about the page that imitates the browser's prompts: the
 //     word said after it doesn't answer the prompt until the browser has
 //     read its own question again.
+//   - The browser's own mirroring of the screen to another device (Cast),
+//     which no tab's capture indicator shows: as for a share of the screen.
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "base/command_line.h"
@@ -31,6 +35,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/common/molt_screen_mirroring.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
@@ -49,6 +54,7 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/permissions/test/mock_permission_prompt_factory.h"
+#include "content/public/browser/desktop_media_id.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_platform.h"
 #include "content/public/browser/web_contents.h"
@@ -58,6 +64,15 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/media/cast_mirroring_service_host.h"
+#include "components/mirroring/mojom/cast_message_channel.mojom.h"
+#include "components/mirroring/mojom/session_observer.mojom.h"
+#include "components/mirroring/mojom/session_parameters.mojom.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#endif
 
 namespace molt_ai {
 namespace voice {
@@ -455,6 +470,65 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
   EXPECT_TRUE(WaitForLog("notify:denied"));
 #endif
 }
+
+#if !BUILDFLAG(IS_ANDROID)
+// Cast's mirroring of the screen to another device: the mirroring's host
+// notes it while it runs (common/molt_screen_mirroring.h), and the word
+// shown is taken back then, as for a share of the screen; the prompt gets
+// one again when it ends.
+IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
+                       MirroringTheScreenTakesTheShownWordBack) {
+  // The host of a mirroring of the whole screen, started and ended.
+  {
+    auto host = std::make_unique<mirroring::CastMirroringServiceHost>(
+        content::DesktopMediaID(content::DesktopMediaID::TYPE_SCREEN,
+                                content::DesktopMediaID::kFakeId));
+    mojo::PendingRemote<mirroring::mojom::SessionObserver> observer;
+    std::ignore = observer.InitWithNewPipeAndPassReceiver();
+    mojo::PendingRemote<mirroring::mojom::CastMessageChannel> outbound;
+    std::ignore = outbound.InitWithNewPipeAndPassReceiver();
+    mojo::Remote<mirroring::mojom::CastMessageChannel> inbound;
+    auto params = mirroring::mojom::SessionParameters::New();
+    params->source_id = "SourceID";
+    EXPECT_FALSE(IsMirroringScreen());
+    host->Start(std::move(params), std::move(observer), std::move(outbound),
+                inbound.BindNewPipeAndPassReceiver(), "Living room");
+    EXPECT_TRUE(IsMirroringScreen());
+    host.reset();
+    EXPECT_FALSE(IsMirroringScreen());
+  }
+
+  VoiceController* voice = Start();
+  auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(manager);
+  permissions::MockPermissionPromptFactory factory(manager);
+  AskNotifications();
+  const std::string word = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(word)) << word;
+  EXPECT_EQ(Prompts(voice)->ShownWord(), word);
+
+  // A mirroring of the screen begins (as its host notes it).
+  int session = 0;
+  NoteScreenMirroring(&session, true);
+  EXPECT_TRUE(base::test::RunUntil(
+      [&]() { return Prompts(voice)->ShownWord().empty(); }));
+  EXPECT_TRUE(
+      WaitForSpeech("I can't take the word while your screen is shared"));
+  voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(manager->IsRequestInProgress());
+
+  // It ends: a new word, shown again.
+  NoteScreenMirroring(&session, false);
+  EXPECT_TRUE(WaitForSpeech("Your screen is no longer shared."));
+  const std::string next = Prompts(voice)->current_word_for_testing();
+  ASSERT_TRUE(MatchConfirmationWord(next)) << next;
+  EXPECT_NE(next, word);
+  EXPECT_EQ(Prompts(voice)->ShownWord(), next);
+  voice->HandleHeardUtterance(next, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  EXPECT_TRUE(NoWordSpoken());
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
                        AShareThatBeginsTakesTheShownWordBack) {
