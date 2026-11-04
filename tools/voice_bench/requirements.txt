@@ -1,6 +1,6 @@
 # numpy for gen_audio.py and audio.py, only where it isn't installed.
 #   python3 -m pip install --user --require-hashes -r tools/voice_bench/requirements.txt
-# Wheels for CPython 3.12 and 3.13 on Linux (x86-64, arm64), macOS arm64
+# Wheels for CPython 3.12, 3.13 and 3.14 on Linux (x86-64, arm64), macOS arm64
 # and Windows x64; hashes from PyPI (numpy 2.5.3, published 2026-09-06).
 numpy==2.5.3 \
     --hash=sha256:f59a878c33d6b88122d80d239bb3b845d58708750b0cb06a09aebb9b18ec696c \
@@ -12,4 +12,9 @@ numpy==2.5.3 \
     --hash=sha256:f9a2353b37a1a9e78fd82b27ad7e2a32a2d036604d18f02b05e3136c62ca3b09 \
     --hash=sha256:c76d5dde9f445058f83d0c02af00557a4db91de9a9a57c0df87d1535001d654b \
     --hash=sha256:a5fa86b80fd24bcd1aff83ad23be44ea323de3f787be8f8b15d4a65621e25321 \
-    --hash=sha256:71cad2b2a7451ab79d8f5e71b453485b6775963d5cf794179144a7463fe6e8ec
+    --hash=sha256:71cad2b2a7451ab79d8f5e71b453485b6775963d5cf794179144a7463fe6e8ec \
+    --hash=sha256:012e66aca395d795496446e52aeeb5866312a5d4d3f27da270e5a0b43f70dc5c \
+    --hash=sha256:adc1ada2662f8a5f960b8a10d9986897e7499ef07e06d4cfe7197f8cce923c07 \
+    --hash=sha256:be5a8381859b6da607c84f4f7d6847725f1cf1853ef8a2c9e115b7d58bef47dc \
+    --hash=sha256:b0521d0f4aebb6e06189451025fa17a913287b13c03d5fe05c017333b654ea5b \
+    --hash=sha256:2c25dfa72943e4336ddb6b0ee4277b47a0c85bede0807530ec68103bf58e2c10
