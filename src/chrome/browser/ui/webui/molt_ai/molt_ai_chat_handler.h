@@ -179,6 +179,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Page Watchers — create a scheduled Script that periodically
   // extracts a selector and fires a notification on change/threshold.
   void HandleCreateWatcher(const base::ListValue& args);
+  // The watcher saved on the shared storage's sequence.
+  void OnWatcherSaved(const std::string& callback_id,
+                      const std::string& script_id,
+                      int interval_seconds,
+                      bool saved);
   // Agent Inbox — list currently-running background automation runs.
   void HandleListActiveAgents(const base::ListValue& args);
   // PDF chat — download the PDF at |url|, extract text, return.
@@ -267,6 +272,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // into a saved Script, written via AutomationStorage.
   // Args: [callback_id, {name, steps: [string], task}]
   void HandleSavePlanScript(const base::ListValue& args);
+  // The plan saved on the shared storage's sequence, under |script_id|.
+  void OnPlanSaved(const std::string& callback_id,
+                   int step_count,
+                   int parsed_ok,
+                   std::optional<std::string> script_id);
   // Tier 4: Password vault (molt_ai_chat_handler_vault.cc). The chat
   // page never receives a password; adding entries and revealing one
   // happen on molt://ai-settings (MoltVaultHandler).
@@ -365,6 +375,13 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: [callback_id, run_id]. Returns {success, id, name, message} or
   // {success: false, error}.
   void HandleSaveAgentRun(const base::ListValue& args);
+  // The draft of run |run_id| saved (under |script_id|) on the shared
+  // storage's sequence, or not.
+  void OnAgentRunSaved(const std::string& callback_id,
+                       int run_id,
+                       std::string name,
+                       std::string message,
+                       std::optional<std::string> script_id);
   // Opens Agent mode (the studio's side panel) in the chat's window, to
   // review a saved draft. Args: []
   void HandleOpenAgentStudio(const base::ListValue& args);
@@ -666,6 +683,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // its id (bumped when it is forgotten, so stale events miss).
   int agent_run_id_ = 0;
   molt_ai::automation::agent_draft::Run agent_run_;
+  // Its draft is being saved (a second click saves nothing meanwhile).
+  bool agent_run_saving_ = false;
 
   // Page-action proposals (molt_ai_chat_handler_actions.cc). The typed
   // message that asked to act on the page waits here for its text reply:

@@ -90,10 +90,13 @@ class AutomationRunner {
  public:
   // |target_contents| is the tab the script operates on. The runner does
   // not own it; caller must keep it alive. Per user spec, the runner uses
-  // the user's main profile so logins/cookies persist.
+  // the user's main profile so logins/cookies persist. |storage_dir| is the
+  // shared storage's directory, whose audit log, stats and artifacts the
+  // run writes (on its sequence, automation_shared_tasks.h); empty for a
+  // run that keeps nothing (the AI chat's one-off actions).
   AutomationRunner(content::WebContents* target_contents,
                    BrowserAIRuntime* ai_runtime,
-                   AutomationStorage* storage);
+                   const base::FilePath& storage_dir);
   ~AutomationRunner();
 
   AutomationRunner(const AutomationRunner&) = delete;
@@ -357,11 +360,17 @@ class AutomationRunner {
   void EmitStepProgress(bool starting, bool succeeded,
                         const std::string& note);
   void Finish(bool success, const std::string& message);
+  // An audit line for this run's workflow, posted to the storage's
+  // sequence (nothing without a storage).
+  void Audit(const std::string& event, const std::string& extra);
+  // RUN_SCRIPT: the child workflow, read on the storage's sequence.
+  void OnChildLoaded(std::string child_id, std::optional<Script> child);
 
   // ---- State ----
   raw_ptr<content::WebContents> target_contents_;  // not owned
   raw_ptr<BrowserAIRuntime> ai_runtime_;           // not owned
-  raw_ptr<AutomationStorage> storage_;             // not owned
+  // The shared storage's directory; empty: nothing kept.
+  const base::FilePath storage_dir_;
 
   Script script_;
   // AutomationSecurity::EffectivePolicy(script_), fixed at Run(); RUN_SCRIPT

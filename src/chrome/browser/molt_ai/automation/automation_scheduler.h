@@ -9,17 +9,21 @@
 // Threading: lives on the UI thread; uses base::OneShotTimer to wake up
 // at the next scheduled time. macOS sleep wake-ups deliver the timer
 // correctly; on Linux/Windows we additionally check elapsed wall time
-// every minute via a heartbeat.
+// every minute via a heartbeat. The workflows are read on the shared
+// storage's read sequence (automation_shared_tasks.h), after the changes
+// posted before (a fire's last_fired_unix among them), one listing at a
+// time: never on the UI thread.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/functional/callback.h"
-#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -45,7 +49,8 @@ class AutomationScheduler {
   AutomationScheduler(const AutomationScheduler&) = delete;
   AutomationScheduler& operator=(const AutomationScheduler&) = delete;
 
-  void SetStorage(AutomationStorage* storage);
+  // The shared storage's directory (AutomationStorage::directory()).
+  void SetStorageDir(const base::FilePath& dir);
   void SetFireCallback(ScheduledFireCallback cb);
 
   // Reads scripts from disk and arms the next timer. Run any cron
@@ -69,9 +74,17 @@ class AutomationScheduler {
 
  private:
   void Tick();
+  // Lists the workflows (on the storage's read sequence), then OnListed().
   void ArmNext(base::Time now);
+  void OnListed(base::Time now, std::vector<Script> scripts);
+  // The next timer's workflow, read again, fired.
+  void OnTimerScriptLoaded(std::optional<Script> script);
 
-  raw_ptr<AutomationStorage> storage_ = nullptr;  // not owned
+  base::FilePath storage_dir_;
+  // A listing is on its way; another was asked for meanwhile (it follows,
+  // so a catch-up fired by the first is seen fired).
+  bool listing_ = false;
+  bool list_again_ = false;
   ScheduledFireCallback fire_cb_;
   base::OneShotTimer next_timer_;
   base::RepeatingTimer heartbeat_;        // catches missed wakeups

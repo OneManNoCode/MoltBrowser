@@ -44,59 +44,59 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
-#include "components/content_settings/core/browser/host_content_settings_map.h"
-#include "components/content_settings/core/common/content_settings.h"
-#include "components/content_settings/core/common/content_settings_pattern.h"
-#include "components/content_settings/core/common/content_settings_types.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
 #include "chrome/browser/molt_ai/agents/frame_tools.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
-#include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
+#include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
-#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
+#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
+#include "chrome/browser/molt_ai/memory/conversation_store.h"
+#include "chrome/browser/molt_ai/memory/memory_service.h"
+#include "chrome/browser/molt_ai/memory/memory_service_factory.h"
+#include "chrome/browser/molt_ai/memory/memory_types.h"
+#include "chrome/browser/molt_ai/models/download_policy.h"
+#include "chrome/browser/molt_ai/models/model_download_job.h"
+#include "chrome/browser/molt_ai/models/model_download_plan.h"
 #include "chrome/browser/molt_ai/ocr/ocr_service.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
-#include "chrome/browser/molt_ai/vault/vault_store.h"
-#include "chrome/browser/molt_ai/voice/recorded_wav.h"
-#include "chrome/browser/molt_ai/voice/voice_service.h"
+#include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
-#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
-#include "components/proxy_config/proxy_config_dictionary.h"
-#include "components/proxy_config/proxy_config_pref_names.h"
-#include "components/prefs/pref_service.h"
+#include "chrome/browser/molt_ai/vault/vault_store.h"
+#include "chrome/browser/molt_ai/voice/recorded_wav.h"
+#include "chrome/browser/molt_ai/voice/voice_service.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tabs/tab_enums.h"
-#include "ui/base/page_transition_types.h"
-#include "components/bookmarks/browser/bookmark_model.h"
-#include "components/bookmarks/browser/bookmark_node.h"
-#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
-#include "chrome/browser/molt_ai/memory/conversation_store.h"
-#include "chrome/browser/molt_ai/models/download_policy.h"
-#include "chrome/browser/molt_ai/models/model_download_job.h"
-#include "chrome/browser/molt_ai/models/model_download_plan.h"
-#include "chrome/browser/molt_ai/memory/memory_service.h"
-#include "chrome/browser/molt_ai/memory/memory_service_factory.h"
-#include "chrome/browser/molt_ai/memory/memory_types.h"
-#include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
-#include "chrome/browser/molt_ai/security/agent_safety.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/content_settings/core/common/content_settings.h"
+#include "components/content_settings/core/common/content_settings_pattern.h"
+#include "components/content_settings/core/common/content_settings_types.h"
+#include "components/prefs/pref_service.h"
+#include "components/proxy_config/proxy_config_dictionary.h"
+#include "components/proxy_config/proxy_config_pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -111,6 +111,7 @@
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
+#include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 #include "url/url_constants.h"
@@ -3208,7 +3209,7 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   // The runner is captured by a shared_ptr in the completion callback
   // so it stays alive across async step execution.
   auto runner = std::make_shared<molt_ai::automation::AutomationRunner>(
-      target, /*ai_runtime=*/nullptr, /*storage=*/nullptr);
+      target, /*ai_runtime=*/nullptr, /*storage_dir=*/base::FilePath());
   std::string callback_id_copy = callback_id;
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
   runner->Run(std::move(s),
@@ -3608,16 +3609,29 @@ void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
     s.steps.push_back(std::move(step));
   }
 
-  // Save the script to disk. AutomationStorage methods touch the
-  // filesystem on the UI thread, so wrap in ScopedAllowBlockingForMolt.
-  bool saved = false;
-  {
-    ScopedAllowBlockingForMolt allow;
-    molt_ai::automation::AutomationStorage storage;
-    storage.EnsureDirectory();
-    saved = storage.Save(s);
-  }
+  // Saved on the shared storage's sequence (never on the UI thread), over
+  // the watcher of the same page and selector.
+  const std::string id = s.id;
+  molt_ai::automation::PostSharedChange(
+      molt_ai::automation::AutomationStorage::SharedDirectory(),
+      base::BindOnce(
+          [](molt_ai::automation::Script script,
+             molt_ai::automation::AutomationStorage& storage) {
+            return storage.Save(script);
+          },
+          std::move(s)),
+      base::BindOnce(&MoltAIChatHandler::OnWatcherSaved,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id, id, seconds));
+}
 
+void MoltAIChatHandler::OnWatcherSaved(const std::string& callback_id,
+                                       const std::string& script_id,
+                                       int interval_seconds,
+                                       bool saved) {
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+  base::DictValue out;
   if (!saved) {
     out.Set("success", false);
     out.Set("error", "failed to save watcher script");
@@ -3640,8 +3654,8 @@ void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
   }
 
   out.Set("success", true);
-  out.Set("script_id", s.id);
-  out.Set("interval_seconds", seconds);
+  out.Set("script_id", script_id);
+  out.Set("interval_seconds", interval_seconds);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }
@@ -5309,14 +5323,31 @@ void MoltAIChatHandler::HandleSavePlanScript(const base::ListValue& args) {
     return;
   }
 
-  bool saved = false;
-  {
-    ScopedAllowBlockingForMolt allow;
-    molt_ai::automation::AutomationStorage storage;
-    storage.EnsureDirectory();
-    saved = storage.Save(s);
+  // A new workflow, on the shared storage's sequence: under its id or the
+  // first free one after it (two plans in one second are two workflows).
+  const int step_count = static_cast<int>(s.steps.size());
+  molt_ai::automation::PostSharedChange(
+      molt_ai::automation::AutomationStorage::SharedDirectory(),
+      base::BindOnce(
+          [](molt_ai::automation::Script script,
+             molt_ai::automation::AutomationStorage& storage) {
+            return storage.SaveNew(std::move(script));
+          },
+          std::move(s)),
+      base::BindOnce(&MoltAIChatHandler::OnPlanSaved,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id, step_count,
+                     parsed_ok));
+}
+
+void MoltAIChatHandler::OnPlanSaved(const std::string& callback_id,
+                                    int step_count,
+                                    int parsed_ok,
+                                    std::optional<std::string> script_id) {
+  if (!IsJavascriptAllowed()) {
+    return;
   }
-  if (!saved) {
+  base::DictValue out;
+  if (!script_id) {
     out.Set("success", false);
     out.Set("error", "AutomationStorage::Save failed");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -5324,13 +5355,12 @@ void MoltAIChatHandler::HandleSavePlanScript(const base::ListValue& args) {
     return;
   }
   out.Set("success", true);
-  out.Set("script_id", s.id);
-  out.Set("step_count", static_cast<int>(s.steps.size()));
+  out.Set("script_id", *script_id);
+  out.Set("step_count", step_count);
   out.Set("parsed_ok", parsed_ok);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }
-
 
 // /fill ai and /paste (the form filler with the on-device model) are
 // proposals: HandleProposeFormFill in molt_ai_chat_handler_actions.cc.

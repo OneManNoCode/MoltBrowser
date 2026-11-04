@@ -15,7 +15,6 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,6 +23,7 @@
 #include "base/unguessable_token.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/frame_tools.h"
+#include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -313,6 +313,11 @@ bool EncodePngAndWrite(const SkBitmap& bitmap, const base::FilePath& path) {
       gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, /*discard_transparency=*/false);
   if (!png)
     return false;
+  // The workflow's artifacts directory, made here the first time.
+  if (!base::DirectoryExists(path.DirName()) &&
+      !base::CreateDirectory(path.DirName())) {
+    return false;
+  }
   return base::WriteFile(path, png.value());
 }
 
@@ -428,11 +433,18 @@ class NavigationSettleWaiter : public content::WebContentsObserver {
 };
 
 AutomationRunner::AutomationRunner(content::WebContents* target_contents,
-                                    BrowserAIRuntime* ai_runtime,
-                                    AutomationStorage* storage)
+                                   BrowserAIRuntime* ai_runtime,
+                                   const base::FilePath& storage_dir)
     : target_contents_(target_contents),
       ai_runtime_(ai_runtime),
-      storage_(storage) {}
+      storage_dir_(storage_dir) {}
+
+void AutomationRunner::Audit(const std::string& event,
+                             const std::string& extra) {
+  if (!storage_dir_.empty()) {
+    PostSharedAudit(storage_dir_, script_.id, event, extra);
+  }
+}
 
 AutomationRunner::~AutomationRunner() {
   WithdrawQuestion();
@@ -484,27 +496,21 @@ void AutomationRunner::Run(Script script,
   // it and confirmed its sites in the Agent studio
   // (AutomationSecurity::ConfirmDraftSites): its steps are the model's.
   if (script_.security.sites_unconfirmed) {
-    if (storage_)
-      storage_->AppendAudit(script_.id, "run_refused", "draft_unconfirmed");
+    Audit("run_refused", "draft_unconfirmed");
     Finish(false, kDraftNeedsReviewMessage);
     return;
   }
   // A routine taught by voice runs in voice mode, through its own loop
   // (automation_voice_steps.h): its steps have no selectors to act on.
   if (HasVoiceSteps(script_)) {
-    if (storage_)
-      storage_->AppendAudit(script_.id, "run_refused", "voice_routine");
+    Audit("run_refused", "voice_routine");
     Finish(false, kVoiceRoutineMessage);
     return;
   }
 
-  if (storage_) {
-    std::string extra =
-        (current_index_ > 0)
-            ? "from_step=" + base::NumberToString(current_index_)
-            : "";
-    storage_->AppendAudit(script_.id, "run_started", extra);
-  }
+  Audit("run_started", current_index_ > 0
+                           ? "from_step=" + base::NumberToString(current_index_)
+                           : std::string());
 
   ExecuteNextStep();
 }
@@ -714,8 +720,7 @@ void AutomationRunner::BlockStep(const std::string& reason,
   weak_factory_.InvalidateWeakPtrs();
   LOG(WARNING) << "[Automation] step " << current_index_
                << " blocked: " << reason;
-  if (storage_)
-    storage_->AppendAudit(script_.id, "step_blocked", reason);
+  Audit("step_blocked", reason);
   EmitStepProgress(/*starting=*/false, /*succeeded=*/false, reason);
   step_attempt_ = 0;
   // Terminal: a policy decision does not change on retry.
@@ -869,8 +874,11 @@ void AutomationRunner::CaptureStepAndThen(bool succeeded,
   sr.found_by = found_by_;
   sr.duration_ms = (base::TimeTicks::Now() - step_start_).InMilliseconds();
 
+  // The artifacts directory (no I/O here: the screenshot's write makes it).
   base::FilePath dir =
-      storage_ ? storage_->EnsureArtifactsDir(script_.id) : base::FilePath();
+      storage_dir_.empty()
+          ? base::FilePath()
+          : AutomationStorage(storage_dir_).ArtifactsDir(script_.id);
   std::string filename;
   base::FilePath path;
   if (!dir.empty()) {
@@ -1021,7 +1029,7 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
                                      std::move(rec));
   if (script_.stats.run_history.size() > kRunHistoryCap)
     script_.stats.run_history.resize(kRunHistoryCap);
-  if (storage_) {
+  if (!storage_dir_.empty()) {
     // Only the run's stats go back to disk, onto the workflow as stored
     // now. script_ also holds this run's variable values, which the user
     // may have typed at the start of the run because they are private (a
@@ -1029,13 +1037,19 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
     // saved as the workflow's defaults. (And RUN_SCRIPT inlined another
     // workflow's steps into script_.steps.) A workflow deleted meanwhile
     // stays deleted. One read-modify-write under the storage directory's
-    // lock (the Agent studio changes it on its own sequence).
-    storage_->Update(script_.id, [this](Script& stored) {
-      stored.stats = script_.stats;
-      return true;
-    });
-    storage_->AppendAudit(script_.id, success ? "run_succeeded" : "run_failed",
-                          message);
+    // lock, on its sequence (the Agent studio's and molt://ai-automation's
+    // changes run there too).
+    PostSharedChange(storage_dir_,
+                     base::BindOnce(
+                         [](const std::string& id, const Stats& stats,
+                            AutomationStorage& storage) {
+                           storage.Update(id, [&stats](Script& stored) {
+                             stored.stats = stats;
+                             return true;
+                           });
+                         },
+                         script_.id, script_.stats));
+    Audit(success ? "run_succeeded" : "run_failed", message);
   }
 
   if (on_complete_)
@@ -1344,12 +1358,10 @@ void AutomationRunner::PinLocated(
                }
                self->pin_token_ = std::move(token);
                self->found_by_ = found_by;
-               if (self->storage_) {
-                 self->storage_->AppendAudit(
-                     self->script_.id, "step_located",
-                     "step=" + base::NumberToString(self->current_index_ + 1) +
-                         " by=" + found_by);
-               }
+               self->Audit(
+                   "step_located",
+                   "step=" + base::NumberToString(self->current_index_ + 1) +
+                       " by=" + found_by);
                std::move(cb).Run(selector);
              },
              weak_factory_.GetWeakPtr(), token, std::move(found_by),
@@ -1384,21 +1396,15 @@ void AutomationRunner::AskUser(const std::string& kind,
       script_.id, static_cast<int>(current_index_), kind, text,
       base::BindOnce(&AutomationRunner::OnUserAnswer,
                      weak_factory_.GetWeakPtr(), std::move(on_answer)));
-  if (storage_) {
-    storage_->AppendAudit(
-        script_.id, "question_asked",
+  Audit("question_asked",
         kind + " step=" + base::NumberToString(current_index_ + 1));
-  }
 }
 
 void AutomationRunner::OnUserAnswer(base::OnceCallback<void(bool)> on_answer,
                                     bool allowed) {
   question_id_ = 0;
-  if (storage_) {
-    storage_->AppendAudit(script_.id,
-                          allowed ? "question_allowed" : "question_declined",
-                          "step=" + base::NumberToString(current_index_ + 1));
-  }
+  Audit(allowed ? "question_allowed" : "question_declined",
+        "step=" + base::NumberToString(current_index_ + 1));
   // The rest of the step gets its own time again.
   if (current_index_ < script_.steps.size())
     ArmStepTimeout(script_.steps[current_index_]);
@@ -2420,11 +2426,8 @@ void AutomationRunner::CallToolStep() {
                     tool_call_->arguments.json,
                     base::BindOnce(&AutomationRunner::OnToolStepCalled,
                                    weak_factory_.GetWeakPtr()));
-  if (storage_) {
-    storage_->AppendAudit(script_.id, "site_tool_called",
-                          "step=" + base::NumberToString(current_index_ + 1) +
-                              " tool=" + tool_call_->live.name);
-  }
+  Audit("site_tool_called", "step=" + base::NumberToString(current_index_ + 1) +
+                                " tool=" + tool_call_->live.name);
 }
 
 void AutomationRunner::OnToolStepCalled(SiteToolHost::CallEnd end,
@@ -2472,11 +2475,27 @@ void AutomationRunner::DoRunScript(const Step& s) {
     OnStepFinished(false, "RUN_SCRIPT: refusing to recurse into self");
     return;
   }
-  if (!storage_) {
+  if (storage_dir_.empty()) {
     OnStepFinished(false, "RUN_SCRIPT: no storage available");
     return;
   }
-  auto child = storage_->Load(child_id);
+  // Read on the storage's sequence; the step goes on when it comes (not
+  // after a timeout ended the step: OnStepFinished() drops this reply).
+  PostSharedRead(storage_dir_,
+                 base::BindOnce(
+                     [](const std::string& id, AutomationStorage& storage) {
+                       return storage.Load(id);
+                     },
+                     child_id),
+                 base::BindOnce(&AutomationRunner::OnChildLoaded,
+                                weak_factory_.GetWeakPtr(), child_id));
+}
+
+void AutomationRunner::OnChildLoaded(std::string child_id,
+                                     std::optional<Script> child) {
+  if (!is_running_) {
+    return;
+  }
   if (!child) {
     OnStepFinished(false, "RUN_SCRIPT: child not found: " + child_id);
     return;
@@ -2559,12 +2578,13 @@ void AutomationRunner::DoAssert(const Step& s) {
 
 void AutomationRunner::TakeSnapshot(const std::string& tag,
                                      base::OnceCallback<void(bool)> on_done) {
-  if (!storage_ || !target_contents_) {
+  if (storage_dir_.empty() || !target_contents_) {
     std::move(on_done).Run(false);
     return;
   }
   // Capture URL + visible text + a small outerHTML snippet via JS.
-  EvalJS(R"JS(
+  EvalJS(
+      R"JS(
     (function() {
       var body = document.body;
       var html = body ? body.outerHTML.slice(0, 8000) : '';
@@ -2572,45 +2592,48 @@ void AutomationRunner::TakeSnapshot(const std::string& tag,
       return {url: location.href, title: document.title,
               text: text, html: html, ts: Date.now()};
     })()
-  )JS", base::BindOnce(
-      [](base::WeakPtr<AutomationRunner> self, std::string tag,
-         base::OnceCallback<void(bool)> on_done, base::Value v) {
-        if (!self || !self->storage_) {
-          std::move(on_done).Run(false);
-          return;
-        }
-        base::FilePath dir =
-            self->storage_->EnsureArtifactsDir(self->script_.id);
-        if (dir.empty()) {
-          std::move(on_done).Run(false);
-          return;
-        }
-        std::string filename = tag + "_" +
-            base::NumberToString(static_cast<int64_t>(std::time(nullptr))) +
-            ".json";
-        base::FilePath path = dir.Append(base::FilePath::FromUTF8Unsafe(filename));
-        std::string serialized;
-        base::JSONWriter::WriteWithOptions(
-            v, base::JSONWriter::OPTIONS_PRETTY_PRINT, &serialized);
-        // EnsureArtifactsDir already opened a ScopedAllowBlocking scope
-        // for itself, but WriteFile here is independent — open a local
-        // one. Since AutomationStorage is the gate, we go through a
-        // tiny helper that uses the same wrapper.
-        bool ok = false;
-        {
-          ScopedAllowBlockingForMolt allow_blocking;
-          ok = base::WriteFile(path, serialized);
-        }
-        if (ok) {
-          self->storage_->AppendAudit(self->script_.id, "snapshot",
-                                       filename);
-        } else {
-          LOG(WARNING) << "[Automation] snapshot write failed: "
-                       << path.value();
-        }
-        std::move(on_done).Run(ok);
-      },
-      weak_factory_.GetWeakPtr(), tag, std::move(on_done)));
+  )JS",
+      base::BindOnce(
+          [](base::WeakPtr<AutomationRunner> self, std::string tag,
+             base::OnceCallback<void(bool)> on_done, base::Value v) {
+            if (!self || self->storage_dir_.empty()) {
+              std::move(on_done).Run(false);
+              return;
+            }
+            std::string filename =
+                tag + "_" +
+                base::NumberToString(static_cast<int64_t>(std::time(nullptr))) +
+                ".json";
+            std::string serialized;
+            base::JSONWriter::WriteWithOptions(
+                v, base::JSONWriter::OPTIONS_PRETTY_PRINT, &serialized);
+            // Written on the storage's sequence (its artifacts directory made
+            // there), then the audit line, in order with the run's others.
+            PostSharedChange(
+                self->storage_dir_,
+                base::BindOnce(
+                    [](const std::string& id, const std::string& filename,
+                       const std::string& serialized,
+                       AutomationStorage& storage) {
+                      const base::FilePath dir = storage.EnsureArtifactsDir(id);
+                      const bool ok =
+                          !dir.empty() &&
+                          base::WriteFile(
+                              dir.Append(
+                                  base::FilePath::FromUTF8Unsafe(filename)),
+                              serialized);
+                      if (ok) {
+                        storage.AppendAudit(id, "snapshot", filename);
+                      } else {
+                        LOG(WARNING) << "[Automation] snapshot write failed: "
+                                     << filename;
+                      }
+                      return ok;
+                    },
+                    self->script_.id, filename, std::move(serialized)),
+                std::move(on_done));
+          },
+          weak_factory_.GetWeakPtr(), tag, std::move(on_done)));
 }
 
 }  // namespace automation

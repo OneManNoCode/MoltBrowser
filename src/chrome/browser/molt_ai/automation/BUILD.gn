@@ -84,9 +84,21 @@ source_set("automation") {
     ":ai_steps",
     ":automation_policy",
     ":run_questions",
+    ":shared_tasks",
     ":storage",
     ":tool_steps",
     "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# The shared storage's work posted from the UI thread to its sequences
+# (automation_shared_tasks.h). Header only.
+source_set("shared_tasks") {
+  sources = [ "automation_shared_tasks.h" ]
+  public_deps = [
+    ":storage",
+    "//base",
+    "//chrome/browser/molt_ai/common:molt_file_sequences",
   ]
 }
 

@@ -5,12 +5,18 @@
 
 #include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <ctime>
+#include <optional>
+#include <string>
+#include <utility>
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
+#include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -74,36 +80,39 @@ void AutomationRecorderTabHelper::Toggle(Profile* profile) {
   LOG(INFO) << "[MoltAutomation] stop recording, captured "
             << static_cast<int>(s.steps.size()) << " steps; saving id=" << s.id;
 
-  // Save through the scheduler service's storage when possible so we
-  // share an instance with the scheduler. Falls back to a new
-  // AutomationStorage if not available.
-  AutomationStorage* storage = nullptr;
-  std::unique_ptr<AutomationStorage> owned;
+  // Saved on the shared storage's sequence, as a new workflow (under its
+  // id or the first free one after it: never over another recording).
+  base::FilePath dir = AutomationStorage::SharedDirectory();
   if (profile) {
     if (auto* svc =
             AutomationSchedulerServiceFactory::GetForProfile(profile)) {
-      storage = svc->storage();
+      dir = svc->storage_dir();
     }
   }
-  if (!storage) {
-    owned = std::make_unique<AutomationStorage>();
-    owned->EnsureDirectory();
-    storage = owned.get();
-  }
-  storage->Save(s);
-
-  // Open the manager UI so the user can rename/edit/run. Pass the new
-  // script id in the fragment so the page can scroll to + highlight it.
-  if (profile) {
-    ProfileBrowserCollection* browsers =
-        ProfileBrowserCollection::GetForProfile(profile);
-    BrowserWindowInterface* b =
-        browsers ? browsers->GetLastActiveBrowser() : nullptr;
-    if (b) {
-      ShowSingletonTab(b,
-                        GURL("molt://ai-automation/#new=" + s.id));
-    }
-  }
+  PostSharedChange(
+      dir,
+      base::BindOnce(
+          [](Script script, AutomationStorage& storage) {
+            return storage.SaveNew(std::move(script));
+          },
+          std::move(s)),
+      base::BindOnce(
+          [](base::WeakPtr<Profile> profile, std::optional<std::string> id) {
+            // Open the manager UI so the user can rename/edit/run. Pass
+            // the new script id in the fragment so the page can scroll to
+            // + highlight it.
+            if (!profile || !id) {
+              return;
+            }
+            ProfileBrowserCollection* browsers =
+                ProfileBrowserCollection::GetForProfile(profile.get());
+            BrowserWindowInterface* b =
+                browsers ? browsers->GetLastActiveBrowser() : nullptr;
+            if (b) {
+              ShowSingletonTab(b, GURL("molt://ai-automation/#new=" + *id));
+            }
+          },
+          profile ? profile->GetWeakPtr() : base::WeakPtr<Profile>()));
 }
 
 void AutomationRecorderTabHelper::StartRecording(

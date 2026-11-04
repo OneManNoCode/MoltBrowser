@@ -287,16 +287,16 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         web_ui()->GetWebContents()->GetBrowserContext());
   }
 
-  // The profile's automation service's shared storage, which the runner
-  // and the scheduler use on the UI thread. The studio itself only takes
-  // its directory (Places()) and never reads or writes through it here.
-  AutomationStorage* storage() {
+  // The profile's automation service's shared storage directory (the
+  // runner's and the scheduler's); empty without the service (as in
+  // browser tests). No I/O.
+  base::FilePath storage_dir() {
     if (Profile* p = profile()) {
       if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p)) {
-        return svc->storage();
+        return svc->storage_dir();
       }
     }
-    return nullptr;
+    return base::FilePath();
   }
 
   // The profile's voice routines (voice_learning.h); null off the record,
@@ -322,8 +322,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       places.routines_dir = learning->routines_dir();
       places.shared_root = learning->shared_root();
     }
-    if (AutomationStorage* st = storage()) {
-      places.shared_dir = st->directory();
+    if (base::FilePath dir = storage_dir(); !dir.empty()) {
+      places.shared_dir = dir;
     } else if (learning && !learning->shared_root().empty()) {
       places.shared_dir =
           AutomationStorage::SharedDirectory(learning->shared_root());
@@ -799,7 +799,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AllowJavascript();
     // Runs need the profile's automation service (the run window and the
     // poll for its result).
-    if (args.size() < 2 || !args[1].is_string() || !storage()) {
+    if (args.size() < 2 || !args[1].is_string() || storage_dir().empty()) {
       base::DictValue out;
       out.Set("ok", false);
       ResolveDict(args, std::move(out));
@@ -1003,7 +1003,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   void HandleSaveSchedule(const base::ListValue& args) {
     AllowJavascript();
     if (args.size() < 3 || !args[1].is_string() || !args[2].is_dict() ||
-        !storage()) {
+        storage_dir().empty()) {
       base::DictValue out;
       out.Set("ok", false);
       ResolveDict(args, std::move(out));
@@ -3537,17 +3537,17 @@ h2[tabindex="-1"]:focus{outline:none!important}
     content::WebContents* wc = wc_getter.Run();
     Profile* p =
         wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
-    AutomationStorage* st = nullptr;
+    base::FilePath storage_dir;
     if (p) {
       if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p))
-        st = svc->storage();
+        storage_dir = svc->storage_dir();
     }
-    if (!st) {
+    if (storage_dir.empty()) {
       std::move(callback).Run(empty());
       return;
     }
     // Where its run left it (no I/O here: read on the pool below).
-    base::FilePath dir = st->ArtifactsDir(script_id);
+    base::FilePath dir = AutomationStorage(storage_dir).ArtifactsDir(script_id);
     base::FilePath path = dir.Append(base::FilePath::FromUTF8Unsafe(filename));
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
