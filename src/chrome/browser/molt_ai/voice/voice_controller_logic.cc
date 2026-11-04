@@ -823,8 +823,8 @@ class Planner {
     // It takes the floor: what the loop asked is dropped.
     ClearConfirmation();
     const bool gesture = NeedsGesture(prompt.kind) && !prompt.malicious;
+    DropPrompt();
     PendingPrompt& pending = state().prompt;
-    pending = PendingPrompt();
     pending.id = id;
     pending.kind = prompt.kind;
     pending.language = prompt.language;
@@ -869,7 +869,7 @@ class Planner {
   void PromptGone(int id, std::string_view said) {
     turn_.kind = K::kUnknown;
     if (state().prompt.id != 0 && state().prompt.id == id) {
-      state().prompt = PendingPrompt();
+      DropPrompt();
     }
     if (!said.empty()) {
       Say(said);
@@ -881,7 +881,7 @@ class Planner {
     PendingPrompt& prompt = state().prompt;
     if (!PromptWaits(prompt, env_.now_ms)) {
       if (prompt.id != 0) {
-        prompt = PendingPrompt();
+        DropPrompt();
       }
       return false;
     }
@@ -921,10 +921,17 @@ class Planner {
         Status(ReplySpeech(prompt, reply));
         Add(std::move(step));
         Say(ReplySpeech(prompt, reply));
-        prompt = PendingPrompt();
+        DropPrompt();
         return true;
     }
     return false;
+  }
+
+  // The waiting prompt goes: what it said with its word stays for "repeat"
+  // only as its twin (ForgetWordTexts()).
+  void DropPrompt() {
+    ForgetWordTexts(state().prompt, state().last_spoken);
+    state().prompt = PendingPrompt();
   }
 
   // ---- Follow-ups --------------------------------------------------------

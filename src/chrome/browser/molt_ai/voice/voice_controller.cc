@@ -566,6 +566,8 @@ void VoiceController::DetachFromTab() {
   if (prompts_) {
     prompts_->Detach();
   }
+  // "Repeat" never says its word again (voice_prompts.h).
+  ForgetWordTexts(state_.prompt, state_.last_spoken);
   state_.prompt = PendingPrompt();
   if (attached_) {
     // Its question, if any, is answered "no" by the guard.

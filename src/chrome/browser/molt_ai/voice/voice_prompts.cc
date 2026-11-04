@@ -443,6 +443,18 @@ const std::string* WordTextTwin(const PendingPrompt& prompt,
   return nullptr;
 }
 
+void ForgetWordTexts(const PendingPrompt& prompt,
+                     std::vector<std::string>& spoken) {
+  for (std::string& text : spoken) {
+    for (const WordText& word_text : prompt.word_texts) {
+      if (text == word_text.said) {
+        text = word_text.without;
+        break;
+      }
+    }
+  }
+}
+
 namespace {
 
 std::string PromptSpeechOnly(const BrowserPrompt& prompt,

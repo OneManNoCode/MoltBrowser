@@ -1485,6 +1485,50 @@ TEST(VoiceControllerLogicTest, WhatIsSaidWithTheWordKeepsItsTwin) {
   EXPECT_TRUE(c.state().prompt.word_texts.empty());
 }
 
+// A prompt that goes without words (answered by a click, its tab left, its
+// window over): "repeat" says what it said with its word only as the twin.
+TEST(VoiceControllerLogicTest, RepeatAfterThePromptWentSaysTheTwin) {
+  const std::string with_word =
+      "maps.example wants to use your location. To allow it, say harbor. To "
+      "block it, say no.";
+  const std::string twin =
+      "maps.example wants to use your location. To allow it, say the word "
+      "on your screen. To block it, say no.";
+  // Closed by a click: the browser says nothing.
+  {
+    Conversation c(BuildPageMap(ShopPage(false)), Env());
+    c.state() =
+        PlanBrowserPrompt(21, Permission(), "harbor", c.env(), c.state()).state;
+    c.state() = PlanBrowserPromptGone(21, "", c.env(), c.state()).state;
+    const VoiceTurn turn = c.Say("repeat");
+    EXPECT_EQ(Said(turn), twin);
+    EXPECT_EQ(Said(turn).find("harbor"), std::string::npos);
+  }
+  // Its window over: the next command finds it gone.
+  {
+    Conversation c(BuildPageMap(ShopPage(false)), Env());
+    c.state() =
+        PlanBrowserPrompt(22, Permission(), "harbor", c.env(), c.state()).state;
+    c.env().now_ms += kPromptWindowMs;
+    EXPECT_EQ(Said(c.Say("repeat")), twin);
+  }
+  // While it waits, "repeat" says it with its word (the glue says the
+  // twin wherever the word can't be said).
+  {
+    Conversation c(BuildPageMap(ShopPage(false)), Env());
+    c.state() =
+        PlanBrowserPrompt(23, Permission(), "harbor", c.env(), c.state()).state;
+    EXPECT_EQ(Said(c.Say("repeat")), with_word);
+  }
+  // The helper on its own.
+  PendingPrompt prompt;
+  prompt.word = "harbor";
+  NoteWordText(prompt, WordText{with_word, twin});
+  std::vector<std::string> spoken = {"Scrolled down.", with_word};
+  ForgetWordTexts(prompt, spoken);
+  EXPECT_EQ(spoken, (std::vector<std::string>{"Scrolled down.", twin}));
+}
+
 TEST(VoiceControllerLogicTest, NoWordWhileTheScreenIsShared) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   BrowserPrompt prompt = Permission();

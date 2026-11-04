@@ -254,6 +254,13 @@ void NoteWordText(PendingPrompt& prompt, WordText text);
 const std::string* WordTextTwin(const PendingPrompt& prompt,
                                 std::string_view said);
 
+// |prompt| no longer waits (answered, closed by a click, gone with its
+// page, its window over, another in its place): each of |spoken| (what
+// "repeat" says again) that it said with its word becomes that text's twin,
+// so a word gone with its prompt is never said again, nor passed on.
+void ForgetWordTexts(const PendingPrompt& prompt,
+                     std::vector<std::string>& spoken);
+
 enum class PromptAnswer : uint8_t {
   kNone,       // not an answer: a command as usual
   kAllow,      // the gesture's word: allow, keep
