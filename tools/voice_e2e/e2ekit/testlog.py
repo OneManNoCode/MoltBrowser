@@ -15,6 +15,7 @@ The browser writes it; the kit reads it as untrusted input all the same
 """
 
 import json
+import math
 import os
 import threading
 
@@ -62,8 +63,12 @@ class TestLog(object):
                 self._events.append(ev)
 
     def events(self, since=0.0, window=None):
-        """Events at or after |since| (seconds since the epoch)."""
+        """Events at or after |since| (seconds since the epoch). The log's
+        times are whole milliseconds, so an event in the same millisecond
+        as |since| counts, even when |since| is later within it."""
         self.poll()
+        # (A microsecond of slack for the float product: 8.001 * 1000.)
+        since = math.floor(since * 1000 + 1e-3) / 1000.0
         with self._lock:
             return [e for e in self._events if e["ts"] >= since and
                     (window is None or e.get("w") == window)]

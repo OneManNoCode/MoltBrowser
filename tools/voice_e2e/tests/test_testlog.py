@@ -51,6 +51,17 @@ class TestLogTest(unittest.TestCase):
                              ["activity", "prompt", "confirm"])
             self.assertEqual(log.bad_lines, 0)
 
+    def test_an_event_in_the_same_millisecond_counts(self):
+        # The log's times are whole milliseconds; a step's start time isn't.
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "voice.jsonl")
+            with open(path, "w") as f:
+                f.write('{"t":8000,"w":2,"e":"heard","text":"pause","source":"typed",'
+                        '"clean":true,"intent":"pause"}\n')
+            log = testlog.TestLog(path)
+            self.assertEqual(len(log.events(since=8.0004)), 1)
+            self.assertEqual(log.events(since=8.001), [])
+
     def test_skips_what_isnt_an_event(self):
         bad = [b"not json", b'["a list"]', b'{"e":"heard"}', b'{"t":"soon","e":"said"}',
                b'{"t":1,"e":"launch"}', b'{"t":true,"e":"said"}', b"\xff\xfe",

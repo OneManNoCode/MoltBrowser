@@ -342,12 +342,19 @@ jobs:
         run: |
           command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
           shellcheck tools/voice_e2e/*.sh
+      # A venv: "python3 -I" ignores the user site that "pip --user" installs
+      # into, which left the renderer's tests skipped.
       - name: numpy, pinned by hash (the renderer's and the mixes' tests)
-        run: python3 -I -c "import numpy" 2>/dev/null || python3 -m pip install --user --require-hashes -r tools/voice_bench/requirements.txt
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -q --require-hashes -r tools/voice_bench/requirements.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - name: The scenarios load
         run: python3 -I tools/voice_e2e/run_e2e.py list
       - name: tools/voice_e2e tests (no browser, no downloads)
-        run: python3 -I -m unittest discover -s tools/voice_e2e/tests -t tools/voice_e2e -v
+        run: |
+          python3 -I -c "import numpy; print('numpy', numpy.__version__)"
+          python3 -I -m unittest discover -s tools/voice_e2e/tests -t tools/voice_e2e -v
 
   fuzz-smoke:
     runs-on: ubuntu-latest
