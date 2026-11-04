@@ -146,8 +146,8 @@ base::DictValue MoltWebAISitesHandler::BuildState(bool enabled) {
 void MoltWebAISitesHandler::ResolveWithState(
     std::string callback_id,
     std::optional<std::string> error) {
-  // On settings.json's own sequence: after any change posted before.
-  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+  // After any change posted before, on settings.json's read sequence.
+  molt_ai::PostReadMoltSettings(
       FROM_HERE, base::BindOnce(&molt_ai::web_ai::ReadWebAIApisSwitch),
       base::BindOnce(&MoltWebAISitesHandler::OnSwitchRead,
                      weak_factory_.GetWeakPtr(), std::move(callback_id),

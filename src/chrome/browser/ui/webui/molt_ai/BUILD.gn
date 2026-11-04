@@ -89,6 +89,9 @@ source_set("molt_ai") {
 
     # The studio's screenshots read only as regular files.
     "//chrome/browser/molt_ai/common:molt_regular_file",
+
+    # The studio's listings on the read sequences, after the changes.
+    "//chrome/browser/molt_ai/common:molt_file_sequences",
     "//chrome/browser/molt_ai/common:helper_output",
     "//chrome/browser/molt_ai/common:helper_sandbox",
 
@@ -261,11 +264,21 @@ source_set("unit_tests") {
 source_set("browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "molt_ai_agent_storage_browsertest.cc" ]
+  sources = [
+    "molt_ai_agent_storage_browsertest.cc",
+
+    # molt://ai-automation and the AI chat's saves, from the storage's
+    # sequences, in the test's own ~/.moltbrowser (leftovers).
+    "molt_ai_automation_storage_browsertest.cc",
+  ]
 
   deps = [
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir",
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/molt_ai/automation:storage",
     "//chrome/browser/molt_ai/voice:voice_controller",

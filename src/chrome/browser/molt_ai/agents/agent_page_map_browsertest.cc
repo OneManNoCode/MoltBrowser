@@ -47,6 +47,7 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
@@ -199,6 +200,11 @@ std::string Done(const std::string& result) {
 }
 
 class AgentPageMapBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  public:
   AgentPageMapBrowserTest() {
     // One action at a time (no plan), so the scripted model's replies need

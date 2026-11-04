@@ -57,6 +57,7 @@
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
+#include "chrome/browser/molt_ai/common/molt_file_sequences.h"
 #include "chrome/browser/molt_ai/common/molt_regular_file.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
@@ -454,16 +455,20 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       OnRoutinesListed(places, CallbackIdOf(args), RoutinesListing());
       return;
     }
-    routines->PostTaskAndReplyWithResult(
-        FROM_HERE, base::BindOnce(&molt_ai::agent_studio::ListRoutines, places),
+    // Reads: after the changes posted before, on the read sequences, which
+    // never hold shutdown.
+    molt_ai::PostReadAfterChanges(
+        routines, Learning()->routines_read_task_runner(), FROM_HERE,
+        base::BindOnce(&molt_ai::agent_studio::ListRoutines, places),
         base::BindOnce(&AgentStudioHandler::OnRoutinesListed,
                        weak_factory_.GetWeakPtr(), places, CallbackIdOf(args)));
   }
   void OnRoutinesListed(StudioPlaces places,
                         CallbackId callback_id,
                         RoutinesListing listing) {
-    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
-        FROM_HERE,
+    molt_ai::PostReadAfterChanges(
+        AutomationStorage::SharedSequence(),
+        AutomationStorage::SharedReadSequence(), FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::ListSharedWorkflows,
                        std::move(places)),
         base::BindOnce(&AgentStudioHandler::OnWorkflowsListed,
@@ -862,9 +867,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       }
       ++attempts;
     }
-    // The workflow as stored, read on the shared storage's sequence.
-    AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
-        FROM_HERE,
+    // The workflow as stored, read on the shared storage's read sequence
+    // (after the run's own stats, posted before).
+    molt_ai::PostReadAfterChanges(
+        AutomationStorage::SharedSequence(),
+        AutomationStorage::SharedReadSequence(), FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::LoadSharedWorkflow, Places(),
                        id),
         base::BindOnce(&AgentStudioHandler::OnRunPolled,

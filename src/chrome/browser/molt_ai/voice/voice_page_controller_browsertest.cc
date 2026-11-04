@@ -25,6 +25,7 @@
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -135,6 +136,11 @@ const PageItem* FindItem(const PageMap& map,
 }
 
 class VoicePageControllerBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  public:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     InProcessBrowserTest::SetUpCommandLine(command_line);

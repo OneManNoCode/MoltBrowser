@@ -23,6 +23,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
@@ -57,6 +58,11 @@ Script Workflow(const std::string& id, const std::string& name) {
 }
 
 class AgentStudioStorageBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  protected:
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
