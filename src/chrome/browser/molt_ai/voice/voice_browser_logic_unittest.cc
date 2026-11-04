@@ -212,6 +212,18 @@ TEST(VoiceBrowserGrammarTest, EnglishCommands) {
       {"maximum volume", CK::kSetVolume},
       {"volume 50 percent", CK::kSetVolume},
       {"set the volume to half", CK::kSetVolume},
+      // As the spoken end-to-end scenarios say them (tools/voice_e2e/).
+      {"set the volume to 50 percent", CK::kSetVolume},
+      {"play faster", CK::kSpeedUp},
+      {"turn on captions", CK::kCaptionsOn},
+      {"captions off", CK::kCaptionsOff},
+      {"open the bookmark trams return to Lyon", CK::kOpenBookmark},
+      {"new private window", CK::kNewWindow},
+      {"new MoltNet window", CK::kNewWindow},
+      {"ask the AI what is a tram", CK::kAskAI},
+      {"type hello comma world period", CK::kType},
+      {"where am I", CK::kWhereAmI},
+      {"what can I say", CK::kHelp},
       // Still what they were.
       {"play from the beginning", CK::kRestart},
       {"faster", CK::kSpeedUp},
