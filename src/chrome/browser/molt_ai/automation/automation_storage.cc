@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <ctime>
 #include <map>
 #include <memory>
@@ -20,6 +21,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/memory/stack_allocated.h"
 #include "base/no_destructor.h"
 #include "base/rand_util.h"
 #include "base/strings/string_split.h"
@@ -150,6 +152,16 @@ std::string RandomToken() {
   return token;
 }
 
+// |id| cut to at most |max_bytes|, never inside a UTF-8 character.
+std::string IdPrefix(const std::string& id, size_t max_bytes) {
+  size_t size = std::min(id.size(), max_bytes);
+  while (size > 0 && size < id.size() &&
+         (static_cast<unsigned char>(id[size]) & 0xc0) == 0x80) {
+    --size;
+  }
+  return id.substr(0, size);
+}
+
 // The id of the script a set-aside file holds: "<id>.molt.<token>.taken"
 // (a token of 1 to 32 lowercase hex digits), or round 43's
 // "<id>.molt.taken"; nullopt for any other name.
@@ -203,6 +215,9 @@ class AutomationStorage::BlockingScope {
 };
 
 class AutomationStorage::ChangeScope {
+  // Holds a base::AutoLock: on the stack only.
+  STACK_ALLOCATED();
+
  public:
   explicit ChangeScope(const AutomationStorage& storage)
       : hold_(DirectoryLock(storage.GetAutomationsDir())),
@@ -430,14 +445,11 @@ std::optional<std::string> AutomationStorage::SaveNew(Script script) {
   bool saved = false;
   {
     ChangeScope locked(*this);
-    // The first id nothing is saved under (nor anything else is at).
-    while (
-        MoltFileKindAt(GetScriptPath(script.id), MoltFileLinks::kNotFollowed) !=
-        MoltFileKind::kMissing) {
-      if (script.id.size() >= kMaxIdBytes)
-        return std::nullopt;
-      script.id += '_';
-    }
+    // An id nothing is saved under (nor anything else is at).
+    std::optional<std::string> id = FreeIdLocked(script.id);
+    if (!id)
+      return std::nullopt;
+    script.id = std::move(*id);
     saved = SaveLocked(script);
   }
   if (!saved)
@@ -638,27 +650,49 @@ bool AutomationStorage::ReturnSetAsideLocked(const SetAside& set_aside) {
   bool returned = false;
   if (MoltFileKindAt(set_aside.file, MoltFileLinks::kNotFollowed) ==
       MoltFileKind::kRegular) {
-    // Back under its id, or the first free one after it: never over a
-    // script saved under that id meanwhile.
-    std::string back = id;
-    while (MoltFileKindAt(GetScriptPath(back), MoltFileLinks::kNotFollowed) !=
-               MoltFileKind::kMissing &&
-           back.size() < kMaxIdBytes) {
-      back += '_';
-    }
-    if (MoltFileKindAt(GetScriptPath(back), MoltFileLinks::kNotFollowed) ==
-        MoltFileKind::kMissing) {
+    // Back under its id, or a free one made from it: never over a script
+    // saved under that id meanwhile.
+    std::optional<std::string> back = FreeIdLocked(id);
+    if (back) {
       returned =
-          base::ReplaceFile(set_aside.file, GetScriptPath(back), nullptr);
-      if (returned && back != id) {
+          base::ReplaceFile(set_aside.file, GetScriptPath(*back), nullptr);
+      if (returned && *back != id) {
         LOG(WARNING) << "[Automation] "
                      << set_aside.file.BaseName().AsUTF8Unsafe()
-                     << " returned as " << back << kScriptExt;
+                     << " returned as " << *back << kScriptExt;
       }
     }
   }
   Taking::Get().Stop(set_aside.file);
   return returned;
+}
+
+std::optional<std::string> AutomationStorage::FreeIdLocked(
+    const std::string& id) const {
+  const auto is_free = [this](const std::string& candidate) {
+    return MoltFileKindAt(GetScriptPath(candidate),
+                          MoltFileLinks::kNotFollowed) ==
+           MoltFileKind::kMissing;
+  };
+  std::string simple = id;
+  while (true) {
+    if (is_free(simple))
+      return simple;
+    if (simple.size() >= kMaxIdBytes)
+      break;
+    simple += '_';
+  }
+  // Every simple name taken (by scripts, or by anything else): a fresh one,
+  // "<id>_<16 hex digits>", the id cut to fit. A few tries: two random
+  // suffixes alike are next to impossible.
+  constexpr size_t kSuffixBytes = 17;
+  const std::string prefix = IdPrefix(id, kMaxIdBytes - kSuffixBytes);
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const std::string fresh = prefix + "_" + RandomToken();
+    if (IsValidScriptId(fresh) && is_free(fresh))
+      return fresh;
+  }
+  return std::nullopt;
 }
 
 std::vector<AutomationStorage::SetAside> AutomationStorage::InterruptedTakes() {

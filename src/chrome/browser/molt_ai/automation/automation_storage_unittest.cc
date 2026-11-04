@@ -5,7 +5,8 @@
 // one-time move out of the shared storage (Take()); since round 44, files
 // that aren't regular or are too big skipped and never written over, the
 // audit log created and read from its end, Update() as one
-// read-modify-write whichever thread, and moves cut short reported.
+// read-modify-write whichever thread, and moves cut short reported; since
+// round 45, a fresh id when every simple one is taken.
 
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
@@ -370,6 +371,69 @@ TEST(AutomationStorageTest, TwoTakesOfOneIdNeverReplaceEachOther) {
   EXPECT_EQ(first.Load("voice_5")->name, "second");
 }
 
+// Every simple name a set-aside script could go back under taken (id, id_,
+// ... up to the longest id; by scripts or by anything else): back under a
+// fresh id made from its own, never left set aside.
+TEST(AutomationStorageTest, ReturnedUnderAFreshIdWhenEverySimpleOneIsTaken) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const base::FilePath dir = temp.GetPath().AppendASCII("automations");
+  AutomationStorage storage(dir);
+  ASSERT_TRUE(storage.Save(Named("voice_9", "my news")));
+  ASSERT_TRUE(storage.Take("voice_9"));
+  ASSERT_EQ(SetAsideFiles(dir, "voice_9").size(), 1u);
+  std::string simple = "voice_9";
+  while (simple.size() <= 128) {
+    if (simple.size() == 64) {
+      ASSERT_TRUE(base::CreateDirectory(dir.AppendASCII(simple + ".molt")));
+    } else {
+      ASSERT_TRUE(base::WriteFile(dir.AppendASCII(simple + ".molt"), "{}"));
+    }
+    simple += '_';
+  }
+
+  ASSERT_TRUE(storage.ReturnTaken("voice_9"));
+  EXPECT_TRUE(SetAsideFiles(dir, "voice_9").empty());
+  EXPECT_TRUE(storage.InterruptedTakes().empty());
+  std::string back;
+  for (const std::string& id : storage.ListIds()) {
+    std::optional<Script> script = storage.Load(id);
+    if (script && script->name == "my news") {
+      EXPECT_TRUE(back.empty()) << id;
+      back = id;
+    }
+  }
+  // "voice_9_" and 16 hex digits.
+  ASSERT_EQ(back.size(), 7u + 1u + 16u) << back;
+  EXPECT_EQ(back.rfind("voice_9_", 0), 0u) << back;
+  EXPECT_EQ(back.find_first_not_of("0123456789abcdef", 8), std::string::npos)
+      << back;
+  EXPECT_EQ(storage.Load(back)->id, back);
+
+  // A long id made of two-byte characters: cut to fit, never inside one.
+  std::string long_id;
+  for (int i = 0; i < 60; ++i) {
+    long_id += "\xc3\xa9";
+  }
+  for (simple = long_id; simple.size() <= 128; simple += '_') {
+    ASSERT_TRUE(storage.Save(Named(simple, "taken")));
+  }
+  ASSERT_TRUE(storage.Save(Named(long_id, "my notes")));
+  ASSERT_TRUE(storage.Take(long_id));
+  ASSERT_TRUE(storage.Save(Named(long_id, "saved since")));
+  ASSERT_TRUE(storage.ReturnTaken(long_id));
+  std::string fresh;
+  for (const std::string& id : storage.ListIds()) {
+    std::optional<Script> script = storage.Load(id);
+    if (script && script->name == "my notes") {
+      fresh = id;
+    }
+  }
+  ASSERT_EQ(fresh.size(), 110u + 1u + 16u) << fresh;
+  EXPECT_EQ(fresh.substr(0, 111), long_id.substr(0, 110) + "_");
+  EXPECT_EQ(storage.Load(long_id)->name, "saved since");
+}
+
 // A new workflow (the AI chat's agent run, a plan, a recording): saved
 // under its id or the first free one after it, never over another, however
 // many savers pick the same id at once.
@@ -414,10 +478,15 @@ TEST(AutomationStorageTest, SaveNewNeverOverwrites) {
   std::sort(names.begin(), names.end());
   ASSERT_EQ(names.size(), 2u * kSaves);
   EXPECT_EQ(std::unique(names.begin(), names.end()), names.end());
-  // No id left free: nothing saved.
-  Script long_id = Named(std::string(128, 'x'), "full");
+  // No simple id left free: saved under a fresh one made from it.
   ASSERT_TRUE(storage.SaveNew(Named(std::string(128, 'x'), "first")));
-  EXPECT_FALSE(storage.SaveNew(std::move(long_id)));
+  std::optional<std::string> fresh =
+      storage.SaveNew(Named(std::string(128, 'x'), "second"));
+  ASSERT_TRUE(fresh);
+  ASSERT_EQ(fresh->size(), 128u);
+  EXPECT_EQ(fresh->substr(0, 112), std::string(111, 'x') + "_");
+  EXPECT_EQ(storage.Load(*fresh)->name, "second");
+  EXPECT_EQ(storage.Load(std::string(128, 'x'))->name, "first");
 }
 
 // A save that depends on what is stored (molt://ai-automation keeps the

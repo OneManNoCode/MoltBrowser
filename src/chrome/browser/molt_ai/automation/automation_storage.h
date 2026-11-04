@@ -250,6 +250,10 @@ class AutomationStorage {
   bool SaveLocked(const Script& script);
   // Under the directory's lock: ReturnTaken()'s rename.
   bool ReturnSetAsideLocked(const SetAside& set_aside);
+  // Under the directory's lock: |id| if nothing is at its script's path,
+  // else the first of |id|_, |id|__, ... that is free, else a fresh id made
+  // from |id| and a random suffix; nullopt only if none of those is free.
+  std::optional<std::string> FreeIdLocked(const std::string& id) const;
 
   base::FilePath root_override_;
   // A storage of its own: its files are here.
