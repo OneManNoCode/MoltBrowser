@@ -39,9 +39,11 @@ permissions:
   contents: read
   actions: read
 
+# A newer request replaces a build still running on the same branch; it
+# can resume from the last stage the cancelled run saved (resume_run).
 concurrency:
   group: molt-test-build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   config:

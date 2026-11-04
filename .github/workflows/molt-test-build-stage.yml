@@ -164,6 +164,7 @@ jobs:
             !chromium/.molt-ci/previous-manifest.txt
             chromium/.molt-ci/status
           if-no-files-found: ignore
+          include-hidden-files: true
           retention-days: 30
 
       # The out dir goes to the next stage unless the tests ran here. It is
