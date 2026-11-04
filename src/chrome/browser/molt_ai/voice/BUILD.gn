@@ -929,7 +929,7 @@ source_set("voice_controller") {
     "//chrome/browser/ui:chrome_pages",
     "//chrome/browser/ui:singleton_tabs",
     "//chrome/browser/ui/side_panel",
-    "//chrome/common:url_constants",
+    "//chrome/common",
     "//components/bookmarks/browser",
     "//components/history/core/browser",
     "//components/keyed_service/core",
