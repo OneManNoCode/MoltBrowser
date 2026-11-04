@@ -288,6 +288,14 @@ class Browser(object):
                           {"url": AGENT_URL, "newWindow": True, "background": True})
         self.agent_target = r["targetId"]
         self._attach(self.agent_target)
+        # Out of the way, so the browser's window is the last active one.
+        try:
+            wid = self.cdp.call("Browser.getWindowForTarget",
+                                {"targetId": self.agent_target}).get("windowId")
+            self.cdp.call("Browser.setWindowBounds",
+                          {"windowId": wid, "bounds": {"windowState": "minimized"}})
+        except cdplib.CdpError:
+            pass
         if main:
             self.activate(main["targetId"])
 
@@ -295,8 +303,14 @@ class Browser(object):
         if not self.agent_target:
             self.open_agent()
         sid = self.sessions[self.agent_target]
-        return self.cdp.evaluate(sid, TYPED_JS % json.dumps(text), timeout=15,
-                                 user_gesture=False)
+        r = self.cdp.evaluate(sid, TYPED_JS % json.dumps(text), timeout=15,
+                              user_gesture=False)
+        agent = [t for t in self.cdp.targets() if t["targetId"] == self.agent_target]
+        if agent and not (agent[0].get("url") or "").startswith(AGENT_URL):
+            raise BrowserError("the typed command acted in Agent mode's own window, "
+                               "not the browser's (its window didn't become the last "
+                               "active one): run typed mode with a window manager")
+        return r
 
     # ---- the world (expect.py) -----------------------------------------
 

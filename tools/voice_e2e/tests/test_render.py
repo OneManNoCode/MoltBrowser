@@ -126,6 +126,34 @@ class DeterminismTest(unittest.TestCase):
             self.assertEqual(rate, 16000)
             self.assertAlmostEqual(20 * numpy.log10(audio.rms(x)), -26.0, delta=0.2)
 
+    def test_the_file_captures_wav(self):
+        from e2ekit import audio_path
+        import audio
+        import wave
+        with tempfile.TemporaryDirectory() as a:
+            self.render(a)
+            pieces = []
+            for i, (text, wake) in enumerate((("open YouTube", True), ("speed 1.5", False))):
+                out = os.path.join(a, "step%d.wav" % i)
+                speech = audio_path.utterance_wav(a, out, "ljspeech", 1.0, text, wake)
+                self.assertGreater(speech, 0.2)
+                pieces.append(out)
+            first = audio.read_wav(pieces[0])[0]
+            plain = audio.read_wav(render.clip_path(a, "ljspeech", 1.0, "open YouTube"))[0]
+            self.assertGreater(len(first), len(plain))  # the wake phrase first
+            wav = os.path.join(a, "scenario.wav")
+            times = audio_path.scenario_wav(wav, pieces, "music10", 6.0, 9.0, "seed")
+            self.assertAlmostEqual(times[0][0], 6.0)
+            self.assertAlmostEqual(times[1][0], times[0][1] + 9.0, places=3)
+            with wave.open(wav) as w:
+                self.assertEqual((w.getframerate(), w.getnchannels()), (44100, 2))
+                # A gap after the last one too, for its outcome.
+                self.assertAlmostEqual(w.getnframes() / 44100.0, times[1][1] + 9.0 + 2.0,
+                                       delta=0.01)
+            again = os.path.join(a, "again.wav")
+            audio_path.scenario_wav(again, pieces, "music10", 6.0, 9.0, "seed")
+            self.assertEqual(render.sha256_file(wav), render.sha256_file(again))
+
     def test_mixes(self):
         with tempfile.TemporaryDirectory() as a:
             self.render(a)
