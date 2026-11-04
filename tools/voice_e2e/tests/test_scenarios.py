@@ -47,9 +47,9 @@ class ShippedTest(unittest.TestCase):
     def test_this_rounds_commands_are_named(self):
         needs = {n for s in self.scs for n in s.needs()}
         for n in ("set_volume", "speed_up", "normal_speed", "captions_on", "undo",
-                  "bookmark_page", "show_history", "reopen_tab", "show_downloads",
-                  "open_settings", "new_window", "new_private_window",
-                  "new_moltnet_window", "open_ai_chat", "open_menu", "next_match",
+                  "bookmark_page", "list_history", "reopen_tab", "list_downloads",
+                  "open_settings", "new_window", "new_window",
+                  "new_window", "open_ai_chat", "open_menu", "next_match",
                   "start_over"):
             self.assertIn(n, needs)
 

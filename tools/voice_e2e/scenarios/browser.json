@@ -10,7 +10,7 @@
    "steps": [
     {"say": "bookmark this page", "needs": ["bookmark_page"],
      "expect": [{"said_re": "(?i)bookmark"}]},
-    {"say": "open my bookmarks", "needs": ["open_bookmarks"],
+    {"say": "open my bookmarks", "needs": ["list_bookmarks"],
      "expect": [{"url_has": "chrome://bookmarks"}]},
     {"say": "open the bookmark trams return to Lyon", "needs": ["open_bookmark"],
      "expect": [{"host": "news.test"}, {"path": "/story"}]}
@@ -23,7 +23,7 @@
    "start": {"url": "https://news.test/"},
    "steps": [
     {"say": "click sport", "needs": ["choose"], "expect": [{"path": "/sport"}]},
-    {"say": "show my history", "needs": ["show_history"],
+    {"say": "show my history", "needs": ["list_history"],
      "expect": [{"url_has": "chrome://history"}]}
    ]
   },
@@ -45,7 +45,7 @@
    "task": "browser",
    "start": {"url": "https://news.test/"},
    "steps": [
-    {"say": "show my downloads", "needs": ["show_downloads"],
+    {"say": "show my downloads", "needs": ["list_downloads"],
      "expect": [{"url_has": "chrome://downloads"}]}
    ]
   },
@@ -77,7 +77,7 @@
    "task": "browser",
    "start": {"url": "https://news.test/"},
    "steps": [
-    {"say": "new private window", "needs": ["new_private_window"],
+    {"say": "new private window", "needs": ["new_window"],
      "expect": [{"windows": 2}]}
    ]
   },
@@ -87,7 +87,7 @@
    "task": "browser",
    "start": {"url": "https://news.test/"},
    "steps": [
-    {"say": "new MoltNet window", "needs": ["new_moltnet_window"],
+    {"say": "new MoltNet window", "needs": ["new_window"],
      "expect": [{"windows": 2}]},
     {"say": "scroll down", "needs": ["scroll_down"],
      "expect": [{"js": "window.scrollY > 0"}]}

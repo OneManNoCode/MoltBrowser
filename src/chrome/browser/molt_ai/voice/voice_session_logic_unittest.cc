@@ -1019,7 +1019,10 @@ TEST(VoiceSessionCommandsTest, TakenOverOwnVoice) {
        {"open youtube", "go to example dot com", "search for cats", "new tab",
         "close this tab", "type hello", "submit", "run morning news",
         "forget the word harbor", "turn on voice mode", "buy the cheapest one",
-        "no I said queen", ""}) {
+        "no I said queen", "", "close this window", "new private window",
+        "open settings", "open the last download", "bookmark this page",
+        "reopen the closed tab", "ask the AI what is the capital of France",
+        "open the menu", "start over"}) {
     EXPECT_FALSE(TakenOverOwnVoice(text)) << text;
   }
 }

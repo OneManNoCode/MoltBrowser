@@ -170,6 +170,12 @@ namespace {
 // Whether |command| stays with what the browser reads or does
 // (TakenOverOwnVoice()).
 bool StaysWithWhatIsRead(const VoiceCommand& command) {
+  // The browser's own actions (windows, settings, downloads, bookmarks,
+  // the AI, its menus, starting over) wait for the browser to be quiet,
+  // as opening a site does.
+  if (ActsOnTheBrowser(command.kind)) {
+    return false;
+  }
   switch (command.kind) {
     case VoiceCommandKind::kChoose:
       // A place in the list ("the third one", "number four", "the next
