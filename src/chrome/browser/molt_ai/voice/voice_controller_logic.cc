@@ -11,7 +11,9 @@
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
 #include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
+#include "chrome/browser/molt_ai/voice/voice_browser_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_command_phrases.h"
+#include "chrome/browser/molt_ai/voice/voice_dictation.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
@@ -259,7 +261,7 @@ VoiceStep MediaStep(MediaCommand media, int seconds = 0) {
 }
 
 // One turn being planned.
-class Planner {
+class Planner : public TurnPlanner {
  public:
   Planner(const PageMap& map,
           const VoiceEnvironment& env,
@@ -267,9 +269,14 @@ class Planner {
       : map_(map), env_(env) {
     turn_.state = state;
     ForgetOtherPages();
+    // A navigation asked for earlier holds once its page is seen (undo).
+    SettleUndo(turn_.state.browser.undo, env_.page_id, env_.active_tab,
+               /*page_loaded=*/false);
   }
 
   VoiceTurn Finish() {
+    // What "undo" goes back from (voice_browser_logic.h).
+    NoteNavigationForUndo(turn_.kind, turn_.steps, env_, turn_.state);
     if (!spoken_.empty()) {
       std::vector<std::string>& last = turn_.state.last_spoken;
       last.clear();
@@ -288,7 +295,12 @@ class Planner {
   ConversationState& state() { return turn_.state; }
   VoiceTurn& turn() { return turn_; }
 
-  void Say(std::string text) {
+  // TurnPlanner (voice_browser_logic.h):
+  const PageMap& Map() const override { return map_; }
+  const VoiceEnvironment& Env() const override { return env_; }
+  ConversationState& State() override { return turn_.state; }
+
+  void Say(std::string text) override {
     // In the window's language (a constant sentence; the others come
     // through Tr()), then built from cleaned pieces, cleaned once more as
     // it leaves.
@@ -312,9 +324,9 @@ class Planner {
     }
   }
 
-  void Add(VoiceStep step) { turn_.steps.push_back(std::move(step)); }
+  void Add(VoiceStep step) override { turn_.steps.push_back(std::move(step)); }
 
-  void Status(std::string status) {
+  void Status(std::string status) override {
     turn_.status =
         SpeechSafeText(Localized(env_.language, status), kMaxStatusChars);
   }
@@ -350,6 +362,11 @@ class Planner {
         command.kind != K::kVerbosity) {
       state().offered.clear();
       DropOfferContext();
+    }
+    // The browser's list read last, or its menu that shows, hears a choice
+    // first (voice_browser_logic.h).
+    if (PlanBrowserFirst(command, *this)) {
+      return;
     }
 
     switch (command.kind) {
@@ -478,8 +495,7 @@ class Planner {
         Volume(command.kind == K::kVolumeUp);
         break;
       case K::kSetVolume:
-        Say("Setting the volume to a level comes later. Say louder or "
-            "quieter.");
+        PlanVolumeLevel(command.level, *this);
         break;
       case K::kMute:
       case K::kUnmute: {
@@ -549,10 +565,10 @@ class Planner {
           SpeechRate(command.kind == K::kSpeedUp);
           break;
         }
-        Say("Changing the playback speed comes later.");
+        PlanPlaybackRate(command.kind, 0, *this);
         break;
       case K::kNormalSpeed:
-        Say("Changing the playback speed comes later.");
+        PlanPlaybackRate(command.kind, 0, *this);
         break;
       case K::kSkipAd:
         SkipAd();
@@ -686,7 +702,7 @@ class Planner {
         Status("Stopped");
         break;
       case K::kUndo:
-        Say("Undo comes later. Say go back to return to the page before.");
+        PlanUndo(*this);
         break;
       case K::kRepeat:
         if (state().last_spoken.empty()) {
@@ -772,7 +788,45 @@ class Planner {
         AskToConfirm(std::move(steps), "turn off voice mode");
         break;
       }
+
+      // The rest of the browser (voice_browser_logic.h).
+      case K::kSetSpeed:
+      case K::kStartOver:
+      case K::kNextMatch:
+      case K::kPreviousMatch:
+      case K::kBookmarkPage:
+      case K::kRemoveBookmark:
+      case K::kListBookmarks:
+      case K::kOpenBookmark:
+      case K::kListHistory:
+      case K::kReopenTab:
+      case K::kOpenFromHistory:
+      case K::kListDownloads:
+      case K::kOpenDownload:
+      case K::kOpenSettings:
+      case K::kAlwaysListening:
+      case K::kProtectedSetting:
+      case K::kNewWindow:
+      case K::kCloseWindow:
+      case K::kSwitchWindow:
+      case K::kAskAI:
+      case K::kOpenAIChat:
+      case K::kShowBrowserButtons:
+      case K::kOpenMenu:
+      case K::kCloseMenu:
+        PlanBrowserCommand(command, *this);
+        break;
     }
+  }
+
+  // ---- The browser's lists ----------------------------------------------
+
+  void BrowserItems(const VoiceStep& asked, std::vector<BrowserItem> items) {
+    turn_.kind = K::kUnknown;
+    if (env_.moltnet) {
+      return;
+    }
+    PlanBrowserItemsRead(asked, std::move(items), *this);
   }
 
   // ---- The planner's questions ------------------------------------------
@@ -934,6 +988,10 @@ class Planner {
     if (env_.moltnet) {
       return;
     }
+    // The wait ended: a navigation asked for on this very page opened
+    // nothing (undo).
+    SettleUndo(state().browser.undo, env_.page_id, env_.active_tab,
+               /*page_loaded=*/true);
     if (!wait.preface.empty()) {
       Say(wait.preface);
     }
@@ -1038,6 +1096,10 @@ class Planner {
     s.list_container = list ? list->container : PageNodeHandle();
     s.list_label = list ? list->label : std::string();
     s.offered.clear();
+    // The page's list is the one to choose from now, not the browser's.
+    s.browser.list = BrowserListKind::kNone;
+    s.browser.items.clear();
+    s.browser.offered.clear();
   }
 
   // The candidates of the state's list, on this page.
@@ -1279,7 +1341,8 @@ class Planner {
     return true;
   }
 
-  void AskToConfirm(std::vector<VoiceStep> steps, const std::string& what) {
+  void AskToConfirm(std::vector<VoiceStep> steps,
+                    const std::string& what) override {
     ConversationState& s = state();
     s.confirming = true;
     s.confirm_steps = std::move(steps);
@@ -1291,7 +1354,7 @@ class Planner {
     Say(Tr("Say yes to {0}, or no to cancel.", {s.confirm_what}));
   }
 
-  void SetCurrentItem(int number) {
+  void SetCurrentItem(int number) override {
     VoiceStep step = Step(VoiceStepKind::kSetCurrentItem);
     step.index = number;
     Add(std::move(step));
@@ -1438,6 +1501,8 @@ class Planner {
     Add(std::move(open));
     Status(Tr("Opening {0}", {target.name}));
     Add(WaitStep(FollowUpKind::kAnnounceOpened, target.name));
+    // Its name alone opens it again (voice_browser_logic.h).
+    NoteOpenedSite(state(), command.site_words, target.name, target.url);
   }
 
   void SearchTheWeb(const std::string& query, std::string preface) {
@@ -1637,11 +1702,22 @@ class Planner {
     }
   }
 
+  // "Undo" reopens the tab voice mode closed (voice_undo.h).
+  void NoteClosedTab(int index) {
+    UndoEntry undo;
+    undo.kind = UndoKind::kReopenTab;
+    if (index >= 0 && static_cast<size_t>(index) < env_.tabs.size()) {
+      undo.name = PageText(env_.tabs[index].title);
+    }
+    NoteUndo(state().browser.undo, std::move(undo));
+  }
+
   void CloseTab(const VoiceCommand& command) {
     if (command.choice.kind == ChoiceRef::Kind::kNone) {
       VoiceStep close = Step(VoiceStepKind::kCloseTab);
       close.index = -1;
       Add(std::move(close));
+      NoteClosedTab(env_.active_tab);
       Say("Closed the tab.");
       return;
     }
@@ -1650,6 +1726,7 @@ class Planner {
       VoiceStep close = Step(VoiceStepKind::kCloseTab);
       close.index = *index;
       Add(std::move(close));
+      NoteClosedTab(*index);
       std::string said = Tr("Closed tab {0}", {std::to_string(*index + 1)});
       const std::string title = PageText(env_.tabs[*index].title);
       if (!title.empty()) {
@@ -1781,6 +1858,10 @@ class Planner {
           SpanishItemSaying(map_, ItemKind::kButton, SpanishControl::kCaptions);
     }
     if (!button) {
+      // The media element's own captions (voice_browser_logic.h).
+      if (PlanMediaCaptions(on, *this)) {
+        return;
+      }
       Say("I can't find a captions button on this page.");
       return;
     }
@@ -1972,6 +2053,10 @@ class Planner {
                                       std::to_string(env_.tabs.size())});
     }
     Say(said);
+    // The list, field, player, menu or question the user is in.
+    for (std::string& context : WhereAmIContext(state(), map_, env_)) {
+      Say(std::move(context));
+    }
   }
 
   void FindInPage(const std::string& query) {
@@ -1988,13 +2073,35 @@ class Planner {
     std::string where;
     PageNodeHandle target;
     int number = 0;
+    // Every place, for "next match" (voice_browser_logic.h).
+    std::vector<FindMatch> matches;
+    const auto note = [&](std::string place, const PageNodeHandle& handle,
+                          int item_number) {
+      if (matches.size() < kMaxFindMatches) {
+        FindMatch match;
+        match.where = std::move(place);
+        match.handle = handle;
+        match.item_number = item_number;
+        matches.push_back(std::move(match));
+      }
+    };
     for (const PageHeading& heading : map_.headings) {
+      if (has(heading.text)) {
+        note(Tr("the heading {0}", {PageText(heading.text)}), heading.handle,
+             0);
+      }
       if (has(heading.text) && found++ == 0) {
         where = Tr("the heading {0}", {PageText(heading.text)});
         target = heading.handle;
       }
     }
     for (const PageItem& item : map_.items) {
+      if (has(item.label)) {
+        note(Localized(env_.language,
+                       "the " + std::string(ItemKindName(item.kind))) +
+                 " " + PageText(item.label),
+             item.handle, item.number);
+      }
       if (has(item.label) && found++ == 0) {
         // "the link", "the button": in the window's language.
         where = Localized(env_.language,
@@ -2004,6 +2111,7 @@ class Planner {
         number = item.number;
       }
     }
+    NoteFindMatches(state(), query, std::move(matches), env_.page_id);
     if (!found) {
       Say(Tr("I can't find {0} in this page's headings, links or buttons.",
              {Quoted(PageText(query))}));
@@ -2016,6 +2124,7 @@ class Planner {
     std::string said = Tr("Found it in {0}.", {where});
     if (found > 1) {
       said += Tr(" It's in {0} places.", {std::to_string(found)});
+      said += Tr(" Say next match to go on.");
     }
     Say(said);
   }
@@ -2139,7 +2248,9 @@ class Planner {
     std::string said;
     switch (command.kind) {
       case K::kType:
-        text = value.empty() ? command.text : value + " " + command.text;
+        // Spoken punctuation ("comma", "new line"; voice_dictation.h).
+        text = JoinDictation(
+            value, ApplySpokenPunctuation(command.text, env_.language));
         said = "Typed.";
         break;
       case K::kNewLine:
@@ -2176,6 +2287,17 @@ class Planner {
              "it again.",
              {name}));
       return;
+    }
+    if (complete) {
+      // "Undo" puts back what the field held (voice_undo.h).
+      UndoEntry undo;
+      undo.kind = UndoKind::kRestoreText;
+      undo.page_id = env_.page_id;
+      undo.tab = env_.active_tab;
+      undo.field = field->handle;
+      undo.text = value;
+      undo.name = name;
+      NoteUndo(state().browser.undo, std::move(undo));
     }
     Add(NodeStep(VoiceStepKind::kSetText, field->handle, text));
     Say(said);
@@ -2547,6 +2669,11 @@ class Planner {
       RunRoutine(command.heard);
       return;
     }
+    // A site's name on its own: a site the browser knows by name, or one
+    // opened by voice here (voice_browser_logic.h).
+    if (PlanSiteNameAlone(command, *this)) {
+      return;
+    }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
     planner.preface = Tr(
@@ -2592,6 +2719,8 @@ class Planner {
     }
     kinds.insert(kinds.end(), {K::kOpenSite, K::kSearch, K::kBack,
                                K::kReadHeadings, K::kWhereAmI, K::kStop});
+    // A menu, the browser's list, a reading, a player first.
+    AddBrowserHelpKinds(state(), env_, kinds);
     std::vector<std::string> examples;
     for (VoiceCommandKind kind : kinds) {
       if (examples.size() >= kMaxHelpExamples) {
@@ -2611,8 +2740,15 @@ class Planner {
       }
       said += examples[i];
     }
-    Say(ChunkSentences(
-        {said + ".", Tr("The full list is in Voice commands, in the help.")}));
+    std::vector<std::string> sentences = {said + "."};
+    // A question from the browser waiting, typing's punctuation.
+    const std::string context = BrowserHelpContext(
+        state(), map_, env_, FieldInFocus(state(), map_, env_) != nullptr);
+    if (!context.empty()) {
+      sentences.push_back(context);
+    }
+    sentences.push_back(Tr("The full list is in Voice commands, in the help."));
+    Say(ChunkSentences(sentences));
   }
 
   // A planner lives on its Plan*() function's stack, inside its inputs' lives.
@@ -2701,7 +2837,10 @@ ParseContext ContextFor(const ConversationState& state,
   context.language = env.language;
   context.expecting_yes_no = ConfirmationValid(state, env);
   context.expecting_choice =
-      (state.expecting_choice && ListValid(state, env)) || state.numbers_shown;
+      (state.expecting_choice && ListValid(state, env)) ||
+      state.numbers_shown ||
+      // The browser's list read last, or its menu (voice_browser_logic.h).
+      BrowserListValid(state, env) || env.browser.menu_open;
   context.text_field_focused = FieldInFocus(state, map, env) != nullptr;
   return context;
 }
@@ -2789,6 +2928,16 @@ VoiceTurn PlanBrowserPromptGone(int id,
 
 int BrowserPromptHeld(const ConversationState& state, int64_t now_ms) {
   return PromptWaits(state.prompt, now_ms) ? state.prompt.id : 0;
+}
+
+VoiceTurn PlanBrowserItems(const VoiceStep& asked,
+                           std::vector<BrowserItem> items,
+                           const VoiceEnvironment& env,
+                           const ConversationState& state) {
+  const PageMap no_map;
+  Planner planner(no_map, env, state);
+  planner.BrowserItems(asked, std::move(items));
+  return planner.Finish();
 }
 
 bool AnswersBrowserPrompt(const VoiceCommand& command,

@@ -57,6 +57,8 @@ COVERED = (
     "voice/page_reading.cc",
     "voice/page_questions.cc",
     "voice/voice_page_questions.cc",
+    "voice/voice_browser_logic.cc",
+    "voice/voice_media_controls.cc",
     "agents/voice_agent_speech.cc",
     "security/activation_policy.cc",
 )

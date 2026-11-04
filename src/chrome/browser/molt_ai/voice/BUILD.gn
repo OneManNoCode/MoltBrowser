@@ -611,6 +611,24 @@ source_set("voice_loop") {
     "voice_speech_text.h",
     "voice_vocabulary.cc",
     "voice_vocabulary.h",
+
+    # The rest of the browser by voice (voice_browser_logic.h): bookmarks,
+    # history, downloads, settings, windows, the AI chat, the browser's own
+    # buttons and menus (browser_ui_map.h), the media element's speed,
+    # volume and captions (voice_media_controls.h), undo (voice_undo.h) and
+    # spoken punctuation (voice_dictation.h).
+    "browser_ui_map.cc",
+    "browser_ui_map.h",
+    "voice_browser_logic.cc",
+    "voice_browser_logic.h",
+    "voice_browser_types.cc",
+    "voice_browser_types.h",
+    "voice_dictation.cc",
+    "voice_dictation.h",
+    "voice_media_controls.cc",
+    "voice_media_controls.h",
+    "voice_undo.cc",
+    "voice_undo.h",
   ]
 
   public_deps = [
@@ -936,6 +954,7 @@ source_set("voice_loop_unit_tests") {
   sources = [
     "page_reading_unittest.cc",
     "site_skills_unittest.cc",
+    "voice_browser_logic_unittest.cc",
     "voice_candidates_unittest.cc",
     "voice_controller_logic_skills_unittest.cc",
     "voice_controller_logic_unittest.cc",

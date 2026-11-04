@@ -120,6 +120,196 @@ constexpr CommandPattern kPatterns[] = {
     {K::kVerbosity, "(menos detalle|menos detalles|di menos|menos detallado)",
      C::kAlways, V::kLess},
 
+    // --- The rest of the browser (voice_browser_logic.h) ------------------
+    // Before sites and choices: "abre mis marcadores" is no site called
+    // "mis marcadores", and "abre la última descarga" no item of the page.
+    {K::kStartOver,
+     "(empecemos de nuevo|empecemos otra vez|empieza de cero|empecemos de "
+     "cero|desde cero|volvamos a empezar|vamos a empezar de nuevo|empezar "
+     "de nuevo|borron y cuenta nueva|reinicia la conversacion|nueva "
+     "conversacion|empieza de nuevo|vuelve a empezar)"},
+    {K::kNextMatch,
+     "[ve a|salta a|muestra|muestrame] [la] (siguiente|proxima) "
+     "(coincidencia|aparicion)"},
+    {K::kNextMatch,
+     "[ve a|salta a|muestra|muestrame] [la] (coincidencia|aparicion) "
+     "siguiente"},
+    {K::kNextMatch,
+     "(busca|buscar|encuentra) (la siguiente|otra vez|de nuevo)"},
+    {K::kPreviousMatch,
+     "[ve a|salta a|muestra|muestrame|vuelve a] [la] (coincidencia|aparicion)"
+     " anterior"},
+    {K::kPreviousMatch,
+     "[ve a|salta a|muestra|muestrame|vuelve a] [la] anterior "
+     "(coincidencia|aparicion)"},
+    {K::kPreviousMatch, "(busca|buscar|encuentra) la anterior"},
+    // Bookmarks.
+    {K::kRemoveBookmark,
+     "(quita|quitar|borra|borrar|elimina|eliminar) (este|el) marcador [de "
+     "esta pagina]"},
+    {K::kRemoveBookmark,
+     "(quita|quitar|borra|borrar|elimina|eliminar|saca) (esta pagina|la "
+     "pagina|esto|este sitio) de [mis|los] marcadores"},
+    {K::kBookmarkPage,
+     "(anade|anadir|agrega|agregar|guarda|guardar|pon|poner) (esta pagina|la "
+     "pagina|esto|este sitio|esta pestana) (en|a) [mis|los] marcadores"},
+    {K::kBookmarkPage,
+     "(anade|anadir|agrega|agregar|crea|crear|pon|poner) un marcador [a "
+     "esta pagina|para esta pagina|aqui]"},
+    {K::kBookmarkPage,
+     "(marca|marcar|guarda|guardar) (esta pagina|la pagina|este sitio) como "
+     "(favorito|marcador)"},
+    {K::kBookmarkPage,
+     "(guarda|guardar|anade|anadir|agrega|agregar) (esta pagina|la "
+     "pagina|esto|este sitio) (en|a) [mis|los] favoritos"},
+    {K::kListBookmarks,
+     "(abre|abrir|muestra|muestrame|mostrar|lee|leeme|lista|dime) [todos] "
+     "(mis|los) (marcadores|favoritos)"},
+    {K::kListBookmarks, "(cuales son|que hay en) mis (marcadores|favoritos)"},
+    {K::kListBookmarks, "mis (marcadores|favoritos)"},
+    {K::kOpenBookmark,
+     "(abre|abrir|abra|ve a|ir a|carga) el (marcador|favorito) [llamado|de|"
+     "que se llama] {name}"},
+    {K::kOpenBookmark,
+     "(abre|abrir|abra|ve a|ir a|carga) {name} (de|desde) (mis|los) "
+     "(marcadores|favoritos)"},
+    // History.
+    {K::kReopenTab,
+     "(reabre|reabrir|vuelve a abrir|volver a abrir|recupera|recuperar|"
+     "restaura|restaurar) la [ultima] pestana [cerrada|que cerre|que he "
+     "cerrado]"},
+    {K::kReopenTab, "(abre|abrir) la [ultima] pestana cerrada"},
+    {K::kListHistory,
+     "(abre|abrir|muestra|muestrame|mostrar|lee|leeme|dime) (mi|el) "
+     "historial [de navegacion]"},
+    {K::kListHistory,
+     "(que|cuales) (paginas|sitios|webs) (visite|he visitado|abri|he "
+     "abierto) [hace poco|antes|ultimamente]"},
+    {K::kListHistory, "(mi historial|historial)"},
+    {K::kOpenFromHistory,
+     "(abre|abrir|abra|ve a|ir a|carga|busca|encuentra) {query} (de|desde|"
+     "en) (mi|el) historial"},
+    // Downloads.
+    {K::kOpenDownload,
+     "(abre|abrir|abra) (la|el) (ultima|ultimo|mas reciente) (descarga|"
+     "archivo descargado|archivo)",
+     C::kAlways, V::kNewest},
+    {K::kOpenDownload,
+     "(abre|abrir|abra) (la|el) (ultima descarga|ultimo archivo "
+     "descargado|archivo que descargue|descarga mas reciente)",
+     C::kAlways, V::kNewest},
+    {K::kOpenDownload, "(abre|abrir|abra) la descarga [numero] {number}"},
+    {K::kOpenDownload, "(abre|abrir|abra) la {position} descarga"},
+    {K::kListDownloads,
+     "(abre|abrir|muestra|muestrame|mostrar|lee|leeme|lista|dime) [todas] "
+     "(mis|las) descargas"},
+    {K::kListDownloads, "que (descargue|he descargado) [hace poco|antes]"},
+    {K::kListDownloads, "(mis descargas|descargas)"},
+    // Settings. Those that weaken a protection are only changed by a click.
+    {K::kProtectedSetting,
+     "[activa|activar|enciende] [siempre] (di|decir|dime) la palabra "
+     "[de confirmacion] en voz alta [siempre]"},
+    {K::kProtectedSetting,
+     "(confia en|confiar en|aprueba|aprobar|permite|permitir) (este|el|ese|"
+     "mi) (flujo de trabajo|flujo|automatizacion)",
+     C::kAlways, V::kWorkflowTrust},
+    {K::kProtectedSetting,
+     "(confia en|confiar en|aprueba|aprobar) (esta|la|esa|mi) "
+     "(rutina|automatizacion)",
+     C::kAlways, V::kWorkflowTrust},
+    {K::kProtectedSetting,
+     "(cambia|cambiar|sube|subir) la confianza (de|del) (este|el|esta|la|mi) "
+     "(flujo de trabajo|flujo|rutina|automatizacion)",
+     C::kAlways, V::kWorkflowTrust},
+    {K::kAlwaysListening,
+     "(activa|activar|active|enciende|encender|pon|poner) [el] (escuchar "
+     "siempre|escucha continua|modo escucha continua|escucha permanente)"},
+    {K::kAlwaysListening,
+     "(escuchame siempre|escucha siempre|escuchar siempre|escucha todo el "
+     "tiempo)"},
+    {K::kAlwaysListening,
+     "(desactiva|desactivar|desactive|apaga|apagar|quita|quitar) [el] "
+     "(escuchar siempre|escucha continua|modo escucha continua|escucha "
+     "permanente)",
+     C::kAlways, V::kOff},
+    {K::kAlwaysListening,
+     "(deja de escuchar siempre|no escuches siempre|escucha solo con oye "
+     "molt)",
+     C::kAlways, V::kOff},
+    {K::kOpenSettings,
+     "(abre|abrir|abra|muestra|muestrame|ve a|ir a) [la] configuracion de "
+     "(privacidad|seguridad|privacidad y seguridad)",
+     C::kAlways, V::kSettingsPrivacy},
+    {K::kOpenSettings,
+     "(abre|abrir|abra|muestra|muestrame|ve a|ir a) [la] configuracion de "
+     "[la] (ia|inteligencia artificial|molt ai|asistente)",
+     C::kAlways, V::kSettingsAI},
+    {K::kOpenSettings,
+     "(abre|abrir|abra|muestra|muestrame|ve a|ir a) [la] configuracion del "
+     "(modo de voz|modo voz|control por voz)",
+     C::kAlways, V::kSettingsVoice},
+    {K::kOpenSettings,
+     "(abre|abrir|abra|muestra|muestrame|ve a|ir a) [la] configuracion de "
+     "voz",
+     C::kAlways, V::kSettingsVoice},
+    {K::kOpenSettings,
+     "(abre|abrir|abra|muestra|muestrame|ve a|ir a) [la] configuracion de "
+     "(moltnet|molt net|tor)",
+     C::kAlways, V::kSettingsMoltNet},
+    {K::kOpenSettings,
+     "(abre|abrir|abra|muestra|muestrame|ve a|ir a) [la] (configuracion|"
+     "ajustes|preferencias) [del navegador|de moltbrowser]"},
+    {K::kOpenSettings, "(configuracion|ajustes) del navegador"},
+    // Windows: voice mode stays in the window it is in.
+    {K::kNewWindow,
+     "(abre|abrir|abra|nueva|crea|crear) [una] [nueva] ventana (privada|de "
+     "incognito|incognito)",
+     C::kAlways, V::kWindowPrivate},
+    {K::kNewWindow, "ventana (privada|de incognito|incognito)", C::kAlways,
+     V::kWindowPrivate},
+    {K::kNewWindow,
+     "(abre|abrir|abra|nueva|crea|crear) [una] [nueva] ventana (de "
+     "moltnet|moltnet|de molt net|de tor)",
+     C::kAlways, V::kWindowMoltNet},
+    {K::kNewWindow, "ventana (de moltnet|moltnet|de tor)", C::kAlways,
+     V::kWindowMoltNet},
+    {K::kNewWindow,
+     "(abre|abrir|abra|crea|crear) [una] (nueva ventana|ventana nueva|otra "
+     "ventana|ventana)"},
+    {K::kNewWindow, "(nueva ventana|ventana nueva)"},
+    {K::kCloseWindow,
+     "(cierra|cerrar|cierre) (esta ventana|la ventana|la ventana actual)"},
+    {K::kSwitchWindow,
+     "(cambia|cambiar|ve|ir|pasa|salta|vuelve) a la (otra|siguiente|"
+     "anterior) ventana"},
+    {K::kSwitchWindow, "(otra ventana|siguiente ventana|ventana siguiente)"},
+    // The AI chat.
+    {K::kAskAI,
+     "(preguntale|pregunta|preguntar|pregunte) (a la ia|al asistente|a la "
+     "inteligencia artificial|a molt ai|al chat) [si|sobre|acerca de] "
+     "{query}"},
+    {K::kOpenAIChat,
+     "(abre|abrir|abra|muestra|muestrame|inicia) [el] (chat de la ia|chat de "
+     "ia|chat|asistente|panel de la ia|chat con la ia)"},
+    {K::kOpenAIChat,
+     "(abre|abrir|abra|muestra|muestrame) la (ia|inteligencia artificial)"},
+    // The browser's own buttons and menus.
+    {K::kShowBrowserButtons,
+     "(muestra|muestrame|mostrar|lee|leeme|lista|dime) [los] (botones|"
+     "controles) del (navegador|la barra de herramientas)"},
+    {K::kShowBrowserButtons,
+     "(cuales son|que hay en) [los] (botones|controles) del navegador"},
+    {K::kShowBrowserButtons,
+     "(botones del navegador|controles del navegador|barra de "
+     "herramientas)"},
+    {K::kCloseMenu,
+     "(cierra|cerrar|cierre|sal del|salir del|oculta|quita) [el] menu [del "
+     "navegador|principal]"},
+    {K::kOpenMenu,
+     "(abre|abrir|abra|muestra|muestrame) el menu [del navegador|principal|"
+     "de la aplicacion]"},
+    {K::kOpenMenu, "(menu del navegador|menu principal)"},
+
     // --- Routines (learning) ----------------------------------------------
     // What was learned, forgotten: before "olvida {name}", which would take
     // these as a routine's name.
@@ -205,9 +395,11 @@ constexpr CommandPattern kPatterns[] = {
      "(desplazate|desplaza|desplazar|ve|mueve) (a la|hacia la) derecha"},
 
     // --- Seeking (before "vuelve" and "adelante") -------------------------
+    // "Empieza de nuevo" is kStartOver (above): while something plays, it
+    // plays from the start too.
     {K::kRestart,
-     "(reinicia|reiniciar|empieza de nuevo|empieza otra vez|vuelve a "
-     "empezar|desde el principio|desde el inicio|ponlo otra vez|ponlo de "
+     "(reinicia|reiniciar|empieza otra vez|desde el principio|desde el "
+     "inicio|ponlo otra vez|ponlo de "
      "nuevo|reproduce otra vez|reproduce de nuevo|reinicia el video|"
      "rebobina hasta el principio|rebobina al principio)"},
     {K::kSkipBack,
@@ -332,6 +524,13 @@ constexpr CommandPattern kPatterns[] = {
     {K::kNormalSpeed,
      "([pon|reproduce a] [la] velocidad normal|velocidad por defecto|"
      "restablece la velocidad)"},
+    {K::kSetSpeed,
+     "[pon|poner|ajusta|ajustar|cambia|cambiar|deja] [la] velocidad [de "
+     "reproduccion] [a|en|al] {speed}"},
+    {K::kSetSpeed,
+     "(reproduce|reproducir|reproducelo|pon|poner|ponlo|ponla|ve|mira) a "
+     "{speed} [velocidad|de velocidad]"},
+    {K::kSetSpeed, "a {speed} (velocidad|de velocidad)"},
     {K::kSpeedUp,
      "(mas rapido|acelera|acelerar|aceleralo|reproduce mas rapido|aumenta "
      "la velocidad|sube la velocidad)"},
@@ -350,6 +549,7 @@ constexpr CommandPattern kPatterns[] = {
     {K::kSetVolume,
      "[pon|poner|ajusta|ajustar|cambia|deja] [el] volumen [a|al|en] "
      "{level}"},
+    {K::kSetVolume, "[pon|poner|deja] (el|al) {level} [de] [el] volumen"},
     {K::kMute,
      "(silencia|silenciar|silencie|mutea|mutear) [esto|todo|el (sonido|"
      "audio|video|volumen)|la (pestana|musica)]"},
@@ -624,6 +824,12 @@ constexpr CommandInfo kInfos[] = {
      "busca Bohemian Rhapsody"},
     {K::kFindInPage, "Ir a sitios", "Encuentra palabras en esta página.",
      "busca horario en esta página"},
+    {K::kNextMatch, "Ir a sitios",
+     "El siguiente sitio donde se encontraron las palabras.",
+     "siguiente coincidencia"},
+    {K::kPreviousMatch, "Ir a sitios",
+     "El sitio anterior donde se encontraron las palabras.",
+     "coincidencia anterior"},
     {K::kBack, "Ir a sitios", "Vuelve a la página anterior.", "atrás"},
     {K::kForward, "Ir a sitios", "Avanza otra vez.", "adelante"},
     {K::kReload, "Ir a sitios", "Vuelve a cargar la página.", "recarga"},
@@ -670,7 +876,7 @@ constexpr CommandInfo kInfos[] = {
     {K::kSkipBack, "Multimedia", "Retrocede en el vídeo.",
      "retrocede 10 segundos"},
     {K::kRestart, "Multimedia", "Reproduce desde el principio.",
-     "empieza de nuevo"},
+     "desde el principio"},
     {K::kNextTrack, "Multimedia", "El vídeo o la canción siguiente.",
      "siguiente vídeo"},
     {K::kPreviousTrack, "Multimedia", "El vídeo o la canción anterior.",
@@ -686,6 +892,10 @@ constexpr CommandInfo kInfos[] = {
     {K::kSlowDown, "Multimedia", "Reproduce más lento.", "más lento"},
     {K::kNormalSpeed, "Multimedia", "Vuelve a la velocidad normal.",
      "velocidad normal"},
+    {K::kSetSpeed, "Multimedia",
+     "Pon la velocidad de reproducción: 1,5, uno y medio, el doble, la "
+     "mitad, de un cuarto a 4 veces.",
+     "velocidad 1,5"},
     {K::kSkipAd, "Multimedia",
      "Salta el anuncio, cuando el reproductor lo permita.", "salta el anuncio"},
     // Reading.
@@ -759,7 +969,16 @@ constexpr CommandInfo kInfos[] = {
      "Para: de hablar, y lo que esté en marcha.", "para"},
     {K::kStopSpeaking, "Hablar con el navegador", "Deja de hablar.",
      "deja de hablar"},
-    {K::kUndo, "Hablar con el navegador", "Deshaz la última acción.", "deshaz"},
+    {K::kUndo, "Hablar con el navegador",
+     "Deshaz lo último que hizo el modo de voz: reabre la pestaña que "
+     "cerró, devuelve lo que escribió, vuelve atrás desde una página que "
+     "abrió, o recupera un marcador.",
+     "deshaz"},
+    {K::kStartOver, "Hablar con el navegador",
+     "Empieza de nuevo: olvida la lista, la pregunta y lo que se estaba "
+     "haciendo, y vuelve a escuchar. Mientras algo se reproduce, lo pone "
+     "desde el principio.",
+     "empecemos de nuevo"},
     {K::kRepeat, "Hablar con el navegador", "Dilo otra vez.", "repite"},
     {K::kHelp, "Hablar con el navegador", "Escucha lo que puedes decir.",
      "qué puedo decir"},
@@ -774,6 +993,72 @@ constexpr CommandInfo kInfos[] = {
      "sé breve"},
     {K::kCorrection, "Hablar con el navegador", "Corrige lo que se oyó.",
      "no, dije YouTube"},
+    // The browser itself.
+    {K::kBookmarkPage, "El navegador", "Añade esta página a los marcadores.",
+     "añade esta página a mis marcadores"},
+    {K::kRemoveBookmark, "El navegador", "Quita el marcador de esta página.",
+     "quita este marcador"},
+    {K::kListBookmarks, "El navegador",
+     "Escucha tus marcadores, para abrir uno por su número o su nombre.",
+     "abre mis marcadores"},
+    {K::kOpenBookmark, "El navegador", "Abre un marcador por su nombre.",
+     "abre el marcador noticias"},
+    {K::kListHistory, "El navegador",
+     "Escucha las páginas que visitaste, para abrir una por su número o su "
+     "nombre.",
+     "muestra mi historial"},
+    {K::kReopenTab, "El navegador", "Reabre la última pestaña que cerraste.",
+     "reabre la pestaña cerrada"},
+    {K::kOpenFromHistory, "El navegador",
+     "Abre una página de tu historial por su sitio o su título.",
+     "abre el tiempo de mi historial"},
+    {K::kListDownloads, "El navegador",
+     "Escucha tus descargas, de la más reciente a la más antigua, para abrir "
+     "una.",
+     "muestra mis descargas"},
+    {K::kOpenDownload, "El navegador",
+     "Abre un archivo descargado: el último, o por su número. Un archivo que "
+     "puede ejecutar programas no se abre por voz.",
+     "abre la última descarga"},
+    {K::kOpenSettings, "El navegador",
+     "Abre la configuración: la del navegador, o la de privacidad, la IA, el "
+     "modo de voz o MoltNet.",
+     "abre la configuración"},
+    {K::kAlwaysListening, "El navegador",
+     "Escuchar siempre, activado (después de tu sí) o desactivado: cada "
+     "frase es una orden, sin Oye Molt.",
+     "activa escuchar siempre"},
+    {K::kProtectedSetting, "El navegador",
+     "Las opciones que debilitan una protección (decir la palabra de "
+     "confirmación en voz alta, la confianza de un flujo de trabajo) solo "
+     "se cambian con un clic en la configuración: el navegador dice dónde.",
+     "di la palabra en voz alta"},
+    {K::kNewWindow, "El navegador",
+     "Abre una ventana nueva, una ventana privada o una ventana de MoltNet. "
+     "El modo de voz se queda en esta ventana, y nunca escucha en MoltNet.",
+     "nueva ventana"},
+    {K::kCloseWindow, "El navegador",
+     "Cierra esta ventana, después de tu sí; el modo de voz pasa a otra "
+     "ventana.",
+     "cierra esta ventana"},
+    {K::kSwitchWindow, "El navegador",
+     "Cambia a tu otra ventana; el modo de voz va contigo.",
+     "cambia a la otra ventana"},
+    {K::kAskAI, "El navegador",
+     "Pregúntale algo a la IA del dispositivo. Su respuesta se te lee, y no "
+     "se hace nada por ella.",
+     "pregúntale a la IA a qué distancia está la luna"},
+    {K::kOpenAIChat, "El navegador", "Abre el chat de la IA junto a la página.",
+     "abre el chat de la IA"},
+    {K::kShowBrowserButtons, "El navegador",
+     "Escucha los botones del propio navegador (la barra de herramientas, "
+     "las pestañas, la barra de marcadores, el panel lateral), para pulsar "
+     "uno por su número o su nombre.",
+     "muestra los botones del navegador"},
+    {K::kOpenMenu, "El navegador",
+     "Abre el menú del navegador, y luego di qué pulsar.", "abre el menú"},
+    {K::kCloseMenu, "El navegador", "Cierra el menú del navegador.",
+     "cierra el menú"},
     // Routines.
     {K::kRememberRoutine, "Rutinas",
      "Guarda lo que acabas de hacer como una rutina.",
