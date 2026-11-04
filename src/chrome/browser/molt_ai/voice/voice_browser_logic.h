@@ -108,6 +108,13 @@ void PlanBrowserItemsRead(const VoiceStep& asked,
                           std::vector<BrowserItem> items,
                           TurnPlanner& planner);
 
+// Whether a downloaded file named |file_name| could run code on this
+// computer when opened (a program, an installer, a script, a shortcut, a
+// disk image, an archive of an app; its extension, any case, the last of
+// several): voice mode doesn't open those. A name without an extension
+// counts as one that could.
+bool FileCouldRunCode(std::string_view file_name);
+
 // Whether the browser's list read last still holds.
 bool BrowserListValid(const ConversationState& state,
                       const VoiceEnvironment& env);

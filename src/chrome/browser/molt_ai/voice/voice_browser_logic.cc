@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/voice/voice_browser_logic.h"
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <utility>
 
@@ -225,7 +226,9 @@ void ActOnItem(BrowserListKind kind,
   switch (kind) {
     case BrowserListKind::kBookmarks:
     case BrowserListKind::kHistory: {
-      if (item.url.empty()) {
+      // Only a web address (the browser gathers only those).
+      if (!item.url.starts_with("https://") &&
+          !item.url.starts_with("http://")) {
         p.Say(Tr(p, "{0}. There's nothing to open there.", {name}));
         return;
       }
@@ -696,7 +699,47 @@ void OpenDownload(const VoiceCommand& command, TurnPlanner& p) {
   p.Status("Looking at your downloads");
 }
 
+// Extensions of files that run code when opened, on any of the desktop
+// platforms (folded to lower case).
+constexpr std::string_view kRunsCode[] = {
+    "ade",     "adp",  "app",    "appimage", "appref-ms", "application", "apk",
+    "bas",     "bat",  "bin",    "cab",      "chm",       "cmd",         "com",
+    "command", "cpl",  "crx",    "csh",      "deb",       "desktop",     "dll",
+    "dmg",     "docm", "exe",    "flatpak",  "gadget",    "hta",         "inf",
+    "ins",     "isp",  "jar",    "jnlp",     "js",        "jse",         "ksh",
+    "lnk",     "mht",  "mhtml",  "mpkg",     "msc",       "msi",         "msix",
+    "msp",     "mst",  "pif",    "pkg",      "pl",        "plugin",      "ps1",
+    "psm1",    "py",   "pyw",    "rb",       "reg",       "rpm",         "run",
+    "scf",     "scr",  "sct",    "sh",       "shb",       "shs",         "snap",
+    "svg",     "swf",  "sys",    "terminal", "tool",      "url",         "vb",
+    "vbe",     "vbs",  "webloc", "workflow", "ws",        "wsc",         "wsf",
+    "wsh",     "xbap", "xlsm",   "xpi",
+};
+
 }  // namespace
+
+bool FileCouldRunCode(std::string_view file_name) {
+  const size_t dot = file_name.rfind('.');
+  if (dot == std::string_view::npos || dot + 1 >= file_name.size()) {
+    return true;
+  }
+  std::string extension(file_name.substr(dot + 1));
+  for (char& c : extension) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  // Trailing dots and spaces, which some systems drop ("setup.exe.").
+  while (!extension.empty() &&
+         (extension.back() == ' ' || extension.back() == '.')) {
+    extension.pop_back();
+  }
+  if (extension.empty()) {
+    return true;
+  }
+  return std::find(std::begin(kRunsCode), std::end(kRunsCode), extension) !=
+         std::end(kRunsCode);
+}
 
 bool BrowserListValid(const ConversationState& state,
                       const VoiceEnvironment& env) {

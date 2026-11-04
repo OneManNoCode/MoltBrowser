@@ -1227,6 +1227,45 @@ constexpr SpokenAnswer kAnswers[] = {
      "El menú no tiene nada llamado {0}. Di cierra el menú, o el nombre de "
      "lo que quieras pulsar."},
     {"{0} is turned off now.", "{0} está desactivado ahora."},
+    {"I can't find that button any more. Say show the browser's buttons.",
+     "Ya no encuentro ese botón. Di muestra los botones del navegador."},
+    // What the browser did (voice_browser_actions.cc).
+    {"I can't open that download now.", "Ahora no puedo abrir esa descarga."},
+    {"I can't reopen that tab any more.", "Ya no puedo reabrir esa pestaña."},
+    {"Undone: the tab is open again.",
+     "Deshecho: la pestaña está abierta otra vez."},
+    {"Undone: {0} is open again.", "Deshecho: {0} está abierta otra vez."},
+    {"There's no closed tab to reopen.",
+     "No hay ninguna pestaña cerrada que reabrir."},
+    {"Reopened the closed tab.", "He reabierto la pestaña cerrada."},
+    {"Reopened {0}.", "He reabierto {0}."},
+    {"I couldn't save that setting. Change it in settings.",
+     "No he podido guardar esa opción. Cámbiala en la configuración."},
+    {"I'm listening in this window now.", "Ahora escucho en esta ventana."},
+    {"I'm listening in this window now: {0}.",
+     "Ahora escucho en esta ventana: {0}."},
+    {"MoltNet couldn't start. Open it from the toolbar to see why.",
+     "MoltNet no ha podido iniciarse. Ábrelo desde la barra de herramientas "
+     "para ver por qué."},
+    // Asking the AI (voice_ai_answers.cc, ai_questions.cc).
+    {"Let me think.", "Déjame pensar."},
+    {"The on-device AI can't run on this computer.",
+     "La IA del dispositivo no puede funcionar en este ordenador."},
+    {"The on-device AI didn't answer in time, so I stopped. It may be busy.",
+     "La IA del dispositivo no respondió a tiempo, así que he parado. Puede "
+     "que esté ocupada."},
+    {"The AI's answer held something that sounds like a voice command, so I "
+     "left it out.",
+     "La respuesta de la IA contenía algo que suena a una orden de voz, así "
+     "que la he omitido."},
+    {"The AI says: {0}", "La IA dice: {0}"},
+    // At the first run (voice_first_run.cc).
+    {"This is MoltBrowser's voice mode, on because this is the browser's "
+     "first run. Say Hey Molt, then what you want, or what can I say. To "
+     "turn it off, say turn off voice mode.",
+     "Este es el modo de voz de MoltBrowser, activado porque es la primera "
+     "vez que se abre el navegador. Di Oye Molt y luego lo que quieras, o "
+     "qué puedo decir. Para desactivarlo, di desactiva el modo de voz."},
 };
 
 }  // namespace

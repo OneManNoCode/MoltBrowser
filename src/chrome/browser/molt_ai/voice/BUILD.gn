@@ -295,6 +295,10 @@ source_set("page_reading") {
 # molt_page_questions_fuzzer build the same code.
 source_set("page_questions") {
   sources = [
+    # "Ask the AI ...": the same rules for a question of the user's own
+    # (ai_questions.h).
+    "ai_questions.cc",
+    "ai_questions.h",
     "page_questions.cc",
     "page_questions.h",
   ]
@@ -325,6 +329,9 @@ source_set("page_questions") {
 # planner fallback calls it), one question at a time, with a time limit.
 source_set("voice_page_questions") {
   sources = [
+    # "Ask the AI ...", through the same runtime (voice_ai_answers.h).
+    "voice_ai_answers.cc",
+    "voice_ai_answers.h",
     "voice_page_questions.cc",
     "voice_page_questions.h",
   ]
@@ -392,6 +399,46 @@ source_set("voice_page_questions_browser_tests") {
     "//chrome/test:test_support_ui",
     "//content/public/browser",
     "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+# The rest of the browser by voice through the whole loop, with a fake TTS
+# platform (chrome/test/data/molt_voice/player.html, frame_player*.html,
+# tool.bat): bookmarks, history and the closed tab, downloads, settings,
+# windows, the AI chat with a scripted model, undo, the app menu, the
+# player's speed, volume and captions, a player in a frame. Picked up by
+# :browser_tests.
+source_set("voice_browser_actions_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_browser_actions_browsertest.cc" ]
+
+  data = [ "//chrome/test/data/molt_voice/" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_page",
+    ":voice_page_questions",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/bookmarks",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/side_panel",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/bookmarks/browser",
+    "//components/bookmarks/test",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media:media_buildflags",
     "//net:test_support",
     "//testing/gtest",
     "//url",
@@ -560,6 +607,10 @@ source_set("browser_tests") {
 
     # Questions about the page, with a scripted model.
     ":voice_page_questions_browser_tests",
+
+    # The rest of the browser by voice: bookmarks, history, downloads,
+    # settings, windows, the AI chat, undo, the app menu, the player.
+    ":voice_browser_actions_browser_tests",
 
     # The web agent on the page map, and the planner fallback.
     "//chrome/browser/molt_ai/agents:browser_tests",
@@ -730,8 +781,17 @@ source_set("voice_dialog_manager") {
 # played through the audio service) or TtsController.
 source_set("voice_controller") {
   sources = [
+    # The rest of the browser by voice: bookmarks, history, downloads,
+    # settings, windows, the AI chat, the browser's own buttons
+    # (voice_browser_ui.h, implemented by
+    # //chrome/browser/ui/views/molt_ai/voice:browser_ui), the page's media
+    # element.
+    "voice_browser_actions.cc",
+    "voice_browser_actions.h",
     "voice_browser_prompts.cc",
     "voice_browser_prompts.h",
+    "voice_browser_ui.cc",
+    "voice_browser_ui.h",
 
     # What captures a microphone, the screen or a window: the voice
     # gesture's word is said or shown accordingly.
@@ -857,6 +917,24 @@ source_set("voice_controller") {
     # mode stays off in MoltNet windows.
     "//chrome/browser/profiles:profile",
 
+    # The rest of the browser by voice (voice_browser_actions.cc): the
+    # bookmarks, the history, the recently closed tabs, settings' pages,
+    # the AI chat's side panel, a MoltNet window, the media element's
+    # script in an isolated world.
+    "//chrome/browser/bookmarks",
+    "//chrome/browser/history",
+    "//chrome/browser/molt_ai/tor",
+    "//chrome/browser/sessions",
+    "//chrome/browser/ui:browser_live_tab_context",
+    "//chrome/browser/ui:chrome_pages",
+    "//chrome/browser/ui:singleton_tabs",
+    "//chrome/browser/ui/side_panel",
+    "//components/bookmarks/browser",
+    "//components/history/core/browser",
+    "//components/keyed_service/core",
+    "//components/sessions",
+    "//content/public/common",
+
     # The default search engine, for names the browser doesn't know.
     "//chrome/browser/search_engines",
     "//chrome/browser/ui:browser_commands",
@@ -977,6 +1055,9 @@ source_set("voice_loop_unit_tests") {
 
   deps = [
     ":page_map_test_support",
+
+    # "Ask the AI ...": its prompt and its answer (ai_questions.h).
+    ":page_questions",
     ":page_reading",
     ":site_skills",
     ":voice_learning_store",
@@ -1195,6 +1276,37 @@ source_set("voice_session") {
     # Windows' loader's start failures (helper_sandbox_win_policy.h, pure
     # C++, built everywhere).
     "//chrome/browser/molt_ai/common:helper_sandbox_win_policy",
+  ]
+}
+
+# The listening side's part of the rest of the browser by voice
+# (voice_window_listening.h): voice mode moving between windows with the
+# microphone, always listening changed by voice. Installed by the Voice
+# button (//chrome/browser/ui/views/molt_ai/voice:toolbar_button), as the
+# voice loop can't depend on the session that builds on it.
+source_set("voice_window_listening") {
+  sources = [
+    # Voice mode offered at the browser's first run (behind its own
+    # feature, off by default).
+    "voice_first_run.cc",
+    "voice_first_run.h",
+    "voice_window_listening.cc",
+    "voice_window_listening.h",
+  ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_session",
+    "//base",
+    "//chrome/browser/first_run",
+
+    # Voice mode's switches in settings.json, through its one writer.
+    "//chrome/browser/molt_ai/common:molt_settings_file",
+
+    # molt_net_profile_id.h (header-only IsMoltNetProfile()).
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
   ]
 }
 

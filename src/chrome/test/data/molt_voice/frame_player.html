@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<!-- A page with its player in a frame of another site
+     (voice_browser_actions_browsertest.cc): skipping, the next video, full
+     screen and the speed on a player inside a frame. The test loads it as
+     host.test with the frame from player.test (?frame=<url>). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Embedded player - Fixture</title>
+</head>
+<body>
+<h1>An article with a video</h1>
+<p>The video is below.</p>
+<iframe id="frame" width="660" height="420" allow="fullscreen; autoplay"
+        allowfullscreen></iframe>
+<script>
+  const src = new URLSearchParams(location.search).get('frame');
+  if (src) {
+    document.getElementById('frame').src = src;
+  }
+</script>
+</body>
+</html>

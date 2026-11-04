@@ -286,10 +286,23 @@ const char kVoiceSettingsJs[] = R"JS(
   'use strict';
   var section = document.getElementById('voiceSection');
   if (!section) return;
+  // molt://ai-settings/?section=voice (voice mode's "open voice mode
+  // settings"): the section, once it shows.
+  var scrollToSection =
+      new URLSearchParams(window.location.search).get('section') === 'voice';
 
   function render(s) {
     if (!s || typeof s !== 'object') return;
     section.hidden = s.available !== true;
+    if (scrollToSection && !section.hidden) {
+      scrollToSection = false;
+      section.scrollIntoView({block: 'start'});
+      var heading = section.querySelector('h2');
+      if (heading) {
+        heading.setAttribute('tabindex', '-1');
+        heading.focus({preventScroll: true});
+      }
+    }
     document.getElementById('voiceEnabled').checked = s.enabled === true;
     document.getElementById('voiceAlwaysListening').checked =
         s.alwaysListening === true;

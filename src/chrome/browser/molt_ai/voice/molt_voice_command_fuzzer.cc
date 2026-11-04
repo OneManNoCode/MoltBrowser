@@ -155,15 +155,20 @@ bool CarriesText(K kind) {
          kind == K::kCorrection || kind == K::kRememberRoutine ||
          kind == K::kForgetRoutine || kind == K::kRunRoutine ||
          kind == K::kReadSection || kind == K::kForgetWord ||
-         kind == K::kAskPage;
+         kind == K::kAskPage ||
+         // The rest of the browser: a bookmark's name, what to find in the
+         // history, the question for the AI.
+         kind == K::kOpenBookmark || kind == K::kOpenFromHistory ||
+         kind == K::kAskAI;
 }
 
 bool Same(const VoiceCommand& a, const VoiceCommand& b) {
   return a.kind == b.kind && a.heard == b.heard && a.text == b.text &&
          a.site == b.site && a.site_words == b.site_words &&
          a.whole_query == b.whole_query && a.seconds == b.seconds &&
-         a.level == b.level && a.count == b.count && a.verb == b.verb &&
-         a.scope == b.scope && a.choice.kind == b.choice.kind &&
+         a.level == b.level && a.rate == b.rate && a.count == b.count &&
+         a.verb == b.verb && a.scope == b.scope &&
+         a.choice.kind == b.choice.kind &&
          a.choice.ordinal == b.choice.ordinal &&
          a.choice.number == b.choice.number &&
          a.choice.words == b.choice.words &&
@@ -229,8 +234,15 @@ void CheckUtterance(uint8_t flags,
   CHECK_GE(command.count, 1);
   CHECK_LE(command.count, 50);
   CheckChoice(command.choice);
-  if (command.kind == K::kChoose) {
+  if (command.kind == K::kChoose || command.kind == K::kOpenDownload) {
     CHECK(command.choice.kind != ChoiceRef::Kind::kNone);
+  }
+  // A playback speed exactly when one was said, within range.
+  if (command.kind == K::kSetSpeed) {
+    CHECK_GE(command.rate, kMinSpokenRate);
+    CHECK_LE(command.rate, kMaxSpokenRate);
+  } else {
+    CHECK_EQ(command.rate, 0);
   }
   if (command.kind == K::kUnknown) {
     CHECK(command.text.empty());

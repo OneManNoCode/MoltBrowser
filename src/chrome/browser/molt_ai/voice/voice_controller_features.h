@@ -26,6 +26,12 @@ namespace molt_ai::voice {
 
 BASE_DECLARE_FEATURE(kMoltVoiceMode);
 
+// Voice mode offered at the browser's first run (voice_first_run.h), behind
+// #molt-voice-mode: off until the owner decides
+// (docs/design/TOUCHLESS_BROWSING.md §11, decision 5);
+// --enable-features=MoltVoiceModeAtFirstRun turns it on.
+BASE_DECLARE_FEATURE(kMoltVoiceModeAtFirstRun);
+
 namespace flags {
 // The chrome://flags internal name.
 inline constexpr char kVoiceMode[] = "molt-voice-mode";

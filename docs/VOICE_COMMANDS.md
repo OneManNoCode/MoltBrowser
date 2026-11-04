@@ -30,6 +30,15 @@ Voice mode is a preview, behind a flag.
    listening, thinking, speaking), what it heard as you speak, and what it
    is doing.
 
+Voice mode can also be offered the first time MoltBrowser runs, so a
+person who can only speak can start at once: with
+`--enable-features=MoltVoiceModeAtFirstRun` (off until the owner decides
+to ship it on), voice mode starts listening in the first window of the
+browser's first run and, a few seconds after its own greeting, says "This
+is MoltBrowser's voice mode, on because this is the browser's first run.
+Say Hey Molt, then what you want, or what can I say. To turn it off, say
+turn off voice mode." Settings are left as they were.
+
 To stop listening, say **"turn off voice mode"** (the browser asks first,
 because afterwards only the Voice button or settings turn it back on), or
 press the Voice button. One window listens at a time: turning it on in
@@ -139,9 +148,72 @@ and the bar only.
 - **Typing:** choose a field ("click the search box"), then "type ...",
   "delete the last word", "clear the field", "read it back", "submit".
   Password, card and code fields are never typed into or read out.
+  Punctuation is said as words: "type see you at noon comma Ana period"
+  types "see you at noon, Ana." ("comma", "period" or "full stop",
+  "question mark", "exclamation mark", "colon", "semicolon", "new line",
+  "new paragraph", "open quote" and "close quote", "open paren" and "close
+  paren", "hyphen", "dash", "apostrophe", "ellipsis"). "The word comma"
+  types the word itself. After a period, a question mark or a new line,
+  the next word starts with a capital.
 - **Media:** "play", "pause", "resume", "louder" and "quieter" (with the
   player's volume control), "mute", "skip ahead one minute", "full screen",
-  "turn on captions", "skip the ad".
+  "turn on captions", "skip the ad". These work on a player in a frame of
+  another site too (an embedded video), and "next video" where the player
+  says it has one.
+  - **The volume to a level:** "volume 50 percent", "set the volume to
+    half", "maximum volume", "volume 3" (on a scale of ten). The browser
+    sets the video's own volume and says "Volume 50 percent."; when the tab
+    is muted it adds "The tab is muted: say unmute to hear it."
+  - **The playback speed:** "speed 1.5", "play at double speed", "half
+    speed", "speed one and a half", from a quarter to 4 times; "faster"
+    and "slower" step through 0.25, 0.5, 0.75, normal, 1.25, 1.5, 1.75 and
+    2 times (while the browser reads a page aloud, they are its reading
+    speed, as before); "normal speed". It says "Speed: 1.5 times." or
+    "Normal speed."; a player that refuses a speed is heard as "This player
+    doesn't go to that speed. Speed: 2 times."
+  - **Captions:** the player's captions button when it has one; otherwise
+    the video's own captions or subtitles ("Captions on.", "Captions off.",
+    or "I can't find captions for this video.").
+  - With no video or audio on the page: "There's no video or audio on this
+    page."
+- **Undo:** "undo" puts back what voice mode did last, and says so:
+  - a tab it closed is reopened ("Undone: Weather is open again.");
+  - what it typed, cleared or deleted in a field is put back ("Undone:
+    Search says Bohemian Rhapsody again.", or "Undone: Search is empty
+    again.");
+  - a page it opened (a site, a search, a link, a result) goes back to the
+    page before ("Undone: back to the page before.", then the page's
+    title); after "go back", it goes forward again;
+  - a bookmark it added is removed, one it removed put back ("Undone: the
+    bookmark is removed.", "Undone: the bookmark is back.").
+
+  Only the last thing counts. If the page it was on has changed since:
+  "I can't undo the last thing I did any more: the page changed since."
+  While the page it opened is still loading: "Wait until the page has
+  opened, then say undo." With nothing to undo: "There's nothing I can
+  undo." What you did yourself, and what can't be taken back (a form sent,
+  a purchase), is never undone.
+- **Start over:** "start over" forgets the list being chosen from, the
+  question the browser asked and the field being typed into, closes a menu
+  that is open, and listens again: "Starting over. What would you like to
+  do?" (with "A question from the browser is still waiting for your
+  answer." when a permission or a page's dialog still waits). While a video
+  or a song plays, "start over" plays it from the beginning, as before.
+- **"Where am I?"** says the site and the page, the tab, and what you are
+  in: "You're in the list of bookmarks, at 2 of 5.", "You're typing in
+  Search.", "Something is playing.", "The browser's menu is open: say what
+  to press, or close the menu.", "A question from the browser is waiting
+  for your answer." **"What can I say?"** puts first what fits: the menu,
+  the list, a reading, a player, and in a field the punctuation words.
+- **Find on the page:** "find opening hours on this page" says where it is
+  first and, when it is in more places, "Say next match to go on."; "next
+  match" and "previous match" go through them ("Match 2 of 3: the link
+  Opening hours.").
+- **A site's name on its own:** "YouTube" (or "Wikipedia", "Google",
+  "DuckDuckGo", "Bing", "Brave Search") opens it, saying "Opening YouTube."
+  then "YouTube is open."; so does the name of a site you opened by voice
+  earlier in this window ("BBC" after "open bbc dot co dot uk"). Any other
+  name on its own goes to the on-device AI as before.
 - **Reading aloud:** "read the page" reads the page's text, not its menus:
   the article, from its title on, without the navigation, the search box,
   forms, tables or ads in frames. "Read the section on history" reads that
@@ -215,6 +287,66 @@ and the bar only.
   Settings, "What voice mode learned", lists everything and deletes it;
   "Learn from what I say" turns it off. By voice: "forget the word
   Queen", "forget everything you learned".
+- **The browser itself:**
+  - **Bookmarks:** "bookmark this page" ("Bookmarked Cats - VideoSite.",
+    or "This page is already bookmarked."), "remove this bookmark"
+    ("Removed this page's bookmark. Say undo to put it back."), "open my
+    bookmarks" (the bookmark manager opens, and the browser reads them: "5
+    bookmarks. 1: BBC News, bbc.co.uk, 2: ... Say a number or a name."),
+    then a number or a name opens one; "open the bookmark news" opens it
+    at once, or asks which when several fit ("I can't find trains in your
+    bookmarks." when none does).
+  - **History:** "show my history" (the history page opens, and the
+    newest pages are read to choose from), "open the weather from my
+    history", "reopen the closed tab" ("Reopened Weather.", or "There's no
+    closed tab to reopen."). Private windows keep no history: "Private
+    windows keep no history."
+  - **Downloads:** "show my downloads" (the downloads page opens, and they
+    are read, newest first), "open the last download", "open download 3".
+    A file that could run programs on your computer (a program, an
+    installer, a script, a shortcut, a disk image) is never opened by
+    voice: "tool.bat can run programs on your computer, so I don't open it
+    by voice. Open it from the downloads page with the mouse or
+    keyboard." Nor is a file blocked as dangerous, or one still
+    downloading.
+  - **Settings:** "open settings", "open privacy settings", "open the AI
+    settings", "open voice mode settings" (voice mode's section), "open
+    MoltNet settings". The browser can read a settings page to you, but
+    changing a setting there needs the mouse or keyboard: "I can read
+    settings to you, but changing one there needs the mouse or keyboard."
+    Voice mode's own settings it changes by voice: "speak faster", "be
+    brief", and "turn on always listening", which asks first ("With
+    always listening on, everything you say is a command, without Hey
+    Molt, also what others nearby say. Say yes to turn on always
+    listening, or no to cancel."); "turn off always listening" at once.
+    Settings that weaken a protection stay a click in settings: "say the
+    word aloud" and "trust this workflow" only hear where to click.
+  - **Windows:** "new window" and "new private window" open one, and voice
+    mode stays in this window ("New window. I'm still listening in this
+    one: say switch to the other window to use it by voice."); "new
+    MoltNet window" opens one, where voice mode never listens. "Switch to
+    the other window" brings that window forward and voice mode with it
+    ("I'm listening in this window now: <its page>."); never to a MoltNet
+    window. "Close this window" asks first, says how many tabs it has, and
+    moves voice mode to your other window; closing the only window closes
+    MoltBrowser, and the browser says so first.
+  - **The AI chat:** "ask the AI how far away is the moon" asks the
+    on-device AI ("Let me think.", then "The AI says: ..."). Its answer is
+    read to you and nothing is done because of it; an answer holding
+    something that sounds like a voice command is left out ("The AI's
+    answer held something that sounds like a voice command, so I left it
+    out."). Without an on-device AI model, the browser says how to get one.
+    "Open the AI chat" opens the chat beside the page.
+  - **The browser's own buttons and menus:** "open the menu" opens the
+    browser's menu and reads its items ("12 menu items. 1: New tab, ...");
+    say a number or a name ("click Settings", "History") to press one, and
+    a submenu is read when it opens. "Close the menu" or "cancel" closes
+    it. "Show the browser's buttons" reads the toolbar, the tabs, the
+    bookmarks bar and the side panel's buttons to press by number or name.
+    Never a permission's request, a download's warning or the password
+    bubble (they have their own spoken prompts), and never the Voice
+    button ("turn off voice mode" asks first). Pressing the menu's "Exit"
+    asks first.
 - **"Stop"** stops the browser speaking and whatever it was doing; a new
   command does too. "Repeat" says the last answer again.
 
@@ -260,6 +392,8 @@ Each command shows a few ways to say it:
   routine's name, a section's name).
 - `{seconds}`: a length of time; `{seconds?}` may be left out.
 - `{level}`: a volume, from 0 to 10, as a percentage, or "half" or "max".
+- `{speed}`: a playback speed: "1.5", "one point five", "one and a half",
+  "2x", "two times", "double", "half".
 - `{pages?}`: how far to scroll ("a bit", "half a page", "a page", "3
   pages"), or nothing.
 - `{position}`: a position or number on its own ("the fourth one", "number
@@ -300,6 +434,16 @@ said.
 - `find [the word] {query} (on | in) (this | the) page`
 - `(find on page | find in page | find on this page) {query}`
 - `search (this | the) page for {query}`
+
+**The next place the words were found.** For example: "next match".
+
+- `[go to | jump to | show | show me] [the] (next | following) (match | occurrence | hit | one i found)`
+- `find (next | again | the next one)`
+
+**The place before, where the words were found.** For example: "previous match".
+
+- `[go to | jump to | show | show me] [the] previous (match | occurrence | hit)`
+- `find (previous | the previous one)`
 
 **Go back to the previous page.** For example: "go back".
 
@@ -420,6 +564,7 @@ said.
 **Set the volume: 0 to 10, a percentage, half or max.** For example: "set the volume to 5".
 
 - `[set | turn | change | put] [the] volume [to | at] {level}`
+- `{level} volume`
 
 **Mute the sound.** For example: "mute".
 
@@ -446,9 +591,9 @@ said.
 - `rewind [by] {seconds?}`
 - `back {seconds}`
 
-**Play from the beginning.** For example: "start over".
+**Play from the beginning.** For example: "play from the beginning".
 
-- `(restart | start over | replay | play (it | this | that) again | play again | watch again | from the (beginning | start | top) | start from the (beginning | start) | play from the (beginning | start) | restart the video | rewind to the (beginning | start))`
+- `(restart | replay | play (it | this | that) again | play again | watch again | from the (beginning | start | top) | start from the (beginning | start) | play from the (beginning | start) | restart the video | rewind to the (beginning | start))`
 
 **The next video or song.** For example: "next video".
 
@@ -490,6 +635,13 @@ said.
 **Back to normal speed.** For example: "normal speed".
 
 - `((normal | regular | default | usual) [playback] speed | reset [the] [playback] speed | speed (normal | to normal | back to normal) | play at normal speed)`
+
+**Set the playback speed: 1.5, one and a half, double, half, from a quarter to 4 times.** For example: "speed 1.5".
+
+- `[set | change | put | turn] [the] [playback | video] speed [to | at] {speed}`
+- `(play | watch | listen | go) at {speed} [speed]`
+- `(play | watch | listen) [it] {speed} (faster | speed)`
+- `{speed} speed`
 
 **Skip the ad, once the player lets you.** For example: "skip the ad".
 
@@ -682,9 +834,13 @@ said.
 - `(stop | quit) (talking | speaking | reading | reading aloud)`
 - `(shut up | be quiet | quiet | silence | hush | enough)`
 
-**Undo the last action.** For example: "undo".
+**Undo what voice mode did last: reopen the tab it closed, put back what it typed, go back from a page it opened, or put back a bookmark.** For example: "undo".
 
 - `undo [that | it | this | the last (thing | action | step | change) | what you did]`
+
+**Start over: forget the list, the question and what was being done, and listen again. While something plays, play it from the start.** For example: "start over".
+
+- `(start over | start again | begin again | lets start over | lets start again | start from scratch | start afresh | reset | reset everything | clear the conversation | new conversation)`
 
 **Say that again.** For example: "repeat".
 
@@ -721,6 +877,129 @@ said.
 - `[no | nope | wrong] i (said | meant | asked for) {text}`
 - `(no | nope) (not that | thats wrong | wrong) i (said | meant) {text}`
 - `i didnt say that i said {text}`
+
+## The browser itself
+
+**Bookmark this page.** For example: "bookmark this page".
+
+- `bookmark (this | it | this page | the page | this site | this tab | that)`
+- `(add | save | put) (this | it | this page | the page | this site | this tab) (to | in | as) [a | my | the] (bookmarks | bookmark)`
+- `(add | make | create) a bookmark [for this page | for this site | here]`
+
+**Remove this page's bookmark.** For example: "remove this bookmark".
+
+- `(remove | delete) (this | the | that) bookmark [for this page | of this page]`
+- `(remove | delete | take) (this | it | this page | the page | this site) (from | out of) [my | the] bookmarks`
+- `unbookmark [this | it | this page | the page | this site]`
+
+**Hear your bookmarks, to open one by number or name.** For example: "open my bookmarks".
+
+- `(open | show | read | list | tell me) [me] [all] my bookmarks`
+- `(open | show) [me] [the] (bookmarks | bookmark manager | bookmarks page)`
+- `(what are | whats) my bookmarks`
+- `my bookmarks`
+
+**Open a bookmark by its name.** For example: "open the bookmark news".
+
+- `(open | go to | load) [the | my] bookmark [called | named | for] {name}`
+- `(open | go to | load) {name} (from | in) [my | the] bookmarks`
+
+**Hear the pages you visited, to open one by number or name.** For example: "show my history".
+
+- `(open | show | read | list | tell me) [me] my [browsing] history`
+- `(open | show) [me] [the] [browsing] history [page]`
+- `(what | which) (pages | sites) did i (visit | open | look at) [recently]`
+- `my history`
+
+**Reopen the tab you closed last.** For example: "reopen the closed tab".
+
+- `(reopen | restore | bring back | undo close) [the] [last] [closed] tab`
+- `(reopen | restore | bring back | open again) the [last] tab i [just] closed`
+- `open [the] [last] closed tab`
+
+**Open a page from your history by its site or title.** For example: "open the weather from my history".
+
+- `(open | go to | load | find) {query} (from | in) [my | the] history`
+
+**Hear your downloads, newest first, to open one.** For example: "show my downloads".
+
+- `(open | show | read | list | tell me) [me] [all] my downloads`
+- `(open | show) [me] [the] downloads [page | folder]`
+- `what (did i | have i) download [recently]`
+- `my downloads`
+
+**Open a downloaded file: the last one, or by its number. A file that can run programs isn't opened by voice.** For example: "open the last download".
+
+- `open [the] (last | latest | newest | most recent | last downloaded | latest downloaded) (download | file | downloaded file)`
+- `open [the] download [number] {number}`
+- `open [the] {position} (download | downloaded file)`
+
+**Open settings: the browser's, or privacy, AI, voice mode or MoltNet settings.** For example: "open settings".
+
+- `(open | show | go to) [me] [the | my] (privacy | security | privacy and security) settings`
+- `(open | show | go to) [me] [the] (ai | molt ai | assistant) settings`
+- `(open | show | go to) [me] [the] (voice mode | voice | voice control) settings`
+- `(open | show | go to) [me] [the] (moltnet | molt net | tor) settings`
+- `(open | show | go to) [me] [the] [browser | browsers | molt browser | moltbrowser] settings`
+- `(browser | browsers) settings`
+
+**Always listening on (after your yes) or off: every sentence is a command, without Hey Molt.** For example: "turn on always listening".
+
+- `(turn | switch) on (always listening | always listen | listening all the time)`
+- `(turn | switch) always listening on`
+- `(always listening on | always listen [to me] | listen all the time)`
+- `(turn | switch) off (always listening | listening all the time)`
+- `(turn | switch) always listening off`
+- `(always listening off | stop always listening | stop listening all the time | only listen after hey molt)`
+
+**Settings that weaken a protection (saying the confirmation word aloud, a workflow's trust) are changed with a click in settings only: the browser says where.** For example: "say the word aloud".
+
+- `[turn on | switch on | enable | always] say [the] [confirmation] word (aloud | out loud) [always | anyway]`
+- `(turn on | switch on | enable) [the] (say the word aloud | confirmation word aloud)`
+- `(trust | approve | allow) (this | the | that | my) (workflow | routine | automation) [on (all | every) (site | sites)]`
+- `(change | raise) the trust of (this | the | that | my) (workflow | routine | automation)`
+
+**Open a new window, a private window or a MoltNet window. Voice mode stays in this window, and never listens in MoltNet.** For example: "new window".
+
+- `(open | new | start | create) [a] [new] (private | incognito) window`
+- `(private | incognito) window`
+- `(open | new | start | create) [a] [new] (moltnet | molt net | tor) window`
+- `(moltnet | molt net) window`
+- `(open | start | create) [a] new window`
+- `(new window | open [a] window | open another window)`
+
+**Close this window, after your yes; voice mode moves to another window.** For example: "close this window".
+
+- `close [this | the | current] window`
+
+**Switch to your other window; voice mode comes with you.** For example: "switch to the other window".
+
+- `(switch | go | move | change | jump) to [the] (other | next | previous | last) window`
+- `(other | next) window`
+
+**Ask the on-device AI a question. Its answer is read to you, and nothing is done because of it.** For example: "ask the AI how far away is the moon".
+
+- `ask (the ai | ai | the assistant | the ai assistant | molt ai | the chat | the ai chat) [about | whether | if] {query}`
+
+**Open the AI chat beside the page.** For example: "open the AI chat".
+
+- `(open | show | start) [me] [the] (ai chat | ai | chat | assistant | ai assistant | ai panel | chat panel)`
+
+**Hear the browser's own buttons (the toolbar, the tabs, the bookmarks bar, the side panel), to press one by number or name.** For example: "show the browser's buttons".
+
+- `(show | read | list | tell me) [me] [the] (browser | browsers | toolbar | toolbars | browser toolbar) (buttons | controls)`
+- `(what are | whats on) the (browser | browsers | toolbar) (buttons | controls | toolbar)`
+- `(browser buttons | browsers buttons | toolbar buttons | show [me] the toolbar)`
+
+**Open the browser's menu, then say what to click.** For example: "open the menu".
+
+- `(open | show) [me] [the] (app | main | browser | browsers | chrome | moltbrowser) menu`
+- `open the menu`
+- `(app menu | browser menu | main menu | browsers menu)`
+
+**Close the browser's menu.** For example: "close the menu".
+
+- `(close | exit | leave | hide | dismiss) [the] [app | main | browser] menu`
 
 ## Routines
 
@@ -783,10 +1062,21 @@ said.
   Agent mode work and are answered in Spanish with the computer's Spanish
   voice, but voice mode can't listen in Spanish until a Spanish speech
   model it can ship is found. More languages add their own phrase tables.
-- **Spoken punctuation** in typing ("comma", "period"): the recognizer adds
-  punctuation itself.
-- **A site's name on its own** ("YouTube" alone) doesn't open it: say "open
-  YouTube". A spoken address on its own ("example dot com") does.
+- **A site's name on its own** opens only the sites the browser knows by
+  name and those you opened by voice in the same window since it opened;
+  the browser doesn't keep a list of the sites you open across restarts.
+  Say "open", then the name, for any other.
+- **Opening a downloaded program by voice:** a file that could run code
+  (a program, an installer, a script) isn't opened by voice at all, not
+  even with a confirmation word; open it from the downloads page.
+- **Changing settings on a settings page by voice:** voice mode can read
+  a settings page but not change its switches; it changes its own speed,
+  detail and always listening by voice. The settings that weaken a
+  protection stay a click on purpose.
+- **The browser's own buttons:** the toolbar, the tabs, the bookmarks bar,
+  the side panel and the open menu are read and pressed by voice; other
+  windows of the browser (a bubble, a dialog) only through their own
+  spoken prompts. Undo is one step: the last thing voice mode did.
 - **Routines with a site's own tool:** when the on-device AI used a tool a
   site offers, that step can't be kept in a routine yet. Nor can a step
   whose button or link has the same name as another on the page when the
@@ -813,14 +1103,12 @@ said.
   voice and no echo cancellation, say "stop" first.
 - **While reading aloud,** the sentence being read is shown in the bar
   under the page, but not highlighted on the page itself.
-- **"Faster" and "slower"** change the reading speed while the browser
-  reads; otherwise they are the video's playback speed, which comes later.
+- **The playback speed** is the video's own: a site's player that keeps
+  its own speed setting may show its old speed in its menu.
 - **Questions about the page** use only the page's text: not its
   pictures, videos, tables or the parts in frames. A question about a
   picture ("what's in this picture?") comes later, and so does a
   conversation about the answer: each question stands on its own, apart
   from "tell me more". Answers start once they are complete, not word by
-  word.
-- **Still to come in voice mode:** the on-device AI for anything these
-  commands don't cover, setting the volume to a level, the playback speed
-  and undo. Until then the browser says so when you ask for them.
+  word. The same goes for "ask the AI": each question stands on its own,
+  and the answer isn't added to the AI chat's conversation.

@@ -52,7 +52,44 @@ valen "Hola Molt" y "Hey Molt").
   dos, el navegador pregunta cuál.
 - **Si te entendió mal**, di "no, dije ..." y lo que querías.
   "Cancela", "para" y "atrás" funcionan siempre.
-- **"¿Qué puedo decir?"** enumera lo que encaja en la página en la que estás.
+- **"¿Qué puedo decir?"** enumera lo que encaja en la página en la que estás
+  (un menú abierto, una lista, una lectura, un vídeo; en un campo, las
+  palabras de puntuación). **"¿Dónde estoy?"** dice el sitio, la página y
+  en qué estás: una lista ("Estás en la lista de marcadores, en el 2 de
+  5."), un campo ("Estás escribiendo en Buscar."), un vídeo, el menú, una
+  pregunta del navegador.
+- **Al escribir**, la puntuación se dice con palabras: "escribe nos vemos
+  coma Ana punto" escribe "nos vemos, Ana." ("coma", "punto", "punto y
+  coma", "dos puntos", "punto y aparte", "puntos suspensivos", "abre
+  interrogación" y "cierra interrogación", "abre exclamación" y "cierra
+  exclamación", "nueva línea", "nuevo párrafo", "abre comillas" y "cierra
+  comillas", "abre paréntesis" y "cierra paréntesis", "guion", "raya"). "La
+  palabra coma" escribe la palabra misma.
+- **"Deshaz"** devuelve lo último que hizo el modo de voz: reabre la
+  pestaña que cerró ("Deshecho: Tiempo está abierta otra vez."), devuelve
+  lo que escribió en un campo ("Deshecho: Buscar vuelve a decir ..."),
+  vuelve atrás desde una página que abrió ("Deshecho: de vuelta a la página
+  anterior."), o quita o recupera un marcador. **"Empecemos de nuevo"**
+  olvida la lista, la pregunta y lo que se estaba haciendo ("Empecemos de
+  nuevo. ¿Qué quieres hacer?"); mientras algo se reproduce, lo pone desde el
+  principio.
+- **El nombre de un sitio solo** ("YouTube", "Wikipedia") lo abre ("Abriendo
+  YouTube."), igual que el de un sitio que abriste por voz en esta ventana.
+- **El navegador**: "añade esta página a mis marcadores", "abre mis
+  marcadores", "muestra mi historial", "reabre la pestaña cerrada",
+  "muestra mis descargas", "abre la última descarga" (nunca un archivo que
+  pueda ejecutar programas), "abre la configuración", "activa escuchar
+  siempre" (después de tu sí), "nueva ventana", "abre una ventana privada",
+  "cambia a la otra ventana", "cierra esta ventana" (después de tu sí),
+  "pregúntale a la IA ..." ("La IA dice: ..."), "abre el chat de la IA",
+  "abre el menú" y luego qué pulsar, "muestra los botones del navegador".
+  Lo que debilita una protección ("di la palabra en voz alta", "confía en
+  este flujo de trabajo") sigue siendo un clic en la configuración.
+- **Multimedia**: "velocidad 1,5", "reproduce a doble velocidad",
+  "velocidad normal", "más rápido" y "más lento" (la velocidad de lectura
+  mientras el navegador lee), "volumen al 50 por ciento", "pon el volumen al
+  máximo", "activa los subtítulos" (los del propio vídeo si el reproductor
+  no tiene botón).
 
 Una orden que compraría, enviaría, publicaría, borraría o compartiría algo se
 lee antes y espera tu "sí" (también con los botones en español: "Comprar",
@@ -72,6 +109,8 @@ Cada orden muestra algunas formas de decirla:
 - `{seconds}`: un tiempo; `{seconds?}` se puede omitir.
 - `{level}`: un volumen, de 0 a 10, en porcentaje, o "la mitad" o "el
   máximo".
+- `{speed}`: una velocidad de reproducción: "1,5", "uno coma cinco", "uno
+  y medio", "x2", "dos veces", "el doble", "la mitad".
 - `{pages?}`: cuánto desplazarse ("un poco", "media página", "una página",
   "3 páginas"), o nada.
 - `{position}`: una posición o un número ("el cuarto", "el número 12", "el
@@ -111,6 +150,18 @@ primera que encaja con todo lo que dijiste.
 
 - `(busca | buscar | encuentra | encontrar) [la palabra] {query} en (esta | la) pagina`
 - `(busca | buscar | encuentra) en (esta | la) pagina {query}`
+
+**El siguiente sitio donde se encontraron las palabras.** Por ejemplo: "siguiente coincidencia".
+
+- `[ve a | salta a | muestra | muestrame] [la] (siguiente | proxima) (coincidencia | aparicion)`
+- `[ve a | salta a | muestra | muestrame] [la] (coincidencia | aparicion) siguiente`
+- `(busca | buscar | encuentra) (la siguiente | otra vez | de nuevo)`
+
+**El sitio anterior donde se encontraron las palabras.** Por ejemplo: "coincidencia anterior".
+
+- `[ve a | salta a | muestra | muestrame | vuelve a] [la] (coincidencia | aparicion) anterior`
+- `[ve a | salta a | muestra | muestrame | vuelve a] [la] anterior (coincidencia | aparicion)`
+- `(busca | buscar | encuentra) la anterior`
 
 **Vuelve a la página anterior.** Por ejemplo: "atrás".
 
@@ -229,6 +280,7 @@ primera que encaja con todo lo que dijiste.
 **Pon el volumen: de 0 a 10, un porcentaje, la mitad o el máximo.** Por ejemplo: "pon el volumen a 5".
 
 - `[pon | poner | ajusta | ajustar | cambia | deja] [el] volumen [a | al | en] {level}`
+- `[pon | poner | deja] (el | al) {level} [de] [el] volumen`
 
 **Quita el sonido.** Por ejemplo: "silencia".
 
@@ -251,9 +303,9 @@ primera que encaja con todo lo que dijiste.
 - `(rebobina | rebobinar | rebobine) {seconds?}`
 - `atras {seconds}`
 
-**Reproduce desde el principio.** Por ejemplo: "empieza de nuevo".
+**Reproduce desde el principio.** Por ejemplo: "desde el principio".
 
-- `(reinicia | reiniciar | empieza de nuevo | empieza otra vez | vuelve a empezar | desde el principio | desde el inicio | ponlo otra vez | ponlo de nuevo | reproduce otra vez | reproduce de nuevo | reinicia el video | rebobina hasta el principio | rebobina al principio)`
+- `(reinicia | reiniciar | empieza otra vez | desde el principio | desde el inicio | ponlo otra vez | ponlo de nuevo | reproduce otra vez | reproduce de nuevo | reinicia el video | rebobina hasta el principio | rebobina al principio)`
 
 **El vídeo o la canción siguiente.** Por ejemplo: "siguiente vídeo".
 
@@ -299,6 +351,12 @@ primera que encaja con todo lo que dijiste.
 **Vuelve a la velocidad normal.** Por ejemplo: "velocidad normal".
 
 - `([pon | reproduce a] [la] velocidad normal | velocidad por defecto | restablece la velocidad)`
+
+**Pon la velocidad de reproducción: 1,5, uno y medio, el doble, la mitad, de un cuarto a 4 veces.** Por ejemplo: "velocidad 1,5".
+
+- `[pon | poner | ajusta | ajustar | cambia | cambiar | deja] [la] velocidad [de reproduccion] [a | en | al] {speed}`
+- `(reproduce | reproducir | reproducelo | pon | poner | ponlo | ponla | ve | mira) a {speed} [velocidad | de velocidad]`
+- `a {speed} (velocidad | de velocidad)`
 
 **Salta el anuncio, cuando el reproductor lo permita.** Por ejemplo: "salta el anuncio".
 
@@ -494,9 +552,13 @@ primera que encaja con todo lo que dijiste.
 - `(deja de | para de | deje de | pare de | dejar de) (hablar | leer | leerme | hablarme | leer en voz alta)`
 - `(callate | calla | silencio | basta | ya basta | chis | shh | suficiente)`
 
-**Deshaz la última acción.** Por ejemplo: "deshaz".
+**Deshaz lo último que hizo el modo de voz: reabre la pestaña que cerró, devuelve lo que escribió, vuelve atrás desde una página que abrió, o recupera un marcador.** Por ejemplo: "deshaz".
 
 - `(deshaz | deshacer | deshaga | deshazlo) [eso | lo ultimo | la ultima accion | el ultimo cambio | lo que hiciste]`
+
+**Empieza de nuevo: olvida la lista, la pregunta y lo que se estaba haciendo, y vuelve a escuchar. Mientras algo se reproduce, lo pone desde el principio.** Por ejemplo: "empecemos de nuevo".
+
+- `(empecemos de nuevo | empecemos otra vez | empieza de cero | empecemos de cero | desde cero | volvamos a empezar | vamos a empezar de nuevo | empezar de nuevo | borron y cuenta nueva | reinicia la conversacion | nueva conversacion | empieza de nuevo | vuelve a empezar)`
 
 **Dilo otra vez.** Por ejemplo: "repite".
 
@@ -531,6 +593,125 @@ primera que encaja con todo lo que dijiste.
 - `no dije eso (dije | quise decir) {text}`
 - `no (eso no | esta mal | mal | te equivocaste) (dije | quise decir) {text}`
 - `[no] (dije | he dicho | quise decir | queria decir | pedi) {text}`
+
+## El navegador
+
+**Añade esta página a los marcadores.** Por ejemplo: "añade esta página a mis marcadores".
+
+- `(anade | anadir | agrega | agregar | guarda | guardar | pon | poner) (esta pagina | la pagina | esto | este sitio | esta pestana) (en | a) [mis | los] marcadores`
+- `(anade | anadir | agrega | agregar | crea | crear | pon | poner) un marcador [a esta pagina | para esta pagina | aqui]`
+- `(marca | marcar | guarda | guardar) (esta pagina | la pagina | este sitio) como (favorito | marcador)`
+- `(guarda | guardar | anade | anadir | agrega | agregar) (esta pagina | la pagina | esto | este sitio) (en | a) [mis | los] favoritos`
+
+**Quita el marcador de esta página.** Por ejemplo: "quita este marcador".
+
+- `(quita | quitar | borra | borrar | elimina | eliminar) (este | el) marcador [de esta pagina]`
+- `(quita | quitar | borra | borrar | elimina | eliminar | saca) (esta pagina | la pagina | esto | este sitio) de [mis | los] marcadores`
+
+**Escucha tus marcadores, para abrir uno por su número o su nombre.** Por ejemplo: "abre mis marcadores".
+
+- `(abre | abrir | muestra | muestrame | mostrar | lee | leeme | lista | dime) [todos] (mis | los) (marcadores | favoritos)`
+- `(cuales son | que hay en) mis (marcadores | favoritos)`
+- `mis (marcadores | favoritos)`
+
+**Abre un marcador por su nombre.** Por ejemplo: "abre el marcador noticias".
+
+- `(abre | abrir | abra | ve a | ir a | carga) el (marcador | favorito) [llamado | de | que se llama] {name}`
+- `(abre | abrir | abra | ve a | ir a | carga) {name} (de | desde) (mis | los) (marcadores | favoritos)`
+
+**Escucha las páginas que visitaste, para abrir una por su número o su nombre.** Por ejemplo: "muestra mi historial".
+
+- `(abre | abrir | muestra | muestrame | mostrar | lee | leeme | dime) (mi | el) historial [de navegacion]`
+- `(que | cuales) (paginas | sitios | webs) (visite | he visitado | abri | he abierto) [hace poco | antes | ultimamente]`
+- `(mi historial | historial)`
+
+**Reabre la última pestaña que cerraste.** Por ejemplo: "reabre la pestaña cerrada".
+
+- `(reabre | reabrir | vuelve a abrir | volver a abrir | recupera | recuperar | restaura | restaurar) la [ultima] pestana [cerrada | que cerre | que he cerrado]`
+- `(abre | abrir) la [ultima] pestana cerrada`
+
+**Abre una página de tu historial por su sitio o su título.** Por ejemplo: "abre el tiempo de mi historial".
+
+- `(abre | abrir | abra | ve a | ir a | carga | busca | encuentra) {query} (de | desde | en) (mi | el) historial`
+
+**Escucha tus descargas, de la más reciente a la más antigua, para abrir una.** Por ejemplo: "muestra mis descargas".
+
+- `(abre | abrir | muestra | muestrame | mostrar | lee | leeme | lista | dime) [todas] (mis | las) descargas`
+- `que (descargue | he descargado) [hace poco | antes]`
+- `(mis descargas | descargas)`
+
+**Abre un archivo descargado: el último, o por su número. Un archivo que puede ejecutar programas no se abre por voz.** Por ejemplo: "abre la última descarga".
+
+- `(abre | abrir | abra) (la | el) (ultima | ultimo | mas reciente) (descarga | archivo descargado | archivo)`
+- `(abre | abrir | abra) (la | el) (ultima descarga | ultimo archivo descargado | archivo que descargue | descarga mas reciente)`
+- `(abre | abrir | abra) la descarga [numero] {number}`
+- `(abre | abrir | abra) la {position} descarga`
+
+**Abre la configuración: la del navegador, o la de privacidad, la IA, el modo de voz o MoltNet.** Por ejemplo: "abre la configuración".
+
+- `(abre | abrir | abra | muestra | muestrame | ve a | ir a) [la] configuracion de (privacidad | seguridad | privacidad y seguridad)`
+- `(abre | abrir | abra | muestra | muestrame | ve a | ir a) [la] configuracion de [la] (ia | inteligencia artificial | molt ai | asistente)`
+- `(abre | abrir | abra | muestra | muestrame | ve a | ir a) [la] configuracion del (modo de voz | modo voz | control por voz)`
+- `(abre | abrir | abra | muestra | muestrame | ve a | ir a) [la] configuracion de voz`
+- `(abre | abrir | abra | muestra | muestrame | ve a | ir a) [la] configuracion de (moltnet | molt net | tor)`
+- `(abre | abrir | abra | muestra | muestrame | ve a | ir a) [la] (configuracion | ajustes | preferencias) [del navegador | de moltbrowser]`
+- `(configuracion | ajustes) del navegador`
+
+**Escuchar siempre, activado (después de tu sí) o desactivado: cada frase es una orden, sin Oye Molt.** Por ejemplo: "activa escuchar siempre".
+
+- `(activa | activar | active | enciende | encender | pon | poner) [el] (escuchar siempre | escucha continua | modo escucha continua | escucha permanente)`
+- `(escuchame siempre | escucha siempre | escuchar siempre | escucha todo el tiempo)`
+- `(desactiva | desactivar | desactive | apaga | apagar | quita | quitar) [el] (escuchar siempre | escucha continua | modo escucha continua | escucha permanente)`
+- `(deja de escuchar siempre | no escuches siempre | escucha solo con oye molt)`
+
+**Las opciones que debilitan una protección (decir la palabra de confirmación en voz alta, la confianza de un flujo de trabajo) solo se cambian con un clic en la configuración: el navegador dice dónde.** Por ejemplo: "di la palabra en voz alta".
+
+- `[activa | activar | enciende] [siempre] (di | decir | dime) la palabra [de confirmacion] en voz alta [siempre]`
+- `(confia en | confiar en | aprueba | aprobar | permite | permitir) (este | el | ese | mi) (flujo de trabajo | flujo | automatizacion)`
+- `(confia en | confiar en | aprueba | aprobar) (esta | la | esa | mi) (rutina | automatizacion)`
+- `(cambia | cambiar | sube | subir) la confianza (de | del) (este | el | esta | la | mi) (flujo de trabajo | flujo | rutina | automatizacion)`
+
+**Abre una ventana nueva, una ventana privada o una ventana de MoltNet. El modo de voz se queda en esta ventana, y nunca escucha en MoltNet.** Por ejemplo: "nueva ventana".
+
+- `(abre | abrir | abra | nueva | crea | crear) [una] [nueva] ventana (privada | de incognito | incognito)`
+- `ventana (privada | de incognito | incognito)`
+- `(abre | abrir | abra | nueva | crea | crear) [una] [nueva] ventana (de moltnet | moltnet | de molt net | de tor)`
+- `ventana (de moltnet | moltnet | de tor)`
+- `(abre | abrir | abra | crea | crear) [una] (nueva ventana | ventana nueva | otra ventana | ventana)`
+- `(nueva ventana | ventana nueva)`
+
+**Cierra esta ventana, después de tu sí; el modo de voz pasa a otra ventana.** Por ejemplo: "cierra esta ventana".
+
+- `(cierra | cerrar | cierre) (esta ventana | la ventana | la ventana actual)`
+
+**Cambia a tu otra ventana; el modo de voz va contigo.** Por ejemplo: "cambia a la otra ventana".
+
+- `(cambia | cambiar | ve | ir | pasa | salta | vuelve) a la (otra | siguiente | anterior) ventana`
+- `(otra ventana | siguiente ventana | ventana siguiente)`
+
+**Pregúntale algo a la IA del dispositivo. Su respuesta se te lee, y no se hace nada por ella.** Por ejemplo: "pregúntale a la IA a qué distancia está la luna".
+
+- `(preguntale | pregunta | preguntar | pregunte) (a la ia | al asistente | a la inteligencia artificial | a molt ai | al chat) [si | sobre | acerca de] {query}`
+
+**Abre el chat de la IA junto a la página.** Por ejemplo: "abre el chat de la IA".
+
+- `(abre | abrir | abra | muestra | muestrame | inicia) [el] (chat de la ia | chat de ia | chat | asistente | panel de la ia | chat con la ia)`
+- `(abre | abrir | abra | muestra | muestrame) la (ia | inteligencia artificial)`
+
+**Escucha los botones del propio navegador (la barra de herramientas, las pestañas, la barra de marcadores, el panel lateral), para pulsar uno por su número o su nombre.** Por ejemplo: "muestra los botones del navegador".
+
+- `(muestra | muestrame | mostrar | lee | leeme | lista | dime) [los] (botones | controles) del (navegador | la barra de herramientas)`
+- `(cuales son | que hay en) [los] (botones | controles) del navegador`
+- `(botones del navegador | controles del navegador | barra de herramientas)`
+
+**Abre el menú del navegador, y luego di qué pulsar.** Por ejemplo: "abre el menú".
+
+- `(abre | abrir | abra | muestra | muestrame) el menu [del navegador | principal | de la aplicacion]`
+- `(menu del navegador | menu principal)`
+
+**Cierra el menú del navegador.** Por ejemplo: "cierra el menú".
+
+- `(cierra | cerrar | cierre | sal del | salir del | oculta | quita) [el] menu [del navegador | principal]`
 
 ## Rutinas
 
@@ -594,3 +775,12 @@ primera que encaja con todo lo que dijiste.
   ya está en español.
 - **Los campos de las páginas en español** ("hace 2 años", "1,2 M de
   visualizaciones") se leen tal como aparecen en la página.
+- **Los nombres del propio navegador** (los botones de la barra de
+  herramientas y las opciones del menú) se leen como el navegador los
+  muestra, en el idioma del navegador.
+- **Abrir por voz un archivo descargado que puede ejecutar programas**: no
+  se hace, ni siquiera con una palabra de confirmación; ábrelo desde la
+  página de descargas.
+- **El nombre de un sitio solo** abre solo los sitios que el navegador
+  conoce por su nombre y los que abriste por voz en la misma ventana desde
+  que se abrió.

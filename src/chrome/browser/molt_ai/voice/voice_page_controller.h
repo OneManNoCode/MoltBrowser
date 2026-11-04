@@ -218,6 +218,13 @@ class VoicePageController
   // another site's frame embeds, which chose what it shows.
   bool FramedByItsOwnOrigin(int32_t tree_index);
 
+  // The frame |target| is in, found again as for an action (null, with
+  // *|error|, for a stale handle or a frame that isn't an http(s) document):
+  // for the media element's speed, volume and captions, which no
+  // accessibility action reaches (voice_browser_actions.h).
+  content::RenderFrameHost* FrameOf(const PageNodeHandle& target,
+                                    ActionResult* error);
+
   // The names of a select's options (a collapsed <select>, whose options
   // the map doesn't number, or a list box), in order: at most kMaxOptions,
   // each cleaned for speech and capped at kMaxOptionChars; disabled ones

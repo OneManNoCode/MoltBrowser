@@ -681,6 +681,13 @@ bool IsSelectRole(PageRole role) {
 
 }  // namespace
 
+content::RenderFrameHost* VoicePageController::FrameOf(
+    const PageNodeHandle& target,
+    ActionResult* error) {
+  std::optional<Target> found = Resolve(target, error);
+  return found ? found->frame.get() : nullptr;
+}
+
 std::vector<std::string> VoicePageController::OptionsOf(
     const PageNodeHandle& select) {
   ActionResult error;

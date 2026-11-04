@@ -1376,6 +1376,23 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   has stopped, and "play" no longer lets a page's history entry cost an
   extra "go back". Details: `docs/design/TOUCHLESS_BROWSING.md` §6.6, §7.3
   and §7.5.
+- **Touchless browsing: the whole browser by voice** (preview, behind
+  `chrome://flags/#molt-voice-mode`), in English and Spanish. Bookmarks
+  ("bookmark this page", "open my bookmarks"), history ("show my history",
+  "reopen the closed tab"), downloads ("open the last download", never a
+  file that could run programs), settings ("open privacy settings"; always
+  listening by voice after a "yes", while what weakens a protection stays
+  a click), windows ("new private window", "switch to the other window";
+  voice mode never listens in MoltNet), the AI chat ("ask the AI ...",
+  answered aloud and never acted on), and the browser's own buttons and
+  menus ("open the menu", then "click Settings"; never a permission's or a
+  download's warning). Also the volume to a level, the playback speed and
+  captions on any player, "undo" for what voice mode did last, "start
+  over", "next match", punctuation said while typing ("comma", "period"),
+  a known site's name on its own, and "where am I?" and "what can I say?"
+  for what you are in. Voice mode can be offered at first run (built, off
+  until switched on). Details: `docs/VOICE_COMMANDS.md`,
+  `docs/design/TOUCHLESS_BROWSING.md` §2.
 
 ### Fixed
 - **Workflows, routines and settings files hold up to crashes, odd files
