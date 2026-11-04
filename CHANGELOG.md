@@ -1391,6 +1391,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   of holding up shutdown. A `settings.json` kept by a dotfile manager, a
   link to a file in your home folder, stays a link. The automation audit
   log is now created when missing.
+- **Workflows and settings: never on the window's thread, safe with two
+  browsers, and voice mode's names and a page's numbers in Spanish too**
+  (round 45). `molt://ai-automation`, the AI chat's saves, recordings,
+  runs and the scheduler read and write workflows in the background, and a
+  read never holds up quitting (a home folder on a network drive that
+  stopped answering no longer hangs it). Two workflows saved at the same
+  moment, in one browser or two sharing a home folder, never replace each
+  other, and a temporary file left by a crash mid-save is cleaned up. On
+  Windows a linked `settings.json` stays a link, and a linked workflow is
+  never followed. Browser tests use a home folder of their own. A routine
+  name that sounds like another in Spanish ("noticias" and "las noticias")
+  counts as taken; the web agent's questions are asked in Spanish; and a
+  Spanish page's views, dates and lengths ("1,2 M de visualizaciones",
+  "hace 2 años") are read as the numbers they are.
 - **A Windows clock set before 1970 no longer ends the browser** when an
   automation writes its audit timestamp (it records the epoch instead), and
   a schedule whose time can't be converted has no next run.
