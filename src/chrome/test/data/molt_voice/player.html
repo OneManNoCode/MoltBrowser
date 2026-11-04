@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- A bare player for the rest of the browser by voice
+     (voice_browser_actions_browsertest.cc): a <video> with captions and
+     subtitles tracks and no captions button, and a field to type into. The
+     test reads the element's speed, volume and tracks. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Player - Fixture</title>
+</head>
+<body>
+<h1>Player</h1>
+<video id="player" src="/media/bigbuck.webm" preload="auto" width="640"
+       height="360" aria-label="Video player">
+  <track id="captions" kind="captions" srclang="en" label="English"
+         src="captions.vtt">
+  <track id="subtitles" kind="subtitles" srclang="es" label="Español"
+         src="captions.vtt">
+</video>
+<label for="note">Note</label>
+<input id="note" type="text" value="Hello">
+<p>Opening hours are on the next page.</p>
+<a href="article.html">Opening hours</a>
+<script>
+  const player = document.getElementById('player');
+  // What the test reads.
+  window.state = () => ({
+    rate: player.playbackRate,
+    volume: player.volume,
+    muted: player.muted,
+    tracks: Array.from(player.textTracks).map((t) => t.mode),
+  });
+</script>
+</body>
+</html>

@@ -343,6 +343,8 @@ VoiceController::VoiceController(BrowserWindowInterface* browser)
   page_questions_ = std::make_unique<VoicePageQuestions>();
   // The end-to-end kit's log: only with its test switch.
   test_log_ = VoiceTestLog::MaybeCreate(this, IsMoltNet());
+  // The rest of the browser by voice (voice_browser_actions.h).
+  browser_actions_ = std::make_unique<VoiceBrowserActions>(browser, this);
 }
 
 VoiceController::~VoiceController() {
@@ -514,6 +516,10 @@ void VoiceController::CancelRun(bool keep_planner) {
   if (page_questions_) {
     page_questions_->Cancel();
   }
+  // So does what the rest of the browser was doing (a list, the AI).
+  if (browser_actions_) {
+    browser_actions_->Cancel();
+  }
   pending_.clear();
   wait_.reset();
   quiet_timer_.Stop();
@@ -631,7 +637,8 @@ void VoiceController::SetIdleCallbackForTesting(
 bool VoiceController::busy() const {
   return !pending_.empty() || wait_ || submitting_ ||
          (planner_running_ && planner_question_ == 0) ||
-         (page_questions_ && page_questions_->running());
+         (page_questions_ && page_questions_->running()) ||
+         (browser_actions_ && browser_actions_->busy());
 }
 
 VoiceActivity VoiceController::activity() const {
@@ -908,6 +915,10 @@ VoiceEnvironment VoiceController::Environment() {
   // What was learned (§6.8); nothing in MoltNet windows.
   if (learning_ && !env.moltnet) {
     env.learning = learning_->Environment(env.host);
+  }
+  // Bookmarks, windows, an open menu (voice_browser_actions.h).
+  if (browser_actions_ && !env.moltnet) {
+    env.browser = browser_actions_->Environment();
   }
   return env;
 }
@@ -1277,6 +1288,8 @@ bool VoiceController::RunStep(const VoiceStep& step) {
           Fail(StepFailure::kNoTab);
           return false;
         }
+        // "Undo" reopens this very tab (voice_browser_actions.h).
+        browser_actions_->NoteTabClosed();
         return true;
       }
       if (!tabs || step.index < 0 || step.index >= tabs->count()) {
@@ -1291,6 +1304,7 @@ bool VoiceController::RunStep(const VoiceStep& step) {
         tabs->CloseWebContentsAt(
             step.index, TabCloseTypes::CLOSE_USER_GESTURE |
                             TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
+        browser_actions_->NoteTabClosed();
       }
       return true;
     }
@@ -1375,8 +1389,83 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       // The steps go on (there are none after it); the answer comes later.
       AskAboutPage(step);
       return true;
+
+    case VoiceStepKind::kBrowserAction: {
+      // The rest of the browser (voice_browser_actions.h): done now, or it
+      // says when (BrowserActionDone(), BrowserItemsReady()).
+      const VoiceBrowserActions::Result result =
+          browser_actions_->Run(step, run_);
+      switch (result.outcome) {
+        case VoiceBrowserActions::Outcome::kDone:
+          return true;
+        case VoiceBrowserActions::Outcome::kPending:
+          return false;
+        case VoiceBrowserActions::Outcome::kFailed:
+          Fail(result.failure);
+          return false;
+      }
+      return true;
+    }
   }
   return true;
+}
+
+// ---- The rest of the browser ----------------------------------------------
+
+void VoiceController::BrowserActionSays(const std::string& text) {
+  if (!active_ || text.empty()) {
+    return;
+  }
+  Say(text);
+  SetStatus(text);
+  // "Repeat" says it again.
+  state_.last_spoken = {text};
+}
+
+void VoiceController::BrowserActionReads(const std::string& text) {
+  if (!active_ || text.empty()) {
+    return;
+  }
+  // Model output: read as page text is, a chunk at a time, each said to the
+  // observers (the listening session) as it starts; never a command.
+  reader_->ReadText(text, page_id_, state_.speech_rate);
+  state_.last_spoken = {text};
+}
+
+void VoiceController::BrowserActionDone(int run) {
+  if (run != run_) {
+    return;
+  }
+  // The steps go on from a task, as after a submit.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&VoiceController::RunSteps,
+                                run_weak_factory_.GetWeakPtr()));
+}
+
+void VoiceController::BrowserItemsReady(int run,
+                                        const VoiceStep& asked,
+                                        std::vector<BrowserItem> items) {
+  if (run != run_) {
+    return;
+  }
+  VoiceTurn turn =
+      PlanBrowserItems(asked, std::move(items), Environment(), state_);
+  if (!turn.status.empty()) {
+    status_ = turn.status;
+  }
+  RunTurn(std::move(turn));
+}
+
+content::WebContents* VoiceController::BrowserActionContents() {
+  return ActiveContents();
+}
+
+VoicePageController* VoiceController::BrowserActionPage() {
+  return ActivePage();
+}
+
+Language VoiceController::BrowserActionLanguage() {
+  return language_;
 }
 
 // ---- Questions about the page -----------------------------------------------

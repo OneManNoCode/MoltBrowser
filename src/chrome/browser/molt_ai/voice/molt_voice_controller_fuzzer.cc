@@ -15,7 +15,8 @@
 //   byte 1   bits 0-1 the active tab (of up to four), bit 2 a question
 //            expires before the next utterance, bits 3-4 reading aloud
 //            (none, reading, stopped), bit 5 a site skill names parts (the
-//            first items of each kind, whatever they are)
+//            first items of each kind, whatever they are), bit 6 voice mode
+//            in Spanish (the grammar's and the answers' language)
 //   lines    "> utterance"; "? words" (the planner asks the user to
 //            confirm them, voice_planner.h); "T title"; "H text" (a heading);
 //            "L label" (a new list); "% k text" (the browser reads its prompt
@@ -26,7 +27,11 @@
 //            list, with a link item of its own); "I k label\t value\turl" (an
 //            item: k is l link, b button, t text field, s search field, p
 //            password field, c card field, m media, d slider, x clickable); "B
-//            title\thost" (a tab); "@ host"
+//            title\thost" (a tab); "@ host"; "^ title\thost\turl\tflags" (an
+//            entry of the browser's own list: flags i not finished, d
+//            dangerous, r runs code, o turned off, s a submenu); "& k name"
+//            (the browser read that list for a step of kind k, with a name
+//            to find in it, voice_browser_logic.h)
 //
 // Checks: planning returns and is the same twice; every spoken text and
 // status is valid UTF-8 with no control, bidi or invisible character, no
@@ -39,6 +44,7 @@
 // "repeat" keeps stays within its cap; a prompt read again first (an answer
 // said while the page was read) is answered only by what allows or accepts.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <set>
@@ -52,6 +58,7 @@
 #include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/voice_candidates.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
@@ -81,6 +88,8 @@ using molt_ai::voice::VoiceStepKind;
 using molt_ai::voice::VoiceTurn;
 
 constexpr size_t kMaxUtterances = 8;
+// Entries of the browser's list read at most.
+constexpr size_t kMaxBrowserItemLines = 60;
 constexpr size_t kMaxItems = 400;
 constexpr size_t kMaxLines = 600;
 constexpr size_t kMaxSpokenChars = 2 * molt_ai::voice::kMaxSpeechChunkChars;
@@ -321,7 +330,9 @@ void CheckTurn(const VoiceTurn& turn,
   for (const VoiceStep& step : turn.steps) {
     if (env.moltnet) {
       CHECK(step.kind == VoiceStepKind::kSpeak);
-      CHECK_EQ(step.text, "Voice mode is off in MoltNet windows.");
+      CHECK_EQ(step.text,
+               molt_ai::voice::Localized(
+                   env.language, "Voice mode is off in MoltNet windows."));
     }
     switch (step.kind) {
       case VoiceStepKind::kSpeak:
@@ -376,6 +387,31 @@ void CheckTurn(const VoiceTurn& turn,
           CHECK(step.text.empty());
         }
         break;
+      case VoiceStepKind::kBrowserAction:
+        // The rest of the browser (voice_browser_logic.h): a node it names
+        // is on the map; levels and speeds in range; an address only an
+        // entry of the browser's own list gave (http(s)).
+        CHECK(step.browser_action != molt_ai::voice::BrowserAction::kNone);
+        if (step.target.valid()) {
+          CHECK(page.handles.count({step.target.tree, step.target.node}));
+        }
+        if (step.browser_action ==
+            molt_ai::voice::BrowserAction::kSetVolumeLevel) {
+          CHECK_GE(step.index, 0);
+          CHECK_LE(step.index, 100);
+        }
+        if (step.browser_action ==
+            molt_ai::voice::BrowserAction::kSetPlaybackRate) {
+          CHECK(step.index == 0 || (step.index >= 25 && step.index <= 400));
+        }
+        if (step.browser_action == molt_ai::voice::BrowserAction::kOpenUrl) {
+          CHECK(step.url.substr(0, 7) == "http://" ||
+                step.url.substr(0, 8) == "https://");
+        }
+        if (step.browser_action == molt_ai::voice::BrowserAction::kAskAI) {
+          CheckSpeakable(step.text, molt_ai::voice::kMaxCommandTextBytes);
+        }
+        break;
       default:
         break;
     }
@@ -390,13 +426,25 @@ void CheckTurn(const VoiceTurn& turn,
   CHECK_LE(state.offered.size(), molt_ai::voice::kMaxCloseChoices);
   CHECK(state.confirming || state.confirm_steps.empty());
   for (const VoiceStep& held : state.confirm_steps) {
-    CHECK(IsPageAction(held.kind) || held.kind == VoiceStepKind::kSpeak ||
-          held.kind == VoiceStepKind::kWaitForPage ||
-          held.kind == VoiceStepKind::kSetCurrentItem ||
-          (held.kind == VoiceStepKind::kSetVoiceMode && !held.flag) ||
-          ((held.kind == VoiceStepKind::kPlannerAnswer ||
-            held.kind == VoiceStepKind::kPageRequestAnswer) &&
-           held.flag && held.index > 0));
+    CHECK(
+        IsPageAction(held.kind) || held.kind == VoiceStepKind::kSpeak ||
+        held.kind == VoiceStepKind::kWaitForPage ||
+        held.kind == VoiceStepKind::kSetCurrentItem ||
+        (held.kind == VoiceStepKind::kSetVoiceMode && !held.flag) ||
+        // What the rest of the browser asks first: always listening on,
+        // closing the window, a press of the browser's "Exit".
+        (held.kind == VoiceStepKind::kBrowserAction &&
+         ((held.browser_action ==
+               molt_ai::voice::BrowserAction::kSetAlwaysListening &&
+           held.flag) ||
+          held.browser_action == molt_ai::voice::BrowserAction::kCloseWindow ||
+          held.browser_action ==
+              molt_ai::voice::BrowserAction::kPressBrowserUi ||
+          held.browser_action ==
+              molt_ai::voice::BrowserAction::kListBrowserUi)) ||
+        ((held.kind == VoiceStepKind::kPlannerAnswer ||
+          held.kind == VoiceStepKind::kPageRequestAnswer) &&
+         held.flag && held.index > 0));
   }
   for (const VoiceStep& step : turn.steps) {
     if (step.kind == VoiceStepKind::kPlannerAnswer ||
@@ -464,6 +512,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   page.map.page_tree = 0;
   VoiceEnvironment env;
   std::vector<std::string_view> utterances;
+  std::vector<molt_ai::voice::BrowserItem> browser_items;
   size_t lines = 0;
   for (std::string_view line : Split(text, '\n')) {
     if (++lines > kMaxLines) {
@@ -476,12 +525,35 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       continue;
     }
     // The planner's question keeps its "? ", the activation guard's its
-    // "! ", the browser's prompt its "% " (handled in turn below).
+    // "! ", the browser's prompt its "% ", the browser's list its "& "
+    // (handled in turn below).
     if (line.size() >= 2 &&
-        (line[0] == '?' || line[0] == '!' || line[0] == '%') &&
+        (line[0] == '?' || line[0] == '!' || line[0] == '%' ||
+         line[0] == '&') &&
         line[1] == ' ') {
       if (utterances.size() < kMaxUtterances) {
         utterances.push_back(line);
+      }
+      continue;
+    }
+    // "^ title\thost\turl\tflags": an entry of the browser's list (a
+    // bookmark's name, a history entry's title, a file's name: the user's
+    // or a page's words).
+    if (line.size() >= 2 && line[0] == '^' && line[1] == ' ') {
+      if (browser_items.size() < kMaxBrowserItemLines) {
+        const std::vector<std::string_view> parts = Split(line.substr(2), '\t');
+        molt_ai::voice::BrowserItem item;
+        item.title = SpeechSafeText(parts.empty() ? "" : parts[0], 160);
+        item.host = parts.size() > 1 ? std::string(parts[1]) : std::string();
+        item.url = parts.size() > 2 ? std::string(parts[2]) : std::string();
+        const std::string_view flags = parts.size() > 3 ? parts[3] : "";
+        item.complete = flags.find('i') == std::string_view::npos;
+        item.dangerous = flags.find('d') != std::string_view::npos;
+        item.runs_code = flags.find('r') != std::string_view::npos;
+        item.enabled = flags.find('o') == std::string_view::npos;
+        item.has_submenu = flags.find('s') != std::string_view::npos;
+        item.id = static_cast<int64_t>(browser_items.size()) + 1;
+        browser_items.push_back(std::move(item));
       }
       continue;
     }
@@ -499,6 +571,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                        : static_cast<int>((more_bits & 0x03) % env.tabs.size());
   env.page_id = 1;
   env.now_ms = 1000;
+  env.language = (more_bits & 0x40) ? molt_ai::voice::Language::kSpanish
+                                    : molt_ai::voice::Language::kEnglish;
   using Reading = molt_ai::voice::VoiceEnvironment::Reading;
   env.reading = (more_bits & 0x18) == 0x08   ? Reading::kReading
                 : (more_bits & 0x18) == 0x10 ? Reading::kStopped
@@ -572,6 +646,30 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                                asked.state, env.now_ms) == question);
       CHECK(!asked.state.confirming);
       state = asked.state;
+      continue;
+    }
+    if (utterance.size() >= 3 && utterance[0] == '&' && utterance[1] == ' ') {
+      // The browser gathered its list (bookmarks, history, downloads, its
+      // own buttons) for a step that asked, with a name to find in it: the
+      // entries are the user's or a page's words.
+      static constexpr molt_ai::voice::BrowserAction kLists[] = {
+          molt_ai::voice::BrowserAction::kListBookmarks,
+          molt_ai::voice::BrowserAction::kListHistory,
+          molt_ai::voice::BrowserAction::kListDownloads,
+          molt_ai::voice::BrowserAction::kListBrowserUi,
+      };
+      VoiceStep asked;
+      asked.kind = VoiceStepKind::kBrowserAction;
+      asked.browser_action =
+          kLists[static_cast<unsigned char>(utterance[2]) % 4];
+      asked.text =
+          std::string(utterance.substr(std::min<size_t>(utterance.size(), 4)));
+      asked.index =
+          static_cast<int>(static_cast<unsigned char>(utterance[2]) % 7) - 3;
+      const VoiceTurn read =
+          molt_ai::voice::PlanBrowserItems(asked, browser_items, env, state);
+      CheckTurn(read, page, env);
+      state = read.state;
       continue;
     }
     VoiceTurn turn = PlanUtterance(utterance, page.map, env, state);

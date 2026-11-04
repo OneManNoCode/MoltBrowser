@@ -115,6 +115,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/security/page_request_asker.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
+#include "chrome/browser/molt_ai/voice/voice_browser_actions.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_planner.h"
@@ -147,7 +148,8 @@ enum class VoiceActivity {
 
 class VoiceController : public VoicePlanner::Delegate,
                         public activation::PageRequestAsker,
-                        public VoiceBrowserPrompts::Delegate {
+                        public VoiceBrowserPrompts::Delegate,
+                        public VoiceBrowserActions::Delegate {
  public:
   DECLARE_USER_DATA(VoiceController);
 
@@ -445,6 +447,18 @@ class VoiceController : public VoicePlanner::Delegate,
                               const PageMap& map,
                               const VoiceEnvironment& env) const;
 
+  // VoiceBrowserActions::Delegate (the rest of the browser,
+  // voice_browser_actions.h):
+  void BrowserActionSays(const std::string& text) override;
+  void BrowserActionReads(const std::string& text) override;
+  void BrowserActionDone(int run) override;
+  void BrowserItemsReady(int run,
+                         const VoiceStep& asked,
+                         std::vector<BrowserItem> items) override;
+  content::WebContents* BrowserActionContents() override;
+  VoicePageController* BrowserActionPage() override;
+  Language BrowserActionLanguage() override;
+
   // Questions about the page (voice_page_questions.h): a kAskPage step is
   // asked of the on-device model; its answer is read as page text is.
   void AskAboutPage(const VoiceStep& step);
@@ -530,6 +544,10 @@ class VoiceController : public VoicePlanner::Delegate,
   std::unique_ptr<VoicePageQuestions> page_questions_;
   // The test log, with --molt-voice-test-log only (voice_test_log.h).
   std::unique_ptr<VoiceTestLog> test_log_;
+  // Bookmarks, history, downloads, settings, windows, the AI chat, the
+  // browser's own buttons, the page's media element
+  // (voice_browser_actions.h).
+  std::unique_ptr<VoiceBrowserActions> browser_actions_;
   base::RepeatingClosure idle_for_testing_;
   base::WeakPtrFactory<VoiceController> run_weak_factory_{this};
   base::WeakPtrFactory<VoiceController> weak_factory_{this};

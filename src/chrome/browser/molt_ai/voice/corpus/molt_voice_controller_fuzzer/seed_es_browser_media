@@ -1,0 +1,14 @@
+@T Reproductor
+@ fixture.test
+I m Reproductor de video
+I t Nota	Hola
+I l Horario		/hours
+> pon la velocidad a 1,5
+> más rápido
+> volumen al 50 por ciento
+> activa los subtítulos
+> haz clic en la nota
+> escribe hasta luego coma Ana punto
+> deshaz
+> busca horario en esta página
+> siguiente coincidencia

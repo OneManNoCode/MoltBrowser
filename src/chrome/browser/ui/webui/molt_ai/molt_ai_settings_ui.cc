@@ -2419,6 +2419,9 @@ loadVault();
                : section === 'providers' ? 'providersSection'
                : section === 'passwords' ? 'passwordsSection'
                : section === 'webai' ? 'webAiSection'
+               // Voice mode's "open MoltNet settings" (voice mode's own
+               // section scrolls itself once it shows).
+               : section === 'moltnet' ? 'moltnetSection'
                : null;
   if (targetId) {
     var el = document.getElementById(targetId);
@@ -2864,7 +2867,7 @@ h2[tabindex="-1"]:focus{outline:none !important}
     </div>
   </div>
 
-  <div class="section">
+  <div class="section" id="moltnetSection">
     <h2><span class="icon" aria-hidden="true">&#128274;</span> Privacy Network (MoltNet)</h2>
     <div class="field">
       <label class="toggle">

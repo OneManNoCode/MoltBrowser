@@ -35,9 +35,6 @@ constexpr SpokenAnswer kAnswers[] = {
     {"Cancelled", "Cancelado"},
     {"Cancelled.", "Cancelado."},
     {"Stopped", "Detenido"},
-    {"Undo comes later. Say go back to return to the page before.",
-     "Deshacer llegará más adelante. Di atrás para volver a la página "
-     "anterior."},
     {"I haven't said anything yet.", "Todavía no he dicho nada."},
     {"I'm already listening.", "Ya estoy escuchando."},
     {"Turning on voice mode", "Activando el modo de voz"},
@@ -151,9 +148,6 @@ constexpr SpokenAnswer kAnswers[] = {
      "En pausa. Di sigue leyendo para continuar."},
     {"Nothing is playing.", "No se está reproduciendo nada."},
     {"Paused.", "En pausa."},
-    {"Setting the volume to a level comes later. Say louder or quieter.",
-     "Poner el volumen a un nivel llegará más adelante. Di más alto o más "
-     "bajo."},
     {"It's already muted.", "Ya está silenciado."},
     {"It isn't muted.", "No está silenciado."},
     {"Muted.", "Silenciado."},
@@ -165,8 +159,6 @@ constexpr SpokenAnswer kAnswers[] = {
     {"Previous.", "Anterior."},
     {"It isn't full screen.", "No está en pantalla completa."},
     {"Left full screen.", "He salido de la pantalla completa."},
-    {"Changing the playback speed comes later.",
-     "Cambiar la velocidad de reproducción llegará más adelante."},
     {"Playing: {0}", "Reproduciendo: {0}"},
     {"Playing {0}.", "Reproduciendo {0}."},
     {"It's already playing.", "Ya se está reproduciendo."},
@@ -1004,6 +996,284 @@ constexpr SpokenAnswer kAnswers[] = {
     {"Done reading", "Lectura terminada"},
     {"Heading level {0}: {1}.", "Título de nivel {0}: {1}."},
     {"untitled", "sin título"},
+
+    // --- The rest of the browser (voice_browser_logic.cc,
+    // voice_media_controls.cc, voice_browser_actions.cc,
+    // voice_ai_answers.cc) ---------------------------------------------
+    // Media.
+    {"There's no video or audio on this page.",
+     "No hay vídeo ni audio en esta página."},
+    {"There's no video or audio on this page. Say mute or unmute for the "
+     "tab's sound.",
+     "No hay vídeo ni audio en esta página. Di silencia o activa el sonido "
+     "para el sonido de la pestaña."},
+    {"Changing the speed", "Cambiando la velocidad"},
+    {"Setting the volume", "Ajustando el volumen"},
+    {"Normal speed.", "Velocidad normal."},
+    {"Speed: {0} times.", "Velocidad: {0} veces."},
+    {"This player doesn't go to that speed. Speed: {0} times.",
+     "Este reproductor no llega a esa velocidad. Velocidad: {0} veces."},
+    {"Volume {0} percent.", "Volumen al {0} por ciento."},
+    {"The tab is muted: say unmute to hear it.",
+     "La pestaña está silenciada: di activa el sonido para oírla."},
+    {"I can't find captions for this video.",
+     "No encuentro subtítulos para este vídeo."},
+    // Recover.
+    {"Undoing", "Deshaciendo"},
+    {"There's nothing I can undo.", "No hay nada que pueda deshacer."},
+    {"There's nothing I can undo. Say go back to return to the page before.",
+     "No hay nada que pueda deshacer. Di atrás para volver a la página "
+     "anterior."},
+    {"Wait until the page has opened, then say undo.",
+     "Espera a que se abra la página y luego di deshaz."},
+    {"I can't undo the last thing I did any more: the page changed since.",
+     "Ya no puedo deshacer lo último que hice: la página ha cambiado desde "
+     "entonces."},
+    {"Undone: {0} is empty again.", "Deshecho: {0} vuelve a estar vacío."},
+    {"Undone: {0} says {1} again.", "Deshecho: {0} vuelve a decir {1}."},
+    {"Undone: back to the page before.",
+     "Deshecho: de vuelta a la página anterior."},
+    {"Undone: forward again.", "Deshecho: hacia adelante otra vez."},
+    {"Undone: the bookmark is removed.",
+     "Deshecho: el marcador se ha quitado."},
+    {"Undone: the bookmark is back.", "Deshecho: el marcador ha vuelto."},
+    {"Starting over", "Empezando de nuevo"},
+    {"Starting over. What would you like to do?",
+     "Empecemos de nuevo. ¿Qué quieres hacer?"},
+    {"Starting over. A question from the browser is still waiting for your "
+     "answer.",
+     "Empecemos de nuevo. Una pregunta del navegador sigue esperando tu "
+     "respuesta."},
+    {"A question from the browser is waiting for your answer.",
+     "Una pregunta del navegador espera tu respuesta."},
+    {"A question from the browser is waiting: answer it, or say no.",
+     "Una pregunta del navegador está esperando: respóndela, o di no."},
+    {"The browser's menu is open: say what to press, or close the menu.",
+     "El menú del navegador está abierto: di qué pulsar, o cierra el menú."},
+    {"You're in the list of {0}, at {1} of {2}.",
+     "Estás en la lista de {0}, en el {1} de {2}."},
+    {"You're in the list of {0}: {1}.", "Estás en la lista de {0}: {1}."},
+    {"You're at number {0} of the list.",
+     "Estás en el número {0} de la lista."},
+    {"You're typing in {0}.", "Estás escribiendo en {0}."},
+    {"a text field", "un campo de texto"},
+    {"Something is playing.", "Se está reproduciendo algo."},
+    {"The video is paused: say play to go on.",
+     "El vídeo está en pausa: di reproduce para seguir."},
+    {"I stopped reading this page: say continue reading.",
+     "Dejé de leer esta página: di sigue leyendo."},
+    {"When you type, say comma, period, question mark or new line for "
+     "punctuation, and the word comma for the word itself.",
+     "Al escribir, di coma, punto, signo de interrogación o nueva línea "
+     "para la puntuación, y la palabra coma para la palabra misma."},
+    // Find.
+    {" Say next match to go on.", " Di siguiente coincidencia para seguir."},
+    {"Find something first: say find, then the words.",
+     "Busca algo primero: di busca, luego las palabras y en esta página."},
+    {"That's the last match.", "Esa es la última coincidencia."},
+    {"That's the first match.", "Esa es la primera coincidencia."},
+    {"Match {0} of {1}: {2}.", "Coincidencia {0} de {1}: {2}."},
+    // Bookmarks, history and downloads.
+    {"bookmark", "marcador"},
+    {"bookmarks", "marcadores"},
+    {"page", "página"},
+    {"pages", "páginas"},
+    {"download", "descarga"},
+    {"downloads", "descargas"},
+    {"button", "botón"},
+    {"buttons", "botones"},
+    {"menu item", "opción del menú"},
+    {"menu items", "opciones del menú"},
+    {"tab", "pestaña"},
+    {"tabs", "pestañas"},
+    {"blocked", "bloqueada"},
+    {"not finished", "sin terminar"},
+    {"more options", "más opciones"},
+    {"on", "activado"},
+    {"turned off", "desactivado"},
+    {"I can only bookmark web pages.",
+     "Solo puedo añadir páginas web a los marcadores."},
+    {"This page is already bookmarked.",
+     "Esta página ya está en los marcadores."},
+    {"This page isn't bookmarked.", "Esta página no está en los marcadores."},
+    {"Bookmarked {0}", "Añadido a los marcadores: {0}"},
+    {"Bookmarked {0}.", "He añadido {0} a los marcadores."},
+    {"Bookmarked this page.", "He añadido esta página a los marcadores."},
+    {"Removed the bookmark", "Marcador quitado"},
+    {"Removed this page's bookmark. Say undo to put it back.",
+     "He quitado el marcador de esta página. Di deshaz para recuperarlo."},
+    {"Looking at your bookmarks", "Mirando tus marcadores"},
+    {"Looking at your history", "Mirando tu historial"},
+    {"Looking at your downloads", "Mirando tus descargas"},
+    {"Looking at the browser's buttons", "Mirando los botones del navegador"},
+    {"Reading the list", "Leyendo la lista"},
+    {"Menu open", "Menú abierto"},
+    {"Which bookmark? Say open the bookmark, then its name.",
+     "¿Qué marcador? Di abre el marcador y luego su nombre."},
+    {"Open what? Say open, then the site, then from my history.",
+     "¿Abrir qué? Di abre, el sitio y luego de mi historial."},
+    {"Private windows keep no history.",
+     "Las ventanas privadas no guardan historial."},
+    {"Reopening the closed tab", "Reabriendo la pestaña cerrada"},
+    {"You have no bookmarks yet. Say bookmark this page to add one.",
+     "Todavía no tienes marcadores. Di añade esta página a mis marcadores "
+     "para añadir uno."},
+    {"I can't find {0} in your bookmarks.",
+     "No encuentro {0} en tus marcadores."},
+    {"Your history is empty.", "Tu historial está vacío."},
+    {"I can't find {0} in your history.", "No encuentro {0} en tu historial."},
+    {"You have no downloads.", "No tienes descargas."},
+    {"There's no download {0}. You have {1}.",
+     "No hay ninguna descarga {0}. Tienes {1}."},
+    {"Say the download's number: open download, then its number.",
+     "Di el número de la descarga: abre la descarga y luego su número."},
+    {"{0} was blocked as dangerous, so I won't open it. The downloads page "
+     "has what you can do with it.",
+     "{0} se bloqueó por peligroso, así que no lo abriré. En la página de "
+     "descargas está lo que puedes hacer con él."},
+    {"{0} hasn't finished downloading.", "{0} no ha terminado de descargarse."},
+    {"{0} can run programs on your computer, so I don't open it by voice. "
+     "Open it from the downloads page with the mouse or keyboard.",
+     "{0} puede ejecutar programas en tu ordenador, así que no lo abro por "
+     "voz. Ábrelo desde la página de descargas con el ratón o el teclado."},
+    // Settings.
+    {"Opening settings", "Abriendo la configuración"},
+    {"Opening settings.", "Abriendo la configuración."},
+    {"Opening privacy settings", "Abriendo la configuración de privacidad"},
+    {"Opening privacy and security settings.",
+     "Abriendo la configuración de privacidad y seguridad."},
+    {"Opening AI settings", "Abriendo la configuración de la IA"},
+    {"Opening the AI settings.", "Abriendo la configuración de la IA."},
+    {"Opening voice mode settings",
+     "Abriendo la configuración del modo de voz"},
+    {"Opening voice mode's settings. I change some of them myself: say speak "
+     "faster, be brief, or turn on always listening.",
+     "Abriendo la configuración del modo de voz. Algunas las cambio yo: di "
+     "habla más rápido, sé breve o activa escuchar siempre."},
+    {"Opening MoltNet settings", "Abriendo la configuración de MoltNet"},
+    {"Opening MoltNet's settings.", "Abriendo la configuración de MoltNet."},
+    {"I can read settings to you, but changing one there needs the mouse or "
+     "keyboard.",
+     "Puedo leerte la configuración, pero para cambiar algo ahí hace falta "
+     "el ratón o el teclado."},
+    {"Always listening is already on.", "Escuchar siempre ya está activado."},
+    {"Always listening is already off.",
+     "Escuchar siempre ya está desactivado."},
+    {"Always listening off", "Escuchar siempre desactivado"},
+    {"Always listening is off. Say Hey Molt before what you want.",
+     "Escuchar siempre está desactivado. Di Oye Molt antes de lo que "
+     "quieras."},
+    {"Always listening is on. Everything you say is a command now, without "
+     "Hey Molt.",
+     "Escuchar siempre está activado. Ahora todo lo que digas es una orden, "
+     "sin Oye Molt."},
+    {"With always listening on, everything you say is a command, without "
+     "Hey Molt, also what others nearby say.",
+     "Con escuchar siempre activado, todo lo que digas es una orden, sin "
+     "Oye Molt, también lo que digan otros cerca."},
+    {"turn on always listening", "activar escuchar siempre"},
+    {"Saying the confirmation word aloud lets a page or another program "
+     "hear it, so only a click changes that: in settings, Voice mode, Say "
+     "the confirmation word aloud.",
+     "Decir la palabra de confirmación en voz alta deja que una página u "
+     "otro programa la oiga, así que solo un clic lo cambia: en la "
+     "configuración, Modo de voz, Decir la palabra de confirmación en voz "
+     "alta."},
+    {"A workflow's trust changes only with a click, in Agent mode, so "
+     "nothing you say or a page plays can change it.",
+     "La confianza de un flujo de trabajo solo cambia con un clic, en el "
+     "modo Agente, así que nada de lo que digas ni de lo que reproduzca una "
+     "página puede cambiarla."},
+    // Windows.
+    {"New window", "Nueva ventana"},
+    {"New window. I'm still listening in this one: say switch to the other "
+     "window to use it by voice.",
+     "Nueva ventana. Sigo escuchando en esta: di cambia a la otra ventana "
+     "para usarla por voz."},
+    {"New private window", "Nueva ventana privada"},
+    {"New private window. I'm still listening in this one: say switch to "
+     "the other window to use it by voice.",
+     "Nueva ventana privada. Sigo escuchando en esta: di cambia a la otra "
+     "ventana para usarla por voz."},
+    {"Opening a MoltNet window", "Abriendo una ventana de MoltNet"},
+    {"Opening a MoltNet window. Voice mode never listens in MoltNet windows, "
+     "so I stay in this one.",
+     "Abriendo una ventana de MoltNet. El modo de voz nunca escucha en las "
+     "ventanas de MoltNet, así que me quedo en esta."},
+    {"This window has {0}.", "Esta ventana tiene {0}."},
+    {"It's the only window: MoltBrowser will close, and I can't start it "
+     "again by voice.",
+     "Es la única ventana: MoltBrowser se cerrará, y no puedo volver a "
+     "abrirlo por voz."},
+    {"I'll go on listening in your other window.",
+     "Seguiré escuchando en tu otra ventana."},
+    {"close this window", "cerrar esta ventana"},
+    {"Switching windows", "Cambiando de ventana"},
+    {"There's no other window. Say new window to open one.",
+     "No hay otra ventana. Di nueva ventana para abrir una."},
+    // The AI chat.
+    {"Ask what? Say ask the AI, then your question.",
+     "¿Preguntar qué? Di pregúntale a la IA y luego tu pregunta."},
+    {"Asking the AI", "Preguntando a la IA"},
+    {"Opening the AI chat", "Abriendo el chat de la IA"},
+    {"The AI chat is open beside the page. To ask it by voice, say ask the "
+     "AI, then your question.",
+     "El chat de la IA está abierto junto a la página. Para preguntarle por "
+     "voz, di pregúntale a la IA y luego tu pregunta."},
+    {"The AI chat is already open. To ask it by voice, say ask the AI, then "
+     "your question.",
+     "El chat de la IA ya está abierto. Para preguntarle por voz, di "
+     "pregúntale a la IA y luego tu pregunta."},
+    // The browser's buttons and menus.
+    {"Opening the menu", "Abriendo el menú"},
+    {"No menu is open.", "No hay ningún menú abierto."},
+    {"Closed the menu.", "He cerrado el menú."},
+    {"I can't find any of the browser's buttons to press here.",
+     "No encuentro aquí ningún botón del navegador que pulsar."},
+    {"The menu has nothing called {0}. Say close the menu, or the name of "
+     "what to press.",
+     "El menú no tiene nada llamado {0}. Di cierra el menú, o el nombre de "
+     "lo que quieras pulsar."},
+    {"{0} is turned off now.", "{0} está desactivado ahora."},
+    {"I can't find that button any more. Say show the browser's buttons.",
+     "Ya no encuentro ese botón. Di muestra los botones del navegador."},
+    // What the browser did (voice_browser_actions.cc).
+    {"I can't open that download now.", "Ahora no puedo abrir esa descarga."},
+    {"I can't reopen that tab any more.", "Ya no puedo reabrir esa pestaña."},
+    {"Undone: the tab is open again.",
+     "Deshecho: la pestaña está abierta otra vez."},
+    {"Undone: {0} is open again.", "Deshecho: {0} está abierta otra vez."},
+    {"There's no closed tab to reopen.",
+     "No hay ninguna pestaña cerrada que reabrir."},
+    {"Reopened the closed tab.", "He reabierto la pestaña cerrada."},
+    {"Reopened {0}.", "He reabierto {0}."},
+    {"I couldn't save that setting. Change it in settings.",
+     "No he podido guardar esa opción. Cámbiala en la configuración."},
+    {"I'm listening in this window now.", "Ahora escucho en esta ventana."},
+    {"I'm listening in this window now: {0}.",
+     "Ahora escucho en esta ventana: {0}."},
+    {"MoltNet couldn't start. Open it from the toolbar to see why.",
+     "MoltNet no ha podido iniciarse. Ábrelo desde la barra de herramientas "
+     "para ver por qué."},
+    // Asking the AI (voice_ai_answers.cc, ai_questions.cc).
+    {"Let me think.", "Déjame pensar."},
+    {"The on-device AI can't run on this computer.",
+     "La IA del dispositivo no puede funcionar en este ordenador."},
+    {"The on-device AI didn't answer in time, so I stopped. It may be busy.",
+     "La IA del dispositivo no respondió a tiempo, así que he parado. Puede "
+     "que esté ocupada."},
+    {"The AI's answer held something that sounds like a voice command, so I "
+     "left it out.",
+     "La respuesta de la IA contenía algo que suena a una orden de voz, así "
+     "que la he omitido."},
+    {"The AI says: {0}", "La IA dice: {0}"},
+    // At the first run (voice_first_run.cc).
+    {"This is MoltBrowser's voice mode, on because this is the browser's "
+     "first run. Say Hey Molt, then what you want, or what can I say. To "
+     "turn it off, say turn off voice mode.",
+     "Este es el modo de voz de MoltBrowser, activado porque es la primera "
+     "vez que se abre el navegador. Di Oye Molt y luego lo que quieras, o "
+     "qué puedo decir. Para desactivarlo, di desactiva el modo de voz."},
 };
 
 }  // namespace

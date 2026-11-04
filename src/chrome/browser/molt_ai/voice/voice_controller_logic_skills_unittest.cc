@@ -299,7 +299,7 @@ TEST(VoiceSkillsLogicTest, PauseContinueAndRateWhileReading) {
   // Not reading: "faster" is still the playback speed.
   env.reading = Reading::kNone;
   turn = Say("faster", article, env, &state);
-  EXPECT_EQ(Said(turn), "Changing the playback speed comes later.");
+  EXPECT_EQ(Said(turn), "There's no video or audio on this page.");
 }
 
 }  // namespace

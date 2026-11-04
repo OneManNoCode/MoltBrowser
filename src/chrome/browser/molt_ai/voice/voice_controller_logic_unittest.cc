@@ -875,8 +875,8 @@ TEST(VoiceControllerLogicTest, MediaWithoutControls) {
   EXPECT_EQ(Said(c.Say("captions on")),
             "I can't find a captions button on this page.");
   EXPECT_EQ(Said(c.Say("set the volume to 5")),
-            "Setting the volume to a level comes later. Say louder or "
-            "quieter.");
+            "There's no video or audio on this page. Say mute or unmute for "
+            "the tab's sound.");
 }
 
 TEST(VoiceControllerLogicTest, PlaysWhatOpensUnlessItAlreadyPlays) {
@@ -1053,7 +1053,8 @@ TEST(VoiceControllerLogicTest, StopCancelUndoAndCorrections) {
   EXPECT_FALSE(c.state().confirming);
   EXPECT_EQ(Said(c.Say("cancel")), "Cancelled.");
   EXPECT_EQ(Said(c.Say("undo")),
-            "Undo comes later. Say go back to return to the page before.");
+            "There's nothing I can undo. Say go back to return to the page "
+            "before.");
 
   turn = c.Say("no, I said open YouTube");
   EXPECT_EQ(turn.kind, VoiceCommandKind::kOpenSite);

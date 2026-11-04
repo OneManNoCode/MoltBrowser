@@ -180,11 +180,57 @@ enum class VoiceCommandKind : uint8_t {
   // --- Voice mode (listening) ----------------------------------------------
   kVoiceModeOn,   // start listening (typed, or said while voice mode is on)
   kVoiceModeOff,  // stop listening (after a spoken "yes")
+
+  // --- The rest of the browser (voice_browser_logic.h) -------------------
+  // Media.
+  kSetSpeed,  // |rate|: the playback speed in hundredths (150: 1.5 times)
+  // Recover: the list, question and conversation start over (while
+  // something plays, the media starts again).
+  kStartOver,
+  // Find on page: the next or previous match of the last "find".
+  kNextMatch,
+  kPreviousMatch,
+  // Bookmarks.
+  kBookmarkPage,
+  kRemoveBookmark,
+  kListBookmarks,  // read the bookmarks, to choose from
+  kOpenBookmark,   // |text|: the bookmark's name
+  // History.
+  kListHistory,      // read the history, to choose from
+  kReopenTab,        // the last closed tab
+  kOpenFromHistory,  // |text|: the site or title
+  // Downloads.
+  kListDownloads,  // read the downloads, to choose from
+  kOpenDownload,   // |choice|: its number or position (1: the newest)
+  // Settings.
+  kOpenSettings,      // |settings_page|
+  kAlwaysListening,   // |on|: every utterance a command (on after a "yes")
+  kProtectedSetting,  // |protected_setting|: changed by a click only
+  // Windows.
+  kNewWindow,  // |window|
+  kCloseWindow,
+  kSwitchWindow,
+  // The AI chat.
+  kAskAI,  // |text|: the question for the on-device AI
+  kOpenAIChat,
+  // The browser's own buttons and menus (browser_ui_map.h).
+  kShowBrowserButtons,
+  kOpenMenu,
+  kCloseMenu,
 };
 
-// The number of kinds, for tables and tests.
+// The last kind, and the number of kinds, for tables and tests.
+inline constexpr VoiceCommandKind kLastVoiceCommandKind =
+    VoiceCommandKind::kCloseMenu;
 inline constexpr size_t kVoiceCommandKindCount =
-    static_cast<size_t>(VoiceCommandKind::kVoiceModeOff) + 1;
+    static_cast<size_t>(kLastVoiceCommandKind) + 1;
+
+// Whether |kind| acts on the browser itself, beyond the page being read: a
+// bookmark, a window, a setting, a download, the history, the browser's
+// own buttons, the AI. Such a command never runs over the browser's own
+// voice without the wake phrase (voice_session_logic.h's
+// TakenOverOwnVoice()).
+bool ActsOnTheBrowser(VoiceCommandKind kind);
 
 // A stable name ("kOpenSite" -> "open_site"), for logs and the docs.
 std::string_view VoiceCommandKindName(VoiceCommandKind kind);
@@ -232,6 +278,33 @@ enum class Verbosity : uint8_t {
   kLess,  // one step down
 };
 
+// kOpenSettings: which page.
+enum class SettingsPage : uint8_t {
+  kMain,     // the browser's settings
+  kPrivacy,  // privacy and security
+  kAI,       // MoltBrowser's AI settings
+  kVoice,    // voice mode's settings
+  kMoltNet,  // MoltNet's settings
+};
+
+// kNewWindow: which kind.
+enum class WindowKind : uint8_t {
+  kNormal,
+  kPrivate,
+  kMoltNet,
+};
+
+// kProtectedSetting: the settings that weaken a protection, which only a
+// click in settings changes.
+enum class ProtectedSetting : uint8_t {
+  kWordAloud,      // say the confirmation word aloud even when others hear
+  kWorkflowTrust,  // a workflow's trust (automation_security.h)
+};
+
+// The playback speeds kSetSpeed takes, in hundredths.
+inline constexpr int kMinSpokenRate = 25;
+inline constexpr int kMaxSpokenRate = 400;
+
 enum class RefusalReason : uint8_t {
   kNone,
   kTooLong,
@@ -275,7 +348,9 @@ struct VoiceCommand {
   // query (kSearch, kFindInPage), the text (kType), the correction
   // (kCorrection), the routine's name (kRememberRoutine, kForgetRoutine,
   // kRunRoutine), the section's name (kReadSection), the word to forget
-  // (kForgetWord), the question or its topic (kAskPage).
+  // (kForgetWord), the question or its topic (kAskPage), a bookmark's name
+  // (kOpenBookmark), what to look for in the history (kOpenFromHistory),
+  // the question for the AI (kAskAI).
   std::string text;
   // kOpenSite, and kSearch with kNamedSite: the site as host-like text,
   // lower case: "youtube", "new york times" -> "newyorktimes",
@@ -295,13 +370,23 @@ struct VoiceCommand {
   // kSearch "search for X on Y": the whole "X on Y", to search for when Y
   // is not a site the browser knows ("search for things to do on Sunday").
   std::string whole_query;
-  // kChoose (and kCloseTab, kSwitchTab).
+  // kChoose (and kCloseTab, kSwitchTab, kOpenDownload).
   ChoiceVerb verb = ChoiceVerb::kDefault;
   ChoiceRef choice;
   // kSkipForward, kSkipBack: seconds, 0 for the default step.
   int seconds = 0;
   // kSetVolume: 0..100.
   int level = 0;
+  // kSetSpeed: hundredths, kMinSpokenRate..kMaxSpokenRate.
+  int rate = 0;
+  // kOpenSettings.
+  SettingsPage settings_page = SettingsPage::kMain;
+  // kNewWindow.
+  WindowKind window = WindowKind::kNormal;
+  // kAlwaysListening: on (true) or off.
+  bool on = true;
+  // kProtectedSetting.
+  ProtectedSetting protected_setting = ProtectedSetting::kWordAloud;
   // kScroll*.
   ScrollAmount scroll = ScrollAmount::kDefault;
   int count = 1;
@@ -315,6 +400,12 @@ struct VoiceCommand {
 
 VoiceCommand ParseVoiceCommand(std::string_view utterance,
                                const ParseContext& context);
+
+// The words of |utterance| the patterns would take, folded, one space
+// between: without the wake phrase, fillers and politeness ("hey molt,
+// YouTube please" -> "youtube"). Empty for text the grammar refuses.
+std::string CommandWords(std::string_view utterance,
+                         const ParseContext& context);
 
 }  // namespace voice
 }  // namespace molt_ai

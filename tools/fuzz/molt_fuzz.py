@@ -336,6 +336,9 @@ FUZZERS = {
                 "voice_candidates", "voice_speech_text",
                 "voice_controller_logic", "voice_gesture", "voice_hints",
                 "voice_prompts", "voice_routines_logic", "voice_vocabulary",
+                # The rest of the browser (voice_browser_logic.h).
+                "voice_browser_logic", "voice_browser_types", "voice_undo",
+                "voice_dictation", "voice_media_controls", "browser_ui_map",
                 "voice_planner")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
              f"{MOLT_AI}/security/activation_policy.cc"],
@@ -353,6 +356,8 @@ FUZZERS = {
                 "voice_candidates", "voice_speech_text",
                 "voice_controller_logic", "voice_gesture", "voice_hints",
                 "voice_prompts", "voice_routines_logic", "voice_vocabulary",
+                "voice_browser_logic", "voice_browser_types", "voice_undo",
+                "voice_dictation", "voice_media_controls", "browser_ui_map",
                 "voice_routines", "voice_learning_store", "voice_planner")
         ] + [f"{MOLT_AI}/agents/hidden_chars.cc",
              f"{MOLT_AI}/security/activation_policy.cc",
