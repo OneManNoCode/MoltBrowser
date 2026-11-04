@@ -223,6 +223,11 @@ class WebAgent : public content::WebContentsObserver,
                           // activation guard's: the run doesn't wait for
                           // it, and "Deny" doesn't stop it)
     std::string message;  // e.g. "Open https://example.com"
+    // The same question as voice mode asks it after "Say yes to " ("open
+    // example.com"): English, from whole sentences of the spoken-answer
+    // catalog (voice_agent_speech.h), which the voice loop says in its
+    // language. Empty: voice mode asks voice_agent::QuestionWhat(message).
+    std::string spoken;
     // FRAME_TOOLS: whether "Always" may be offered (a profile that keeps
     // answers).
     bool can_remember = false;
@@ -510,9 +515,11 @@ class WebAgent : public content::WebContentsObserver,
   std::string CurrentOriginText() const;
   // Pauses the run on |message|; runs |on_allow| if the user allows it and
   // stops the run if they deny it (or if there is no ConfirmCallback).
+  // |spoken|: the question as voice mode asks it (ConfirmRequest::spoken).
   void RequestConfirmation(const std::string& action,
                            const std::string& message,
-                           base::OnceClosure on_allow);
+                           base::OnceClosure on_allow,
+                           std::string spoken = std::string());
 
   // -- Navigation wait helpers ------------------------------------
   void MaybeNavDone();  // Called by DidStopLoading + 12 s safety timeout

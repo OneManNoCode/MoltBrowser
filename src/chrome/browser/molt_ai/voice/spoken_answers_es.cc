@@ -1274,6 +1274,51 @@ constexpr SpokenAnswer kAnswers[] = {
      "Este es el modo de voz de MoltBrowser, activado porque es la primera "
      "vez que se abre el navegador. Di Oye Molt y luego lo que quieras, o "
      "qué puedo decir. Para desactivarlo, di desactiva el modo de voz."},
+    // --- The web agent's own questions (voice_agent_speech.cc's
+    // OpenQuestion() and the rest), said after "Di sí para ": infinitives.
+    // A page's label is "el que se llama ...", one phrase.
+    {"open the site {0}", "abrir el sitio {0}"},
+    {"keep working on {0} (the page moved there)",
+     "seguir trabajando en {0} (la página se fue allí)"},
+    {"click the one labelled {0}, it opens {1}",
+     "pulsar el que se llama {0}, lo que abre {1}"},
+    {"click the one labelled {0}, it submits a form on {1}",
+     "pulsar el que se llama {0}, lo que envía un formulario en {1}"},
+    {"click the one labelled {0}, it submits a form to {1}",
+     "pulsar el que se llama {0}, lo que envía un formulario a {1}"},
+    {"click the one labelled {0}, it opens {1} and submits a form on {2}",
+     "pulsar el que se llama {0}, lo que abre {1} y envía un formulario en "
+     "{2}"},
+    {"click the one labelled {0}, it opens {1} and submits a form to {2}",
+     "pulsar el que se llama {0}, lo que abre {1} y envía un formulario a "
+     "{2}"},
+    {"click, it opens {0}", "pulsar, lo que abre {0}"},
+    {"click, it submits a form on {0}",
+     "pulsar, lo que envía un formulario en {0}"},
+    {"click, it submits a form to {0}",
+     "pulsar, lo que envía un formulario a {0}"},
+    {"click, it opens {0} and submits a form on {1}",
+     "pulsar, lo que abre {0} y envía un formulario en {1}"},
+    {"click, it opens {0} and submits a form to {1}",
+     "pulsar, lo que abre {0} y envía un formulario a {1}"},
+    {"type into a password field on {0}",
+     "escribir en un campo de contraseña en {0}"},
+    {"type into a payment card field on {0}",
+     "escribir en un campo de tarjeta de pago en {0}"},
+    {"type into a one-time code field on {0}",
+     "escribir en un campo de código de un solo uso en {0}"},
+    {"type into a form field on {0}",
+     "escribir en un campo de formulario en {0}"},
+    {"fill a password field on {0}",
+     "rellenar un campo de contraseña en {0}"},
+    {"fill a payment card field on {0}",
+     "rellenar un campo de tarjeta de pago en {0}"},
+    {"fill a one-time code field on {0}",
+     "rellenar un campo de código de un solo uso en {0}"},
+    {"fill a form field on {0}", "rellenar un campo de formulario en {0}"},
+    {"use the page's {0} tool", "usar la herramienta {0} de la página"},
+    {"use another site's {0} tool, in a frame on {1}",
+     "usar la herramienta {0} de otro sitio, en un marco de {1}"},
 };
 
 }  // namespace

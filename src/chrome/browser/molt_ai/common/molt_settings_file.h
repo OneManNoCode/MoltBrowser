@@ -8,7 +8,16 @@
 //     (MoltSettingsFileTaskRunner(): MayBlock, BLOCK_SHUTDOWN), so changes
 //     made at the same time from different places (molt://ai-settings, the
 //     voice loop's speech rate, voice mode's switches, the built-in AI
-//     APIs' switch) never drop each other's keys.
+//     APIs' switch) never drop each other's keys. Only changes run there.
+//   - A read that only reads goes through PostReadMoltSettings(): after
+//     the changes posted before it, on a sequence of its own that never
+//     holds shutdown (CONTINUE_ON_SHUTDOWN, molt_file_sequences.h), so a
+//     settings.json on a network file system that stopped answering
+//     neither hangs shutdown with a read nor makes a change wait behind
+//     one.
+//   - The writer's temporary files a browser ended mid-write left beside
+//     settings.json are deleted on the first read or change of each run
+//     (DeleteStaleWriteTemporaries(), molt_regular_file.h).
 //   - Written atomically (base::ImportantFileWriter::WriteFileAtomically():
 //     a temporary file in the same directory, then a rename), so a crash
 //     leaves the old file or the new one, never part of one.
@@ -38,11 +47,15 @@
 
 #include <optional>
 
+#include <utility>
+
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/functional/function_ref.h"
+#include "base/location.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/common/molt_file_sequences.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -53,15 +66,29 @@ namespace molt_ai {
 // settings.json is at most a few KiB; anything bigger isn't ours.
 inline constexpr size_t kMaxMoltSettingsFileBytes = 1 << 20;
 
-// ~/.moltbrowser/settings.json (or the test's path); nullopt without a home
-// directory.
+// ~/.moltbrowser/settings.json (MoltHomeDir(), or the test's path);
+// nullopt without a home directory.
 std::optional<base::FilePath> MoltSettingsFilePath();
 
 // Tests: settings.json is |path| instead, until called with nullopt.
 void SetMoltSettingsFilePathForTesting(std::optional<base::FilePath> path);
 
-// The one sequence that changes settings.json.
+// The one sequence that changes settings.json (changes only).
 scoped_refptr<base::SequencedTaskRunner> MoltSettingsFileTaskRunner();
+// The sequence its reads run on (CONTINUE_ON_SHUTDOWN).
+scoped_refptr<base::SequencedTaskRunner> MoltSettingsFileReadTaskRunner();
+
+// From a sequence: |read| (ReadMoltSettings() or a reader built on it) once
+// the changes posted before have been written, on the read sequence; then
+// |reply| with its result on the calling sequence.
+template <typename R, typename ReplyArg>
+void PostReadMoltSettings(const base::Location& from,
+                          base::OnceCallback<R()> read,
+                          base::OnceCallback<void(ReplyArg)> reply) {
+  PostReadAfterChanges(MoltSettingsFileTaskRunner(),
+                       MoltSettingsFileReadTaskRunner(), from, std::move(read),
+                       std::move(reply));
+}
 
 enum class MoltSettingsRead {
   kMissing,      // no file: the defaults apply, and a change creates it

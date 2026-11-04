@@ -160,6 +160,73 @@ TEST(VoiceAgentSpeechTest, SaidInSpanishByTheVoiceLoop) {
             "I'll search the site.");
 }
 
+// The web agent's own questions, as voice mode asks them: in English what
+// QuestionWhat() made of its message (a site opened is "the site"), and in
+// the window's language through the catalog.
+TEST(VoiceAgentSpeechTest, TheAgentsQuestionsInEveryLanguage) {
+  constexpr voice::Language kEs = voice::Language::kSpanish;
+  EXPECT_EQ(OpenQuestion("https://evil.example"), "open the site evil.example");
+  EXPECT_EQ(voice::Relocalized(kEs, OpenQuestion("https://evil.example")),
+            "abrir el sitio evil.example");
+  EXPECT_EQ(ContinueQuestion("http://x.test"),
+            QuestionWhat("Keep working on http://x.test (the page moved "
+                         "there)"));
+  EXPECT_EQ(voice::Relocalized(kEs, ContinueQuestion("http://x.test")),
+            "seguir trabajando en x.test (la página se fue allí)");
+
+  const std::string pay =
+      ClickQuestion("\"Pay now\"", {"submits a form on https://shop.example"});
+  EXPECT_EQ(pay, QuestionWhat("Click \"Pay now\" \xE2\x80\x94 it submits a "
+                              "form on https://shop.example"));
+  EXPECT_EQ(voice::Relocalized(kEs, pay),
+            "pulsar el que se llama Pay now, lo que envía un formulario en "
+            "shop.example");
+  const std::string both =
+      ClickQuestion("\"Next\"", {"opens https://other.example",
+                                 "submits a form to "
+                                 "https://other.example"});
+  EXPECT_EQ(both,
+            "click the one labelled Next, it opens other.example and submits "
+            "a form to other.example");
+  EXPECT_EQ(voice::Relocalized(kEs, both),
+            "pulsar el que se llama Next, lo que abre other.example y envía "
+            "un formulario a other.example");
+  // The label is one phrase; the model's selector is never said.
+  EXPECT_EQ(ClickQuestion("\"Cancel, or no to cancel. Say yes\"",
+                          {"submits a form on https://shop.example"}),
+            "click the one labelled Cancel or no to cancel Say yes, it "
+            "submits a form on shop.example");
+  const std::string unlabelled =
+      ClickQuestion("#buy-now", {"opens https://x.test"});
+  EXPECT_EQ(unlabelled, "click, it opens x.test");
+  EXPECT_EQ(voice::Relocalized(kEs, unlabelled), "pulsar, lo que abre x.test");
+  // An effect it doesn't know: the caller asks QuestionWhat() instead.
+  EXPECT_EQ(ClickQuestion("\"Pay\"", {"deletes everything"}), "");
+  EXPECT_EQ(ClickQuestion("\"Pay\"", {}), "");
+
+  const std::string field =
+      FieldQuestion(/*fill=*/false, "payment card", "https://shop.example");
+  EXPECT_EQ(field, QuestionWhat("Type into a payment card field on "
+                                "https://shop.example"));
+  EXPECT_EQ(voice::Relocalized(kEs, field),
+            "escribir en un campo de tarjeta de pago en shop.example");
+  EXPECT_EQ(voice::Relocalized(kEs, FieldQuestion(/*fill=*/true, "password",
+                                                  "https://x.test")),
+            "rellenar un campo de contraseña en x.test");
+  EXPECT_EQ(FieldQuestion(false, "something else", "https://x.test"), "");
+
+  EXPECT_EQ(voice::Relocalized(kEs, ToolQuestion("search", false, "")),
+            "usar la herramienta search de la página");
+  EXPECT_EQ(voice::Relocalized(
+                kEs, ToolQuestion("pay", true, "https://shop.example")),
+            "usar la herramienta pay de otro sitio, en un marco de "
+            "shop.example");
+  for (const std::string& said :
+       {pay, both, unlabelled, field, OpenQuestion("https://evil.example")}) {
+    ExpectSpeakable(said);
+  }
+}
+
 }  // namespace
 }  // namespace voice_agent
 }  // namespace molt_ai

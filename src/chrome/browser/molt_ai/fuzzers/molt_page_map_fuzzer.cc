@@ -9,6 +9,11 @@
 // states, strings (bidi, invisible and control characters, huge ones),
 // bounds, child links that cycle, repeat or point nowhere, and the limits.
 //
+// Each tree is mapped as an English page and again as a Spanish one (its
+// fields read in Spanish, page_map_text.h), and every node's name goes
+// through the field parsers in both languages (a count of about 10^15 at
+// most, with a unit; a duration within 1000 hours).
+//
 // Checks: BuildPageMap() returns (no hang: its work is capped) and gives
 // the same map twice; at most max_nodes nodes are visited and max_items
 // items made; items are numbered 1, 2, ... and each names a node of the
@@ -39,6 +44,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -54,6 +60,8 @@ namespace {
 using molt_ai::voice::BuildPageMap;
 using molt_ai::voice::CountCodePoints;
 using molt_ai::voice::CredentialKind;
+using molt_ai::voice::FieldLanguage;
+using molt_ai::voice::LooksLikeDate;
 using molt_ai::voice::PageItem;
 using molt_ai::voice::PageList;
 using molt_ai::voice::PageListEntry;
@@ -63,6 +71,9 @@ using molt_ai::voice::PageNode;
 using molt_ai::voice::PageNodeHandle;
 using molt_ai::voice::PageRole;
 using molt_ai::voice::PageTree;
+using molt_ai::voice::ParseCount;
+using molt_ai::voice::ParsedCount;
+using molt_ai::voice::ParseDuration;
 using molt_ai::voice::SpeechSafeText;
 
 constexpr uint8_t kRoleCount = static_cast<uint8_t>(PageRole::kTime) + 1;
@@ -353,5 +364,28 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const PageMap map = BuildPageMap(tree, limits);
   CheckMap(tree, limits, map);
   CheckSameMap(map, BuildPageMap(tree, limits));
+
+  // The same tree as a Spanish page: its fields read in Spanish
+  // (page_map_text.h), with the same promises.
+  tree.language = "es";
+  const PageMap spanish = BuildPageMap(tree, limits);
+  CheckMap(tree, limits, spanish);
+  CheckSameMap(spanish, BuildPageMap(tree, limits));
+  for (const PageNode& node : tree.nodes) {
+    for (FieldLanguage language :
+         {FieldLanguage::kEnglish, FieldLanguage::kSpanish}) {
+      if (std::optional<ParsedCount> count = ParseCount(node.name, language)) {
+        // At most 10^15, and a fraction of the multiplier (at most 10^9).
+        CHECK_GE(count->value, 0);
+        CHECK_LT(count->value, int64_t{1000000000000000} + 1000000000);
+        CHECK(!count->unit.empty());
+      }
+      if (std::optional<int> seconds = ParseDuration(node.name, language)) {
+        CHECK_GE(*seconds, 0);
+        CHECK_LE(*seconds, 1000 * 3600);
+      }
+      LooksLikeDate(node.name, language);
+    }
+  }
   return 0;
 }

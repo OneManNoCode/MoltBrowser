@@ -392,6 +392,10 @@ source_set("voice_page_questions_browser_tests") {
     ":voice_page_questions",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/browser/molt_ai/security:agent_safety",
     "//chrome/browser/profiles:profile",
@@ -628,6 +632,10 @@ source_set("browser_tests") {
     "//chrome/browser/ui/webui/molt_ai:browser_tests",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/ui",
     "//chrome/test:test_support",
     "//chrome/test:test_support_ui",
@@ -882,6 +890,9 @@ source_set("voice_controller") {
     # The learning file read and written only as a regular file.
     "//chrome/browser/molt_ai/common:molt_regular_file",
 
+    # Its reads on a sequence that never holds shutdown.
+    "//chrome/browser/molt_ai/common:molt_file_sequences",
+
     # g_browser_process: the browser's own language, voice mode's when the
     # setting names none.
     "//chrome/browser:browser_process",
@@ -1135,6 +1146,10 @@ source_set("voice_prompts_browser_tests") {
     ":voice_prompts",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/content_settings:content_settings_factory",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/common:non_code_constants",
@@ -1189,6 +1204,10 @@ source_set("voice_loop_browser_tests") {
     ":voice_page",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/profiles:profile",
     "//chrome/browser/search_engines",
     "//chrome/browser/ui",
@@ -1391,6 +1410,10 @@ source_set("voice_speech_browser_tests") {
     ":voice_controller",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
     "//chrome/browser/ui/browser_window",
@@ -1423,6 +1446,10 @@ source_set("voice_learning_browser_tests") {
     ":voice_session",
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/permissions/system",

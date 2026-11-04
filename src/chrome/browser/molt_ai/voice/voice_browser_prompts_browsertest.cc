@@ -26,6 +26,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "chrome/browser/download/download_item_warning_data.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_prompts.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
@@ -142,6 +143,11 @@ class SpeechLog : public VoiceController::Observer {
 };
 
 class VoiceBrowserPromptsBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  public:
   VoiceBrowserPromptsBrowserTest() {
     features_.InitAndEnableFeature(kMoltVoiceMode);

@@ -47,6 +47,7 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
@@ -199,6 +200,11 @@ std::string Done(const std::string& result) {
 }
 
 class AgentPageMapBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  public:
   AgentPageMapBrowserTest() {
     // One action at a time (no plan), so the scripted model's replies need
@@ -600,7 +606,7 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest, HandsTheRestToThePlanner) {
   EXPECT_EQ(log.started[0], "find me a train from Paris to Lyon tomorrow");
   EXPECT_GE(log.map_items, 3);
   EXPECT_EQ(tts_.TakeSpoken(),
-            "I'll search the site for trains to Lyon.|Say yes to open "
+            "I'll search the site for trains to Lyon.|Say yes to open the site "
             "trains.example, or no to cancel.");
   EXPECT_TRUE(voice()->planner_running());
   Say("yes");
@@ -653,8 +659,8 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest, AnOrderWaitsForAYes) {
   // "No": nothing is ordered.
   Say("order the socks for me");
   EXPECT_EQ(tts_.TakeSpoken(),
-            "Working on it.|Pressing Place order.|Say yes to click Place "
-            "order, it submits a form on " +
+            "Working on it.|Pressing Place order.|Say yes to click the one "
+            "labelled Place order, it submits a form on " +
                 site + ", or no to cancel.");
   EXPECT_EQ(0, Js("window.ordered"));
   Say("no");
@@ -688,8 +694,9 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
 
   // The request: the planner types, asks before the search form, chooses.
   Say("play the live aid version of bohemian rhapsody");
-  ASSERT_TRUE(Heard("Say yes to click Search, it submits a form on " + site +
-                    ", or no to cancel."));
+  ASSERT_TRUE(
+      Heard("Say yes to click the one labelled Search, it submits a form on " +
+            site + ", or no to cancel."));
   Say("yes");
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return !voice()->planner_running() && !voice()->busy(); }));
@@ -758,8 +765,9 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
   EXPECT_TRUE(Heard("Running live aid. Step 1: open video.test."));
   EXPECT_TRUE(Heard("Step 2: type Bohemian Rhapsody in Search."));
   EXPECT_TRUE(Heard("Step 3: click Search."));
-  ASSERT_TRUE(Heard("Say yes to click Search, it submits a form on " + site +
-                    ", or no to cancel."));
+  ASSERT_TRUE(
+      Heard("Say yes to click the one labelled Search, it submits a form on " +
+            site + ", or no to cancel."));
   Say("yes");
   EXPECT_TRUE(Heard("Step 4: click Queen - Bohemian Rhapsody (Live Aid "));
   EXPECT_TRUE(Heard("live aid is done."));
@@ -776,7 +784,7 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
       browser(), Url("video.test", "/molt_voice/video_home.html")));
   ScriptTheVideoSearch();
   Say("play the live aid version of bohemian rhapsody");
-  ASSERT_TRUE(Heard("Say yes to click Search"));
+  ASSERT_TRUE(Heard("Say yes to click the one labelled Search"));
   Say("yes");
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return !voice()->planner_running() && !voice()->busy(); }));
@@ -798,7 +806,7 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
 
   tts_.TakeSpoken();
   Say("run live aid");
-  ASSERT_TRUE(Heard("Say yes to click Search"));
+  ASSERT_TRUE(Heard("Say yes to click the one labelled Search"));
   Say("yes");
   EXPECT_TRUE(
       Heard("I couldn't find Queen - Not On This Page on this page. "
@@ -839,7 +847,7 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerRoutinesBrowserTest,
       browser(), Url("video.test", "/molt_voice/video_home.html")));
   ScriptTheVideoSearch();
   Say("play the live aid version of bohemian rhapsody");
-  ASSERT_TRUE(Heard("Say yes to click Search"));
+  ASSERT_TRUE(Heard("Say yes to click the one labelled Search"));
   Say("yes");
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return !voice()->planner_running() && !voice()->busy(); }));

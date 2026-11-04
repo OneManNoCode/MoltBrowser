@@ -242,11 +242,24 @@ const std::string* FindRoutineName(const std::vector<std::string>& names,
                                    std::string_view said,
                                    Language language = Language::kEnglish);
 
+// The names in |names| that |name| clashes with: those it names in any
+// language voice mode can use (English and Spanish), as their keys
+// (RoutineNameKey()) in that language say. Routines are saved, named and
+// flagged by it, so that whichever language the user speaks, voice mode
+// runs exactly one routine by each name ("noticias" and "las noticias" are
+// one name in Spanish, two in English: they clash). For English names it
+// is MatchRoutineName()'s English result, but where a Spanish article or
+// number word makes two names one.
+RoutineNameMatch MatchRoutineNameInAnyLanguage(
+    const std::vector<std::string>& names,
+    std::string_view name);
+
 // What a routine brought in under |name| is called beside |names| (the
-// profile's): |name| when none of them is said as it is, else the first of
-// "|name| (2)" to "|name| (kMaxRoutineNameCopies)" that none is (a "(n)"
-// that ends |name| replaced, not added to); "" when every one is taken. A
-// name with no word to say is kept.
+// profile's): |name| when it clashes with none of them
+// (MatchRoutineNameInAnyLanguage()), else the first of "|name| (2)" to
+// "|name| (kMaxRoutineNameCopies)" that clashes with none (a "(n)" that
+// ends |name| replaced, not added to); "" when every one is taken. A name
+// with no word to say is kept.
 std::string UniqueRoutineName(const std::vector<std::string>& names,
                               std::string_view name);
 

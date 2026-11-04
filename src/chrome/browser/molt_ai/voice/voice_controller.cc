@@ -1854,9 +1854,10 @@ void VoiceController::PlannerAsks(int question, const std::string& what) {
     return;
   }
   // Asked as the loop asks before pressing Buy, and answered only by a
-  // "yes" or "no" heard in that context.
-  VoiceTurn turn =
-      PlanPlannerQuestion(question, what, Environment(), state_);
+  // "yes" or "no" heard in that context. The agent's question is made from
+  // the catalog's English (voice_agent_speech.h): in the window's language.
+  VoiceTurn turn = PlanPlannerQuestion(question, Relocalized(language_, what),
+                                       Environment(), state_);
   if (PlannerQuestionHeld(turn.state) != question) {
     CancelPlanner();
     Idle();

@@ -773,11 +773,9 @@ primera que encaja con todo lo que dijiste.
 - **La voz propia de MoltBrowser en español**: su voz incluida lee solo
   inglés, así que en español habla una voz del sistema.
 - **Lo que escribe la IA del dispositivo** al hacer una tarea abierta (los
-  pasos de su plan y su resultado) y los mensajes del agente web al pedir
-  confirmación pueden seguir en inglés; lo que dice el navegador alrededor
-  ya está en español.
-- **Los campos de las páginas en español** ("hace 2 años", "1,2 M de
-  visualizaciones") se leen tal como aparecen en la página.
+  pasos de su plan y su resultado) puede seguir en inglés; lo que dice el
+  navegador alrededor, y lo que el agente web pregunta antes de actuar
+  ("Di sí para abrir el sitio ..."), ya está en español.
 - **Los nombres del propio navegador** (los botones de la barra de
   herramientas y las opciones del menú) se leen como el navegador los
   muestra, en el idioma del navegador.

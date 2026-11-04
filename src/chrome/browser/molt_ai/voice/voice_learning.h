@@ -20,9 +20,17 @@
 // profiles (Get() is null there): nothing is learned there, and nothing
 // learned is used there.
 //
-// File I/O runs on one sequence (MayBlock), the profile's routines' and
-// learning file's (routines_task_runner(), shared with the Agent studio);
-// changes are written a moment later, the whole file atomically. The
+// File I/O runs on two sequences (molt_ai/common/molt_file_sequences.h):
+// every change to the profile's routines and learning file on one
+// (routines_task_runner(), BLOCK_SHUTDOWN, shared with the Agent studio),
+// and the reads (the learning file at start, each listing of the
+// routines, after the changes posted before) on the other
+// (routines_read_task_runner(), CONTINUE_ON_SHUTDOWN), so a profile on a
+// network file system that stopped answering neither hangs shutdown with
+// a read nor makes a change wait behind one. Changes to the learning file
+// are written a moment later, the whole file atomically; the writer's
+// temporary files a browser that ended mid-write left beside it are
+// deleted when it is first read. The
 // learning file is read only when it is a regular file, or a link to one
 // inside the home directory, which is then written through (a FIFO or
 // anything else there is never opened, nor written over:
@@ -106,6 +114,12 @@ class VoiceLearning : public base::SupportsUserData::Data {
   const scoped_refptr<base::SequencedTaskRunner>& routines_task_runner() const {
     return task_runner_;
   }
+  // The sequence their reads run on (molt_ai::PostReadAfterChanges() with
+  // routines_task_runner()), which never holds shutdown.
+  const scoped_refptr<base::SequencedTaskRunner>& routines_read_task_runner()
+      const {
+    return read_task_runner_;
+  }
 
   // Learning; nothing while !enabled().
   void NoteName(std::string_view phrase);
@@ -188,6 +202,7 @@ class VoiceLearning : public base::SupportsUserData::Data {
   base::FilePath routines_dir_;
   base::FilePath automations_root_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> read_task_runner_;
   bool loaded_ = false;
   bool enabled_ = true;
   // The learning file is missing or a regular file (or a link followed to

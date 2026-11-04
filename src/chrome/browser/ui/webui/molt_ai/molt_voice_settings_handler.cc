@@ -100,7 +100,7 @@ BrowserWindowInterface* MoltVoiceSettingsHandler::Window() {
 void MoltVoiceSettingsHandler::ResolveWithState(
     std::string callback_id,
     std::optional<std::string> error) {
-  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+  molt_ai::PostReadMoltSettings(
       FROM_HERE, base::BindOnce(&molt_ai::voice::ReadVoiceModeSettings),
       base::BindOnce(&MoltVoiceSettingsHandler::OnRead,
                      weak_factory_.GetWeakPtr(), std::move(callback_id),
@@ -113,8 +113,8 @@ void MoltVoiceSettingsHandler::OnRead(std::string callback_id,
   if (!IsJavascriptAllowed()) {
     return;
   }
-  // Then the language (the same sequence: it sees every change before).
-  molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+  // Then the language (after every change posted before).
+  molt_ai::PostReadMoltSettings(
       FROM_HERE, base::BindOnce(&molt_ai::voice::ReadVoiceLanguageSetting),
       base::BindOnce(&MoltVoiceSettingsHandler::OnLanguageRead,
                      weak_factory_.GetWeakPtr(), std::move(callback_id),

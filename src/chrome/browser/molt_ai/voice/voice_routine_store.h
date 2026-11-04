@@ -22,11 +22,13 @@
 // Where a routine came from isn't read from the file: a file's contents
 // never make it any profile's, only where it is.
 //
-// Names (RoutineNameKey()): a routine taught by voice under a name the
-// profile uses replaces that routine (its id kept) only when the user said
-// so; a routine brought in under a name in use (claimed, imported, copied)
-// is renamed "my news (2)" (UniqueRoutineName()). A name two routines
-// answer to (their files edited) runs neither by voice.
+// Names (RoutineNameKey()), in use when they clash in any language voice
+// mode speaks (MatchRoutineNameInAnyLanguage(): "noticias" and "las
+// noticias" are one name in Spanish): a routine taught by voice under a
+// name the profile uses replaces that routine (its id kept) only when the
+// user said so; a routine brought in under a name in use (claimed,
+// imported, copied) is renamed "my news (2)" (UniqueRoutineName()). A name
+// two routines answer to (their files edited) runs neither by voice.
 //
 // A claim cut short (round 44): the browser ended after a routine was set
 // aside (Take()) and before the claim finished, so neither the shared

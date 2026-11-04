@@ -6,7 +6,8 @@
 // a file on the UI thread (where blocking is disallowed in a browser test,
 // so a file access there would fail a check): every storage message is
 // sent through the page, and a message isn't answered while the sequence of
-// the storage it reads is busy, then is once it is free.
+// the storage it reads is busy, then is once it is free; and an answer
+// meant for a page that reloaded meanwhile never reaches the new one.
 
 #include <memory>
 #include <optional>
@@ -23,6 +24,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
@@ -35,6 +37,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -57,6 +60,11 @@ Script Workflow(const std::string& id, const std::string& name) {
 }
 
 class AgentStudioStorageBrowserTest : public InProcessBrowserTest {
+ protected:
+  // MoltBrowser's own directory is the test's, from before the browser
+  // starts: never the real ~/.moltbrowser.
+  molt_ai::ScopedMoltHomeDirForTesting molt_home_;
+
  protected:
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
@@ -205,6 +213,47 @@ IN_PROC_BROWSER_TEST_F(AgentStudioStorageBrowserTest,
   EXPECT_NE(content::EvalJs(studio(), "window.answer")
                 .ExtractString()
                 .find("\"name\":\"Prices\""),
+            std::string::npos);
+}
+
+// The page reloads while an answer is on its way: that answer is dropped,
+// and the new page's request of the same callback id (ids start again
+// with the page) gets its own.
+IN_PROC_BROWSER_TEST_F(AgentStudioStorageBrowserTest,
+                       AnAnswerForTheReloadedPageIsDropped) {
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    AutomationStorage shared(
+        AutomationStorage::SharedDirectory(automations_.GetPath()));
+    ASSERT_TRUE(shared.Save(Workflow("wf_2", "Weather")));
+  }
+  // getWorkflow(|id|) sent as "getWorkflow_101" (whatever the page sent
+  // before), not waited for.
+  const auto send_as_101 = [&](const std::string& id) {
+    return content::ExecJs(
+        studio(),
+        "idCounter = 100; window.answer = null; sendWithPromise("
+        "'getWorkflow', '" +
+            id + "').then(r => { window.answer = JSON.stringify(r); });");
+  };
+  std::unique_ptr<base::WaitableEvent> shared =
+      Hold(AutomationStorage::SharedSequence());
+  ASSERT_TRUE(send_as_101("wf_1"));
+  EXPECT_FALSE(Answered());
+
+  content::TestNavigationObserver reloaded(studio(), 1);
+  ASSERT_TRUE(content::ExecJs(studio(), "location.reload();"));
+  reloaded.Wait();
+  ASSERT_TRUE(send_as_101("wf_2"));
+  EXPECT_FALSE(Answered());
+  shared->Signal();
+  ASSERT_TRUE(base::test::RunUntil([&]() { return Answered(); }));
+  const std::string answer =
+      content::EvalJs(studio(), "window.answer").ExtractString();
+  EXPECT_NE(answer.find("\"name\":\"Weather\""), std::string::npos) << answer;
+  EXPECT_EQ(answer.find("Prices"), std::string::npos) << answer;
+  // And the page goes on being answered.
+  EXPECT_NE(Ask("getWorkflow", "'wf_1'").find("\"name\":\"Prices\""),
             std::string::npos);
 }
 

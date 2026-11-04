@@ -38,6 +38,33 @@ source_set("screen_mirroring") {
   public_deps = [ "//base" ]
 }
 
+# ~/.moltbrowser, or a test's directory in its place (molt_home_dir.h).
+source_set("molt_home_dir") {
+  sources = [
+    "molt_home_dir.cc",
+    "molt_home_dir.h",
+  ]
+  public_deps = [ "//base" ]
+}
+
+# A temporary directory as ~/.moltbrowser, for a browser test fixture.
+source_set("molt_home_dir_test_support") {
+  testonly = true
+  sources = [
+    "molt_home_dir_test_util.cc",
+    "molt_home_dir_test_util.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [ ":molt_home_dir" ]
+}
+
+# A sequence for a set of files' changes and one for their reads, which
+# never holds shutdown (molt_file_sequences.h). Header only.
+source_set("molt_file_sequences") {
+  sources = [ "molt_file_sequences.h" ]
+  public_deps = [ "//base" ]
+}
+
 # ~/.moltbrowser/settings.json's one writer: every change a read-modify-write
 # on one sequence, written atomically (molt_settings_file.h).
 source_set("molt_settings_file") {
@@ -45,8 +72,14 @@ source_set("molt_settings_file") {
     "molt_settings_file.cc",
     "molt_settings_file.h",
   ]
-  public_deps = [ "//base" ]
-  deps = [ ":molt_regular_file" ]
+  public_deps = [
+    ":molt_file_sequences",
+    "//base",
+  ]
+  deps = [
+    ":molt_home_dir",
+    ":molt_regular_file",
+  ]
 }
 
 # Which helper executables (tor, tesseract, whisper-cli) MoltBrowser may run
@@ -230,6 +263,8 @@ source_set("unit_tests") {
   deps = [
     ":common",
     ":helper_limits",
+    ":molt_file_sequences",
+    ":molt_home_dir",
     ":molt_regular_file",
     ":molt_settings_file",
     ":screen_mirroring",

@@ -318,7 +318,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 1u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
-    molt_ai::MoltSettingsFileTaskRunner()->PostTaskAndReplyWithResult(
+    molt_ai::PostReadMoltSettings(
         FROM_HERE, base::BindOnce(&LoadSettings, GetDefaultSettings()),
         base::BindOnce(&MoltAISettingsHandler::ResolveSettings,
                        weak_ptr_factory_.GetWeakPtr(), callback_id));

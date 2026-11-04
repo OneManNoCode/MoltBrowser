@@ -261,9 +261,37 @@ std::optional<int> ParseIsoDuration(std::string_view t) {
   return static_cast<int>(total);
 }
 
-std::optional<int> ParseWordDuration(std::string_view t) {
+// Seconds in one of a Spanish duration's units, or 0.
+int SpanishDurationUnitSeconds(std::string_view unit) {
+  if (OneOf(unit, {"h", "hora", "horas"})) {
+    return 3600;
+  }
+  if (OneOf(unit, {"m", "min", "mins", "minuto", "minutos"})) {
+    return 60;
+  }
+  if (OneOf(unit, {"s", "seg", "segs", "segundo", "segundos"})) {
+    return 1;
+  }
+  return 0;
+}
+
+bool IsSpanishTimeUnit(std::string_view unit) {
+  return SpanishDurationUnitSeconds(unit) != 0 ||
+         OneOf(unit, {"d\xC3\xAD"
+                      "a",
+                      "d\xC3\xAD"
+                      "as",
+                      "dia", "dias", "semana", "semanas", "sem", "mes", "meses",
+                      "a\xC3\xB1o", "a\xC3\xB1os"});
+}
+
+std::optional<int> ParseWordDuration(std::string_view t,
+                                     FieldLanguage language) {
   // Number-unit pairs ("6 minutes, 7 seconds", "1 hr 2 min", "1h 2m"),
-  // separated by spaces, commas or "and"; each unit once, larger first.
+  // separated by spaces, commas or "and" (Spanish: "y"); each unit once,
+  // larger first.
+  const bool spanish = language == FieldLanguage::kSpanish;
+  const std::string_view and_word = spanish ? "y" : "and";
   std::vector<std::string_view> tokens = Tokens(t, ",", 12);
   if (tokens.empty() || tokens.size() > 12) {
     return std::nullopt;
@@ -273,7 +301,7 @@ std::optional<int> ParseWordDuration(std::string_view t) {
   bool any = false;
   size_t i = 0;
   while (i < tokens.size()) {
-    if (tokens[i] == "and" && any) {
+    if (tokens[i] == and_word && any) {
       ++i;
       continue;
     }
@@ -297,7 +325,8 @@ std::optional<int> ParseWordDuration(std::string_view t) {
       unit = tokens[i + 1];
       i += 2;
     }
-    const int seconds = DurationUnitSeconds(unit);
+    const int seconds =
+        spanish ? SpanishDurationUnitSeconds(unit) : DurationUnitSeconds(unit);
     if (seconds == 0 || seconds >= last_unit) {
       return std::nullopt;
     }
@@ -372,7 +401,235 @@ bool LooksLikeNumericDate(std::string_view t, char sep) {
          (IsYear(parts[2]) && parts[0].size() <= 2 && parts[1].size() <= 2);
 }
 
+// ---- Spanish fields -------------------------------------------------------
+
+constexpr std::array<std::string_view, 12> kSpanishMonths = {
+    "enero", "febrero", "marzo",      "abril",   "mayo",      "junio",
+    "julio", "agosto",  "septiembre", "octubre", "noviembre", "diciembre"};
+
+// "enero", "ene", "ene.", "sept", "setiembre".
+bool IsSpanishMonthName(std::string_view token) {
+  if (!token.empty() && token.back() == '.') {
+    token.remove_suffix(1);
+  }
+  if (token.size() < 3) {
+    return false;
+  }
+  if (token == "sept" || token == "setiembre") {
+    return true;
+  }
+  for (std::string_view month : kSpanishMonths) {
+    if (token == month || (token.size() == 3 && month.substr(0, 3) == token)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// A unit's word in Spanish: letters, accented ones included (any byte of a
+// multi-byte character), at most 30 bytes.
+bool IsSpanishUnitWord(std::string_view word) {
+  return !word.empty() && word.size() <= 30 &&
+         std::all_of(word.begin(), word.end(), [](char c) {
+           return IsAsciiAlpha(c) || static_cast<unsigned char>(c) >= 0x80;
+         });
+}
+
+// The next word of |rest| (after any spaces), and what follows it.
+std::string_view NextWord(std::string_view rest, std::string_view* after) {
+  rest = rest.substr(std::min(rest.size(), rest.find_first_not_of(' ')));
+  const size_t end = std::min(rest.size(), rest.find(' '));
+  *after = rest.substr(end);
+  return rest.substr(0, end);
+}
+
+// A Spanish count (see ParseCount()). |t| is LowerField()'s.
+std::optional<ParsedCount> ParseSpanishCount(std::string_view t) {
+  ParsedCount count;
+  std::string_view rest = t;
+  if (rest.substr(0, 4) == "sin ") {
+    rest.remove_prefix(3);  // "Sin visualizaciones": none, then the unit
+  } else {
+    // Digits, "." or "," before each group of three, and a decimal part
+    // after a "," or "." that one or two digits follow (Spain writes
+    // "1,2 M" and "1.234", Latin America "1.2 M" and "1,234").
+    int64_t whole = 0;
+    int digits = 0;
+    int64_t fraction = 0;
+    int64_t fraction_scale = 1;
+    size_t i = 0;
+    while (i < rest.size()) {
+      const char c = rest[i];
+      if (IsAsciiDigit(c)) {
+        if (++digits > 15) {
+          return std::nullopt;
+        }
+        whole = whole * 10 + (c - '0');
+        ++i;
+        continue;
+      }
+      if ((c != '.' && c != ',') || digits == 0) {
+        break;
+      }
+      size_t j = i + 1;
+      while (j < rest.size() && IsAsciiDigit(rest[j])) {
+        ++j;
+      }
+      const size_t run = j - i - 1;
+      if (run == 3) {
+        ++i;  // a group separator: three digits follow
+        continue;
+      }
+      if (run == 0) {
+        break;  // the number ends ("12, ...")
+      }
+      if (run > 3) {
+        return std::nullopt;
+      }
+      // A decimal part, of one or two digits.
+      for (size_t k = i + 1; k < j; ++k) {
+        fraction = fraction * 10 + (rest[k] - '0');
+        fraction_scale *= 10;
+      }
+      i = j;
+      break;
+    }
+    if (digits == 0) {
+      return std::nullopt;
+    }
+    rest.remove_prefix(i);
+    // A multiplier, attached ("12k", "1,2M") or as a word: "k", "mil",
+    // "M", "mill.", "millones", "mil M", "mil millones".
+    int64_t multiplier = 1;
+    std::string_view after;
+    const std::string_view word = NextWord(rest, &after);
+    auto is_million = [](std::string_view w) {
+      return OneOf(w, {"m", "mill", "mill.", "mill\xC3\xB3n", "millones"});
+    };
+    if (word == "k") {
+      multiplier = 1000;
+    } else if (is_million(word)) {
+      multiplier = 1000000;
+    } else if (word == "mil") {
+      multiplier = 1000;
+      std::string_view after_millions;
+      if (is_million(NextWord(after, &after_millions))) {
+        multiplier = 1000000000;
+        after = after_millions;
+      }
+    }
+    if (multiplier > 1) {
+      rest = after;
+      // "1,2 M de visualizaciones", "3 millones de vistas".
+      std::string_view after_de;
+      if (NextWord(rest, &after_de) == "de") {
+        rest = after_de;
+      }
+    }
+    constexpr int64_t kMaxCount = 1000000000000000;
+    if (whole > kMaxCount / multiplier) {
+      return std::nullopt;
+    }
+    count.value = whole * multiplier + fraction * multiplier / fraction_scale;
+  }
+  // The unit: one or two words, not a unit of time.
+  if (rest.empty() || rest.front() != ' ') {
+    return std::nullopt;
+  }
+  std::vector<std::string_view> words = Tokens(rest, "", 2);
+  if (words.empty() || words.size() > 2) {
+    return std::nullopt;
+  }
+  for (std::string_view word : words) {
+    if (!IsSpanishUnitWord(word) || IsSpanishTimeUnit(word) ||
+        IsTimeUnit(word) || word == "hace" || word == "de") {
+      return std::nullopt;
+    }
+  }
+  count.unit = std::string(words[0]);
+  if (words.size() == 2) {
+    count.unit += ' ';
+    count.unit += words[1];
+  }
+  return count;
+}
+
+// A Spanish date (see LooksLikeDate()). |t| is LowerField()'s.
+bool LooksLikeSpanishDate(std::string_view t) {
+  if (OneOf(t, {"hoy", "ayer", "anteayer", "ahora", "justo ahora",
+                "ahora mismo"})) {
+    return true;
+  }
+  std::vector<std::string_view> tokens = Tokens(t, ",", 8);
+  if (tokens.empty() || tokens.size() > 7) {
+    return false;
+  }
+  // "Emitido hace 2 años", "Publicado el 5 de enero de 2024".
+  if (OneOf(tokens[0], {"emitido", "transmitido", "publicado", "actualizado",
+                        "subido", "estrenado", "editado"})) {
+    tokens.erase(tokens.begin());
+    if (!tokens.empty() && OneOf(tokens[0], {"el", "en"})) {
+      tokens.erase(tokens.begin());
+    }
+  }
+  if (tokens.empty()) {
+    return false;
+  }
+  // "hace 3 días", "hace un año", "hace una hora".
+  if (tokens.size() == 3 && tokens[0] == "hace" &&
+      IsSpanishTimeUnit(tokens[2]) &&
+      (AllDigits(tokens[1]) || tokens[1] == "un" || tokens[1] == "una")) {
+    return true;
+  }
+  // "la semana pasada", "el mes pasado", "el año pasado".
+  if (tokens.size() == 3 &&
+      ((tokens[0] == "la" && tokens[1] == "semana" && tokens[2] == "pasada") ||
+       (tokens[0] == "el" && OneOf(tokens[1], {"mes", "a\xC3\xB1o"}) &&
+        tokens[2] == "pasado"))) {
+    return true;
+  }
+  if (tokens.size() == 1) {
+    if (LooksLikeNumericDate(tokens[0], '-') ||
+        LooksLikeNumericDate(tokens[0], '/')) {
+      return true;
+    }
+  }
+  // Month names, "de" between: "5 ene 2024", "5 de enero de 2024", "enero
+  // de 2024".
+  int months = 0;
+  int days = 0;
+  int years = 0;
+  int words = 0;
+  for (std::string_view token : tokens) {
+    if (token == "de") {
+      continue;
+    }
+    ++words;
+    if (IsSpanishMonthName(token)) {
+      ++months;
+    } else if (IsYear(token)) {
+      ++years;
+    } else if (IsDayNumber(token)) {
+      ++days;
+    } else {
+      return false;
+    }
+  }
+  return months == 1 && days <= 1 && years <= 1 && days + years >= 1 &&
+         words <= 3;
+}
+
 }  // namespace
+
+FieldLanguage FieldLanguageOf(std::string_view language_tag) {
+  if (language_tag.size() >= 2 && ToLowerAscii(language_tag[0]) == 'e' &&
+      ToLowerAscii(language_tag[1]) == 's' &&
+      (language_tag.size() == 2 || language_tag[2] == '-' ||
+       language_tag[2] == '_')) {
+    return FieldLanguage::kSpanish;
+  }
+  return FieldLanguage::kEnglish;
+}
 
 size_t CountCodePoints(std::string_view utf8) {
   size_t n = 0;
@@ -494,7 +751,8 @@ std::optional<std::string> TypedText(std::string_view text,
   return out;
 }
 
-std::optional<int> ParseDuration(std::string_view text) {
+std::optional<int> ParseDuration(std::string_view text,
+                                 FieldLanguage language) {
   const std::string t = LowerField(text);
   if (t.empty() || text.size() > kMaxFieldScanBytes) {
     return std::nullopt;
@@ -505,13 +763,17 @@ std::optional<int> ParseDuration(std::string_view text) {
   if (t.size() >= 2 && t[0] == 'p' && t[1] == 't') {
     return ParseIsoDuration(t);
   }
-  return ParseWordDuration(t);
+  return ParseWordDuration(t, language);
 }
 
-std::optional<ParsedCount> ParseCount(std::string_view text) {
+std::optional<ParsedCount> ParseCount(std::string_view text,
+                                      FieldLanguage language) {
   const std::string t = LowerField(text);
   if (t.empty() || text.size() > kMaxFieldScanBytes) {
     return std::nullopt;
+  }
+  if (language == FieldLanguage::kSpanish) {
+    return ParseSpanishCount(t);
   }
   ParsedCount count;
   std::string_view rest = t;
@@ -606,10 +868,13 @@ std::optional<ParsedCount> ParseCount(std::string_view text) {
   return count;
 }
 
-bool LooksLikeDate(std::string_view text) {
+bool LooksLikeDate(std::string_view text, FieldLanguage language) {
   const std::string lower = LowerField(text);
   if (lower.empty() || text.size() > kMaxFieldScanBytes) {
     return false;
+  }
+  if (language == FieldLanguage::kSpanish) {
+    return LooksLikeSpanishDate(lower);
   }
   std::string_view t = lower;
   if (OneOf(t, {"today", "yesterday", "just now"})) {

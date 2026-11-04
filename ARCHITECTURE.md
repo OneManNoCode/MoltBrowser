@@ -387,14 +387,33 @@ repo/
   (`ui/webui/molt_ai/molt_ai_agent_storage.*`), on one sequence per
   directory: the profile's routines' (VoiceLearning's, shared with voice
   mode) and `AutomationStorage::SharedSequence()`; a storage made with a
-  directory checks that it may block. The runner, the scheduler and its
-  service, the recorder, the run window, `molt://ai-automation` and the AI
-  chat's saves still use the default storage on the UI thread, with
-  `ScopedAllowBlockingForMolt`. A claim of a routine from before profiles
-  sets it aside under a name of its own (`<id>.molt.<token>.taken`); one
-  cut short by a crash is finished or put back at the next listing
+  directory checks that it may block. A claim of a routine from before
+  profiles sets it aside under a name of its own (`<id>.molt.<token>.taken`);
+  one cut short by a crash is finished or put back at the next listing
   (`VoiceRoutineStore::RecoverInterruptedClaims()`,
   `docs/design/TOUCHLESS_BROWSING.md` §6.8).
+- **Storage (round 45).** No storage allows blocking: every caller on the UI
+  thread (`molt://ai-automation` through `molt_ai_automation_storage.*`, the
+  AI chat's watcher, plan and agent-run saves, the recorder, the run window,
+  the runner, the scheduler and its service) posts its work to the shared
+  storage's sequences (`automation/automation_shared_tasks.h`) and is
+  answered there. Each set of files (the shared storage, a profile's
+  routines and learning file, `settings.json`) has a change sequence
+  (`BLOCK_SHUTDOWN`) and a read sequence (`CONTINUE_ON_SHUTDOWN`); a read
+  runs after the changes posted before it (`molt_ai/common/molt_file_sequences.h`),
+  so a home directory on a network file system that stopped answering
+  doesn't hold shutdown with a read, nor make a change wait behind one. A
+  new workflow takes a free id under the directory's lock (`SaveNew()`), a
+  save that keeps the stored trust is one `SaveChecked()`. Across browsers
+  on one home directory, each change also takes the directory's
+  `.storage.lock` (`MoltFileLock`, `base::File::Lock()`, tried for at most a
+  second, released by the system when a browser ends). A listing deletes
+  the temporary files a write cut short by a crash left (`ImportantFileWriter`'s
+  names, regular files a minute old), as the first read of a run does
+  beside `settings.json` and the learning file. On Windows, reparse points
+  that name another file are links (`FILE_FLAG_OPEN_REPARSE_POINT`).
+  `~/.moltbrowser` is `MoltHomeDir()` (`molt_ai/common/molt_home_dir.h`),
+  which browser tests make their own (`ScopedMoltHomeDirForTesting`).
 - UI is the studio at `molt://ai-agent`, hosted in the side panel
   (`molt_ai/side_panel/agent_side_panel_web_view`), sharing one `kContent` panel
   with AI chat (opening one swaps the other).

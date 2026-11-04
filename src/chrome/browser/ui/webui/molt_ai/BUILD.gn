@@ -79,12 +79,19 @@ source_set("molt_ai") {
 
     # The Agent studio's storage, on each storage's sequence.
     ":agent_studio_storage",
+
+    # molt://ai-automation's storage, on the shared storage's sequences.
+    ":automation_page_storage",
     "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/automation:shared_tasks",
     "//chrome/browser/molt_ai/cloud",
     "//chrome/browser/molt_ai/common",
 
     # The studio's screenshots read only as regular files.
     "//chrome/browser/molt_ai/common:molt_regular_file",
+
+    # The studio's listings on the read sequences, after the changes.
+    "//chrome/browser/molt_ai/common:molt_file_sequences",
     "//chrome/browser/molt_ai/common:helper_output",
     "//chrome/browser/molt_ai/common:helper_sandbox",
 
@@ -196,6 +203,21 @@ source_set("agent_studio_storage") {
   deps = [ "//chrome/browser/molt_ai/automation:storage" ]
 }
 
+# molt://ai-automation's reads and changes, run on the shared storage's
+# sequences (molt_ai_automation_storage.h). base and the storage only, so
+# molt_ai_unittests tests it on temporary directories.
+source_set("automation_page_storage") {
+  sources = [
+    "molt_ai_automation_storage.cc",
+    "molt_ai_automation_storage.h",
+  ]
+  public_deps = [
+    "//base",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/automation:storage",
+  ]
+}
+
 # Pure-logic tests for the shared WebUI handler helpers (argument
 # validation, the chat's window), the chat's form fills and the Agent
 # studio's storage. Linked into
@@ -204,12 +226,14 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "molt_ai_agent_storage_unittest.cc",
+    "molt_ai_automation_storage_unittest.cc",
     "molt_ai_chat_form_fill_unittest.cc",
     "molt_ai_chat_handler_helpers.h",
     "molt_ai_chat_handler_helpers_unittest.cc",
   ]
   deps = [
     ":agent_studio_storage",
+    ":automation_page_storage",
     ":chat_form_fill",
     "//base",
 
@@ -240,11 +264,21 @@ source_set("unit_tests") {
 source_set("browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "molt_ai_agent_storage_browsertest.cc" ]
+  sources = [
+    "molt_ai_agent_storage_browsertest.cc",
+
+    # molt://ai-automation and the AI chat's saves, from the storage's
+    # sequences, in the test's own ~/.moltbrowser (leftovers).
+    "molt_ai_automation_storage_browsertest.cc",
+  ]
 
   deps = [
     "//base",
     "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir",
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/molt_ai/automation:storage",
     "//chrome/browser/molt_ai/voice:voice_controller",

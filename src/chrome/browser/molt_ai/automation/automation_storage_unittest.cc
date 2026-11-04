@@ -5,7 +5,8 @@
 // one-time move out of the shared storage (Take()); since round 44, files
 // that aren't regular or are too big skipped and never written over, the
 // audit log created and read from its end, Update() as one
-// read-modify-write whichever thread, and moves cut short reported.
+// read-modify-write whichever thread, and moves cut short reported; since
+// round 45, a fresh id when every simple one is taken.
 
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
@@ -14,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -24,6 +26,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_POSIX)
@@ -334,6 +337,8 @@ TEST(AutomationStorageTest, MovesCutShortAreReported) {
   std::optional<Script> beside = shared.Load("voice_1_");
   ASSERT_TRUE(beside);
   EXPECT_EQ(beside->name, "voice_1");
+  // Known by its file's name: two scripts, never two of one id.
+  EXPECT_EQ(beside->id, "voice_1_");
   EXPECT_EQ(shared.Load("voice_1")->name, "saved since");
   shared.FinishTake("voice_4");
   EXPECT_FALSE(base::PathExists(taken4[0]));
@@ -366,6 +371,235 @@ TEST(AutomationStorageTest, TwoTakesOfOneIdNeverReplaceEachOther) {
   EXPECT_TRUE(second.ReturnTaken("voice_5"));
   EXPECT_TRUE(SetAsideFiles(dir, "voice_5").empty());
   EXPECT_EQ(first.Load("voice_5")->name, "second");
+}
+
+// Every simple name a set-aside script could go back under taken (id, id_,
+// ... up to the longest id; by scripts or by anything else): back under a
+// fresh id made from its own, never left set aside.
+TEST(AutomationStorageTest, ReturnedUnderAFreshIdWhenEverySimpleOneIsTaken) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const base::FilePath dir = temp.GetPath().AppendASCII("automations");
+  AutomationStorage storage(dir);
+  ASSERT_TRUE(storage.Save(Named("voice_9", "my news")));
+  ASSERT_TRUE(storage.Take("voice_9"));
+  ASSERT_EQ(SetAsideFiles(dir, "voice_9").size(), 1u);
+  std::string simple = "voice_9";
+  while (simple.size() <= 128) {
+    if (simple.size() == 64) {
+      ASSERT_TRUE(base::CreateDirectory(dir.AppendASCII(simple + ".molt")));
+    } else {
+      ASSERT_TRUE(base::WriteFile(dir.AppendASCII(simple + ".molt"), "{}"));
+    }
+    simple += '_';
+  }
+
+  ASSERT_TRUE(storage.ReturnTaken("voice_9"));
+  EXPECT_TRUE(SetAsideFiles(dir, "voice_9").empty());
+  EXPECT_TRUE(storage.InterruptedTakes().empty());
+  std::string back;
+  for (const std::string& id : storage.ListIds()) {
+    std::optional<Script> script = storage.Load(id);
+    if (script && script->name == "my news") {
+      EXPECT_TRUE(back.empty()) << id;
+      back = id;
+    }
+  }
+  // "voice_9_" and 16 hex digits.
+  ASSERT_EQ(back.size(), 7u + 1u + 16u) << back;
+  EXPECT_EQ(back.rfind("voice_9_", 0), 0u) << back;
+  EXPECT_EQ(back.find_first_not_of("0123456789abcdef", 8), std::string::npos)
+      << back;
+  EXPECT_EQ(storage.Load(back)->id, back);
+
+  // A long id made of two-byte characters: cut to fit, never inside one.
+  std::string long_id;
+  for (int i = 0; i < 60; ++i) {
+    long_id += "\xc3\xa9";
+  }
+  for (simple = long_id; simple.size() <= 128; simple += '_') {
+    ASSERT_TRUE(storage.Save(Named(simple, "taken")));
+  }
+  ASSERT_TRUE(storage.Save(Named(long_id, "my notes")));
+  ASSERT_TRUE(storage.Take(long_id));
+  ASSERT_TRUE(storage.Save(Named(long_id, "saved since")));
+  ASSERT_TRUE(storage.ReturnTaken(long_id));
+  std::string fresh;
+  for (const std::string& id : storage.ListIds()) {
+    std::optional<Script> script = storage.Load(id);
+    if (script && script->name == "my notes") {
+      fresh = id;
+    }
+  }
+  ASSERT_EQ(fresh.size(), 110u + 1u + 16u) << fresh;
+  EXPECT_EQ(fresh.substr(0, 111), long_id.substr(0, 110) + "_");
+  EXPECT_EQ(storage.Load(long_id)->name, "saved since");
+}
+
+// A new workflow (the AI chat's agent run, a plan, a recording): saved
+// under its id or the first free one after it, never over another, however
+// many savers pick the same id at once.
+TEST(AutomationStorageTest, SaveNewNeverOverwrites) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const base::FilePath dir = temp.GetPath().AppendASCII("automations");
+  AutomationStorage storage(dir);
+  std::optional<std::string> first = storage.SaveNew(Named("agent_1", "one"));
+  ASSERT_TRUE(first);
+  EXPECT_EQ(*first, "agent_1");
+  std::optional<std::string> second = storage.SaveNew(Named("agent_1", "two"));
+  ASSERT_TRUE(second);
+  EXPECT_EQ(*second, "agent_1_");
+  EXPECT_EQ(storage.Load("agent_1")->name, "one");
+  EXPECT_EQ(storage.Load("agent_1_")->name, "two");
+
+  // Two writers at once, from two threads.
+  constexpr int kSaves = 20;
+  for (int writer = 0; writer < 2; ++writer) {
+    base::ThreadPool::PostTask(
+        FROM_HERE, {base::MayBlock()},
+        base::BindOnce(
+            [](base::FilePath dir, int writer) {
+              AutomationStorage mine(dir);
+              for (int i = 0; i < kSaves; ++i) {
+                EXPECT_TRUE(
+                    mine.SaveNew(Named("plan_7", std::to_string(writer) + "-" +
+                                                     std::to_string(i))));
+              }
+            },
+            dir, writer));
+  }
+  task_environment.RunUntilIdle();
+  std::vector<std::string> names;
+  for (const Script& script : storage.ListAll()) {
+    if (script.id.rfind("plan_7", 0) == 0) {
+      names.push_back(script.name);
+    }
+  }
+  std::sort(names.begin(), names.end());
+  ASSERT_EQ(names.size(), 2u * kSaves);
+  EXPECT_EQ(std::unique(names.begin(), names.end()), names.end());
+  // No simple id left free: saved under a fresh one made from it.
+  ASSERT_TRUE(storage.SaveNew(Named(std::string(128, 'x'), "first")));
+  std::optional<std::string> fresh =
+      storage.SaveNew(Named(std::string(128, 'x'), "second"));
+  ASSERT_TRUE(fresh);
+  ASSERT_EQ(fresh->size(), 128u);
+  EXPECT_EQ(fresh->substr(0, 112), std::string(111, 'x') + "_");
+  EXPECT_EQ(storage.Load(*fresh)->name, "second");
+  EXPECT_EQ(storage.Load(std::string(128, 'x'))->name, "first");
+}
+
+// A save that depends on what is stored (molt://ai-automation keeps the
+// stored trust): the check sees it, under the lock, and may refuse.
+TEST(AutomationStorageTest, SaveCheckedSeesWhatIsStored) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  AutomationStorage storage(temp.GetPath().AppendASCII("automations"));
+  bool saw_nothing = false;
+  EXPECT_TRUE(storage.SaveChecked(Named("wf_2", "new"),
+                                  [&](const Script* stored, Script& script) {
+                                    saw_nothing = stored == nullptr;
+                                    return true;
+                                  }));
+  EXPECT_TRUE(saw_nothing);
+  ASSERT_TRUE(storage.Update("wf_2", [](Script& script) {
+    script.security.trust = TrustLevel::APPROVED;
+    return true;
+  }));
+  Script edit = Named("wf_2", "edited");
+  edit.security.trust = TrustLevel::ADMIN;
+  EXPECT_TRUE(storage.SaveChecked(
+      std::move(edit), [](const Script* stored, Script& script) {
+        EXPECT_TRUE(stored);
+        script.security.trust = stored->security.trust;
+        return true;
+      }));
+  std::optional<Script> saved = storage.Load("wf_2");
+  ASSERT_TRUE(saved);
+  EXPECT_EQ(saved->name, "edited");
+  EXPECT_EQ(saved->security.trust, TrustLevel::APPROVED);
+  // Refused, or its id changed: nothing written.
+  EXPECT_FALSE(storage.SaveChecked(
+      Named("wf_2", "no"), [](const Script*, Script&) { return false; }));
+  EXPECT_FALSE(storage.SaveChecked(Named("wf_2", "moved"),
+                                   [](const Script*, Script& script) {
+                                     script.id = "wf_3";
+                                     return true;
+                                   }));
+  EXPECT_EQ(storage.Load("wf_2")->name, "edited");
+  EXPECT_FALSE(storage.Load("wf_3"));
+}
+
+// A browser that ended mid-write left the writer's temporary file beside
+// a script: a listing deletes it once it is a minute old, never one of a
+// write in progress, nor anything else.
+TEST(AutomationStorageTest, AListingDeletesWritesCutShort) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const base::FilePath dir = temp.GetPath().AppendASCII("automations");
+  AutomationStorage storage(dir);
+  ASSERT_TRUE(storage.Save(Named("wf_1", "Prices")));
+  const auto temporary = [&](const std::string& name, base::TimeDelta age) {
+    base::FilePath path;
+    base::File file = base::CreateAndOpenTemporaryFileInDir(
+        dir, &path, 0, base::FilePath::FromUTF8Unsafe(name).value());
+    EXPECT_TRUE(file.IsValid());
+    file.Close();
+    const base::Time when = base::Time::Now() - age;
+    EXPECT_TRUE(base::TouchFile(path, when, when));
+    return path;
+  };
+  const base::FilePath stale = temporary("wf_1.molt", base::Minutes(3));
+  const base::FilePath fresh = temporary("wf_2.molt", base::Seconds(1));
+  const base::FilePath not_a_script = temporary("notes.txt", base::Minutes(3));
+  const std::vector<std::string> ids = storage.ListIds();
+  EXPECT_EQ(ids, std::vector<std::string>{"wf_1"});
+  EXPECT_FALSE(base::PathExists(stale));
+  EXPECT_TRUE(base::PathExists(fresh));
+  EXPECT_TRUE(base::PathExists(not_a_script));
+  EXPECT_EQ(storage.Load("wf_1")->name, "Prices");
+}
+
+// Every change takes the directory's lock file, which other browsers on
+// the same home directory take too; anything else at its path doesn't stop
+// a change.
+TEST(AutomationStorageTest, ChangesTakeTheLockFile) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const base::FilePath dir = temp.GetPath().AppendASCII("automations");
+  AutomationStorage storage(dir);
+  ASSERT_TRUE(storage.Save(Named("wf_1", "Prices")));
+  const base::FilePath lock = dir.AppendASCII(".storage.lock");
+  EXPECT_TRUE(base::PathExists(lock));
+  EXPECT_FALSE(base::DirectoryExists(lock));
+  // Not a script, and never listed.
+  EXPECT_EQ(storage.ListIds(), std::vector<std::string>{"wf_1"});
+  ASSERT_TRUE(base::DeleteFile(lock));
+  ASSERT_TRUE(base::CreateDirectory(lock));
+  EXPECT_TRUE(storage.Update("wf_1", [](Script& script) {
+    script.name = "Prices again";
+    return true;
+  }));
+  EXPECT_EQ(storage.Load("wf_1")->name, "Prices again");
+}
+
+// The shared storage is in MoltBrowser's own directory, which a test makes
+// its own (molt_home_dir.h).
+TEST(AutomationStorageTest, TheSharedStorageIsInMoltHomeDir) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  SetMoltHomeDirForTesting(temp.GetPath());
+  AutomationStorage shared;
+  EXPECT_EQ(shared.directory(), temp.GetPath().AppendASCII("automations"));
+  EXPECT_EQ(AutomationStorage::SharedDirectory(), shared.directory());
+  ASSERT_TRUE(shared.Save(Named("wf_1", "Prices")));
+  EXPECT_TRUE(base::PathExists(
+      temp.GetPath().AppendASCII("automations").AppendASCII("wf_1.molt")));
+  SetMoltHomeDirForTesting(base::FilePath());
+  EXPECT_NE(AutomationStorage::SharedDirectory(),
+            temp.GetPath().AppendASCII("automations"));
 }
 
 }  // namespace

@@ -10,14 +10,18 @@
 #include <algorithm>  // for std::max
 #include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <ctime>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/values.h"
@@ -26,9 +30,11 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
+#include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_storage.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/render_frame_host.h"
@@ -39,9 +45,12 @@
 
 namespace {
 
+namespace automation_page = molt_ai::automation_page;
 using molt_ai::automation::AutomationScheduler;
 using molt_ai::automation::AutomationSecurity;
 using molt_ai::automation::AutomationStorage;
+using molt_ai::automation::PostSharedChange;
+using molt_ai::automation::PostSharedRead;
 using molt_ai::automation::Script;
 using molt_ai::automation::Step;
 using molt_ai::automation::StepType;
@@ -52,15 +61,10 @@ using molt_ai::chat_handler_helpers::HasCallbackArgs;
 // The most audit-log lines a page may ask for at once.
 constexpr int kMaxAuditLines = 2000;
 
-// Routines taught by voice belong to the profile that taught them
-// (molt_ai/voice/voice_routine_store.h), which keeps them in its own
-// directory and shows them in Agent mode. The ones still in the shared
-// storage were made before that, and are kept by a profile in Agent mode
-// or by voice: this page lists and changes neither.
-constexpr char kVoiceRoutinesElsewhere[] =
-    "Routines taught by voice belong to a profile: they are in Agent mode.";
-
 // ---- Message Handler ----
+// Every read and change of the shared storage runs on its sequences
+// (molt_ai_automation_storage.h, automation_shared_tasks.h), and the page
+// is answered from there: no file is read or written on the UI thread.
 class MoltAIAutomationHandler : public content::WebUIMessageHandler {
  public:
   MoltAIAutomationHandler() = default;
@@ -119,18 +123,21 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
             base::Unretained(this)));
   }
 
- private:
-  AutomationStorage storage_;
-  AutomationSecurity security_;
+  void OnJavascriptDisallowed() override {
+    // The page reloaded or went: answers on their way are dropped.
+    weak_factory_.InvalidateWeakPtrs();
+  }
 
-  // The workflow |id|; nullopt for a routine taught by voice (see
-  // kVoiceRoutinesElsewhere).
-  std::optional<Script> LoadWorkflow(const std::string& id) {
-    std::optional<Script> script = storage_.Load(id);
-    if (script && molt_ai::automation::HasVoiceSteps(*script)) {
-      return std::nullopt;
+ private:
+  // The shared storage's directory (no I/O).
+  static base::FilePath Dir() { return AutomationStorage::SharedDirectory(); }
+
+  void Resolve(const std::string& callback_id, base::DictValue result) {
+    if (!IsJavascriptAllowed()) {
+      return;
     }
-    return script;
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
   }
 
   // Convert a Script to a UI-friendly dict (same shape its JSON has, but
@@ -165,18 +172,19 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 1u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
-
+    PostSharedRead(
+        Dir(), base::BindOnce(&automation_page::ListWorkflows),
+        base::BindOnce(&MoltAIAutomationHandler::OnListed,
+                       weak_factory_.GetWeakPtr(), args[0].GetString()));
+  }
+  void OnListed(const std::string& callback_id, std::vector<Script> scripts) {
     base::ListValue list;
-    for (const auto& s : storage_.ListAll()) {
-      if (!molt_ai::automation::HasVoiceSteps(s))
-        list.Append(ScriptToDict(s));
+    for (const Script& s : scripts) {
+      list.Append(ScriptToDict(s));
     }
-
     base::DictValue result;
     result.Set("scripts", std::move(list));
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    Resolve(callback_id, std::move(result));
   }
 
   void HandleGetScript(const base::ListValue& args) {
@@ -184,11 +192,14 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 2u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
-
-    auto script = LoadWorkflow(id);
+    PostSharedRead(
+        Dir(), base::BindOnce(&automation_page::LoadWorkflow, id),
+        base::BindOnce(&MoltAIAutomationHandler::OnGot,
+                       weak_factory_.GetWeakPtr(), args[0].GetString()));
+  }
+  void OnGot(const std::string& callback_id, std::optional<Script> script) {
     base::DictValue result;
     if (script) {
       result.Set("script", ScriptToDict(*script));
@@ -196,8 +207,7 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     } else {
       result.Set("found", false);
     }
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    Resolve(callback_id, std::move(result));
   }
 
   void HandleSaveScript(const base::ListValue& args) {
@@ -206,32 +216,26 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       return;
     }
     const std::string callback_id = args[0].GetString();
-
-    base::DictValue result;
-    if (!args[1].is_dict()) {
-      result.Set("success", false);
-      result.Set("error", "expected script dict");
-    } else {
-      auto script = Script::FromJSON(args[1].GetDict());
-      if (!script) {
-        result.Set("success", false);
-        result.Set("error", "invalid script");
-      } else if (molt_ai::automation::HasVoiceSteps(*script) ||
-                 (storage_.Load(script->id) && !LoadWorkflow(script->id))) {
-        result.Set("success", false);
-        result.Set("error", kVoiceRoutinesElsewhere);
-      } else {
-        // The dict's security.trust is UI-supplied and ignored: a save keeps
-        // the trust stored on disk (set only via promoteTrust) or starts a
-        // new script at CASUAL.
-        std::optional<Script> existing = storage_.Load(script->id);
-        AutomationSecurity::ClampTrustForSave(
-            *script, existing ? &*existing : nullptr);
-        result.Set("success", storage_.Save(*script));
-      }
+    std::optional<Script> script;
+    if (args[1].is_dict()) {
+      script = Script::FromJSON(args[1].GetDict());
     }
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    if (!script) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("error",
+                 args[1].is_dict() ? "invalid script" : "expected script dict");
+      Resolve(callback_id, std::move(result));
+      return;
+    }
+    // The dict's security.trust is UI-supplied and ignored: a save keeps
+    // the trust stored on disk (set only via promoteTrust) or starts a new
+    // script at CASUAL, in one read-modify-write.
+    PostSharedChange(
+        Dir(),
+        base::BindOnce(&automation_page::SaveWorkflow, std::move(*script)),
+        base::BindOnce(&MoltAIAutomationHandler::Resolve,
+                       weak_factory_.GetWeakPtr(), callback_id));
   }
 
   void HandleDeleteScript(const base::ListValue& args) {
@@ -239,13 +243,17 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 2u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
+    PostSharedChange(
+        Dir(), base::BindOnce(&automation_page::DeleteWorkflow, id),
+        base::BindOnce(&MoltAIAutomationHandler::OnSucceeded,
+                       weak_factory_.GetWeakPtr(), args[0].GetString()));
+  }
+  void OnSucceeded(const std::string& callback_id, bool success) {
     base::DictValue result;
-    result.Set("success", LoadWorkflow(id) && storage_.Delete(id));
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    result.Set("success", success);
+    Resolve(callback_id, std::move(result));
   }
 
   // Run a saved script in a background browser window using the user's
@@ -256,53 +264,52 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 2u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
-
-    auto script = LoadWorkflow(id);
-    base::DictValue result;
-    if (!script) {
-      result.Set("success", false);
-      result.Set("error", "script not found");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
-      return;
-    }
-
+    std::map<std::string, std::string> overrides;
     // Apply any one-shot variable overrides supplied with the run call.
     if (args.size() > 2 && args[2].is_dict()) {
       for (const auto kv : args[2].GetDict()) {
         if (kv.second.is_string())
-          script->default_variables[kv.first] = kv.second.GetString();
+          overrides[kv.first] = kv.second.GetString();
       }
     }
-
     // Day 6: optional 4th arg is a 0-based step index to resume from.
-    size_t start_index = 0;
+    int start_from = 0;
     if (args.size() > 3 && args[3].is_int()) {
-      start_index = std::min(static_cast<size_t>(std::max(0, args[3].GetInt())),
-                             script->steps.size());
+      start_from = std::max(0, args[3].GetInt());
     }
-
-    storage_.AppendAudit(id, "manual_run_requested",
-                          start_index > 0
-                              ? "from_step=" +
-                                base::NumberToString(start_index)
-                              : "from_ui");
-
+    // Read, and the run asked for in the audit log, on the storage's
+    // sequence; the run window opens here.
+    PostSharedChange(
+        Dir(), base::BindOnce(&automation_page::LoadToRun, id, start_from),
+        base::BindOnce(&MoltAIAutomationHandler::OnLoadedToRun,
+                       weak_factory_.GetWeakPtr(), args[0].GetString(),
+                       std::move(overrides), start_from));
+  }
+  void OnLoadedToRun(const std::string& callback_id,
+                     std::map<std::string, std::string> overrides,
+                     int start_from,
+                     std::optional<Script> script) {
+    base::DictValue result;
+    if (!script) {
+      result.Set("success", false);
+      result.Set("error", "script not found");
+      Resolve(callback_id, std::move(result));
+      return;
+    }
+    const size_t start_index = automation_page::StartIndex(*script, start_from);
     Profile* profile = Profile::FromBrowserContext(
         web_ui()->GetWebContents()->GetBrowserContext());
     bool headless =
         script->security.trust >= molt_ai::automation::TrustLevel::TRUSTED;
-    molt_ai::automation::RunScriptInBackgroundBrowser(profile, *script,
-                                                       headless, start_index);
+    molt_ai::automation::RunScriptInBackgroundBrowser(
+        profile, *script, headless, start_index, overrides);
 
     result.Set("success", true);
     result.Set("steps", static_cast<int>(script->steps.size()));
     result.Set("name", script->name);
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    Resolve(callback_id, std::move(result));
   }
 
   void HandleAuditTail(const base::ListValue& args) {
@@ -310,19 +317,22 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 1u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
     int max_lines = 200;
     if (args.size() > 1 && args[1].is_int())
       max_lines = std::clamp(args[1].GetInt(), 1, kMaxAuditLines);
-
+    PostSharedRead(
+        Dir(), base::BindOnce(&automation_page::AuditTail, max_lines),
+        base::BindOnce(&MoltAIAutomationHandler::OnAuditTail,
+                       weak_factory_.GetWeakPtr(), args[0].GetString()));
+  }
+  void OnAuditTail(const std::string& callback_id,
+                   std::vector<std::string> tail) {
     base::ListValue lines;
-    for (const auto& l : storage_.ReadAuditTail(max_lines))
-      lines.Append(l);
-
+    for (std::string& l : tail)
+      lines.Append(std::move(l));
     base::DictValue result;
     result.Set("lines", std::move(lines));
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    Resolve(callback_id, std::move(result));
   }
 
   // Convenience: drop a sample script onto disk so the user can see the UI
@@ -332,7 +342,6 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 1u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
 
     Script s;
     s.id = "sample-flight-watch";
@@ -367,12 +376,19 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     notify.description = "Notify user";
     s.steps.push_back(std::move(notify));
 
-    bool ok = storage_.Save(s);
+    const std::string id = s.id;
+    PostSharedChange(
+        Dir(), base::BindOnce(&automation_page::SaveSample, std::move(s)),
+        base::BindOnce(&MoltAIAutomationHandler::OnCreated,
+                       weak_factory_.GetWeakPtr(), args[0].GetString(), id));
+  }
+  void OnCreated(const std::string& callback_id,
+                 const std::string& id,
+                 bool success) {
     base::DictValue result;
-    result.Set("success", ok);
-    result.Set("script_id", s.id);
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    result.Set("success", success);
+    result.Set("script_id", id);
+    Resolve(callback_id, std::move(result));
   }
 
   // Day 4: create a brand-new empty script the user can edit step-by-step.
@@ -381,7 +397,6 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 1u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
 
     Script s;
     int64_t now = static_cast<int64_t>(std::time(nullptr));
@@ -391,12 +406,15 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     s.security.trust = TrustLevel::CASUAL;
     s.security.require_approval_for = {"form_submit", "payment", "login"};
 
-    bool ok = storage_.Save(s);
-    base::DictValue result;
-    result.Set("success", ok);
-    result.Set("script_id", s.id);
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    // Two in one second are two scripts: the second takes a free id.
+    PostSharedChange(
+        Dir(), base::BindOnce(&automation_page::SaveBlank, std::move(s)),
+        base::BindOnce(&MoltAIAutomationHandler::OnBlankCreated,
+                       weak_factory_.GetWeakPtr(), args[0].GetString()));
+  }
+  void OnBlankCreated(const std::string& callback_id, std::string id) {
+    const bool success = !id.empty();
+    OnCreated(callback_id, id, success);
   }
 
   // Day 4: import a script from JSON (paste-or-upload from the UI).
@@ -413,16 +431,14 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!args[1].is_dict()) {
       result.Set("success", false);
       result.Set("error", "expected script JSON dict");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
+      Resolve(callback_id, std::move(result));
       return;
     }
     auto script = Script::FromJSON(args[1].GetDict());
     if (!script) {
       result.Set("success", false);
       result.Set("error", "invalid script JSON");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
+      Resolve(callback_id, std::move(result));
       return;
     }
     // A routine taught by voice is imported in Agent mode, into the
@@ -432,26 +448,17 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       result.Set("error",
                  "This is a routine taught by voice. Import it in Agent "
                  "mode, where it belongs to your profile.");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
+      Resolve(callback_id, std::move(result));
       return;
     }
-    // Don't overwrite existing scripts on import — assign a new id if
-    // the original is taken. Reset stats so imported scripts start
-    // CASUAL-trust and 0 runs (the importer hasn't earned trust yet).
-    if (storage_.Load(script->id)) {
-      script->id = script->id + "-imported-" +
-          base::NumberToString(static_cast<int64_t>(std::time(nullptr)));
-    }
-    script->stats = molt_ai::automation::Stats();
-    // Imported JSON is untrusted: whatever trust it claims, it starts CASUAL.
-    AutomationSecurity::ClampTrustForSave(*script, /*existing=*/nullptr);
-    bool ok = storage_.Save(*script);
-    if (ok) storage_.AppendAudit(script->id, "imported", "from_ui");
-    result.Set("success", ok);
-    result.Set("script_id", script->id);
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    // Never over an existing script, stats reset, CASUAL trust: on the
+    // storage's sequence, the id picked under its lock.
+    PostSharedChange(
+        Dir(),
+        base::BindOnce(&automation_page::ImportWorkflow, std::move(*script),
+                       static_cast<int64_t>(std::time(nullptr))),
+        base::BindOnce(&MoltAIAutomationHandler::Resolve,
+                       weak_factory_.GetWeakPtr(), callback_id));
   }
 
   // Day 6: parse the global audit log and return only entries whose
@@ -463,15 +470,21 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (!HasCallbackArgs(args, 2u, __func__)) {
       return;
     }
-    const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
     int max_lines = 500;
     if (args.size() > 2 && args[2].is_int())
       max_lines = std::clamp(args[2].GetInt(), 1, kMaxAuditLines);
-
+    PostSharedRead(
+        Dir(), base::BindOnce(&automation_page::AuditTail, max_lines),
+        base::BindOnce(&MoltAIAutomationHandler::OnAuditForScript,
+                       weak_factory_.GetWeakPtr(), args[0].GetString(), id));
+  }
+  void OnAuditForScript(const std::string& callback_id,
+                        const std::string& id,
+                        std::vector<std::string> tail) {
     base::ListValue out;
-    for (const auto& line : storage_.ReadAuditTail(max_lines)) {
+    for (const auto& line : tail) {
       // Format: ISO8601 | script_id | event | extra
       std::vector<std::string> parts = base::SplitString(
           line, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
@@ -487,8 +500,7 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
     base::DictValue result;
     result.Set("entries", std::move(out));
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    Resolve(callback_id, std::move(result));
   }
 
   // Day 5: explicit trust-level change. The UI sends the new level as a
@@ -510,44 +522,30 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     const std::string trust_str =
         args[2].is_string() ? args[2].GetString() : "casual";
 
-    base::DictValue result;
     // Trust changes need a real click on the trust panel (the WebUI message
     // pipe is frame-associated, so the click's activation reaches the
     // browser first), as in the agent studio; one click, one change
     // (ConsumeUserClick()).
     if (!molt_ai::chat_handler_helpers::ConsumeUserClick(
             true, web_ui()->GetRenderFrameHost())) {
+      base::DictValue result;
       result.Set("success", false);
       result.Set("error", "Click the button to change trust");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
+      Resolve(callback_id, std::move(result));
       return;
     }
-    std::optional<Script> existing = LoadWorkflow(id);
-    if (!existing) {
-      result.Set("success", false);
-      result.Set("error", "script not found");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
-      return;
-    }
-    // A draft from a web agent run is trusted only after its sites are
-    // confirmed in the agent studio.
-    if (existing->security.sites_unconfirmed) {
-      result.Set("success", false);
-      result.Set("error", "Confirm this draft's sites in Agent mode first.");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
-      return;
-    }
-    const TrustLevel level =
-        molt_ai::automation::TrustLevelFromString(trust_str);
-    bool ok = storage_.SetTrustLevel(id, level);
-    result.Set("success", ok);
-    result.Set("trust", TrustLevelToString(level));
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    // Not a routine taught by voice, nor an unconfirmed draft: checked and
+    // changed in one read-modify-write.
+    PostSharedChange(
+        Dir(),
+        base::BindOnce(&automation_page::PromoteTrust, id,
+                       molt_ai::automation::TrustLevelFromString(trust_str)),
+        base::BindOnce(&MoltAIAutomationHandler::Resolve,
+                       weak_factory_.GetWeakPtr(), callback_id));
   }
+
+  AutomationSecurity security_;
+  base::WeakPtrFactory<MoltAIAutomationHandler> weak_factory_{this};
 };
 
 constexpr char kAutomationPageJs[] = R"JS(// Automations page script, served as /app.js under the strict molt

@@ -366,7 +366,9 @@ void VoiceAgentPlanner::OnConfirm(const WebAgent::ConfirmRequest& request) {
   }
   question_ = request.id;
   delegate_->PlannerAsks(request.id,
-                         voice_agent::QuestionWhat(request.message));
+                         request.spoken.empty()
+                             ? voice_agent::QuestionWhat(request.message)
+                             : request.spoken);
 }
 
 void VoiceAgentPlanner::Answer(int question, bool yes) {

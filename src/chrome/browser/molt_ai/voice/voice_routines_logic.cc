@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/voice/voice_routines_logic.h"
 
 #include <algorithm>
+#include <array>
 #include <span>
 #include <utility>
 
@@ -696,9 +697,38 @@ const std::string* FindRoutineName(const std::vector<std::string>& names,
   return MatchRoutineName(names, said, language).name;
 }
 
+RoutineNameMatch MatchRoutineNameInAnyLanguage(
+    const std::vector<std::string>& names,
+    std::string_view name) {
+  // Every language voice mode can use.
+  static constexpr std::array<Language, 2> kLanguages = {Language::kEnglish,
+                                                         Language::kSpanish};
+  std::array<std::string, kLanguages.size()> keys;
+  for (size_t i = 0; i < kLanguages.size(); ++i) {
+    keys[i] = RoutineNameKey(name, kLanguages[i]);
+  }
+  RoutineNameMatch match;
+  const std::string* found = nullptr;
+  for (const std::string& other : names) {
+    bool clashes = false;
+    for (size_t i = 0; i < kLanguages.size() && !clashes; ++i) {
+      clashes =
+          !keys[i].empty() && RoutineNameKey(other, kLanguages[i]) == keys[i];
+    }
+    if (clashes) {
+      found = &other;
+      ++match.count;
+    }
+  }
+  if (match.count == 1) {
+    match.name = found;
+  }
+  return match;
+}
+
 std::string UniqueRoutineName(const std::vector<std::string>& names,
                               std::string_view name) {
-  if (!MatchRoutineName(names, name).count) {
+  if (!MatchRoutineNameInAnyLanguage(names, name).count) {
     return std::string(name);
   }
   // "my news (2)" brought in again is "my news (3)", not "my news (2) (2)".
@@ -716,7 +746,7 @@ std::string UniqueRoutineName(const std::vector<std::string>& names,
   }
   for (int n = 2; n <= kMaxRoutineNameCopies; ++n) {
     std::string candidate = std::string(base) + " (" + std::to_string(n) + ")";
-    if (!MatchRoutineName(names, candidate).count) {
+    if (!MatchRoutineNameInAnyLanguage(names, candidate).count) {
       return candidate;
     }
   }
