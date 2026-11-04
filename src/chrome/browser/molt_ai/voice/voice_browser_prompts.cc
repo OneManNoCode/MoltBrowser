@@ -330,7 +330,8 @@ WordChannelInputs VoiceBrowserPrompts::Inputs() {
 }
 
 WordChannel VoiceBrowserPrompts::WordChannelNow() {
-  return DecideWordChannel(Inputs());
+  const WordChannel channel = DecideWordChannel(Inputs());
+  return current_ && current_->last_words ? LastWordsChannel(channel) : channel;
 }
 
 std::string VoiceBrowserPrompts::ShownWord() {
@@ -363,13 +364,8 @@ void VoiceBrowserPrompts::DrawWord(const WordChannel& channel,
     prompt.screen_shared = true;
     return;
   }
-  if (current.reads > kMaxWordsPerPrompt) {
-    if (current.gesture_id) {
-      gestures_.Cancel(current.gesture_id);
-      current.gesture_id = 0;
-    }
-    return;
-  }
+  // Its last words: only shown (LastWordsChannel()).
+  current.last_words = current.reads > kMaxWordsPerPrompt;
   // Locked out: no word; voice can only refuse.
   std::optional<GesturePrompt> gesture =
       gestures_.Begin(current.binding, prompt.language, NowMs());
@@ -379,8 +375,8 @@ void VoiceBrowserPrompts::DrawWord(const WordChannel& channel,
   }
   current.gesture_id = gesture->id;
   current.word = gesture->word;
-  current.delivered = channel;
-  if (!channel.said && !explained_shown_only_) {
+  current.delivered = current.last_words ? LastWordsChannel(channel) : channel;
+  if (!current.delivered.said && !explained_shown_only_) {
     explained_shown_only_ = true;
     prompt.explain_shown_only = true;
   }
@@ -394,10 +390,17 @@ void VoiceBrowserPrompts::Reissue(WordRetired why) {
   BrowserPrompt prompt = current_->prompt;
   prompt.preface = WordRetiredPreface(why, prompt.language);
   DrawWord(WordChannelNow(), prompt);
-  if (current_->reads > kMaxWordsPerPrompt && current_->word.empty() &&
+  if (current_->last_words && current_->word.empty() &&
       !current_->screen_shared) {
     prompt.preface =
         Said(prompt.language, "I can't take a word for this one any more.", {});
+  } else if (current_->reads == kMaxWordsPerPrompt + 1 &&
+             !current_->word.empty() && current_->delivered.shown) {
+    // From now on it is only shown, and stays however it is heard.
+    prompt.preface +=
+        (prompt.preface.empty() ? "" : " ") +
+        Said(prompt.language,
+             "From now on, the word for this one is only on your screen.", {});
   }
   if (!delegate_->ReadBrowserPrompt(id, prompt, current_->word)) {
     Drop();
@@ -523,7 +526,7 @@ void VoiceBrowserPrompts::OnUtteranceHeard(const std::string& heard,
   // Only what was said aloud can have been recorded; a word answered with
   // (allowed, refused, retired) is AnswerWithWord()'s.
   if (!evidence.from_microphone || !current_ || !current_->needs_word ||
-      current_->word.empty()) {
+      current_->word.empty() || current_->last_words) {
     return;
   }
   PendingPrompt pending;
@@ -555,10 +558,11 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     return;
   }
   if (heard == HearResult::kNotClean) {
-    // Said aloud, and heard by whatever captures: a new word then.
+    // Said aloud, and heard by whatever captures: a new word then (not
+    // once its words are only shown: LastWordsChannel()).
     WordChannel heard_aloud;
     heard_aloud.said = true;
-    if (WordExposed(heard_aloud, Inputs())) {
+    if (!current_->last_words && WordExposed(heard_aloud, Inputs())) {
       Reissue(WordRetired::kNotClean);
       return;
     }

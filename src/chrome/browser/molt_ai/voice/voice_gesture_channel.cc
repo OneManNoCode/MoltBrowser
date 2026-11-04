@@ -32,6 +32,15 @@ WordChannel DecideWordChannel(const WordChannelInputs& inputs) {
   return channel;
 }
 
+WordChannel LastWordsChannel(const WordChannel& channel) {
+  WordChannel last = channel;
+  if (last.shown) {
+    last.said = false;
+    last.privately = false;
+  }
+  return last;
+}
+
 bool WordExposed(const WordChannel& delivered, const WordChannelInputs& now) {
   if (delivered.shown && now.screen_captured) {
     return true;

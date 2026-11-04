@@ -490,6 +490,8 @@ constexpr SpokenAnswer kAnswers[] = {
      "no."},
     {"I can't take a word for this one any more.",
      "Ya no puedo aceptar una palabra para esto."},
+    {"From now on, the word for this one is only on your screen.",
+     "A partir de ahora, la palabra para esto solo está en tu pantalla."},
     {"I couldn't confirm them.", "No he podido confirmarlos."},
     {"That's twice: for the next ten minutes, allow things with the mouse or "
      "keyboard.",

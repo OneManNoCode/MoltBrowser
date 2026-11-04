@@ -15,6 +15,7 @@
 //     prompt says why, and "no" still blocks; a word shown when the share
 //     begins is taken back, and the prompt gets one again when it ends.
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -260,6 +261,60 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
                    .ExtractBool());
   // The new one, heard cleanly, allows it.
   voice->HandleHeardUtterance(next, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  EXPECT_TRUE(NoWordSpoken());
+}
+
+// A page that captures the microphone and plays words of the list (heard,
+// but not cleanly) retires the word each time; once the prompt had
+// kMaxWordsPerPrompt words, its words are only shown and stay however they
+// are heard, so the user can still answer by voice.
+IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
+                       APagePlayingWordsCantTakeTheGestureAway) {
+  VoiceController* voice = Start();
+  auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(manager);
+  permissions::MockPermissionPromptFactory factory(manager);
+
+  ASSERT_TRUE(content::ExecJs(tab(), "captureAudio()"));
+  ASSERT_TRUE(WaitForLog("audio:on"));
+  ASSERT_TRUE(Prompts(voice));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return Prompts(voice)->word_channel_inputs_for_testing().audio_captured;
+  }));
+
+  AskNotifications();
+  std::vector<std::string> seen = {Prompts(voice)->current_word_for_testing()};
+  // A word of the list the prompt never had: what the page plays.
+  auto played = [&]() {
+    for (std::string_view word : ConfirmationWords()) {
+      if (std::find(seen.begin(), seen.end(), word) == seen.end()) {
+        return std::string(word);
+      }
+    }
+    return std::string();
+  };
+  for (int i = 0; i < kMaxWordsPerPrompt; ++i) {
+    const std::string before = seen.back();
+    voice->HandleHeardUtterance(played(), /*heard_cleanly=*/false);
+    ASSERT_TRUE(base::test::RunUntil([&]() {
+      return Prompts(voice)->current_word_for_testing() != before;
+    }));
+    seen.push_back(Prompts(voice)->current_word_for_testing());
+  }
+  EXPECT_TRUE(WaitForSpeech(
+      "From now on, the word for this one is only on your screen."));
+  const std::string last = seen.back();
+  ASSERT_TRUE(MatchConfirmationWord(last)) << last;
+  EXPECT_EQ(Prompts(voice)->ShownWord(), last);
+  // Heard unclearly, or said in passing: it stays.
+  voice->HandleHeardUtterance(played(), /*heard_cleanly=*/false);
+  voice->HandleHeardUtterance(last, /*heard_cleanly=*/false);
+  voice->HandleHeardUtterance("the word is " + last, /*heard_cleanly=*/true);
+  EXPECT_EQ(Prompts(voice)->current_word_for_testing(), last);
+  EXPECT_TRUE(manager->IsRequestInProgress());
+  // Heard cleanly, it allows it.
+  voice->HandleHeardUtterance(last, /*heard_cleanly=*/true);
   EXPECT_TRUE(WaitForLog("notify:granted"));
   EXPECT_TRUE(NoWordSpoken());
 }

@@ -49,9 +49,10 @@
 namespace molt_ai {
 namespace voice {
 
-// A prompt gets at most this many words: its first, and the ones that
-// replaced a word retired (a capture began, or the word was heard but not
-// cleanly while something captured). Then the gesture is off for it.
+// A prompt gets this many words through the channel decided for it: its
+// first, and the ones that replaced a word retired (a capture began, or the
+// word was heard but not cleanly, or said in passing, while something
+// captured). After that its words are only shown (LastWordsChannel()).
 inline constexpr int kMaxWordsPerPrompt = 4;
 
 // The longest word the caption bar shows (the list's are much shorter).
@@ -94,6 +95,17 @@ struct WordChannel {
 };
 
 WordChannel DecideWordChannel(const WordChannelInputs& inputs);
+
+// The channel of a prompt's words once kMaxWordsPerPrompt of them were
+// retired (a page that captures a microphone can retire a word by playing
+// words of the list, which are heard but not cleanly): shown only, never
+// said by the browser (as |channel| decided where it can't be shown: the
+// screen shared, with the setting). Such a word isn't retired by being heard
+// unclearly or said in passing (what a microphone's capture hears of it is
+// the user saying it, which only a clean hearing from the microphone
+// answers with), only by the screen being shared; so the user can always
+// still answer by voice.
+WordChannel LastWordsChannel(const WordChannel& channel);
 
 // Whether a word that went out through |delivered| may have reached
 // something that could answer with it, now that the inputs are |now|: it
