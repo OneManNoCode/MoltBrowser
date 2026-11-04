@@ -288,3 +288,9 @@ jobs:
       - name: Build errors
         if: always()
         run: tools/ci/molt_test_build.sh failures
+
+      - name: Test failures
+        if: always() && steps.tests.outputs.ran == 'true'
+        run: |
+          cat "$RUNNER_TEMP/reports/summary.md" 2>/dev/null || true
+          head -c 200000 "$RUNNER_TEMP/reports/failures.md" 2>/dev/null || true

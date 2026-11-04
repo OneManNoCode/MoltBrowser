@@ -198,6 +198,9 @@ jobs:
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           if [ -f "$RUNNER_TEMP/e2e-report/report.md" ]; then
             cat "$RUNNER_TEMP/e2e-report/report.md" >> "$GITHUB_STEP_SUMMARY"
+            # Also in the job log, which the API serves when the artifact
+            # storage isn't reachable.
+            echo "::group::report.md"; cat "$RUNNER_TEMP/e2e-report/report.md"; echo "::endgroup::"
           fi
           exit 0
       - name: Reports
