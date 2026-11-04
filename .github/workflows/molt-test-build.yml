@@ -1,0 +1,86 @@
+# MoltBrowser test build: Chromium with the overlay, built for real and
+# tested, on GitHub's free runners (Linux x64).
+# Copyright 2026 GenEye AI Labs Inc.
+#
+# A from-scratch build of chrome, molt_ai_unittests and browser_tests takes
+# longer than one 6-hour job on a 4-core runner, so it runs as a chain of
+# stages (molt-test-build-stage.yml). Each stage carries the out dir to the
+# next as artifacts; the first stage that finds the build complete runs
+# MoltBrowser's unit and browser tests. A run can resume from an earlier
+# run's out dir (resume_run), so after a fix only what changed is rebuilt.
+#
+# It is a component build with DCHECKs on: a test build, not a release.
+# Releases are built by release-*.yml and signed offline.
+#
+# Trigger: Actions > "MoltBrowser test build" > Run workflow, or
+#   gh workflow run molt-test-build.yml -f resume_run=<run id>
+
+name: MoltBrowser test build
+
+on:
+  workflow_dispatch:
+    inputs:
+      resume_run:
+        description: 'Run id whose out dir to start from (empty: build from scratch)'
+        type: string
+        default: ''
+      run_tests:
+        description: 'Run the tests once the build is complete'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: molt-test-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  stage-1:
+    uses: ./.github/workflows/molt-test-build-stage.yml
+    with:
+      stage: 1
+      resume_run: ${{ inputs.resume_run }}
+      run_tests: ${{ inputs.run_tests }}
+
+  stage-2:
+    needs: stage-1
+    if: >-
+      needs.stage-1.outputs.status == 'partial' ||
+      (inputs.run_tests && needs.stage-1.outputs.tested != 'true')
+    uses: ./.github/workflows/molt-test-build-stage.yml
+    with:
+      stage: 2
+      run_tests: ${{ inputs.run_tests }}
+
+  stage-3:
+    needs: stage-2
+    if: >-
+      needs.stage-2.outputs.status == 'partial' ||
+      (inputs.run_tests && needs.stage-2.outputs.tested != 'true')
+    uses: ./.github/workflows/molt-test-build-stage.yml
+    with:
+      stage: 3
+      run_tests: ${{ inputs.run_tests }}
+
+  stage-4:
+    needs: stage-3
+    if: >-
+      needs.stage-3.outputs.status == 'partial' ||
+      (inputs.run_tests && needs.stage-3.outputs.tested != 'true')
+    uses: ./.github/workflows/molt-test-build-stage.yml
+    with:
+      stage: 4
+      run_tests: ${{ inputs.run_tests }}
+
+  stage-5:
+    needs: stage-4
+    if: >-
+      needs.stage-4.outputs.status == 'partial' ||
+      (inputs.run_tests && needs.stage-4.outputs.tested != 'true')
+    uses: ./.github/workflows/molt-test-build-stage.yml
+    with:
+      stage: 5
+      run_tests: ${{ inputs.run_tests }}
