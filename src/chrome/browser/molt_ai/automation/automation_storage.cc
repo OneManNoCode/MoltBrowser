@@ -13,7 +13,6 @@
 #include <string_view>
 #include <utility>
 
-#include "base/base_paths.h"
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
@@ -22,7 +21,6 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
-#include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -33,7 +31,7 @@
 #include "base/threading/scoped_blocking_call.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
-#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/common/molt_home_dir.h"
 #include "chrome/browser/molt_ai/common/molt_regular_file.h"
 
 namespace molt_ai {
@@ -43,6 +41,9 @@ namespace {
 
 constexpr char kAutomationsDirName[] = ".moltbrowser";
 constexpr char kAutomationsSubdir[] = "automations";
+// Another browser on the same home directory takes it before a change
+// (MoltFileLock).
+constexpr char kLockFileName[] = ".storage.lock";
 constexpr char kArtifactsSubdir[] = "artifacts";
 constexpr char kAuditLogName[] = "audit.log";
 constexpr char kScriptExt[] = ".molt";
@@ -52,14 +53,19 @@ constexpr char kTakenExt[] = ".taken";
 // A script id, at most.
 constexpr size_t kMaxIdBytes = 128;
 
-// The Agent studio's sequence for the shared storage (made lazily, and per
-// test environment in unit tests). A change posted before shutdown is
-// written.
+// The shared storage's sequence for changes (made lazily, and per test
+// environment in unit tests). A change posted before shutdown is written.
 base::LazyThreadPoolSequencedTaskRunner g_shared_sequence =
     LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
         base::TaskTraits(base::MayBlock(),
                          base::TaskPriority::USER_VISIBLE,
                          base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
+// And for reads, which shutdown never waits for.
+base::LazyThreadPoolSequencedTaskRunner g_shared_read_sequence =
+    LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
+        base::TaskTraits(base::MayBlock(),
+                         base::TaskPriority::USER_VISIBLE,
+                         base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN));
 
 // Every change to a directory's scripts holds its lock (one per directory,
 // for the browser's lifetime: the shared storage and each profile's).
@@ -186,20 +192,30 @@ bool MayStillBeMoving(base::Time set_aside, base::Time now) {
 
 class AutomationStorage::BlockingScope {
  public:
-  explicit BlockingScope(const AutomationStorage& storage) {
-    if (storage.directory_.empty()) {
-      // The callers still on the UI thread.
-      allow_.emplace();
-    }
-    // Checks the sequence may block (a storage made with a directory).
-    check_.emplace(FROM_HERE, base::BlockingType::MAY_BLOCK);
-  }
+  // Checks the sequence may block (never the UI thread).
+  explicit BlockingScope(const AutomationStorage&)
+      : check_(FROM_HERE, base::BlockingType::MAY_BLOCK) {}
   BlockingScope(const BlockingScope&) = delete;
   BlockingScope& operator=(const BlockingScope&) = delete;
 
  private:
-  std::optional<ScopedAllowBlockingForMolt> allow_;
-  std::optional<base::ScopedBlockingCall> check_;
+  base::ScopedBlockingCall check_;
+};
+
+class AutomationStorage::ChangeScope {
+ public:
+  explicit ChangeScope(const AutomationStorage& storage)
+      : hold_(DirectoryLock(storage.GetAutomationsDir())),
+        file_(storage.GetAutomationsDir().Append(
+                  base::FilePath::FromUTF8Unsafe(kLockFileName)),
+              kStorageLockWait) {}
+  ChangeScope(const ChangeScope&) = delete;
+  ChangeScope& operator=(const ChangeScope&) = delete;
+
+ private:
+  // This browser's changes, then the other browsers'.
+  base::AutoLock hold_;
+  MoltFileLock file_;
 };
 
 AutomationStorage::AutomationStorage() = default;
@@ -221,12 +237,18 @@ scoped_refptr<base::SequencedTaskRunner> AutomationStorage::SharedSequence() {
   return g_shared_sequence.Get();
 }
 
+// static
+scoped_refptr<base::SequencedTaskRunner>
+AutomationStorage::SharedReadSequence() {
+  return g_shared_read_sequence.Get();
+}
+
 base::FilePath AutomationStorage::GetRoot() const {
   if (!root_override_.empty())
     return root_override_;
-  base::FilePath home;
-  base::PathService::Get(base::DIR_HOME, &home);
-  return home.Append(base::FilePath::FromUTF8Unsafe(kAutomationsDirName));
+  // Without a home directory, a relative one, as before.
+  return MoltHomeDir().value_or(
+      base::FilePath::FromUTF8Unsafe(kAutomationsDirName));
 }
 
 base::FilePath AutomationStorage::GetAutomationsDir() const {
@@ -286,6 +308,20 @@ std::vector<std::string> AutomationStorage::ListIds() {
   base::FilePath dir = GetAutomationsDir();
   if (!base::DirectoryExists(dir))
     return out;
+
+  // A script's write the browser didn't finish (it ended between the
+  // temporary file and the rename) left its temporary file: deleted. One
+  // of a write in progress (kStaleWriteAge) is left to it.
+  DeleteStaleWriteTemporaries(
+      dir,
+      [](std::string_view name) {
+        const std::string_view ext(kScriptExt);
+        return name.size() > ext.size() &&
+               name.substr(name.size() - ext.size()) == ext &&
+               IsValidScriptId(
+                   std::string(name.substr(0, name.size() - ext.size())));
+      },
+      base::Time::Now());
 
   base::FileEnumerator e(dir, /*recursive=*/false,
                          base::FileEnumerator::FILES,
@@ -356,7 +392,7 @@ std::optional<Script> AutomationStorage::Load(const std::string& id) {
   // does not linger on disk (read again under the lock: the file as it is
   // now).
   if (AutomationSecurity::ScrubPlaintextSecrets(*dict)) {
-    base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+    ChangeScope locked(*this);
     std::optional<base::DictValue> now = ReadScriptDict(path);
     if (!now)
       return std::nullopt;
@@ -379,11 +415,58 @@ bool AutomationStorage::Save(const Script& script) {
     return false;
   bool saved = false;
   {
-    base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+    ChangeScope locked(*this);
     saved = SaveLocked(script);
   }
   if (saved)
     AppendAudit(script.id, "saved", "");
+  return saved;
+}
+
+std::optional<std::string> AutomationStorage::SaveNew(Script script) {
+  BlockingScope blocking(*this);
+  if (!IsValidScriptId(script.id) || !EnsureDirectory())
+    return std::nullopt;
+  bool saved = false;
+  {
+    ChangeScope locked(*this);
+    // The first id nothing is saved under (nor anything else is at).
+    while (
+        MoltFileKindAt(GetScriptPath(script.id), MoltFileLinks::kNotFollowed) !=
+        MoltFileKind::kMissing) {
+      if (script.id.size() >= kMaxIdBytes)
+        return std::nullopt;
+      script.id += '_';
+    }
+    saved = SaveLocked(script);
+  }
+  if (!saved)
+    return std::nullopt;
+  AppendAudit(script.id, "saved", "");
+  return script.id;
+}
+
+bool AutomationStorage::SaveChecked(Script script, SaveCheck check) {
+  BlockingScope blocking(*this);
+  if (!IsValidScriptId(script.id) || !EnsureDirectory())
+    return false;
+  const std::string id = script.id;
+  bool saved = false;
+  {
+    ChangeScope locked(*this);
+    std::optional<base::DictValue> dict = ReadScriptDict(GetScriptPath(id));
+    std::optional<Script> stored =
+        dict ? Script::FromJSON(*dict) : std::nullopt;
+    if (stored) {
+      // Known by its file's name, whatever the file says.
+      stored->id = id;
+    }
+    if (!check(stored ? &*stored : nullptr, script) || script.id != id)
+      return false;
+    saved = SaveLocked(script);
+  }
+  if (saved)
+    AppendAudit(id, "saved", "");
   return saved;
 }
 
@@ -405,7 +488,7 @@ bool AutomationStorage::Update(const std::string& script_id,
     return false;
   bool saved = false;
   {
-    base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+    ChangeScope locked(*this);
     std::optional<base::DictValue> dict = ReadScriptDict(GetScriptPath(id));
     std::optional<Script> script =
         dict ? Script::FromJSON(*dict) : std::nullopt;
@@ -457,7 +540,7 @@ bool AutomationStorage::Delete(const std::string& id) {
     return false;
   bool deleted_script = false;
   {
-    base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+    ChangeScope locked(*this);
     deleted_script = base::DeleteFile(GetScriptPath(id));
   }
   base::DeletePathRecursively(ArtifactsDir(id));
@@ -474,7 +557,7 @@ std::optional<Script> AutomationStorage::Take(const std::string& id) {
   const SetAside set_aside{id, NewSetAsidePath(id)};
   if (!Taking::Get().Start(set_aside.file))
     return std::nullopt;
-  base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+  ChangeScope locked(*this);
   // Only a script's regular file: never a link (renaming one would move
   // the link, and reading it would read whatever it points to).
   if (MoltFileKindAt(GetScriptPath(id), MoltFileLinks::kNotFollowed) !=
@@ -532,7 +615,7 @@ void AutomationStorage::FinishSetAside(const SetAside& set_aside) {
   if (!IsSetAsideHere(set_aside))
     return;
   {
-    base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+    ChangeScope locked(*this);
     if (MoltFileKindAt(set_aside.file, MoltFileLinks::kNotFollowed) ==
         MoltFileKind::kRegular) {
       base::DeleteFile(set_aside.file);
@@ -546,7 +629,7 @@ bool AutomationStorage::ReturnSetAside(const SetAside& set_aside) {
   BlockingScope blocking(*this);
   if (!IsSetAsideHere(set_aside))
     return false;
-  base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+  ChangeScope locked(*this);
   return ReturnSetAsideLocked(set_aside);
 }
 

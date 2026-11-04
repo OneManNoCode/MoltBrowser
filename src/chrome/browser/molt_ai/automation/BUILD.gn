@@ -101,11 +101,11 @@ source_set("storage") {
   ]
 
   deps = [
-    # ScopedAllowBlockingForMolt (molt_blocking_scope.h), for the callers
-    # still on the UI thread.
-    "//chrome/browser/molt_ai/common",
+    # The shared storage is in ~/.moltbrowser, or a test's directory.
+    "//chrome/browser/molt_ai/common:molt_home_dir",
 
-    # A .molt and audit.log read and written only as regular files.
+    # A .molt and audit.log read and written only as regular files; the
+    # lock file other browsers honour.
     "//chrome/browser/molt_ai/common:molt_regular_file",
   ]
 
@@ -250,6 +250,9 @@ source_set("unit_tests") {
 
     # The storage's updates from two threads (TaskEnvironment).
     "//base/test:test_support",
+
+    # The shared storage in a test's own ~/.moltbrowser.
+    "//chrome/browser/molt_ai/common:molt_home_dir",
 
     # Every schema the runner builds must be accepted by the inference
     # service's converter; the tests run the real one (std-only).

@@ -18,23 +18,32 @@
 // anything else is skipped with a log line, never opened and never written
 // over. Each is written atomically (a temporary file, then a rename), never
 // over the cap. audit.log is appended to only when it is a regular file,
-// and created when missing.
+// and created when missing. A listing deletes the writer's temporary files
+// a browser that ended mid-write left there (kStaleWriteAge old at least).
 //
-// Threads. A storage made with a directory is used on a sequence that may
-// block, and checks it (base::ScopedBlockingCall): the profile's routines'
-// sequence (VoiceLearning's, which voice mode and the Agent studio share)
-// or the shared storage's (SharedSequence(), the Agent studio's). The
-// default-constructed shared storage is for the callers that still run on
-// the UI thread (ScopedAllowBlockingForMolt): the runner, the scheduler and
-// its service, the recorder, the run window, molt://ai-automation and the
-// AI chat's saves.
+// Threads. Every storage is used on a sequence that may block, and checks
+// it (base::ScopedBlockingCall); nothing here allows blocking on the UI
+// thread. The shared storage's changes run on SharedSequence()
+// (BLOCK_SHUTDOWN) and its reads on SharedReadSequence()
+// (CONTINUE_ON_SHUTDOWN: shutdown doesn't wait for a read a hung network
+// file system holds, molt_ai/common/molt_file_sequences.h): the Agent
+// studio, molt://ai-automation, the AI chat's saves, the recorder, the
+// runner, the run window and the scheduler all post there. A profile's
+// routines are on its routines' sequences (VoiceLearning's, which voice
+// mode and the Agent studio share).
 //
 // Changes. Within the browser, every change to a directory's scripts
-// (Save(), Update(), Delete(), SetTrustLevel(), Take() and the rest, and
-// the migration Load() may write) holds that directory's lock, so a
-// read-modify-write made with Update() never interleaves with another
-// change there, from whichever thread. Take()'s rename is what keeps a
-// claim once across browsers.
+// (Save(), SaveNew(), SaveChecked(), Update(), Delete(), SetTrustLevel(),
+// Take() and the rest, and the migration Load() may write) holds that
+// directory's lock, so a read-modify-write never interleaves with another
+// change there, from whichever thread. Across browsers on the same home
+// directory, each change also holds the directory's lock file
+// (.storage.lock, molt_ai/common/molt_regular_file.h's MoltFileLock: tried
+// for at most kStorageLockWait, released by the system if a browser ends),
+// so another browser's change waits for this one; without it (a browser
+// that hangs holding it, a file system without locks) a change goes ahead
+// as before, each file written atomically, and Take()'s rename still keeps
+// a claim once.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_
@@ -67,11 +76,14 @@ inline constexpr size_t kMaxAuditTailBytes = 1024 * 1024;
 // may be one another browser on the same home directory is moving now;
 // older, and not being taken in this browser, its move was cut short.
 inline constexpr base::TimeDelta kTakenGracePeriod = base::Minutes(1);
+// A change waits at most this long for another browser's (the lock file).
+inline constexpr base::TimeDelta kStorageLockWait = base::Seconds(1);
 
 class AutomationStorage {
  public:
-  // The shared storage, ~/.moltbrowser/automations/, on the UI thread
-  // (see the threads above).
+  // The shared storage, <MoltHomeDir()>/automations/
+  // (~/.moltbrowser/automations/), on a sequence that may block (see the
+  // threads above).
   AutomationStorage();
   // A storage in |directory| (the files above, without the "automations"
   // level), on a sequence that may block.
@@ -81,12 +93,16 @@ class AutomationStorage {
   AutomationStorage(const AutomationStorage&) = delete;
   AutomationStorage& operator=(const AutomationStorage&) = delete;
 
-  // The shared storage's directory: <|root| or ~/.moltbrowser>/automations.
+  // The shared storage's directory: <|root| or MoltHomeDir()>/automations
+  // (no I/O).
   static base::FilePath SharedDirectory(
       const base::FilePath& root = base::FilePath());
-  // The one sequence on which the Agent studio reads and changes the
-  // shared storage (MayBlock, BLOCK_SHUTDOWN, made lazily).
+  // The one sequence that changes the shared storage (MayBlock,
+  // BLOCK_SHUTDOWN, made lazily), and the one its reads run on (MayBlock,
+  // CONTINUE_ON_SHUTDOWN): a read that must see the changes posted before
+  // goes through molt_ai::PostReadAfterChanges() with both.
   static scoped_refptr<base::SequencedTaskRunner> SharedSequence();
+  static scoped_refptr<base::SequencedTaskRunner> SharedReadSequence();
 
   // Where this storage's files are (no I/O).
   base::FilePath directory() const { return GetAutomationsDir(); }
@@ -97,7 +113,9 @@ class AutomationStorage {
   // needed. On macOS / Linux this is ~/.moltbrowser/automations/.
   bool EnsureDirectory();
 
-  // List all script IDs currently saved on disk (regular files only).
+  // List all script IDs currently saved on disk (regular files only). The
+  // writer's temporary files a browser that ended mid-write left beside
+  // them are deleted first (molt_regular_file.h).
   std::vector<std::string> ListIds();
 
   // List all scripts (parsed). Skips files that fail to parse.
@@ -114,6 +132,23 @@ class AutomationStorage {
   // Plaintext secret values are scrubbed from what is written. Nothing is
   // written over anything but a regular file, nor a file over the cap.
   bool Save(const Script& script);
+
+  // Save() of a new script, never over another: under |script|'s id, or
+  // the first free one made by adding "_" to it, picked and written under
+  // the directory's lock (above), so two savers at once (here or in another
+  // browser) never pick the same one. The id it was saved under; nullopt
+  // when it wasn't (no free id within the id's length, or the write
+  // failed).
+  std::optional<std::string> SaveNew(Script script);
+
+  // Save() as a read-modify-write: |check| sees the script stored under
+  // |script|'s id now (null when none is, or it can't be read) and may
+  // change |script| before it is written (keep the stored trust, say), or
+  // refuse (false: nothing written), all under the directory's lock.
+  // |check| must not use a storage.
+  using SaveCheck =
+      base::FunctionRef<bool(const Script* stored, Script& script)>;
+  bool SaveChecked(Script script, SaveCheck check);
 
   // A read-modify-write of script |id|: loaded as Load() loads it (known by
   // its file's name), changed by |change|, and saved as Save() saves it,
@@ -190,9 +225,10 @@ class AutomationStorage {
   void SetRootForTesting(const base::FilePath& root);
 
  private:
-  // Blocking allowed (the default storage, on the UI thread) or checked (a
-  // storage made with a directory), for the scope of a call.
+  // Blocking checked, for the scope of a call.
   class BlockingScope;
+  // A change: the directory's lock and its lock file (above).
+  class ChangeScope;
 
   base::FilePath GetRoot() const;
   base::FilePath GetAutomationsDir() const;

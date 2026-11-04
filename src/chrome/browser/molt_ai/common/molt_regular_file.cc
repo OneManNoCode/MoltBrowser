@@ -8,8 +8,10 @@
 #include <utility>
 
 #include "base/base_paths.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
+#include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_POSIX)
@@ -21,8 +23,12 @@
 #include "base/files/scoped_file.h"
 #include "base/posix/eintr_wrapper.h"
 #else
+#include <windows.h>
+
+#include <string_view>
+
 #include "base/containers/span.h"
-#include "base/files/file.h"
+#include "base/win/scoped_handle.h"
 #endif
 
 namespace molt_ai {
@@ -31,6 +37,9 @@ namespace {
 
 // Read this much at a time.
 constexpr size_t kChunkBytes = 16 * 1024;
+
+// MoltFileLock tries again this often.
+constexpr base::TimeDelta kLockRetry = base::Milliseconds(20);
 
 // What a read or a rewrite of a path uses: the path itself, or a link's
 // target.
@@ -129,40 +138,180 @@ bool ReadFrom(int fd, int64_t offset, size_t max_bytes, std::string* out) {
   }
 }
 
-#else  // BUILDFLAG(IS_POSIX)
-
-Resolved Resolve(const base::FilePath& path, MoltFileLinks links) {
-  base::File::Info info;
-  if (!base::GetFileInfo(path, &info)) {
-    return {base::PathExists(path) ? MoltFileKind::kUnreadable
-                                   : MoltFileKind::kMissing,
-            path};
+// |path| opened to be locked: created when missing, never through a link,
+// never waiting on a FIFO, and only a regular file.
+base::File OpenLockFile(const base::FilePath& path) {
+  base::ScopedFD fd(HANDLE_EINTR(
+      open(path.value().c_str(),
+           O_RDWR | O_CREAT | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC | O_NOCTTY,
+           0600)));
+  struct stat st;
+  if (!fd.is_valid() || fstat(fd.get(), &st) != 0 || !S_ISREG(st.st_mode)) {
+    return base::File();
   }
-  if (info.is_directory) {
-    return {MoltFileKind::kNotRegular, path};
-  }
-  return {MoltFileKind::kRegular, path};
+  return base::File(fd.release());
 }
 
-// |file| opened for reading (Windows: no FIFO at an ordinary path).
+#else  // BUILDFLAG(IS_POSIX)
+
+constexpr DWORD kShareAll =
+    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+
+MoltFileKind KindOfOpenError(DWORD error) {
+  return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+             ? MoltFileKind::kMissing
+             : MoltFileKind::kUnreadable;
+}
+
+// What an open handle is: a link (a name-surrogate reparse point: a
+// symbolic link, a junction, a mount point), a directory, a pipe or a
+// device ("not a regular file"), or a file (a reparse point of another
+// kind, such as a cloud file's placeholder, holds its own data).
+struct HandleKind {
+  MoltFileKind kind = MoltFileKind::kUnreadable;
+  bool link = false;
+};
+
+HandleKind KindOfHandle(HANDLE handle) {
+  FILE_ATTRIBUTE_TAG_INFO tag = {};
+  if (!::GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &tag,
+                                      sizeof(tag))) {
+    return {MoltFileKind::kUnreadable, false};
+  }
+  if ((tag.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+      IsReparseTagNameSurrogate(tag.ReparseTag)) {
+    return {MoltFileKind::kNotRegular, true};
+  }
+  if ((tag.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+      ::GetFileType(handle) != FILE_TYPE_DISK) {
+    return {MoltFileKind::kNotRegular, false};
+  }
+  return {MoltFileKind::kRegular, false};
+}
+
+// |path| opened without following a link at it (FILE_FLAG_OPEN_REPARSE_POINT;
+// FILE_FLAG_BACKUP_SEMANTICS opens a directory too, to be told apart).
+base::win::ScopedHandle OpenNotFollowed(const base::FilePath& path,
+                                        DWORD access,
+                                        DWORD disposition) {
+  return base::win::ScopedHandle(::CreateFileW(
+      path.value().c_str(), access, kShareAll, nullptr, disposition,
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+}
+
+// What is at |path| itself, a link not followed.
+HandleKind LookAt(const base::FilePath& path) {
+  base::win::ScopedHandle handle =
+      OpenNotFollowed(path, FILE_READ_ATTRIBUTES, OPEN_EXISTING);
+  if (!handle.is_valid()) {
+    return {KindOfOpenError(::GetLastError()), false};
+  }
+  return KindOfHandle(handle.get());
+}
+
+// |path| with every link on the way followed, as the system names it
+// (GetFinalPathNameByHandleW(), without its "\\?\" prefix); empty when it
+// leads nowhere.
+base::FilePath FinalPathOf(const base::FilePath& path) {
+  base::win::ScopedHandle handle(::CreateFileW(
+      path.value().c_str(), /*dwDesiredAccess=*/0, kShareAll, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+  if (!handle.is_valid()) {
+    return base::FilePath();
+  }
+  std::wstring name(MAX_PATH, L'\0');
+  constexpr DWORD kFlags = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
+  DWORD length = ::GetFinalPathNameByHandleW(
+      handle.get(), name.data(), static_cast<DWORD>(name.size()), kFlags);
+  if (length >= name.size()) {
+    // Too long for the buffer: |length| is the size it needs.
+    name.assign(length, L'\0');
+    length = ::GetFinalPathNameByHandleW(
+        handle.get(), name.data(), static_cast<DWORD>(name.size()), kFlags);
+  }
+  if (length == 0 || length >= name.size()) {
+    return base::FilePath();
+  }
+  name.resize(length);
+  constexpr std::wstring_view kUnc = L"\\\\?\\UNC\\";
+  constexpr std::wstring_view kLocal = L"\\\\?\\";
+  if (std::wstring_view(name).substr(0, kUnc.size()) == kUnc) {
+    name = L"\\\\" + name.substr(kUnc.size());
+  } else if (std::wstring_view(name).substr(0, kLocal.size()) == kLocal) {
+    name.erase(0, kLocal.size());
+  }
+  return base::FilePath(name);
+}
+
+// A link at |path|, followed to a regular file inside the home directory.
+Resolved FollowLinkWithinHome(const base::FilePath& path) {
+  Resolved refused{MoltFileKind::kNotRegular, path};
+  base::FilePath home;
+  if (!base::PathService::Get(base::DIR_HOME, &home)) {
+    return refused;
+  }
+  // Every link resolved, the home directory's own included.
+  const base::FilePath real_home = FinalPathOf(home);
+  const base::FilePath target = FinalPathOf(path);
+  if (real_home.empty() || target.empty() || !real_home.IsParent(target)) {
+    return refused;
+  }
+  if (LookAt(target).kind != MoltFileKind::kRegular) {
+    return refused;
+  }
+  return {MoltFileKind::kRegular, target};
+}
+
+Resolved Resolve(const base::FilePath& path, MoltFileLinks links) {
+  const HandleKind at = LookAt(path);
+  if (at.link && links == MoltFileLinks::kFollowedWithinHome) {
+    return FollowLinkWithinHome(path);
+  }
+  return {at.kind, path};
+}
+
+// |file| opened for reading if it is a regular file: never through a link
+// swapped in since it was looked at, never a pipe or a device.
 base::File OpenForRead(const base::FilePath& file,
                        MoltFileKind* kind,
                        int64_t* size) {
-  base::File opened(file, base::File::FLAG_OPEN | base::File::FLAG_READ |
-                              base::File::FLAG_WIN_SHARE_DELETE);
-  base::File::Info info;
-  if (!opened.IsValid() || !opened.GetInfo(&info)) {
-    *kind = base::PathExists(file) ? MoltFileKind::kUnreadable
-                                   : MoltFileKind::kMissing;
+  base::win::ScopedHandle handle =
+      OpenNotFollowed(file, GENERIC_READ, OPEN_EXISTING);
+  if (!handle.is_valid()) {
+    *kind = KindOfOpenError(::GetLastError());
     return base::File();
   }
-  if (info.is_directory) {
-    *kind = MoltFileKind::kNotRegular;
+  const HandleKind opened = KindOfHandle(handle.get());
+  if (opened.kind != MoltFileKind::kRegular) {
+    *kind = opened.kind;
+    return base::File();
+  }
+  base::File read(handle.Take());
+  base::File::Info info;
+  if (!read.GetInfo(&info)) {
+    *kind = MoltFileKind::kUnreadable;
     return base::File();
   }
   *kind = MoltFileKind::kRegular;
   *size = info.size;
-  return opened;
+  return read;
+}
+
+// |path| opened to be appended to (|append|) or locked: created when
+// missing, never through a link, and only a regular file.
+base::File OpenToChange(const base::FilePath& path, bool append) {
+  base::win::ScopedHandle handle = OpenNotFollowed(
+      path, append ? FILE_APPEND_DATA : GENERIC_READ | GENERIC_WRITE,
+      OPEN_ALWAYS);
+  if (!handle.is_valid() ||
+      KindOfHandle(handle.get()).kind != MoltFileKind::kRegular) {
+    return base::File();
+  }
+  return base::File(handle.Take());
+}
+
+base::File OpenLockFile(const base::FilePath& path) {
+  return OpenToChange(path, /*append=*/false);
 }
 
 bool ReadFrom(base::File& file,
@@ -269,9 +418,9 @@ bool AppendToMoltFile(const base::FilePath& path, std::string_view data) {
   }
   return base::WriteFileDescriptor(fd.get(), data);
 #else
-  base::File file(path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_APPEND);
-  base::File::Info info;
-  if (!file.IsValid() || !file.GetInfo(&info) || info.is_directory) {
+  // FILE_APPEND_DATA only: every write goes at the end.
+  base::File file = OpenToChange(path, /*append=*/true);
+  if (!file.IsValid()) {
     return false;
   }
   return file.WriteAtCurrentPosAndCheck(base::as_byte_span(data));
@@ -318,6 +467,74 @@ std::optional<std::string> ReadMoltFileTail(const base::FilePath& path,
     tail.erase(0, newline == std::string::npos ? tail.size() : newline + 1);
   }
   return tail;
+}
+
+size_t DeleteStaleWriteTemporaries(
+    const base::FilePath& dir,
+    base::FunctionRef<bool(std::string_view name)> is_ours,
+    base::Time now) {
+  size_t deleted = 0;
+  // The writer's temporary files (base::CreateAndOpenTemporaryFileInDir()
+  // with the file's name as the prefix), whatever file they were for.
+  base::FileEnumerator temporaries(
+      dir, /*recursive=*/false, base::FileEnumerator::FILES,
+      base::FormatTemporaryFileName(FILE_PATH_LITERAL("*"), /*hidden=*/true)
+          .value());
+  for (base::FilePath path = temporaries.Next(); !path.empty();
+       path = temporaries.Next()) {
+    const std::optional<base::FilePath::StringType> prefix =
+        base::GetNamePrefixForTemporaryFile(path);
+    if (!prefix || !is_ours(base::FilePath(*prefix).AsUTF8Unsafe()) ||
+        MoltFileKindAt(path, MoltFileLinks::kNotFollowed) !=
+            MoltFileKind::kRegular) {
+      continue;
+    }
+    base::File::Info info;
+    if (!base::GetFileInfo(path, &info)) {
+      continue;
+    }
+    // A write in progress (here, or in another browser on the same home
+    // directory) is left to finish.
+    const base::TimeDelta age = now - info.last_modified;
+    if (!age.is_negative() && age < kStaleWriteAge) {
+      continue;
+    }
+    if (base::DeleteFile(path)) {
+      ++deleted;
+    }
+  }
+  return deleted;
+}
+
+MoltFileLock::MoltFileLock(const base::FilePath& path, base::TimeDelta wait) {
+  file_ = OpenLockFile(path);
+  if (!file_.IsValid()) {
+    return;
+  }
+  for (base::TimeDelta waited;; waited += kLockRetry) {
+    const base::File::Error error =
+        file_.Lock(base::File::LockMode::kExclusive);
+    if (error == base::File::FILE_OK) {
+      held_ = true;
+      return;
+    }
+    // Held by another browser (POSIX EAGAIN or EACCES, Windows
+    // ERROR_LOCK_VIOLATION): tried again a little later. Anything else (a
+    // file system without locks) won't change.
+    const bool busy = error == base::File::FILE_ERROR_ACCESS_DENIED ||
+                      error == base::File::FILE_ERROR_IN_USE;
+    if (!busy || waited >= wait) {
+      file_.Close();
+      return;
+    }
+    base::PlatformThread::Sleep(kLockRetry);
+  }
+}
+
+MoltFileLock::~MoltFileLock() {
+  if (held_) {
+    file_.Unlock();
+  }
 }
 
 }  // namespace molt_ai
