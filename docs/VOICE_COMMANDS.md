@@ -125,11 +125,16 @@ and the bar only.
   has echo cancellation, and no page is using a microphone. Otherwise it
   shows the word in large letters at the end of the bar under the page
   and says "To allow it, say the word on your screen." While your screen
-  or a window is shared, it gives no word at all ("I can't take the word
-  while your screen is shared"): allow it with the mouse or keyboard, or
-  say "no". If a page starts using a microphone after the word was said,
-  or the screen is shared after it was shown, the browser changes the
-  word and tells you; saying the old one then does nothing. If you can't
+  or a window is shared (Cast's screen mirroring included), it gives no
+  word at all ("I can't take the word while your screen is shared"):
+  allow it with the mouse or keyboard, or say "no". If a page starts using
+  a microphone after the word was said, or the screen is shared after it
+  was shown, the browser changes the word and tells you; saying the old
+  one then does nothing. When the page's own text was read out after the
+  question (an answer about the page, a reading), the browser reads its
+  question again before it takes your word or your "yes" ("That was the
+  page's text. Here is my question: ..."), so a page can't pose as the
+  browser. If you can't
   see the word, turn on "Say the confirmation word aloud even when
   another program could hear it" in Settings, "Voice mode": the browser
   then always says it, and a page or program listening could hear it
