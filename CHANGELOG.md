@@ -1430,6 +1430,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   contrast script ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md)).
 
 ### Engineering
+- **A real test build on GitHub's runners** (`.github/workflows/molt-test-build.yml`,
+  `tools/ci/molt_test_build.sh`): Chromium 156 with the overlay, built as a
+  component build with DCHECKs on (`chrome`, `molt_ai_unittests`,
+  `browser_tests`) in a chain of 6-hour stages that pass the out dir along,
+  then MoltBrowser's unit and browser tests under Xvfb. A run can resume
+  from an earlier run's out dir, so after a fix only what changed is rebuilt
+  (`tools/ci/molt_ci_times.py` keeps ninja's file times honest across a
+  fresh sync). It is a test build, not a release.
 - **Windows release builds without DCHECKs** (`configs/windows-x64.gn`):
   its non-official build had turned Chromium's debugging-only checks on.
   Moving Windows to an official build is on the build machine's list

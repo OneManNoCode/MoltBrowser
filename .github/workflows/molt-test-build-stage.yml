@@ -1,0 +1,273 @@
+# One stage of MoltBrowser's staged test build (molt-test-build.yml).
+# Copyright 2026 GenEye AI Labs Inc.
+#
+# A stage syncs Chromium at the pin, applies the overlay, restores the out
+# dir of the previous stage (or of an earlier run), builds until its time
+# budget ends, and saves the out dir as artifacts for the next stage. A
+# stage that finds the build complete, with time left, runs MoltBrowser's
+# unit and browser tests (tools/ci/molt_test_build.sh). The repository is
+# public, so these jobs run on GitHub's free 4-core runners.
+
+name: MoltBrowser test build stage
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        description: 'Stage number (1 for the first)'
+        type: number
+        required: true
+      resume_run:
+        description: 'Run id to resume from for stage 1 (empty: from scratch)'
+        type: string
+        default: ''
+      run_tests:
+        type: boolean
+        default: true
+    outputs:
+      status:
+        description: 'complete, errors or partial'
+        value: ${{ jobs.stage.outputs.status }}
+      tested:
+        description: 'true once a stage ran the tests'
+        value: ${{ jobs.stage.outputs.tested }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    outputs:
+      status: ${{ steps.build.outputs.status }}
+      tested: ${{ steps.tested.outputs.tested }}
+    env:
+      STAGE: ${{ inputs.stage }}
+      RESUME_RUN: ${{ inputs.resume_run }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Start time
+        run: echo "STAGE_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Free disk space (unused preinstalled SDKs)
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6  # v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Packages and depot_tools
+        run: tools/ci/molt_test_build.sh deps
+
+      - name: The previous stage's out dir
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/parts"
+          if [ "$STAGE" -gt 1 ]; then
+            RUN="$GITHUB_RUN_ID"; PREV=$((STAGE - 1))
+          elif [ -n "$RESUME_RUN" ]; then
+            RUN="$RESUME_RUN"
+            PREV="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/artifacts" --paginate \
+              -q '.artifacts[] | select(.expired == false) | .name' \
+              | sed -nE 's/^molt-s([0-9]+)-meta$/\1/p' | sort -n | tail -1)"
+            if [ -z "$PREV" ]; then
+              echo "::error::run $RUN has no saved out dir"; exit 1
+            fi
+          else
+            echo "From scratch."; exit 0
+          fi
+          echo "Out dir of run $RUN, stage $PREV"
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" \
+            --pattern "molt-s${PREV}-*" --dir "$RUNNER_TEMP/parts"
+          find "$RUNNER_TEMP/parts" -mindepth 2 -type f -exec mv -t "$RUNNER_TEMP/parts" {} +
+          find "$RUNNER_TEMP/parts" -mindepth 1 -type d -empty -delete
+          ls -l "$RUNNER_TEMP/parts"
+
+      - name: Sync Chromium at the pin
+        run: tools/ci/molt_test_build.sh sync
+
+      - name: Overlay and Rust crates
+        run: tools/ci/molt_test_build.sh overlay
+
+      - name: Restore the out dir
+        run: tools/ci/molt_test_build.sh restore "$RUNNER_TEMP/parts"
+
+      - name: File times
+        run: tools/ci/molt_test_build.sh times
+
+      - name: gn gen
+        run: tools/ci/molt_test_build.sh gen
+
+      - name: Build
+        id: build
+        run: |
+          set -euo pipefail
+          # 355 minutes per job: keep 45 for saving and uploading, and 80
+          # for the tests if the build completes in this stage.
+          ELAPSED=$(( ($(date +%s) - STAGE_START) / 60 ))
+          BUDGET=$(( 355 - 45 - ELAPSED ))
+          echo "Elapsed ${ELAPSED} min; build budget ${BUDGET} min"
+          tools/ci/molt_test_build.sh build "$BUDGET" \
+            chrome molt_ai_unittests browser_tests
+
+      - name: Tests
+        id: tests
+        if: >-
+          inputs.run_tests && inputs.stage > 1 &&
+          steps.build.outputs.status != 'partial'
+        run: |
+          set -euo pipefail
+          ELAPSED=$(( ($(date +%s) - STAGE_START) / 60 ))
+          if [ $(( 355 - ELAPSED )) -lt 110 ]; then
+            echo "Not enough time left for the tests in this stage."
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tools/ci/molt_test_build.sh test "$RUNNER_TEMP/reports"
+          echo "ran=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tested
+        id: tested
+        if: always()
+        env:
+          RAN: ${{ steps.tests.outputs.ran }}
+        run: echo "tested=${RAN:-false}" >> "$GITHUB_OUTPUT"
+
+      - name: Test reports
+        if: always() && steps.tests.outputs.ran == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-test-reports-s${{ inputs.stage }}
+          path: ${{ runner.temp }}/reports/
+          retention-days: 30
+
+      - name: Build logs
+        if: always() && steps.build.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-build-logs-s${{ inputs.stage }}
+          path: |
+            chromium/.molt-ci/*.log
+            chromium/.molt-ci/*.txt
+            !chromium/.molt-ci/manifest.txt
+            !chromium/.molt-ci/previous-manifest.txt
+            chromium/.molt-ci/status
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # The out dir goes to the next stage unless the tests ran here. It is
+      # also what a later run resumes from (workflow input resume_run).
+      - name: Save the out dir
+        id: save
+        if: steps.build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          tools/ci/molt_test_build.sh save "$GITHUB_WORKSPACE/molt-save"
+          N="$(find molt-save -name 'molt-out.tar.zst.*' | wc -l)"
+          echo "parts=$N" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the manifest
+        if: steps.save.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-meta
+          path: |
+            molt-save/manifest.txt.zst
+            molt-save/status
+          retention-days: 14
+      - name: Upload part 00
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p00
+          path: molt-save/molt-out.tar.zst.00
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 01
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p01
+          path: molt-save/molt-out.tar.zst.01
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 02
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p02
+          path: molt-save/molt-out.tar.zst.02
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 03
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p03
+          path: molt-save/molt-out.tar.zst.03
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 04
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p04
+          path: molt-save/molt-out.tar.zst.04
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 05
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p05
+          path: molt-save/molt-out.tar.zst.05
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 06
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p06
+          path: molt-save/molt-out.tar.zst.06
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 07
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p07
+          path: molt-save/molt-out.tar.zst.07
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 08
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 8
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p08
+          path: molt-save/molt-out.tar.zst.08
+          compression-level: 0
+          retention-days: 14
+      - name: Upload part 09
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: molt-s${{ inputs.stage }}-p09
+          path: molt-save/molt-out.tar.zst.09
+          compression-level: 0
+          retention-days: 14
+      - name: More parts than this workflow uploads
+        if: steps.save.outcome == 'success' && fromJSON(steps.save.outputs.parts) > 10
+        run: |
+          echo "::error::the out dir needs more than 10 parts; add upload steps"
+          exit 1

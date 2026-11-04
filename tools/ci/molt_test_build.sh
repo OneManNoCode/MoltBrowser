@@ -1,0 +1,329 @@
+#!/bin/bash
+# MoltBrowser — a test build of MoltBrowser on GitHub's runners, in stages
+# Copyright 2026 GenEye AI Labs Inc.
+#
+# A Chromium build doesn't fit in one 6-hour job on a 4-core runner, so
+# .github/workflows/molt-test-build.yml runs it as a chain of jobs (stages).
+# Each stage syncs the pinned Chromium, applies the overlay, restores the
+# out dir the previous stage left (or a previous run's), builds until its
+# time budget ends and saves the out dir again. A stage whose build is
+# complete runs MoltBrowser's tests.
+#
+# Ninja decides what to rebuild by file times, and a fresh sync gives every
+# file a new time; tools/ci/molt_ci_times.py sets the tree to one old time
+# and only the files that changed since the restored build to now.
+#
+# Usage: tools/ci/molt_test_build.sh <command> [args]
+#   deps                 build and test packages, depot_tools
+#   sync                 Chromium at the pin (shallow), with its hooks
+#   overlay              src/ over chromium/src, then the Rust crates (gnrt)
+#   restore DIR          unpack the out dir parts in DIR, if there are any
+#   times                file times for ninja (see above)
+#   gen                  args.gn and gn gen, unless an out dir was restored
+#   build MINUTES T...   ninja -k 0 on the targets until done or MINUTES pass
+#   save DIR             the out dir as parts in DIR, with the manifest
+#   test DIR             MoltBrowser's unit and browser tests; reports in DIR
+#
+# The out dir is chromium/src/out/MoltCI: a component build with DCHECKs on
+# (developer and test configuration, not a release build).
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+CR="$ROOT/chromium"
+SRC="$CR/src"
+OUT_REL="out/MoltCI"
+OUT="$SRC/$OUT_REL"
+STATE="$CR/.molt-ci"
+DEPOT="${DEPOT_TOOLS:-$HOME/depot_tools}"
+export DEPOT_TOOLS_UPDATE=0
+export PATH="$DEPOT:$PATH"
+mkdir -p "$STATE"
+
+say() { echo "==> $*"; }
+output() { [ -n "${GITHUB_OUTPUT:-}" ] && echo "$1=$2" >> "$GITHUB_OUTPUT"; return 0; }
+summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat >> "$GITHUB_STEP_SUMMARY"; return 0; }
+
+pin_revision() { "$ROOT/tools/chromium/pin.sh" revision; }
+
+ninja_bin() {
+  local c
+  for c in "$SRC/third_party/ninja/ninja" "$DEPOT/ninja"; do
+    [ -x "$c" ] && { echo "$c"; return; }
+  done
+  command -v ninja
+}
+
+cmd_deps() {
+  say "Packages"
+  sudo apt-get update -q
+  sudo apt-get install -y -q --no-install-recommends \
+    build-essential clang lld cmake ninja-build python3 python3-pip \
+    git curl wget pkg-config gperf bison flex zstd \
+    libgtk-3-dev libglib2.0-dev libnss3-dev libatk1.0-dev \
+    libatk-bridge2.0-dev libcups2-dev libdrm-dev libxkbcommon-dev \
+    libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev \
+    libpango1.0-dev libasound2-dev libdbus-1-dev libexpat1-dev \
+    libfontconfig1-dev libfreetype-dev libnspr4-dev libpulse-dev \
+    libx11-xcb-dev libxcb-dri3-dev libxext-dev libxfixes-dev \
+    libxi-dev libxrender-dev libxtst-dev libvulkan-dev \
+    xvfb xauth dbus-x11 pulseaudio pulseaudio-utils \
+    fonts-liberation fonts-noto-color-emoji
+  if [ ! -d "$DEPOT" ]; then
+    say "depot_tools"
+    git clone -q --depth 1 \
+      https://chromium.googlesource.com/chromium/tools/depot_tools.git "$DEPOT"
+  fi
+  ( cd "$DEPOT" && ./gclient --version >/dev/null 2>&1 ) || true
+  [ -n "${GITHUB_PATH:-}" ] && echo "$DEPOT" >> "$GITHUB_PATH"
+  return 0
+}
+
+cmd_sync() {
+  local rev
+  rev="$(pin_revision)"
+  say "Chromium at $rev"
+  mkdir -p "$CR"
+  cd "$CR"
+  cat > .gclient <<'EOF'
+solutions = [
+  {
+    "name": "src",
+    "url": "https://chromium.googlesource.com/chromium/src.git",
+    "managed": False,
+    "custom_deps": {},
+    "custom_vars": {},
+  },
+]
+target_os = ['linux']
+EOF
+  if [ ! -d src/.git ]; then
+    mkdir -p src
+    git -C src init -q
+    git -C src remote add origin https://chromium.googlesource.com/chromium/src.git
+    git -C src fetch -q --depth=1 --no-tags origin "$rev"
+    git -C src checkout -q --detach FETCH_HEAD
+  fi
+  [ "$(git -C src rev-parse HEAD)" = "$rev" ] || { echo "not at the pin"; exit 1; }
+  gclient sync --revision "src@$rev" --no-history --shallow
+  df -h / | tail -1
+}
+
+cmd_overlay() {
+  say "Overlay"
+  cp -R "$ROOT/src/." "$SRC/"
+  [ -d "$SRC/chrome/browser/molt_ai" ] || { echo "overlay copy failed"; exit 1; }
+  say "Rust crates (gnrt)"
+  "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC" --no-copy-back
+}
+
+cmd_restore() {
+  local dir="$1"
+  shopt -s nullglob
+  local parts=("$dir"/molt-out.tar.zst.*)
+  shopt -u nullglob
+  if [ "${#parts[@]}" -eq 0 ]; then
+    say "No out dir to restore: a build from scratch"
+    rm -f "$STATE/previous-manifest.txt"
+    return 0
+  fi
+  say "Restoring the out dir from ${#parts[@]} parts"
+  mkdir -p "$SRC/out"
+  cat "${parts[@]}" | zstd -d -q -T0 | tar -x -C "$SRC"
+  rm -f "${parts[@]}"
+  if [ -f "$dir/manifest.txt.zst" ]; then
+    zstd -d -q -f "$dir/manifest.txt.zst" -o "$STATE/previous-manifest.txt"
+  fi
+  df -h / | tail -1
+}
+
+cmd_times() {
+  local prev=()
+  [ -f "$STATE/previous-manifest.txt" ] && [ -d "$OUT" ] && \
+    prev=(--previous "$STATE/previous-manifest.txt")
+  python3 "$ROOT/tools/ci/molt_ci_times.py" --tree "$SRC" \
+    --write "$STATE/manifest.txt" "${prev[@]}"
+}
+
+cmd_gen() {
+  if [ -f "$OUT/build.ninja" ]; then
+    say "Out dir restored; ninja regenerates it if a BUILD.gn changed"
+    return 0
+  fi
+  say "gn gen $OUT_REL"
+  mkdir -p "$OUT"
+  cat > "$OUT/args.gn" <<'EOF'
+# MoltBrowser CI test build (tools/ci/molt_test_build.sh): a component
+# build with DCHECKs on, for MoltBrowser's tests. Not a release build.
+target_os = "linux"
+target_cpu = "x64"
+is_debug = false
+is_official_build = false
+is_component_build = true
+dcheck_always_on = true
+use_siso = false
+use_remoteexec = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+enable_nacl = false
+is_clang = true
+use_lld = true
+use_sysroot = true
+use_ozone = true
+ozone_auto_platforms = true
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+safe_browsing_mode = 1
+enable_reporting = false
+enable_supervised_users = true
+is_chrome_branded = false
+enable_extensions = true
+chrome_pgo_phase = 0
+treat_warnings_as_errors = false
+EOF
+  cd "$SRC"
+  buildtools/linux64/gn gen "$OUT_REL" 2>&1 | tee "$STATE/gn-gen.log"
+}
+
+cmd_build() {
+  local minutes="$1"; shift
+  local ninja rc status log="$STATE/ninja.log"
+  ninja="$(ninja_bin)"
+  cd "$SRC"
+  if [ "$minutes" -lt 10 ]; then
+    say "No time left to build in this stage"
+    status=partial
+  else
+    say "ninja -k 0 $* for at most $minutes minutes"
+    set +e
+    timeout --signal=INT --kill-after=180 "${minutes}m" \
+      "$ninja" -C "$OUT_REL" -k 0 "$@" > "$log" 2>&1
+    rc=$?
+    set -e
+    tail -5 "$log"
+    if [ "$rc" -eq 0 ]; then
+      status=complete
+    elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ] || grep -q "interrupted by user" "$log"; then
+      status=partial
+    else
+      status=errors
+    fi
+  fi
+  echo "$status" > "$STATE/status"
+  grep -E '^FAILED: ' "$log" 2>/dev/null | sort -u > "$STATE/failed-steps.txt" || true
+  grep -E 'error:|undefined symbol|duplicate symbol' "$log" 2>/dev/null \
+    | sort | uniq -c | sort -rn | head -400 > "$STATE/errors.txt" || true
+  local progress
+  progress="$(grep -oE '^\[[0-9]+/[0-9]+\]' "$log" 2>/dev/null | tail -1 || true)"
+  say "Build status: $status ${progress} ($(wc -l < "$STATE/failed-steps.txt") failed steps)"
+  output status "$status"
+  output progress "$progress"
+  {
+    echo "### Build: $status ${progress}"
+    echo
+    echo "Failed steps: $(wc -l < "$STATE/failed-steps.txt")"
+    if [ -s "$STATE/failed-steps.txt" ]; then
+      echo
+      echo '```'
+      head -60 "$STATE/failed-steps.txt"
+      echo '```'
+      echo
+      echo "First errors:"
+      echo
+      echo '```'
+      head -80 "$STATE/errors.txt"
+      echo '```'
+    fi
+  } | summary
+}
+
+cmd_save() {
+  local dir="$1"
+  mkdir -p "$dir"
+  say "Saving the out dir"
+  tar -C "$SRC" -cf - "$OUT_REL" | zstd -q -T0 -3 \
+    | split -b 3800M -d -a 2 - "$dir/molt-out.tar.zst."
+  zstd -q -f "$STATE/manifest.txt" -o "$dir/manifest.txt.zst"
+  cp "$STATE/status" "$dir/status" 2>/dev/null || true
+  ls -l "$dir"
+  df -h / | tail -1
+}
+
+# Every fixture of MoltBrowser's browser tests, as a gtest filter.
+browser_test_filter() {
+  local files
+  files="$(git -C "$ROOT" ls-files 'src/*_browsertest.cc' | grep -E '/molt_ai/|molt_')" || true
+  [ -n "$files" ] || return 0
+  # shellcheck disable=SC2086
+  (cd "$ROOT" && grep -ohE 'IN_PROC_BROWSER_TEST_[FP]\(\s*[A-Za-z0-9_]+' $files) \
+    | sed -E 's/.*\(\s*//' | sort -u | sed 's/.*/*&.*/' | paste -sd: -
+}
+
+cmd_test() {
+  local dir="$1" rc=0
+  mkdir -p "$dir"
+  cd "$SRC"
+  # Ubuntu's AppArmor policy blocks the unprivileged user namespaces
+  # Chromium's sandbox (and MoltBrowser's helper sandbox) use.
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 >/dev/null 2>&1 || true
+  sudo sysctl -w kernel.unprivileged_userns_clone=1 >/dev/null 2>&1 || true
+  if [ -x "$OUT/molt_ai_unittests" ]; then
+    say "molt_ai_unittests"
+    set +e
+    xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/molt_ai_unittests" \
+      --test-launcher-jobs=4 --test-launcher-retry-limit=0 \
+      --test-launcher-summary-output="$dir/molt_ai_unittests.json" \
+      > "$dir/molt_ai_unittests.log" 2>&1
+    rc=$((rc | $?))
+    set -e
+    tail -5 "$dir/molt_ai_unittests.log"
+  else
+    echo "molt_ai_unittests was not built" | tee "$dir/molt_ai_unittests.log"
+    rc=1
+  fi
+  if [ -x "$OUT/browser_tests" ]; then
+    local filter
+    filter="$(browser_test_filter)"
+    echo "$filter" | tr ':' '\n' > "$dir/browser_tests.filter"
+    say "browser_tests: $(wc -l < "$dir/browser_tests.filter") MoltBrowser fixtures"
+    set +e
+    xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/browser_tests" \
+      --gtest_filter="$filter" --test-launcher-jobs=4 \
+      --test-launcher-retry-limit=1 --ui-test-action-max-timeout=120000 \
+      --test-launcher-summary-output="$dir/browser_tests.json" \
+      > "$dir/browser_tests.log" 2>&1
+    rc=$((rc | $?))
+    set -e
+    tail -5 "$dir/browser_tests.log"
+  else
+    echo "browser_tests was not built" | tee "$dir/browser_tests.log"
+    rc=1
+  fi
+  python3 "$ROOT/tools/ci/molt_test_summary.py" "$dir" > "$dir/summary.md" || rc=1
+  cat "$dir/summary.md"
+  summary < "$dir/summary.md"
+  output tests_rc "$rc"
+  return 0
+}
+
+main() {
+  local c="${1:-}"
+  [ -n "$c" ] || { sed -n '16,26p' "$0"; exit 2; }
+  shift
+  case "$c" in
+    deps) cmd_deps ;;
+    sync) cmd_sync ;;
+    overlay) cmd_overlay ;;
+    restore) cmd_restore "$@" ;;
+    times) cmd_times ;;
+    gen) cmd_gen ;;
+    build) cmd_build "$@" ;;
+    save) cmd_save "$@" ;;
+    test) cmd_test "$@" ;;
+    *) echo "unknown command: $c"; exit 2 ;;
+  esac
+}
+
+main "$@"
