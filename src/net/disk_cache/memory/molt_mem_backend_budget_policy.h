@@ -42,6 +42,7 @@
 #ifndef NET_DISK_CACHE_MEMORY_MOLT_MEM_BACKEND_BUDGET_POLICY_H_
 #define NET_DISK_CACHE_MEMORY_MOLT_MEM_BACKEND_BUDGET_POLICY_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 

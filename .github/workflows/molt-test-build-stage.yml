@@ -133,7 +133,7 @@ jobs:
       - name: Tests
         id: tests
         if: >-
-          inputs.run_tests && inputs.stage > 1 &&
+          inputs.run_tests &&
           steps.build.outputs.status != 'partial'
         run: |
           set -euo pipefail

@@ -16,6 +16,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_PROCESS_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_PROCESS_POLICY_H_
 
+#include <initializer_list>
 #include <string_view>
 
 namespace molt_ai {
