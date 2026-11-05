@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/voice/speech_helper/listener.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 #include <string>
 #include <utility>
@@ -108,27 +110,39 @@ Listener::ConfigResult Listener::ApplyConfig(const ConfigUpdate& update,
   }
   if (update.has_vad_silence_ms) {
     config_.vad_silence_ms = update.values.vad_silence_ms;
-    pending_vad_ms_ = update.values.vad_silence_ms;
+    // Every CONFIG carries it: a new detector, which forgets the speech it
+    // was following, only when it changes.
+    pending_vad_ms_ = update.values.vad_silence_ms == vad_ms_
+                          ? 0
+                          : update.values.vad_silence_ms;
     if (state_ == State::kWaitWake || state_ == State::kOpen) {
       ApplyPendingVad();
     }
   }
   if (update.has_wake_required) {
     config_.wake_required = update.values.wake_required;
-    if (state_ == State::kWaitWake && !config_.wake_required) {
+    if (state_ == State::kHearing && !config_.wake_required) {
+      // Speech heard while the wake phrase was needed, and now it isn't:
+      // the utterance counts from its start.
+      Emit(SpeechStartEvent(Now()));
+      state_ = State::kUtterance;
+    } else if (state_ == State::kWaitWake && !config_.wake_required) {
       state_ = State::kOpen;
     } else if (state_ == State::kOpen && config_.wake_required) {
       state_ = State::kWaitWake;
       engines_->ResetSpotter();
+      RespotRecent();
     }
   }
   return ConfigResult::kOk;
 }
 
 void Listener::Reset() {
-  if (state_ == State::kAfterWake || state_ == State::kUtterance) {
+  if (state_ == State::kAfterWake || state_ == State::kUtterance ||
+      state_ == State::kHearing) {
     engines_->AbandonUtterance();
   }
+  heard_off_ = false;
   engines_->ResetVad();
   vad_in_speech_ = false;
   speech_onset_ = -1;
@@ -165,7 +179,32 @@ void Listener::Step(const std::vector<float>& samples) {
   switch (state_) {
     case State::kWaitWake:
       if (engines_->Spot(samples, &wake_words_)) {
-        OnWake();
+        OnWake(received_);
+        return;
+      }
+      if (!vad.in_speech) {
+        heard_off_ = false;
+      } else if (!heard_off_) {
+        // Heard as well, in case the spotter misses the phrase.
+        const int64_t onset = speech_onset_ >= 0 ? speech_onset_ : step_start;
+        BeginFrom(onset - kPrerollSamples);
+        state_ = State::kHearing;
+      }
+      return;
+    case State::kHearing:
+      if (engines_->Spot(samples, &wake_words_)) {
+        // The spotter heard it after all: as usual (the recognizer starts
+        // again from before the phrase).
+        engines_->AbandonUtterance();
+        OnWake(received_);
+        return;
+      }
+      engines_->Recognize(samples);
+      if (vad.segment_ended ||
+          received_ - utterance_from_ >= kMaxUtteranceSamples) {
+        OnHeard(engines_->Finish(), /*whole=*/true);
+      } else {
+        OnHeard(engines_->Partial(), /*whole=*/false);
       }
       return;
     case State::kOpen:
@@ -227,9 +266,9 @@ void Listener::Step(const std::vector<float>& samples) {
   }
 }
 
-void Listener::OnWake() {
-  wake_at_ = received_;
-  Emit(WakeEvent(Now()));
+void Listener::OnWake(int64_t at) {
+  wake_at_ = at;
+  Emit(WakeEvent(At(at)));
   int64_t from = wake_at_ - kWakePrerollSamples;
   if (vad_in_speech_ && speech_onset_ >= 0) {
     // Not the speech before this stretch of it.
@@ -237,6 +276,87 @@ void Listener::OnWake() {
   }
   BeginFrom(from);
   state_ = State::kAfterWake;
+}
+
+void Listener::OnHeard(const RecognizerResult& result, bool whole) {
+  const size_t words =
+      WakePhraseWordsAtStart(result.text, config_.wake_phrases);
+  const size_t heard = CountWords(result.text);
+  // The phrase is complete once a word follows it, or the speech ended.
+  if (words > 0 && (whole || heard > words)) {
+    OnHeardWake(result, words, whole);
+    return;
+  }
+  if (whole) {
+    // No wake phrase: nothing is written, and the speech is done with.
+    consumed_ = received_;
+    ToBaseState();
+    return;
+  }
+  size_t longest = 0;
+  for (const std::string& phrase : config_.wake_phrases) {
+    longest = std::max(longest, CountWords(phrase));
+  }
+  // Its first words aren't a wake phrase (run together, the phrase may
+  // take one word more than it has), or the speech went on without one.
+  if ((words == 0 && heard > longest + 1) ||
+      received_ - utterance_from_ >= kHearingSamples) {
+    StopHearing();
+  }
+}
+
+void Listener::OnHeardWake(const RecognizerResult& result,
+                           size_t words,
+                           bool whole) {
+  // As if the spotter had fired where the phrase ended (where the next
+  // word starts): the browser's checks for its own voice and other
+  // sources go by when it was said.
+  int64_t at = received_;
+  if (words < result.word_seconds.size()) {
+    at = utterance_from_ +
+         static_cast<int64_t>(result.word_seconds[words] * kSampleRate);
+  }
+  at = std::clamp(at, std::max(consumed_, utterance_from_), received_);
+  wake_at_ = at;
+  wake_words_ = words;
+  Emit(WakeEvent(At(at)));
+  if (CountWords(result.text) <= words) {
+    // The phrase alone, and its speech is over: wait for the command.
+    consumed_ = received_;
+    last_partial_.clear();
+    state_ = State::kAwaitCommand;
+    return;
+  }
+  Emit(SpeechStartEvent(At(at)));
+  if (whole) {
+    EndUtterance(result);
+    return;
+  }
+  state_ = State::kUtterance;
+  EmitPartial(result);
+}
+
+void Listener::StopHearing() {
+  engines_->AbandonUtterance();
+  last_partial_.clear();
+  heard_off_ = true;
+  state_ = State::kWaitWake;
+}
+
+void Listener::RespotRecent() {
+  const int64_t from =
+      std::max({consumed_, received_ - kRespotSamples, int64_t{0}});
+  const std::vector<float> recent = Recall(from);
+  for (size_t offset = 0; offset < recent.size(); offset += kStepSamples) {
+    const size_t n = std::min(kStepSamples, recent.size() - offset);
+    const std::vector<float> step(
+        recent.begin() + static_cast<ptrdiff_t>(offset),
+        recent.begin() + static_cast<ptrdiff_t>(offset + n));
+    if (engines_->Spot(step, &wake_words_)) {
+      OnWake(from + static_cast<int64_t>(offset + n));
+      return;
+    }
+  }
 }
 
 void Listener::BeginFrom(int64_t from_sample) {
@@ -259,8 +379,13 @@ bool Listener::HasWordsAfterWake(const RecognizerResult& result,
   }
   // The spotter may fire late (in noise): then a short command said in
   // the same breath starts before the cut, but the words still outnumber
-  // the phrase's.
-  return whole && CountWords(result.text) > wake_words_;
+  // the phrase's, as the recognizer wrote it ("Himalt" is one word).
+  if (!whole) {
+    return false;
+  }
+  const size_t phrase =
+      WakePhraseWordsAtStart(result.text, config_.wake_phrases);
+  return CountWords(result.text) > (phrase > 0 ? phrase : wake_words_);
 }
 
 void Listener::EmitPartial(const RecognizerResult& result) {
@@ -296,6 +421,7 @@ void Listener::EndWithoutCommand() {
 
 void Listener::ToBaseState() {
   last_partial_.clear();
+  heard_off_ = false;
   state_ = config_.wake_required ? State::kWaitWake : State::kOpen;
   engines_->ResetSpotter();
   ApplyPendingVad();
@@ -306,15 +432,20 @@ void Listener::ApplyPendingVad() {
     return;
   }
   engines_->SetVadSilenceMs(pending_vad_ms_);
+  vad_ms_ = pending_vad_ms_;
   pending_vad_ms_ = 0;
   vad_in_speech_ = false;
   speech_onset_ = -1;
 }
 
 EventTime Listener::Now() const {
+  return At(received_);
+}
+
+EventTime Listener::At(int64_t sample) const {
   EventTime time;
   time.epoch = epoch_;
-  time.audio_ms = received_ * 1000 / kSampleRate;
+  time.audio_ms = sample * 1000 / kSampleRate;
   return time;
 }
 

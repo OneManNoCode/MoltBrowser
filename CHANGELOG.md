@@ -1405,6 +1405,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   `docs/design/TOUCHLESS_BROWSING.md` §2.
 
 ### Fixed
+- **Voice mode (preview) hears "Hey Molt" far more reliably** (round 45,
+  from the spoken suite on a real build). The wake-phrase spotter missed
+  about one in seven phrases in a long session; the speech helper now
+  also listens to the words themselves while someone speaks, and takes
+  speech that starts with the phrase as written or sounding like it
+  ("Hey, Malt", "Himalt"), with nothing written for any other speech.
+  97 of 100 test phrases woke it, up from 86, with no new false
+  wake-ups (`docs/design/SPEECH_HELPER_PROTOCOL.md` §8.4). A phrase begun
+  just as the follow-up window closed was lost, and the helper rebuilt
+  its voice activity detector on every change of the window, losing the
+  speech it was following; neither happens now. At a browser prompt,
+  "no" heard as "now" blocks or declines, and four more misheard
+  commands are understood.
 - **Workflows, routines and settings files hold up to crashes, odd files
   and a busy window** (round 44, storage-robustness). A routine being kept
   from before profiles when the browser closed is put back to be offered

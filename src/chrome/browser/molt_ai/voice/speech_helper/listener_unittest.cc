@@ -40,7 +40,12 @@ struct Scene {
   std::vector<std::pair<int64_t, int64_t>> speech;
   // Where the spotter fires.
   std::vector<int64_t> wakes;
+  // Where each wake phrase starts, if given: the spotter fires for it only
+  // if it was given the audio from there since it was last reset.
+  std::vector<int64_t> wake_starts;
   std::vector<Word> words;
+  // How much of a word the recognizer needs before it writes it.
+  int64_t word_lag = 200 * kSampleRate / 1000;
 };
 
 // What the listener asked of the engines.
@@ -72,8 +77,14 @@ class FakeEngines : public SpeechEngines {
   bool Spot(const std::vector<float>& samples, size_t* words) override {
     const int64_t from = PositionOf(samples.front());
     const int64_t to = from + static_cast<int64_t>(samples.size());
-    for (int64_t at : scene_->wakes) {
-      if (at >= from && at < to && at >= spotter_from_) {
+    if (spotter_first_ < 0) {
+      spotter_first_ = from;
+    }
+    for (size_t i = 0; i < scene_->wakes.size(); ++i) {
+      const int64_t at = scene_->wakes[i];
+      const bool whole = i >= scene_->wake_starts.size() ||
+                         spotter_first_ <= scene_->wake_starts[i];
+      if (at >= from && at < to && at >= spotter_from_ && whole) {
         *words = 2;
         return true;
       }
@@ -83,6 +94,7 @@ class FakeEngines : public SpeechEngines {
   void ResetSpotter() override {
     ++log_->spotter_resets;
     spotter_from_ = position_;
+    spotter_first_ = -1;
   }
   void SetVadSilenceMs(int ms) override {
     log_->vad_silences.push_back(ms);
@@ -152,8 +164,8 @@ class FakeEngines : public SpeechEngines {
       return result;
     }
     for (const Word& word : scene_->words) {
-      // A word is heard once 200 ms of it went in.
-      if (word.at >= first_ && word.at + Ms(200) <= last_) {
+      // A word is heard once |word_lag| of it went in.
+      if (word.at >= first_ && word.at + scene_->word_lag <= last_) {
         result.text += (result.text.empty() ? "" : " ") + word.text;
         result.word_seconds.push_back(static_cast<float>(word.at - first_) /
                                       kSampleRate);
@@ -167,6 +179,8 @@ class FakeEngines : public SpeechEngines {
   int64_t silence_ = Ms(500);
   int64_t position_ = 0;
   int64_t spotter_from_ = 0;
+  // The first sample given to the spotter since its reset, or -1.
+  int64_t spotter_first_ = -1;
   int64_t vad_from_ = -1;
   bool utterance_ = false;
   int64_t first_ = -1;
@@ -265,6 +279,35 @@ void WakePhrase(Scene* scene) {
   scene->wakes = {Ms(1930)};
 }
 
+// The wake phrase as the spotter hears it, which the recognizer doesn't
+// write as the phrase: only the spotter wakes.
+void SpottedOnly(Scene* scene) {
+  scene->words = {{"Hello", Ms(1000)}, {"there", Ms(1250)}};
+  scene->wakes = {Ms(1930)};
+}
+
+// What the events with |type| carry as audio_ms.
+std::vector<int64_t> AudioMs(const std::vector<std::string>& events,
+                             const std::string& type) {
+  std::vector<int64_t> out;
+  for (const std::string& line : events) {
+    if (line.find("\"type\":\"" + type + "\"") == std::string::npos) {
+      continue;
+    }
+    const size_t at = line.find("\"audio_ms\":");
+    if (at == std::string::npos) {
+      continue;
+    }
+    int64_t ms = 0;
+    for (size_t i = at + 11; i < line.size() && line[i] >= '0' && line[i] <= '9';
+         ++i) {
+      ms = ms * 10 + (line[i] - '0');
+    }
+    out.push_back(ms);
+  }
+  return out;
+}
+
 TEST_F(SpeechListenerTest, HearsAWakePhraseAndACommandInOneBreath) {
   WakePhrase(scene_.get());
   scene_->speech = {{Ms(1000), Ms(2700)}};
@@ -296,7 +339,7 @@ TEST_F(SpeechListenerTest, HearsAShortCommandInTheSameBreath) {
 }
 
 TEST_F(SpeechListenerTest, CountsWordsWhenTheSpotterIsLate) {
-  WakePhrase(scene_.get());
+  SpottedOnly(scene_.get());
   scene_->wakes = {Ms(2300)};
   scene_->speech = {{Ms(1000), Ms(2000)}};
   scene_->words.push_back({"stop", Ms(1700)});
@@ -304,7 +347,20 @@ TEST_F(SpeechListenerTest, CountsWordsWhenTheSpotterIsLate) {
   // "stop" starts before the cut, but three words outnumber the phrase.
   EXPECT_EQ(Types(), (std::vector<std::string>{"wake", "speech_start",
                                                "speech_end",
-                                               "final:Hey Molt stop"}));
+                                               "final:Hello there stop"}));
+}
+
+TEST_F(SpeechListenerTest, CountsAPhraseRunTogetherAsOneWord) {
+  // The spotter fires after "stop" began (before the cut), and before the
+  // recognizer wrote it; the recognizer runs the phrase together.
+  scene_->word_lag = Ms(600);
+  scene_->words = {{"Himalt.", Ms(1000)}, {"stop", Ms(1400)}};
+  scene_->wakes = {Ms(1750)};
+  scene_->speech = {{Ms(1000), Ms(1700)}};
+  FeedUntil(Ms(3500));
+  EXPECT_EQ(Types(), (std::vector<std::string>{"wake", "speech_start",
+                                               "speech_end",
+                                               "final:Himalt. stop"}));
 }
 
 TEST_F(SpeechListenerTest, WaitsForTheCommandAfterAPause) {
@@ -318,10 +374,11 @@ TEST_F(SpeechListenerTest, WaitsForTheCommandAfterAPause) {
                          "partial:open YouTube", "speech_end",
                          "final:open YouTube"}));
   // The command's audio starts a little before the detector noticed it,
-  // after the wake phrase's own speech.
-  ASSERT_EQ(log_->utterance_starts.size(), 2u);
-  EXPECT_LE(log_->utterance_starts[1], Ms(3000));
-  EXPECT_GE(log_->utterance_starts[1], Ms(2400));
+  // after the wake phrase's own speech (which the recognizer heard while
+  // the spotter listened, then again from before the phrase).
+  ASSERT_EQ(log_->utterance_starts.size(), 3u);
+  EXPECT_LE(log_->utterance_starts[2], Ms(3000));
+  EXPECT_GE(log_->utterance_starts[2], Ms(2400));
 }
 
 TEST_F(SpeechListenerTest, AnswersAWakeWithNothingAfterIt) {
@@ -343,8 +400,131 @@ TEST_F(SpeechListenerTest, IgnoresSpeechWithoutTheWakePhrase) {
   scene_->speech = {{Ms(500), Ms(2000)}};
   scene_->words = {{"hello", Ms(500)}};
   FeedUntil(Ms(4000));
+  // Heard, for a wake phrase the spotter might have missed; nothing is
+  // written.
   EXPECT_TRUE(events_.empty());
-  EXPECT_TRUE(log_->utterance_starts.empty());
+  EXPECT_EQ(log_->utterance_starts.size(), 1u);
+}
+
+TEST_F(SpeechListenerTest, HearsAWakePhraseTheSpotterMissed) {
+  // The spotter never fires; the recognizer writes the phrase.
+  scene_->words = {{"Hey,", Ms(1000)}, {"Malt,", Ms(1250)},
+                   {"open", Ms(1700)}, {"YouTube", Ms(2050)}};
+  scene_->speech = {{Ms(1000), Ms(2700)}};
+  FeedUntil(Ms(4000));
+  EXPECT_EQ(Types(), (std::vector<std::string>{
+                         "wake", "speech_start", "partial:Hey, Malt, open",
+                         "partial:Hey, Malt, open YouTube", "speech_end",
+                         "final:Hey, Malt, open YouTube"}));
+  // Where the phrase ended (the next word started), for the browser's
+  // checks of what else was heard then; the command's audio from before
+  // the phrase.
+  EXPECT_EQ(AudioMs(events_, "wake"), std::vector<int64_t>{1700});
+  EXPECT_EQ(AudioMs(events_, "speech_start"), std::vector<int64_t>{1700});
+  ASSERT_EQ(log_->utterance_starts.size(), 1u);
+  EXPECT_LE(log_->utterance_starts[0], Ms(1000));
+}
+
+TEST_F(SpeechListenerTest, HearsTheWakePhraseRunTogether) {
+  scene_->words = {{"Himalt.", Ms(1000)}, {"Pause.", Ms(1500)}};
+  scene_->speech = {{Ms(1000), Ms(1900)}};
+  FeedUntil(Ms(3500));
+  EXPECT_EQ(Types(), (std::vector<std::string>{"wake", "speech_start",
+                                               "partial:Himalt. Pause.",
+                                               "speech_end",
+                                               "final:Himalt. Pause."}));
+}
+
+TEST_F(SpeechListenerTest, WaitsForTheCommandAfterAPhraseTheSpotterMissed) {
+  scene_->words = {{"Hey", Ms(1000)}, {"mold.", Ms(1250)},
+                   {"open", Ms(3050)}, {"YouTube", Ms(3350)}};
+  scene_->speech = {{Ms(1000), Ms(1650)}, {Ms(3000), Ms(3800)}};
+  FeedUntil(Ms(5000));
+  EXPECT_EQ(Types(), (std::vector<std::string>{
+                         "wake", "speech_start", "partial:open",
+                         "partial:open YouTube", "speech_end",
+                         "final:open YouTube"}));
+  // The wake when the detector ended the phrase's speech (0.5 s on, at the
+  // end of the 20 ms frame it was in).
+  EXPECT_EQ(AudioMs(events_, "wake"), std::vector<int64_t>{2160});
+}
+
+TEST_F(SpeechListenerTest, GivesUpOnSpeechThatDoesntStartWithThePhrase) {
+  scene_->words = {{"hey", Ms(1000)},   {"Walt,", Ms(1200)},
+                   {"are", Ms(1500)},   {"you", Ms(1700)},
+                   {"coming", Ms(1900)}, {"hey", Ms(2300)},
+                   {"Molt", Ms(2500)},  {"stop", Ms(2800)}};
+  scene_->speech = {{Ms(1000), Ms(3200)}};
+  FeedUntil(Ms(5000));
+  // Its first words aren't the phrase: the recognizer stops (and the
+  // phrase later in the same breath isn't a wake phrase).
+  EXPECT_TRUE(events_.empty());
+  EXPECT_EQ(log_->abandoned, 1);
+  ASSERT_EQ(log_->utterance_starts.size(), 1u);
+  // The next stretch of speech is heard again.
+  scene_->speech.push_back({Ms(6000), Ms(6900)});
+  scene_->words.push_back({"Hey", Ms(6000)});
+  scene_->words.push_back({"Molt,", Ms(6250)});
+  scene_->words.push_back({"pause", Ms(6600)});
+  FeedUntil(Ms(8500));
+  EXPECT_EQ(Types().front(), "wake");
+  EXPECT_EQ(Types().back(), "final:Hey Molt, pause");
+}
+
+TEST_F(SpeechListenerTest, AWindowOpeningMidSpeechCountsIt) {
+  scene_->words = {{"next", Ms(1000)}, {"page", Ms(1300)}};
+  scene_->speech = {{Ms(1000), Ms(1800)}};
+  FeedUntil(Ms(1250));
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  FeedUntil(Ms(3000));
+  EXPECT_EQ(Types(), (std::vector<std::string>{
+                         "speech_start", "partial:next", "partial:next page",
+                         "speech_end", "final:next page"}));
+}
+
+TEST_F(SpeechListenerTest, ASpottedWakeIsUnchanged) {
+  // The recognizer doesn't write the phrase; the spotter fires.
+  SpottedOnly(scene_.get());
+  scene_->speech = {{Ms(1000), Ms(2700)}};
+  scene_->words.push_back({"open", Ms(2000)});
+  FeedUntil(Ms(4000));
+  EXPECT_EQ(Types().front(), "wake");
+  EXPECT_EQ(AudioMs(events_, "wake"), std::vector<int64_t>{1940});
+  EXPECT_EQ(Types().back(), "final:Hello there open");
+  // Heard from the speech's start, then again from before the phrase.
+  EXPECT_EQ(log_->abandoned, 1);
+  EXPECT_EQ(log_->utterance_starts.size(), 2u);
+}
+
+TEST_F(SpeechListenerTest, SpotsAPhraseBegunAsTheWindowCloses) {
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  SpottedOnly(scene_.get());
+  scene_->wake_starts = {Ms(1000)};
+  scene_->speech = {{Ms(1000), Ms(2300)}};
+  scene_->words.push_back({"pause", Ms(2000)});
+  // The browser asks for the wake phrase again 40 ms into it, before the
+  // detector noticed the speech: the spotter starts on the audio before.
+  FeedUntil(Ms(1040));
+  listener_->ApplyConfig(Config(R"({"wake_required":true})"), nullptr);
+  FeedUntil(Ms(4000));
+  ASSERT_FALSE(Types().empty());
+  EXPECT_EQ(Types().front(), "wake");
+  EXPECT_EQ(Types().back(), "final:Hello there pause");
+}
+
+TEST_F(SpeechListenerTest, KeepsTheDetectorWhenItsSilenceDoesntChange) {
+  // Every CONFIG carries the silence; a new detector forgets the speech it
+  // was following.
+  for (int i = 0; i < 3; ++i) {
+    listener_->ApplyConfig(
+        Config(i % 2 ? R"({"vad_silence_ms":500,"wake_required":true})"
+                     : R"({"vad_silence_ms":500,"wake_required":false})"),
+        nullptr);
+  }
+  EXPECT_EQ(log_->vad_silences, std::vector<int>{500});
+  listener_->ApplyConfig(Config(R"({"vad_silence_ms":700})"), nullptr);
+  listener_->ApplyConfig(Config(R"({"vad_silence_ms":700})"), nullptr);
+  EXPECT_EQ(log_->vad_silences, (std::vector<int>{500, 700}));
 }
 
 TEST_F(SpeechListenerTest, CountsEveryUtteranceWhenNoWakeIsRequired) {

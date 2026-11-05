@@ -132,7 +132,9 @@ const Vocabularies& TheVocabularies() {
 
 // Engines that react to the audio: speech is any step with a sample past a
 // quarter of full scale, the spotter fires on the sample value 12345, and
-// the recognizer hears one word per loud sample run.
+// the recognizer hears one word per loud sample run, which of a few (the
+// wake phrase's words among them, so the helper's own search for the phrase
+// in what was heard runs too) by the run's first sample.
 class AudioDrivenEngines : public SpeechEngines {
  public:
   bool SetKeywords(const std::vector<std::string>& lines) override {
@@ -172,6 +174,7 @@ class AudioDrivenEngines : public SpeechEngines {
   void BeginUtterance(const std::string& hotwords) override {
     CHECK_LE(hotwords.size(), kMaxHotwordsBytes);
     words_.clear();
+    texts_.clear();
     in_utterance_ = true;
     fed_ = 0;
   }
@@ -181,6 +184,7 @@ class AudioDrivenEngines : public SpeechEngines {
       const bool loud = s > 0.5f;
       if (loud && !word_) {
         words_.push_back(static_cast<float>(fed_) / kSampleRate);
+        texts_.push_back(static_cast<size_t>(s * 32768.0f) % 5);
       }
       word_ = loud;
       ++fed_;
@@ -188,8 +192,11 @@ class AudioDrivenEngines : public SpeechEngines {
   }
   RecognizerResult Partial() override {
     RecognizerResult result;
+    static constexpr const char* kWords[] = {"w", "w\x01\xC3\xA9", "Hey,",
+                                             "molt", "Himalt."};
     for (size_t i = 0; i < words_.size() && i < 600; ++i) {
-      result.text += i ? " w\x01\xC3\xA9" : "w";
+      result.text += i ? " " : "";
+      result.text += kWords[texts_[i]];
     }
     result.word_seconds = words_;
     return result;
@@ -209,6 +216,7 @@ class AudioDrivenEngines : public SpeechEngines {
   bool word_ = false;
   int64_t fed_ = 0;
   std::vector<float> words_;
+  std::vector<size_t> texts_;
 };
 
 // Follows the event sequence of §4.

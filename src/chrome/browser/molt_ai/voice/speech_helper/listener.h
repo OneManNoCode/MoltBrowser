@@ -117,6 +117,14 @@ class Listener {
   static constexpr int64_t kRingSamples = kSampleRate * 5 / 2;
   // Audio is processed in steps of at most this much.
   static constexpr size_t kStepSamples = 1600;
+  // When the browser asks for the wake phrase again, the spotter starts on
+  // this much of the audio before (none an utterance used), so a phrase
+  // begun just before isn't cut in half.
+  static constexpr int64_t kRespotSamples = kSampleRate * 3 / 2;
+  // How long speech is heard for a wake phrase the spotter missed
+  // (|State::kHearing|) before the helper gives up on it: the phrase comes
+  // first.
+  static constexpr int64_t kHearingSamples = 4 * kSampleRate;
 
   enum class ConfigResult { kOk, kConfigError, kEngineError };
 
@@ -144,6 +152,11 @@ class Listener {
   enum class State {
     // Wake phrase required; waiting for it.
     kWaitWake,
+    // Wake phrase required, someone speaking, and the spotter hasn't fired:
+    // it goes on listening, and the recognizer hears the speech too, for
+    // the wake phrase the spotter may miss (WakePhraseWordsAtStart()).
+    // Nothing is written unless the phrase is there.
+    kHearing,
     // Every utterance counts; waiting for speech.
     kOpen,
     // A wake phrase was heard; the recognizer hears it and what follows,
@@ -157,7 +170,18 @@ class Listener {
   };
 
   void Step(const std::vector<float>& samples);
-  void OnWake();
+  // The spotter fired at sample |at|.
+  void OnWake(int64_t at);
+  // kHearing: what the recognizer heard so far, or all of it at the end
+  // of the speech (|whole|).
+  void OnHeard(const RecognizerResult& result, bool whole);
+  // A wake phrase the recognizer heard and the spotter didn't: |words| of
+  // |result|'s first words.
+  void OnHeardWake(const RecognizerResult& result, size_t words, bool whole);
+  // Back to waiting for the wake phrase for the rest of this speech.
+  void StopHearing();
+  // The spotter on the last kRespotSamples of audio no utterance used.
+  void RespotRecent();
   void BeginFrom(int64_t from_sample);
   void FinishUtterance();
   void EndUtterance(const RecognizerResult& result);
@@ -170,6 +194,7 @@ class Listener {
   void EmitPartial(const RecognizerResult& result);
   void ApplyPendingVad();
   EventTime Now() const;
+  EventTime At(int64_t sample) const;
   void Emit(const std::string& line);
 
   // Pre-roll: the last kRingSamples samples.
@@ -189,6 +214,12 @@ class Listener {
   // An end-of-speech silence waiting for the end of an utterance; 0 if
   // none.
   int pending_vad_ms_ = 0;
+  // The one the detector has; 0 before Start(). Every CONFIG the browser
+  // sends carries it: the detector is built again only when it changes.
+  int vad_ms_ = 0;
+  // kWaitWake: the recognizer gave up on this stretch of speech (it isn't
+  // heard again until the detector hears it end).
+  bool heard_off_ = false;
 
   State state_ = State::kWaitWake;
   int64_t epoch_ = 0;
