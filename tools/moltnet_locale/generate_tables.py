@@ -289,6 +289,11 @@ class GrdSource:
         return data
 
 
+# grit's _ELLIPSIS_PATTERN: three dots not after a dot, before a space or the
+# end.
+ELLIPSIS_PATTERN = re.compile(r"(?<!\.)\.\.\.(?=$|\s)")
+
+
 def message_text(message):
     """A grit message's text as grit puts it in an en-US .pak: each
     placeholder replaced by its original text ($1, ...), examples dropped,
@@ -306,7 +311,9 @@ def message_text(message):
         text = text[3:]
     if text.endswith("'''"):
         text = text[:-3]
-    return text
+    # grit writes "..." as U+2026 unless built with --no-replace-ellipsis,
+    # which no .grd here is (tools/grit/grit/node/message.py).
+    return ELLIPSIS_PATTERN.sub("\u2026", text)
 
 
 def grd_messages(data):

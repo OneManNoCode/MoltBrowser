@@ -35,6 +35,10 @@ std::unique_ptr<views::Label> MakeLabel() {
   label->SetMultiLine(false);
   // The bar's own colours, as they are: they were chosen for contrast.
   label->SetAutoColorReadabilityEnabled(false);
+  // Drawn on the bar's own rounded fill, in a layer that isn't opaque:
+  // subpixel text would sample the transparent pixels around it (views'
+  // Label checks this).
+  label->SetSubpixelRenderingEnabled(false);
   return label;
 }
 

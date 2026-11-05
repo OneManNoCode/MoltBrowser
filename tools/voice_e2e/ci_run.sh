@@ -51,6 +51,10 @@ RUNS="${VOICE_E2E_RUNS:-pulse:clean,pulse:music10,file:clean,typed}"
 
 log() { echo "[voice-e2e] $*"; }
 
+# Until the suite itself runs, a failed step means it couldn't run (2), not
+# that it ran and missed Phase 1's exit (1).
+trap 'log "a setup step failed (line $LINENO)"; exit 2' ERR
+
 BROWSER="$OUT_DIR/chrome"
 [[ -x "$BROWSER" ]] || { log "no browser at $BROWSER"; exit 2; }
 [[ -x "$BUNDLE_DIR/speech/molt-speech" ]] || { log "no molt-speech in $BUNDLE_DIR/speech"; exit 2; }
@@ -132,6 +136,7 @@ args=(run --browser "$BROWSER" --bundle "$BUNDLE_DIR" --speech "$SPEECH_DIR"
 [[ "${VOICE_E2E_MODEL:-0}" == 1 ]] && args+=(--model)
 args+=("${SANDBOX_FLAGS[@]}")
 log "running: ${args[*]}"
+trap - ERR
 status=0
 python3 -I "$SCRIPT_DIR/run_e2e.py" "${args[@]}" || status=$?
 log "report: $REPORT_DIR/report.md (exit $status)"

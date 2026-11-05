@@ -381,9 +381,12 @@ TEST_F(MoltNetDomStorageTest, WithoutADatabaseAnUnusedEmptyAreaGoesAtOnce) {
 // The same for sessionStorage: an area left unbound that holds nothing goes
 // from its namespace at once; one holding an item stays.
 TEST_F(MoltNetDomStorageTest, SessionStorageWithoutADatabaseDropsEmptyAreas) {
+  // Its control pipe, as the storage service binds it (the constructor
+  // sets its disconnect handler); it outlives the impl.
+  mojo::Remote<storage::mojom::SessionStorageControl> control;
   storage::SessionStorageImpl session(
       base::FilePath(), storage::SessionStorageImpl::BackingMode::kNoDisk,
-      base::DoNothing(), mojo::NullReceiver());
+      base::DoNothing(), control.BindNewPipeAndPassReceiver());
   session.MoltKeepCachesPerSite();
   const std::string ns = base::Uuid::GenerateRandomV4().AsLowercaseString();
   session.CreateNamespace(ns);
@@ -848,6 +851,9 @@ TEST_F(MoltNetDomStorageTest, ASitesAreasShareOneTotal) {
   storage_->DeleteStorage(Key("https://s0.greedy.test"), deleted.GetCallback());
   ASSERT_TRUE(deleted.Wait());
   task_environment_.RunUntilIdle();
+  // The site's write allowance refilled (ASitesWriteBytesAreLimited), so
+  // only its total decides.
+  task_environment_.FastForwardBy(base::Seconds(10));
   EXPECT_TRUE(Write(Key("https://s9.greedy.test"), kPart));
 }
 
@@ -905,9 +911,12 @@ TEST_F(MoltNetDomStorageTest, ARefusedWriteChangesNothing) {
 // sessionStorage in MoltNet's partition: no database, and a map holding
 // items stays when its site's unused areas are purged.
 TEST_F(MoltNetDomStorageTest, SessionStorageWithoutADatabaseKeepsItsItems) {
+  // Its control pipe, as the storage service binds it (the constructor
+  // sets its disconnect handler); it outlives the impl.
+  mojo::Remote<storage::mojom::SessionStorageControl> control;
   storage::SessionStorageImpl session(
       base::FilePath(), storage::SessionStorageImpl::BackingMode::kNoDisk,
-      base::DoNothing(), mojo::NullReceiver());
+      base::DoNothing(), control.BindNewPipeAndPassReceiver());
   session.MoltKeepCachesPerSite();
   const std::string ns = base::Uuid::GenerateRandomV4().AsLowercaseString();
   session.CreateNamespace(ns);
@@ -1264,7 +1273,7 @@ class MoltNetSessionStorageTest : public testing::Test {
   void SetUp() override {
     storage_ = std::make_unique<storage::SessionStorageImpl>(
         base::FilePath(), storage::SessionStorageImpl::BackingMode::kNoDisk,
-        base::DoNothing(), mojo::NullReceiver());
+        base::DoNothing(), control_.BindNewPipeAndPassReceiver());
   }
   void TearDown() override {
     storage_.reset();
@@ -1301,6 +1310,8 @@ class MoltNetSessionStorageTest : public testing::Test {
   }
 
   base::test::TaskEnvironment task_environment_;
+  // storage_'s control pipe, as the storage service binds it.
+  mojo::Remote<storage::mojom::SessionStorageControl> control_;
   std::unique_ptr<storage::SessionStorageImpl> storage_;
 };
 

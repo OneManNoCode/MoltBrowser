@@ -13,6 +13,7 @@
 
 import json
 import os
+import re
 import sys
 
 BINARIES = ('molt_ai_unittests', 'browser_tests')
@@ -63,18 +64,99 @@ def summarize(dir_path, binary, lines, details):
                       for s, n in sorted(counts.items()) if s not in PASS)
     lines.append('- **%s:** %d tests, %d passed%s' %
                  (binary, len(last), passed, ', ' + parts if parts else ''))
-    for name, status, snippet in failed[:60]:
-        first = next((l for l in snippet.splitlines()
-                      if 'Failure' in l or 'error' in l.lower()
-                      or 'Check failed' in l), '')
+    # Failures with the same first error (a fixture's shared setup, say)
+    # are one section: its first test's output, then the others' names.
+    groups = {}
+    for name, status, snippet in failed:
+        first = first_error(snippet)
+        key = (normalized(first) or name) + ' | ' + freed_at(snippet)
+        groups.setdefault(key, []).append((name, status, snippet, first))
+    for name, status, snippet, first in [g[0] for g in groups.values()][:80]:
         lines.append('  - `%s`: %s%s' % (name, status.lower(),
                                          (' — ' + first.strip()[:200])
                                          if first else ''))
-        details.append('## %s (%s, %s)\n\n```\n%s\n```\n' %
-                       (name, binary, status.lower(), snippet[-6000:]))
-    if len(failed) > 60:
-        lines.append('  - ... and %d more' % (len(failed) - 60))
+    if len(groups) > 80:
+        lines.append('  - ... and %d more' % (len(groups) - 80))
+    for group in groups.values():
+        name, status, snippet, _ = group[0]
+        others = [g[0] for g in group[1:]]
+        lines_of_others = ('\nThe same first error in %d more: %s\n' %
+                           (len(others), ', '.join(others))) if others else ''
+        details.append('## %s (%s, %s)\n%s\n```\n%s\n```\n' %
+                       (name, binary, status.lower(), lines_of_others,
+                        clip(snippet)))
     return 1 if failed else 0
+
+
+STRONG = ('FATAL', 'Check failed', 'DCHECK failed', 'Failure',
+          'Assertion', 'Sanitizer', 'Timeout')
+RELEASED = 'Memory was released on:'
+
+
+def first_error(snippet):
+    """The line that names the failure: a fatal error or a test's failure,
+    else any error line."""
+    lines = snippet.splitlines()
+    return (next((l for l in lines if any(s in l for s in STRONG)), '') or
+            next((l for l in lines if 'error' in l.lower()), ''))
+
+
+def freed_at(snippet):
+    """For a dangling raw_ptr report (base's CheckDanglingRawPtrBufferEmpty),
+    the first frame past the allocator where the memory was freed: which
+    object the pointer outlived."""
+    at = snippet.find(RELEASED)
+    if at < 0:
+        return ''
+    for line in snippet[at:].splitlines()[1:60]:
+        frame = re.sub(r'^#\d+ 0x[0-9a-f]+ ', '', line.strip())
+        if not line.strip().startswith('#'):
+            continue
+        if not re.search(r'partition_alloc|allocator|operator delete|'
+                         r'CollectStackTrace|StackTrace::|'
+                         r'DanglingRawPtr|std::__|base::internal', frame):
+            return frame
+    return ''
+
+
+def normalized(line):
+    """The first error without what differs from run to run: process and
+    thread IDs, addresses, timings."""
+    line = re.sub(r'^\[\d+:\d+:', '[', line.strip())
+    line = re.sub(r'0x[0-9a-f]+', '0x', line)
+    return re.sub(r'\(\d+ ms\)', '', line)
+
+
+def clip(snippet, before=1500, after=4500, tail=1500, limit=14000):
+    """What explains the failure: the output around the first error and
+    around each dangling raw_ptr report, and the end."""
+    if len(snippet) <= limit:
+        return snippet
+    anchors = [m.start() for m in re.finditer(re.escape(RELEASED), snippet)]
+    first = first_error(snippet)
+    if first:
+        anchors.append(snippet.find(first))
+    windows = sorted((max(0, a - before), a + after) for a in anchors if a >= 0)
+    windows.append((max(0, len(snippet) - tail), len(snippet)))
+    merged = []
+    for start, end in sorted(windows):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    out, shown, last = [], 0, 0
+    for start, end in merged:
+        if shown >= limit:
+            break
+        end = min(end, start + limit - shown)
+        if start > last:
+            out.append('[... %d characters ...]' % (start - last))
+        out.append(snippet[start:end])
+        shown += end - start
+        last = end
+    if last < len(snippet):
+        out.append('[... %d characters ...]' % (len(snippet) - last))
+    return '\n'.join(out)
 
 
 def main(argv):
