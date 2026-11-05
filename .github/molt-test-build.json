@@ -1,2 +1,4 @@
-{"resume_run": "41987494563", "run_tests": true, "e2e_only": false,
- "request": "Round 45, fourth build: browser test fixes from the third run, the map and microphone-level test log events, the microphone and listener released before the session drops them, file mode's times past the greeting, the run-together wake phrase, the matcher's tie band, and the kit's PulseAudio route check and audio log lines; then the tests and the whole spoken suite. Resume from run 41987494563 (stage 1 built)."}
+{"resume_run": "42007519255", "run_tests": true, "e2e_only": false,
+ "e2e_runs": "pulse:clean,pulse:clean:noloop,pulse:clean:noaec,file:clean,typed",
+ "e2e_speech_check": false,
+ "request": "Round 45, fifth build: the manifest test's stack overflow, bounded waits that say what they waited for, a selection as Blink gives it, a player in a frame as voice mode comes on, the file run's sound-alikes, skip-ad with MoltShield off; PulseAudio with and without the loopback and the echo canceller. Resume from run 42007519255 (stage 1 built)."}
