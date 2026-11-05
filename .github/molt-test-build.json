@@ -1,2 +1,2 @@
-{"resume_run": "41974851120", "run_tests": true, "e2e_only": false,
- "request": "Round 45, third build: the reentrant caption fix, the bundled voice's player, browser test fixes, fixture trees as Blink builds them, and voice mode on forms, lists, players and pages from the typed run; then the tests and the whole spoken suite. Resume from run 41974851120 (stage 1 built and tested)."}
+{"resume_run": "41987494563", "run_tests": true, "e2e_only": false,
+ "request": "Round 45, fourth build: browser test fixes from the third run, the map and microphone-level test log events, the microphone and listener released before the session drops them, file mode's times past the greeting, the run-together wake phrase, the matcher's tie band, and the kit's PulseAudio route check and audio log lines; then the tests and the whole spoken suite. Resume from run 41987494563 (stage 1 built)."}
