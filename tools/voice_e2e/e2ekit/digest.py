@@ -51,10 +51,14 @@ def _normalized(line):
 
 def molt_lines(lines, limit=20):
     """MoltBrowser's own log lines ("[MoltVoice] microphone error ..."),
-    each kind once."""
+    each kind once: voice mode's, and the rest's errors (every run's
+    filter-list and update checks fail offline, which explains nothing)."""
     out, seen = [], set()
     for line in lines:
         if "[Molt" not in line:
+            continue
+        if "[MoltVoice]" not in line and ":ERROR:" not in line and \
+                ":FATAL:" not in line:
             continue
         key = _normalized(line)
         if key in seen:
@@ -212,7 +216,7 @@ def _results(report_dir):
     return out
 
 
-def build(report_dir, limit=150000, max_groups=30):
+def build(report_dir, limit=400000, max_groups=40):
     groups = {}
     order = []
     for label, res in _results(report_dir):

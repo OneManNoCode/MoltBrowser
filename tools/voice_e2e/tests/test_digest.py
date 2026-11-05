@@ -78,10 +78,13 @@ class DigestTest(unittest.TestCase):
                   "error 0: No audio\n"
                   "[1:2:3/4.6:WARNING:voice_audio.cc:9] [MoltVoice] microphone "
                   "error 0: No audio\n"
+                  "[1:2:3/4.6:WARNING:filter_list_manager.cc:9] [MoltShield] list "
+                  "update failed: easylist\n"
                   "[1:2:3/4.5:INFO:x.cc:1] the last line\n")
             text = digest.build(d)
             self.assertEqual(text.count("[MoltVoice] microphone error 0"), 3)
             self.assertIn("MoltBrowser's lines:", text)
+            self.assertNotIn("list update failed", text.split("(nothing fatal")[0])
             self.assertIn("(nothing fatal; the end of browser.log:)", text)
             self.assertIn("the last line", text)
             self.assertIn("(no voice test log)", text)
