@@ -417,6 +417,14 @@ void VoiceListener::Stop() {
   EndConnection(StopReason::kExited, std::string());
 }
 
+void VoiceListener::Release() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Once stopped, nothing calls the delegate: lines of an ended
+  // connection are dropped (OnLine()), and an end reports nothing.
+  Stop();
+  delegate_ = nullptr;
+}
+
 void VoiceListener::Launch() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   ++generation_;

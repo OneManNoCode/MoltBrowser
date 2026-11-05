@@ -187,8 +187,11 @@ on the browser, never on fixed gaps.
 **File capture** (fallback): one WAV per scenario for Chromium's fake
 capture device (`--use-fake-device-for-media-stream
 --use-file-for-fake-audio-capture=<wav>%noloop`, 44.1 kHz stereo), the
-utterances at fixed times (the first 6 s in, each next 9 s after the one
-before), timed from the moment the test log shows the microphone on. No
+utterances at fixed times (the first 11 s in, past voice mode's greeting,
+each next 12 s after the end of the one before, past the longest answer:
+without echo cancellation an utterance over voice mode's own speech stops
+it and is dropped), timed from the moment the test log shows the
+microphone on. No
 loopback and no recording: the scenarios that need the confirmation word
 or a page's sound are skipped there.
 

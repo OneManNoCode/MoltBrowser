@@ -342,6 +342,14 @@ void VoiceAudio::Stop() {
   chunker_.Reset();
 }
 
+void VoiceAudio::Release() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Stop() leaves nothing that calls the delegate (the weak pointers its
+  // posted calls hold are invalidated).
+  Stop();
+  delegate_ = nullptr;
+}
+
 void VoiceAudio::OnCaptureStarted() {
   // The audio thread (AudioInputDevice's AudioThreadCallback, once it has
   // the stream's memory), like Capture().

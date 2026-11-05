@@ -146,6 +146,9 @@ class VoiceListener {
 
   void Start();
   void Stop();
+  // Stops, and forgets the delegate: for a listener deleted later
+  // (DeleteSoon()) than its delegate may be.
+  void Release();
   bool started() const { return started_; }
   // A helper is ready.
   bool ready() const { return ready_; }

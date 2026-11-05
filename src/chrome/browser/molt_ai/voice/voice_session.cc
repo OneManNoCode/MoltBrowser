@@ -428,12 +428,14 @@ void VoiceSession::StopListening() {
   // The microphone first (no more frames), then the helper. Both stop now;
   // they go once whatever of theirs called here has returned.
   if (audio_) {
-    audio_->Stop();
+    // It goes after this session may (a window closing): it keeps no
+    // pointer to it.
+    audio_->Release();
     base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
         FROM_HERE, std::move(audio_));
   }
   if (listener_) {
-    listener_->Stop();
+    listener_->Release();
     base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
         FROM_HERE, std::move(listener_));
   }

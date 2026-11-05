@@ -34,8 +34,15 @@ SETTLE_S = 1.5        # quiet after the browser speaks (> kGestureQuietMs)
 LISTEN_TIMEOUT_S = 45
 IDLE_TIMEOUT_S = 60
 POLL_S = 0.2
-FILE_LEAD_S = 6.0
-FILE_GAP_S = 9.0
+# File mode's fixed times (the recording can't wait on the browser): past
+# voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
+# want.", which ends about 7 s after the microphone opens, once the speech
+# helper is ready), and past the longest answer before the next utterance.
+# Without echo cancellation (the fake device has none) what is said over
+# voice mode's own speech stops it and is dropped ("I've stopped. Now say
+# that again."), so an utterance mustn't land on it.
+FILE_LEAD_S = 11.0
+FILE_GAP_S = 12.0
 DEFAULT_QUIET_S = 8.0
 WORD_TRIES = 3
 

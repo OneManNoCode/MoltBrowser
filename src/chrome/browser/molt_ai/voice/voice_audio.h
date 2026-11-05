@@ -111,6 +111,9 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   // Asks the OS for the microphone if it hasn't yet, then captures.
   void Start();
   void Stop();
+  // Stops, and forgets the delegate: for a VoiceAudio that is deleted
+  // later (DeleteSoon()) than its delegate may be.
+  void Release();
   bool capturing() const { return source_ != nullptr; }
 
   // media::AudioCapturerSource::CaptureCallback (OnCaptureStarted() and
