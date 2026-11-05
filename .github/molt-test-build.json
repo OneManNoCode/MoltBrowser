@@ -1,5 +1,5 @@
 {
-  "resume_run": "41841116156",
+  "resume_run": "41895812780",
   "run_tests": true,
-  "request": "the first real build's 8 failed steps fixed: resume from run 41841116156"
+  "request": "the chrome and browser_tests link fix: resume from run 41895812780 (its unit tests ran: 2814 of 2920 passed)"
 }

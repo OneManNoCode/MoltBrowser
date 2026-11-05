@@ -21,12 +21,20 @@ SKIP = {'SKIPPED', 'NOTRUN', 'EXCESSIVE_OUTPUT_SKIPPED'}
 
 
 def last_runs(data):
-    """Maps each test to its last run, across the launcher's iterations."""
+    """Maps each test to its last run, across the launcher's iterations. A
+    test that failed or crashed before passing on a retry is "FLAKY", with
+    the failing run's output: a flake is still a failure to fix."""
     last = {}
     for iteration in data.get('per_iteration_data') or []:
         for name, runs in (iteration or {}).items():
-            if runs:
-                last[name] = runs[-1]
+            if not runs:
+                continue
+            final = runs[-1]
+            bad = [r for r in runs[:-1]
+                   if r.get('status') not in PASS and r.get('status') not in SKIP]
+            if final.get('status') in PASS and bad:
+                final = dict(bad[-1], status='FLAKY')
+            last[name] = final
     return last
 
 

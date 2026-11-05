@@ -69,8 +69,11 @@ class MoltNetSSLHostStateDelegate : public StatefulSSLHostStateDelegate {
   bool HasAllowException(
       const std::string& host,
       content::StoragePartition* storage_partition) override {
+    // The base's HTTP part (its declared HasHttpAllowException() has no
+    // definition at 156; IsHttpAllowedForHost() is what its own
+    // HasAllowException() uses).
     return cert_decisions_.HasAnyFor(host) ||
-           HasHttpAllowException(host, storage_partition);
+           IsHttpAllowedForHost(host, storage_partition);
   }
 
   void RevokeUserAllowExceptions(const std::string& host) override {
