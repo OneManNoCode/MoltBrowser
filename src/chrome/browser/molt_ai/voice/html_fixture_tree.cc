@@ -448,6 +448,27 @@ class Converter {
     return PageRole::kGeneric;
   }
 
+  // Blink includes an element with any aria-* attribute
+  // (AXNodeObject::ShouldIncludeBasedOnSemantics()).
+  static bool HasAriaAttribute(const DomNode& n) {
+    for (const auto& [key, value] : n.attrs) {
+      if (key.size() > 5 && key.compare(0, 5, "aria-") == 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // And an element a link within the page could go to: <a name>, or any
+  // element with an id but a <label> or <optgroup> (or SVG, which these
+  // fixtures don't have). Blink's IsPotentialInPageLinkTarget().
+  static bool IsPotentialInPageLinkTarget(const DomNode& n) {
+    if (n.tag == "a" && n.HasAttr("name")) {
+      return true;
+    }
+    return n.HasAttr("id") && n.tag != "label" && n.tag != "optgroup";
+  }
+
   // Whether a block's children are all inline (text and inline elements)
   // and there is some: LayoutBlockFlow::ChildrenInline(), which Blink
   // includes the block for. A block with a block child wraps its inline
@@ -525,7 +546,8 @@ class Converter {
     if (role == PageRole::kGeneric && !ignored) {
       const bool block = !IsInline(n.tag);
       ignored = !(custom || focusable || n.HasAttr("role") ||
-                  n.HasAttr("aria-label") ||
+                  HasAriaAttribute(n) || !n.AttrOr("title").empty() ||
+                  IsPotentialInPageLinkTarget(n) ||
                   (block && HoldsTextDirectly(n)));
     }
 

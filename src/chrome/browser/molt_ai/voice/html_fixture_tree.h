@@ -13,11 +13,13 @@
 //     article, table, tr, td, th, video, audio, img, p, time); anything
 //     else is a generic container;
 //   - ignored nodes: a generic container is ignored unless it is a custom
-//     element (a '-' in its tag), focusable (tabindex), has a role, or is a
-//     block whose children are all inline (text, links, spans); a span or
-//     other inline element is ignored. Ignored nodes keep no tag, id or
-//     class, as Blink sends none for them, so a skill can't lean on them
-//     here either;
+//     element (a '-' in its tag), focusable (tabindex), has a role, any
+//     aria-* attribute or a title, could be the target of a link within the
+//     page (an id, but on a label or optgroup; <a name>: Blink's
+//     IsPotentialInPageLinkTarget()), or is a block whose children are all
+//     inline (text, links, spans); a span or other inline element is
+//     ignored on the same terms. Ignored nodes keep no tag, id or class, as
+//     Blink sends none for them, so a skill can't lean on them here either;
 //   - hidden: hidden, aria-hidden="true", style="display:none" and the
 //     content of script, style, template and head (but the title) are
 //     left out;

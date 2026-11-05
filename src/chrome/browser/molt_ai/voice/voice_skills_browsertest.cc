@@ -306,8 +306,8 @@ IN_PROC_BROWSER_TEST_F(VoiceSkillsBrowserTest, HeadingsSectionsSelection) {
             "wikipedia_search.html?search=");
   Open(Url(kWikipediaHost, "wikipedia_article.html"));
   tts_.TakeSpoken();
-  Say("next heading");
-  EXPECT_EQ(tts_.TakeSpoken(), "Heading level 1: Queen (band).");
+  // The article's first heading: the skill reads the article's text, and
+  // the title is outside it.
   Say("next heading");
   EXPECT_EQ(tts_.TakeSpoken(), "Heading level 2: History.");
   Say("next paragraph");

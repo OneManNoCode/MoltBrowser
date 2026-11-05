@@ -120,11 +120,15 @@ TEST(VoiceReaderTest, ReadsThePageAChunkAhead) {
   EXPECT_TRUE(reader.reading());
   EXPECT_EQ(reader.StateFor(kPage), Reading::kReading);
   // Each chunk is noted as it starts.
-  EXPECT_EQ(host.TakeSaid(), "Queen (band).");
-  EXPECT_EQ(host.status(), "Reading: Queen (band).");
+  // The article's text, which the skill reads (its title is outside).
+  EXPECT_EQ(host.TakeSaid(), "This is a stand-in for a hatnote.");
+  EXPECT_EQ(host.status(), "Reading: This is a stand-in for a hatnote.");
   ASSERT_FALSE(host.scrolled().empty());
   host.FinishOne(reader);
-  EXPECT_EQ(host.TakeSaid(), "From Wikipedia, the free encyclopedia.");
+  EXPECT_EQ(host.TakeSaid(),
+            "Queen stands in for the article's subject here. This first "
+            "sentence stands in for the lead. A second sentence follows it, "
+            "with a link inside.");
   EXPECT_EQ(host.queued(), 2u);
   host.FinishAll(reader);
   const std::string said = host.TakeSaid();
@@ -174,7 +178,9 @@ TEST(VoiceReaderTest, StopKeepsThePlaceAndContinueGoesOn) {
   EXPECT_EQ(reader.StateFor(kPage), Reading::kStopped);
   // "Continue reading": the chunk that was cut short, again.
   reader.Run(ReadOp::kResume, "", kPage, 1.0);
-  EXPECT_EQ(host.TakeSaid(), "This is a stand-in for a hatnote.");
+  EXPECT_EQ(host.TakeSaid(),
+            "The lead's second paragraph stands in for more text. It ends "
+            "here.");
   // Another page: nothing to go on with there.
   reader.Interrupt();
   host.DropAll(reader);
@@ -195,7 +201,10 @@ TEST(VoiceReaderTest, SomethingElseStoppingTheVoiceKeepsThePlace) {
   EXPECT_FALSE(reader.reading());
   EXPECT_EQ(reader.StateFor(kPage), Reading::kStopped);
   reader.Run(ReadOp::kResume, "", kPage, 1.0);
-  EXPECT_EQ(host.TakeSaid(), "From Wikipedia, the free encyclopedia.");
+  EXPECT_EQ(host.TakeSaid(),
+            "Queen stands in for the article's subject here. This first "
+            "sentence stands in for the lead. A second sentence follows it, "
+            "with a link inside.");
 }
 
 TEST(VoiceReaderTest, ASection) {
@@ -217,17 +226,15 @@ TEST(VoiceReaderTest, ASection) {
   host.DropAll(reader);
   reader.Run(ReadOp::kSection, "discography", kPage, 1.0);
   EXPECT_EQ(host.TakeSaid().find("There's no section called discography. "
-                                 "The sections are: Queen (band), History"),
+                                 "The sections are: History"),
             0u);
 }
 
 TEST(VoiceReaderTest, HeadingsAndParagraphs) {
   FakeHost host(Fixture("wikipedia_article.html"));
   VoiceReader reader(&host);
-  // Not reading: the heading is said, and the place is after it.
-  reader.Run(ReadOp::kNextHeading, "", kPage, 1.0);
-  EXPECT_EQ(host.TakeSaid(), "Heading level 1: Queen (band).");
-  host.FinishAll(reader);
+  // Not reading: the heading is said, and the place is after it. The
+  // article's first (its title is outside the text the skill reads).
   reader.Run(ReadOp::kNextHeading, "", kPage, 1.0);
   EXPECT_EQ(host.TakeSaid(), "Heading level 2: History.");
   host.FinishAll(reader);
