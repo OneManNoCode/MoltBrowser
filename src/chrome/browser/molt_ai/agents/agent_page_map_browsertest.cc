@@ -469,7 +469,8 @@ class StubPlanner : public voice::VoicePlanner {
     log_->started.push_back(heard);
     log_->map_items = static_cast<int>(map.items.size());
     delegate_->PlannerSays("I'll search the site for trains to Lyon.");
-    delegate_->PlannerAsks(1, "open trains.example");
+    // As the web agent asks it (voice_agent::OpenQuestion()).
+    delegate_->PlannerAsks(1, "open the site trains.example");
   }
   void Replay(content::WebContents* contents,
               const voice::PlannerStep& step,

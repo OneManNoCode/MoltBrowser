@@ -74,15 +74,27 @@ def summarize(dir_path, binary, lines, details):
     failed = [(name, status, snippet + rerun_output(dir_path, binary, name)
                if not first_error(snippet) else snippet)
               for name, status, snippet in failed]
+    # A timeout's first error is the launcher's kill, the same for every
+    # test that ran out of time: each is its own.
     groups = {}
     for name, status, snippet in failed:
         first = first_error(snippet)
         key = (normalized(first) or name) + ' | ' + freed_at(snippet)
+        if status == 'TIMEOUT':
+            key = name
         groups.setdefault(key, []).append((name, status, snippet, first))
-    for name, status, snippet, first in [g[0] for g in groups.values()][:80]:
-        lines.append('  - `%s`: %s%s' % (name, status.lower(),
-                                         (' — ' + first.strip()[:200])
-                                         if first else ''))
+    for group in list(groups.values())[:80]:
+        name, status, snippet, first = group[0]
+        others = [g[0] for g in group[1:]]
+        lines.append('  - `%s`: %s%s%s' % (
+            name, status.lower(),
+            (' — ' + first.strip()[:200]) if first else '',
+            (' (the same in %d more: %s%s)' %
+             (len(others), ', '.join(others[:12]),
+              ', ...' if len(others) > 12 else '')) if others else ''))
+        # What a failed expectation saw, in the list itself: the details
+        # below can run past what the job log shows.
+        lines.extend('    > ' + l for l in expectation(snippet, first))
     if len(groups) > 80:
         lines.append('  - ... and %d more' % (len(groups) - 80))
     # The details most worth the log's room first: crashes and failures,
@@ -100,6 +112,25 @@ def summarize(dir_path, binary, lines, details):
                        (name, binary, status.lower(), lines_of_others,
                         clip(snippet)))
     return 1 if failed else 0
+
+
+def expectation(snippet, first, max_lines=8, width=300):
+    """A gtest failure's message after its "file:line: Failure" line (the
+    values compared), up to its stack trace."""
+    if not first or not first.rstrip().endswith('Failure'):
+        return []
+    lines = snippet.splitlines()
+    try:
+        at = lines.index(first)
+    except ValueError:
+        return []
+    out = []
+    for line in lines[at + 1:]:
+        if line.startswith('Stack trace:') or len(out) >= max_lines:
+            break
+        if line.strip():
+            out.append(line.rstrip()[:width])
+    return out
 
 
 def rerun_output(dir_path, binary, name, limit=12000):
