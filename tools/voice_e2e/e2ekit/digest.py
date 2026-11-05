@@ -66,11 +66,35 @@ def molt_lines(lines, limit=20):
     return out
 
 
+AUDIO = re.compile(r"media/audio/|services/audio/|\bpulse|\balsa|"
+                   r"audio_manager|AudioInput", re.IGNORECASE)
+
+
+def audio_lines(lines, limit=15):
+    """Chromium's own lines about audio (its audio manager, PulseAudio,
+    ALSA, the audio service), each kind once: what a run that heard
+    nothing opened."""
+    out, seen = [], set()
+    for line in lines:
+        if "[Molt" in line or not AUDIO.search(line):
+            continue
+        key = _normalized(line)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append("  " + line[:400])
+        if len(out) >= limit:
+            break
+    return out
+
+
 def browser_log_digest(text, stack_lines=40, tail_lines=25):
     """(the first fatal line normalized or '', the digest's lines)."""
     lines = text.splitlines()
     own = molt_lines(lines)
     own = (["MoltBrowser's lines:"] + own) if own else []
+    audio = audio_lines(lines)
+    own += (["audio lines:"] + audio) if audio else []
     fatal = [i for i, l in enumerate(lines)
              if any(s in l for s in FATAL) and not any(n in l for n in NOISE)]
     if not fatal:

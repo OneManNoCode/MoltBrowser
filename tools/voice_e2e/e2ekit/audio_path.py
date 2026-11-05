@@ -24,9 +24,12 @@ times. No loopback, no recording, and no confirmation word (it isn't known
 before the run).
 """
 
+import array
+import math
 import os
 import shutil
 import signal
+import struct
 import subprocess
 import tempfile
 import time
@@ -39,6 +42,9 @@ ECHO_DB = -6.0
 PCM_RATE = 16000
 FILE_RATE = 44100  # the fake capture device's rate (leakkit/micinput.py)
 WAKE_GAP_S = 0.35
+# The route check's tone, and the least of it the default input must give.
+CHECK_TONE_DB = -12.0
+CHECK_MIN_DB = -40.0
 
 
 class AudioError(Exception):
@@ -130,7 +136,42 @@ class Pulse(object):
             for line in self._pactl("list", "short", "sink-inputs").stdout.splitlines():
                 idx = line.split("\t", 1)[0]
                 self._pactl("set-sink-input-volume", idx, str(vol))
+        peak = self.check_route()
+        self.log("[pulse] a tone played into molt_mic_in reaches the default "
+                 "input at %.1f dBFS" % peak)
+        if peak < CHECK_MIN_DB:
+            self.stop()
+            raise AudioError("the default input doesn't hear what is played into "
+                             "molt_mic_in (%.1f dBFS); see %s/pulse.log" % (peak, self.dir))
         return self
+
+    def check_route(self, seconds=0.6):
+        """Plays a tone into molt_mic_in while recording the default input
+        (as the browser opens it: no device named) and returns the
+        recording's peak in dBFS (-120 for silence)."""
+        tone = os.path.join(self.dir, "check-tone.wav")
+        n = int(PCM_RATE * seconds)
+        amp = 32767 * 10 ** (CHECK_TONE_DB / 20.0)
+        with wave.open(tone, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(PCM_RATE)
+            w.writeframes(b"".join(
+                struct.pack("<h", int(amp * math.sin(2 * math.pi * 440 * i / PCM_RATE)))
+                for i in range(n)))
+        raw = os.path.join(self.dir, "check-input.raw")
+        rec = subprocess.Popen(
+            ["parec", "--format=s16le", "--rate=%d" % PCM_RATE, "--channels=1",
+             "--raw", raw],
+            env=self._env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        try:
+            time.sleep(0.3)
+            self.play(tone)
+            time.sleep(0.3)
+        finally:
+            _kill_group(rec)
+        return pcm_peak_db(raw)
 
     def _pactl(self, *args):
         return subprocess.run(["pactl"] + list(args), capture_output=True, text=True,
@@ -196,6 +237,19 @@ def _kill_group(proc):
             os.killpg(proc.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
+
+
+def pcm_peak_db(path):
+    """The peak of a raw s16le file in dBFS (-120 for silence or none)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return -120.0
+    samples = array.array("h")
+    samples.frombytes(data[:len(data) // 2 * 2])
+    peak = max((abs(x) for x in samples), default=0)
+    return 20 * math.log10(peak / 32768.0) if peak else -120.0
 
 
 def read_pcm_since(path, t0, since, until=None):

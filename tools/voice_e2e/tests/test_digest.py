@@ -96,6 +96,20 @@ class DigestTest(unittest.TestCase):
             self.assertIn("- pulse/clean: s49 (failed): reason 49", text)
             self.assertLessEqual(len(digest.build(d, limit=300)), 400)
 
+    def test_audio_lines(self):
+        log = ("[1:2:1105/0248.1:WARNING:media/audio/linux/audio_manager_linux.cc:55] "
+               "Falling back to ALSA for audio output.\n"
+               "[1:3:1105/0248.2:ERROR:media/audio/alsa/alsa_util.cc:204] "
+               "PcmOpen: default, No such file or directory\n"
+               "[1:3:1105/0248.3:ERROR:media/audio/alsa/alsa_util.cc:204] "
+               "PcmOpen: default, No such file or directory\n"
+               "[1:4:1105/0248.4:INFO:CONSOLE(1)] \"page\"\n")
+        _, out = digest.browser_log_digest(log)
+        self.assertEqual(out[0], "audio lines:")
+        self.assertEqual(len([l for l in out if "PcmOpen" in l]), 1)
+        self.assertTrue(any("Falling back to ALSA" in l for l in out))
+        self.assertFalse(any("CONSOLE" in l for l in out[:3]))
+
     def test_microphone_reports_fold_into_one_line(self):
         with tempfile.TemporaryDirectory() as d:
             log = os.path.join(d, "voice.jsonl")

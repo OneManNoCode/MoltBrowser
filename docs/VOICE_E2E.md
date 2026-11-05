@@ -184,6 +184,15 @@ voice mode has been listening (not thinking or speaking) for 1.5 s, more
 than the gesture's quiet period (`kGestureQuietMs`), so a scenario waits
 on the browser, never on fixed gaps.
 
+Before the first scenario the kit checks its own route: a 440 Hz tone at
+-12 dBFS played into `molt_mic_in` must reach the default input (recorded
+as the browser opens it, no device named) at -40 dBFS or more, or the run
+stops there. In a PulseAudio run the browser also logs what its audio
+manager opens (`--enable-logging=stderr` and `--vmodule` for Chromium's
+Linux audio files), and the digest lists those lines, each kind once, as
+"audio lines": a fallback to ALSA, or a stream that didn't open, shows
+there.
+
 **File capture** (fallback): one WAV per scenario for Chromium's fake
 capture device (`--use-fake-device-for-media-stream
 --use-file-for-fake-audio-capture=<wav>%noloop`, 44.1 kHz stereo), the

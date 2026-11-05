@@ -47,6 +47,12 @@ DEFAULT_QUIET_S = 8.0
 WORD_TRIES = 3
 
 
+# Chromium's Linux audio files whose VLOG(1) the pulse runs log.
+AUDIO_VLOG_MODULES = ("audio_manager_linux", "audio_manager_pulse", "pulse_util",
+                      "pulse_input", "audio_manager_alsa", "alsa_input",
+                      "input_controller", "input_stream")
+
+
 class RunConfig(object):
     def __init__(self, audio="pulse", condition="clean", loopback=True,
                  voices=None, speeds=None, settle=SETTLE_S, sandbox=True,
@@ -188,6 +194,11 @@ class Runner(object):
         if wav:
             f += ["--use-fake-device-for-media-stream",
                   "--use-file-for-fake-audio-capture=%s%%noloop" % wav]
+        elif self.config.audio == "pulse":
+            # What Chromium's audio manager opens (PulseAudio or ALSA, which
+            # device), for the digest's audio lines.
+            f += ["--enable-logging=stderr", "--vmodule=" + ",".join(
+                "%s=1" % m for m in AUDIO_VLOG_MODULES)]
         return f + self.config.extra_flags
 
     def server_rules(self):
