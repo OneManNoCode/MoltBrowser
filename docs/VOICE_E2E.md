@@ -191,7 +191,11 @@ on the browser, never on fixed gaps. The first is played once voice mode
 has said it's on, as a user would wait: the microphone opens a few seconds
 before the speech helper is ready, and what's said until then reaches no
 recognizer (the listener drops it, and the `mic` lines count it as
-`dropped`).
+`dropped`). In wake mode, a step said with the wake phrase also waits until
+voice mode waits for the phrase again (its follow-up window closed; at most
+30 s), as when a user says "Hey Molt" after a pause: so the suite tests the
+wake phrase itself, which in the window would be just part of a follow-up.
+Answers (steps without the wake phrase) are said in the window.
 
 Before the first scenario the kit checks its own route: a 440 Hz tone at
 -12 dBFS played into `molt_mic_in` must reach the default input (recorded

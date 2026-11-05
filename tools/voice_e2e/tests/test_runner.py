@@ -172,6 +172,12 @@ class RunnerTest(unittest.TestCase):
         run = r.run(self.scs, modes=["wake"])
         self.check(run, typed=False)
         self.assertIn("open YouTube", player.played)
+        # Each step with the wake phrase was said once voice mode waited for
+        # it again (the follow-up window closed), not as a follow-up.
+        with open(os.path.join(self.d, "report", by_id(run)["t-owner"]["log"])) as f:
+            heard = [json.loads(line) for line in f if '"heard"' in line]
+        self.assertEqual(len(heard), 4)
+        self.assertTrue(all(h["waiting"] for h in heard), heard)
         owner = by_id(run)["t-owner"]
         self.assertEqual(owner["voice"], "ljspeech")
         # The WAV the player got starts with the wake phrase.

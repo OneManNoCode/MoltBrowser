@@ -34,6 +34,8 @@ from .scenarios import QUIET_KINDS
 SETTLE_S = 1.5        # quiet after the browser speaks (> kGestureQuietMs)
 LISTEN_TIMEOUT_S = 45
 IDLE_TIMEOUT_S = 60
+# The longest wait for voice mode's follow-up window to close.
+WINDOW_TIMEOUT_S = 30
 POLL_S = 0.2
 # File mode's fixed times (the recording can't wait on the browser): past
 # voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
@@ -283,6 +285,18 @@ class Runner(object):
             time.sleep(POLL_S)
         return False
 
+    def wait_waiting(self, log, timeout=WINDOW_TIMEOUT_S):
+        """Until voice mode waits for the wake phrase (its follow-up window
+        closed), as when the user says "Hey Molt" after a pause: the step is
+        then heard by the wake phrase, not as a follow-up."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            a = log.activity()
+            if a is not None and a.get("activity") == "listening" and a.get("waiting"):
+                return True
+            time.sleep(POLL_S)
+        return False
+
     def wait_idle(self, log, timeout=IDLE_TIMEOUT_S):
         """Until voice mode has been listening (not thinking or speaking)
         for the settle time, and said nothing in it."""
@@ -370,6 +384,9 @@ class Runner(object):
                                          "status": "not run",
                                          "detail": "an earlier step failed"})
                     continue
+                if self.config.audio == "pulse" and step.action == "say" and \
+                        self.wake_for(step, mode) and not step.barge_in:
+                    self.wait_waiting(tlog)
                 sres = self.run_step(sc, step, i, world, tlog, plan, stream_start, mode,
                                      run_dir)
                 res["steps"].append(sres)
