@@ -26,6 +26,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/unguessable_token.h"
+#include "chrome/browser/molt_ai/voice/voice_test_audio.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/audio_service.h"
@@ -240,7 +241,9 @@ media::AudioParameters VoiceCaptureParameters(EchoCancellation echo) {
 
 VoiceAudio::VoiceAudio(Delegate* delegate,
                        scoped_refptr<VoiceListener::AudioSink> sink)
-    : delegate_(delegate), sink_(std::move(sink)) {}
+    : delegate_(delegate),
+      sink_(std::move(sink)),
+      test_audio_(VoiceTestAudio::MaybeCreate()) {}
 
 VoiceAudio::~VoiceAudio() {
   Stop();
@@ -407,6 +410,9 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
                                               1000000 / kHelperSampleRate);
   for (const std::vector<int16_t>& frame : frames) {
     sink_->Push(frame, end_captured);
+    if (test_audio_) {
+      test_audio_->Append(frame);
+    }
   }
 }
 

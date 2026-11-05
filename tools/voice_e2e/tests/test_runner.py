@@ -99,6 +99,12 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(res["t-quiet"]["status"], "passed", res["t-quiet"])
         self.assertEqual(res["t-word"]["status"], "skipped")
 
+    def test_microphone_levels(self):
+        import struct
+        pcm = struct.pack("<16000h", *([0] * 16000)) + \
+            struct.pack("<16000h", *([16384] + [0] * 15999))
+        self.assertEqual(runner.mic_levels(pcm), [-120, -6])
+
     def test_a_run_without_the_loopback_is_labelled(self):
         self.assertEqual(runner.RunConfig(audio="pulse").label, "pulse/clean")
         self.assertEqual(runner.RunConfig(audio="pulse", loopback=False).label,

@@ -249,6 +249,14 @@ in `VoiceController`):
   loop's own yes-or-no questions (a purchase, the activation guard's), as
   they open and close.
 
+In PulseAudio runs the kit also passes `--molt-voice-test-audio=<absolute
+path>` (`voice/voice_test_audio.*`): what voice mode's microphone gave
+after the browser's processing, as its speech helper gets it, raw 16 kHz
+mono 16-bit samples, at most 64 MB, a regular file readable by its owner
+alone. For a failed scenario the digest lists each second's peak of it and
+what the kit's own recognizer makes of it: a microphone that got nothing
+from audio voice mode's recognizer didn't make out.
+
 Like Chromium's own test switches (`--use-fake-ui-for-media-stream`,
 `--log-net-log`), nothing is logged without it and the browser never sets
 it; like `--moltnet-tor-binary` it takes an absolute path only. The file

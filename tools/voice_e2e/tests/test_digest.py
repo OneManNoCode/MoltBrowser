@@ -96,6 +96,15 @@ class DigestTest(unittest.TestCase):
             self.assertIn("- pulse/clean: s49 (failed): reason 49", text)
             self.assertLessEqual(len(digest.build(d, limit=300)), 400)
 
+    def test_the_microphone(self):
+        out = digest.microphone_digest({"mic_levels": [-120, -8, -24],
+                                        "mic_heard": "hey molt play"})
+        self.assertEqual(out[0], "microphone, each second's peak (dBFS): -120 -8 -24")
+        self.assertIn('"hey molt play"', out[1])
+        self.assertEqual(digest.microphone_digest({"mic_heard": ""})[0],
+                         "microphone, as the kit's recognizer hears it: (nothing)")
+        self.assertEqual(digest.microphone_digest({}), [])
+
     def test_audio_lines(self):
         log = ("[1:2:1105/0248.1:WARNING:media/audio/linux/audio_manager_linux.cc:55] "
                "Falling back to ALSA for audio output.\n"

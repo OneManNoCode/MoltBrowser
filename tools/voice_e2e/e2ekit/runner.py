@@ -20,6 +20,7 @@ the report names why, with a screenshot of the tab.
 import json
 import os
 import re
+import sys
 import time
 import traceback
 
@@ -45,6 +46,29 @@ FILE_LEAD_S = 11.0
 FILE_GAP_S = 12.0
 DEFAULT_QUIET_S = 8.0
 WORD_TRIES = 3
+
+
+# What voice mode's microphone gave in a pulse run (--molt-voice-test-audio):
+# raw 16 kHz mono 16-bit, in the scenario's run directory.
+MIC_DUMP = "mic.pcm"
+# How much of it the kit's recognizer hears back for a failed scenario.
+MIC_DUMP_MAX_S = 90
+
+
+def mic_levels(pcm, rate=16000):
+    """The peak of each second of |pcm| (16-bit little-endian), in dBFS
+    (-120 for silence)."""
+    import array
+    import math
+    samples = array.array("h")
+    samples.frombytes(pcm[:len(pcm) // 2 * 2])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    out = []
+    for at in range(0, len(samples), rate):
+        peak = max((abs(x) for x in samples[at:at + rate]), default=0)
+        out.append(round(20 * math.log10(peak / 32768.0)) if peak else -120)
+    return out
 
 
 # Chromium's Linux audio files whose VLOG(1) the pulse runs log.
@@ -211,6 +235,10 @@ class Runner(object):
             f += ["--use-fake-device-for-media-stream",
                   "--use-file-for-fake-audio-capture=%s%%noloop" % wav]
         elif self.config.audio == "pulse":
+            # What voice mode's microphone gave, as its speech helper gets
+            # it (voice_test_audio.h), for the digest.
+            f.append("--molt-voice-test-audio=" +
+                     os.path.join(os.path.dirname(log_path), MIC_DUMP))
             # What Chromium's audio manager opens (PulseAudio or ALSA, which
             # device), for the digest's audio lines.
             f += ["--enable-logging=stderr", "--vmodule=" + ",".join(
@@ -283,6 +311,7 @@ class Runner(object):
         os.makedirs(run_dir, exist_ok=True)
         log_path = os.path.join(run_dir, "voice.jsonl")
         testlog.fresh(log_path)
+        testlog.fresh(os.path.join(run_dir, MIC_DUMP))  # the browser appends
         tlog = testlog.TestLog(log_path)
         t_start = time.time()
         browser = None
@@ -345,6 +374,8 @@ class Runner(object):
                 self.pulse.stop_recording()
             if browser:
                 browser.close()
+            if res.get("status") in ("failed", "error"):
+                self.note_microphone(res, run_dir)
         res["duration_s"] = round(time.time() - t_start, 1)
         res["kinds"] = tlog.kinds()
         res["bad_log_lines"] = tlog.bad_lines
@@ -364,6 +395,25 @@ class Runner(object):
             browser.evaluate_active(start["js"])
 
     # ---- audio ----------------------------------------------------------------
+
+    def note_microphone(self, res, run_dir):
+        """For a failed pulse scenario: what voice mode's microphone gave
+        (its dump, voice_test_audio.h), each second's peak and what the
+        kit's own recognizer makes of it, so the report tells a microphone
+        that got nothing from audio voice mode's recognizer didn't make
+        out."""
+        path = os.path.join(run_dir, MIC_DUMP)
+        try:
+            with open(path, "rb") as f:
+                pcm = f.read(MIC_DUMP_MAX_S * audio_path.PCM_RATE * 2)
+        except OSError:
+            return
+        res["mic_levels"] = mic_levels(pcm)
+        if self.ears and pcm:
+            try:
+                res["mic_heard"] = (self.ears.transcribe(pcm) or "")[:600]
+            except Exception as err:  # the ears are the kit's: a note only
+                res["mic_heard"] = "(the kit's recognizer failed: %s)" % err
 
     def wake_for(self, step, mode):
         return mode == "wake" and not step.answer

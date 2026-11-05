@@ -70,6 +70,8 @@ class AudioSystem;
 namespace molt_ai {
 namespace voice {
 
+class VoiceTestAudio;
+
 // Which echo canceller the microphone gets.
 enum class EchoCancellation {
   kChromeWide,  // WebRTC's, in the audio service; the browser's output
@@ -150,6 +152,9 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   SEQUENCE_CHECKER(sequence_checker_);
   raw_ptr<Delegate> delegate_;
   const scoped_refptr<VoiceListener::AudioSink> sink_;
+  // With --molt-voice-test-audio (a test switch), what the helper gets is
+  // also written there (voice_test_audio.h); else null.
+  const scoped_refptr<VoiceTestAudio> test_audio_;
   std::unique_ptr<media::AudioSystem> audio_system_;
   scoped_refptr<media::AudioCapturerSource> source_;
   EchoCancellation echo_ = EchoCancellation::kNone;

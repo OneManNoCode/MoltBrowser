@@ -149,6 +149,23 @@ def voice_log_digest(path, limit_events=60):
     return out
 
 
+def microphone_digest(res, limit=90):
+    """What voice mode's microphone gave in a pulse run (the runner's
+    note_microphone()): each second's peak, and what the kit's recognizer
+    made of it."""
+    out = []
+    levels = res.get("mic_levels")
+    if isinstance(levels, list) and levels:
+        out.append("microphone, each second's peak (dBFS): " +
+                   " ".join(str(int(v)) for v in levels[:limit]
+                            if isinstance(v, (int, float))))
+    heard = res.get("mic_heard")
+    if isinstance(heard, str):
+        out.append("microphone, as the kit's recognizer hears it: %s" %
+                   (json.dumps(heard[:600]) if heard else "(nothing)"))
+    return out
+
+
 def _fold_microphone(events):
     """Each run of "mic" events (one about every five seconds) as one: how
     many, the loudest and quietest peaks, the samples, the echo modes."""
@@ -230,6 +247,7 @@ def build(report_dir, limit=150000, max_groups=30):
         part += blog
         part.append("voice.jsonl:")
         part += voice_log_digest(os.path.join(run_dir, "voice.jsonl"))
+        part += microphone_digest(res)
         err = _read(os.path.join(run_dir, "error.txt"), 4000).strip()
         if err:
             part.append("error.txt:")
