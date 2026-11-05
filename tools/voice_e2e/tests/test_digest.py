@@ -96,6 +96,26 @@ class DigestTest(unittest.TestCase):
             self.assertIn("- pulse/clean: s49 (failed): reason 49", text)
             self.assertLessEqual(len(digest.build(d, limit=300)), 400)
 
+    def test_microphone_reports_fold_into_one_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "voice.jsonl")
+            lines = [{"t": 1000, "w": 1, "e": "heard", "text": "hi"}]
+            lines += [{"t": 1000 + 5000 * i, "w": 1, "e": "mic",
+                       "peak_db": -120 if i < 3 else -30, "samples": 80000,
+                       "echo": "off" if i == 1 else "none"}
+                      for i in range(1, 70)]
+            lines += [{"t": 400000, "w": 1, "e": "said", "text": "ok"}]
+            write(log, "\n".join(json.dumps(l) for l in lines) + "\n")
+            out = digest.voice_log_digest(log)
+            self.assertEqual(len(out), 3)
+            self.assertIn("heard", out[0])
+            self.assertIn('"reports": 69', out[1])
+            self.assertIn('"loudest_db": -30', out[1])
+            self.assertIn('"quietest_db": -120', out[1])
+            self.assertIn('"samples": 5520000', out[1])
+            self.assertIn('["off", "none"]', out[1])
+            self.assertIn("said", out[2])
+
     def test_no_report(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(digest.build(d), "(no failed scenarios)")

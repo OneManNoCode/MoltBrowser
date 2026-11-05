@@ -511,6 +511,14 @@ void VoiceController::SetListening(ListeningCaption caption) {
   NotifyCaption();
 }
 
+void VoiceController::NoteMicrophoneLevels(float peak,
+                                           int64_t samples,
+                                           std::string_view echo) {
+  if (test_log_) {
+    test_log_->OnMicrophone(peak, samples, echo);
+  }
+}
+
 void VoiceController::SetNumbersShown(bool shown) {
   state_.numbers_shown = shown;
 }

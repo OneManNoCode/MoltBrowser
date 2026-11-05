@@ -104,6 +104,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/callback_list.h"
@@ -292,6 +293,10 @@ class VoiceController : public VoicePlanner::Delegate,
   // (on by default in voice mode, §5.3): lists are then read, and numbers
   // chosen, as they are shown.
   void SetNumbersShown(bool shown);
+
+  // What the microphone gave over the last few seconds, for the spoken
+  // test kit's log (voice_test_log.h); nothing without the log.
+  void NoteMicrophoneLevels(float peak, int64_t samples, std::string_view echo);
 
   // The planner open-ended requests go to (§6.2, layer 3): the web agent's
   // (agents/voice_agent_planner.h) unless replaced; null, the browser says

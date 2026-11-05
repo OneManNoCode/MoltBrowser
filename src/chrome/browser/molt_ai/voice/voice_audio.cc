@@ -4,6 +4,8 @@
 #include "chrome/browser/molt_ai/voice/voice_audio.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -350,6 +352,13 @@ void VoiceAudio::Release() {
   delegate_ = nullptr;
 }
 
+VoiceAudio::Levels VoiceAudio::TakeLevels() {
+  Levels levels;
+  levels.peak = peak_millionths_.exchange(0, std::memory_order_relaxed) / 1e6f;
+  levels.samples = samples_.exchange(0, std::memory_order_relaxed);
+  return levels;
+}
+
 void VoiceAudio::OnCaptureStarted() {
   // The audio thread (AudioInputDevice's AudioThreadCallback, once it has
   // the stream's memory), like Capture().
@@ -375,6 +384,20 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
   if (!audio_source || audio_source->channels() < 1) {
     return;
   }
+  // The levels the test log notes (TakeLevels()).
+  float peak = 0;
+  for (const float sample : audio_source->channel(0)) {
+    peak = std::max(peak, std::fabs(sample));
+  }
+  const uint32_t millionths =
+      static_cast<uint32_t>(std::min(peak, 1.0f) * 1e6f);
+  uint32_t seen = peak_millionths_.load(std::memory_order_relaxed);
+  while (millionths > seen &&
+         !peak_millionths_.compare_exchange_weak(seen, millionths,
+                                                 std::memory_order_relaxed)) {
+  }
+  samples_.fetch_add(audio_source->frames(), std::memory_order_relaxed);
+
   std::vector<std::vector<int16_t>> frames;
   chunker_.Add(audio_source->channel(0), &frames);
   // |audio_capture_time| is the first sample's: a frame completed here ends

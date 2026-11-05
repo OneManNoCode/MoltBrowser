@@ -108,6 +108,13 @@ class VoiceTestLog::Writer {
     Write(lines_.Map(ms, map, pending_word));
   }
 
+  void Microphone(int64_t ms,
+                  float peak,
+                  int64_t samples,
+                  const std::string& echo) {
+    Write(lines_.Microphone(ms, peak, samples, echo));
+  }
+
   void Changed(int64_t ms,
                const std::string& activity,
                bool mic,
@@ -221,6 +228,13 @@ void VoiceTestLog::OnMap(const PageMap& map,
       .WithArgs(NowMs(), map.items.size(), map.lists.size(), map.media.size(),
                 selection, selected_text, std::move(labels),
                 state.prompt.id != 0 ? state.prompt.word : std::string());
+}
+
+void VoiceTestLog::OnMicrophone(float peak,
+                                int64_t samples,
+                                std::string_view echo) {
+  writer_.AsyncCall(&Writer::Microphone)
+      .WithArgs(NowMs(), peak, samples, std::string(echo));
 }
 
 void VoiceTestLog::OnLoop(VoiceActivity activity,

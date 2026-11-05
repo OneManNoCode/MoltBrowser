@@ -15,6 +15,8 @@
 //   {"t":...,"w":1,"e":"prompt","op":"close","id":3}
 //   {"t":...,"w":1,"e":"confirm","op":"open","what":"press Buy now"}
 //   {"t":...,"w":1,"e":"confirm","op":"close"}
+//   {"t":...,"w":1,"e":"mic","peak_db":-23,"samples":80000,
+//    "echo":"chrome-wide"}
 //   {"t":...,"w":1,"e":"map","items":12,"lists":1,"media":1,
 //    "selection":false,"selected_text":false,"labels":["Search",...]}
 //
@@ -126,6 +128,15 @@ class TestLogLines {
   std::string Map(int64_t ms,
                   const MapSummary& map,
                   std::string_view pending_word) const;
+
+  // What the microphone gave over the last few seconds: its loudest
+  // sample in dBFS (-120 for silence), how many samples, and the echo
+  // cancellation it has ("chrome-wide", "platform" or "none"; "off"
+  // before it starts).
+  std::string Microphone(int64_t ms,
+                         float peak,
+                         int64_t samples,
+                         std::string_view echo) const;
 
   // The lines for what changed since the last call (the first call compares
   // with a TestLogState{}).

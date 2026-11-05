@@ -111,6 +111,7 @@ def voice_log_digest(path, limit_events=60):
     if not events:
         return ["(the voice test log is empty)"]
     t0 = events[0].get("t", 0)
+    events = _fold_microphone(events)
     shown = events if len(events) <= limit_events else \
         events[:limit_events // 2] + [{"e": "...", "skipped": len(events) - limit_events}] + \
         events[-limit_events // 2:]
@@ -121,6 +122,34 @@ def voice_log_digest(path, limit_events=60):
             "%+.1fs" % ((t - t0) / 1000.0) if isinstance(t, (int, float)) else "",
             ev.get("e", "?"),
             json.dumps(rest, ensure_ascii=False)[:1500 if ev.get("e") == "map" else 300]))
+    return out
+
+
+def _fold_microphone(events):
+    """Each run of "mic" events (one about every five seconds) as one: how
+    many, the loudest and quietest peaks, the samples, the echo modes."""
+    out = []
+    for ev in events:
+        if ev.get("e") != "mic":
+            out.append(ev)
+            continue
+        peak = ev.get("peak_db")
+        samples = ev.get("samples")
+        peak = peak if isinstance(peak, (int, float)) else -120
+        samples = samples if isinstance(samples, int) else 0
+        echo = str(ev.get("echo", ""))[:32]
+        last = out[-1] if out else None
+        if last is not None and last.get("e") == "mic" and "reports" in last:
+            last["reports"] += 1
+            last["loudest_db"] = max(last["loudest_db"], peak)
+            last["quietest_db"] = min(last["quietest_db"], peak)
+            last["samples"] += samples
+            if echo not in last["echo"]:
+                last["echo"].append(echo)
+            continue
+        out.append({"t": ev.get("t"), "e": "mic", "reports": 1,
+                    "loudest_db": peak, "quietest_db": peak,
+                    "samples": samples, "echo": [echo]})
     return out
 
 

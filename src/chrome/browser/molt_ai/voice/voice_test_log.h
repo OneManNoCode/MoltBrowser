@@ -28,8 +28,10 @@
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_TEST_LOG_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_TEST_LOG_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "base/files/file_path.h"
 #include "base/memory/raw_ptr.h"
@@ -70,6 +72,10 @@ class VoiceTestLog : public VoiceController::Observer {
              bool selection,
              bool selected_text,
              const ConversationState& state);
+
+  // What the microphone gave since the last call: its loudest sample (0
+  // to 1), how many samples, and its echo cancellation.
+  void OnMicrophone(float peak, int64_t samples, std::string_view echo);
 
   // The loop's state as the caption bar shows it.
   void OnLoop(VoiceActivity activity,

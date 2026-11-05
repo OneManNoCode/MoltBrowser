@@ -45,6 +45,8 @@
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_AUDIO_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_AUDIO_H_
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -116,6 +118,15 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   void Release();
   bool capturing() const { return source_ != nullptr; }
 
+  // What the microphone gave since the last call, from the capture
+  // thread's counts: its loudest sample (0 to 1, of the first channel) and
+  // how many samples. For the voice test log (voice_test_log.h).
+  struct Levels {
+    float peak = 0;
+    int64_t samples = 0;
+  };
+  Levels TakeLevels();
+
   // media::AudioCapturerSource::CaptureCallback (OnCaptureStarted() and
   // Capture() on the audio thread, OnCaptureError() on either):
   void OnCaptureStarted() override;
@@ -149,6 +160,10 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   base::WeakPtr<VoiceAudio> started_self_;
   // The capture thread's.
   AudioFrameChunker chunker_;
+  // Written by the capture thread, taken here (TakeLevels()): the peak in
+  // millionths, and the samples.
+  std::atomic<uint32_t> peak_millionths_{0};
+  std::atomic<int64_t> samples_{0};
   base::WeakPtrFactory<VoiceAudio> weak_factory_{this};
 };
 

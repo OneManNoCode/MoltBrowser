@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/voice/voice_test_log_lines.h"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -271,6 +273,24 @@ std::string TestLogLines::Map(int64_t ms,
                      pending_word));
   }
   out.append("]}\n");
+  return out;
+}
+
+std::string TestLogLines::Microphone(int64_t ms,
+                                     float peak,
+                                     int64_t samples,
+                                     std::string_view echo) const {
+  std::string out = Head(ms, "mic");
+  const int db = peak > 1e-6f && std::isfinite(peak)
+                     ? static_cast<int>(
+                           std::lround(20.0 * std::log10(std::min(peak, 1.0f))))
+                     : -120;
+  out.append(",\"peak_db\":");
+  out.append(std::to_string(db));
+  out.append(",\"samples\":");
+  out.append(std::to_string(std::max<int64_t>(samples, 0)));
+  AppendString(out, "echo", CleanSpokenText(echo, 32));
+  out.append("}\n");
   return out;
 }
 
