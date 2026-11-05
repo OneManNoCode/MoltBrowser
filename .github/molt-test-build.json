@@ -1,5 +1,5 @@
 {"resume_run": "41952636924", "run_tests": true, "e2e_only": true,
- "e2e_runs": "pulse:clean,file:clean,typed",
- "e2e_scenarios": "act-press-button,act-follow-link,read-title,go-open-by-name,owner-song,browser-settings,browser-new-window,media-play-pause",
+ "e2e_runs": "file:clean",
+ "e2e_scenarios": "act-press-button,go-open-by-name",
  "e2e_speech_check": false,
- "request": "Diagnostics: the spoken suite's digest of browser logs for the pulse crash, file mode's silence and typed mode's settings crash, on run 41952636924's build."}
+ "request": "Diagnostics: why the fake (file) microphone stops at once, on run 41952636924's build, with the digest's MoltBrowser lines."}
