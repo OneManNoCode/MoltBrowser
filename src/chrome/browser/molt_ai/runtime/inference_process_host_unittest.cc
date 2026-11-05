@@ -56,12 +56,21 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
     service_receiver_.Bind(std::move(receiver));
   }
 
+  // As in the real service, a pipe the browser closes is gone here too
+  // (a mojo::Receiver stays bound after its peer closes unless reset).
+  void UnbindWhenClosed() {
+    model_receiver_.set_disconnect_handler(base::BindOnce(
+        [](FakeService* self) { self->model_receiver_.reset(); },
+        base::Unretained(this)));
+  }
+
   // mojom::MoltInferenceService:
   void LoadModel(mojom::ModelLoadParamsPtr params,
                  mojo::PendingReceiver<mojom::Model> model,
                  LoadModelCallback callback) override {
     load_params_ = std::move(params);
     model_receiver_.Bind(std::move(model));
+    UnbindWhenClosed();
     pending_load_ = std::move(callback);
     // A GPU load asks the browser about the device first, as the real
     // service does (design section 11.10).
@@ -299,6 +308,9 @@ class InferenceProcessHostTest : public testing::Test {
           self->services_.push_back(std::make_unique<FakeService>());
           self->services_.back()->load_behavior = self->next_load_behavior_;
           self->services_.back()->Bind(std::move(receiver));
+          // Launched, as content reports it; with no handle, so nothing a
+          // test does terminates a real process.
+          std::move(on_process).Run(base::Process());
         },
         base::Unretained(this)));
   }

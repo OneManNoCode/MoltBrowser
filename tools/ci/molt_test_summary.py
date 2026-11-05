@@ -77,7 +77,13 @@ def summarize(dir_path, binary, lines, details):
                                          if first else ''))
     if len(groups) > 80:
         lines.append('  - ... and %d more' % (len(groups) - 80))
-    for group in groups.values():
+    # The details most worth the log's room first: crashes and failures,
+    # then timeouts and flakes, then failures at exit (a dangling pointer
+    # found at shutdown usually ends many tests alike).
+    order = {'CRASH': 0, 'FAILURE': 1, 'TIMEOUT': 2, 'FLAKY': 3,
+             'FAILURE_ON_EXIT': 4}
+    for group in sorted(groups.values(),
+                        key=lambda g: order.get(g[0][1], 5)):
         name, status, snippet, _ = group[0]
         others = [g[0] for g in group[1:]]
         lines_of_others = ('\nThe same first error in %d more: %s\n' %

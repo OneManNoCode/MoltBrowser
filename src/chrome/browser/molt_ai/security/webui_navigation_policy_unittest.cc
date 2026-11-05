@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/security/webui_navigation_policy.h"
 
 #include <optional>
+#include <string_view>
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -15,12 +16,16 @@ namespace {
 
 // chrome://, devtools:// etc. are standard schemes in the browser (content/
 // and chrome/ register them); without that their origins would be opaque.
+// The unit test launcher registers content's already (adding one twice is
+// a DCHECK), so only the missing ones are added.
 class WebUINavigationPolicyTest : public testing::Test {
  protected:
   WebUINavigationPolicyTest() {
-    for (const char* scheme : {"chrome", "chrome-untrusted", "devtools",
-                               "chrome-extension", "molt"}) {
-      url::AddStandardScheme(scheme, url::SCHEME_WITH_HOST);
+    for (std::string_view scheme : {"chrome", "chrome-untrusted", "devtools",
+                                    "chrome-extension", "molt"}) {
+      if (!url::IsStandard(scheme)) {
+        url::AddStandardScheme(scheme, url::SCHEME_WITH_HOST);
+      }
     }
   }
 
