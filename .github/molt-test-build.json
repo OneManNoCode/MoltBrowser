@@ -1,1 +1,5 @@
-{"resume_run": "41944827120", "run_tests": true, "e2e_only": false, "request": "unit and browser test fixes, the launcher switch, the spoken suite in four parallel jobs: resume from run 41944827120 (stage 1 built and tested)"}
+{"resume_run": "41952636924", "run_tests": true, "e2e_only": true,
+ "e2e_runs": "pulse:clean,file:clean,typed",
+ "e2e_scenarios": "act-press-button,act-follow-link,read-title,go-open-by-name,owner-song,browser-settings,browser-new-window,media-play-pause",
+ "e2e_speech_check": false,
+ "request": "Diagnostics: the spoken suite's digest of browser logs for the pulse crash, file mode's silence and typed mode's settings crash, on run 41952636924's build."}
