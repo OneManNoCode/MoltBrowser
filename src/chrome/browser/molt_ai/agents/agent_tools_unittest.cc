@@ -4,7 +4,6 @@
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
 
 #include <algorithm>
-#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -998,17 +997,8 @@ TEST(AgentToolsTest, RefusesBadArguments) {
   EXPECT_EQ(Read(tool, args("\"\xC3\xA9\xC3\xA9\xC3\xA9\xC3\xA9\xC3\xA9\"",
                             null, null, null, null, null)),
             ArgumentsError::kNone);
-  // A number the reader can't hold is refused, not rounded into range.
-  base::DictValue inf;
-  inf.Set("q", "ab");
-  inf.Set("n", base::Value());
-  inf.Set("x", std::numeric_limits<double>::infinity());
-  inf.Set("s", base::Value());
-  inf.Set("l", base::Value());
-  inf.Set("ok", base::Value());
-  ToolArguments out;
-  EXPECT_EQ(ReadArguments(base::Value(std::move(inf)), tool, &out),
-            ArgumentsError::kBadValue);
+  // (A number the reader can't hold never gets here: the reader refuses
+  // it, and a base::Value can't hold a non-finite one.)
 }
 
 TEST(AgentToolsTest, WholeNumbersOutsideIntRange) {

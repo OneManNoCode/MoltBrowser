@@ -966,12 +966,17 @@ TEST(AgentActionsTest, RefusesBadToolCalls) {
       {R"({"reason":"r","action":"call_tool","tool":"t1",)"
        R"("arguments":{"q":"x"}})",
        ActionError::kUnknownAction},
-      // Nested deeper than any reply may be.
+      // Nested deeper than any reply may be (object > arguments > list):
+      // refused by the reader itself.
       {R"({"reason":"r","action":"CALL_TOOL","tool":"t2",)"
        R"("arguments":{"id":"A1","qty":null,"gift":[[["x"]]]}})",
        ActionError::kNotJsonObject},
       {R"({"reason":"r","action":"CALL_TOOL","tool":"t2",)"
        R"("arguments":{"id":"A1","qty":null,"gift":[[]]}})",
+       ActionError::kNotJsonObject},
+      // As deep as a reply may be, with an item the schema refuses.
+      {R"({"reason":"r","action":"CALL_TOOL","tool":"t2",)"
+       R"("arguments":{"id":"A1","qty":null,"gift":[1]}})",
        ActionError::kBadArguments},
   };
   for (const auto& [json, error] : cases)

@@ -24,6 +24,7 @@
 
 #include "base/check.h"
 #include "base/json/json_reader.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
@@ -33,6 +34,19 @@
 
 namespace molt_ai::agent_vision {
 namespace {
+
+// What a page can hand the browser: a script's strings arrive as UTF-8, and
+// a base::Value holds nothing else (its constructors DCHECK it).
+std::string PageString(std::string s) {
+  if (!base::IsStringUTF8AllowingNoncharacters(s)) {
+    for (char& c : s) {
+      if (static_cast<unsigned char>(c) >= 0x80) {
+        c = '?';
+      }
+    }
+  }
+  return s;
+}
 
 // The canvas before annotation: a colour no mask or tag uses.
 constexpr uint8_t kOriginal[3] = {7, 9, 11};
@@ -86,8 +100,9 @@ base::Value GeometryValue(FuzzedDataProvider& p, size_t elements) {
   const int view_w = p.ConsumeIntegralInRange<int>(1, 4096);
   const int view_h = p.ConsumeIntegralInRange<int>(1, 4096);
   base::DictValue d;
-  d.Set("origin", p.ConsumeBool() ? std::string("https://example.com")
-                                  : p.ConsumeRandomLengthString(64));
+  d.Set("origin", p.ConsumeBool()
+                      ? std::string("https://example.com")
+                      : PageString(p.ConsumeRandomLengthString(64)));
   d.Set("over", p.ConsumeIntegralInRange<int>(0, 15) == 0);
   base::DictValue view;
   view.Set("w", Number(p, 1, view_w));

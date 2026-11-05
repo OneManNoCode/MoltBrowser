@@ -14,6 +14,7 @@
 #define MOLT_FUZZ_STAND_INS_BASE_VALUES_H_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -26,6 +27,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/strings/string_util.h"
 
 namespace base {
 
@@ -50,11 +52,18 @@ class Value {
   explicit Value(Type type);
   explicit Value(bool b) : data_(b) {}
   explicit Value(int i) : data_(i) {}
-  explicit Value(double d) : data_(d) {}
-  explicit Value(std::string_view s) : data_(std::string(s)) {}
-  explicit Value(const char* s) : data_(std::string(s)) {}
-  explicit Value(std::string&& s) : data_(std::move(s)) {}
-  explicit Value(const std::string& s) : data_(s) {}
+  // As the real one in a DCHECK build: JSON has no non-finite numbers.
+  explicit Value(double d) : data_(d) { CHECK(std::isfinite(d)); }
+  // As the real ones in a DCHECK build: strings and keys are UTF-8.
+  explicit Value(std::string_view s) : data_(std::string(s)) { CheckUtf8(s); }
+  explicit Value(const char* s) : data_(std::string(s)) { CheckUtf8(s); }
+  explicit Value(std::string&& s) : data_(std::move(s)) {
+    CheckUtf8(std::get<std::string>(data_));
+  }
+  explicit Value(const std::string& s) : data_(s) { CheckUtf8(s); }
+  static void CheckUtf8(std::string_view s) {
+    CHECK(IsStringUTF8AllowingNoncharacters(s));
+  }
   explicit Value(BlobStorage blob) : data_(std::move(blob)) {}
   explicit Value(DictValue&& d);
   explicit Value(ListValue&& l);
@@ -320,11 +329,13 @@ class DictValue {
 
  private:
   Items::iterator LowerBound(std::string_view key) {
+    Value::CheckUtf8(key);  // Every key lookup and Set() comes here.
     return std::lower_bound(
         items_.begin(), items_.end(), key,
         [](const auto& item, std::string_view k) { return item.first < k; });
   }
   Items::const_iterator LowerBound(std::string_view key) const {
+    Value::CheckUtf8(key);  // Every key lookup and Set() comes here.
     return std::lower_bound(
         items_.begin(), items_.end(), key,
         [](const auto& item, std::string_view k) { return item.first < k; });

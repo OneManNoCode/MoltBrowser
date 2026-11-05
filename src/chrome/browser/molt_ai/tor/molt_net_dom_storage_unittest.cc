@@ -971,6 +971,10 @@ TEST(MoltStorageAreaPutTest, AQuotaRefusedPutKeepsTheOldValue) {
   NoCommitsDelegate delegate;
   storage::StorageAreaImpl::Options options;
   options.max_size = 100;
+  // Rates the area requires (StorageAreaImpl::RateLimiter), as sessionStorage
+  // gives its maps.
+  options.max_bytes_per_hour = 1024 * 1024;
+  options.max_commits_per_hour = 60;
   storage::StorageAreaImpl area(
       /*database=*/nullptr,
       base::MakeRefCounted<storage::DomStorageDatabase::SharedMapLocator>(

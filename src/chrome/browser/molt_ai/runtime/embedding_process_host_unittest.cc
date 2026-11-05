@@ -23,7 +23,6 @@
 #include "base/functional/callback_helpers.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
-#include "mojo/core/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/system/functions.h"
@@ -134,14 +133,7 @@ struct Result {
 
 class EmbeddingProcessHostTest : public testing::Test {
  protected:
-  static void SetUpTestSuite() {
-    static bool mojo_initialized = false;
-    if (!mojo_initialized) {
-      mojo::core::Init();
-      mojo_initialized = true;
-    }
-  }
-
+  // The test launcher has initialized Mojo.
   void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     model_path_ = temp_dir_.GetPath().AppendASCII("model.gguf");

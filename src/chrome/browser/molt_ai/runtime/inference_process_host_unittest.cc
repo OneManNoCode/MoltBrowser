@@ -24,7 +24,6 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
-#include "mojo/core/embedder/embedder.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -280,14 +279,7 @@ class RecordingDelegate : public InferenceProcessHost::Delegate {
 
 class InferenceProcessHostTest : public testing::Test {
  protected:
-  static void SetUpTestSuite() {
-    static bool mojo_initialized = false;
-    if (!mojo_initialized) {
-      mojo::core::Init();
-      mojo_initialized = true;
-    }
-  }
-
+  // The test launcher has initialized Mojo.
   void SetUp() override {
     mojo::SetDefaultProcessErrorHandler(base::BindRepeating(
         [](std::vector<std::string>* out, const std::string& error) {

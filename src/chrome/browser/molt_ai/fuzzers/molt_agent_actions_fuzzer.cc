@@ -35,6 +35,7 @@
 
 #include "base/check.h"
 #include "base/json/json_reader.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
@@ -45,6 +46,19 @@
 
 namespace molt_ai {
 namespace {
+
+// What a page can hand the browser: a script's strings arrive as UTF-8, and
+// a base::Value holds nothing else (its constructors DCHECK it).
+std::string PageString(std::string s) {
+  if (!base::IsStringUTF8AllowingNoncharacters(s)) {
+    for (char& c : s) {
+      if (static_cast<unsigned char>(c) >= 0x80) {
+        c = '?';
+      }
+    }
+  }
+  return s;
+}
 
 using agent_actions::ActionSet;
 using agent_actions::ActionType;
@@ -82,7 +96,7 @@ size_t Count(std::string_view haystack, std::string_view needle) {
 base::Value PageValue(const std::string& json) {
   std::optional<base::Value> v =
       base::JSONReader::Read(json, base::JSON_PARSE_RFC);
-  return v ? std::move(*v) : base::Value(json);
+  return v ? std::move(*v) : base::Value(PageString(json));
 }
 
 void CheckObservation(const Observation& observation,
@@ -277,7 +291,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   reply.invalid_output = p.ConsumeIntegralInRange<int>(0, 7) == 0;
   reply.truncated = p.ConsumeBool();
   reply.error_message = p.ConsumeRandomLengthString(64);
-  reply.text = p.ConsumeRandomLengthString(4096);
+  // The browser only hears UTF-8 from the inference service
+  // (runtime/stream_validator.h).
+  reply.text = PageString(p.ConsumeRandomLengthString(4096));
   const ParsedAction parsed = ParseAction(reply.text, observation, allowed);
   if (parsed.action) {
     CHECK(parsed.error == ActionError::kNone);
@@ -322,9 +338,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     action = *parsed.action;
   } else {
     action.type = static_cast<ActionType>(p.ConsumeIntegralInRange<int>(0, 8));
-    action.url = p.ConsumeRandomLengthString(256);
-    action.query = p.ConsumeRandomLengthString(64);
-    action.text = p.ConsumeRandomLengthString(64);
+    action.url = PageString(p.ConsumeRandomLengthString(256));
+    action.query = PageString(p.ConsumeRandomLengthString(64));
+    action.text = PageString(p.ConsumeRandomLengthString(64));
     action.direction = p.ConsumeBool() ? "up" : "down";
     const size_t n = observation.elements.size();
     if (n > 0) {

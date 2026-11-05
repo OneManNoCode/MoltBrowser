@@ -570,13 +570,15 @@ ExtractOutcome InterpretExtract(const ModelReply& reply,
   std::string problem = ReplyProblem(reply, &out.terminal);
   if (problem.empty() && spec.fields.empty()) {
     // A free-form object, checked whole before anything is read: size
-    // first, then the reader's own depth limit (one level of margin; the
-    // walk enforces the exact one).
+    // first, then the reader's own depth limit, one container of margin
+    // so the walk enforces the exact one and says so. (The reader counts
+    // levels, the innermost container's values included: N containers
+    // need N + 1.)
     if (reply.text.size() > kMaxFreeformReplyBytes) {
       problem = "the answer was too long";
     } else {
       std::optional<base::Value> parsed = base::JSONReader::Read(
-          reply.text, base::JSON_PARSE_RFC, kMaxFreeformDepth + 1);
+          reply.text, base::JSON_PARSE_RFC, kMaxFreeformDepth + 2);
       if (!parsed || !parsed->is_dict()) {
         problem = "the answer wasn't in the required format";
       } else {

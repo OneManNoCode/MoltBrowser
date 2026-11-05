@@ -261,7 +261,10 @@ TEST(HelperScratchDirTest, AFreshPrivateDirectoryPerRun) {
     path = scratch.path();
     EXPECT_TRUE(path.IsAbsolute());
     EXPECT_TRUE(base::DirectoryExists(path));
-    EXPECT_TRUE(path.BaseName().MaybeAsASCII().starts_with("molt_test"));
+    // base names it "<platform prefix>.molt_test.XXXXXX" on POSIX and
+    // "molt_test<GUID>.tmp" on Windows.
+    EXPECT_NE(path.BaseName().MaybeAsASCII().find("molt_test"),
+              std::string::npos);
     ASSERT_TRUE(base::WriteFile(path.AppendASCII("input.png"), "image"));
 
     const HelperSandboxPolicy policy = scratch.MakePolicy();
