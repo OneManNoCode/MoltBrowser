@@ -102,8 +102,8 @@ jobs:
             E2E_RUNS="$IN_E2E_RUNS"; E2E_SCENARIOS="$IN_E2E_SCENARIOS"
           fi
           E2E_RUNS="${E2E_RUNS:-pulse:clean,pulse:music10,file:clean,typed}"
-          if ! [[ "$E2E_RUNS" =~ ^((pulse|file):[a-z0-9]+|typed)(,((pulse|file):[a-z0-9]+|typed))*$ ]]; then
-            echo "::error::e2e_runs must be runs like pulse:clean,typed"; exit 1
+          if ! [[ "$E2E_RUNS" =~ ^(pulse:[a-z0-9]+(:noloop|:noaec)?|file:[a-z0-9]+|typed)(,(pulse:[a-z0-9]+(:noloop|:noaec)?|file:[a-z0-9]+|typed))*$ ]]; then
+            echo "::error::e2e_runs must be runs like pulse:clean,pulse:clean:noloop,pulse:clean:noaec,typed"; exit 1
           fi
           if ! [[ "$E2E_SCENARIOS" =~ ^[a-z0-9,-]*$ ]]; then
             echo "::error::e2e_scenarios must be scenario ids, comma-separated"; exit 1

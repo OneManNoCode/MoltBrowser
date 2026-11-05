@@ -38,7 +38,12 @@ helpers' sandboxes make user namespaces (Ubuntu 24.04 restricts them),
 fetches the pinned voices, renders the speech, checks it against the
 bundle's recognizer, and runs four runs: PulseAudio in quiet
 (`pulse:clean`), PulseAudio with music (`pulse:music10`), Chromium's file
-capture (`file:clean`) and typed (`typed`). It exits 0 when the exit is
+capture (`file:clean`) and typed (`typed`). A PulseAudio run can also be
+`pulse:<condition>:noloop`, without the loopback of the browser's output
+into the microphone, or `pulse:<condition>:noaec`, with the browser's
+Chrome-wide echo cancellation off (`--disable-features=
+ChromeWideEchoCancellation`): which of them hears tells the echo
+canceller's part from the routing's. It exits 0 when the exit is
 met, 1 when it isn't, 2 when it couldn't run. Expect about three hours for
 everything on a 4-core runner; `VOICE_E2E_RUNS`, `VOICE_E2E_SCENARIOS`
 and `VOICE_E2E_VOICES` narrow it. It also leaves `digest.txt`

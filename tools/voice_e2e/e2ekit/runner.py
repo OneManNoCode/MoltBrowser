@@ -55,6 +55,7 @@ AUDIO_VLOG_MODULES = ("audio_manager_linux", "audio_manager_pulse", "pulse_util"
 
 class RunConfig(object):
     def __init__(self, audio="pulse", condition="clean", loopback=True,
+                 echo_cancellation=True,
                  voices=None, speeds=None, settle=SETTLE_S, sandbox=True,
                  extra_flags=(), model_available=False):
         if audio not in ("pulse", "file", "typed"):
@@ -64,6 +65,9 @@ class RunConfig(object):
         self.audio = audio
         self.condition = "clean" if audio == "typed" else condition
         self.loopback = loopback
+        # False: the browser without Chrome-wide echo cancellation (the
+        # microphone then has none on Linux).
+        self.echo_cancellation = echo_cancellation
         self.voices = list(voices or [v[0] for v in render.VOICES])
         self.speeds = list(speeds or render.SPEEDS)
         self.settle = settle
@@ -73,7 +77,13 @@ class RunConfig(object):
 
     @property
     def label(self):
-        return "typed" if self.audio == "typed" else "%s/%s" % (self.audio, self.condition)
+        if self.audio == "typed":
+            return "typed"
+        # A PulseAudio run without the speaker-to-microphone loopback.
+        suffix = "-noloop" if self.audio == "pulse" and not self.loopback else ""
+        if self.audio == "pulse" and not self.echo_cancellation:
+            suffix += "-noaec"
+        return "%s/%s%s" % (self.audio, self.condition, suffix)
 
     @property
     def typed(self):
@@ -191,6 +201,8 @@ class Runner(object):
              "--window-size=1280,900", "--lang=en-US"]
         if not self.config.sandbox:
             f.append("--no-sandbox")
+        if not self.config.echo_cancellation:
+            f.append("--disable-features=ChromeWideEchoCancellation")
         if not shields:
             # MoltShield off for this run: what a page shows that its
             # filters would hide (a YouTube ad's skip button) is there.

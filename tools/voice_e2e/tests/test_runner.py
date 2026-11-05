@@ -99,6 +99,23 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(res["t-quiet"]["status"], "passed", res["t-quiet"])
         self.assertEqual(res["t-word"]["status"], "skipped")
 
+    def test_a_run_without_the_loopback_is_labelled(self):
+        self.assertEqual(runner.RunConfig(audio="pulse").label, "pulse/clean")
+        self.assertEqual(runner.RunConfig(audio="pulse", loopback=False).label,
+                         "pulse/clean-noloop")
+        self.assertEqual(runner.RunConfig(audio="file", loopback=False).label,
+                         "file/clean")
+        self.assertEqual(
+            runner.RunConfig(audio="pulse", echo_cancellation=False).label,
+            "pulse/clean-noaec")
+
+    def test_a_run_without_echo_cancellation_disables_it(self):
+        cfg = runner.RunConfig(audio="pulse", echo_cancellation=False)
+        r = runner.Runner(self.exe, os.path.join(self.d, "speech"),
+                          os.path.join(self.d, "report"), FakeServer(), "spki", cfg,
+                          log=lambda *a: None)
+        self.assertIn("--disable-features=ChromeWideEchoCancellation", r.flags("log"))
+
     def test_shields_off_disables_molt_shield(self):
         cfg = runner.RunConfig(audio="typed", settle=0.2)
         r = runner.Runner(self.exe, os.path.join(self.d, "speech"),

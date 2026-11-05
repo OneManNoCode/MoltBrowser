@@ -146,20 +146,34 @@ def cmd_run(args):
     runs = []
     try:
         for spec in args.runs.split(","):
-            audio, _, cond = spec.partition(":")
+            # audio:condition, and for PulseAudio ":noloop" for a run
+            # without the loopback of the browser's output into the
+            # microphone (no echo for the echo canceller to remove), or
+            # ":noaec" for one without Chrome-wide echo cancellation.
+            audio, _, rest = spec.partition(":")
+            cond, _, option = rest.partition(":")
+            if option not in ("", "noloop", "noaec") or (option and audio != "pulse"):
+                log("unknown run %s: skipped" % spec)
+                continue
+            loopback = not args.no_loopback and option != "noloop"
             cfg = runner.RunConfig(audio=audio, condition=cond or "clean",
-                                   loopback=not args.no_loopback,
+                                   loopback=loopback,
+                                   echo_cancellation=option != "noaec",
                                    sandbox=not args.no_sandbox,
                                    model_available=args.model,
                                    extra_flags=args.browser_flag or [],
                                    voices=[v for v in args.voices.split(",") if v] or None,
                                    speeds=[float(x) for x in args.speeds.split(",") if x]
                                    or None)
+            if audio == "pulse" and pulse is not None and pulse.loopback != loopback:
+                # The daemon has the loopback or hasn't: a new one.
+                pulse.stop()
+                pulse = None
             if audio == "pulse" and pulse is None:
                 if not audio_path.pulse_available():
                     log("PulseAudio isn't installed: skipping %s" % spec)
                     continue
-                pulse = audio_path.Pulse(report_dir, loopback=not args.no_loopback,
+                pulse = audio_path.Pulse(report_dir, loopback=loopback,
                                          log=log).start()
                 helper = os.path.join(bundle, "speech", "molt-speech")
                 if os.path.exists(helper):
