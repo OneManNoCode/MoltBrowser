@@ -1409,6 +1409,30 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     }
     return command;
   }
+  // A verb heard glued to the next word ("clickname a color", as the
+  // bundled English recognizer hears "click name a colour"): once more,
+  // apart. Only when nothing understood it, a remainder of at least four
+  // letters ("clicking" stays as it is), and once (the retry starts with
+  // the verb alone).
+  const std::string_view first = u.words[0];
+  for (std::string_view verb : p.glued_verbs) {
+    if (first.size() < verb.size() + 4 || !first.starts_with(verb)) {
+      continue;
+    }
+    std::string apart = std::string(verb) + " " +
+                        std::string(first.substr(verb.size()));
+    for (size_t i = 1; i < u.words.size(); ++i) {
+      apart += " ";
+      apart += u.words[i];
+    }
+    VoiceCommand again = ParseVoiceCommand(apart, context);
+    if (again.kind != VoiceCommandKind::kUnknown &&
+        again.kind != VoiceCommandKind::kRefused) {
+      again.heard = command.heard;
+      return again;
+    }
+    break;
+  }
   return command;  // kUnknown: the planner gets |heard|
 }
 

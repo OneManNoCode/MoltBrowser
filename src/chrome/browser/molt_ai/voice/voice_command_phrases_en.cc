@@ -138,11 +138,14 @@ constexpr CommandPattern kPatterns[] = {
      "(open|go to|load) [the|my] bookmark [called|named|for] {name}"},
     {K::kOpenBookmark, "(open|go to|load) {name} (from|in) [my|the] bookmarks"},
     // History.
+    // "Closed tip", "close tab", "Reuben": how the bundled English
+    // recognizer hears "reopen the closed tab" in some voices.
     {K::kReopenTab,
-     "(reopen|restore|bring back|undo close) [the] [last] [closed] tab"},
+     "(reopen|restore|bring back|undo close|reuben) [the] [last] "
+     "[closed|close] (tab|tip)"},
     {K::kReopenTab,
      "(reopen|restore|bring back|open again) the [last] tab i [just] closed"},
-    {K::kReopenTab, "open [the] [last] closed tab"},
+    {K::kReopenTab, "open [the] [last] (closed|close) (tab|tip)"},
     {K::kListHistory,
      "(open|show|read|list|tell me) [me] my [browsing] history"},
     {K::kListHistory, "(open|show) [me] [the] [browsing] history [page]"},
@@ -217,12 +220,13 @@ constexpr CommandPattern kPatterns[] = {
      V::kWindowPrivate},
     {K::kNewWindow, "(private|incognito) window", C::kAlways,
      V::kWindowPrivate},
+    // "Moldenet", "moldenate", "mold the": more of how it hears "MoltNet".
     {K::kNewWindow,
-     "(open|new|start|create) [a] [new] (moltnet|molt net|mold net|tor) "
-     "window",
+     "(open|new|start|create) [a] [new] (moltnet|molt net|mold net|moldnet|"
+     "moldenet|moldenate|mold the|tor) window",
      C::kAlways, V::kWindowMoltNet},
-    {K::kNewWindow, "(moltnet|molt net|mold net) window", C::kAlways,
-     V::kWindowMoltNet},
+    {K::kNewWindow, "(moltnet|molt net|mold net|moldnet|moldenet) window",
+     C::kAlways, V::kWindowMoltNet},
     {K::kNewWindow, "(open|start|create) [a] new window"},
     {K::kNewWindow, "(new window|open [a] window|open another window)"},
     {K::kCloseWindow, "close [this|the|current] window"},
@@ -235,9 +239,11 @@ constexpr CommandPattern kPatterns[] = {
     {K::kAskAI,
      "ask (the ai|ai|the assistant|the ai assistant|molt ai|the chat|the ai "
      "chat|the eye|the a chat) [about|whether|if] {query}"},
+    // "As the AI": "ask" heard without its k (asking only answers).
+    {K::kAskAI, "as (the ai|the assistant|the ai assistant) {query}"},
     {K::kOpenAIChat,
      "(open|show|start) [me] [the] (ai chat|ai|chat|assistant|ai assistant|"
-     "ai panel|chat panel|a chat|eye chat)"},
+     "ai panel|chat panel|a chat|achat|eye chat|ai checked)"},
     // The browser's own buttons and menus.
     {K::kShowBrowserButtons,
      "(show|read|list|tell me) [me] [the] (browser|browsers|toolbar|"
@@ -310,7 +316,8 @@ constexpr CommandPattern kPatterns[] = {
      C::kTextField},
     {K::kSubmit, "(press|hit) (enter|return)"},
     {K::kSubmit, "submit [the] form"},
-    {K::kType, "(type|write|dictate) {text}"},
+    // "Tight": how some voices' "type" is heard.
+    {K::kType, "(type|write|dictate|tight) {text}"},
 
     // --- Scrolling (before "go back": "go back to the top") --------------
     {K::kScrollToTop,

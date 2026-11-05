@@ -263,6 +263,7 @@ LanguagePhrases MakeEnglishPhrases() {
   // (WakeKeywordLines()).
   p.wake_greetings = {"hey", "hi", "ok", "okay", "hello", "a", "hay", "he"};
   p.default_wake_phrase = "hey molt";
+  p.glued_verbs = {"click", "press", "tap"};
 
   p.volume_words = {
       {"half", 50},     {"halfway", 50},         {"max", 100},

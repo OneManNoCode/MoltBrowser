@@ -165,6 +165,22 @@ void Check(const std::vector<Case>& cases) {
   }
 }
 
+// A verb glued to the next word, as the bundled English recognizer hears
+// "click name a colour": read as the two words; "clicking" and a known
+// command are left as they are.
+TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
+  const ParseContext context = MakeContext(kNone);
+  const VoiceCommand glued = ParseVoiceCommand("Clickname a color", context);
+  const VoiceCommand apart = ParseVoiceCommand("click name a color", context);
+  EXPECT_EQ(Fields(glued), Fields(apart));
+  EXPECT_EQ(glued.kind, VoiceCommandKind::kChoose);
+  EXPECT_EQ(glued.heard, "Clickname a color");
+  EXPECT_EQ(Fields(ParseVoiceCommand("presssubmit", context)),
+            Fields(ParseVoiceCommand("press submit", context)));
+  EXPECT_NE(ParseVoiceCommand("clicking", context).kind,
+            VoiceCommandKind::kChoose);
+}
+
 TEST(VoiceCommandTest, OpenSites) {
   Check({
       {"open YouTube", "open_site", "site=youtube"},
