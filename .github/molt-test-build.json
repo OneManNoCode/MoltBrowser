@@ -1,5 +1,2 @@
-{"resume_run": "41952636924", "run_tests": true, "e2e_only": true,
- "e2e_runs": "file:clean",
- "e2e_scenarios": "act-press-button,go-open-by-name",
- "e2e_speech_check": false,
- "request": "Diagnostics: why the fake (file) microphone stops at once, on run 41952636924's build, with the digest's MoltBrowser lines."}
+{"resume_run": "41952636924", "run_tests": true, "e2e_only": false,
+ "request": "Round 45 fixes: voice mode on the real build (the page's tree, microphone callbacks, the fake device, a short hey, the toolbar's buttons), unit and browser test fixes; then the tests and the whole spoken suite. Resume from run 41952636924 (stage 1 built and tested)."}
