@@ -65,6 +65,7 @@ class Pulse(object):
         self.proc = None
         self.recorder = None
         self.bed = None
+        self.keepalive = None
         self.socket = os.path.join(self.dir, "runtime", "native")
         if len(self.socket) > MAX_SOCKET_PATH:
             # A Unix socket's path has a small limit (108 bytes on Linux).
@@ -125,6 +126,11 @@ class Pulse(object):
         else:
             self.stop()
             raise AudioError("pulseaudio didn't start; see %s/pulse.log" % self.dir)
+        if not self.loopback:
+            # No loopback: a silent stream keeps molt_mic_in running, as the
+            # loopback does (a null sink with nothing playing gives its
+            # monitor no samples, and plays a new stream late).
+            self._start_keepalive()
         if self.loopback:
             r = self._pactl("load-module", "module-loopback", "source=molt_out.monitor",
                             "sink=molt_mic_in", "latency_msec=30",
@@ -145,10 +151,27 @@ class Pulse(object):
                              "molt_mic_in (%.1f dBFS); see %s/pulse.log" % (peak, self.dir))
         return self
 
-    def check_route(self, seconds=0.6):
+    def _start_keepalive(self):
+        silence = os.path.join(self.dir, "keepalive.wav")
+        with wave.open(silence, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(PCM_RATE)
+            w.writeframes(b"\0\0" * PCM_RATE * 10)
+        self.keepalive = subprocess.Popen(
+            ["bash", "-c", 'while :; do paplay --latency-msec=30 '
+             '--device=molt_mic_in "$0" || exit 1; done', silence],
+            env=self._env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        time.sleep(0.5)
+
+    def check_route(self, seconds=1.5):
         """Plays a tone into molt_mic_in while recording the default input
         (as the browser opens it: no device named) and returns the
-        recording's peak in dBFS (-120 for silence)."""
+        recording's peak in dBFS (-120 for silence). The recording goes on
+        well past the tone: with no low-latency stream on molt_mic_in (no
+        loopback), the null sink plays a new stream with a delay, and a
+        short tone would come out after a short recording stopped."""
         tone = os.path.join(self.dir, "check-tone.wav")
         n = int(PCM_RATE * seconds)
         amp = 32767 * 10 ** (CHECK_TONE_DB / 20.0)
@@ -168,7 +191,7 @@ class Pulse(object):
         try:
             time.sleep(0.3)
             self.play(tone)
-            time.sleep(0.3)
+            time.sleep(1.5)
         finally:
             _kill_group(rec)
         return pcm_peak_db(raw)
@@ -217,6 +240,9 @@ class Pulse(object):
     def stop(self):
         self.stop_bed()
         self.stop_recording()
+        if self.keepalive:
+            _kill_group(self.keepalive)
+            self.keepalive = None
         if self.proc:
             _kill_group(self.proc)
             self.proc = None
