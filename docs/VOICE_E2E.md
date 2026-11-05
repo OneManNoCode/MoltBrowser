@@ -187,7 +187,11 @@ which returns when it has been played: its end is the end of speech, to
 within 20 to 30 ms here. The next one is played when the step is done and
 voice mode has been listening (not thinking or speaking) for 1.5 s, more
 than the gesture's quiet period (`kGestureQuietMs`), so a scenario waits
-on the browser, never on fixed gaps.
+on the browser, never on fixed gaps. The first is played once voice mode
+has said it's on, as a user would wait: the microphone opens a few seconds
+before the speech helper is ready, and what's said until then reaches no
+recognizer (the listener drops it, and the `mic` lines count it as
+`dropped`).
 
 Before the first scenario the kit checks its own route: a 440 Hz tone at
 -12 dBFS played into `molt_mic_in` must reach the default input (recorded

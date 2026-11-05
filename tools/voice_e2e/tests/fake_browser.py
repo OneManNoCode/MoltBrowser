@@ -84,8 +84,11 @@ class Fake(object):
     def serve(self):
         if self.settings.get("voice_mode"):
             self.start_log()
-            self.line("activity", activity="listening", mic=True,
-                      waiting=not self.settings.get("voice_always_listening"))
+            always = self.settings.get("voice_always_listening")
+            self.line("activity", activity="listening", mic=True, waiting=not always)
+            # As the browser does once its speech helper is ready.
+            self.line("said", text="Voice mode is on. I'm listening." if always else
+                      "Voice mode is on. Say Hey Molt, then what you want.")
             threading.Thread(target=self.listen, daemon=True).start()
         buf = b""
         while not self.closing:

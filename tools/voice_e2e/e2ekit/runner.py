@@ -273,6 +273,16 @@ class Runner(object):
             time.sleep(POLL_S)
         return None
 
+    def wait_greeting(self, log, timeout=LISTEN_TIMEOUT_S):
+        """Until voice mode has said something (its greeting, "Voice mode is
+        on...", which it says once its speech helper is ready)."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if any(e["e"] == "said" for e in log.events(0)):
+                return True
+            time.sleep(POLL_S)
+        return False
+
     def wait_idle(self, log, timeout=IDLE_TIMEOUT_S):
         """Until voice mode has been listening (not thinking or speaking)
         for the settle time, and said nothing in it."""
@@ -344,6 +354,13 @@ class Runner(object):
                 if self.config.condition != "clean":
                     self.pulse.start_bed(plan["bed"])
             self.start_page(browser, sc)
+            if self.config.audio == "pulse":
+                # As a user does: speak once voice mode has said it's on.
+                # The microphone is on before its speech helper is ready,
+                # and what is said until then reaches no recognizer.
+                if not self.wait_greeting(tlog):
+                    raise RuntimeError("voice mode never said it was on (no said "
+                                       "line in the test log; see browser.log)")
             if self.config.audio != "file":
                 self.wait_idle(tlog)
             ok = True
