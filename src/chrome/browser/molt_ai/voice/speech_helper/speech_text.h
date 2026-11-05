@@ -83,6 +83,18 @@ bool WakeKeywordLine(std::string_view phrase,
                      const TokenSet& tokens,
                      std::string* line);
 
+// All the spotter's lines for a wake phrase: WakeKeywordLine()'s, then,
+// for a phrase that starts with "hey", the same phrase with "hey" said
+// short ("he molt"), under the first line's label (so the spotter reports
+// the phrase the browser asked for, with its number of words). Several of
+// the test voices say "hey" so that the spotter hears "▁HE" and nothing
+// after it, and never woke (docs/VOICE_BENCH.md §3.8). False when the
+// phrase itself can't be spelled; a variant that can't is left out.
+bool WakeKeywordLines(std::string_view phrase,
+                      const PieceVocab& vocab,
+                      const TokenSet& tokens,
+                      std::vector<std::string>* lines);
+
 // sherpa-onnx's per-stream hotwords argument for |phrases| as the browser
 // sent them: phrases joined by '/', each cleaned
 // (docs/design/SPEECH_HELPER_PROTOCOL.md §2.2): anything but an ASCII
@@ -96,6 +108,32 @@ bool WakeKeywordLine(std::string_view phrase,
 std::string HotwordsArgument(const std::vector<std::string>& phrases,
                              const PieceVocab& vocab,
                              const TokenSet& tokens);
+
+// How many of |text|'s first words (a transcript; words are separated by
+// spaces and have a letter or digit) are one of |phrases| (wake phrases,
+// NormalizeWakePhrase()) as a recognizer may write it, or 0. Either word
+// by word, each the phrase's word or one with the same consonants ("Hey,
+// Malt", "he mold" for "hey molt"), or run together into as many words as
+// the phrase has or one more, with the same consonants and about as many
+// letters ("Himalt", "him old"). Consonants: a word's letters with the
+// vowels, "y", and "h" and "w" after its first letter dropped, b/p, d/t,
+// c/g/k/q, f/v and s/z alike, repeats collapsed. A phrase whose consonants
+// are fewer than three is only taken as written, and running words
+// together needs four ("oye molt" never runs together: "molt" alone
+// would be it). For the speech helper's second chance at a wake phrase
+// its spotter missed (docs/design/SPEECH_HELPER_PROTOCOL.md §4.1); the
+// browser's grammar strips the phrase as before. Linear in |text|.
+size_t WakePhraseWordsAtStart(std::string_view text,
+                              const std::vector<std::string>& phrases);
+
+// For a wake the spotter already heard, where the phrase ends in |text|
+// when its start was lost ("Emold. Click", "A mold. Close this tab": the
+// greeting clipped or misheard): the number of words up to a phrase's last
+// word (its name), as written or with the same consonants (three at
+// least), if it is the first or second word; else 0. Never a reason to
+// wake: only to find the command after a wake.
+size_t WakeNameWordsAtStart(std::string_view text,
+                            const std::vector<std::string>& phrases);
 
 // Text for an event: well-formed UTF-8 only (other bytes dropped), no
 // control characters (C0, DEL, C1, line and paragraph separators), runs of

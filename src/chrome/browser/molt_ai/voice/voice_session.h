@@ -230,6 +230,8 @@ class VoiceSession : public VoiceController::Observer,
   bool start_pending_ = false;
   base::OneShotTimer tick_timer_;
   base::RepeatingTimer poll_timer_;
+  // Polls since the microphone's levels last went to the test log.
+  int polls_ = 0;
   base::ObserverList<Observer> observers_;
   base::WeakPtrFactory<VoiceSession> weak_factory_{this};
 };

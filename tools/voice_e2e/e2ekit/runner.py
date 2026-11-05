@@ -20,6 +20,7 @@ the report names why, with a screenshot of the tab.
 import json
 import os
 import re
+import sys
 import time
 import traceback
 
@@ -33,15 +34,54 @@ from .scenarios import QUIET_KINDS
 SETTLE_S = 1.5        # quiet after the browser speaks (> kGestureQuietMs)
 LISTEN_TIMEOUT_S = 45
 IDLE_TIMEOUT_S = 60
+# The longest wait for voice mode's follow-up window to close.
+WINDOW_TIMEOUT_S = 30
 POLL_S = 0.2
-FILE_LEAD_S = 6.0
-FILE_GAP_S = 9.0
+# File mode's fixed times (the recording can't wait on the browser): past
+# voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
+# want.", which ends about 7 s after the microphone opens, once the speech
+# helper is ready), and past the longest answer before the next utterance.
+# Without echo cancellation (the fake device has none) what is said over
+# voice mode's own speech stops it and is dropped ("I've stopped. Now say
+# that again."), so an utterance mustn't land on it.
+FILE_LEAD_S = 11.0
+FILE_GAP_S = 12.0
 DEFAULT_QUIET_S = 8.0
 WORD_TRIES = 3
 
 
+# What voice mode's microphone gave in a pulse run (--molt-voice-test-audio):
+# raw 16 kHz mono 16-bit, in the scenario's run directory.
+MIC_DUMP = "mic.pcm"
+# How much of it the kit's recognizer hears back for a failed scenario.
+MIC_DUMP_MAX_S = 90
+
+
+def mic_levels(pcm, rate=16000):
+    """The peak of each second of |pcm| (16-bit little-endian), in dBFS
+    (-120 for silence)."""
+    import array
+    import math
+    samples = array.array("h")
+    samples.frombytes(pcm[:len(pcm) // 2 * 2])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    out = []
+    for at in range(0, len(samples), rate):
+        peak = max((abs(x) for x in samples[at:at + rate]), default=0)
+        out.append(round(20 * math.log10(peak / 32768.0)) if peak else -120)
+    return out
+
+
+# Chromium's Linux audio files whose VLOG(1) the pulse runs log.
+AUDIO_VLOG_MODULES = ("audio_manager_linux", "audio_manager_pulse", "pulse_util",
+                      "pulse_input", "audio_manager_alsa", "alsa_input",
+                      "input_controller", "input_stream")
+
+
 class RunConfig(object):
     def __init__(self, audio="pulse", condition="clean", loopback=True,
+                 echo_cancellation=True,
                  voices=None, speeds=None, settle=SETTLE_S, sandbox=True,
                  extra_flags=(), model_available=False):
         if audio not in ("pulse", "file", "typed"):
@@ -51,6 +91,9 @@ class RunConfig(object):
         self.audio = audio
         self.condition = "clean" if audio == "typed" else condition
         self.loopback = loopback
+        # False: the browser without Chrome-wide echo cancellation (the
+        # microphone then has none on Linux).
+        self.echo_cancellation = echo_cancellation
         self.voices = list(voices or [v[0] for v in render.VOICES])
         self.speeds = list(speeds or render.SPEEDS)
         self.settle = settle
@@ -60,7 +103,13 @@ class RunConfig(object):
 
     @property
     def label(self):
-        return "typed" if self.audio == "typed" else "%s/%s" % (self.audio, self.condition)
+        if self.audio == "typed":
+            return "typed"
+        # A PulseAudio run without the speaker-to-microphone loopback.
+        suffix = "-noloop" if self.audio == "pulse" and not self.loopback else ""
+        if self.audio == "pulse" and not self.echo_cancellation:
+            suffix += "-noaec"
+        return "%s/%s%s" % (self.audio, self.condition, suffix)
 
     @property
     def typed(self):
@@ -111,6 +160,9 @@ def unmet(requirements, config, pulse_ok):
     """Why a scenario can't run in |config| (or "")."""
     if "microphone" in requirements and config.typed:
         return "needs the microphone (typed text never answers with a word)"
+    if "listening" in requirements and config.typed:
+        return ("needs voice mode listening in its window (a typed command "
+                "runs in the last active window)")
     if "pulse" in requirements and (config.audio != "pulse" or not pulse_ok):
         return "needs live audio (PulseAudio)"
     if "model" in requirements and not config.model_available:
@@ -129,11 +181,17 @@ def word_errors(ref, hyp):
     return vbl.edit_distance(r, h), len(r)
 
 
+# How the bundled recognizer writes "hey molt", apart or run together
+# ("him old", "Himalt"): what precedes the command it heard.
+WAKE_WORDS = ("hey", "hi", "hay", "a", "he", "him", "molt", "mold", "malt",
+              "moult", "melt", "old", "alled", "himalt", "himold", "himaled",
+              "himalled", "heymolt")
+
+
 def strip_wake(text):
     words = normalized(text).split()
     i = 0
-    while i < len(words) and i < 3 and words[i] in ("hey", "hi", "hay", "a", "molt",
-                                                    "mold", "malt", "moult", "melt"):
+    while i < len(words) and i < 3 and words[i] in WAKE_WORDS:
         i += 1
     return " ".join(words[i:])
 
@@ -158,7 +216,7 @@ class Runner(object):
 
     # ---- the browser's launch -------------------------------------------
 
-    def flags(self, log_path, wav=None):
+    def flags(self, log_path, wav=None, shields=True):
         f = ["--user-data-dir=%s", "--no-first-run", "--no-default-browser-check",
              "--password-store=basic", "--disable-search-engine-choice-screen",
              "--enable-features=MoltVoiceMode",
@@ -169,9 +227,24 @@ class Runner(object):
              "--window-size=1280,900", "--lang=en-US"]
         if not self.config.sandbox:
             f.append("--no-sandbox")
+        if not self.config.echo_cancellation:
+            f.append("--disable-features=ChromeWideEchoCancellation")
+        if not shields:
+            # MoltShield off for this run: what a page shows that its
+            # filters would hide (a YouTube ad's skip button) is there.
+            f.append("--disable-molt-shield")
         if wav:
             f += ["--use-fake-device-for-media-stream",
                   "--use-file-for-fake-audio-capture=%s%%noloop" % wav]
+        elif self.config.audio == "pulse":
+            # What voice mode's microphone gave, as its speech helper gets
+            # it (voice_test_audio.h), for the digest.
+            f.append("--molt-voice-test-audio=" +
+                     os.path.join(os.path.dirname(log_path), MIC_DUMP))
+            # What Chromium's audio manager opens (PulseAudio or ALSA, which
+            # device), for the digest's audio lines.
+            f += ["--enable-logging=stderr", "--vmodule=" + ",".join(
+                "%s=1" % m for m in AUDIO_VLOG_MODULES)]
         return f + self.config.extra_flags
 
     def server_rules(self):
@@ -201,6 +274,28 @@ class Runner(object):
                 return a["ts"]
             time.sleep(POLL_S)
         return None
+
+    def wait_greeting(self, log, timeout=LISTEN_TIMEOUT_S):
+        """Until voice mode has said something (its greeting, "Voice mode is
+        on...", which it says once its speech helper is ready)."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if any(e["e"] == "said" for e in log.events(0)):
+                return True
+            time.sleep(POLL_S)
+        return False
+
+    def wait_waiting(self, log, timeout=WINDOW_TIMEOUT_S):
+        """Until voice mode waits for the wake phrase (its follow-up window
+        closed), as when the user says "Hey Molt" after a pause: the step is
+        then heard by the wake phrase, not as a follow-up."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            a = log.activity()
+            if a is not None and a.get("activity") == "listening" and a.get("waiting"):
+                return True
+            time.sleep(POLL_S)
+        return False
 
     def wait_idle(self, log, timeout=IDLE_TIMEOUT_S):
         """Until voice mode has been listening (not thinking or speaking)
@@ -240,6 +335,7 @@ class Runner(object):
         os.makedirs(run_dir, exist_ok=True)
         log_path = os.path.join(run_dir, "voice.jsonl")
         testlog.fresh(log_path)
+        testlog.fresh(os.path.join(run_dir, MIC_DUMP))  # the browser appends
         tlog = testlog.TestLog(log_path)
         t_start = time.time()
         browser = None
@@ -252,7 +348,8 @@ class Runner(object):
                         "voice_language": "en"}
             settings.update(sc.start.get("settings", {}))
             browserlib.write_settings(os.path.join(run_dir, "home"), settings)
-            flags = self.flags(log_path, plan.get("file_wav"))
+            flags = self.flags(log_path, plan.get("file_wav"),
+                               shields=sc.start.get("shields", True))
             flags[0] = flags[0] % os.path.join(run_dir, "profile")
             browser = self.browser_factory(self.exe, run_dir, flags, self.env(run_dir),
                                            log=self.log)
@@ -271,6 +368,13 @@ class Runner(object):
                 if self.config.condition != "clean":
                     self.pulse.start_bed(plan["bed"])
             self.start_page(browser, sc)
+            if self.config.audio == "pulse":
+                # As a user does: speak once voice mode has said it's on.
+                # The microphone is on before its speech helper is ready,
+                # and what is said until then reaches no recognizer.
+                if not self.wait_greeting(tlog):
+                    raise RuntimeError("voice mode never said it was on (no said "
+                                       "line in the test log; see browser.log)")
             if self.config.audio != "file":
                 self.wait_idle(tlog)
             ok = True
@@ -280,6 +384,13 @@ class Runner(object):
                                          "status": "not run",
                                          "detail": "an earlier step failed"})
                     continue
+                if self.config.audio == "pulse" and step.action == "say" and \
+                        self.wake_for(step, mode) and not step.barge_in:
+                    # Then the settle time, as a user waits for the tone
+                    # voice mode plays as it starts waiting: said over the
+                    # tone, the phrase's start is lost to the echo canceller.
+                    if self.wait_waiting(tlog):
+                        self.wait_idle(tlog)
                 sres = self.run_step(sc, step, i, world, tlog, plan, stream_start, mode,
                                      run_dir)
                 res["steps"].append(sres)
@@ -301,6 +412,8 @@ class Runner(object):
                 self.pulse.stop_recording()
             if browser:
                 browser.close()
+            if res.get("status") in ("failed", "error"):
+                self.note_microphone(res, run_dir)
         res["duration_s"] = round(time.time() - t_start, 1)
         res["kinds"] = tlog.kinds()
         res["bad_log_lines"] = tlog.bad_lines
@@ -320,6 +433,25 @@ class Runner(object):
             browser.evaluate_active(start["js"])
 
     # ---- audio ----------------------------------------------------------------
+
+    def note_microphone(self, res, run_dir):
+        """For a failed pulse scenario: what voice mode's microphone gave
+        (its dump, voice_test_audio.h), each second's peak and what the
+        kit's own recognizer makes of it, so the report tells a microphone
+        that got nothing from audio voice mode's recognizer didn't make
+        out."""
+        path = os.path.join(run_dir, MIC_DUMP)
+        try:
+            with open(path, "rb") as f:
+                pcm = f.read(MIC_DUMP_MAX_S * audio_path.PCM_RATE * 2)
+        except OSError:
+            return
+        res["mic_levels"] = mic_levels(pcm)
+        if self.ears and pcm:
+            try:
+                res["mic_heard"] = (self.ears.transcribe(pcm) or "")[:600]
+            except Exception as err:  # the ears are the kit's: a note only
+                res["mic_heard"] = "(the kit's recognizer failed: %s)" % err
 
     def wake_for(self, step, mode):
         return mode == "wake" and not step.answer

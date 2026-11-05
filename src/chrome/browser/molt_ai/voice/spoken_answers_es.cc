@@ -279,6 +279,15 @@ constexpr SpokenAnswer kAnswers[] = {
     {"Opening to play: {0}", "Abriendo para reproducir: {0}"},
     {"Opening: {0}", "Abriendo: {0}"},
     {"Pressed {0}.", "He pulsado {0}."},
+    // A list (a <select>) chosen by voice, and its option.
+    {"List: {0}", "Lista: {0}"},
+    {"{0} list. Its options: {1}. Say choose, then one.",
+     "Lista {0}. Sus opciones: {1}. Di elige y luego una de ellas."},
+    {"{0} list, set to {1}. Its options: {2}. Say choose, then one.",
+     "Lista {0}, con {1}. Sus opciones: {2}. Di elige y luego una de ellas."},
+    {"{0}, and {1} more", "{0} y {1} más"},
+    {"Chose {0}", "Elegido: {0}"},
+    {"Chose {0}.", "Elegido: {0}."},
     {"Pressing: {0}", "Pulsando: {0}"},
 
     // --- Typing -------------------------------------------------------------

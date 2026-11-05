@@ -39,6 +39,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
@@ -469,7 +470,8 @@ class StubPlanner : public voice::VoicePlanner {
     log_->started.push_back(heard);
     log_->map_items = static_cast<int>(map.items.size());
     delegate_->PlannerSays("I'll search the site for trains to Lyon.");
-    delegate_->PlannerAsks(1, "open trains.example");
+    // As the web agent asks it (voice_agent::OpenQuestion()).
+    delegate_->PlannerAsks(1, "open the site trains.example");
   }
   void Replay(content::WebContents* contents,
               const voice::PlannerStep& step,
@@ -507,6 +509,14 @@ class VoicePlannerBrowserTest : public AgentPageMapBrowserTest {
     voice::VoiceController* controller = voice();
     ASSERT_TRUE(controller);
     controller->HandleUtterance(std::string(text));
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kHeardTimeout,
+        base::BindRepeating(
+            [](FakeTtsPlatform* tts, std::string said) {
+              return "still busy after \"" + said +
+                     "\"; heard since: " + tts->Untaken();
+            },
+            base::Unretained(&tts_), std::string(text)));
     ASSERT_TRUE(base::test::RunUntil([&]() {
       return !controller->busy() &&
              controller->activity() != voice::VoiceActivity::kSpeaking;
@@ -516,11 +526,21 @@ class VoicePlannerBrowserTest : public AgentPageMapBrowserTest {
 
   // Waits until the browser has said |text| since TakeSpoken() last took
   // what it said.
+  // Waits, at most kHeardTimeout, for |text| to be said; a failure says
+  // what was.
   bool Heard(std::string_view text) {
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kHeardTimeout, base::BindRepeating(
+                                      [](FakeTtsPlatform* tts, std::string want) {
+                                        return "never heard \"" + want +
+                                               "\"; heard: " + tts->Untaken();
+                                      },
+                                      base::Unretained(&tts_), std::string(text)));
     return base::test::RunUntil([&]() {
       return tts_.Untaken().find(std::string(text)) != std::string::npos;
     });
   }
+  static constexpr base::TimeDelta kHeardTimeout = base::Seconds(20);
 };
 
 // Routines with the planner's steps: the profile's learning keeps them in
@@ -535,6 +555,11 @@ class VoicePlannerRoutinesBrowserTest : public VoicePlannerBrowserTest {
       ASSERT_TRUE(automations_.CreateUniqueTempDir());
     }
     learning()->SetAutomationsRootForTesting(automations_.GetPath());
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kHeardTimeout,
+        base::BindRepeating([]() {
+          return std::string("voice mode's learning never loaded");
+        }));
     ASSERT_TRUE(base::test::RunUntil([&]() { return learning()->loaded(); }));
   }
 

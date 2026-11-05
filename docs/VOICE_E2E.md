@@ -38,10 +38,26 @@ helpers' sandboxes make user namespaces (Ubuntu 24.04 restricts them),
 fetches the pinned voices, renders the speech, checks it against the
 bundle's recognizer, and runs four runs: PulseAudio in quiet
 (`pulse:clean`), PulseAudio with music (`pulse:music10`), Chromium's file
-capture (`file:clean`) and typed (`typed`). It exits 0 when the exit is
+capture (`file:clean`) and typed (`typed`). A PulseAudio run can also be
+`pulse:<condition>:noloop`, without the loopback of the browser's output
+into the microphone, or `pulse:<condition>:noaec`, with the browser's
+Chrome-wide echo cancellation off (`--disable-features=
+ChromeWideEchoCancellation`): which of them hears tells the echo
+canceller's part from the routing's. It exits 0 when the exit is
 met, 1 when it isn't, 2 when it couldn't run. Expect about three hours for
 everything on a 4-core runner; `VOICE_E2E_RUNS`, `VOICE_E2E_SCENARIOS`
-and `VOICE_E2E_VOICES` narrow it.
+and `VOICE_E2E_VOICES` narrow it. It also leaves `digest.txt`
+(`run_e2e.py digest`): each failed scenario's browser log (its fatal lines
+and the stack after the first, one crash printed once with the names of
+the others it ended) and voice mode's test log, which the CI job prints
+after `report.md`, as the report's artifact isn't always reachable from
+where the results are read.
+
+In the test build workflow (`molt-test-build.yml`), the request file's
+`e2e_runs` and `e2e_scenarios` narrow the same way, one job per run, and
+`"e2e_speech_check": false` skips the recognizer check (about an hour);
+with `"e2e_only": true` and `resume_run` only the spoken suite runs, on
+that run's saved build.
 
 By hand, the same steps:
 
@@ -171,13 +187,36 @@ which returns when it has been played: its end is the end of speech, to
 within 20 to 30 ms here. The next one is played when the step is done and
 voice mode has been listening (not thinking or speaking) for 1.5 s, more
 than the gesture's quiet period (`kGestureQuietMs`), so a scenario waits
-on the browser, never on fixed gaps.
+on the browser, never on fixed gaps. The first is played once voice mode
+has said it's on, as a user would wait: the microphone opens a few seconds
+before the speech helper is ready, and what's said until then reaches no
+recognizer (the listener drops it, and the `mic` lines count it as
+`dropped`). In wake mode, a step said with the wake phrase also waits until
+voice mode waits for the phrase again (its follow-up window closed; at most
+30 s), then for the settle time, as when a user says "Hey Molt" after a
+pause and after the tone voice mode plays as it starts waiting (said over
+the tone, the echo canceller takes the phrase's start with it: "Emold"):
+so the suite tests the wake phrase itself, which in the window would be
+just part of a follow-up.
+Answers (steps without the wake phrase) are said in the window.
+
+Before the first scenario the kit checks its own route: a 440 Hz tone at
+-12 dBFS played into `molt_mic_in` must reach the default input (recorded
+as the browser opens it, no device named) at -40 dBFS or more, or the run
+stops there. In a PulseAudio run the browser also logs what its audio
+manager opens (`--enable-logging=stderr` and `--vmodule` for Chromium's
+Linux audio files), and the digest lists those lines, each kind once, as
+"audio lines": a fallback to ALSA, or a stream that didn't open, shows
+there.
 
 **File capture** (fallback): one WAV per scenario for Chromium's fake
 capture device (`--use-fake-device-for-media-stream
 --use-file-for-fake-audio-capture=<wav>%noloop`, 44.1 kHz stereo), the
-utterances at fixed times (the first 6 s in, each next 9 s after the one
-before), timed from the moment the test log shows the microphone on. No
+utterances at fixed times (the first 11 s in, past voice mode's greeting,
+each next 12 s after the end of the one before, past the longest answer:
+without echo cancellation an utterance over voice mode's own speech stops
+it and is dropped), timed from the moment the test log shows the
+microphone on. No
 loopback and no recording: the scenarios that need the confirmation word
 or a page's sound are skipped there.
 
@@ -194,6 +233,9 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"activity","activity":"listening","mic":true,"waiting":true}
 {"t":...,"w":1,"e":"prompt","op":"open","id":3,"kind":"permission"}
 {"t":...,"w":1,"e":"confirm","op":"open","what":"press Place order"}
+{"t":...,"w":1,"e":"map","items":15,"lists":1,"media":1,"selection":false,"selected_text":false,"labels":["YouTube Home","Search",...]}
+{"t":...,"w":1,"e":"mic","peak_db":-23,"samples":80000,"dropped":0,"echo":"chrome-wide"}
+{"t":...,"w":1,"e":"dropped","text":"open YouTube","reason":"no wake phrase"}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -203,12 +245,34 @@ in `VoiceController`):
 - `heard`: every utterance that reached the loop, typed or from the
   microphone (and whether heard cleanly), with the command it was
   understood as.
+- `map`: the page map it was planned on, just before the `heard` line:
+  how many items, lists and media, the first 40 items' labels (masked as
+  every text is), and whether the page's tree had a selection and its text
+  could be read. What a failure saw on the page, in the digest.
+- `mic`: about every five seconds while voice mode listens, what the
+  microphone gave since the last one: its loudest sample in dBFS (-120 for
+  silence), how many samples, how many the listener dropped (no helper to
+  take them, or its input backed up), and its echo cancellation (`off`
+  until the microphone starts).
+- `dropped`: what the speech helper heard that the listening session set
+  aside, and why (no wake phrase; another source was speaking; a tab's
+  sound and not heard surely; voice mode's voice heard back), masked as
+  every text is: an utterance that never reached `heard`. A run that heard nothing tells a silent microphone
+  (the audio's routing) from sound that wasn't recognized.
 - `said`: what voice mode says, as it starts saying it.
 - `activity`: voice mode's state, the microphone, and whether only the wake
   phrase counts.
 - `prompt`, `confirm`: the browser's prompts and a page's dialogs, and the
   loop's own yes-or-no questions (a purchase, the activation guard's), as
   they open and close.
+
+In PulseAudio runs the kit also passes `--molt-voice-test-audio=<absolute
+path>` (`voice/voice_test_audio.*`): what voice mode's microphone gave
+after the browser's processing, as its speech helper gets it, raw 16 kHz
+mono 16-bit samples, at most 64 MB, a regular file readable by its owner
+alone. For a failed scenario the digest lists each second's peak of it and
+what the kit's own recognizer makes of it: a microphone that got nothing
+from audio voice mode's recognizer didn't make out.
 
 Like Chromium's own test switches (`--use-fake-ui-for-media-stream`,
 `--log-net-log`), nothing is logged without it and the browser never sets

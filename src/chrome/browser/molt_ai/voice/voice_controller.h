@@ -102,7 +102,9 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/callback_list.h"
@@ -228,7 +230,10 @@ class VoiceController : public VoicePlanner::Delegate,
 
   // One utterance, as typed or recognized. Starts voice mode when it is
   // off (except in MoltNet windows), stops whatever runs, then plans and
-  // runs the new one. Does nothing while #molt-voice-mode is off.
+  // runs the new one: once the page's tree has come, when the tab is on a
+  // web page whose tree hasn't yet (the first thing said turned voice mode
+  // on, or the page just loaded), kMaxTreeWait at most. Does nothing while
+  // #molt-voice-mode is off.
   void HandleUtterance(const std::string& text);
   // One utterance the listening session heard (voice_session.h), and
   // whether it heard it cleanly enough for the voice gesture
@@ -288,6 +293,15 @@ class VoiceController : public VoicePlanner::Delegate,
   // (on by default in voice mode, §5.3): lists are then read, and numbers
   // chosen, as they are shown.
   void SetNumbersShown(bool shown);
+
+  // What the microphone gave over the last few seconds, for the spoken
+  // test kit's log (voice_test_log.h); nothing without the log.
+  void NoteMicrophoneLevels(float peak,
+                            int64_t samples,
+                            int64_t dropped,
+                            std::string_view echo);
+  // What the listening session set aside, and why: for the test log only.
+  void NoteDroppedUtterance(const std::string& text, std::string_view reason);
 
   // The planner open-ended requests go to (§6.2, layer 3): the web agent's
   // (agents/voice_agent_planner.h) unless replaced; null, the browser says
@@ -367,6 +381,18 @@ class VoiceController : public VoicePlanner::Delegate,
   void OnTreeChanged();
   void OnMediaStarted();
   void OnTabGone();
+
+  // The caption round NotifyCaption() sends.
+  void NotifyCaptionOnce();
+
+  // The utterance's planning: the map, the grammar, the turn.
+  void PlanAndRunUtterance(const std::string& text);
+  // Whether the active tab is a web page whose tree hasn't come yet: an
+  // utterance then waits for it (kMaxTreeWait at most).
+  bool PageTreeIsComing();
+  void OnDeferredTrees();
+  void RunDeferredUtterance();
+  void DropDeferredUtterance();
 
   void OnSpeakingChanged(bool speaking);
 
@@ -486,6 +512,8 @@ class VoiceController : public VoicePlanner::Delegate,
   // Changes with every committed navigation of the active tab and every
   // change of the active tab.
   int64_t page_id_ = 1;
+  // The page an utterance last waited for trees on (PageTreeIsComing()).
+  int64_t frames_waited_page_id_ = 0;
   // Committed navigations of the active tab, in all and when the current
   // utterance came, and when the last one committed: a wait that starts
   // after its navigation already committed (a quick submit) knows it.
@@ -537,7 +565,21 @@ class VoiceController : public VoicePlanner::Delegate,
   bool say_word_aloud_ = false;
   HeardEvidence heard_evidence_;
   HeardEvidence next_evidence_;
-  base::ObserverList<Observer> observers_;
+  // The utterance waiting for the page's tree (PageTreeIsComing()).
+  struct DeferredUtterance {
+    std::string text;
+    HeardEvidence evidence;
+  };
+  std::optional<DeferredUtterance> deferred_;
+  // NotifyCaption() is sending a round; another was asked for meanwhile.
+  bool notifying_caption_ = false;
+  bool caption_again_ = false;
+  base::CallbackListSubscription deferred_trees_;
+  base::OneShotTimer deferred_timer_;
+  // Reentrant: observers answer synchronously (the listening session
+  // stops the voice or says a notice in answer to what it hears), which
+  // notifies them again; Chromium's default list refuses that (a CHECK).
+  base::ReentrantObserverList<Observer> observers_;
   // Routines, personal words and site hints (voice_learning_loop.h).
   std::unique_ptr<VoiceLearningLoop> learning_;
   // Questions about the page (voice_page_questions.h).

@@ -31,9 +31,16 @@ PromptKind KindOf(content::JavaScriptDialogType type) {
 WEB_CONTENTS_USER_DATA_KEY_IMPL(VoiceDialogManager);
 
 VoiceDialogManager::VoiceDialogManager(content::WebContents* contents)
-    : content::WebContentsUserData<VoiceDialogManager>(*contents) {}
+    : content::WebContentsObserver(contents),
+      content::WebContentsUserData<VoiceDialogManager>(*contents) {}
 
 VoiceDialogManager::~VoiceDialogManager() = default;
+
+void VoiceDialogManager::WebContentsDestroyed() {
+  upstream_ = nullptr;
+  listener_ = nullptr;
+  showing_ = 0;
+}
 
 // static
 content::JavaScriptDialogManager* VoiceDialogManager::For(

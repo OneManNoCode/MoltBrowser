@@ -22,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/command_line.h"
@@ -34,6 +35,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -83,6 +85,15 @@ class RecordingTtsPlatform : public content::TtsPlatform {
     std::string out;
     for (const std::string& text : spoken_) {
       out += text + "|";
+    }
+    return out;
+  }
+  // What it said last, newest first: a failure says what came of the last
+  // steps (the whole list cuts off in the test summary).
+  std::string Last(size_t count) const {
+    std::string out;
+    for (size_t i = spoken_.size(); i > 0 && count > 0; --i, --count) {
+      out += spoken_[i - 1].substr(0, 160) + "|";
     }
     return out;
   }
@@ -209,10 +220,26 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
     return embedded_test_server()->GetURL(host, path);
   }
 
+  // The waits are bounded (kWaitTimeout); a failure says what it waited
+  // for and what voice mode said.
+  std::unique_ptr<base::test::ScopedRunLoopTimeout> Bounded(
+      std::string waiting_for) {
+    return std::make_unique<base::test::ScopedRunLoopTimeout>(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating(
+            [](const RecordingTtsPlatform* tts, std::string what) {
+              return what + "; voice mode said last (newest first): " +
+                     tts->Last(6);
+            },
+            base::Unretained(&tts_), std::move(waiting_for)));
+  }
+
   void Say(std::string_view text, BrowserWindowInterface* window = nullptr) {
     VoiceController* controller = voice(window);
     ASSERT_TRUE(controller);
     controller->HandleUtterance(std::string(text));
+    const auto bounded =
+        Bounded("still busy after \"" + std::string(text) + "\"");
     ASSERT_TRUE(base::test::RunUntil([&]() {
       return !controller->busy() &&
              controller->activity() != VoiceActivity::kSpeaking;
@@ -225,10 +252,13 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
   }
 
   bool Spoke(std::string_view text) {
+    const auto bounded =
+        Bounded("never said \"" + std::string(text) + "\"");
     return base::test::RunUntil([&]() {
       return tts_.All().find(std::string(text)) != std::string::npos;
     });
   }
+  static constexpr base::TimeDelta kWaitTimeout = base::Seconds(20);
 
   content::EvalJsResult Js(std::string_view script) {
     return content::EvalJs(web_contents(), script,
@@ -383,21 +413,24 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), Url("video.test", "/molt_voice/video_home.html")));
   // The stand-in helper "mishears" Queen as Green; the user corrects it;
-  // the next time it writes Green, the browser searches for Queen.
+  // the next time it writes Green, the browser searches for Queen. The
+  // script counts audio, not the browser's work: each utterance comes well
+  // after the search before it can have loaded on a busy machine (said
+  // while the browser still works on the last, it would be set aside).
   Script(
       "ready\n"
       "300 wake\n"
       "500 speech_start\n"
       "1100 speech_end\n"
       "1200 final 0.9 Hey Molt, search for Green\n"
-      "4000 wake\n"
-      "4200 speech_start\n"
-      "4800 speech_end\n"
-      "4900 final 0.9 Hey Molt, no, I said Queen\n"
-      "8000 wake\n"
-      "8200 speech_start\n"
-      "8800 speech_end\n"
-      "8900 final 0.9 Hey Molt, search for Green\n");
+      "9000 wake\n"
+      "9200 speech_start\n"
+      "9800 speech_end\n"
+      "9900 final 0.9 Hey Molt, no, I said Queen\n"
+      "18000 wake\n"
+      "18200 speech_start\n"
+      "18800 speech_end\n"
+      "18900 final 0.9 Hey Molt, search for Green\n");
   VoiceSession* session = VoiceSession::GetOrCreateForBrowser(browser());
   ASSERT_TRUE(session);
   ASSERT_TRUE(session->Start());

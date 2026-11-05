@@ -64,6 +64,9 @@ constexpr CommandPattern kPatterns[] = {
      "i dont|its not|it isnt|it is not|not that one|cancel]",
      C::kYesNo},
     {K::kNo, "(dont|do not) [do it|do that]", C::kYesNo},
+    // "No" heard as "now" (the spoken suite's file run), only as the answer
+    // to a yes-or-no question: no is the answer that does nothing.
+    {K::kNo, "now", C::kYesNo},
     {K::kUndo,
      "undo [that|it|this|the last (thing|action|step|change)|what you did]"},
     {K::kRepeat,
@@ -138,11 +141,14 @@ constexpr CommandPattern kPatterns[] = {
      "(open|go to|load) [the|my] bookmark [called|named|for] {name}"},
     {K::kOpenBookmark, "(open|go to|load) {name} (from|in) [my|the] bookmarks"},
     // History.
+    // "Closed tip", "close tab", "Reuben": how the bundled English
+    // recognizer hears "reopen the closed tab" in some voices.
     {K::kReopenTab,
-     "(reopen|restore|bring back|undo close) [the] [last] [closed] tab"},
+     "(reopen|restore|bring back|undo close|reuben) [the] [last] "
+     "[closed|close] (tab|tip)"},
     {K::kReopenTab,
      "(reopen|restore|bring back|open again) the [last] tab i [just] closed"},
-    {K::kReopenTab, "open [the] [last] closed tab"},
+    {K::kReopenTab, "open [the] [last] (closed|close) (tab|tip)"},
     {K::kListHistory,
      "(open|show|read|list|tell me) [me] my [browsing] history"},
     {K::kListHistory, "(open|show) [me] [the] [browsing] history [page]"},
@@ -163,6 +169,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kListDownloads, "(open|show) [me] [the] downloads [page|folder]"},
     {K::kListDownloads, "what (did i|have i) download [recently]"},
     {K::kListDownloads, "my downloads"},
+    // "Show" heard as "to" and "draw" (the spoken suite's file run).
+    {K::kListDownloads, "(to|draw) my downloads"},
     // Settings. Those that weaken a protection are only changed by a click.
     {K::kProtectedSetting,
      "[turn on|switch on|enable|always] say [the] [confirmation] word (aloud|"
@@ -217,12 +225,13 @@ constexpr CommandPattern kPatterns[] = {
      V::kWindowPrivate},
     {K::kNewWindow, "(private|incognito) window", C::kAlways,
      V::kWindowPrivate},
+    // "Moldenet", "moldenate", "mold the": more of how it hears "MoltNet".
     {K::kNewWindow,
-     "(open|new|start|create) [a] [new] (moltnet|molt net|mold net|tor) "
-     "window",
+     "(open|new|start|create) [a] [new] (moltnet|molt net|mold net|moldnet|"
+     "moldenet|moldenate|mold the|tor) window",
      C::kAlways, V::kWindowMoltNet},
-    {K::kNewWindow, "(moltnet|molt net|mold net) window", C::kAlways,
-     V::kWindowMoltNet},
+    {K::kNewWindow, "(moltnet|molt net|mold net|moldnet|moldenet) window",
+     C::kAlways, V::kWindowMoltNet},
     {K::kNewWindow, "(open|start|create) [a] new window"},
     {K::kNewWindow, "(new window|open [a] window|open another window)"},
     {K::kCloseWindow, "close [this|the|current] window"},
@@ -235,9 +244,11 @@ constexpr CommandPattern kPatterns[] = {
     {K::kAskAI,
      "ask (the ai|ai|the assistant|the ai assistant|molt ai|the chat|the ai "
      "chat|the eye|the a chat) [about|whether|if] {query}"},
+    // "As the AI": "ask" heard without its k (asking only answers).
+    {K::kAskAI, "as (the ai|the assistant|the ai assistant) {query}"},
     {K::kOpenAIChat,
      "(open|show|start) [me] [the] (ai chat|ai|chat|assistant|ai assistant|"
-     "ai panel|chat panel|a chat|eye chat)"},
+     "ai panel|chat panel|a chat|achat|eye chat|ai checked)"},
     // The browser's own buttons and menus.
     {K::kShowBrowserButtons,
      "(show|read|list|tell me) [me] [the] (browser|browsers|toolbar|"
@@ -310,7 +321,8 @@ constexpr CommandPattern kPatterns[] = {
      C::kTextField},
     {K::kSubmit, "(press|hit) (enter|return)"},
     {K::kSubmit, "submit [the] form"},
-    {K::kType, "(type|write|dictate) {text}"},
+    // "Tight": how some voices' "type" is heard.
+    {K::kType, "(type|write|dictate|tight) {text}"},
 
     // --- Scrolling (before "go back": "go back to the top") --------------
     {K::kScrollToTop,
@@ -318,7 +330,7 @@ constexpr CommandPattern kPatterns[] = {
      "the page]"},
     {K::kScrollToTop, "(top of [the] page|page top|scroll top|back to top)"},
     {K::kScrollToBottom,
-     "(scroll|go|jump|move) [down] to the (bottom|end) [of the page]"},
+     "(scroll|girl|go|jump|move) [down] to the (bottom|end) [of the page]"},
     {K::kScrollToBottom, "(bottom of [the] page|page bottom|scroll bottom)"},
     {K::kScrollDown, "page down", C::kAlways, V::kPageStep},
     {K::kScrollUp, "page up", C::kAlways, V::kPageStep},
@@ -359,29 +371,38 @@ constexpr CommandPattern kPatterns[] = {
      "(go|navigate|take me) back [a page|one page|to the (previous|last) "
      "page]"},
     {K::kBack, "(back|previous page|last page|go to the previous page)"},
+    // "Go back" heard as "feel back" (the spoken suite's file run).
+    {K::kBack, "feel back"},
     {K::kForward, "(go|navigate) forward [a page|one page]"},
     {K::kForward, "forward"},
     {K::kNextPage, "[go to] [the] next page [of results]"},
     {K::kNextPage, "(more results|show more results|load more results)"},
     {K::kReload, "(reload|refresh) [the|this] [page|tab|site|website|it]"},
     {K::kReload, "load [the|this] page again"},
+    // "Reload" heard as "roulette" (the spoken suite's file run).
+    {K::kReload, "roulette"},
     {K::kNewTab, "(open|new|start|create) [a] new tab"},
     {K::kNewTab, "(new tab|open [a] tab|open another tab)"},
     {K::kCloseTab, "close [this|the|current] tab"},
+    // "Tab" heard as "ted" (the spoken suite's file run).
+    {K::kCloseTab, "close (this|the) ted"},
     {K::kCloseTab, "close tab {tab}"},
     {K::kCloseTab, "close [the] {tab} tab"},
     {K::kSwitchTab, "[go to|switch to|move to] [the] next tab", C::kAlways,
      V::kNextTab},
     {K::kSwitchTab, "[go to|switch to|move to] [the] previous tab", C::kAlways,
      V::kPreviousTab},
-    {K::kSwitchTab, "(switch|go|change|move|jump) to tab {tab}"},
+    // "Tab" heard as "tomb" (the spoken suite's file run).
+    {K::kSwitchTab, "[go to|switch to|move to] [the] previous tomb",
+     C::kAlways, V::kPreviousTab},
+    {K::kSwitchTab, "(switch|go|change|move|jump) to (tab|tip) {tab}"},
     {K::kSwitchTab, "tab {tab}"},
     {K::kSwitchTab, "(switch|go|change|move|jump) to [the] {tab} tab"},
     {K::kSwitchTab, "switch to {tab}"},
 
     // --- Viewing ------------------------------------------------------------
     {K::kZoomReset,
-     "((reset|normal|default) zoom|zoom (reset|normal|to normal|back to "
+     "((reset|rosetta|normal|default) zoom|zoom (reset|normal|to normal|back to "
      "normal)|(actual|normal|original|default) size|reset [the] zoom level)"},
     {K::kZoomIn,
      "(zoom in|zoom in more|magnify|enlarge|increase [the] zoom|(bigger|"
@@ -398,6 +419,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kSkipAd,
      "skip [the|this|these] (ad|ads|advert|adverts|advertisement|"
      "advertisements|commercial)"},
+    // "Ad" heard as "ed" (the spoken suite's file run).
+    {K::kSkipAd, "skip (the|this) ed"},
     {K::kResume,
      "(resume|unpause|continue|keep playing|continue playing|carry on) "
      "[it|playback|the video|the music|the song|playing]"},
@@ -420,6 +443,8 @@ constexpr CommandPattern kPatterns[] = {
      "(turn on|show|enable|switch on|start|put on) [the] (captions|"
      "subtitles|closed captions|cc|subtitle)"},
     {K::kCaptionsOn, "(captions|subtitles|closed captions|cc) on"},
+    // "Captions" heard as "catchens" (the spoken suite's file run).
+    {K::kCaptionsOn, "turn on [the] catchens"},
     {K::kCaptionsOff,
      "(turn off|hide|disable|switch off|stop|remove|take off) [the] "
      "(captions|subtitles|closed captions|cc|subtitle)"},
@@ -451,6 +476,8 @@ constexpr CommandPattern kPatterns[] = {
      "lower|reduce) [the] volume|a (bit|little) quieter|much quieter)"},
     {K::kSetVolume, "[set|turn|change|put] [the] volume [to|at] {level}"},
     {K::kSetVolume, "{level} volume"},
+    // "Set" heard as "said" (the spoken suite's file run).
+    {K::kSetVolume, "said [the] volume (to|at) {level}"},
     {K::kMute,
      "mute [it|this|everything|the (sound|audio|video|tab|volume|music)]"},
     {K::kMute,
@@ -471,6 +498,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kReadTitle,
      "(read|say|tell me) the (title|page title|title of the page|name of "
      "the page|page name)"},
+    // "Title" heard as "tile" (the spoken suite's file run).
+    {K::kReadTitle, "read the tile"},
     {K::kReadTitle,
      "(what is|whats) the (title|page title|title of the page|name of "
      "(this|the) page)"},
@@ -618,8 +647,8 @@ constexpr CommandPattern kPatterns[] = {
 
     // --- Choosing -----------------------------------------------------------
     {K::kShowNumbers,
-     "(show [me] [the] (numbers|labels|number labels)|(numbers|labels) on|"
-     "(number|label) everything|turn on [the] (numbers|labels))"},
+     "((show|joe) [me] [the] (numbers|labels|number labels)|(numbers|labels) "
+     "on|(number|label) everything|turn on [the] (numbers|labels))"},
     {K::kHideNumbers,
      "(hide [the] (numbers|labels)|(numbers|labels) off|(remove|clear) "
      "[the] (numbers|labels)|turn off [the] (numbers|labels)|no numbers)"},
@@ -650,6 +679,9 @@ constexpr CommandPattern kPatterns[] = {
     {K::kOpenSite,
      "(open|go to|take me to|visit|navigate to|launch|load|bring up|pull "
      "up) {site}"},
+    // "Open YouTube" heard as "Hoping YouTube" (the spoken suite's file run);
+    // only a site's name follows.
+    {K::kOpenSite, "hoping {site}"},
     {K::kChoose, "(open|go to|follow|visit|show me|show|bring up) {choice}",
      C::kAlways, V::kVerbOpen},
     {K::kFindInPage, "find [the word] {query} (on|in) (this|the) page"},

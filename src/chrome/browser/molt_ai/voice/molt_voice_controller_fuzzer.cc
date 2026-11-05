@@ -26,7 +26,8 @@
 //            title\tchannel\tduration\tdate\tcount\ttext" (an entry of the
 //            list, with a link item of its own); "I k label\t value\turl" (an
 //            item: k is l link, b button, t text field, s search field, p
-//            password field, c card field, m media, d slider, x clickable); "B
+//            password field, c card field, m media, d slider, o select
+//            (its options after the url, tab-separated), x clickable); "B
 //            title\thost" (a tab); "@ host"; "^ title\thost\turl\tflags" (an
 //            entry of the browser's own list: flags i not finished, d
 //            dangerous, r runs code, o turned off, s a submenu); "& k name"
@@ -276,6 +277,9 @@ void AddLine(Page& page,
         case 'd':
           kind = ItemKind::kSlider;
           break;
+        case 'o':
+          kind = ItemKind::kSelect;
+          break;
         default:
           break;
       }
@@ -291,6 +295,18 @@ void AddLine(Page& page,
         item.filled = true;
       }
       item.url = std::string(Part(fields, 2));
+      if (kind == ItemKind::kSelect) {
+        // Its options after the url, as the map keeps them.
+        for (size_t f = 3; f < fields.size() &&
+                           item.options.size() < molt_ai::voice::kMaxSelectOptions;
+             ++f) {
+          std::string option = molt_ai::voice::SpeechSafeText(
+              fields[f], molt_ai::voice::kMaxSelectOptionChars);
+          if (!option.empty()) {
+            item.options.push_back(std::move(option));
+          }
+        }
+      }
       if (kind == ItemKind::kMedia) {
         PageMedia media;
         media.label = item.label;
@@ -315,6 +331,7 @@ bool IsPageAction(VoiceStepKind kind) {
     case VoiceStepKind::kScrollIntoView:
     case VoiceStepKind::kIncrement:
     case VoiceStepKind::kDecrement:
+    case VoiceStepKind::kSelectOption:
       return true;
     default:
       return false;
@@ -359,8 +376,19 @@ void CheckTurn(const VoiceTurn& turn,
         break;
       case VoiceStepKind::kIncrement:
       case VoiceStepKind::kDecrement:
-        CHECK_EQ(step.count, molt_ai::voice::kVolumeSteps);
+        CHECK(step.count == molt_ai::voice::kVolumeSteps ||
+              step.count == molt_ai::voice::kVolumeSteps *
+                                molt_ai::voice::kMuchVolumeFactor);
         break;
+      case VoiceStepKind::kSelectOption: {
+        // One of the select's own options, by the name the map gave it.
+        const PageItem* select = page.map.ItemForHandle(step.target);
+        CHECK(select);
+        CHECK(select->kind == ItemKind::kSelect);
+        CHECK(std::find(select->options.begin(), select->options.end(),
+                        step.text) != select->options.end());
+        break;
+      }
       case VoiceStepKind::kScrollPage:
         CHECK_GE(step.count, 1);
         CHECK_LE(step.count, 20);

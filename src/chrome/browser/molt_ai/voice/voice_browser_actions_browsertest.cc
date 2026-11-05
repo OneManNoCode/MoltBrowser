@@ -32,10 +32,12 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/voice/voice_ai_answers.h"
@@ -53,6 +55,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/download/public/common/download_item.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/tts_controller.h"
@@ -159,12 +162,25 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
 
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
+    // The profile, which outlives the windows: a test may close browser().
+    profile_ = browser()->GetProfile();
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
     content::TtsController::GetInstance()->SetTtsPlatform(&tts_);
   }
 
   void TearDownOnMainThread() override {
+    // A download still in progress would hold up closing the browser.
+    std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> items;
+    profile_->GetDownloadManager()->GetAllDownloads(&items);
+    for (download::DownloadItem* item : items) {
+      if (item->GetState() == download::DownloadItem::IN_PROGRESS) {
+        item->Cancel(/*user_cancel=*/false);
+      }
+    }
+    items.clear();
+    // The profile goes before the fixture does.
+    profile_ = nullptr;
     VoiceAiAnswers::SetModelForTesting(VoiceAiAnswers::ModelForTesting());
     for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
       if (VoiceController* voice = VoiceController::FromBrowser(window)) {
@@ -177,6 +193,8 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
   }
 
  protected:
+  raw_ptr<Profile> profile_ = nullptr;
+
   content::WebContents* web_contents(BrowserWindowInterface* window = nullptr) {
     return (window ? window : browser())
         ->GetTabStripModel()
@@ -210,6 +228,9 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
 
   // The voice loop has the page's tree (lists, the player, fields).
   void WaitForPage() {
+    // Voice mode on, as the first thing said turns it on: the active tab
+    // then has its page controller.
+    ASSERT_TRUE(voice()->Start());
     VoicePageController* page =
         VoicePageController::FromWebContents(web_contents());
     ASSERT_TRUE(page);
@@ -260,6 +281,8 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, Bookmarks) {
   const std::string said = tts_.TakeSpoken();
   EXPECT_NE(said.find("1 bookmark."), std::string::npos) << said;
   EXPECT_NE(said.find("Player - Fixture"), std::string::npos) << said;
+  // The manager loads in the tab after the list is read.
+  EXPECT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "bookmarks");
   Say("one");
   EXPECT_EQ(web_contents()->GetLastCommittedURL(), page);
@@ -308,7 +331,10 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
   content::DownloadTestObserverTerminal done(
       manager, 1, content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_DENY);
   ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), Url("/molt_voice/tool.bat")));
+      // From localhost: Chrome holds a download over plain http from another
+      // host as insecure, which never finishes here.
+      ui_test_utils::NavigateToURL(browser(),
+                                   Url("/molt_voice/tool.bat", "localhost")));
   done.WaitForFinished();
   Open(Url("/molt_voice/article.html"));
   Say("show my downloads");
@@ -329,11 +355,15 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
 IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, Settings) {
   Open(Url("/molt_voice/article.html"));
   Say("open settings");
+  // The settings page opens in a tab of its own: once it has loaded.
+  ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "settings");
   Say("open privacy settings");
+  ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "settings");
   EXPECT_EQ(web_contents()->GetLastCommittedURL().path(), "/privacy");
   Say("open voice mode settings");
+  ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "molt-ai-settings");
   EXPECT_EQ(web_contents()->GetLastCommittedURL().query(), "section=voice");
   tts_.TakeSpoken();
@@ -460,6 +490,21 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, Undo) {
             "/molt_voice/player.html");
 }
 
+// The first thing said turns voice mode on, and the page's tree comes a
+// moment after: the command waits for it instead of finding nothing (as
+// typed into Agent mode, or said right after a page loads).
+IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
+                       TheFirstCommandWaitsForThePage) {
+  Open(Url("/molt_voice/player.html"));
+  ASSERT_FALSE(voice()->active());
+  Say("click the note");
+  EXPECT_TRUE(voice()->active());
+  EXPECT_EQ("note", Js("document.activeElement.id"));
+  tts_.TakeSpoken();
+  Say("read the title");
+  EXPECT_NE(tts_.TakeSpoken().find("The title is"), std::string::npos);
+}
+
 IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, TheAppMenuByVoice) {
   Open(Url("/molt_voice/article.html"));
   Say("open the menu");
@@ -477,6 +522,8 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, TheAppMenuByVoice) {
   said = tts_.TakeSpoken();
   EXPECT_NE(said.find("buttons."), std::string::npos) << said;
   EXPECT_EQ(said.find("Voice mode"), std::string::npos) << said;
+  EXPECT_NE(said.find("Reload"), std::string::npos) << said;
+  EXPECT_NE(said.find("Back"), std::string::npos) << said;
   Say("open the menu");
   Say("close the menu");
   EXPECT_NE(tts_.TakeSpoken().find("Closed the menu."), std::string::npos);
@@ -501,6 +548,32 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
   EXPECT_EQ("disabled", Js("state().tracks[1]"));
   Say("captions off");
   EXPECT_EQ("disabled", Js("state().tracks[0]"));
+}
+
+// Said as voice mode comes on (the first thing said turns it on), before
+// the frame's tree came: the command waits for it, so the frame's player is
+// the one played (not "There's nothing to play on this page").
+IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
+                       APlayerInAFrameAsVoiceModeComesOn) {
+  const GURL inner = Url("/molt_voice/frame_player_inner.html", "player.test");
+  Open(Url("/molt_voice/frame_player.html?frame=" + inner.spec(), "host.test"));
+  content::RenderFrameHost* frame =
+      content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0);
+  ASSERT_TRUE(frame);
+  ASSERT_TRUE(content::EvalJs(frame, "player.paused").ExtractBool());
+  Say("play");
+  const base::test::ScopedRunLoopTimeout timeout(
+      FROM_HERE, base::Seconds(20),
+      base::BindRepeating([]() {
+        return std::string("the frame's player never played");
+      }));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return content::EvalJs(frame, "!player.paused").ExtractBool();
+  }));
+  VoicePageController* page =
+      VoicePageController::FromWebContents(web_contents());
+  ASSERT_TRUE(page);
+  EXPECT_FALSE(page->FrameTreesComing());
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, APlayerInAFrame) {

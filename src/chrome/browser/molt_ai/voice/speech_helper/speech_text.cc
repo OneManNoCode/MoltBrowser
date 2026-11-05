@@ -360,6 +360,38 @@ bool WakeKeywordLine(std::string_view phrase,
   return true;
 }
 
+bool WakeKeywordLines(std::string_view phrase,
+                      const PieceVocab& vocab,
+                      const TokenSet& tokens,
+                      std::vector<std::string>* lines) {
+  std::string line;
+  if (!WakeKeywordLine(phrase, vocab, tokens, &line)) {
+    return false;
+  }
+  lines->push_back(line);
+  constexpr std::string_view kHey = "hey ";
+  if (phrase.substr(0, kHey.size()) != kHey) {
+    return true;
+  }
+  const std::string short_phrase =
+      "he " + std::string(phrase.substr(kHey.size()));
+  std::string short_line;
+  if (!WakeKeywordLine(short_phrase, vocab, tokens, &short_line)) {
+    return true;
+  }
+  // The pieces and threshold of the short phrase, the label of the phrase.
+  const size_t label = line.rfind(" @");
+  const size_t short_label = short_line.rfind(" @");
+  if (label == std::string::npos || short_label == std::string::npos) {
+    return true;
+  }
+  short_line = short_line.substr(0, short_label) + line.substr(label);
+  if (short_line != line) {
+    lines->push_back(std::move(short_line));
+  }
+  return true;
+}
+
 std::string HotwordsArgument(const std::vector<std::string>& phrases,
                              const PieceVocab& vocab,
                              const TokenSet& tokens) {
@@ -454,6 +486,183 @@ std::string CleanEventText(std::string_view text, size_t max_bytes) {
     out.append(sequence);
   }
   return out;
+}
+
+namespace {
+
+// A phrase or transcript word for WakePhraseWordsAtStart(): ASCII letters
+// lower-cased, other bytes of 0x80 and over kept, everything else dropped.
+std::string WakeWord(std::string_view token) {
+  std::string out;
+  for (const char c : token) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    if (u >= 'A' && u <= 'Z') {
+      out.push_back(static_cast<char>(u - 'A' + 'a'));
+    } else if ((u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') ||
+               u >= 0x80) {
+      out.push_back(c);
+    }
+  }
+  return out;
+}
+
+// The first |max_words| words of |text| (space-separated, each with a
+// letter or digit), as WakeWord()s.
+std::vector<std::string> FirstWakeWords(std::string_view text,
+                                        size_t max_words) {
+  std::vector<std::string> words;
+  size_t at = 0;
+  while (words.size() < max_words && at < text.size()) {
+    const size_t space = text.find(' ', at);
+    const size_t end = space == std::string_view::npos ? text.size() : space;
+    std::string word = WakeWord(text.substr(at, end - at));
+    if (!word.empty()) {
+      words.push_back(std::move(word));
+    }
+    at = end + 1;
+  }
+  return words;
+}
+
+// WakePhraseWordsAtStart()'s consonants of a WakeWord() (or of words run
+// together).
+std::string Consonants(std::string_view word) {
+  std::string out;
+  char last = 0;
+  for (size_t i = 0; i < word.size(); ++i) {
+    char code = 0;
+    switch (word[i]) {
+      case 'a': case 'e': case 'i': case 'o': case 'u': case 'y':
+        break;
+      case 'h': case 'w':
+        code = i == 0 ? word[i] : '\0';
+        break;
+      case 'b': case 'p':
+        code = 'p';
+        break;
+      case 'd': case 't':
+        code = 't';
+        break;
+      case 'c': case 'g': case 'k': case 'q':
+        code = 'k';
+        break;
+      case 'f': case 'v':
+        code = 'f';
+        break;
+      case 's': case 'z':
+        code = 's';
+        break;
+      case 'x':
+        if (last != 'k') {
+          out.push_back('k');
+        }
+        code = 's';
+        last = 'k';
+        break;
+      default:
+        code = word[i];
+        break;
+    }
+    if (code == 0) {
+      // A vowel separates repeats ("tat" keeps both); a silent letter
+      // doesn't.
+      if (word[i] != 'h' && word[i] != 'w') {
+        last = 0;
+      }
+      continue;
+    }
+    if (code != last) {
+      out.push_back(code);
+    }
+    last = code;
+  }
+  return out;
+}
+
+size_t Letters(const std::vector<std::string>& words, size_t from,
+               size_t count) {
+  size_t n = 0;
+  for (size_t i = from; i < from + count; ++i) {
+    n += words[i].size();
+  }
+  return n;
+}
+
+}  // namespace
+
+size_t WakePhraseWordsAtStart(std::string_view text,
+                              const std::vector<std::string>& phrases) {
+  size_t longest = 0;
+  std::vector<std::vector<std::string>> wanted;
+  for (const std::string& phrase : phrases) {
+    std::vector<std::string> words = FirstWakeWords(phrase, 8);
+    if (!words.empty()) {
+      longest = std::max(longest, words.size());
+      wanted.push_back(std::move(words));
+    }
+  }
+  const std::vector<std::string> heard = FirstWakeWords(text, longest + 1);
+  for (const std::vector<std::string>& phrase : wanted) {
+    const size_t n = phrase.size();
+    std::string joined;
+    for (const std::string& word : phrase) {
+      joined += word;
+    }
+    const std::string key = Consonants(joined);
+    // Word by word.
+    if (heard.size() >= n) {
+      bool exact = true;
+      bool alike = true;
+      for (size_t i = 0; i < n && alike; ++i) {
+        if (heard[i] == phrase[i]) {
+          continue;
+        }
+        exact = false;
+        const std::string want = Consonants(phrase[i]);
+        alike = !want.empty() && Consonants(heard[i]) == want;
+      }
+      if (exact || (alike && key.size() >= 3)) {
+        return n;
+      }
+    }
+    // Run together.
+    if (key.size() < 4) {
+      continue;
+    }
+    for (size_t k = 1; k <= n + 1 && k <= heard.size(); ++k) {
+      std::string run;
+      for (size_t i = 0; i < k; ++i) {
+        run += heard[i];
+      }
+      const size_t letters = Letters(heard, 0, k);
+      const size_t diff =
+          letters > joined.size() ? letters - joined.size()
+                                  : joined.size() - letters;
+      if (diff <= 2 && Consonants(run) == key) {
+        return k;
+      }
+    }
+  }
+  return 0;
+}
+
+size_t WakeNameWordsAtStart(std::string_view text,
+                            const std::vector<std::string>& phrases) {
+  const std::vector<std::string> heard = FirstWakeWords(text, 2);
+  for (const std::string& phrase : phrases) {
+    const std::vector<std::string> words = FirstWakeWords(phrase, 8);
+    if (words.empty()) {
+      continue;
+    }
+    const std::string& name = words.back();
+    const std::string key = Consonants(name);
+    for (size_t i = 0; i < heard.size(); ++i) {
+      if (heard[i] == name || (key.size() >= 3 && Consonants(heard[i]) == key)) {
+        return i + 1;
+      }
+    }
+  }
+  return 0;
 }
 
 }  // namespace molt_speech

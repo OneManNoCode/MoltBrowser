@@ -415,9 +415,13 @@ void VoiceLearningLoop::OnPlanned(const VoiceCommand& command,
     // An answer to the routine's question isn't a step of a new one.
     return;
   }
-  // A request for the planner: its steps join "this" as they run.
+  // A request for the planner: its steps join "this" as they run (the
+  // request itself is no step: "play the live aid version", a choice the
+  // page hadn't got, went to the planner).
+  bool to_planner = false;
   for (const VoiceStep& step : turn.steps) {
     if (step.kind == VoiceStepKind::kToPlanner) {
+      to_planner = true;
       planner_goal_ = step.text;
       content::WebContents* contents = controller_->ActiveContents();
       planner_start_url_ =
@@ -435,7 +439,8 @@ void VoiceLearningLoop::OnPlanned(const VoiceCommand& command,
     pending_.reset();
   } else {
     pending_.reset();
-    if (IsRoutineKind(command.kind) && Acted(command.kind, turn)) {
+    if (!to_planner && IsRoutineKind(command.kind) &&
+        Acted(command.kind, turn)) {
       if (std::optional<RoutineStep> step =
               StepFromTurn(command, turn, before, map, env)) {
         if (turn.state.confirming) {

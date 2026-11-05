@@ -279,6 +279,7 @@ source_set("browser_tests") {
     # ~/.moltbrowser is the test's own.
     "//chrome/browser/molt_ai/common:molt_home_dir",
     "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+    "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/molt_ai/automation:storage",
     "//chrome/browser/molt_ai/voice:voice_controller",

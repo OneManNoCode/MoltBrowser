@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -289,6 +290,7 @@ class Converter {
     root.name = title;
     root.html_tag = "#document";
     tree_.nodes.push_back(std::move(root));
+    FindLabels(0, std::string::npos);
     for (size_t child : dom_[0].children) {
       Visit(child, 0);
     }
@@ -311,8 +313,61 @@ class Converter {
            style.find("display: none") != std::string::npos;
   }
 
-  // The visible text inside |index|, collapsed.
-  std::string TextOf(size_t index) const {
+  // A control a <label> names (HTML's labelable elements, those voice mode
+  // reads: input but a hidden one, select, textarea, button, meter,
+  // progress, output).
+  static bool Labelable(const DomNode& n) {
+    return !n.text && (n.tag == "input" || n.tag == "select" ||
+                       n.tag == "textarea" || n.tag == "button" ||
+                       n.tag == "meter" || n.tag == "progress" ||
+                       n.tag == "output");
+  }
+
+  // Which controls labels name, as Blink's accessible name does: a
+  // <label for=id> names the element with that id, a label around a
+  // control (without for=) the first one inside it; the name is the
+  // label's text without the control's own. Ids are found first.
+  void FindLabels(size_t index, size_t label) {
+    const DomNode& n = dom_[index];
+    if (n.text) {
+      return;
+    }
+    if (const std::string* id = n.Attr("id")) {
+      ids_.emplace(*id, index);
+    }
+    if (n.tag == "label") {
+      label = index;
+      if (n.HasAttr("for")) {
+        pending_for_.emplace_back(index, n.AttrOr("for"));
+        label = std::string::npos;
+      }
+    } else if (label != std::string::npos && Labelable(n) &&
+               !wrapped_.count(label)) {
+      wrapped_.emplace(label, index);
+      label = std::string::npos;
+    }
+    for (size_t child : n.children) {
+      FindLabels(child, label);
+    }
+    if (index != 0) {
+      return;
+    }
+    for (const auto& [at, id] : pending_for_) {
+      const auto found = ids_.find(id);
+      if (found != ids_.end() && Labelable(dom_[found->second])) {
+        labels_.emplace(found->second, Collapse(TextOf(at)));
+      }
+    }
+    for (const auto& [at, control] : wrapped_) {
+      labels_.emplace(control, Collapse(TextOf(at, control)));
+    }
+  }
+
+  // The visible text inside |index|, collapsed, without |except|'s.
+  std::string TextOf(size_t index, size_t except = std::string::npos) const {
+    if (index == except) {
+      return std::string();
+    }
     const DomNode& n = dom_[index];
     if (Hidden(n)) {
       return std::string();
@@ -322,7 +377,7 @@ class Converter {
     }
     std::string out;
     for (size_t child : n.children) {
-      out += " " + TextOf(child);
+      out += " " + TextOf(child, except);
     }
     if (n.tag == "img") {
       out += " " + n.AttrOr("alt");
@@ -448,6 +503,27 @@ class Converter {
     return PageRole::kGeneric;
   }
 
+  // Blink includes an element with any aria-* attribute
+  // (AXNodeObject::ShouldIncludeBasedOnSemantics()).
+  static bool HasAriaAttribute(const DomNode& n) {
+    for (const auto& [key, value] : n.attrs) {
+      if (key.size() > 5 && key.compare(0, 5, "aria-") == 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // And an element a link within the page could go to: <a name>, or any
+  // element with an id but a <label> or <optgroup> (or SVG, which these
+  // fixtures don't have). Blink's IsPotentialInPageLinkTarget().
+  static bool IsPotentialInPageLinkTarget(const DomNode& n) {
+    if (n.tag == "a" && n.HasAttr("name")) {
+      return true;
+    }
+    return n.HasAttr("id") && n.tag != "label" && n.tag != "optgroup";
+  }
+
   // Whether a block's children are all inline (text and inline elements)
   // and there is some: LayoutBlockFlow::ChildrenInline(), which Blink
   // includes the block for. A block with a block child wraps its inline
@@ -525,7 +601,8 @@ class Converter {
     if (role == PageRole::kGeneric && !ignored) {
       const bool block = !IsInline(n.tag);
       ignored = !(custom || focusable || n.HasAttr("role") ||
-                  n.HasAttr("aria-label") ||
+                  HasAriaAttribute(n) || !n.AttrOr("title").empty() ||
+                  IsPotentialInPageLinkTarget(n) ||
                   (block && HoldsTextDirectly(n)));
     }
 
@@ -552,6 +629,21 @@ class Converter {
       node.placeholder = n.AttrOr("placeholder");
       states |= kStateMultiline;
     }
+    if (n.tag == "select") {
+      // Its value: the selected option's text, else the first's.
+      std::vector<size_t> options;
+      OptionsIn(index, &options);
+      size_t chosen = options.empty() ? std::string::npos : options[0];
+      for (size_t option : options) {
+        if (dom_[option].HasAttr("selected")) {
+          chosen = option;
+          break;
+        }
+      }
+      if (chosen != std::string::npos) {
+        node.value = Collapse(TextOf(chosen));
+      }
+    }
     if (n.tag == "a") {
       node.url = n.AttrOr("href");
     }
@@ -562,9 +654,17 @@ class Converter {
                                                  n.AttrOr("aria-level", "2")
                                                      .c_str()));
     }
-    // The name.
-    if (const std::string* label = n.Attr("aria-label")) {
+    // The name: aria-labelledby's text, aria-label, a <label>, else from
+    // the contents or the attributes below.
+    const auto label_text = labels_.find(index);
+    const std::string labelled_by =
+        Collapse(LabelledByText(n.AttrOr("aria-labelledby")));
+    if (!labelled_by.empty()) {
+      node.name = labelled_by;
+    } else if (const std::string* label = n.Attr("aria-label")) {
       node.name = *label;
+    } else if (label_text != labels_.end() && !label_text->second.empty()) {
+      node.name = label_text->second;
     } else if (NamedFromContents(role) ||
                (n.tag == "input" && role == PageRole::kButton)) {
       node.name = n.tag == "input" ? n.AttrOr("value") : Collapse(TextOf(index));
@@ -623,11 +723,54 @@ class Converter {
       tree_.nodes[me].states |= kStateFocused;
       tree_.focus = tree_.nodes[me].handle;
     }
-    if (n.tag == "textarea" || n.tag == "select") {
+    if (n.tag == "select") {
+      // A collapsed select's options, as Blink has them: under its
+      // pop-up (a menu list popup, here a generic node), invisible until
+      // it opens.
+      PageNode popup;
+      popup.handle = {0, next_id_++};
+      popup.role = PageRole::kGeneric;
+      popup.states = kStateInvisible;
+      const uint32_t under = Append(std::move(popup), me);
+      std::vector<size_t> options;
+      OptionsIn(index, &options);
+      for (size_t option : options) {
+        PageNode child;
+        child.handle = {0, next_id_++};
+        child.role = PageRole::kOption;
+        child.name = Collapse(TextOf(option));
+        child.states = kStateInvisible;
+        if (dom_[option].HasAttr("disabled")) {
+          child.states |= kStateDisabled;
+        }
+        if (dom_[option].HasAttr("selected")) {
+          child.states |= kStateSelected;
+        }
+        Append(std::move(child), under);
+      }
+      return;
+    }
+    if (n.tag == "textarea") {
       return;
     }
     for (size_t child : n.children) {
       Visit(child, me);
+    }
+  }
+
+  // The <option>s inside |index| (a select, through its optgroups), in
+  // order.
+  void OptionsIn(size_t index, std::vector<size_t>* options) const {
+    for (size_t child : dom_[index].children) {
+      const DomNode& c = dom_[child];
+      if (c.text || Hidden(c)) {
+        continue;
+      }
+      if (c.tag == "option") {
+        options->push_back(child);
+      } else if (c.tag == "optgroup") {
+        OptionsIn(child, options);
+      }
     }
   }
 
@@ -670,7 +813,36 @@ class Converter {
   }
 
   // The caller's, which outlives the converter.
+  // The text of the elements an aria-labelledby names, in its order.
+  std::string LabelledByText(const std::string& list) const {
+    std::string out;
+    size_t at = 0;
+    while (at < list.size()) {
+      while (at < list.size() && IsSpace(list[at])) {
+        ++at;
+      }
+      size_t end = at;
+      while (end < list.size() && !IsSpace(list[end])) {
+        ++end;
+      }
+      if (end > at) {
+        const auto found = ids_.find(list.substr(at, end - at));
+        if (found != ids_.end()) {
+          out += " " + TextOf(found->second);
+        }
+      }
+      at = end;
+    }
+    return out;
+  }
+
   MOLT_RAW_PTR_EXCLUSION const std::vector<DomNode>& dom_;
+  // FindLabels(): element ids, labels' for=, labels around a control, and
+  // the name each labelled control gets (by DOM index).
+  std::map<std::string, size_t> ids_;
+  std::vector<std::pair<size_t, std::string>> pending_for_;
+  std::map<size_t, size_t> wrapped_;
+  std::map<size_t, std::string> labels_;
   PageTree tree_;
   int32_t next_id_ = 1;
   float line_ = 0;

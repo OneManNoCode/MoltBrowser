@@ -76,11 +76,11 @@ TEST(PageReadingTest, AWikipediaArticleWithItsSkill) {
   EXPECT_EQ(doc.source, ReadingSource::kSkill);
   EXPECT_EQ(doc.title, "Queen (band) - Wikipedia");
   EXPECT_FALSE(doc.capped);
+  // The article's text (mw-content-text): the title and the line under it
+  // are the page's, outside it.
   EXPECT_EQ(
       Texts(doc),
       (std::vector<std::string>{
-          "Queen (band)",
-          "From Wikipedia, the free encyclopedia",
           "This is a stand-in for a hatnote.",
           "Queen stands in for the article's subject here. This first "
           "sentence stands in for the lead. A second sentence follows it, "
@@ -100,15 +100,14 @@ TEST(PageReadingTest, AWikipediaArticleWithItsSkill) {
           "article.",
           "References",
       }));
-  EXPECT_EQ(doc.blocks[0].kind, ReadingBlockKind::kHeading);
-  EXPECT_EQ(doc.blocks[0].level, 1);
-  EXPECT_EQ(doc.blocks[5].level, 2);
-  EXPECT_EQ(doc.blocks[7].level, 3);
-  EXPECT_EQ(doc.blocks[9].kind, ReadingBlockKind::kListItem);
-  EXPECT_EQ(doc.blocks[3].kind, ReadingBlockKind::kParagraph);
+  EXPECT_EQ(doc.blocks[3].kind, ReadingBlockKind::kHeading);
+  EXPECT_EQ(doc.blocks[3].level, 2);
+  EXPECT_EQ(doc.blocks[5].level, 3);
+  EXPECT_EQ(doc.blocks[7].kind, ReadingBlockKind::kListItem);
+  EXPECT_EQ(doc.blocks[1].kind, ReadingBlockKind::kParagraph);
   // The lead's link, for the overlay to ring.
-  EXPECT_TRUE(doc.blocks[3].first_link.valid());
-  EXPECT_EQ(doc.blocks[3].sentences, (std::vector<uint32_t>{0, 48, 92}));
+  EXPECT_TRUE(doc.blocks[1].first_link.valid());
+  EXPECT_EQ(doc.blocks[1].sentences, (std::vector<uint32_t>{0, 48, 92}));
 }
 
 TEST(PageReadingTest, WithoutTheSkillTheMainLandmark) {
@@ -226,27 +225,27 @@ TEST(PageReadingTest, ChunksAreWholeSentencesWithinTheRatesSize) {
 
   const ReadingDocument doc =
       WikipediaWithSkill(Fixture("wikipedia_article.html"));
-  // The lead paragraph (block 3) in one chunk at the normal rate...
-  std::optional<ReadingChunk> chunk = ChunkAt(doc, {3, 0}, 195, 99);
+  // The lead paragraph (block 1) in one chunk at the normal rate...
+  std::optional<ReadingChunk> chunk = ChunkAt(doc, {1, 0}, 195, 99);
   ASSERT_TRUE(chunk);
-  EXPECT_EQ(chunk->text, doc.blocks[3].text);
-  EXPECT_EQ(chunk->next, (ReadingPosition{4, 0}));
+  EXPECT_EQ(chunk->text, doc.blocks[1].text);
+  EXPECT_EQ(chunk->next, (ReadingPosition{2, 0}));
   // ...in sentences at a slow one.
-  chunk = ChunkAt(doc, {3, 0}, 80, 99);
+  chunk = ChunkAt(doc, {1, 0}, 80, 99);
   ASSERT_TRUE(chunk);
   EXPECT_EQ(chunk->text, "Queen stands in for the article's subject here.");
-  EXPECT_EQ(chunk->next, (ReadingPosition{3, 48}));
+  EXPECT_EQ(chunk->next, (ReadingPosition{1, 48}));
   // A heading ends with a full stop; the end of a section stops reading.
-  chunk = ChunkAt(doc, {5, 0}, 195, 99);
+  chunk = ChunkAt(doc, {3, 0}, 195, 99);
   ASSERT_TRUE(chunk);
   EXPECT_EQ(chunk->text, "History.");
-  EXPECT_FALSE(ChunkAt(doc, {6, 0}, 195, 6));
+  EXPECT_FALSE(ChunkAt(doc, {4, 0}, 195, 4));
   // Past the end.
   EXPECT_FALSE(ChunkAt(doc, {doc.blocks.size(), 0}, 195, 99));
   // A position at the end of a block moves to the next.
-  chunk = ChunkAt(doc, {5, 999}, 195, 99);
+  chunk = ChunkAt(doc, {3, 999}, 195, 99);
   ASSERT_TRUE(chunk);
-  EXPECT_EQ(chunk->at, (ReadingPosition{6, 0}));
+  EXPECT_EQ(chunk->at, (ReadingPosition{4, 0}));
 }
 
 TEST(PageReadingTest, ASentenceTooLongIsCutAtAWord) {
@@ -345,28 +344,32 @@ TEST(PageReadingTest, ChunksAreMeasuredAsTheyAreSaid) {
 TEST(PageReadingTest, MovesAndSections) {
   const ReadingDocument doc =
       WikipediaWithSkill(Fixture("wikipedia_article.html"));
+  // The article's blocks: 0 the hatnote, 1-2 the lead, 3 History (level
+  // 2), 4 its paragraph, 5 Early years (level 3), 6 its paragraph, 7-8 a
+  // list, 9 Musical style, 10, 11 Legacy, 12, 13 References.
   const size_t none = doc.blocks.size();
-  EXPECT_EQ(MoveBlock(doc, none, ReadingUnit::kHeading, true), 0u);
-  EXPECT_EQ(MoveBlock(doc, 0, ReadingUnit::kHeading, true), 5u);
-  EXPECT_EQ(MoveBlock(doc, 5, ReadingUnit::kHeading, true), 7u);
-  EXPECT_EQ(MoveBlock(doc, 7, ReadingUnit::kHeading, false), 5u);
-  EXPECT_EQ(MoveBlock(doc, 5, ReadingUnit::kParagraph, true), 6u);
-  EXPECT_EQ(MoveBlock(doc, 6, ReadingUnit::kParagraph, true), 8u);
-  EXPECT_EQ(MoveBlock(doc, 8, ReadingUnit::kParagraph, false), 6u);
-  EXPECT_FALSE(MoveBlock(doc, 15, ReadingUnit::kHeading, true));
-  EXPECT_FALSE(MoveBlock(doc, 0, ReadingUnit::kHeading, false));
-  EXPECT_EQ(MoveSpeech(doc, 5), "Heading level 2: History.");
-  EXPECT_EQ(MoveSpeech(doc, 9), "A first point of a list.");
+  ASSERT_EQ(none, 14u);
+  EXPECT_EQ(MoveBlock(doc, none, ReadingUnit::kHeading, true), 3u);
+  EXPECT_EQ(MoveBlock(doc, 0, ReadingUnit::kHeading, true), 3u);
+  EXPECT_EQ(MoveBlock(doc, 3, ReadingUnit::kHeading, true), 5u);
+  EXPECT_EQ(MoveBlock(doc, 5, ReadingUnit::kHeading, false), 3u);
+  EXPECT_EQ(MoveBlock(doc, 3, ReadingUnit::kParagraph, true), 4u);
+  EXPECT_EQ(MoveBlock(doc, 4, ReadingUnit::kParagraph, true), 6u);
+  EXPECT_EQ(MoveBlock(doc, 6, ReadingUnit::kParagraph, false), 4u);
+  EXPECT_FALSE(MoveBlock(doc, 13, ReadingUnit::kHeading, true));
+  EXPECT_FALSE(MoveBlock(doc, 3, ReadingUnit::kHeading, false));
+  EXPECT_EQ(MoveSpeech(doc, 3), "Heading level 2: History.");
+  EXPECT_EQ(MoveSpeech(doc, 7), "A first point of a list.");
 
   std::vector<size_t> close;
-  EXPECT_EQ(FindSection(doc, "history", &close), 5u);
-  EXPECT_EQ(SectionEnd(doc, 5), 11u);
-  EXPECT_EQ(FindSection(doc, "the early years", &close), 7u);
-  EXPECT_EQ(SectionEnd(doc, 7), 11u);
-  EXPECT_EQ(FindSection(doc, "legacy", &close), 13u);
-  EXPECT_EQ(SectionEnd(doc, 13), 15u);
+  EXPECT_EQ(FindSection(doc, "history", &close), 3u);
+  EXPECT_EQ(SectionEnd(doc, 3), 9u);
+  EXPECT_EQ(FindSection(doc, "the early years", &close), 5u);
+  EXPECT_EQ(SectionEnd(doc, 5), 9u);
+  EXPECT_EQ(FindSection(doc, "legacy", &close), 11u);
+  EXPECT_EQ(SectionEnd(doc, 11), 13u);
   // Sound-alikes match, as names do.
-  EXPECT_EQ(FindSection(doc, "musical stile", &close), 11u);
+  EXPECT_EQ(FindSection(doc, "musical stile", &close), 9u);
   EXPECT_FALSE(FindSection(doc, "discography", &close));
   EXPECT_TRUE(close.empty());
 }
@@ -374,12 +377,17 @@ TEST(PageReadingTest, MovesAndSections) {
 TEST(PageReadingTest, LocatesANode) {
   const PageTree tree = Fixture("wikipedia_article.html");
   ReadingDocument doc = WikipediaWithSkill(tree);
-  // The block of the History heading's node, found again by its node.
+  // The block of the History heading's node, found again by its node (in
+  // the whole page's reading, without the skill's scope).
   ReadingOptions options;
-  options.locate = doc.blocks[5].node;
-  EXPECT_EQ(Read(tree, options).located, 5);
+  ASSERT_EQ(doc.blocks[3].text, "History");
+  options.locate = doc.blocks[3].node;
+  const ReadingDocument located = Read(tree, options);
+  ASSERT_GE(located.located, 0);
+  EXPECT_EQ(located.blocks[static_cast<size_t>(located.located)].node,
+            doc.blocks[3].node);
   // A link inside the lead: reading from it starts with its text.
-  options.locate = doc.blocks[3].first_link;
+  options.locate = doc.blocks[1].first_link;
   const ReadingDocument from_link = Read(tree, options);
   ASSERT_GE(from_link.located, 0);
   EXPECT_EQ(from_link.blocks[static_cast<size_t>(from_link.located)].text,
@@ -424,6 +432,18 @@ TEST(PageReadingTest, TheSelection) {
   EXPECT_EQ(select(last, 8, first, 4), "quick brown fox jumps over the");
   // An element end: a child index.
   EXPECT_EQ(select(p, 0, p, 1), "The quick brown fox");
+  // As Blink gives a selection of the paragraph's children
+  // (selectAllChildren()): it starts in the first text and ends on the
+  // paragraph, past its children; either way round.
+  EXPECT_EQ(select(first, 0, p, 3),
+            "The quick brown fox jumps over the lazy dog.");
+  EXPECT_EQ(select(p, 3, first, 0),
+            "The quick brown fox jumps over the lazy dog.");
+  // From before the link (a child index) into the last text.
+  EXPECT_EQ(select(p, 1, last, 4), "jumps over");
+  EXPECT_EQ(select(last, 4, p, 1), "jumps over");
+  // A point before a node and one inside it: nothing between.
+  EXPECT_FALSE(select(p, 0, first, 0));
   // In a text field: its value, by UTF-16 offsets.
   EXPECT_EQ(select(field, 0, field, 4), "caf\xC3\xA9");
   // Never a password.
@@ -442,7 +462,7 @@ TEST(PageReadingTest, TheQueueKeepsItsPlace) {
   ReadingQueue queue;
   EXPECT_FALSE(queue.loaded());
   EXPECT_FALSE(queue.Next(1));
-  queue.Start(doc, {5, 0}, SectionEnd(doc, 5));
+  queue.Start(doc, {3, 0}, SectionEnd(doc, 3));
   // One said, one ahead.
   std::optional<ReadingChunk> a = queue.Next(1);
   std::optional<ReadingChunk> b = queue.Next(1);
@@ -451,7 +471,7 @@ TEST(PageReadingTest, TheQueueKeepsItsPlace) {
   EXPECT_FALSE(queue.Next(1));
   EXPECT_TRUE(queue.speaking());
   queue.Spoken();
-  EXPECT_EQ(queue.current_block(), 5);
+  EXPECT_EQ(queue.current_block(), 3);
   EXPECT_EQ(queue.position(), b->at);
   // Barge-in: the chunk being said is said again on "continue".
   queue.Stop();

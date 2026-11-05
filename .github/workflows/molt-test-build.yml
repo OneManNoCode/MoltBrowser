@@ -16,8 +16,12 @@
 # (gh workflow run molt-test-build.yml -f resume_run=<run id>), or a push
 # to a claude/ branch that changes .github/molt-test-build.json, whose
 # fields are the same inputs: {"resume_run": "<run id or empty>",
-# "run_tests": true, "e2e_only": false}. With e2e_only, only the spoken
-# suite runs, on the build resume_run's last stage saved.
+# "run_tests": true, "e2e_only": false, "e2e_runs": "", "e2e_scenarios":
+# ""}. With e2e_only, only the spoken suite runs, on the build
+# resume_run's last stage saved. e2e_runs picks the spoken suite's runs
+# (default pulse:clean,pulse:music10,file:clean,typed), e2e_scenarios its
+# scenarios (comma-separated ids; default all); "e2e_speech_check": false
+# skips checking the rendered speech against the recognizer (an hour).
 
 name: MoltBrowser test build
 
@@ -39,6 +43,14 @@ on:
         description: "Only the spoken suite, on resume_run's saved build"
         type: boolean
         default: false
+      e2e_runs:
+        description: 'The spoken suite runs, comma-separated (empty: all four)'
+        type: string
+        default: ''
+      e2e_scenarios:
+        description: 'The spoken suite scenario ids, comma-separated (empty: all)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -58,6 +70,8 @@ jobs:
       resume_run: ${{ steps.config.outputs.resume_run }}
       run_tests: ${{ steps.config.outputs.run_tests }}
       e2e_only: ${{ steps.config.outputs.e2e_only }}
+      e2e_matrix: ${{ steps.config.outputs.e2e_matrix }}
+      e2e_scenarios: ${{ steps.config.outputs.e2e_scenarios }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -71,15 +85,34 @@ jobs:
           IN_RESUME: ${{ inputs.resume_run }}
           IN_TESTS: ${{ inputs.run_tests }}
           IN_E2E_ONLY: ${{ inputs.e2e_only }}
+          IN_E2E_RUNS: ${{ inputs.e2e_runs }}
+          IN_E2E_SCENARIOS: ${{ inputs.e2e_scenarios }}
         run: |
           set -euo pipefail
           if [ "$EVENT" = push ]; then
             RESUME="$(jq -r '.resume_run // ""' .github/molt-test-build.json)"
             TESTS="$(jq -r 'if .run_tests == false then "false" else "true" end' .github/molt-test-build.json)"
             E2E_ONLY="$(jq -r 'if .e2e_only == true then "true" else "false" end' .github/molt-test-build.json)"
+            E2E_RUNS="$(jq -r '.e2e_runs // ""' .github/molt-test-build.json)"
+            E2E_SCENARIOS="$(jq -r '.e2e_scenarios // ""' .github/molt-test-build.json)"
+            SPEECH_CHECK="$(jq -r 'if .e2e_speech_check == false then "0" else "1" end' .github/molt-test-build.json)"
           else
+            SPEECH_CHECK=1
             RESUME="$IN_RESUME"; TESTS="$IN_TESTS"; E2E_ONLY="$IN_E2E_ONLY"
+            E2E_RUNS="$IN_E2E_RUNS"; E2E_SCENARIOS="$IN_E2E_SCENARIOS"
           fi
+          E2E_RUNS="${E2E_RUNS:-pulse:clean,pulse:music10,file:clean,typed}"
+          if ! [[ "$E2E_RUNS" =~ ^(pulse:[a-z0-9]+(:noloop|:noaec)?|file:[a-z0-9]+|typed)(,(pulse:[a-z0-9]+(:noloop|:noaec)?|file:[a-z0-9]+|typed))*$ ]]; then
+            echo "::error::e2e_runs must be runs like pulse:clean,pulse:clean:noloop,pulse:clean:noaec,typed"; exit 1
+          fi
+          if ! [[ "$E2E_SCENARIOS" =~ ^[a-z0-9,-]*$ ]]; then
+            echo "::error::e2e_scenarios must be scenario ids, comma-separated"; exit 1
+          fi
+          # One job per run; the first checks the speech against the
+          # recognizer too.
+          MATRIX="$(tr ',' '\n' <<< "$E2E_RUNS" | jq -R . | jq -cs --arg check "$SPEECH_CHECK" \
+            '{include: [to_entries[] | {run: .value, name: (.value | gsub(":"; "-")),
+                                         speech_check: (if .key == 0 then $check else "0" end)}]}')"
           if [ -n "$RESUME" ] && ! [[ "$RESUME" =~ ^[0-9]+$ ]]; then
             echo "::error::resume_run must be a run id"; exit 1
           fi
@@ -91,8 +124,11 @@ jobs:
             echo "resume_run=$RESUME"
             echo "run_tests=$TESTS"
             echo "e2e_only=$E2E_ONLY"
+            echo "e2e_matrix=$MATRIX"
+            echo "e2e_scenarios=$E2E_SCENARIOS"
           } >> "$GITHUB_OUTPUT"
           echo "resume_run='$RESUME' run_tests=$TESTS e2e_only=$E2E_ONLY"
+          echo "e2e: $MATRIX scenarios='$E2E_SCENARIOS'"
 
   # Alongside stage 1 of a resumed build: the steps the restored build
   # failed, rebuilt on their own, so their errors (or their fix) show in
@@ -179,16 +215,12 @@ jobs:
     timeout-minutes: 355
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {run: 'pulse:clean', name: pulse-clean, speech_check: '1'}
-          - {run: 'pulse:music10', name: pulse-music10, speech_check: '0'}
-          - {run: 'file:clean', name: file-clean, speech_check: '0'}
-          - {run: 'typed', name: typed, speech_check: '0'}
+      matrix: ${{ fromJSON(needs.config.outputs.e2e_matrix) }}
     env:
       GH_TOKEN: ${{ github.token }}
       VOICE_E2E_RUNS: ${{ matrix.run }}
       VOICE_E2E_SPEECH_CHECK: ${{ matrix.speech_check }}
+      VOICE_E2E_SCENARIOS: ${{ needs.config.outputs.e2e_scenarios }}
       T1: ${{ needs.stage-1.outputs.tested }}
       T2: ${{ needs.stage-2.outputs.tested }}
       T3: ${{ needs.stage-3.outputs.tested }}
@@ -243,6 +275,10 @@ jobs:
             # Also in the job log, which the API serves when the artifact
             # storage isn't reachable.
             echo "::group::report.md"; cat "$RUNNER_TEMP/e2e-report/report.md"; echo "::endgroup::"
+          fi
+          if [ -f "$RUNNER_TEMP/e2e-report/digest.txt" ]; then
+            echo "::group::digest.txt (the logs of each failure)"
+            cat "$RUNNER_TEMP/e2e-report/digest.txt"; echo "::endgroup::"
           fi
           exit 0
       - name: Reports

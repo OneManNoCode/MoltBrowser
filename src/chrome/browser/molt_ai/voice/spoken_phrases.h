@@ -156,6 +156,9 @@ struct LanguagePhrases {
   std::vector<std::string_view> wake_greetings;
   // The wake phrase when ParseContext gives none.
   std::string_view default_wake_phrase;
+  // Verbs a recognizer may glue to the next word ("clickname a color"): an
+  // utterance nothing else understood is read once more with them apart.
+  std::vector<std::string_view> glued_verbs;
 
   // --- Values in commands -------------------------------------------------
   // Volume words: "half" -> 50, "max" -> 100.

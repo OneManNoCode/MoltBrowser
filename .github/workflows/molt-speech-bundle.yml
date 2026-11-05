@@ -35,6 +35,11 @@ jobs:
         with:
           path: .molt-speech-cache/build/linux-x64
           key: molt-speech-bundle-${{ hashFiles('scripts/bundle-speech.sh', 'src/chrome/browser/molt_ai/voice/speech_helper/**', 'src/chrome/browser/molt_ai/voice/voice_helper/**') }}
+          # On a miss, the last bundle's build directory: ONNX Runtime and
+          # sherpa-onnx are reused when their stamps (their pinned sources
+          # and flags) still match, and the helpers are always rebuilt, so a
+          # change to a helper takes minutes, not a cold build.
+          restore-keys: molt-speech-bundle-
       - name: Build the speech and voice helpers
         if: steps.cache.outputs.cache-hit != 'true'
         run: |

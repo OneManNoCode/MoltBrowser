@@ -530,6 +530,22 @@ TEST(AXPageSourceTest, AnEmptyTreeTakesOnlyAWholeTree) {
   part.nodes = {Node(2, Role::kButton, "Cancel")};
   ui::AXTreeUpdate root_not_first = whole;
   std::swap(root_not_first.nodes[0], root_not_first.nodes[1]);
+  // The root sent again without its subtree (back from the back/forward
+  // cache), a node twice, a child under two parents, the root as a child.
+  ui::AXTreeUpdate root_only;
+  root_only.root_id = 1;
+  root_only.nodes = {Node(1, Role::kRootWebArea, "", {2, 3})};
+  ui::AXTreeUpdate twice = whole;
+  twice.nodes.push_back(Node(2, Role::kButton, "OK"));
+  ui::AXTreeUpdate two_parents;
+  two_parents.root_id = 1;
+  two_parents.nodes = {Node(1, Role::kRootWebArea, "", {2, 3}),
+                       Node(2, Role::kGroup, "", {3}),
+                       Node(3, Role::kButton, "OK")};
+  ui::AXTreeUpdate root_as_child;
+  root_as_child.root_id = 1;
+  root_as_child.nodes = {Node(1, Role::kRootWebArea, "", {2}),
+                         Node(2, Role::kGroup, "", {1})};
 
   ui::AXTree empty;
   EXPECT_TRUE(TreeCanTakeUpdate(empty, whole));
@@ -539,6 +555,10 @@ TEST(AXPageSourceTest, AnEmptyTreeTakesOnlyAWholeTree) {
   EXPECT_FALSE(TreeCanTakeUpdate(empty, part));
   EXPECT_FALSE(TreeCanTakeUpdate(empty, root_not_first));
   EXPECT_FALSE(TreeCanTakeUpdate(empty, ui::AXTreeUpdate()));
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, root_only));
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, twice));
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, two_parents));
+  EXPECT_FALSE(TreeCanTakeUpdate(empty, root_as_child));
 
   // A tree with a root takes them (and checks them itself).
   ui::AXTree tree;

@@ -68,7 +68,7 @@
    "start": {"url": "https://news.test/story"},
    "steps": [
     {"say": "find timetable on this page", "needs": ["find_in_page"],
-     "expect": [{"said_re": "(?i)timetable|found|match"}]}
+     "expect": [{"said_re": "(?i)found it"}]}
    ]
   },
   {
@@ -88,7 +88,7 @@
    "start": {"url": "https://news.test/story",
              "js": "getSelection().selectAllChildren(document.getElementById('transport'))"},
    "steps": [
-    {"say": "read the selection", "needs": ["read_selection"],
+    {"say": "read the selection", "pause": 1.0, "needs": ["read_selection"],
      "expect": [{"said_has": "every six minutes"}]}
    ]
   },

@@ -1,1 +1,4 @@
-{"resume_run": "41944827120", "run_tests": true, "e2e_only": false, "request": "unit and browser test fixes, the launcher switch, the spoken suite in four parallel jobs: resume from run 41944827120 (stage 1 built and tested)"}
+{"resume_run": "42076517368", "run_tests": true, "e2e_only": false,
+ "e2e_runs": "pulse:clean,pulse:music10,pulse:clean:noloop,file:clean,typed",
+ "e2e_speech_check": false,
+ "request": "Round 45, eighth build: no listening tone over a command said in the same breath (the echo canceller took the command's first words with it when the speakers reach the microphone). Resume from run 42076517368 (the seventh build). The spoken suite with and without the speakers in the microphone, with music, by file and typed."}

@@ -243,6 +243,12 @@ bool PersonalVocabulary::NoteCorrection(std::string_view heard,
       heard_key == FoldForComparison(learned)) {
     return false;
   }
+  // What was misheard isn't a name the user says ("search for Green",
+  // noted as the search's name, then "no, I said Queen"): kept, it would
+  // bias the recognizer toward the very mistake.
+  std::erase_if(entries_, [&heard_key](const VocabularyEntry& entry) {
+    return !entry.correction() && FoldForComparison(entry.phrase) == heard_key;
+  });
   if (VocabularyEntry* entry = FindCorrection(heard_key)) {
     entry->phrase = std::move(learned);
     entry->uses = std::min(entry->uses + 1, kMaxVocabularyUses);

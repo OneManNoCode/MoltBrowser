@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/voice/voice_test_log_lines.h"
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -104,6 +106,56 @@ TEST(VoiceTestLogLinesTest, Lines) {
   EXPECT_EQ(lines.Said(10, "To allow it, say the word on your screen."),
             "{\"t\":10,\"w\":2,\"e\":\"said\",\"text\":\"To allow it, say the "
             "word on your screen.\"}\n");
+}
+
+// What the page map held: counts, the selection, the labels masked and
+// capped.
+TEST(VoiceTestLogLinesTest, AMapLine) {
+  TestLogLines lines(1);
+  const std::vector<std::string> labels = {"Skip Ad", "harbor",
+                                           std::string(100, 'x')};
+  TestLogLines::MapSummary map;
+  map.items = 3;
+  map.lists = 1;
+  map.media = 1;
+  map.selection = true;
+  map.labels = labels;
+  EXPECT_EQ(lines.Map(5, map, "harbor"),
+            "{\"t\":5,\"w\":1,\"e\":\"map\",\"items\":3,\"lists\":1,"
+            "\"media\":1,\"selection\":true,\"selected_text\":false,"
+            "\"labels\":[\"Skip Ad\",\"[word]\",\"" +
+                std::string(kMaxTestLogLabelBytes, 'x') + "\"]}\n");
+  // At most kMaxTestLogLabels labels.
+  const std::vector<std::string> many(kMaxTestLogLabels + 5, "a");
+  map.labels = many;
+  const std::string line = lines.Map(6, map, "");
+  EXPECT_EQ(static_cast<size_t>(std::count(line.begin(), line.end(), '"')),
+            // the keys and values before the labels, then two per label
+            20u + 2 * kMaxTestLogLabels);
+}
+
+TEST(VoiceTestLogLinesTest, AMicrophoneLine) {
+  TestLogLines lines(2);
+  EXPECT_EQ(lines.Microphone(7, 0.1f, 80000, 160, "chrome-wide"),
+            "{\"t\":7,\"w\":2,\"e\":\"mic\",\"peak_db\":-20,"
+            "\"samples\":80000,\"dropped\":160,\"echo\":\"chrome-wide\"}\n");
+  // Silence, no samples at all, and what can't be a level.
+  EXPECT_EQ(lines.Microphone(8, 0, 0, 0, "off"),
+            "{\"t\":8,\"w\":2,\"e\":\"mic\",\"peak_db\":-120,"
+            "\"samples\":0,\"dropped\":0,\"echo\":\"off\"}\n");
+  EXPECT_NE(lines.Microphone(9, std::nanf(""), -5, -1, "none")
+                .find("\"peak_db\":-120,\"samples\":0,\"dropped\":0,"),
+            std::string::npos);
+  // Full scale and over it.
+  EXPECT_NE(lines.Microphone(10, 3.0f, 1, 0, "none").find("\"peak_db\":0,"),
+            std::string::npos);
+}
+
+TEST(VoiceTestLogLinesTest, ADroppedLineMasksTheWord) {
+  TestLogLines lines(1);
+  EXPECT_EQ(lines.Dropped(3, "the word is harbor", "no wake phrase", ""),
+            "{\"t\":3,\"w\":1,\"e\":\"dropped\",\"text\":\"the word is "
+            "[word]\",\"reason\":\"no wake phrase\"}\n");
 }
 
 TEST(VoiceTestLogLinesTest, WritesWhatChanged) {

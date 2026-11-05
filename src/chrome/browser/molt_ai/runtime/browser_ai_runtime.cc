@@ -968,8 +968,21 @@ struct BrowserAIRuntime::Impl {
   // Guarded by guard_mutex.
   GpuDriverRecords gpu_records;
   bool gpu_automatic = true;
-  // Local State (UI thread only); null before Initialize() or in tests.
-  raw_ptr<PrefService> local_state = nullptr;
+  // Whether Initialize() found the GPU settings in Local State.
+  bool uses_local_state = false;
+
+  // Local State (UI thread only) holding |pref|, or null: before
+  // Initialize(), in tests, and once the browser process is gone. The
+  // runtime outlives the browser process, so it keeps no pointer to Local
+  // State: g_browser_process is cleared before Local State is destroyed.
+  static PrefService* LocalStateWith(bool uses_local_state, const char* pref) {
+    if (!uses_local_state || !g_browser_process) {
+      return nullptr;
+    }
+    PrefService* local_state = g_browser_process->local_state();
+    return local_state && local_state->FindPreference(pref) ? local_state
+                                                            : nullptr;
+  }
 
   // Pipeline caches (section 11.12): <user data>/MoltAI/GpuCache, read and
   // written in order on one sequence. Set by Initialize().
@@ -989,9 +1002,10 @@ struct BrowserAIRuntime::Impl {
     }
     auto save = [](Impl* impl, std::vector<GpuDriverEntry> entries) {
       DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-      if (impl->local_state) {
-        impl->local_state->SetList(kGpuDriverRecordsPref,
-                                   GpuDriverEntriesToPref(entries));
+      if (PrefService* local_state =
+              LocalStateWith(impl->uses_local_state, kGpuDriverRecordsPref)) {
+        local_state->SetList(kGpuDriverRecordsPref,
+                             GpuDriverEntriesToPref(entries));
       }
     };
     if (ui_task_runner && ui_task_runner->RunsTasksInCurrentSequence()) {
@@ -1396,7 +1410,7 @@ bool BrowserAIRuntime::Initialize() {
         g_browser_process ? g_browser_process->local_state() : nullptr;
     if (local_state && local_state->FindPreference(kGpuDriverRecordsPref) &&
         local_state->FindPreference(kGpuInferenceModePref)) {
-      impl_->local_state = local_state;
+      impl_->uses_local_state = true;
       std::lock_guard<std::mutex> lock(impl_->guard_mutex);
       impl_->gpu_records.Restore(
           GpuDriverEntriesFromPref(local_state->GetList(kGpuDriverRecordsPref)),
@@ -2423,8 +2437,9 @@ void BrowserAIRuntime::SetGpuInferenceAutomatic(bool automatic) {
     std::lock_guard<std::mutex> lock(impl_->guard_mutex);
     impl_->gpu_automatic = automatic;
   }
-  if (impl_->local_state) {
-    impl_->local_state->SetInteger(
+  if (PrefService* local_state = Impl::LocalStateWith(
+          impl_->uses_local_state, kGpuInferenceModePref)) {
+    local_state->SetInteger(
         kGpuInferenceModePref,
         static_cast<int>(automatic ? GpuInferenceMode::kAutomatic
                                    : GpuInferenceMode::kOff));

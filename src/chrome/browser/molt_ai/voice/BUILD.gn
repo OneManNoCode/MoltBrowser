@@ -443,6 +443,7 @@ source_set("voice_browser_actions_browser_tests") {
     "//chrome/test:test_support_ui",
     "//components/bookmarks/browser",
     "//components/bookmarks/test",
+    "//components/download/public/common:public",
     "//content/public/browser",
     "//content/test:test_support",
     "//media:media_buildflags",
@@ -865,7 +866,9 @@ source_set("voice_controller") {
     ":site_skills",
     ":voice_page",
 
-    # The test log's lines (voice_test_log.h).
+    # The test log's lines (voice_test_log.h), and the selection it notes
+    # (page_reading.h).
+    ":page_reading",
     ":voice_test_log_lines",
 
     # Questions about the page, answered by the on-device model.
@@ -1198,6 +1201,7 @@ source_set("voice_loop_browser_tests") {
 
   deps = [
     ":features",
+    ":page_reading",
     ":site_skills",
     ":voice_controller",
     ":voice_loop",
@@ -1295,6 +1299,7 @@ source_set("voice_session") {
 
   deps = [
     ":features",
+    ":voice_test_audio",
 
     # The helper: the bundled copy only, under the resident sandbox.
     "//chrome/browser/molt_ai/common:helper_binary",
@@ -1515,6 +1520,19 @@ source_set("voice_session_browser_tests") {
 # --- The end-to-end spoken test kit's log (tools/voice_e2e/,
 # docs/VOICE_E2E.md) ----------------------------------------------------------
 
+# What voice mode's microphone gave, with --molt-voice-test-audio (a test
+# switch): raw 16 kHz samples for the spoken test kit.
+source_set("voice_test_audio") {
+  sources = [
+    "voice_test_audio.cc",
+    "voice_test_audio.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/common:molt_regular_file",
+  ]
+}
+
 # The lines voice_test_log.h writes with --molt-voice-test-log: what was
 # heard and understood, what was said, the activity and the prompts, as
 # JSON, with every confirmation word masked. Std-only: molt_ai_unittests
@@ -1536,11 +1554,17 @@ source_set("voice_test_log_lines") {
 # Picked up by :unit_tests.
 source_set("voice_test_log_unit_tests") {
   testonly = true
-  sources = [ "voice_test_log_lines_unittest.cc" ]
+  sources = [
+    "voice_test_audio_unittest.cc",
+    "voice_test_log_lines_unittest.cc",
+  ]
   deps = [
     ":spoken_choice",
     ":voice_prompts",
+    ":voice_test_audio",
     ":voice_test_log_lines",
+    "//base",
+    "//base/test:test_support",
     "//testing/gtest",
   ]
 }

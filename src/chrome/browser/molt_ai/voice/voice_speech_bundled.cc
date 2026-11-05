@@ -427,8 +427,12 @@ BundledVoice::BundledVoice(Delegate* delegate, Paths paths)
     : delegate_(delegate),
       paths_(std::move(paths)),
       played_(base::MakeRefCounted<Counter>()),
+      // The player's audio::OutputDevice joins its audio thread when it
+      // goes (AudioDeviceThread's destructor), which needs //base sync
+      // primitives.
       player_(base::ThreadPool::CreateSequencedTaskRunner(
-                  {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+                  {base::MayBlock(), base::WithBaseSyncPrimitives(),
+                   base::TaskPriority::USER_BLOCKING,
                    base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}),
               played_) {}
 

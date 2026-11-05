@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/voice/voice_test_log_lines.h"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -244,6 +246,64 @@ std::string TestLogLines::Heard(int64_t ms,
 std::string TestLogLines::Said(int64_t ms, std::string_view text) const {
   std::string out = Head(ms, "said");
   AppendString(out, "text", MaskConfirmationWords(text, std::string_view()));
+  out.append("}\n");
+  return out;
+}
+
+std::string TestLogLines::Map(int64_t ms,
+                              const MapSummary& map,
+                              std::string_view pending_word) const {
+  std::string out = Head(ms, "map");
+  out.append(",\"items\":");
+  out.append(std::to_string(map.items));
+  out.append(",\"lists\":");
+  out.append(std::to_string(map.lists));
+  out.append(",\"media\":");
+  out.append(std::to_string(map.media));
+  AppendBool(out, "selection", map.selection);
+  AppendBool(out, "selected_text", map.selected_text);
+  out.append(",\"labels\":[");
+  for (size_t i = 0; i < map.labels.size() && i < kMaxTestLogLabels; ++i) {
+    if (i) {
+      out.push_back(',');
+    }
+    AppendQuoted(out,
+                 MaskConfirmationWords(
+                     CleanSpokenText(map.labels[i], kMaxTestLogLabelBytes),
+                     pending_word));
+  }
+  out.append("]}\n");
+  return out;
+}
+
+std::string TestLogLines::Microphone(int64_t ms,
+                                     float peak,
+                                     int64_t samples,
+                                     int64_t dropped,
+                                     std::string_view echo) const {
+  std::string out = Head(ms, "mic");
+  const int db = peak > 1e-6f && std::isfinite(peak)
+                     ? static_cast<int>(
+                           std::lround(20.0 * std::log10(std::min(peak, 1.0f))))
+                     : -120;
+  out.append(",\"peak_db\":");
+  out.append(std::to_string(db));
+  out.append(",\"samples\":");
+  out.append(std::to_string(std::max<int64_t>(samples, 0)));
+  out.append(",\"dropped\":");
+  out.append(std::to_string(std::max<int64_t>(dropped, 0)));
+  AppendString(out, "echo", CleanSpokenText(echo, 32));
+  out.append("}\n");
+  return out;
+}
+
+std::string TestLogLines::Dropped(int64_t ms,
+                                  std::string_view text,
+                                  std::string_view reason,
+                                  std::string_view pending_word) const {
+  std::string out = Head(ms, "dropped");
+  AppendString(out, "text", MaskConfirmationWords(text, pending_word));
+  AppendString(out, "reason", CleanSpokenText(reason, 64));
   out.append("}\n");
   return out;
 }

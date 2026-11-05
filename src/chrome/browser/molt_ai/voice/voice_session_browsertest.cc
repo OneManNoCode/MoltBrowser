@@ -39,6 +39,7 @@
 #include "base/task/thread_pool.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -249,10 +250,26 @@ class VoiceSessionBrowserTest : public InProcessBrowserTest {
 
   int tabs() { return browser()->GetTabStripModel()->count(); }
 
+  // Bounded (kWaitTimeout); a failure says the state the session was in
+  // and what voice mode said.
   bool WaitForState(SessionState state) {
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating(
+            [](VoiceSessionBrowserTest* test, SessionState want) {
+              VoiceSession* now = VoiceSession::FromBrowser(test->browser());
+              return "the session was never " +
+                     std::string(SessionStateName(want)) + "; it is " +
+                     (now ? std::string(SessionStateName(now->state()))
+                          : std::string("gone")) +
+                     (now && now->listening() ? ", listening" : "") +
+                     "; voice mode said: " + test->tts_.AllSpoken();
+            },
+            base::Unretained(this), state));
     return base::test::RunUntil(
         [&]() { return session() && session()->state() == state; });
   }
+  static constexpr base::TimeDelta kWaitTimeout = base::Seconds(20);
 
   // Lets the browser run for |delay|.
   void Wait(base::TimeDelta delay) {
@@ -295,21 +312,24 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, TheWakePhraseThenACommand) {
 
 IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
                        WhatIsHeardWhileTheBrowserSpeaksDoesntCommandIt) {
-  // The browser says "Voice mode is on" for three seconds once the helper
-  // is ready. What the microphone gets meanwhile may be its own voice or a
-  // page's sound: no command without the wake phrase, but "stop" is heard.
-  tts_.set_duration(base::Seconds(3));
+  // The browser says "Voice mode is on" (ten seconds long here) once the
+  // helper is ready. What the microphone gets meanwhile may be its own
+  // voice or a page's sound: no command without the wake phrase, but
+  // "stop" is heard. The script counts audio, which can reach the helper in
+  // a burst on a busy machine: "stop" comes 4 s in, well into the notice.
+  tts_.set_duration(base::Seconds(10));
   Script(
       "ready\n"
-      "400 speech_start\n"
-      "900 speech_end\n"
-      "1000 final 0.95 open a new tab\n"
-      "1500 speech_start\n"
-      "1900 speech_end\n"
-      "2000 final 0.95 stop\n");
+      "2400 speech_start\n"
+      "2900 speech_end\n"
+      "3000 final 0.95 open a new tab\n"
+      "3500 speech_start\n"
+      "3900 speech_end\n"
+      "4000 final 0.95 stop\n");
   ASSERT_TRUE(session()->Start());
   // "Stop" cut the browser's speech short.
-  ASSERT_TRUE(base::test::RunUntil([&]() { return tts_.stops() > 0; }));
+  ASSERT_TRUE(base::test::RunUntil([&]() { return tts_.stops() > 0; }))
+      << "voice mode said: " << tts_.AllSpoken();
   Wait(base::Seconds(2));
   EXPECT_EQ(tabs(), 1);
 }
@@ -387,13 +407,32 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, RestartsAfterACrash) {
       "ready\n"
       "300 exit 3\n");
   ASSERT_TRUE(session()->Start());
-  ASSERT_TRUE(WaitForState(SessionState::kWaiting));
-  // It crashes: restarting.
-  ASSERT_TRUE(WaitForState(SessionState::kStarting));
-  // The next one doesn't.
+  // The helper read its script when it started, before its "ready": the
+  // next one, which the crash at 300 ms starts, doesn't crash. Rewritten
+  // as soon as the first is ready (waiting for the session's state would
+  // wait out the slow greeting, by which time the restarts have read the
+  // old script, and the third crash ends voice mode).
+  {
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating([]() {
+          return std::string("the speech helper was never ready");
+        }));
+    ASSERT_TRUE(base::test::RunUntil([&]() {
+      VoiceListener* listener = session()->listener_for_testing();
+      return listener && listener->ready();
+    }));
+  }
   Script("ready\n");
+  // The crash at 300 ms, then the first restart a second later
+  // (VoiceListener::kRestartDelays).
+  Wait(base::Milliseconds(2500));
+  // It crashed and came back: listening, and nothing said it stopped.
   ASSERT_TRUE(WaitForState(SessionState::kWaiting));
   EXPECT_TRUE(session()->listening());
+  EXPECT_EQ(tts_.AllSpoken().find("Speech recognition stopped working"),
+            std::string::npos)
+      << tts_.AllSpoken();
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, GivesUpAfterCrashesInARow) {
@@ -572,6 +611,10 @@ IN_PROC_BROWSER_TEST_F(MoltSettingsFileBrowserTest,
     EXPECT_TRUE(ReadVoiceModeSettings().start_with_browser);
   }
   SetMoltSettingsFilePathForTesting(std::nullopt);
+  // Removed here, where blocking is allowed, not by |dir|'s destructor on
+  // the UI thread.
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  EXPECT_TRUE(dir.Delete());
 }
 
 }  // namespace

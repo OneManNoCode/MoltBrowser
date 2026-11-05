@@ -299,6 +299,21 @@ TEST(VoiceBrowserGrammarTest, TheirFields) {
             "how far is the moon");
   EXPECT_EQ(Parse("open the a chat").kind, CK::kOpenAIChat);
   EXPECT_EQ(Parse("open the eye chat").kind, CK::kOpenAIChat);
+  // And as the spoken suite's voices were heard by it (speech check).
+  EXPECT_EQ(Parse("new moldenet window").window, WindowKind::kMoltNet);
+  EXPECT_EQ(Parse("new moldenate window").window, WindowKind::kMoltNet);
+  EXPECT_EQ(Parse("new mold the window").window, WindowKind::kMoltNet);
+  EXPECT_EQ(Parse("open the ai checked").kind, CK::kOpenAIChat);
+  EXPECT_EQ(Parse("open the achat").kind, CK::kOpenAIChat);
+  EXPECT_EQ(Parse("as the ai what is a tram").kind, CK::kAskAI);
+  EXPECT_EQ(Parse("as the ai what is a tram").text, "what is a tram");
+  EXPECT_EQ(Parse("reopen the closed tip").kind, CK::kReopenTab);
+  EXPECT_EQ(Parse("reopen the close tab").kind, CK::kReopenTab);
+  EXPECT_EQ(Parse("reuben the closed tab").kind, CK::kReopenTab);
+  EXPECT_EQ(Parse("open the close tab").kind, CK::kReopenTab);
+  EXPECT_EQ(Parse("tight buy bread").kind, CK::kType);
+  // "Close the tab" stays closing it.
+  EXPECT_EQ(Parse("close the tab").kind, CK::kCloseTab);
   EXPECT_EQ(Parse("new window").window, WindowKind::kNormal);
   EXPECT_TRUE(Parse("turn on always listening").on);
   EXPECT_FALSE(Parse("turn off always listening").on);

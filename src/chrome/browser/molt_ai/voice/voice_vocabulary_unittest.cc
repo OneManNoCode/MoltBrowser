@@ -158,6 +158,24 @@ TEST(VoiceVocabularyTest, ForgetTakesEitherSide) {
   EXPECT_TRUE(v.empty());
 }
 
+// "Search for Green" notes Green as a name; "no, I said Queen" says Green
+// was misheard: the name goes, the correction stays (and Queen is the
+// corrected search's name).
+TEST(VoiceVocabularyTest, ACorrectionDropsTheMisheardName) {
+  PersonalVocabulary v;
+  ASSERT_TRUE(v.NoteName("Green", kNow));
+  ASSERT_TRUE(v.NoteName("Adele", kNow));
+  ASSERT_TRUE(v.NoteCorrection("green", "Queen", kNow + 1));
+  ASSERT_EQ(v.entries().size(), 2u);
+  EXPECT_EQ(v.entries()[0].phrase, "Adele");
+  EXPECT_TRUE(v.entries()[1].correction());
+  EXPECT_EQ(v.entries()[1].heard, "green");
+  // Forgetting the word meant leaves nothing of it.
+  EXPECT_EQ(v.Forget("Queen"), 1u);
+  ASSERT_EQ(v.entries().size(), 1u);
+  EXPECT_EQ(v.entries()[0].phrase, "Adele");
+}
+
 TEST(VoiceVocabularyTest, EveryReadingOfThePageCounts) {
   using K = VoiceCommandKind;
   // The page's text read out, however the reading began or went on: what

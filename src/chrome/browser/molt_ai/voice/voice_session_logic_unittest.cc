@@ -61,11 +61,15 @@ TEST_F(VoiceSessionLogicTest, WakePhraseThenCommand) {
 
   SessionActions wake = logic_->OnWake(now_);
   EXPECT_EQ(wake.state, SessionState::kListening);
-  EXPECT_EQ(wake.earcon, EarconKind::kListening);
+  // No tone yet: the command may come in the same breath.
+  EXPECT_FALSE(wake.earcon.has_value());
   EXPECT_EQ(wake.duck, true);
   EXPECT_FALSE(wake.stop_speech);
 
   EXPECT_FALSE(logic_->OnSpeechStart(now_ + 300).state.has_value());
+  // It did: no tone at all, so none over its first words.
+  EXPECT_FALSE(
+      logic_->OnTick(now_ + kWakeEarconDelayMs + 100).earcon.has_value());
   SessionActions partial = logic_->OnPartial("open you", now_ + 900);
   EXPECT_EQ(partial.partial, "open you");
 
@@ -89,6 +93,9 @@ TEST_F(VoiceSessionLogicTest, NothingCountsWithoutTheWakePhrase) {
   EXPECT_FALSE(final_text.utterance.has_value());
   EXPECT_FALSE(final_text.earcon.has_value());
   EXPECT_EQ(logic_->state(), SessionState::kWaiting);
+  // Set aside, and why (for the spoken test kit's log).
+  EXPECT_EQ(final_text.dropped, "open YouTube");
+  EXPECT_EQ(final_text.dropped_reason, "no wake phrase");
 }
 
 TEST_F(VoiceSessionLogicTest, StopAlwaysCounts) {
@@ -175,6 +182,28 @@ TEST_F(VoiceSessionLogicTest, AnUtteranceBegunInTheWindowFinishes) {
   EXPECT_EQ(taken.utterance, "number two");
 }
 
+TEST_F(VoiceSessionLogicTest, TheListeningToneWhenTheUserPauses) {
+  Begin();
+  EXPECT_FALSE(logic_->OnWake(now_).earcon.has_value());
+  EXPECT_EQ(logic_->NextDeadline(), now_ + kWakeEarconDelayMs);
+  EXPECT_FALSE(logic_->OnTick(now_ + kWakeEarconDelayMs - 1).earcon.has_value());
+  EXPECT_EQ(logic_->OnTick(now_ + kWakeEarconDelayMs).earcon,
+            EarconKind::kListening);
+  // Once.
+  EXPECT_FALSE(
+      logic_->OnTick(now_ + kWakeEarconDelayMs + 500).earcon.has_value());
+  // The command after the pause.
+  logic_->OnSpeechStart(now_ + 2000);
+  EXPECT_EQ(logic_->OnFinal("open YouTube", 0.9, now_ + 3000).utterance,
+            "open YouTube");
+  // A wake whose words came at once (a partial first) has no tone either.
+  now_ += 10000;
+  logic_->OnWake(now_);
+  logic_->OnPartial("click", now_ + 200);
+  EXPECT_FALSE(
+      logic_->OnTick(now_ + kWakeEarconDelayMs + 10).earcon.has_value());
+}
+
 TEST_F(VoiceSessionLogicTest, BargeInWithTheWakePhrase) {
   Begin();
   logic_->OnWake(now_);
@@ -184,7 +213,6 @@ TEST_F(VoiceSessionLogicTest, BargeInWithTheWakePhrase) {
                         now_ + 600);
   SessionActions wake = logic_->OnWake(now_ + 3000);
   EXPECT_TRUE(wake.stop_speech);
-  EXPECT_EQ(wake.earcon, EarconKind::kListening);
   EXPECT_EQ(wake.duck, true);
   EXPECT_EQ(logic_->OnPartial("go back", now_ + 3500).partial, "go back");
   EXPECT_EQ(logic_->OnFinal("go back", 0.9, now_ + 4000).utterance, "go back");
@@ -339,9 +367,13 @@ TEST_F(VoiceSessionLogicTest, PageSoundNeedsConfidenceWithoutWakePhrase) {
 
 TEST_F(VoiceSessionLogicTest, WakePhraseThenSilence) {
   Begin();
+  const int64_t woke = now_;
   logic_->OnWake(now_);
-  EXPECT_EQ(logic_->NextDeadline(), now_ + kWakeTimeoutMs);
-  EXPECT_FALSE(At(now_ + kWakeTimeoutMs - 1).state.has_value());
+  // The listening tone first, as nothing more was said.
+  EXPECT_EQ(logic_->NextDeadline(), woke + kWakeEarconDelayMs);
+  EXPECT_EQ(At(woke + kWakeEarconDelayMs).earcon, EarconKind::kListening);
+  EXPECT_EQ(logic_->NextDeadline(), woke + kWakeTimeoutMs);
+  EXPECT_FALSE(At(woke + kWakeTimeoutMs - 1).state.has_value());
   SessionActions timed_out = At(now_ + 1);
   EXPECT_TRUE(timed_out.reset_helper);
   EXPECT_EQ(timed_out.state, SessionState::kWaiting);

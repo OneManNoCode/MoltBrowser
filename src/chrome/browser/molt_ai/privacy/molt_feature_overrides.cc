@@ -137,6 +137,21 @@ void AppendDefaultFeatureOverrides(
       // StubResolverConfigReader::ShouldUseDohFallback() is false and
       // automatic mode only upgrades to the user's own DNS provider.
       &safe_browsing::kBundledSecuritySettingsSecureDnsV2,
+
+      // The toolbar's Back, Forward, Reload and Home buttons drawn as a
+      // WebUI page instead of views. Off by default upstream, but the
+      // testing config's "WebUIReloadButtonStudy" turns all four on for
+      // desktop at 156. Voice mode reads and presses the browser's own
+      // buttons from the views tree (VoiceBrowserUiViews), where the WebUI
+      // ones are a web view, so "show the browser's buttons" lost Back and
+      // Reload. Overriding any feature the study touches skips the whole
+      // study, kInitialWebUI included; every IsWebUI*Enabled() also needs
+      // kWebUIToolbar or the button's own feature, so with these off no
+      // other study can turn a WebUI button on.
+      &features::kWebUIToolbar,
+      &features::kWebUIBackForwardButton,
+      &features::kWebUIReloadButton,
+      &features::kWebUIHomeButton,
   };
   AppendOverrides(kDisabledByDefault,
                   base::FeatureList::OVERRIDE_DISABLE_FEATURE, overrides);

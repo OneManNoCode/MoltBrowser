@@ -129,10 +129,10 @@ def run(speech_dir, bundle, utterances, conditions=("clean", "pink10", "music10"
 
 
 def _strip_wake(text):
+    from .runner import WAKE_WORDS
     words = vbl.normalize(text).split()
     i = 0
-    while i < len(words) and i < 3 and words[i] in ("hey", "hi", "hay", "a", "molt", "mold",
-                                                    "malt", "moult", "melt"):
+    while i < len(words) and i < 3 and words[i] in WAKE_WORDS:
         i += 1
     return " ".join(words[i:])
 

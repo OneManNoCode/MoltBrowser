@@ -22,6 +22,7 @@
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/page_reading.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
 #include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
@@ -83,6 +84,15 @@ constexpr char kPlannerNoAnswer[] = "I didn't hear yes, so I stopped.";
 // look for the new page's tree to number.
 constexpr base::TimeDelta kNumbersRefreshDelay = base::Milliseconds(700);
 constexpr int kMaxNumbersRefreshAttempts = 10;
+
+// Caption updates an observer asks for while one is being sent, at most
+// (each sends the latest caption).
+constexpr int kMaxCaptionRounds = 4;
+
+// An utterance that comes before the page's tree (the first thing said
+// turned voice mode on, or the tab is on a page that just loaded) waits
+// for the tree this long at most, then is planned with what there is.
+constexpr base::TimeDelta kMaxTreeWait = base::Milliseconds(2500);
 
 std::optional<StepFailure> FailureFor(ActionResult result) {
   switch (result) {
@@ -397,6 +407,7 @@ void VoiceController::Stop() {
   if (learning_) {
     learning_->Stop();
   }
+  DropDeferredUtterance();
   CancelRun();
   reader_->Clear();
   page_questions_->Clear();
@@ -498,6 +509,22 @@ void VoiceController::SetListening(ListeningCaption caption) {
   }
   listening_ = std::move(caption);
   NotifyCaption();
+}
+
+void VoiceController::NoteMicrophoneLevels(float peak,
+                                           int64_t samples,
+                                           int64_t dropped,
+                                           std::string_view echo) {
+  if (test_log_) {
+    test_log_->OnMicrophone(peak, samples, dropped, echo);
+  }
+}
+
+void VoiceController::NoteDroppedUtterance(const std::string& text,
+                                           std::string_view reason) {
+  if (test_log_) {
+    test_log_->OnDropped(text, reason, state_);
+  }
 }
 
 void VoiceController::SetNumbersShown(bool shown) {
@@ -635,7 +662,7 @@ void VoiceController::SetIdleCallbackForTesting(
 }
 
 bool VoiceController::busy() const {
-  return !pending_.empty() || wait_ || submitting_ ||
+  return deferred_.has_value() || !pending_.empty() || wait_ || submitting_ ||
          (planner_running_ && planner_question_ == 0) ||
          (page_questions_ && page_questions_->running()) ||
          (browser_actions_ && browser_actions_->busy());
@@ -647,7 +674,8 @@ VoiceActivity VoiceController::activity() const {
   // speaking until its last chunk's end is in, between chunks too.
   switch (DecideLoopActivity(
       active_, (speech_ && speech_->speaking()) || reader_->reading(),
-      !pending_.empty() || wait_ || submitting_, busy())) {
+      deferred_.has_value() || !pending_.empty() || wait_ || submitting_,
+      busy())) {
     case LoopActivity::kOff:
       return VoiceActivity::kOff;
     case LoopActivity::kListening:
@@ -661,6 +689,29 @@ VoiceActivity VoiceController::activity() const {
 }
 
 void VoiceController::NotifyCaption() {
+  // An observer that changes the caption in answer (the listening session
+  // sets what it shows, SetListening()) calls back in here, and observer
+  // lists don't take a second round inside the first (Chromium's default
+  // policy): it waits for the round under way, then gets one of its own.
+  if (notifying_caption_) {
+    caption_again_ = true;
+    return;
+  }
+  base::WeakPtr<VoiceController> self = weak_factory_.GetWeakPtr();
+  int rounds = 0;
+  do {
+    caption_again_ = false;
+    notifying_caption_ = true;
+    NotifyCaptionOnce();
+    if (!self) {
+      return;
+    }
+    notifying_caption_ = false;
+  } while (caption_again_ && ++rounds < kMaxCaptionRounds);
+  caption_again_ = false;
+}
+
+void VoiceController::NotifyCaptionOnce() {
   const VoiceActivity now = activity();
   if (test_log_) {
     test_log_->OnLoop(now, listening_.listening, listening_.waiting, state_);
@@ -937,6 +988,80 @@ void VoiceController::HandleUtterance(const std::string& text) {
   if (!browser_ || !VoiceModeEnabled()) {
     return;
   }
+  // A newer utterance replaces one still waiting for the page.
+  DropDeferredUtterance();
+  if (!active_ && !IsMoltNet()) {
+    Start();
+  }
+  if (PageTreeIsComing()) {
+    // Barge-in now; planning once the tree has come (OnDeferredTrees()).
+    CancelRun(/*keep_planner=*/true);
+    deferred_ = DeferredUtterance{text, heard_evidence_};
+    VoicePageController* page = ActivePage();
+    // One wait a page (it takes in the frames' trees too).
+    frames_waited_page_id_ = page_id_;
+    deferred_trees_ = page->AddTreesUpdatedCallback(base::BindRepeating(
+        &VoiceController::OnDeferredTrees, weak_factory_.GetWeakPtr()));
+    deferred_timer_.Start(FROM_HERE, kMaxTreeWait,
+                          base::BindOnce(&VoiceController::RunDeferredUtterance,
+                                         weak_factory_.GetWeakPtr()));
+    return;
+  }
+  PlanAndRunUtterance(text);
+}
+
+bool VoiceController::PageTreeIsComing() {
+  if (!active_) {
+    return false;
+  }
+  VoicePageController* page = ActivePage();
+  content::WebContents* contents = ActiveContents();
+  if (!page || !page->active() || !contents || contents->IsCrashed()) {
+    return false;
+  }
+  // The page's tree is here: its frames' trees (an embedded player) may
+  // still be coming. Waited for once a page, so a frame that never sends
+  // one can't slow every command on it.
+  if (page->HasPageTree() &&
+      (frames_waited_page_id_ == page_id_ || !page->FrameTreesComing())) {
+    return false;
+  }
+  // Only a web page has a tree for voice mode to read (agent_safety.h);
+  // the browser's own pages and a blank tab answer at once.
+  return agent_safety::IsAllowedNavigationURL(
+      contents->GetLastCommittedURL());
+}
+
+void VoiceController::OnDeferredTrees() {
+  VoicePageController* page = ActivePage();
+  if (deferred_ && page && page->HasPageTree() && !page->FrameTreesComing()) {
+    // After the observers that are still handling this update.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&VoiceController::RunDeferredUtterance,
+                                  weak_factory_.GetWeakPtr()));
+  }
+}
+
+void VoiceController::RunDeferredUtterance() {
+  if (!deferred_) {
+    return;
+  }
+  DeferredUtterance utterance = std::move(*deferred_);
+  DropDeferredUtterance();
+  heard_evidence_ = utterance.evidence;
+  PlanAndRunUtterance(utterance.text);
+}
+
+void VoiceController::DropDeferredUtterance() {
+  deferred_.reset();
+  deferred_trees_ = base::CallbackListSubscription();
+  deferred_timer_.Stop();
+}
+
+void VoiceController::PlanAndRunUtterance(const std::string& text) {
+  if (!browser_ || !VoiceModeEnabled()) {
+    return;
+  }
   // Once the loop has planned it, whatever it was: one that said the
   // waiting prompt's word in passing retires it (voice_browser_prompts.h).
   base::ScopedClosureRunner after_planning(base::BindOnce(
@@ -952,14 +1077,26 @@ void VoiceController::HandleUtterance(const std::string& text) {
   // unless this answers its question: below).
   CancelRun(/*keep_planner=*/true);
   commits_at_utterance_ = commits_;
-  if (!active_ && !IsMoltNet()) {
-    Start();
-  }
   // Longer than the grammar takes: it refuses it without reading it all.
   const std::string utterance = text.substr(0, kMaxUtteranceInputBytes);
   const PageMap map = CurrentMap();
   for (Observer& observer : observers_) {
     observer.OnVoicePageMapped(map);
+  }
+  if (test_log_) {
+    // What the utterance is planned on, for the spoken test kit.
+    bool selection = false;
+    bool selected_text = false;
+    if (VoicePageController* page = ActivePage()) {
+      const PageTree tree =
+          page->BuildTree(VoicePageController::kMaxReadingStringBytes);
+      selection = tree.selection.valid();
+      selected_text =
+          selection &&
+          SelectedText(tree, VoiceReader::kMaxSelectionChars, ReadingLimits())
+              .has_value();
+    }
+    test_log_->OnMap(map, selection, selected_text, state_);
   }
   const VoiceEnvironment env = Environment();
   // As PlanUtterance() does, with the numbers on screen checked between.
@@ -989,7 +1126,13 @@ void VoiceController::HandleUtterance(const std::string& text) {
   learning_->OnPlanned(command, turn, state_, map, env);
   heard_ = turn.heard;
   status_ = turn.status;
+  base::WeakPtr<VoiceController> self = weak_factory_.GetWeakPtr();
   RunTurn(std::move(turn));
+  // A turn that closed this window deleted this controller
+  // (OnBrowserDidClose()).
+  if (!self) {
+    return;
+  }
   // Any other command drops the guard's question: a "no" for the page.
   DropPageRequestQuestionIfGone();
 }
@@ -1177,6 +1320,10 @@ bool VoiceController::RunStep(const VoiceStep& step) {
                               : ActionResult::kNotActive);
     case VoiceStepKind::kPlayMedia:
       return page_result(page ? page->PlayMedia(step.target)
+                              : ActionResult::kNotActive);
+    case VoiceStepKind::kSelectOption:
+      // The option by its name, as the map read it (PageItem::options).
+      return page_result(page ? page->SelectOption(step.target, step.text)
                               : ActionResult::kNotActive);
     case VoiceStepKind::kFocus:
       return page_result(page ? page->Focus(step.target)

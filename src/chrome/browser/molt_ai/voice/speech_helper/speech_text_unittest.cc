@@ -103,6 +103,26 @@ TEST(SpeechTextTest, MakesKeywordLines) {
   EXPECT_FALSE(WakeKeywordLine("hey #molt", vocab, tokens, &line));
 }
 
+// "hey" said short ("he molt") is a second line under the phrase's label;
+// other phrases have just their own.
+TEST(SpeechTextTest, MakesTheShortHeyLineToo) {
+  const PieceVocab vocab = KwsVocab();
+  const TokenSet tokens = TokensOf(vocab);
+  std::vector<std::string> lines;
+  ASSERT_TRUE(WakeKeywordLines("hey molt", vocab, tokens, &lines));
+  EXPECT_EQ(lines, (std::vector<std::string>{
+                       WS "HE Y " WS "MO L T #0.15 @HEY_MOLT",
+                       WS "HE " WS "MO L T #0.15 @HEY_MOLT"}));
+  lines.clear();
+  ASSERT_TRUE(WakeKeywordLines("molt", vocab, tokens, &lines));
+  EXPECT_EQ(lines,
+            (std::vector<std::string>{WS "MO L T #0.15 @MOLT"}));
+  // The phrase itself must be spelled; its short form needn't be.
+  lines.clear();
+  EXPECT_FALSE(WakeKeywordLines("hey max", vocab, tokens, &lines));
+  EXPECT_TRUE(lines.empty());
+}
+
 // A cased vocabulary like Kroko's: every ASCII letter, digit and the
 // apostrophe, the word-start mark, and a few longer pieces.
 PieceVocab RecognizerVocab(TokenSet* tokens) {
@@ -206,6 +226,72 @@ TEST(SpeechTextTest, CleansEventText) {
   const std::string cut = CleanEventText(long_text, 1000);
   EXPECT_LE(cut.size(), 1000u);
   EXPECT_EQ(cut.back(), 'd');
+}
+
+TEST(SpeechTextTest, FindsTheWakePhraseInATranscript) {
+  const std::vector<std::string> en = {"hey molt"};
+  // What the recognizer wrote for the spoken suite's "Hey Molt".
+  for (const char* text :
+       {"Hey Molt open YouTube", "Hey, Malt, play", "Hey mold. So",
+        "He mold. Type below comma world period.", "Hey, Molt, roulette",
+        "hey moult pause", "HEY MOLD"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 2u) << text;
+  }
+  // Run together: as many words as the phrase, one more, or fewer.
+  for (const char* text : {"Himalt, bookmarked this page.", "Himalde. Open"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 1u) << text;
+  }
+  for (const char* text : {"him old. Play the one", "him alled. Open YouTube",
+                           "him old"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 2u) << text;
+  }
+  // Not the phrase, or not at the start: the bench's chatter written to
+  // sound like it, and lost ones.
+  for (const char* text :
+       {"hey Walt, are you coming with us", "snakes molt their skin",
+        "hello Mo, how was your day", "Hoping YouTube.", "open YouTube",
+        "hey mall", "Hey Matt", "the Himalayas", "Himalaya trip",
+        "play hey molt", "", " , ", "hey", "molt", "a molt"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 0u) << text;
+  }
+  // Several phrases, each as long as it is.
+  const std::vector<std::string> two = {"hey molt browser", "hey molt"};
+  EXPECT_EQ(WakePhraseWordsAtStart("hey malt browser go back", two), 3u);
+  EXPECT_EQ(WakePhraseWordsAtStart("hey malt go back", two), 2u);
+  // "oye molt": "oye" has no consonants, so only "oye" itself, and the
+  // phrase never runs together ("molt" alone would be it).
+  const std::vector<std::string> es = {"oye molt", "hey molt"};
+  EXPECT_EQ(WakePhraseWordsAtStart("Oye, malt, pausa", es), 2u);
+  EXPECT_EQ(WakePhraseWordsAtStart("Hey Molt pausa", es), 2u);
+  EXPECT_EQ(WakePhraseWordsAtStart("Oyemolt pausa", es), 0u);
+  EXPECT_EQ(WakePhraseWordsAtStart("molt pausa", es), 0u);
+  EXPECT_EQ(WakePhraseWordsAtStart("hoy malt", {"oye molt"}), 0u);
+  // Few consonants: as written only.
+  EXPECT_EQ(WakePhraseWordsAtStart("hey you there", {"hey you"}), 2u);
+  EXPECT_EQ(WakePhraseWordsAtStart("hi you there", {"hey you"}), 0u);
+  // Bytes from 0x80 are letters; nothing else is read past the phrase.
+  EXPECT_EQ(WakePhraseWordsAtStart("hola m\xC3\xB3lt abre",
+                                   {"hola m\xC3\xB3lt"}),
+            2u);
+  EXPECT_EQ(WakePhraseWordsAtStart(std::string(100000, 'a'), en), 0u);
+}
+
+TEST(SpeechTextTest, FindsTheWakeNameAfterALostStart) {
+  const std::vector<std::string> en = {"hey molt"};
+  // What the recognizer wrote when the phrase's start was lost.
+  EXPECT_EQ(WakeNameWordsAtStart("Emold. Click", en), 1u);
+  EXPECT_EQ(WakeNameWordsAtStart("Malt zoom in", en), 1u);
+  EXPECT_EQ(WakeNameWordsAtStart("A mold. Read the title", en), 2u);
+  EXPECT_EQ(WakeNameWordsAtStart("pain molt close tech", en), 2u);
+  // Not the name, or past the second word.
+  EXPECT_EQ(WakeNameWordsAtStart("Walt. Switch to tab two", en), 0u);
+  EXPECT_EQ(WakeNameWordsAtStart("click the molt button", en), 0u);
+  EXPECT_EQ(WakeNameWordsAtStart("", en), 0u);
+  // Spanish's name is "molt" too.
+  EXPECT_EQ(WakeNameWordsAtStart("Oi, malt, pausa", {"oye molt"}), 2u);
+  // A name with fewer than three consonants is only taken as written.
+  EXPECT_EQ(WakeNameWordsAtStart("hey you there", {"hey you"}), 2u);
+  EXPECT_EQ(WakeNameWordsAtStart("hey yo there", {"hey you"}), 0u);
 }
 
 }  // namespace

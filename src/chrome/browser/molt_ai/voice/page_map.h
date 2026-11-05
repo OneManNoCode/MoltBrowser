@@ -306,6 +306,12 @@ struct PageItem {
   // A link's target (raw page data: check it with agent_safety before
   // navigating to it).
   std::string url;
+  // A select's options (a collapsed <select>'s are hidden, so the map
+  // numbers none of them), in order: at most kMaxSelectOptions, each
+  // cleaned for speech and capped at kMaxSelectOptionChars, disabled ones
+  // left out: the names VoicePageController::OptionsOf() gives and
+  // SelectOption() takes.
+  std::vector<std::string> options;
   // The list and entry (indices into PageMap::lists and its entries) whose
   // primary action this is; -1 otherwise.
   int list = -1;
@@ -532,6 +538,12 @@ struct PageMapLimits {
 inline constexpr size_t kMaxPageTitleChars = 160;
 inline constexpr size_t kMaxItemLabelChars = 120;
 inline constexpr size_t kMaxItemValueChars = 120;
+// A select's options on the map (PageItem::options), as
+// VoicePageController::kMaxOptions and kMaxOptionChars.
+inline constexpr size_t kMaxSelectOptions = 30;
+inline constexpr size_t kMaxSelectOptionChars = 80;
+// The nodes under a select looked through for its options.
+inline constexpr size_t kMaxSelectOptionNodes = 400;
 inline constexpr size_t kMaxEntryTitleChars = 160;
 inline constexpr size_t kMaxEntryFieldChars = 80;
 inline constexpr size_t kMaxEntryTexts = 6;

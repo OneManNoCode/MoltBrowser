@@ -348,6 +348,20 @@ TEST(VoiceControllerLogicTest, ChoosingByNumberRelationAndNoMatch) {
   EXPECT_EQ(Said(turn),
             "Nothing here matches \"the jazz one\". Say a number or a name.");
 
+  {
+    // "Play" what a page without such an item hasn't got: the planner's
+    // task (it says the same where there's no planner).
+    Conversation fresh(BuildPageMap(ShopPage(false)), Env());
+    VoiceTurn asked =
+        fresh.Say("play the live aid version of bohemian rhapsody");
+    const VoiceStep* planner = Find(asked, K::kToPlanner);
+    ASSERT_TRUE(planner);
+    EXPECT_EQ(planner->text, "play the live aid version of bohemian rhapsody");
+    EXPECT_EQ(planner->preface,
+              "Nothing here matches \"play the live aid version of bohemian "
+              "rhapsody\". Say a number or a name.");
+  }
+
   turn = c.Say("open the second one");
   ASSERT_TRUE(Find(turn, K::kPress));
   EXPECT_EQ(c.state().current_position, 2);
@@ -382,6 +396,153 @@ TEST(VoiceControllerLogicTest, ChoosingWithoutAListUsesThePagesItems) {
   turn = c.Say("click 1");
   ASSERT_TRUE(Find(turn, K::kPress));
   EXPECT_EQ(Find(turn, K::kPress)->target, c.map().items[0].handle);
+}
+
+// What the spoken suite's typed run found on the real build: each command
+// as said, on pages like the suite's (tools/voice_e2e/fixtures).
+TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
+  // A box whose name says "send" is ticked without a question; a button
+  // that sends still asks.
+  {
+    TreeBuilder b("Sign up - Club");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Sign up", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    const uint32_t box =
+        b.Add(main, PageRole::kCheckBox, "Send me the newsletter",
+              kStateFocusable | kStateHasDefaultAction);
+    b.Button(main, "Send the form");
+    Conversation c(BuildPageMap(b.Take()), Env());
+    VoiceTurn turn = c.Say("check send me the newsletter");
+    ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}));
+    EXPECT_FALSE(c.state().confirming);
+    EXPECT_EQ(Find(turn, K::kPress)->target, c.map().items[0].handle);
+    (void)box;
+    turn = c.Say("click send the form");
+    EXPECT_TRUE(Actions(turn).empty());
+    EXPECT_TRUE(c.state().confirming);
+  }
+  // A list (a collapsed <select>): chosen, it is focused and its options
+  // said; an option is then chosen by name. Without choosing the list
+  // first, an option only one list has.
+  {
+    TreeBuilder b("Sign up - Club");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Sign up", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    const auto add_select = [&](std::string_view name,
+                                std::vector<std::string_view> options) {
+      const uint32_t select =
+          b.Add(main, PageRole::kSelect, name,
+                kStateFocusable | kStateHasDefaultAction | kStateCollapsed);
+      b.node(select).value = std::string(options[0]);
+      const uint32_t popup = b.Add(select, PageRole::kGeneric, "",
+                                   kStateInvisible);
+      for (std::string_view option : options) {
+        b.Add(popup, PageRole::kOption, option, kStateInvisible);
+      }
+      return select;
+    };
+    add_select("Country", {"Choose a country", "France", "Spain", "Italy"});
+    add_select("Size", {"Small", "Medium", "Large"});
+    Conversation c(BuildPageMap(b.Take()), Env());
+    const PageItem& country = c.map().items[0];
+    ASSERT_EQ(country.kind, ItemKind::kSelect);
+    EXPECT_EQ(country.options, (std::vector<std::string>{
+                                   "Choose a country", "France", "Spain",
+                                   "Italy"}));
+    VoiceTurn turn = c.Say("click country");
+    ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kFocus}));
+    EXPECT_EQ(Said(turn),
+              "Country list, set to Choose a country. Its options: Choose a "
+              "country, France, Spain, Italy. Say choose, then one.");
+    turn = c.Say("choose France");
+    ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSelectOption}));
+    EXPECT_EQ(Find(turn, K::kSelectOption)->target, country.handle);
+    EXPECT_EQ(Find(turn, K::kSelectOption)->text, "France");
+    EXPECT_EQ(Said(turn), "Chose France.");
+    // The other list's option, by name alone.
+    turn = c.Say("select large");
+    ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSelectOption}));
+    EXPECT_EQ(Find(turn, K::kSelectOption)->target, c.map().items[1].handle);
+    EXPECT_EQ(Find(turn, K::kSelectOption)->text, "Large");
+    // Something no list has.
+    turn = c.Say("choose Portugal");
+    EXPECT_TRUE(Actions(turn).empty());
+  }
+  // "Open" what the page names; a known site is still the site, a name
+  // nothing on the page has is still searched for.
+  {
+    TreeBuilder b("Inbox - Mail");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Inbox", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    const uint32_t list = b.Add(main, PageRole::kList, "Messages", 0);
+    for (const char* subject :
+         {"Lunch on Friday", "The chess problem", "Your books are due"}) {
+      b.Link(b.Add(list, PageRole::kListItem, "", 0), subject,
+             std::string("https://mail.test/message?s=") + subject);
+    }
+    Conversation c(BuildPageMap(b.Take()), Env());
+    c.env().host = "mail.test";
+    VoiceTurn turn = c.Say("open lunch on Friday");
+    ASSERT_TRUE(Find(turn, K::kPress));
+    EXPECT_EQ(Find(turn, K::kPress)->target, c.map().items[0].handle);
+    EXPECT_FALSE(Find(turn, K::kSearchWeb));
+    turn = c.Say("open YouTube");
+    EXPECT_TRUE(Find(turn, K::kNavigate));
+    turn = c.Say("open the weather in Lyon");
+    EXPECT_TRUE(Find(turn, K::kSearchWeb));
+  }
+  // "Number seven" with no numbers on screen: the seventh result, not the
+  // page's seventh item (a filter chip).
+  {
+    Conversation c(BuildPageMap(test::YouTubeLikeResults()), Env());
+    VoiceTurn turn = c.Say("play number seven");
+    ASSERT_TRUE(Find(turn, K::kPress));
+    EXPECT_EQ(Find(turn, K::kPress)->target,
+              c.map().lists[0].entries[6].handle);
+  }
+  // A player's own Next and a muted player's Unmute.
+  {
+    TreeBuilder b("Watch");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Watch", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    const uint32_t player =
+        b.Add(main, PageRole::kVideo, "Video player",
+              kStateFocusable | kStateHasDefaultAction);
+    b.Link(player, "Next (SHIFT+n)", "https://video.test/watch?v=video5");
+    b.Button(player, "Unmute (m)");
+    Conversation c(BuildPageMap(b.Take()), Env());
+    VoiceTurn turn = c.Say("next video");
+    ASSERT_TRUE(Find(turn, K::kPress));
+    EXPECT_EQ(c.map().ItemForHandle(Find(turn, K::kPress)->target)->label,
+              "Next (SHIFT+n)");
+    EXPECT_TRUE(Find(turn, K::kWaitForPage));
+    turn = c.Say("mute");
+    EXPECT_EQ(Said(turn), "It's already muted.");
+    turn = c.Say("unmute");
+    ASSERT_TRUE(Find(turn, K::kPress));
+    EXPECT_EQ(c.map().ItemForHandle(Find(turn, K::kPress)->target)->label,
+              "Unmute (m)");
+    EXPECT_EQ(Said(turn), "Sound on.");
+  }
+  // Find: a word finds its plural.
+  {
+    TreeBuilder b("News");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "News", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    b.Heading(main, 1, "Trams return to Lyon after ten years");
+    Conversation c(BuildPageMap(b.Take()), Env());
+    VoiceTurn turn = c.Say("find tram on this page");
+    EXPECT_EQ(Said(turn).find("Found it"), 0u) << Said(turn);
+    turn = c.Say("find return to lyon on this page");
+    EXPECT_EQ(Said(turn).find("Found it"), 0u) << Said(turn);
+    turn = c.Say("find bus on this page");
+    EXPECT_EQ(Said(turn).find("I can't find"), 0u) << Said(turn);
+  }
 }
 
 TEST(VoiceControllerLogicTest, ShownNumbersAreChosenAsShown) {
@@ -831,14 +992,27 @@ TEST(VoiceControllerLogicTest, MediaCommands) {
   turn = c.Say("quieter");
   ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kDecrement}));
 
+  // "Louder" a lot: more steps.
+  turn = c.Say("much louder");
+  EXPECT_EQ(Find(turn, K::kIncrement)->count, kVolumeSteps * kMuchVolumeFactor);
+  turn = c.Say("much quieter");
+  EXPECT_EQ(Find(turn, K::kDecrement)->count, kVolumeSteps * kMuchVolumeFactor);
+
+  // Mute with the player's own button, which the page then shows muted.
   turn = c.Say("mute");
-  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kMute}));
-  EXPECT_TRUE(turn.steps[0].flag);
-  c.env().muted = true;
-  turn = c.Say("mute");
-  EXPECT_EQ(Said(turn), "It's already muted.");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}));
+  EXPECT_EQ(Find(turn, K::kPress)->target,
+            ItemLabelled(map, ItemKind::kButton, "Mute (m)")->handle);
+  EXPECT_EQ(Said(turn), "Muted.");
+  // Not muted: nothing to unmute.
   turn = c.Say("unmute");
+  EXPECT_EQ(Said(turn), "It isn't muted.");
+  // A tab muted (the browser's own mute) is unmuted too.
+  c.env().muted = true;
+  turn = c.Say("unmute");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kMute}));
   EXPECT_FALSE(turn.steps[0].flag);
+  c.env().muted = false;
 
   // Full screen through the player's button, else the browser. The press
   // says so: the page may go full screen from it (activation_policy.h).
@@ -1414,6 +1588,30 @@ TEST(VoiceControllerLogicTest, APermissionPromptIsReadAndWaitsForItsWord) {
   EXPECT_EQ(Said(turn), "Allowed.");
   EXPECT_EQ(BrowserPromptHeld(c.state(), c.env().now_ms), 0);
   EXPECT_EQ(Find(c.Say("harbor"), K::kPromptAnswer), nullptr);
+}
+
+// What isn't a command while the prompt waits for its word goes to no
+// planner: a sentence holding the word would hand it to the model.
+TEST(VoiceControllerLogicTest, NoPlannerWhileAPromptWaitsForItsWord) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  VoiceTurn turn =
+      PlanBrowserPrompt(11, Permission(), "harbor", c.env(), c.state());
+  c.state() = turn.state;
+  turn = c.Say("the word is harbor");
+  EXPECT_TRUE(Actions(turn).empty());
+  EXPECT_EQ(Find(turn, K::kToPlanner), nullptr);
+  EXPECT_EQ(Said(turn), "I didn't catch that. Say the word again.");
+  EXPECT_EQ(BrowserPromptHeld(c.state(), c.env().now_ms), 11);
+  turn = c.Say("find me a cheap flight");
+  EXPECT_EQ(Find(turn, K::kToPlanner), nullptr);
+  // The word answers it.
+  turn = c.Say("harbor");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPromptAnswer}));
+  turn = PlanBrowserPromptGone(11, "Allowed.", c.env(), c.state());
+  c.state() = turn.state;
+  // With no prompt, the planner again.
+  turn = c.Say("find me a cheap flight");
+  EXPECT_NE(Find(turn, K::kToPlanner), nullptr);
 }
 
 TEST(VoiceControllerLogicTest, APermissionPromptRefusedOrLeft) {

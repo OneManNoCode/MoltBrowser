@@ -146,20 +146,34 @@ def cmd_run(args):
     runs = []
     try:
         for spec in args.runs.split(","):
-            audio, _, cond = spec.partition(":")
+            # audio:condition, and for PulseAudio ":noloop" for a run
+            # without the loopback of the browser's output into the
+            # microphone (no echo for the echo canceller to remove), or
+            # ":noaec" for one without Chrome-wide echo cancellation.
+            audio, _, rest = spec.partition(":")
+            cond, _, option = rest.partition(":")
+            if option not in ("", "noloop", "noaec") or (option and audio != "pulse"):
+                log("unknown run %s: skipped" % spec)
+                continue
+            loopback = not args.no_loopback and option != "noloop"
             cfg = runner.RunConfig(audio=audio, condition=cond or "clean",
-                                   loopback=not args.no_loopback,
+                                   loopback=loopback,
+                                   echo_cancellation=option != "noaec",
                                    sandbox=not args.no_sandbox,
                                    model_available=args.model,
                                    extra_flags=args.browser_flag or [],
                                    voices=[v for v in args.voices.split(",") if v] or None,
                                    speeds=[float(x) for x in args.speeds.split(",") if x]
                                    or None)
+            if audio == "pulse" and pulse is not None and pulse.loopback != loopback:
+                # The daemon has the loopback or hasn't: a new one.
+                pulse.stop()
+                pulse = None
             if audio == "pulse" and pulse is None:
                 if not audio_path.pulse_available():
                     log("PulseAudio isn't installed: skipping %s" % spec)
                     continue
-                pulse = audio_path.Pulse(report_dir, loopback=not args.no_loopback,
+                pulse = audio_path.Pulse(report_dir, loopback=loopback,
                                          log=log).start()
                 helper = os.path.join(bundle, "speech", "molt-speech")
                 if os.path.exists(helper):
@@ -234,6 +248,12 @@ def cmd_serve(args):
     return 0
 
 
+def cmd_digest(args):
+    from e2ekit import digest
+    print(digest.build(os.path.abspath(args.report), limit=args.limit))
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--scenarios-dir", default=SCENARIOS_DIR)
@@ -273,12 +293,15 @@ def main(argv=None):
                    help="the voices the scenarios rotate through (default all: "
                         "ljspeech,libritts-m,libritts-f)")
     s.add_argument("--speeds", default="", help="and the speeds (default 1,1.25)")
+    s = sub.add_parser("digest", help="what explains the failed scenarios, for a CI log")
+    s.add_argument("--report", required=True)
+    s.add_argument("--limit", type=int, default=150000)
     s = sub.add_parser("serve")
     s.add_argument("--port", type=int, default=0)
     s.add_argument("--dir", default=os.path.join(os.getcwd(), "voice-e2e-serve"))
     args = p.parse_args(argv)
     return {"list": cmd_list, "render": cmd_render, "check-speech": cmd_check_speech,
-            "run": cmd_run, "serve": cmd_serve}[args.cmd](args)
+            "run": cmd_run, "digest": cmd_digest, "serve": cmd_serve}[args.cmd](args)
 
 
 if __name__ == "__main__":

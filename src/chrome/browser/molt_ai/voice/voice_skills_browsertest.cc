@@ -20,11 +20,13 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
+#include "chrome/browser/molt_ai/voice/page_reading.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
@@ -301,13 +303,46 @@ IN_PROC_BROWSER_TEST_F(VoiceSkillsBrowserTest, ReadThePage) {
   EXPECT_NE(said.find("That's the end of the page."), std::string::npos);
 }
 
+// The tree's selection, for a failure's message: each end's node (its
+// role, name and place) and offset.
+std::string DescribeSelection(const PageTree& tree) {
+  const PageSelection& selection = tree.selection;
+  if (!selection.valid()) {
+    return "no selection";
+  }
+  auto end = [&](const PageNodeHandle& handle, int offset) {
+    std::string out = base::StrCat(
+        {"(", base::NumberToString(handle.tree), ":",
+         base::NumberToString(handle.node), " @",
+         base::NumberToString(offset), ")"});
+    for (size_t i = 0; i < tree.nodes.size(); ++i) {
+      const PageNode& node = tree.nodes[i];
+      if (node.handle == handle) {
+        return base::StrCat(
+            {out, " node ", base::NumberToString(i), " role ",
+             base::NumberToString(static_cast<int>(node.role)), " states ",
+             base::NumberToString(node.states), " name \"",
+             node.name.substr(0, 60), "\" children ",
+             base::NumberToString(node.children.size())});
+      }
+    }
+    return out + " not in the tree";
+  };
+  return base::StrCat({"anchor ", end(selection.anchor, selection.anchor_offset),
+                       "; focus ", end(selection.focus, selection.focus_offset),
+                       "; root tree ",
+                       tree.nodes.empty()
+                           ? std::string("-")
+                           : base::NumberToString(tree.nodes[0].handle.tree)});
+}
+
 IN_PROC_BROWSER_TEST_F(VoiceSkillsBrowserTest, HeadingsSectionsSelection) {
   BindSkill(kWikipediaHost, "wikipedia", "Wikipedia", "wikipedia_article.html",
             "wikipedia_search.html?search=");
   Open(Url(kWikipediaHost, "wikipedia_article.html"));
   tts_.TakeSpoken();
-  Say("next heading");
-  EXPECT_EQ(tts_.TakeSpoken(), "Heading level 1: Queen (band).");
+  // The article's first heading: the skill reads the article's text, and
+  // the title is outside it.
   Say("next heading");
   EXPECT_EQ(tts_.TakeSpoken(), "Heading level 2: History.");
   Say("next paragraph");
@@ -325,10 +360,16 @@ IN_PROC_BROWSER_TEST_F(VoiceSkillsBrowserTest, HeadingsSectionsSelection) {
                      "getSelection().selectAllChildren(p); true"));
   VoicePageController* page =
       VoicePageController::FromWebContents(web_contents());
-  ASSERT_TRUE(base::test::RunUntil([&]() {
-    return page->BuildTree(VoicePageController::kMaxReadingStringBytes)
-        .selection.valid();
-  }));
+  // Until the tree's selection is the one made, readable: an older one (a
+  // caret) can be there first.
+  std::string where;
+  const bool readable = base::test::RunUntil([&]() {
+    const PageTree tree =
+        page->BuildTree(VoicePageController::kMaxReadingStringBytes);
+    where = DescribeSelection(tree);
+    return SelectedText(tree, 1000, ReadingLimits()).has_value();
+  });
+  ASSERT_TRUE(readable) << where;
   Say("read the selection");
   EXPECT_EQ(tts_.TakeSpoken(),
             "The style section has one paragraph. It has two sentences.");

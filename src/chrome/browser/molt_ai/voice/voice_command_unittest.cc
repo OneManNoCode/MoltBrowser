@@ -165,11 +165,51 @@ void Check(const std::vector<Case>& cases) {
   }
 }
 
+// A verb glued to the next word, as the bundled English recognizer hears
+// "click name a colour": read as the two words; "clicking" and a known
+// command are left as they are.
+TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
+  const ParseContext context = MakeContext(kNone);
+  const VoiceCommand glued = ParseVoiceCommand("Clickname a color", context);
+  const VoiceCommand apart = ParseVoiceCommand("click name a color", context);
+  EXPECT_EQ(Fields(glued), Fields(apart));
+  EXPECT_EQ(glued.kind, VoiceCommandKind::kChoose);
+  EXPECT_EQ(glued.heard, "Clickname a color");
+  EXPECT_EQ(Fields(ParseVoiceCommand("presssubmit", context)),
+            Fields(ParseVoiceCommand("press submit", context)));
+  EXPECT_NE(ParseVoiceCommand("clicking", context).kind,
+            VoiceCommandKind::kChoose);
+}
+
 TEST(VoiceCommandTest, OpenSites) {
   Check({
       {"open YouTube", "open_site", "site=youtube"},
       {"Hey Molt, open YouTube.", "open_site", "site=youtube"},
       {"hey mold open youtube", "open_site", "site=youtube"},
+      {"He Molt, open YouTube.", "open_site", "site=youtube"},
+      // What the bundled recognizer heard in the spoken suite's file run.
+      {"Hey, Molt, Rosetta zoom", "zoom_reset", ""},
+      {"Himalt to my downloads", "list_downloads", ""},
+      {"Himaled, girl to the bottom", "scroll_to_bottom", ""},
+      {"He mold, Joe numbers", "show_numbers", ""},
+      {"Hey, Malt, switch to tip two", "switch_tab", "choice=num:2"},
+      {"Hey, Malt, previous tomb.", "switch_tab", "choice=rel:previous"},
+      {"Hey, Malt, close this ted.", "close_tab", ""},
+      {"Hey, Malt, skip the ed.", "skip_ad", ""},
+      {"Hey, Molt, read the tile", "read_title", ""},
+      {"He mold, draw my downloads", "list_downloads", ""},
+      {"Hoping YouTube.", "open_site", "site=youtube"},
+      {"Hey, Molt, roulette", "reload", ""},
+      {"Hey, Malt, feel back", "back", ""},
+      {"Hey, Malt, turn on catchens.", "captions_on", ""},
+      {"Hey mold, said the volume to fifty percent.", "set_volume",
+       "level=50"},
+      // The wake phrase run together by the recognizer.
+      {"him old. Open YouTube", "open_site", "site=youtube"},
+      {"Himalt. Open YouTube", "open_site", "site=youtube"},
+      {"Himaled. Go back", "back", ""},
+      {"him alled. Search for Bohemian rapsody.", "search",
+       "text=Bohemian rapsody"},
       {"OK Molt go to youtube", "open_site", "site=youtube"},
       {"go to example dot com", "open_site", "site=example.com;address=1"},
       {"go to example.com", "open_site", "site=example.com;address=1"},
@@ -630,6 +670,8 @@ TEST(VoiceCommandTest, Conversation) {
       {"that's right", "yes", "", kYesNo},
       {"no", "no", "", kYesNo},
       {"nope", "no", "", kYesNo},
+      // "No" heard as "now": only as an answer.
+      {"Now", "no", "", kYesNo},
       {"no thanks", "no", "", kYesNo},
       {"don't", "no", "", kYesNo},
       {"no don't do it", "no", "", kYesNo},

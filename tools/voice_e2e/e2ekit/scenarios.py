@@ -28,7 +28,7 @@ Fields of a step: "needs" (the grammar's command names it relies on, as
 VoiceCommandKindName() gives them: the report says "not in the grammar
 yet" when the build has none of that name), "answer" (an answer to the
 browser's question: said without the wake phrase), "timeout" (seconds,
-default 20), "requires" ("microphone", "pulse", "model"), "name", "pause"
+default 20), "requires" ("microphone", "pulse", "model", "listening"), "name", "pause"
 (seconds to wait before it), "direct" (false for a step whose action isn't
 a direct command, left out of the latency figures), "barge_in" (said while
 the browser is still speaking: the kit doesn't wait for it to finish).
@@ -64,7 +64,9 @@ TOUCHLESS_BROWSING.md §2: go, read, choose, act, media, browser, recover;
 or prompts, security, owner), "counts" (one of the scripted tasks,
 default true), "modes" (listening modes: "wake", "always"; default
 ["wake"]), "start" ({"url", "tabs": [urls], "settings": {...},
-"js": "..."}), "requires", "steps".
+"js": "...", "shields": false for a browser run with MoltShield off
+(--disable-molt-shield), as for a site the user turned it off on}),
+"requires", "steps".
 """
 
 import json
@@ -74,7 +76,7 @@ import re
 TASKS = ("go", "read", "choose", "act", "media", "browser", "recover",
          "prompts", "security", "owner")
 MODES = ("wake", "always")
-REQUIREMENTS = ("microphone", "pulse", "model")
+REQUIREMENTS = ("microphone", "pulse", "model", "listening")
 
 STEP_ACTIONS = ("say", "say_word", "replay", "wait")
 STEP_KEYS = set(STEP_ACTIONS) | {
@@ -82,7 +84,7 @@ STEP_KEYS = set(STEP_ACTIONS) | {
     "direct", "barge_in", "note"}
 SCENARIO_KEYS = {"id", "title", "task", "counts", "modes", "start",
                  "requires", "steps", "note"}
-START_KEYS = {"url", "tabs", "settings", "js"}
+START_KEYS = {"url", "tabs", "settings", "js", "shields"}
 SETTINGS_KEYS = {"voice_say_word_aloud", "voice_speech_rate",
                  "voice_language"}
 
@@ -353,6 +355,8 @@ def parse_scenario(obj, source=""):
                 not isinstance(u, str) or not u.startswith("https://")
                 for u in start["tabs"]):
             _fail(where, "start.tabs takes https:// URLs")
+    if "shields" in start and not isinstance(start["shields"], bool):
+        _fail(where, "start.shields takes true or false")
     if "settings" in start:
         st = start["settings"]
         if not isinstance(st, dict) or set(st) - SETTINGS_KEYS:

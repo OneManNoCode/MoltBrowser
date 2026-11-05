@@ -120,8 +120,16 @@ is cased, as the screen is.
   (0.8 s on the server of §8, during which the helper reads no input); a
   CONFIG whose wake phrases are the ones in use, as every CONFIG the
   browser sends carries them, keeps it (0.1 ms).
+- When `wake_required` turns true while the helper waits for speech (the
+  browser's follow-up window closed), the spotter starts on the last 1.5 s
+  of audio no utterance used, so a wake phrase begun just before isn't
+  cut in half. When it turns false while speech is being heard for a wake
+  phrase (§4.1), that speech is an utterance from its start:
+  `speech_start` at once.
 - `hotwords` apply from the next utterance; `vad_silence_ms` from the next
-  time the helper is waiting (it rebuilds the voice activity detector).
+  time the helper is waiting (it rebuilds the voice activity detector,
+  which forgets the speech it was following, so only when the value
+  changes: every CONFIG the browser sends carries it).
 
 ### 2.3 RESET
 
@@ -274,7 +282,12 @@ by exactly one `final`; a RESET cancels both (§2.3). `epoch` and
 wake  [speech_start  partial*  speech_end]  final
 ```
 
-- The spotter and the voice activity detector run; the recognizer waits.
+- The spotter and the voice activity detector run. While someone speaks,
+  the recognizer hears the speech too (from 0.6 s before the detector
+  noticed it), for a wake phrase the spotter misses (it misses some, more
+  in a long session: §8.4). Nothing is written for speech that doesn't
+  start with a wake phrase, and the recognizer stops on it as soon as its
+  first words aren't one, or after 4 s.
 - On a wake phrase: `wake`. The recognizer starts on the audio from just
   before the phrase (at most 2 s back, and not before the speech it is
   in), so "Hey Molt, open YouTube" in one breath works. The text then
@@ -284,10 +297,23 @@ wake  [speech_start  partial*  speech_end]  final
   fires 0.2–0.3 s after the phrase ends, [VOICE_BENCH.md](../VOICE_BENCH.md)
   §3.8). The command then ends like any utterance: `speech_end`, then
   `final`.
+- If the spotter hasn't fired but the recognizer's text starts with a wake
+  phrase, as written or sounding like it ("Hey, Malt", "he mold", "Himalt",
+  "him old": the same consonants, `WakePhraseWordsAtStart()` in
+  `speech_text.h`), it was a wake phrase all the same: `wake` once a word
+  follows it, dated where that word starts (where the phrase ended, which
+  the browser's checks for its own voice and other sources go by), then
+  `speech_start` with the same time, and the command goes on as any
+  utterance. If the speech ends with the phrase alone, `wake` then, and
+  the helper waits for the command as below. The browser's grammar strips
+  the phrase from the text as before.
 - If the speech that held the wake phrase ends first, the helper finishes
   recognizing it. Words after the phrase by that rule, or more words than
-  the phrase has (a short command in the same breath, when the spotter
-  fired late), make it the command: `speech_start`, `speech_end` and
+  the phrase has as the recognizer wrote it (a short command in the same
+  breath, when the spotter fired late; "Himalt" is one word, and when the
+  phrase's start was lost the phrase ends at its name: "Emold. Click",
+  `WakeNameWordsAtStart()`, which only ever finds a command after a wake
+  and never wakes the helper), make it the command: `speech_start`, `speech_end` and
   `final` at once. Otherwise it was the wake phrase alone ("Hey Molt."
   pause "Open YouTube."), and the helper waits for the command: its speech
   starts a new utterance, with `speech_start` when the detector hears it.
@@ -645,6 +671,36 @@ stretch of speech that held no wake phrase was tried and changed nothing
 synthetic voices the miss rate is 12% to 27% depending on the take and the
 run; the threshold per user the bench asked for (learned from the wake-ups
 the user confirms) is still to come.
+
+**Round 45: a second chance from the recognizer** (§4.1). The same 100
+clips in one session, `speech_helper_check.py wake`, the helper as built
+from the tree before and after, on the same machine:
+
+| | Spotter only | With the recognizer's second chance |
+|---|---|---|
+| Woke | 86 of 100 | 97 of 100 |
+| The command after it exactly right | 42 | 47 |
+| False wake-ups (chatter, set a, page audio) | 1, 1, 0 | 1, 1, 0 |
+
+With music playing throughout the session (the kit's music bed, 10 dB
+under the speech, the clips 8 s apart): 79 woke before and 91 with the
+second chance, 31 and 35 commands exactly right, and one false wake-up in
+300 commands without the phrase either way. Hearing speech that goes on
+without a pause again every few seconds was tried and changed nothing
+here (the detector doesn't take this music for speech), so it isn't done.
+
+The one false wake-up in quiet is the spotter's, in both: "a molten chocolate cake
+sounds great", on the short-"hey" line (`WakeKeywordLines()`); the
+second chance adds none, as it takes only speech that starts with the
+phrase. Without the short line the spotter misses more and the second
+chance can't make up for it: 87 woke, no false wake-ups. Most of the 13
+misses are one voice whose "hey" the recognizer writes as a "p"
+("Pimalde, search for ..."), too far from the phrase to take. The suite's
+six renderings of "Hey Molt, pause", said 0 to 2 s after the follow-up
+window closed, all wake the helper and give their command (in a run
+before, four of 24 didn't, and one voice's never did: the recognizer
+writes its phrase as one word, "Himalt. Pause.", which the rule for a
+command in the same breath now counts as one).
 
 ### 8.5 Speed and memory
 

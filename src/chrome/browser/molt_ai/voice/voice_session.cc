@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -42,6 +43,22 @@ VoiceSession* g_listening = nullptr;
 // How often the session looks at the tabs' sound and the speech engine
 // (well within kOtherSpeechTailMs).
 constexpr base::TimeDelta kPollInterval = base::Milliseconds(250);
+
+// How many polls between the microphone levels the spoken test kit's log
+// gets (about every five seconds).
+constexpr int kPollsPerMicrophoneLevels = 20;
+
+std::string_view EchoCancellationName(EchoCancellation echo) {
+  switch (echo) {
+    case EchoCancellation::kChromeWide:
+      return "chrome-wide";
+    case EchoCancellation::kPlatform:
+      return "platform";
+    case EchoCancellation::kNone:
+      return "none";
+  }
+  return "none";
+}
 
 // Where the microphone has no echo canceller, nothing said over the
 // browser's speech gives a command but "stop" (voice_session_logic.h).
@@ -428,12 +445,14 @@ void VoiceSession::StopListening() {
   // The microphone first (no more frames), then the helper. Both stop now;
   // they go once whatever of theirs called here has returned.
   if (audio_) {
-    audio_->Stop();
+    // It goes after this session may (a window closing): it keeps no
+    // pointer to it.
+    audio_->Release();
     base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
         FROM_HERE, std::move(audio_));
   }
   if (listener_) {
-    listener_->Stop();
+    listener_->Release();
     base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
         FROM_HERE, std::move(listener_));
   }
@@ -655,6 +674,10 @@ void VoiceSession::Apply(SessionActions actions) {
   if (actions.say_again && controller_) {
     controller_->SayNotice(SayAgainNotice(SpeechLanguage()));
   }
+  if (actions.dropped && controller_) {
+    controller_->NoteDroppedUtterance(*actions.dropped,
+                                      actions.dropped_reason);
+  }
   bool caption = actions.state.has_value();
   if (actions.said_over_voice && speaking_hint_.empty() &&
       ControllerActivity() == BrowserActivity::kSpeaking) {
@@ -817,6 +840,14 @@ void VoiceSession::OnPoll() {
   Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), NowMs()));
   Apply(logic_.OnOwnVoiceUnfiltered(OwnVoiceUnfiltered(), NowMs()));
   Apply(logic_.OnPageAudible(AnyTabAudible(), NowMs()));
+  if (audio_ && controller_ && ++polls_ >= kPollsPerMicrophoneLevels) {
+    polls_ = 0;
+    const VoiceAudio::Levels levels = audio_->TakeLevels();
+    controller_->NoteMicrophoneLevels(
+        levels.peak, levels.samples,
+        listener_ ? listener_->TakeDroppedSamples() : 0,
+        microphone_on_ ? EchoCancellationName(echo_) : "off");
+  }
 }
 
 }  // namespace voice

@@ -26,6 +26,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/molt_ai/voice/voice_prompts.h"
 #include "content/public/browser/javascript_dialog_manager.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "url/origin.h"
 
@@ -34,6 +35,7 @@ namespace voice {
 
 class VoiceDialogManager
     : public content::JavaScriptDialogManager,
+      public content::WebContentsObserver,
       public content::WebContentsUserData<VoiceDialogManager> {
  public:
   // A dialog the page shows.
@@ -100,6 +102,11 @@ class VoiceDialogManager
 
  private:
   friend class content::WebContentsUserData<VoiceDialogManager>;
+
+  // content::WebContentsObserver: the tab is going. Its own manager is
+  // another WebContentsUserData, which may go before this one, so it isn't
+  // kept past here (a dangling raw_ptr otherwise).
+  void WebContentsDestroyed() override;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 
   explicit VoiceDialogManager(content::WebContents* contents);

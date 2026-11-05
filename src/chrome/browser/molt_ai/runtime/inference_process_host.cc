@@ -304,6 +304,10 @@ class InferenceProcessHost::ModelProcess
   mojo::Remote<mojom::MoltInferenceService> service;
   mojo::Remote<mojom::Model> model;
   base::Process process;
+  // It started: the launch was reported (with or without a handle), or the
+  // service sent something (the device it chose, the load's reply), which
+  // can come before the launch notification.
+  bool started = false;
   uint32_t context_tokens = 0;
   uint32_t vocab_size = 0;
   scoped_refptr<InferenceMailbox> load_mailbox;
@@ -557,6 +561,7 @@ void InferenceProcessHost::OnProcessLaunched(
     const base::Process& handle) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!process) return;
+  process->started = true;
   process->process = handle.Duplicate();
   if (process->footprint_limit_bytes() > 0) {
     process->footprint_timer.Start(
@@ -574,6 +579,7 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
       process->state != ModelProcess::State::kLoading) {
     return;
   }
+  process->started = true;
   ModelProcess* p = process.get();
   p->load_deadline.Stop();
   scoped_refptr<InferenceMailbox> mailbox = std::move(p->load_mailbox);
@@ -644,6 +650,7 @@ void InferenceProcessHost::OnGpuChosen(
   if (process->state != ModelProcess::State::kLoading || process->lost) {
     return;  // the pipe closes with the process
   }
+  process->started = true;
   // Once per load, only when the GPU was asked for, within the caps.
   std::optional<GpuDeviceReport> report =
       device && process->gpu_requested() && !process->gpu_device
@@ -996,7 +1003,7 @@ void InferenceProcessHost::OnProcessDisconnected(
 
 void InferenceProcessHost::OnProcessLost(ModelProcess* process) {
   if (process->state == ModelProcess::State::kLoading &&
-      !process->process.IsValid()) {
+      !process->started) {
     // It never started: not the model's fault, so not a crash for the
     // crash-loop guard.
     KillProcess(process, InferenceOutcome::Kind::kLaunchFailed,

@@ -573,6 +573,19 @@ phrase to the detection.
   only the phrase (design §5.1 lets the user choose it), and
   always-listening mode (design §5.1) is the fallback for someone the
   spotter keeps missing.
+- **"Hey" said short.** The spoken suite's voices (tools/voice_e2e) showed
+  the same thing on a real build: three of its six renderings of "Hey Molt"
+  (libritts_r's female voice at both speeds, its male voice at 1.25) never
+  woke the spotter, though each woke it for "molt" alone. What those
+  voices say is "▁HE ▁MO L T" to the spotter, not "▁HE Y ▁MO L T". So the
+  speech helper adds that spelling for any phrase starting with "hey",
+  under the same label (`WakeKeywordLines()`), and English voice mode takes
+  "he" as a greeting before the name; with it all six woke (the GigaSpeech
+  spotter, threshold 0.15, the renderings alone), and neither line fired
+  on the suite's 1,062 other clips (its commands in the six renderings,
+  "new MoltNet window" among them). The extra line's false wake-ups on the
+  bench's own non-wake speech and chatter ("hey mom, I'm home") are still
+  to be measured (`run_bench.py`'s wake set on the build machine).
 - Open-vocabulary spotting needs no training, but it is far from a trained
   wake word's accuracy; a phrase-specific model, trained on recordings of
   the chosen phrase, is the upgrade path if the misses matter in use.

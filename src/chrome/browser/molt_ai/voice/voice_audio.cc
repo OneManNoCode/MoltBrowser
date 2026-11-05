@@ -4,12 +4,15 @@
 #include "chrome/browser/molt_ai/voice/voice_audio.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -23,6 +26,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/unguessable_token.h"
+#include "chrome/browser/molt_ai/voice/voice_test_audio.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/audio_service.h"
@@ -215,9 +219,19 @@ EchoCancellation ChooseEchoCancellation(bool chrome_wide_enabled,
 }
 
 media::AudioParameters VoiceCaptureParameters(EchoCancellation echo) {
-  media::AudioParameters params(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                media::ChannelLayoutConfig::Mono(),
-                                kHelperSampleRate, kCaptureFramesPerBuffer);
+  // With --use-fake-device-for-media-stream (a test switch) the microphone
+  // is the fake device pages get: the audio service makes a fake input
+  // only for AUDIO_FAKE parameters, which MediaStreamManager sets for
+  // pages, and with --use-file-for-fake-audio-capture it plays that file.
+  // Otherwise voice mode would open the real default input, which a test
+  // machine may not have.
+  const bool fake = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kUseFakeDeviceForMediaStream);
+  media::AudioParameters params(
+      fake ? media::AudioParameters::AUDIO_FAKE
+           : media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      media::ChannelLayoutConfig::Mono(), kHelperSampleRate,
+      kCaptureFramesPerBuffer);
   if (echo == EchoCancellation::kPlatform) {
     params.set_effects(media::AudioParameters::ECHO_CANCELLER |
                        media::AudioParameters::NOISE_SUPPRESSION);
@@ -227,7 +241,9 @@ media::AudioParameters VoiceCaptureParameters(EchoCancellation echo) {
 
 VoiceAudio::VoiceAudio(Delegate* delegate,
                        scoped_refptr<VoiceListener::AudioSink> sink)
-    : delegate_(delegate), sink_(std::move(sink)) {}
+    : delegate_(delegate),
+      sink_(std::move(sink)),
+      test_audio_(VoiceTestAudio::MaybeCreate()) {}
 
 VoiceAudio::~VoiceAudio() {
   Stop();
@@ -301,6 +317,10 @@ void VoiceAudio::OnDeviceParameters(
 void VoiceAudio::Open(EchoCancellation echo) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   echo_ = echo;
+  // For OnCaptureStarted(), which the audio thread calls; Stop()
+  // invalidates it, and no callback comes after Stop().
+  owner_ = base::SequencedTaskRunner::GetCurrentDefault();
+  started_self_ = weak_factory_.GetWeakPtr();
   if (echo == EchoCancellation::kNone) {
     LOG(WARNING) << "[MoltVoice] no echo cancellation for the microphone: "
                     "page audio and the browser's voice reach the recognizer";
@@ -327,8 +347,33 @@ void VoiceAudio::Stop() {
   chunker_.Reset();
 }
 
-void VoiceAudio::OnCaptureStarted() {
+void VoiceAudio::Release() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Stop() leaves nothing that calls the delegate (the weak pointers its
+  // posted calls hold are invalidated).
+  Stop();
+  delegate_ = nullptr;
+}
+
+VoiceAudio::Levels VoiceAudio::TakeLevels() {
+  Levels levels;
+  levels.peak = peak_millionths_.exchange(0, std::memory_order_relaxed) / 1e6f;
+  levels.samples = samples_.exchange(0, std::memory_order_relaxed);
+  return levels;
+}
+
+void VoiceAudio::OnCaptureStarted() {
+  // The audio thread (AudioInputDevice's AudioThreadCallback, once it has
+  // the stream's memory), like Capture().
+  owner_->PostTask(FROM_HERE, base::BindOnce(&VoiceAudio::CaptureStarted,
+                                             started_self_));
+}
+
+void VoiceAudio::CaptureStarted() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!source_) {
+    return;
+  }
   starting_ = false;
   delegate_->OnMicrophoneStarted(echo_);
 }
@@ -342,6 +387,20 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
   if (!audio_source || audio_source->channels() < 1) {
     return;
   }
+  // The levels the test log notes (TakeLevels()).
+  float peak = 0;
+  for (const float sample : audio_source->channel(0)) {
+    peak = std::max(peak, std::fabs(sample));
+  }
+  const uint32_t millionths =
+      static_cast<uint32_t>(std::min(peak, 1.0f) * 1e6f);
+  uint32_t seen = peak_millionths_.load(std::memory_order_relaxed);
+  while (millionths > seen &&
+         !peak_millionths_.compare_exchange_weak(seen, millionths,
+                                                 std::memory_order_relaxed)) {
+  }
+  samples_.fetch_add(audio_source->frames(), std::memory_order_relaxed);
+
   std::vector<std::vector<int16_t>> frames;
   chunker_.Add(audio_source->channel(0), &frames);
   // |audio_capture_time| is the first sample's: a frame completed here ends
@@ -351,12 +410,27 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
                                               1000000 / kHelperSampleRate);
   for (const std::vector<int16_t>& frame : frames) {
     sink_->Push(frame, end_captured);
+    if (test_audio_) {
+      test_audio_->Append(frame);
+    }
   }
 }
 
 void VoiceAudio::OnCaptureError(media::AudioCapturerSource::ErrorCode code,
                                 const std::string& message) {
+  // This sequence (the stream's IPC, the dead stream check), or the audio
+  // thread (a socket or buffer error), where Stop() would join the thread
+  // it runs on: always here, after the call. Dropped once stopped.
+  owner_->PostTask(FROM_HERE, base::BindOnce(&VoiceAudio::CaptureError,
+                                             started_self_, code, message));
+}
+
+void VoiceAudio::CaptureError(media::AudioCapturerSource::ErrorCode code,
+                              const std::string& message) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!source_ && !starting_) {
+    return;
+  }
   LOG(WARNING) << "[MoltVoice] microphone error " << static_cast<int>(code)
                << ": " << message;
   Stop();
@@ -449,8 +523,11 @@ class VoiceEarcons::Player : public media::AudioRendererSink::RenderCallback {
 };
 
 VoiceEarcons::VoiceEarcons()
+    // The player's audio::OutputDevice joins its audio thread when it goes
+    // (AudioDeviceThread's destructor), which needs //base sync primitives.
     : player_(base::ThreadPool::CreateSequencedTaskRunner(
-          {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+          {base::MayBlock(), base::WithBaseSyncPrimitives(),
+           base::TaskPriority::USER_BLOCKING,
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN})) {}
 
 VoiceEarcons::~VoiceEarcons() = default;

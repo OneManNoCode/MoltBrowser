@@ -65,6 +65,7 @@
    "id": "browser-new-window",
    "title": "A new window; voice mode stays in its own",
    "task": "browser",
+   "requires": ["listening"],
    "start": {"url": "https://news.test/"},
    "steps": [
     {"say": "new window", "needs": ["new_window"], "expect": [{"windows": 2}]},
@@ -142,8 +143,8 @@
    "start": {"url": "https://news.test/story"},
    "steps": [
     {"say": "find tram on this page", "needs": ["find_in_page"],
-     "expect": [{"said_re": "(?i)tram|found|match"}]},
-    {"say": "next match", "needs": ["next_match"], "expect": [{"said_re": "(?i)2|second|match"}]}
+     "expect": [{"said_re": "(?i)found it"}]},
+    {"say": "next match", "needs": ["next_match"], "expect": [{"said_re": "(?i)match 2 of|the last match"}]}
    ]
   }
  ]

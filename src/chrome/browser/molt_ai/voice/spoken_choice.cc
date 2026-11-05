@@ -595,6 +595,50 @@ void AddSegment(std::string_view text,
     prepared.segments.push_back(segment);
 }
 
+// Whether |item|'s title, stopwords and bare numbers aside ("Cart (1)"),
+// is |words| (the description's, folded), each word the same or its
+// plural, and has nothing else.
+bool TitleIsJust(const Prepared& item,
+                 const std::vector<Sound>& sounds,
+                 const std::vector<std::string>& words,
+                 const LanguagePhrases& phrases) {
+  const auto same = [](std::string_view a, std::string_view b) {
+    return a == b || PluralOf(a, b) || PluralOf(b, a);
+  };
+  std::vector<bool> said(words.size(), false);
+  size_t title_words = 0;
+  for (const Segment& segment : item.segments) {
+    if (segment.kind != kTitleSegment) {
+      continue;
+    }
+    for (uint32_t k = 0; k < segment.size; ++k) {
+      const uint32_t id = item.words[segment.begin + k];
+      if (id == kNoWord || id >= sounds.size()) {
+        return false;
+      }
+      const Sound& word = sounds[id];
+      if (word.numeric || InSortedList(phrases.choice_stopwords, word.text)) {
+        continue;
+      }
+      ++title_words;
+      bool found = false;
+      for (size_t w = 0; w < words.size(); ++w) {
+        if (same(word.text, words[w])) {
+          said[w] = true;
+          found = true;
+        }
+      }
+      if (!found) {
+        return false;
+      }
+    }
+  }
+  // Each word said names one of the title's ("live live live" isn't
+  // named by "live").
+  return title_words > 0 && title_words <= words.size() &&
+         std::all_of(said.begin(), said.end(), [](bool b) { return b; });
+}
+
 // One unit of the reference: a word, or two or three adjacent words of
 // the same group joined.
 struct RefUnit {
@@ -925,6 +969,35 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     result.outcome = ChoiceOutcome::kUnique;
     result.index = scored[0].index;
     return result;
+  }
+  // A tie broken by a name said whole: of the items that match as well as
+  // the best, the one whose title is just the words said ("Cart (1)" for
+  // "click cart"), not one that only has them among others ("Add the
+  // toaster to the cart"). Only a tie: a lead within the margin stays the
+  // margin's question.
+  if (by_words.empty() && from_words.empty() && !words.empty()) {
+    size_t tied = 0;
+    size_t named = 0;
+    size_t named_index = 0;
+    for (const Scored& s : scored) {
+      // Among the ranked ones (ChoiceMatch::ranked), as the outcome says.
+      if (top - s.score > kNamedTieBand || tied >= options.max_ranked) {
+        break;
+      }
+      ++tied;
+      const size_t e = static_cast<size_t>(
+          std::find(eligible.begin(), eligible.end(), s.index) -
+          eligible.begin());
+      if (e < n && TitleIsJust(prepared[e], sounds, words, phrases)) {
+        ++named;
+        named_index = s.index;
+      }
+    }
+    if (tied > 1 && named == 1) {
+      result.outcome = ChoiceOutcome::kUnique;
+      result.index = named_index;
+      return result;
+    }
   }
   result.outcome = ChoiceOutcome::kAmbiguous;
   for (const Scored& s : scored) {

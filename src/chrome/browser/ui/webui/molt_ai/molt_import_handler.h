@@ -56,6 +56,8 @@ class MoltImportHandler : public content::WebUIMessageHandler {
   // getImportableBrowsers -> {browsers:[{id,display_name,installed,
   // has_bookmarks,has_passwords_store}]}. Stat-only, cheap enough inline.
   void HandleGetImportableBrowsers(const base::ListValue& args);
+  void OnImportableBrowsers(const std::string& callback_id,
+                            std::vector<molt_ai::DetectedBrowser> detected);
   // importFromBrowser(callback_id, browser_id_string, include_passwords):
   // reads the chosen browser's profile off-thread, then writes it in.
   void HandleImportFromBrowser(const base::ListValue& args);

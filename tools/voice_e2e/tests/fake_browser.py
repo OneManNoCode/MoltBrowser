@@ -22,6 +22,9 @@ import threading
 import time
 import urllib.parse
 
+# How long the fake's follow-up window stays open after a spoken reply.
+FOLLOW_UP_S = 1.0
+
 KINDS = ["unknown", "refused", "open_site", "search", "choose", "pause", "play",
          "volume_up", "back", "stop", "yes", "no"]
 PNG_1X1 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA"
@@ -84,8 +87,13 @@ class Fake(object):
     def serve(self):
         if self.settings.get("voice_mode"):
             self.start_log()
-            self.line("activity", activity="listening", mic=True,
-                      waiting=not self.settings.get("voice_always_listening"))
+            always = self.settings.get("voice_always_listening")
+            self.waiting = not always
+            self.window = 0
+            self.line("activity", activity="listening", mic=True, waiting=not always)
+            # As the browser does once its speech helper is ready.
+            self.line("said", text="Voice mode is on. I'm listening." if always else
+                      "Voice mode is on. Say Hey Molt, then what you want.")
             threading.Thread(target=self.listen, daemon=True).start()
         buf = b""
         while not self.closing:
@@ -200,6 +208,10 @@ class Fake(object):
 
     def utterance(self, text, mic):
         self.start_log()
+        # Whether voice mode waited for the wake phrase when this was said
+        # (the tests check the kit waited for the follow-up window to close).
+        was_waiting = getattr(self, "waiting", False)
+        self.window = getattr(self, "window", 0) + 1
         words = re.sub(r"^(hey molt,?\s*)", "", text, flags=re.I).strip()
         low = words.lower()
         intent = "unknown"
@@ -213,7 +225,7 @@ class Fake(object):
             intent = {"pause": "pause", "play": "play", "louder": "volume_up",
                       "go back": "back", "stop": "stop"}[low]
         self.line("heard", text=text, source="mic" if mic else "typed", clean=True,
-                  intent=intent)
+                  intent=intent, waiting=was_waiting)
         self.line("activity", activity="thinking", mic=mic, waiting=False)
         time.sleep(0.1)
         if intent == "open_site":
@@ -245,8 +257,18 @@ class Fake(object):
             self.say("I can't do that yet.")
         self.line("activity", activity="speaking", mic=mic, waiting=False)
         time.sleep(0.2)
-        self.line("activity", activity="listening", mic=mic,
-                  waiting=mic and not self.settings.get("voice_always_listening"))
+        self.line("activity", activity="listening", mic=mic, waiting=False)
+        if mic and not self.settings.get("voice_always_listening"):
+            # The follow-up window, then the wake phrase again.
+            self.waiting = False
+            window = self.window
+
+            def close():
+                time.sleep(FOLLOW_UP_S)
+                if window == self.window and not self.closing:
+                    self.waiting = True
+                    self.line("activity", activity="listening", mic=True, waiting=True)
+            threading.Thread(target=close, daemon=True).start()
 
 
 def main():

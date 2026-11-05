@@ -284,8 +284,10 @@ IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
   PageMap watch =
       WaitForMap([](const PageMap& map) { return !map.media.empty(); });
   ASSERT_TRUE(watch.media[0].video);
-  EXPECT_EQ(false,
-            Js(web_contents(), "navigator.userActivation.hasBeenActive"));
+  // The press on the result was a gesture, and a same-origin navigation
+  // made with one carries the page's sticky activation over; the new page
+  // has no transient activation, which is what playing with sound needs.
+  EXPECT_EQ(false, Js(web_contents(), "navigator.userActivation.isActive"));
   EXPECT_EQ(controller()->PlayMedia(watch.media[0].handle),
             ActionResult::kDone);
   EXPECT_EQ("playing", Js(web_contents(), "whenPlaying()"));
@@ -384,6 +386,8 @@ IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
   EXPECT_LT(home->number, like->number);
   EXPECT_LT(like->number, after->number);
   EXPECT_NE(like->handle.tree, home->handle.tree);
+  // Every frame's tree it embeds is here.
+  EXPECT_FALSE(controller()->FrameTreesComing());
 
   content::RenderFrameHost* frame =
       content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0);

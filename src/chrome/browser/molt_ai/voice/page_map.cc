@@ -226,6 +226,27 @@ CredentialKind CredentialFromLabel(std::string_view text) {
       return CredentialKind::kOneTimeCode;
     }
   }
+  // A field labelled "code" and nothing else, or a code sent to the user.
+  // The page's autocomplete="one-time-code" isn't in the accessibility
+  // tree (Blink sends aria-autocomplete there, and HTML attributes only for
+  // snapshots), so the label is what's left. Promo, gift, ZIP, postal,
+  // country and area codes match none of these.
+  for (std::string_view label :
+       {"code", "enter code", "enter the code", "enter your code",
+        "your code"}) {
+    if (folded == label) {
+      return CredentialKind::kOneTimeCode;
+    }
+  }
+  for (std::string_view word :
+       {"sms code", "text code", "texted code", "email code",
+        "emailed code", "confirmation code", "login code", "log in code",
+        "sign in code", "sign-in code", "access code", "auth code",
+        "digit code", "two-step code", "2-step code"}) {
+    if (HasWords(folded, word)) {
+      return CredentialKind::kOneTimeCode;
+    }
+  }
   return CredentialKind::kNone;
 }
 
@@ -586,7 +607,46 @@ class Builder {
     if (item.credential != CredentialKind::kNone) {
       map_.has_credential_fields = true;
     }
+    if (kind == ItemKind::kSelect && !node.Has(kStateProtected)) {
+      item.options = SelectOptionNames(order_[pos].node);
+    }
     return item;
+  }
+
+  // A select's options, as VoicePageController::OptionsOf() names them:
+  // its option descendants (a collapsed select's are invisible) in tree
+  // order, disabled ones left out, an option's own children not searched.
+  std::vector<std::string> SelectOptionNames(uint32_t index) {
+    std::vector<std::string> names;
+    std::vector<uint32_t> stack;
+    const auto push_children = [&](uint32_t at) {
+      const std::vector<uint32_t>& children = tree_->nodes[at].children;
+      for (size_t k = children.size(); k-- > 0;) {
+        if (children[k] < tree_->nodes.size()) {
+          stack.push_back(children[k]);
+        }
+      }
+    };
+    push_children(index);
+    size_t visited = 0;
+    while (!stack.empty() && visited < kMaxSelectOptionNodes &&
+           names.size() < kMaxSelectOptions && Spend(1)) {
+      ++visited;
+      const uint32_t at = stack.back();
+      stack.pop_back();
+      const PageNode& node = tree_->nodes[at];
+      if (node.role == PageRole::kOption) {
+        if (!node.Has(kStateDisabled)) {
+          std::string name = SpeechSafeText(node.name, kMaxSelectOptionChars);
+          if (!name.empty()) {
+            names.push_back(std::move(name));
+          }
+        }
+        continue;
+      }
+      push_children(at);
+    }
+    return names;
   }
 
   // ---- Headings, landmarks, media ----------------------------------------

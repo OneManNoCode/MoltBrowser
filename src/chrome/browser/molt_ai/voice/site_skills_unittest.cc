@@ -429,15 +429,15 @@ TEST(SiteSkillsTest, WikipediaArticle) {
   const SkillReadingScope scope =
       ReadingScopeFor(Skill("wikipedia"), tree, PageMapLimits());
   ASSERT_TRUE(scope.root.valid());
-  // The article's main landmark (mw-content-text wraps blocks only, so the
-  // tree has no id for it).
-  bool root_is_main = false;
+  // The article's text, mw-content-text: an element with an id is in the
+  // tree (Blink keeps it as a target for a link within the page).
+  bool root_is_the_text = false;
   for (const PageNode& node : tree.nodes) {
     if (node.handle == scope.root) {
-      root_is_main = node.role == PageRole::kMain;
+      root_is_the_text = node.html_id == "mw-content-text";
     }
   }
-  EXPECT_TRUE(root_is_main);
+  EXPECT_TRUE(root_is_the_text);
   // Edit links (4), reference marks (2), the infobox, the references, the
   // navbox, the categories and the jump link.
   EXPECT_EQ(scope.skip.size(), 11u);

@@ -270,6 +270,29 @@ browser_test_filter() {
     | sed -E 's/.*\(\s*//' | sort -u | sed 's/.*/*&.*/' | paste -sd: -
 }
 
+# A crashed test that printed nothing, run again on its own, in-process, so
+# its output reaches the summary (molt_test_summary.py), at most 3.
+rerun_silent_crashes() {
+  local dir="$1" binary="$2" name
+  mkdir -p "$dir/rerun"
+  # Under gdb when there is one: a crash that prints nothing (a stack
+  # overflow can take the crash handler with it) still gets its stack.
+  local gdb=()
+  if command -v gdb >/dev/null 2>&1 ||
+      sudo apt-get install -y -qq gdb >/dev/null 2>&1; then
+    gdb=(gdb -q -batch -ex "set pagination off" -ex run
+         -ex "bt 40" -ex "bt -25" -ex "info registers rip rsp" --args)
+  fi
+  python3 "$ROOT/tools/ci/molt_test_summary.py" --silent-crashes "$dir" "$binary" |
+    while read -r name; do
+      [ -n "$name" ] || continue
+      say "running $name again on its own"
+      timeout 300 xvfb-run -a -s "-screen 0 1600x1200x24" "${gdb[@]}" \
+        "$OUT/$binary" --single-process-tests --gtest_filter="$name" \
+        > "$dir/rerun/$binary.$name.log" 2>&1 || true
+    done
+}
+
 cmd_test() {
   local dir="$1" rc=0
   mkdir -p "$dir"
@@ -291,6 +314,7 @@ cmd_test() {
     rc=$((rc | $?))
     set -e
     tail -5 "$dir/molt_ai_unittests.log"
+    rerun_silent_crashes "$dir" molt_ai_unittests
   else
     echo "molt_ai_unittests was not built" | tee "$dir/molt_ai_unittests.log"
     rc=1
@@ -301,9 +325,15 @@ cmd_test() {
     echo "$filter" | tr ':' '\n' > "$dir/browser_tests.filter"
     say "browser_tests: $(wc -l < "$dir/browser_tests.filter") MoltBrowser fixtures"
     set +e
+    # A wait that never ends fails after 30 s (Chromium's own action
+    # timeout), so its message is printed; the test as a whole may take
+    # 150 s (one with many spoken steps on a slow DCHECK build). With the
+    # action timeout at the test's, the launcher killed a stuck test before
+    # its wait could say what it was waiting for.
     xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/browser_tests" \
       --gtest_filter="$filter" --test-launcher-jobs=4 \
-      --test-launcher-retry-limit=1 --ui-test-action-max-timeout=120000 \
+      --test-launcher-retry-limit=1 --ui-test-action-max-timeout=30000 \
+      --test-launcher-timeout=150000 \
       --test-launcher-summary-output="$dir/browser_tests.json" \
       > "$dir/browser_tests.log" 2>&1
     rc=$((rc | $?))

@@ -62,7 +62,8 @@ those three are heard, "Hey Molt" included: say "stop", then what you want,
 or wait until it has finished. Voice mode tells you so when it starts. Voice mode never cuts a page's reading
 short: its own answer waits until the page has finished, and "stop" stops
 only voice mode's speech. Each state has a short sound: a rising tone when it
-heard "Hey Molt", a tick when it took a command, a falling tone when it
+heard "Hey Molt" and you paused (none when you go straight on, so it never
+plays over your words), a tick when it took a command, a falling tone when it
 goes back to waiting for "Hey Molt".
 
 You can also type the commands, without the microphone, in Agent mode's
@@ -101,7 +102,12 @@ and the bar only.
 - **Before anything that can't be undone,** such as buying, paying,
   deleting, sending, posting, subscribing, signing out or sending a form,
   the browser asks "Say yes to press ..." and does it only if your next
-  words are "yes".
+  words are "yes". Ticking a box or choosing an option never asks ("check
+  send me the newsletter"): only the button that sends the form does.
+- **Lists to choose from** (a country, a size): say the list's name
+  ("click country") and the browser reads its options; then "choose
+  France". "Choose France" alone works too when only one list on the page
+  has France.
 - **When a page tries something after the browser clicks for you,** such
   as opening another site in a new window, downloading a file or opening
   another app, the browser asks first: "The page tried to open a new
@@ -422,6 +428,7 @@ said.
 
 - `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site} in [a] new tab`
 - `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site}`
+- `hoping {site}`
 - `{address}`
 
 **Search: on the site you are on (or the search engine when it has no search box), the web, or a site you name.** For example: "search for Bohemian Rhapsody".
@@ -454,6 +461,7 @@ said.
 
 - `(go | navigate | take me) back [a page | one page | to the (previous | last) page]`
 - `(back | previous page | last page | go to the previous page)`
+- `feel back`
 
 **Go forward again.** For example: "go forward".
 
@@ -464,6 +472,7 @@ said.
 
 - `(reload | refresh) [the | this] [page | tab | site | website | it]`
 - `load [the | this] page again`
+- `roulette`
 
 **Stop loading the page.** For example: "stop loading".
 
@@ -487,6 +496,7 @@ said.
 **Close this tab, or a tab by number or name.** For example: "close this tab".
 
 - `close [this | the | current] tab`
+- `close (this | the) ted`
 - `close tab {tab}`
 - `close [the] {tab} tab`
 
@@ -494,7 +504,8 @@ said.
 
 - `[go to | switch to | move to] [the] next tab`
 - `[go to | switch to | move to] [the] previous tab`
-- `(switch | go | change | move | jump) to tab {tab}`
+- `[go to | switch to | move to] [the] previous tomb`
+- `(switch | go | change | move | jump) to (tab | tip) {tab}`
 - `tab {tab}`
 - `(switch | go | change | move | jump) to [the] {tab} tab`
 - `switch to {tab}`
@@ -528,7 +539,7 @@ said.
 
 **Go to the bottom of the page.** For example: "scroll to the bottom".
 
-- `(scroll | go | jump | move) [down] to the (bottom | end) [of the page]`
+- `(scroll | girl | go | jump | move) [down] to the (bottom | end) [of the page]`
 - `(bottom of [the] page | page bottom | scroll bottom)`
 
 **Make everything bigger.** For example: "zoom in".
@@ -541,7 +552,7 @@ said.
 
 **Back to the normal size.** For example: "reset zoom".
 
-- `((reset | normal | default) zoom | zoom (reset | normal | to normal | back to normal) | (actual | normal | original | default) size | reset [the] zoom level)`
+- `((reset | rosetta | normal | default) zoom | zoom (reset | normal | to normal | back to normal) | (actual | normal | original | default) size | reset [the] zoom level)`
 
 ## Media
 
@@ -570,6 +581,7 @@ said.
 
 - `[set | turn | change | put] [the] volume [to | at] {level}`
 - `{level} volume`
+- `said [the] volume (to | at) {level}`
 
 **Mute the sound.** For example: "mute".
 
@@ -623,6 +635,7 @@ said.
 
 - `(turn on | show | enable | switch on | start | put on) [the] (captions | subtitles | closed captions | cc | subtitle)`
 - `(captions | subtitles | closed captions | cc) on`
+- `turn on [the] catchens`
 
 **Hide captions.** For example: "captions off".
 
@@ -651,6 +664,7 @@ said.
 **Skip the ad, once the player lets you.** For example: "skip the ad".
 
 - `skip [the | this | these] (ad | ads | advert | adverts | advertisement | advertisements | commercial)`
+- `skip (the | this) ed`
 
 ## Reading
 
@@ -680,6 +694,7 @@ said.
 **Read the page's title.** For example: "read the title".
 
 - `(read | say | tell me) the (title | page title | title of the page | name of the page | page name)`
+- `read the tile`
 - `(what is | whats) the (title | page title | title of the page | name of (this | the) page)`
 
 **Read the selected text.** For example: "read the selection".
@@ -777,7 +792,7 @@ said.
 
 **Put numbers on everything you can choose.** For example: "show numbers".
 
-- `(show [me] [the] (numbers | labels | number labels) | (numbers | labels) on | (number | label) everything | turn on [the] (numbers | labels))`
+- `((show | joe) [me] [the] (numbers | labels | number labels) | (numbers | labels) on | (number | label) everything | turn on [the] (numbers | labels))`
 
 **Take the numbers away.** For example: "hide numbers".
 
@@ -787,7 +802,7 @@ said.
 
 **Type into the selected field.** For example: "type hello world".
 
-- `(type | write | dictate) {text}`
+- `(type | write | dictate | tight) {text}`
 
 **Start a new line.** For example: "new line".
 
@@ -825,6 +840,7 @@ said.
 
 - `(no | nope | nah | negative | wrong | incorrect | no way) [dont | dont do it | do not | i dont | its not | it isnt | it is not | not that one | cancel]` (when the browser has asked a yes-or-no question)
 - `(dont | do not) [do it | do that]` (when the browser has asked a yes-or-no question)
+- `now` (when the browser has asked a yes-or-no question)
 
 **Cancel what you asked for.** For example: "cancel".
 
@@ -918,9 +934,9 @@ said.
 
 **Reopen the tab you closed last.** For example: "reopen the closed tab".
 
-- `(reopen | restore | bring back | undo close) [the] [last] [closed] tab`
+- `(reopen | restore | bring back | undo close | reuben) [the] [last] [closed | close] (tab | tip)`
 - `(reopen | restore | bring back | open again) the [last] tab i [just] closed`
-- `open [the] [last] closed tab`
+- `open [the] [last] (closed | close) (tab | tip)`
 
 **Open a page from your history by its site or title.** For example: "open the weather from my history".
 
@@ -932,6 +948,7 @@ said.
 - `(open | show) [me] [the] downloads [page | folder]`
 - `what (did i | have i) download [recently]`
 - `my downloads`
+- `(to | draw) my downloads`
 
 **Open a downloaded file: the last one, or by its number. A file that can run programs isn't opened by voice.** For example: "open the last download".
 
@@ -968,8 +985,8 @@ said.
 
 - `(open | new | start | create) [a] [new] (private | incognito) window`
 - `(private | incognito) window`
-- `(open | new | start | create) [a] [new] (moltnet | molt net | mold net | tor) window`
-- `(moltnet | molt net | mold net) window`
+- `(open | new | start | create) [a] [new] (moltnet | molt net | mold net | moldnet | moldenet | moldenate | mold the | tor) window`
+- `(moltnet | molt net | mold net | moldnet | moldenet) window`
 - `(open | start | create) [a] new window`
 - `(new window | open [a] window | open another window)`
 
@@ -985,10 +1002,11 @@ said.
 **Ask the on-device AI a question. Its answer is read to you, and nothing is done because of it.** For example: "ask the AI how far away is the moon".
 
 - `ask (the ai | ai | the assistant | the ai assistant | molt ai | the chat | the ai chat | the eye | the a chat) [about | whether | if] {query}`
+- `as (the ai | the assistant | the ai assistant) {query}`
 
 **Open the AI chat beside the page.** For example: "open the AI chat".
 
-- `(open | show | start) [me] [the] (ai chat | ai | chat | assistant | ai assistant | ai panel | chat panel | a chat | eye chat)`
+- `(open | show | start) [me] [the] (ai chat | ai | chat | assistant | ai assistant | ai panel | chat panel | a chat | achat | eye chat | ai checked)`
 
 **Hear the browser's own buttons (the toolbar, the tabs, the bookmarks bar, the side panel), to press one by number or name.** For example: "show the browser's buttons".
 

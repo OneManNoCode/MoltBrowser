@@ -10,6 +10,7 @@ import re
 import stat
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +48,7 @@ class Player(object):
     def __init__(self, scs):
         self.texts = {s.id: [st.value for st in s.steps] for s in scs}
         self.played = []
+        self.played_at = {}
 
     def play(self, wav):
         run_dir = os.path.dirname(os.path.dirname(wav))
@@ -54,6 +56,7 @@ class Player(object):
         i = int(re.search(r"step(\d+)\.wav$", wav).group(1)) - 1
         text = self.texts[sid][i]
         self.played.append(text)
+        self.played_at.setdefault(sid, []).append(time.time())
         with open(os.path.join(run_dir, "fake-mic.txt"), "a") as f:
             f.write(text + "\n")
 
@@ -99,6 +102,37 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(res["t-quiet"]["status"], "passed", res["t-quiet"])
         self.assertEqual(res["t-word"]["status"], "skipped")
 
+    def test_microphone_levels(self):
+        import struct
+        pcm = struct.pack("<16000h", *([0] * 16000)) + \
+            struct.pack("<16000h", *([16384] + [0] * 15999))
+        self.assertEqual(runner.mic_levels(pcm), [-120, -6])
+
+    def test_a_run_without_the_loopback_is_labelled(self):
+        self.assertEqual(runner.RunConfig(audio="pulse").label, "pulse/clean")
+        self.assertEqual(runner.RunConfig(audio="pulse", loopback=False).label,
+                         "pulse/clean-noloop")
+        self.assertEqual(runner.RunConfig(audio="file", loopback=False).label,
+                         "file/clean")
+        self.assertEqual(
+            runner.RunConfig(audio="pulse", echo_cancellation=False).label,
+            "pulse/clean-noaec")
+
+    def test_a_run_without_echo_cancellation_disables_it(self):
+        cfg = runner.RunConfig(audio="pulse", echo_cancellation=False)
+        r = runner.Runner(self.exe, os.path.join(self.d, "speech"),
+                          os.path.join(self.d, "report"), FakeServer(), "spki", cfg,
+                          log=lambda *a: None)
+        self.assertIn("--disable-features=ChromeWideEchoCancellation", r.flags("log"))
+
+    def test_shields_off_disables_molt_shield(self):
+        cfg = runner.RunConfig(audio="typed", settle=0.2)
+        r = runner.Runner(self.exe, os.path.join(self.d, "speech"),
+                          os.path.join(self.d, "report"), FakeServer(), "spki", cfg,
+                          log=lambda *a: None)
+        self.assertNotIn("--disable-molt-shield", r.flags("log"))
+        self.assertIn("--disable-molt-shield", r.flags("log", shields=False))
+
     def test_typed(self):
         cfg = runner.RunConfig(audio="typed", settle=0.2)
         r = runner.Runner(self.exe, os.path.join(self.d, "speech"),
@@ -135,12 +169,25 @@ class RunnerTest(unittest.TestCase):
         render.render_all(StubTts(speech, words), speech, texts, voices=render.VOICES[:1],
                           speeds=(1.0,), conditions=("clean",), log=lambda *a: None)
         player = Player(self.scs)
-        cfg = runner.RunConfig(audio="pulse", settle=0.2, voices=["ljspeech"], speeds=[1.0])
+        cfg = runner.RunConfig(audio="pulse", settle=0.5, voices=["ljspeech"], speeds=[1.0])
         r = runner.Runner(self.exe, speech, os.path.join(self.d, "report"), FakeServer(),
                           "spki", cfg, player=player, log=lambda *a: None)
         run = r.run(self.scs, modes=["wake"])
         self.check(run, typed=False)
         self.assertIn("open YouTube", player.played)
+        # Each step with the wake phrase was said once voice mode waited for
+        # it again (the follow-up window closed), not as a follow-up.
+        with open(os.path.join(self.d, "report", by_id(run)["t-owner"]["log"])) as f:
+            lines = [json.loads(line) for line in f]
+        heard = [e for e in lines if e["e"] == "heard"]
+        self.assertEqual(len(heard), 4)
+        self.assertTrue(all(h["waiting"] for h in heard), heard)
+        # And not at once: the settle time after it started waiting (its tone).
+        waits = [e["t"] / 1000.0 for e in lines
+                 if e["e"] == "activity" and e.get("waiting")]
+        for at in player.played_at["t-owner"]:
+            since = at - max(w for w in waits if w <= at)
+            self.assertGreaterEqual(since, 0.45, (at, waits))
         owner = by_id(run)["t-owner"]
         self.assertEqual(owner["voice"], "ljspeech")
         # The WAV the player got starts with the wake phrase.

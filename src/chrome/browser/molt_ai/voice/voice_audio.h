@@ -45,6 +45,8 @@
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_AUDIO_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_AUDIO_H_
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -53,6 +55,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequence_bound.h"
 #include "chrome/browser/molt_ai/voice/voice_audio_samples.h"
 #include "chrome/browser/molt_ai/voice/voice_listener.h"
@@ -66,6 +69,8 @@ class AudioSystem;
 
 namespace molt_ai {
 namespace voice {
+
+class VoiceTestAudio;
 
 // Which echo canceller the microphone gets.
 enum class EchoCancellation {
@@ -110,9 +115,22 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   // Asks the OS for the microphone if it hasn't yet, then captures.
   void Start();
   void Stop();
+  // Stops, and forgets the delegate: for a VoiceAudio that is deleted
+  // later (DeleteSoon()) than its delegate may be.
+  void Release();
   bool capturing() const { return source_ != nullptr; }
 
-  // media::AudioCapturerSource::CaptureCallback:
+  // What the microphone gave since the last call, from the capture
+  // thread's counts: its loudest sample (0 to 1, of the first channel) and
+  // how many samples. For the voice test log (voice_test_log.h).
+  struct Levels {
+    float peak = 0;
+    int64_t samples = 0;
+  };
+  Levels TakeLevels();
+
+  // media::AudioCapturerSource::CaptureCallback (OnCaptureStarted() and
+  // Capture() on the audio thread, OnCaptureError() on either):
   void OnCaptureStarted() override;
   void Capture(const media::AudioBus* audio_source,
                base::TimeTicks audio_capture_time,
@@ -126,16 +144,31 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   void OnPermissionAsked();
   void OnDeviceParameters(const std::optional<media::AudioParameters>& params);
   void Open(EchoCancellation echo);
+  // OnCaptureStarted() and OnCaptureError(), back on this sequence.
+  void CaptureStarted();
+  void CaptureError(media::AudioCapturerSource::ErrorCode code,
+                    const std::string& message);
 
   SEQUENCE_CHECKER(sequence_checker_);
   raw_ptr<Delegate> delegate_;
   const scoped_refptr<VoiceListener::AudioSink> sink_;
+  // With --molt-voice-test-audio (a test switch), what the helper gets is
+  // also written there (voice_test_audio.h); else null.
+  const scoped_refptr<VoiceTestAudio> test_audio_;
   std::unique_ptr<media::AudioSystem> audio_system_;
   scoped_refptr<media::AudioCapturerSource> source_;
   EchoCancellation echo_ = EchoCancellation::kNone;
   bool starting_ = false;
+  // Set on this sequence before the stream starts, for the audio thread's
+  // OnCaptureStarted() (no callback comes after Stop()).
+  scoped_refptr<base::SequencedTaskRunner> owner_;
+  base::WeakPtr<VoiceAudio> started_self_;
   // The capture thread's.
   AudioFrameChunker chunker_;
+  // Written by the capture thread, taken here (TakeLevels()): the peak in
+  // millionths, and the samples.
+  std::atomic<uint32_t> peak_millionths_{0};
+  std::atomic<int64_t> samples_{0};
   base::WeakPtrFactory<VoiceAudio> weak_factory_{this};
 };
 
