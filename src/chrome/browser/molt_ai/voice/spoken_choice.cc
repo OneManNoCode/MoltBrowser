@@ -75,9 +75,6 @@ constexpr size_t kMaxFieldWords = 24;
 // Distinct words compared across all items; words past it match nothing.
 constexpr uint32_t kMaxVocabulary = 32768;
 constexpr uint32_t kNoWord = UINT32_MAX;
-// Items whose scores are this close to the best are tied (MatchDescription()'s
-// tie broken by a name said whole).
-constexpr double kNamedTieBand = 0.02;
 
 enum Group : uint8_t { kDescription = 0, kBy = 1, kFrom = 2 };
 
@@ -983,7 +980,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     size_t named = 0;
     size_t named_index = 0;
     for (const Scored& s : scored) {
-      if (top - s.score > kNamedTieBand) {
+      // Among the ranked ones (ChoiceMatch::ranked), as the outcome says.
+      if (top - s.score > kNamedTieBand || tied >= options.max_ranked) {
         break;
       }
       ++tied;

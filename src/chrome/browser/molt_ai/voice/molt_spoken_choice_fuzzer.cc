@@ -160,10 +160,25 @@ void CheckMatch(const ChoiceMatch& m,
       CHECK(m.reason == NoMatchReason::kNone);
       CHECK(!m.ranked.empty());
       if (ref.kind == ChoiceRef::Kind::kDescription && ref.ordinal == 0) {
-        CHECK_EQ(m.ranked[0].index, m.index);
         CHECK_GE(m.ranked[0].score, options.min_score);
         const double second = m.ranked.size() > 1 ? m.ranked[1].score : 0.0;
-        CHECK_GE(m.ranked[0].score - second, options.margin - 1e-9);
+        const bool lead = m.ranked[0].index == m.index &&
+                          m.ranked[0].score - second >= options.margin - 1e-9;
+        if (!lead) {
+          // A tie broken by a name said whole: the one chosen is among two
+          // or more ranked items as good as the best.
+          size_t tied = 0;
+          bool chosen_tied = false;
+          for (const molt_ai::voice::RankedChoice& r : m.ranked) {
+            if (m.ranked[0].score - r.score <=
+                molt_ai::voice::kNamedTieBand + 1e-9) {
+              ++tied;
+              chosen_tied = chosen_tied || r.index == m.index;
+            }
+          }
+          CHECK(chosen_tied);
+          CHECK_GE(tied, 2u);
+        }
       }
       break;
     case ChoiceOutcome::kAmbiguous: {

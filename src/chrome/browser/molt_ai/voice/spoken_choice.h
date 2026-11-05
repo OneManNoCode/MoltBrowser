@@ -43,8 +43,10 @@
 //     is read as plain description words ("Stand by me").
 //   - An item's score is the weighted mean of its words' matches, in
 //     [0, 1]. Below kMinChoiceScore nothing matches; a lead of at least
-//     kChoiceMargin over the next item makes the best one unique;
-//     otherwise the items within the margin are ambiguous.
+//     kChoiceMargin over the next item makes the best one unique; so does
+//     a tie (kNamedTieBand) that one item's title, the words said and
+//     nothing more, breaks ("click cart": Cart (1), not Add toaster to
+//     cart); otherwise the items within the margin are ambiguous.
 //
 // Not settled here: descriptions about things the items don't say ("the
 // shortest one", "the newest"). Those score low (no match) or tie
@@ -275,6 +277,12 @@ struct MatchOptions {
   double margin = kChoiceMargin;
   size_t max_ranked = kMaxRankedChoices;
 };
+
+// Items that score within this of the best are tied: when exactly one of
+// them is named by the words said and nothing else ("Cart (1)" for
+// "cart"), it is the unique match (one of the ranked items, not always the
+// first).
+inline constexpr double kNamedTieBand = 0.02;
 
 enum class ChoiceOutcome : uint8_t {
   kUnique,
