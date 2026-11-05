@@ -1281,6 +1281,10 @@ bool VoiceController::RunStep(const VoiceStep& step) {
     case VoiceStepKind::kPlayMedia:
       return page_result(page ? page->PlayMedia(step.target)
                               : ActionResult::kNotActive);
+    case VoiceStepKind::kSelectOption:
+      // The option by its name, as the map read it (PageItem::options).
+      return page_result(page ? page->SelectOption(step.target, step.text)
+                              : ActionResult::kNotActive);
     case VoiceStepKind::kFocus:
       return page_result(page ? page->Focus(step.target)
                               : ActionResult::kNotActive);

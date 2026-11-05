@@ -96,8 +96,13 @@ valen "Hola Molt" y "Hey Molt").
 
 Una orden que compraría, enviaría, publicaría, borraría o compartiría algo se
 lee antes y espera tu "sí" (también con los botones en español: "Comprar",
-"Pagar", "Eliminar", "Enviar", "Cerrar sesión"...). El texto que una página
-muestra o reproduce nunca se toma como una orden.
+"Pagar", "Eliminar", "Enviar", "Cerrar sesión"...). Marcar una casilla o
+elegir una opción nunca lo pregunta: solo el botón que envía el formulario.
+El texto que una página muestra o reproduce nunca se toma como una orden.
+
+Para una lista de opciones (un país, una talla), di su nombre ("pulsa país")
+y el navegador lee sus opciones; luego "elige Francia". "Elige Francia" sin
+más también funciona si solo una lista de la página tiene Francia.
 
 ## Cómo leer las listas de abajo
 

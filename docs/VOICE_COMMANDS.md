@@ -101,7 +101,12 @@ and the bar only.
 - **Before anything that can't be undone,** such as buying, paying,
   deleting, sending, posting, subscribing, signing out or sending a form,
   the browser asks "Say yes to press ..." and does it only if your next
-  words are "yes".
+  words are "yes". Ticking a box or choosing an option never asks ("check
+  send me the newsletter"): only the button that sends the form does.
+- **Lists to choose from** (a country, a size): say the list's name
+  ("click country") and the browser reads its options; then "choose
+  France". "Choose France" alone works too when only one list on the page
+  has France.
 - **When a page tries something after the browser clicks for you,** such
   as opening another site in a new window, downloading a file or opening
   another app, the browser asks first: "The page tried to open a new

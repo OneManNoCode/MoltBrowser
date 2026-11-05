@@ -116,6 +116,13 @@ inline constexpr int64_t kConfirmationTimeoutMs = 30000;
 inline constexpr int kDefaultSkipSeconds = 10;
 // Increments per "louder" or "quieter" on a page's volume slider.
 inline constexpr int kVolumeSteps = 2;
+// A select chosen says at most this many of its options.
+inline constexpr size_t kMaxSaidOptions = 8;
+// "Much louder", "a lot quieter": this many times kVolumeSteps.
+inline constexpr int kMuchVolumeFactor = 3;
+// How well "open X" must name something on the page to open it rather
+// than search the web for X (spoken_choice.h's scores).
+inline constexpr double kOpenOnThePageMinScore = 0.8;
 
 // ---------------------------------------------------------------------------
 // Steps
@@ -175,6 +182,9 @@ enum class VoiceStepKind : uint8_t {
   kAskPage,
   // The rest of the browser (voice_browser_types.h): |browser_action|.
   kBrowserAction,
+  // |target|, a select: choose its option named |text| (one of
+  // PageItem::options).
+  kSelectOption,
 };
 
 // What a kRead step asks of the reader.
@@ -400,6 +410,10 @@ struct ConversationState {
   // The text field being typed into.
   PageNodeHandle field;
   int64_t field_page_id = -1;
+  // The select last chosen ("click country"), whose options "choose
+  // France" names first.
+  PageNodeHandle select;
+  int64_t select_page_id = -1;
 
   // "Next heading", "next link": 1-based positions on |cursor_page_id|.
   int heading_cursor = 0;

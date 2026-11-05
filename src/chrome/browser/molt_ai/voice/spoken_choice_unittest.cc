@@ -639,6 +639,36 @@ TEST(SpokenChoiceMatchTest, RankedAndClose) {
   EXPECT_EQ(Match("Bohemian Rhapsody", list, options).ranked.size(), 3u);
 }
 
+// Of items that all have the words said, the one named by them alone is
+// meant: "cart" is the cart, not "Add the toaster to the cart".
+TEST(SpokenChoiceMatchTest, ANameSaidWholeBreaksATie) {
+  const auto items = MakeList({{"Cart (1)", ""},
+                               {"Add kettle to cart", ""},
+                               {"Add toaster to cart", ""},
+                               {"Add mug to cart", ""}},
+                              ChoiceRole::kButton);
+  ChoiceMatch m = Match("cart", items);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique) << Describe(m, items);
+  EXPECT_EQ(m.index, 0u);
+  // A plural is the same name ("carts").
+  m = Match("carts", items);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(m.index, 0u);
+  // Words more than the name don't break it: still the toaster's.
+  m = Match("toaster cart", items);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(m.index, 2u);
+  // Two items named alike stay a question.
+  const auto twins = MakeList(
+      {{"Cart", ""}, {"Cart (2)", ""}, {"Add to cart", ""}}, ChoiceRole::kButton);
+  EXPECT_EQ(Match("cart", twins).outcome, ChoiceOutcome::kAmbiguous);
+  // A title the words only start ("Bohemian Rhapsody" among the versions)
+  // isn't one named whole.
+  const auto songs = SongResults();
+  EXPECT_EQ(Match("Bohemian Rhapsody", songs).outcome,
+            ChoiceOutcome::kAmbiguous);
+}
+
 TEST(SpokenChoiceMatchTest, Diacritics) {
   const auto list = MakeList({{"Beyonc\xC3\xA9 - Halo", ""},
                               {"Sigur R\xC3\xB3s - Hopp\xC3\xADpolla", ""},

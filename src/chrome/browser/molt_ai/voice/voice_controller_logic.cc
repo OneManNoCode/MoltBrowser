@@ -82,6 +82,23 @@ std::vector<std::string> SplitWords(const std::string& folded) {
   return words;
 }
 
+// |a| and |b| are the same word, or one is the other's plural ("s",
+// "es").
+bool SameWordOrPlural(std::string_view a, std::string_view b) {
+  if (a == b) {
+    return true;
+  }
+  const auto plural = [](std::string_view longer, std::string_view word) {
+    if (word.size() < 3 || longer.size() <= word.size() ||
+        longer.substr(0, word.size()) != word) {
+      return false;
+    }
+    const std::string_view tail = longer.substr(word.size());
+    return tail == "s" || tail == "es";
+  };
+  return plural(a, b) || plural(b, a);
+}
+
 bool HasWord(const std::vector<std::string>& words, std::string_view word) {
   return std::find(words.begin(), words.end(), word) != words.end();
 }
@@ -498,18 +515,9 @@ class Planner : public TurnPlanner {
         PlanVolumeLevel(command.level, *this);
         break;
       case K::kMute:
-      case K::kUnmute: {
-        const bool mute = command.kind == K::kMute;
-        if (env_.muted == mute) {
-          Say(mute ? "It's already muted." : "It isn't muted.");
-          break;
-        }
-        VoiceStep step = Step(VoiceStepKind::kMute);
-        step.flag = mute;
-        Add(std::move(step));
-        Say(mute ? "Muted." : "Sound on.");
+      case K::kUnmute:
+        Mute(command.kind == K::kMute);
         break;
-      }
       case K::kSkipForward:
       case K::kSkipBack: {
         if (!env_.media_session) {
@@ -534,6 +542,9 @@ class Planner : public TurnPlanner {
         break;
       case K::kNextTrack:
       case K::kPreviousTrack:
+        if (PlayerNext(command.kind == K::kNextTrack)) {
+          break;
+        }
         if (!env_.media_session) {
           Say("Nothing is playing.");
           break;
@@ -1158,8 +1169,19 @@ class Planner : public TurnPlanner {
     bool uses_current = false;
   };
 
-  void Choose(const ChoiceRef& ref, ChoiceVerb verb) {
+  void Choose(const ChoiceRef& spoken_ref, ChoiceVerb verb) {
     ConversationState& s = state();
+    // "Play number seven" with no numbers on screen: the user can't see
+    // the items' numbers, so the seventh of the page's results (as "the
+    // seventh one"), when the page has them.
+    ChoiceRef ref = spoken_ref;
+    if (ref.kind == ChoiceRef::Kind::kNumber && !s.numbers_shown &&
+        s.list == ListContext::kNone && ref.number > 0 &&
+        Locate(SitePart::kResultList, /*record=*/false).list) {
+      ref.kind = ChoiceRef::Kind::kPosition;
+      ref.ordinal = ref.number;
+      ref.from_end = false;
+    }
     if (verb == ChoiceVerb::kDefault && !s.offered.empty()) {
       verb = s.offered_verb;
     }
@@ -1216,6 +1238,10 @@ class Planner : public TurnPlanner {
       attempts.push_back(std::move(items));
     }
 
+    // "Choose France" after "click country": that list's options first.
+    if (ChooseOption(ref, /*any_select=*/false)) {
+      return;
+    }
     NoMatchReason reason = NoMatchReason::kNoCandidates;
     bool first = true;
     for (Attempt& attempt : attempts) {
@@ -1243,7 +1269,97 @@ class Planner : public TurnPlanner {
         break;
       }
     }
+    // Nothing on the page is called that: an option of one of its lists.
+    if (ChooseOption(ref, /*any_select=*/true)) {
+      return;
+    }
     NoMatch(ref, reason);
+  }
+
+  // What a select chosen says: "Country list, set to Choose a country. Its
+  // options: France, Spain, Italy, Germany. Say choose, then one."
+  std::string SelectSpeech(const std::string& name, const PageItem& select) {
+    std::string options;
+    const size_t said = std::min(select.options.size(), kMaxSaidOptions);
+    for (size_t i = 0; i < said; ++i) {
+      options += (i ? ", " : "") + PageText(select.options[i]);
+    }
+    if (select.options.size() > said) {
+      options = Tr("{0}, and {1} more",
+                   {options, std::to_string(select.options.size() - said)});
+    }
+    const std::string value = PageText(select.value);
+    return value.empty()
+               ? Tr("{0} list. Its options: {1}. Say choose, then one.",
+                    {name, options})
+               : Tr("{0} list, set to {1}. Its options: {2}. Say choose, "
+                    "then one.",
+                    {name, value, options});
+  }
+
+  // Chooses the option |ref| names: of the select last chosen on this page,
+  // or (|any_select|) of the one list on the page that has an option so
+  // named. False when none does, clearly.
+  bool ChooseOption(const ChoiceRef& ref, bool any_select) {
+    if (ref.kind != ChoiceRef::Kind::kDescription) {
+      return false;
+    }
+    ConversationState& s = state();
+    std::vector<const PageItem*> selects;
+    if (!any_select) {
+      if (!s.select.valid() || s.select_page_id != env_.page_id) {
+        return false;
+      }
+      const PageItem* current = map_.ItemForHandle(s.select);
+      if (current && current->kind == ItemKind::kSelect) {
+        selects.push_back(current);
+      }
+    } else {
+      for (const PageItem& item : map_.items) {
+        if (item.kind == ItemKind::kSelect && !item.options.empty() &&
+            !item.disabled) {
+          selects.push_back(&item);
+        }
+      }
+    }
+    const PageItem* chosen_select = nullptr;
+    std::string chosen;
+    for (const PageItem* select : selects) {
+      std::vector<ChoiceCandidate> candidates;
+      for (size_t i = 0; i < select->options.size(); ++i) {
+        ChoiceCandidate c;
+        c.position = static_cast<int>(i + 1);
+        c.role = ChoiceRole::kOption;
+        c.title = select->options[i];
+        candidates.push_back(std::move(c));
+      }
+      MatchOptions options;
+      options.language = env_.language;
+      options.min_score = any_select ? kOpenOnThePageMinScore : kMinChoiceScore;
+      const ChoiceMatch match = MatchSpokenChoice(ref, candidates, options);
+      if (match.outcome != ChoiceOutcome::kUnique) {
+        continue;
+      }
+      if (chosen_select) {
+        return false;  // two lists have it: "choose" one of them first
+      }
+      chosen_select = select;
+      chosen = select->options[match.index];
+    }
+    if (!chosen_select) {
+      return false;
+    }
+    VoiceStep step = NodeStep(VoiceStepKind::kSelectOption,
+                              chosen_select->handle, PageText(chosen));
+    step.text = chosen;
+    Add(std::move(step));
+    s.select = chosen_select->handle;
+    s.select_page_id = env_.page_id;
+    s.offered.clear();
+    s.expecting_choice = false;
+    Status(Tr("Chose {0}", {PageText(chosen)}));
+    Say(Tr("Chose {0}.", {PageText(chosen)}));
+    return true;
   }
 
   void Chosen(const Attempt& attempt, size_t index, ChoiceVerb verb) {
@@ -1463,11 +1579,22 @@ class Planner : public TurnPlanner {
         }
         return;
       }
+      case ItemKind::kSelect:
+        if (item && !item->options.empty()) {
+          // Focused (a press would open its pop-up, which voice mode
+          // can't read), its options said; "choose France" then names one.
+          Add(NodeStep(VoiceStepKind::kFocus, target.handle, name));
+          state().select = target.handle;
+          state().select_page_id = env_.page_id;
+          Status(Tr("List: {0}", {name}));
+          Say(SelectSpeech(name, *item));
+          return;
+        }
+        [[fallthrough]];
       case ItemKind::kButton:
       case ItemKind::kCheckBox:
       case ItemKind::kRadio:
       case ItemKind::kSwitch:
-      case ItemKind::kSelect:
       case ItemKind::kOption:
       case ItemKind::kMenuItem:
       case ItemKind::kTab:
@@ -1478,7 +1605,18 @@ class Planner : public TurnPlanner {
         VoiceStep said = Step(VoiceStepKind::kSpeak);
         said.text = Tr("Pressed {0}.", {name});
         steps.push_back(said);
-        if (Confirm(steps, name, label, target.url)) {
+        // A box ticked, an option or a tab chosen changes what the form
+        // or the page shows, nothing more ("Send me the newsletter"): only
+        // what can act (a button, a menu item, anything else clickable)
+        // is asked about first.
+        const bool only_state =
+            target.kind == ItemKind::kCheckBox ||
+            target.kind == ItemKind::kRadio ||
+            target.kind == ItemKind::kSwitch ||
+            target.kind == ItemKind::kSelect ||
+            target.kind == ItemKind::kOption || target.kind == ItemKind::kTab ||
+            target.kind == ItemKind::kTreeItem;
+        if (!only_state && Confirm(steps, name, label, target.url)) {
           return;
         }
         Status(Tr("Pressing: {0}", {name}));
@@ -1499,6 +1637,10 @@ class Planner : public TurnPlanner {
   void OpenSite(const VoiceCommand& command) {
     const SiteTarget target = ResolveSpokenSite(
         command.site, command.site_is_address, command.site_words);
+    if (target.kind == SiteTarget::Kind::kUnknown && !command.new_tab &&
+        !command.site_is_address && OpenOnThePage(command.site_words)) {
+      return;
+    }
     if (target.kind == SiteTarget::Kind::kUnknown) {
       const std::string name = PageText(target.name);
       if (name.empty()) {
@@ -1523,6 +1665,37 @@ class Planner : public TurnPlanner {
     Add(WaitStep(FollowUpKind::kAnnounceOpened, target.name));
     // Its name alone opens it again (voice_browser_logic.h).
     NoteOpenedSite(state(), command.site_words, target.name, target.url);
+  }
+
+  // "Open lunch on Friday" on a page with a link of that name: no site is
+  // called that, so the link (or button) the words name clearly, as "click
+  // lunch on Friday" would choose it, rather than a web search for them.
+  // Known sites come first: a page can't take "open YouTube".
+  bool OpenOnThePage(std::string_view spoken) {
+    if (!env_.web_page || map_.items.empty()) {
+      return false;
+    }
+    const std::optional<ChoiceRef> ref =
+        ParseChoiceRef(spoken, env_.language, /*bare_numbers=*/false);
+    if (!ref || ref->kind != ChoiceRef::Kind::kDescription) {
+      return false;
+    }
+    Attempt items;
+    items.set = CandidatesFromItems(map_);
+    items.context = ListContext::kItems;
+    if (items.set.empty()) {
+      return false;
+    }
+    MatchOptions options;
+    options.language = env_.language;
+    options.min_score = kOpenOnThePageMinScore;
+    const ChoiceMatch match =
+        MatchSpokenChoice(*ref, items.set.candidates, options);
+    if (match.outcome != ChoiceOutcome::kUnique) {
+      return false;
+    }
+    Chosen(items, match.index, ChoiceVerb::kOpen);
+    return true;
   }
 
   void SearchTheWeb(const std::string& query, std::string preface) {
@@ -1794,6 +1967,77 @@ class Planner : public TurnPlanner {
     Say("There's nothing to play on this page.");
   }
 
+  // A player's own control, a button or link whose label starts with
+  // |word| ("Mute (m)", "Next (SHIFT+n)"), on a page with a player: the
+  // page's state then says what was done (a tab muted doesn't mute the
+  // player it shows).
+  const PageItem* PlayerControl(std::string_view word) const {
+    if (map_.media.empty()) {
+      return nullptr;
+    }
+    for (const PageItem& item : map_.items) {
+      if ((item.kind != ItemKind::kButton && item.kind != ItemKind::kLink) ||
+          item.disabled) {
+        continue;
+      }
+      const std::vector<std::string> words =
+          SplitWords(FoldForComparison(item.label));
+      if (!words.empty() && words[0] == word && !HasWord(words, "page")) {
+        return &item;
+      }
+    }
+    return nullptr;
+  }
+
+  void Mute(bool mute) {
+    // The player shows "Mute" while it plays with sound, "Unmute" once
+    // muted.
+    const PageItem* player_mute = PlayerControl("mute");
+    const PageItem* player_unmute = PlayerControl("unmute");
+    if (mute) {
+      if (player_mute) {
+        Add(NodeStep(VoiceStepKind::kPress, player_mute->handle,
+                     PageText(player_mute->label)));
+        Say("Muted.");
+        return;
+      }
+      if (player_unmute || env_.muted) {
+        Say("It's already muted.");
+        return;
+      }
+    } else {
+      bool done = false;
+      if (player_unmute) {
+        Add(NodeStep(VoiceStepKind::kPress, player_unmute->handle,
+                     PageText(player_unmute->label)));
+        done = true;
+      }
+      if (!env_.muted) {
+        Say(done ? "Sound on." : "It isn't muted.");
+        return;
+      }
+    }
+    VoiceStep step = Step(VoiceStepKind::kMute);
+    step.flag = mute;
+    Add(std::move(step));
+    Say(mute ? "Muted." : "Sound on.");
+  }
+
+  // "Next video": the player's own Next, which opens it.
+  bool PlayerNext(bool next) {
+    const PageItem* control = PlayerControl(next ? "next" : "previous");
+    if (!control) {
+      return false;
+    }
+    const std::string name = PageText(control->label);
+    Add(NodeStep(VoiceStepKind::kPress, control->handle, name));
+    if (control->kind == ItemKind::kLink) {
+      Add(WaitStep(FollowUpKind::kAnnouncePage, name));
+    }
+    Say(next ? "Next." : "Previous.");
+    return true;
+  }
+
   void Volume(bool up) {
     const PageItem* slider = ItemSaying(map_, ItemKind::kSlider, {"volume"});
     if (!slider && env_.language == Language::kSpanish) {
@@ -1807,7 +2051,11 @@ class Planner : public TurnPlanner {
     VoiceStep step = NodeStep(
         up ? VoiceStepKind::kIncrement : VoiceStepKind::kDecrement,
         slider->handle, PageText(slider->label));
-    step.count = kVolumeSteps;
+    const std::vector<std::string> heard =
+        SplitWords(FoldForComparison(turn_.heard));
+    const bool much = HasWord(heard, "much") || HasWord(heard, "lot") ||
+                      HasWord(heard, "way") || HasWord(heard, "mucho");
+    step.count = much ? kVolumeSteps * kMuchVolumeFactor : kVolumeSteps;
     Add(std::move(step));
     Say(up ? "Louder." : "Quieter.");
   }
@@ -2085,9 +2333,22 @@ class Planner : public TurnPlanner {
       Say("Find what? Say find, then the words.");
       return;
     }
+    // The words in a row, each as said or as its plural or singular
+    // ("tram" finds "Trams return to Lyon").
+    const std::vector<std::string> wanted = SplitWords(needle);
     auto has = [&](const std::string& text) {
-      return (" " + FoldForComparison(text) + " ").find(" " + needle + " ") !=
-             std::string::npos;
+      const std::vector<std::string> words =
+          SplitWords(FoldForComparison(text));
+      for (size_t i = 0; i + wanted.size() <= words.size(); ++i) {
+        bool all = !wanted.empty();
+        for (size_t k = 0; all && k < wanted.size(); ++k) {
+          all = SameWordOrPlural(words[i + k], wanted[k]);
+        }
+        if (all) {
+          return true;
+        }
+      }
+      return false;
     };
     size_t found = 0;
     std::string where;

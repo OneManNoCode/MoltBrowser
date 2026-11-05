@@ -26,6 +26,9 @@
 //   - names: aria-label, else (links, buttons, headings, list items,
 //     options, cells, tabs, menu items) the text inside, else alt (img),
 //     title, placeholder; values from value= and a textarea's text;
+//   - a <select>: its value is the selected option's text (else the
+//     first's); its options (through optgroups) are invisible option nodes
+//     under an invisible generic one, as under Blink's menu list popup;
 //   - states: disabled, aria-pressed/checked, aria-expanded, required,
 //     readonly, tabindex and the controls' focusability, a password field
 //     protected; the focused node is the one with autofocus.
