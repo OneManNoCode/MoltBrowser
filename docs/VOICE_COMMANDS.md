@@ -427,6 +427,7 @@ said.
 
 - `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site} in [a] new tab`
 - `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site}`
+- `hoping {site}`
 - `{address}`
 
 **Search: on the site you are on (or the search engine when it has no search box), the web, or a site you name.** For example: "search for Bohemian Rhapsody".
@@ -459,6 +460,7 @@ said.
 
 - `(go | navigate | take me) back [a page | one page | to the (previous | last) page]`
 - `(back | previous page | last page | go to the previous page)`
+- `feel back`
 
 **Go forward again.** For example: "go forward".
 
@@ -469,6 +471,7 @@ said.
 
 - `(reload | refresh) [the | this] [page | tab | site | website | it]`
 - `load [the | this] page again`
+- `roulette`
 
 **Stop loading the page.** For example: "stop loading".
 
@@ -631,6 +634,7 @@ said.
 
 - `(turn on | show | enable | switch on | start | put on) [the] (captions | subtitles | closed captions | cc | subtitle)`
 - `(captions | subtitles | closed captions | cc) on`
+- `turn on [the] catchens`
 
 **Hide captions.** For example: "captions off".
 

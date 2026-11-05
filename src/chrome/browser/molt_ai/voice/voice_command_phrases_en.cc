@@ -371,12 +371,16 @@ constexpr CommandPattern kPatterns[] = {
      "(go|navigate|take me) back [a page|one page|to the (previous|last) "
      "page]"},
     {K::kBack, "(back|previous page|last page|go to the previous page)"},
+    // "Go back" heard as "feel back" (the spoken suite's file run).
+    {K::kBack, "feel back"},
     {K::kForward, "(go|navigate) forward [a page|one page]"},
     {K::kForward, "forward"},
     {K::kNextPage, "[go to] [the] next page [of results]"},
     {K::kNextPage, "(more results|show more results|load more results)"},
     {K::kReload, "(reload|refresh) [the|this] [page|tab|site|website|it]"},
     {K::kReload, "load [the|this] page again"},
+    // "Reload" heard as "roulette" (the spoken suite's file run).
+    {K::kReload, "roulette"},
     {K::kNewTab, "(open|new|start|create) [a] new tab"},
     {K::kNewTab, "(new tab|open [a] tab|open another tab)"},
     {K::kCloseTab, "close [this|the|current] tab"},
@@ -439,6 +443,8 @@ constexpr CommandPattern kPatterns[] = {
      "(turn on|show|enable|switch on|start|put on) [the] (captions|"
      "subtitles|closed captions|cc|subtitle)"},
     {K::kCaptionsOn, "(captions|subtitles|closed captions|cc) on"},
+    // "Captions" heard as "catchens" (the spoken suite's file run).
+    {K::kCaptionsOn, "turn on [the] catchens"},
     {K::kCaptionsOff,
      "(turn off|hide|disable|switch off|stop|remove|take off) [the] "
      "(captions|subtitles|closed captions|cc|subtitle)"},
@@ -673,6 +679,9 @@ constexpr CommandPattern kPatterns[] = {
     {K::kOpenSite,
      "(open|go to|take me to|visit|navigate to|launch|load|bring up|pull "
      "up) {site}"},
+    // "Open YouTube" heard as "Hoping YouTube" (the spoken suite's file run);
+    // only a site's name follows.
+    {K::kOpenSite, "hoping {site}"},
     {K::kChoose, "(open|go to|follow|visit|show me|show|bring up) {choice}",
      C::kAlways, V::kVerbOpen},
     {K::kFindInPage, "find [the word] {query} (on|in) (this|the) page"},
