@@ -1259,7 +1259,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   Both run on the device in a few milliseconds; not yet connected to a
   microphone. What you can say: `docs/VOICE_COMMANDS.md`.
 - **Touchless browsing: voice commands do what you meant, and answer
-  aloud** (preview, off by default: `chrome://flags/#molt-voice-mode`).
+  aloud** (preview, behind `chrome://flags/#molt-voice-mode`).
   Typed in Agent mode's new "Type a voice command" field until the browser
   can hear, "open YouTube", "search for Bohemian Rhapsody", "play the
   fourth one" or "the live one by Queen", "pause" and "go back" are done
@@ -1403,6 +1403,23 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   for what you are in. Voice mode can be offered at first run (built, off
   until switched on at `chrome://flags/#molt-voice-mode-at-first-run`). Details: `docs/VOICE_COMMANDS.md`,
   `docs/design/TOUCHLESS_BROWSING.md` §2.
+- **Voice mode is on by default, with a microphone on the home page**
+  (round 45). The page a new window or tab opens on starts with a big
+  microphone under "Which site would you like me to open?"; clicking it
+  (or pressing Enter, as it has the focus) starts voice mode, which says
+  it is on and asks which site to open. The site's name alone, like
+  "Facebook", or "I want to go to Facebook", opens it at its official
+  address: 38 popular sites (Facebook, Instagram, WhatsApp, X,
+  LinkedIn, Reddit, TikTok, Amazon, eBay, Netflix, Spotify, Gmail,
+  Outlook, Google Maps, BBC, CNN, GitHub, PayPal, ChatGPT, Claude and
+  others) are now in voice mode's built-in list of verified addresses,
+  next to YouTube, Google, Wikipedia and the search engines. A name it
+  doesn't know is searched for on the web, never guessed as an address.
+  "Search Instagram for cats" searches the web when a site has no search
+  page voice mode can use. The microphone still opens only when you start
+  it: the home page's script can't start it without your click, and
+  MoltNet windows don't show it. `chrome://flags/#molt-voice-mode` turns
+  voice mode off.
 
 ### Fixed
 - **Voice mode (preview) hears "Hey Molt" far more reliably** (round 45,

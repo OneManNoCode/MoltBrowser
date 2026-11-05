@@ -117,6 +117,11 @@ class VoiceSession : public VoiceController::Observer,
   // Starts listening in this window. False, after saying why, in a MoltNet
   // window or while #molt-voice-mode is off.
   bool Start();
+  // The home page's microphone: starts listening if it isn't, then asks
+  // "Which site would you like me to open?" (VoiceController::AskWhichSite())
+  // once the speech helper is ready, in place of "Voice mode is on": said
+  // before then, the answer would reach no recognizer. False as Start().
+  bool StartAndAskWhichSite();
   // Stops listening (the microphone and the helper) and voice mode in the
   // window (the caption bar goes); typed commands start it again.
   void Stop();
@@ -224,6 +229,8 @@ class VoiceSession : public VoiceController::Observer,
   std::vector<base::WeakPtr<content::WebContents>> ducked_;
   // "Voice mode is on" was said in this session.
   bool announced_ = false;
+  // StartAndAskWhichSite(): the question waits for the speech helper.
+  bool ask_which_site_ = false;
   // Start() waits for the window's voice language (read on a worker when its
   // voice mode is made): the microphone never opens in a language voice mode
   // can't listen in, not even until the setting is read.

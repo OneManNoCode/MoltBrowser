@@ -21,6 +21,7 @@
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_language.h"
 #include "chrome/browser/molt_ai/voice/voice_learning.h"
 #include "chrome/browser/molt_ai/voice/voice_listener_protocol.h"
@@ -397,11 +398,27 @@ void VoiceSession::OnHelperFound(std::optional<VoiceListener::Paths> paths,
       base::BindRepeating(&VoiceSession::OnPoll, base::Unretained(this)));
 }
 
+bool VoiceSession::StartAndAskWhichSite() {
+  if (logic_.running() && listener_ && listener_->ready()) {
+    // Listening already: asked now.
+    controller_->AskWhichSite(std::string());
+    return true;
+  }
+  if (!Start()) {
+    return false;
+  }
+  // Once the speech helper is ready (OnListenerReady()), or the window's
+  // language is known and it has started.
+  ask_which_site_ = true;
+  return true;
+}
+
 void VoiceSession::Stop() {
   StopSession(/*stop_voice_mode=*/true);
 }
 
 void VoiceSession::StopSession(bool stop_voice_mode) {
+  ask_which_site_ = false;
   if (start_pending_) {
     // It never started, and won't once the language is known.
     start_pending_ = false;
@@ -491,9 +508,13 @@ void VoiceSession::OnListenerReady(const HelperEvent& ready) {
   announced_ = true;
   problem_.clear();
   Apply(logic_.OnHelperReady(NowMs()));
-  if (first && controller_) {
+  if (!controller_) {
+    return;
+  }
+  std::string notice;
+  if (first) {
     const Language language = SpeechLanguage();
-    std::string notice =
+    notice =
         settings_.always_listening
             ? Said(language, "Voice mode is on. I'm listening.", {})
             : Said(language,
@@ -502,6 +523,14 @@ void VoiceSession::OnListenerReady(const HelperEvent& ready) {
       // Without an echo canceller, only "stop" interrupts the browser.
       notice += " " + StopFirstHint(language);
     }
+  }
+  if (ask_which_site_) {
+    // The home page's microphone: the greeting, then its question.
+    ask_which_site_ = false;
+    controller_->AskWhichSite(notice);
+    return;
+  }
+  if (first) {
     controller_->SayNotice(notice);
   }
 }
@@ -597,9 +626,12 @@ void VoiceSession::OnVoiceCaption(VoiceActivity activity,
     UpdateCaption();
   }
   const ConversationState& state = controller_->state();
-  // The browser's prompt waits for its answer too (voice_prompts.h).
-  Apply(logic_.OnAwaitingAnswer(
-      state.confirming || state.expecting_choice || state.prompt.id != 0, now));
+  // The browser's prompt waits for its answer too (voice_prompts.h), and so
+  // does "Which site would you like me to open?".
+  Apply(logic_.OnAwaitingAnswer(state.confirming || state.expecting_choice ||
+                                    state.prompt.id != 0 ||
+                                    SiteQuestionWaits(state, now),
+                                now));
 }
 
 void VoiceSession::OnVoiceSpeech(const std::string& text) {

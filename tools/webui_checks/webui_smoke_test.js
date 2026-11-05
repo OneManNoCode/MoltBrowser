@@ -1056,12 +1056,62 @@ const memoryUrlSearches = [];
 
 const PAGES = [
   {name: 'molt://home', file: 'molt_home_ui.cc',
-   listeners: ['#searchForm:submit'],
-   after(window) {
+   listeners: ['#searchForm:submit', '#mic:click'],
+   // MoltHomeHandler: the microphone opens only with the click itself.
+   clickGated: ['startVoice'],
+   responses: {
+     getVoice: {available: true, listening: false, started: false},
+     startVoice: {available: true, listening: true, started: true},
+   },
+   async after(window) {
+     const doc = window.document;
+     const tick = () => new Promise((r) => setTimeout(r, 15));
+     await tick();
      // The cards are plain links (keyboard and screen readers get them
      // for free).
-     const cards = window.document.querySelectorAll('nav a.card[href^="molt://"]');
+     const cards = doc.querySelectorAll('nav a.card[href^="molt://"]');
      assert.strictEqual(cards.length, 3, 'three card links');
+     // The microphone comes first, asks its question, and is focused.
+     assert.strictEqual(doc.getElementById('voice').hidden, false, 'microphone shows');
+     assert.strictEqual(doc.getElementById('voiceAsk').textContent,
+                        'Which site would you like me to open?');
+     assert(doc.getElementById('mic').hasAttribute('autofocus'));
+     assert(doc.getElementById('voice').compareDocumentPosition(
+                doc.getElementById('searchForm')) & 4, 'before the search field');
+     assert.deepStrictEqual(window.__clickConsumed, [], 'load opens no microphone');
+     doc.getElementById('mic').click(); await tick();
+     assert.deepStrictEqual(window.__clickConsumed, ['startVoice'], 'one per click');
+     assert(/^Listening\. Say a site's name/.test(
+                doc.getElementById('voiceStatus').textContent));
+     assert(doc.getElementById('mic').classList.contains('on'));
+   }},
+  {name: 'molt://home (voice mode unavailable)', host: 'home', file: 'molt_home_ui.cc',
+   listeners: ['#searchForm:submit', '#mic:click'],
+   clickGated: ['startVoice'],
+   responses: {
+     getVoice: {available: false, listening: false, started: false},
+     startVoice: {available: false, listening: false, started: false},
+   },
+   async after(window) {
+     const tick = () => new Promise((r) => setTimeout(r, 15));
+     await tick();
+     // Not in a MoltNet window, nor with #molt-voice-mode off.
+     assert.strictEqual(window.document.getElementById('voice').hidden, true);
+   }},
+  {name: 'molt://home (voice mode couldn\'t start)', host: 'home', file: 'molt_home_ui.cc',
+   listeners: ['#searchForm:submit', '#mic:click'],
+   clickGated: ['startVoice'],
+   responses: {
+     getVoice: {available: true, listening: false, started: false},
+     startVoice: {available: true, listening: false, started: false},
+   },
+   async after(window) {
+     const doc = window.document;
+     const tick = () => new Promise((r) => setTimeout(r, 15));
+     await tick();
+     doc.getElementById('mic').click(); await tick();
+     assert(/couldn't start/.test(doc.getElementById('voiceStatus').textContent));
+     assert(!doc.getElementById('mic').classList.contains('on'));
    }},
   {name: 'molt://memory', file: 'molt_ai_memory_ui.cc',
    listeners: ['#search-btn:click', '#forget-domain-btn:click',
@@ -2224,7 +2274,8 @@ async function runPage(page, hooks = {}) {
     errors.push('jsdomError: ' + e.message + (e.detail ? ' ' + (e.detail.stack || e.detail) : ''));
   });
   const dom = new JSDOM(html, {runScripts: 'outside-only', pretendToBeVisual: true,
-                               url: 'chrome://' + page.name.slice(7) + '/', virtualConsole: vc});
+                               url: 'chrome://' + (page.host || page.name.slice(7)) + '/',
+                               virtualConsole: vc});
   const {window} = dom;
   makeTrustedTypes(window, trustedTypesMode(src), violations);
 

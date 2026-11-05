@@ -365,6 +365,12 @@ class Planner : public TurnPlanner {
       Say("Voice mode is off in MoltNet windows.");
       return;
     }
+    // "Which site?" stays asked until something the grammar understands
+    // (a misheard answer can be said again).
+    if (depth == 0 && command.kind != K::kUnknown &&
+        command.kind != K::kRepeat) {
+      state().expecting_site = false;
+    }
     // The browser's prompt hears its answers first.
     if (depth == 0 && AnswerBrowserPrompt(command)) {
       return;
@@ -841,6 +847,21 @@ class Planner : public TurnPlanner {
   }
 
   // ---- The planner's questions ------------------------------------------
+
+  void SiteQuestion(std::string_view intro) {
+    turn_.kind = K::kUnknown;
+    if (env_.moltnet) {
+      return;
+    }
+    state().expecting_site = true;
+    state().site_question_page_id = env_.page_id;
+    state().site_question_expires_ms = env_.now_ms + kConfirmationTimeoutMs;
+    Status("Which site would you like me to open?");
+    if (!intro.empty()) {
+      Say(intro);
+    }
+    Say("Which site would you like me to open?");
+  }
 
   void PlannerQuestion(int question, std::string_view what) {
     turn_.kind = K::kUnknown;
@@ -1748,12 +1769,20 @@ class Planner : public TurnPlanner {
     if (scope == SearchScope::kNamedSite) {
       const KnownSite* site =
           command.site_is_address ? nullptr : FindKnownSite(command.site);
-      if (site) {
+      if (site && !site->search_url.empty()) {
         VoiceStep open = Step(VoiceStepKind::kNavigate);
         open.url = SiteSearchURL(*site, query);
         Add(std::move(open));
         Status(Tr("Searching {0} for {1}", {site->name, query}));
         Add(WaitStep(FollowUpKind::kReadResults, query));
+        return;
+      }
+      if (site) {
+        // A site with no search page of its own: the web, for it.
+        const std::string whole = std::string(site->name) + " " + query;
+        SearchTheWeb(whole, Tr("{0} has no search I can use, so I searched "
+                               "the web for {1}.",
+                               {site->name, whole}));
         return;
       }
       if (!command.whole_query.empty()) {
@@ -1796,7 +1825,8 @@ class Planner : public TurnPlanner {
         Add(WaitStep(FollowUpKind::kReadResults, query));
         return;
       }
-      if (const KnownSite* site = KnownSiteForHost(env_.host)) {
+      if (const KnownSite* site = KnownSiteForHost(env_.host);
+          site && !site->search_url.empty()) {
         VoiceStep open = Step(VoiceStepKind::kNavigate);
         open.url = SiteSearchURL(*site, query);
         Add(std::move(open));
@@ -3158,6 +3188,8 @@ ParseContext ContextFor(const ConversationState& state,
       // The browser's list read last, or its menu (voice_browser_logic.h).
       BrowserListValid(state, env) || env.browser.menu_open;
   context.text_field_focused = FieldInFocus(state, map, env) != nullptr;
+  context.expecting_site = SiteQuestionWaits(state, env.now_ms) &&
+                           state.site_question_page_id == env.page_id;
   return context;
 }
 
@@ -3185,6 +3217,15 @@ VoiceTurn PlanFollowUp(const VoiceStep& wait,
                        const ConversationState& state) {
   Planner planner(map, env, state);
   planner.FollowUp(wait);
+  return planner.Finish();
+}
+
+VoiceTurn PlanSiteQuestion(std::string_view intro,
+                           const VoiceEnvironment& env,
+                           const ConversationState& state) {
+  const PageMap no_map;
+  Planner planner(no_map, env, state);
+  planner.SiteQuestion(intro);
   return planner.Finish();
 }
 

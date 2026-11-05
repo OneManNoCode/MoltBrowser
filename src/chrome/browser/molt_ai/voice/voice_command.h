@@ -320,6 +320,9 @@ struct ParseContext {
   // A text field has focus: the dictation commands ("new line", "clear",
   // "read it back", "submit") apply to it.
   bool text_field_focused = false;
+  // The browser just asked which site to open (the home page's microphone):
+  // a site's name alone ("Facebook") opens it.
+  bool expecting_site = false;
   Language language = Language::kEnglish;
   // The wake phrase the user chose ("Hey Molt", "computer"; folded here);
   // empty for the language's default ("hey molt"). Removed from the start

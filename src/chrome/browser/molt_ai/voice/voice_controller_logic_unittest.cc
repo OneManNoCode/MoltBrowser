@@ -213,6 +213,79 @@ class Conversation {
 // The owner's scenario
 // ---------------------------------------------------------------------------
 
+TEST(VoiceControllerLogicTest, WhichSiteFromTheHomePage) {
+  // The home page's microphone: voice mode asks, and a site's name alone
+  // opens it at its official address.
+  Conversation c(PageMap(), Env());
+  VoiceTurn asked = PlanSiteQuestion("", c.env(), c.state());
+  EXPECT_EQ(Said(asked), "Which site would you like me to open?");
+  EXPECT_TRUE(asked.state.expecting_site);
+  // Starting voice mode: its greeting first, the question last.
+  EXPECT_EQ(Said(PlanSiteQuestion(
+                "Voice mode is on. Say Hey Molt, then what you want.",
+                c.env(), c.state())),
+            "Voice mode is on. Say Hey Molt, then what you want.|Which site "
+            "would you like me to open?");
+  c.state() = asked.state;
+  VoiceTurn turn = c.Say("Facebook");
+  EXPECT_EQ(turn.kind, VoiceCommandKind::kOpenSite);
+  ASSERT_FALSE(turn.steps.empty());
+  EXPECT_EQ(turn.steps[0].kind, K::kNavigate);
+  EXPECT_EQ(turn.steps[0].url, "https://www.facebook.com/");
+  // Asked once: a name alone means nothing after.
+  EXPECT_FALSE(turn.state.expecting_site);
+  EXPECT_NE(c.Say("Facebook").kind, VoiceCommandKind::kOpenSite);
+
+  // "I want to go to Netflix", and a name the browser doesn't know: searched
+  // for, never guessed as an address.
+  c.state() = PlanSiteQuestion("", c.env(), c.state()).state;
+  turn = c.Say("I want to go to Netflix");
+  ASSERT_FALSE(turn.steps.empty());
+  EXPECT_EQ(turn.steps[0].url, "https://www.netflix.com/");
+  c.state() = PlanSiteQuestion("", c.env(), c.state()).state;
+  turn = c.Say("Flarbonix");
+  ASSERT_FALSE(turn.steps.empty());
+  EXPECT_EQ(turn.steps[0].url.find("https://www.facebook"), std::string::npos);
+  EXPECT_EQ(turn.steps[0].url.find("flarbonix.com"), std::string::npos);
+
+  // A misheard answer keeps the question; "no thanks" and other commands
+  // end it; it holds only on the page it was asked on.
+  c.state() = PlanSiteQuestion("", c.env(), c.state()).state;
+  turn = c.Say("blah blah blah blah blah blah blah");
+  EXPECT_TRUE(turn.state.expecting_site);
+  turn = c.Say("no thanks");
+  EXPECT_EQ(turn.kind, VoiceCommandKind::kCancel);
+  EXPECT_FALSE(turn.state.expecting_site);
+  c.state() = PlanSiteQuestion("", c.env(), c.state()).state;
+  EXPECT_EQ(c.Say("scroll down").kind, VoiceCommandKind::kScrollDown);
+  // It waits 30 s, misheard answers or not.
+  c.state() = PlanSiteQuestion("", c.env(), c.state()).state;
+  c.env().now_ms += kConfirmationTimeoutMs - 1;
+  EXPECT_TRUE(SiteQuestionWaits(c.state(), c.env().now_ms));
+  c.env().now_ms += 1;
+  EXPECT_FALSE(SiteQuestionWaits(c.state(), c.env().now_ms));
+  EXPECT_NE(c.Say("Facebook").kind, VoiceCommandKind::kOpenSite);
+  c.state() = PlanSiteQuestion("", c.env(), c.state()).state;
+  c.env().page_id += 1;
+  EXPECT_NE(c.Say("Facebook").kind, VoiceCommandKind::kOpenSite);
+
+  // Not in a MoltNet window.
+  VoiceEnvironment moltnet = Env();
+  moltnet.moltnet = true;
+  EXPECT_FALSE(PlanSiteQuestion("", moltnet, ConversationState()).state.expecting_site);
+}
+
+TEST(VoiceControllerLogicTest, ASiteWithNoSearchPageIsSearchedOnTheWeb) {
+  Conversation c(PageMap(), Env());
+  const VoiceTurn turn = c.Say("search Instagram for cats");
+  ASSERT_EQ(Kinds(turn), (std::vector<VoiceStepKind>{K::kSearchWeb,
+                                                     K::kWaitForPage}));
+  EXPECT_EQ(turn.steps[0].text, "Instagram cats");
+  EXPECT_EQ(turn.steps[1].preface,
+            "Instagram has no search I can use, so I searched the web for "
+            "Instagram cats.");
+}
+
 TEST(VoiceControllerLogicTest, TheOwnersScenario) {
   Conversation c(PageMap(), Env());
   c.env().host.clear();
@@ -584,18 +657,23 @@ TEST(VoiceControllerLogicTest, OpensAddressesAndNewTabs) {
 
 TEST(VoiceControllerLogicTest, AnUnknownSiteIsSearchedForNotGuessed) {
   Conversation c(PageMap(), Env());
-  VoiceTurn turn = c.Say("open Netflix");
+  VoiceTurn turn = c.Say("open Lantern");
   ASSERT_EQ(Kinds(turn), (std::vector<VoiceStepKind>{K::kSearchWeb,
                                                      K::kWaitForPage}));
-  EXPECT_EQ(turn.steps[0].text, "Netflix");
+  EXPECT_EQ(turn.steps[0].text, "Lantern");
   EXPECT_EQ(turn.steps[1].preface,
-            "I don't know a site called Netflix, so I searched for it.");
+            "I don't know a site called Lantern, so I searched for it.");
   turn = c.Loaded(turn.steps[1], BuildPageMap(test::GoogleLikeResults()), 2);
   const std::string said = Said(turn);
-  EXPECT_EQ(said.find("I don't know a site called Netflix, so I searched for "
+  EXPECT_EQ(said.find("I don't know a site called Lantern, so I searched for "
                       "it.|10 results."),
             0u)
       << said;
+  // A popular site's name: its official address.
+  Conversation fresh(PageMap(), Env());
+  turn = fresh.Say("open Netflix");
+  ASSERT_EQ(turn.steps[0].kind, K::kNavigate);
+  EXPECT_EQ(turn.steps[0].url, "https://www.netflix.com/");
 }
 
 TEST(VoiceControllerLogicTest, SearchesANamedSiteOrTheWeb) {
@@ -619,12 +697,12 @@ TEST(VoiceControllerLogicTest, SearchesANamedSiteOrTheWeb) {
   EXPECT_EQ(turn.steps[0].text, "things to do on Sunday");
 
   // A site it doesn't know: the web, and it says so.
-  turn = c.Say("search Netflix for cats");
+  turn = c.Say("search Lantern for cats");
   ASSERT_EQ(turn.steps[0].kind, K::kSearchWeb);
-  EXPECT_EQ(turn.steps[0].text, "Netflix cats");
+  EXPECT_EQ(turn.steps[0].text, "Lantern cats");
   EXPECT_EQ(turn.steps[1].preface,
-            "I don't know a site called Netflix, so I searched the web for "
-            "Netflix cats.");
+            "I don't know a site called Lantern, so I searched the web for "
+            "Lantern cats.");
 
   // This site without a search box: the web, and it says so.
   turn = c.Say("search this site for returns policy");
@@ -1507,6 +1585,10 @@ TEST(VoiceControllerLogicTest, EveryCommandKindIsPlanned) {
       case PatternContext::kTextField:
         state.field = box->handle;
         state.field_page_id = env.page_id;
+        break;
+      case PatternContext::kSite:
+        state.expecting_site = true;
+        state.site_question_page_id = env.page_id;
         break;
     }
     const VoiceTurn turn = PlanUtterance(info.example, results, env, state);

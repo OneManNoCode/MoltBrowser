@@ -5,12 +5,14 @@
 //   chrome://flags/#molt-voice-mode
 //   --enable-features=MoltVoiceMode
 //
-// Disabled by default while voice mode is a preview: the browser can't
-// hear yet, and commands are typed. Enabled, the agent panel
-// (chrome://molt-ai-agent) shows a "Type a voice command" field, and a
-// command there runs in its window's active tab (voice_controller.h) with
-// a spoken answer. MoltNet windows keep voice mode off either way (§7.4).
-// Read at each command.
+// Enabled by default (the owner's decision, Nov 2026): the toolbar's Voice
+// button and the home page's microphone (chrome://molt-home) start it, the
+// agent panel (chrome://molt-ai-agent) shows a "Type a voice command"
+// field, and a command runs in its window's active tab
+// (voice_controller.h) with a spoken answer. The microphone opens only when
+// the user starts voice mode (a click, a setting, or voice mode at first
+// run). MoltNet windows keep voice mode off either way (§7.4). Read at each
+// command.
 //
 // MOLT_VOICE_FEATURE_ENTRIES is expanded inside kFeatureEntries in
 // chrome/browser/about_flags.cc next to the other MoltBrowser entries, so
@@ -46,11 +48,11 @@ bool VoiceModeEnabled();
 // clang-format off
 #define MOLT_VOICE_FEATURE_ENTRIES                                            \
     {molt_ai::voice::flags::kVoiceMode,                                       \
-     "MoltBrowser: voice mode (preview)",                                     \
-     "Type what you would say (\"open YouTube\", \"search for ...\", "        \
-     "\"play the fourth one\") in the Agent mode panel; the browser does it " \
-     "on the page and says the answer aloud. The browser can't hear you "     \
-     "yet. Off in MoltNet windows.",                                          \
+     "MoltBrowser: voice mode",                                               \
+     "Say or type what you want (\"open YouTube\", \"search for ...\", "      \
+     "\"play the fourth one\"): the browser does it on the page and says "    \
+     "the answer aloud. Start it with the Voice button or the home page's "   \
+     "microphone. Off in MoltNet windows.",                                   \
      kOsDesktop, FEATURE_VALUE_TYPE(molt_ai::voice::kMoltVoiceMode)},         \
     {molt_ai::voice::flags::kVoiceModeAtFirstRun,                             \
      "MoltBrowser: voice mode at first run (preview)",                        \

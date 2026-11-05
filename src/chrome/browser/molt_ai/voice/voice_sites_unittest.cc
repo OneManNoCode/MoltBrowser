@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 
+#include <set>
 #include <string>
 
 #include "chrome/browser/molt_ai/voice/voice_command.h"
@@ -30,27 +31,68 @@ TEST(VoiceSitesTest, KnownSitesByTheGrammarsNames) {
     EXPECT_EQ(site->name, c.name);
   }
   EXPECT_FALSE(FindKnownSite(""));
-  EXPECT_FALSE(FindKnownSite("netflix"));
+  EXPECT_FALSE(FindKnownSite("lantern"));
   EXPECT_FALSE(FindKnownSite("youtube.com.evil"));
   EXPECT_FALSE(FindKnownSite("you"));
 }
 
-TEST(VoiceSitesTest, EveryKnownSiteIsHttpsWithASearchPage) {
+TEST(VoiceSitesTest, EveryKnownSiteIsHttpsWithItsOwnPages) {
   for (const KnownSite& site : KnownSites()) {
     SCOPED_TRACE(site.name);
     EXPECT_EQ(site.home_url.substr(0, 8), "https://");
-    EXPECT_EQ(site.search_url.substr(0, 8), "https://");
-    EXPECT_NE(site.search_url.find('?'), std::string_view::npos);
-    EXPECT_EQ(site.search_url.back(), '=');
+    // A search page, when it has one, takes the query last.
+    if (!site.search_url.empty()) {
+      EXPECT_EQ(site.search_url.substr(0, 8), "https://");
+      EXPECT_NE(site.search_url.find('?'), std::string_view::npos);
+      EXPECT_EQ(site.search_url.back(), '=');
+    }
     EXPECT_FALSE(site.names.empty());
-    EXPECT_FALSE(site.domains.empty());
-    // Its own pages are recognized.
+    // Its own pages are recognized; Google Maps' are Google's.
     const std::string home(site.home_url);
     const std::string host = home.substr(8, home.find('/', 8) - 8);
-    EXPECT_EQ(KnownSiteForHost(host), &site);
+    if (site.domains.empty()) {
+      EXPECT_EQ(site.name, "Google Maps");
+      EXPECT_EQ(KnownSiteForHost(host), FindKnownSite("google"));
+    } else {
+      EXPECT_EQ(KnownSiteForHost(host), &site);
+    }
     // Each name the grammar may write finds it.
     for (std::string_view name : site.names) {
       EXPECT_EQ(FindKnownSite(name), &site);
+    }
+  }
+}
+
+TEST(VoiceSitesTest, PopularSitesAtTheirOfficialAddresses) {
+  struct Case {
+    const char* name;
+    const char* home;
+  } cases[] = {
+      {"facebook", "https://www.facebook.com/"},
+      {"fb", "https://www.facebook.com/"},
+      {"instagram", "https://www.instagram.com/"},
+      {"twitter", "https://x.com/"},
+      {"amazon", "https://www.amazon.com/"},
+      {"netflix", "https://www.netflix.com/"},
+      {"gmail", "https://mail.google.com/"},
+      {"newyorktimes", "https://www.nytimes.com/"},
+      {"googlemaps", "https://www.google.com/maps"},
+  };
+  for (const Case& c : cases) {
+    SCOPED_TRACE(c.name);
+    const KnownSite* site = FindKnownSite(c.name);
+    ASSERT_TRUE(site);
+    EXPECT_EQ(site->home_url, c.home);
+  }
+  // Look-alike hosts are nobody's: a name is never guessed as a domain.
+  EXPECT_EQ(KnownSiteForHost("facebook.com.evil.example"), nullptr);
+  EXPECT_EQ(KnownSiteForHost("faceb00k.com"), nullptr);
+  EXPECT_EQ(KnownSiteForHost("m.facebook.com"), FindKnownSite("facebook"));
+  // No two sites share a name.
+  std::set<std::string_view> names;
+  for (const KnownSite& site : KnownSites()) {
+    for (std::string_view name : site.names) {
+      EXPECT_TRUE(names.insert(name).second) << name;
     }
   }
 }
@@ -137,11 +179,11 @@ TEST(VoiceSitesTest, ResolveNeverInventsADomain) {
   EXPECT_EQ(target.url, "https://example.com/");
   EXPECT_EQ(target.name, "example.com");
 
-  // An unknown name: searched for, never "netflix.com".
-  target = ResolveSpokenSite("netflix", false, "Netflix");
+  // An unknown name: searched for, never "lantern.com".
+  target = ResolveSpokenSite("lantern", false, "Lantern");
   EXPECT_EQ(target.kind, SiteTarget::Kind::kUnknown);
   EXPECT_TRUE(target.url.empty());
-  EXPECT_EQ(target.name, "Netflix");
+  EXPECT_EQ(target.name, "Lantern");
 
   // An address that isn't one is a name too.
   target = ResolveSpokenSite("example.c", true, "example dot c");

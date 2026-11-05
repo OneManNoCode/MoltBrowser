@@ -396,11 +396,11 @@ IN_PROC_BROWSER_TEST_F(VoiceControllerBrowserTest,
 
   // Never a made-up domain: the name is searched for, and the browser
   // says so, then reads the results.
-  Say("open Netflix");
+  Say("open Lantern");
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "search.test");
-  EXPECT_EQ(web_contents()->GetLastCommittedURL().query(), "q=Netflix");
+  EXPECT_EQ(web_contents()->GetLastCommittedURL().query(), "q=Lantern");
   const std::string said = tts_.TakeSpoken();
-  EXPECT_EQ(said.find("I don't know a site called Netflix, so I searched for "
+  EXPECT_EQ(said.find("I don't know a site called Lantern, so I searched for "
                       "it.|10 results. 1: Bohemian Rhapsody, Wikipedia."),
             0u)
       << said;

@@ -6,12 +6,20 @@ lists the commands the browser understands directly, without its AI model:
 they work in a moment, even on a slow machine. Anything else you say goes to
 the on-device AI, which works out what you mean from the page.
 
-Voice mode is a preview, behind a flag.
+Voice mode is on by default (`chrome://flags/#molt-voice-mode` turns it
+off). The microphone opens only when you start it.
 
 ## Turning voice mode on
 
-1. Turn on `chrome://flags/#molt-voice-mode` and restart the browser.
-2. Then, any of these turns listening on in a window:
+1. Any of these turns listening on in a window:
+   - the big **microphone on the home page** (the page a new window or tab
+     opens on), under "Which site would you like me to open?". Voice mode
+     says it is on, then asks which site to open: say the site's name
+     alone, like "Facebook" or "YouTube", or "I want to go to Facebook".
+     Well-known sites open at their official addresses (`www.facebook.com`
+     for Facebook), from a built-in list; any other name is searched for
+     on the web, never guessed as an address. "No thanks" or any other
+     command ends the question;
    - the **Voice** button in the toolbar (it has a violet ring while the
      window listens; press it again to stop);
    - **Settings** (`molt://ai-settings`), "Voice mode": the switch listens
@@ -21,11 +29,11 @@ Voice mode is a preview, behind a flag.
      command, without "Hey Molt";
    - typing **"turn on voice mode"** in Agent mode's "Type what you would
      say" field.
-3. The first time, your system may ask whether MoltBrowser may use the
+2. The first time, your system may ask whether MoltBrowser may use the
    microphone: allow it. If it is refused, the browser says so aloud and
    on screen; allow it in the system's privacy settings, then turn voice
    mode on again.
-4. You hear "Voice mode is on. Say Hey Molt, then what you want." A bar
+3. You hear "Voice mode is on. Say Hey Molt, then what you want." A bar
    under the page shows what voice mode is doing (waiting for "Hey Molt",
    listening, thinking, speaking), what it heard as you speak, and what it
    is doing.
@@ -430,6 +438,7 @@ said.
 - `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site}`
 - `hoping {site}`
 - `{address}`
+- `{site}` (when the browser has asked which site to open)
 
 **Search: on the site you are on (or the search engine when it has no search box), the web, or a site you name.** For example: "search for Bohemian Rhapsody".
 
@@ -845,6 +854,7 @@ said.
 **Cancel what you asked for.** For example: "cancel".
 
 - `(cancel | never mind | nevermind | forget it | forget that | forget about it | cancel that | abort | scratch that | stop that request)`
+- `(no | no thanks | no thank you | nothing | none | never mind | not now)` (when the browser has asked which site to open)
 
 **Stop: speaking, and whatever is running.** For example: "stop".
 

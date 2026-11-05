@@ -3,11 +3,13 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_home_ui.h"
 
+#include <memory>
 #include <optional>
 #include <string>
 
 #include "base/memory/ref_counted_memory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_home_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
@@ -44,14 +46,58 @@ function runSearch(e) {
   window.location.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q);
 }
 document.getElementById('searchForm').addEventListener('submit', runSearch);
+
+// ---- The microphone: "Which site would you like me to open?" ----
+// The browser answers through cr.webUIResponse (molt_home_handler.h); this
+// page loads no cr.js.
+var pending = {};
+var nextId = 0;
+window.cr = window.cr || {};
+cr.webUIResponse = function(id, ok, resp) {
+  var cb = pending[id];
+  if (cb) { delete pending[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
+};
+function send(method) {
+  var id = method + '_' + (++nextId);
+  return new Promise(function(resolve, reject) {
+    pending[id] = {resolve: resolve, reject: reject};
+    chrome.send(method, [id]);
+  });
+}
+var voice = document.getElementById('voice');
+var mic = document.getElementById('mic');
+var voiceStatus = document.getElementById('voiceStatus');
+function showVoice(state, asked) {
+  if (!state || !state.available) {
+    voice.hidden = true;
+    return;
+  }
+  voice.hidden = false;
+  if (state.started || (asked && state.listening)) {
+    voiceStatus.textContent =
+        'Listening. Say a site\'s name, like YouTube or Facebook.';
+    mic.classList.add('on');
+  } else if (asked) {
+    voiceStatus.textContent =
+        'Voice mode couldn\'t start. Check that MoltBrowser may use the ' +
+        'microphone, then click again.';
+  }
+}
+if (window.chrome && chrome.send) {
+  send('getVoice').then(function(state) { showVoice(state, false); });
+  mic.addEventListener('click', function() {
+    send('startVoice').then(function(state) { showVoice(state, true); });
+  });
+}
 })();
 )JS";
 
 // Serves the MoltBrowser new-tab / home page (HTML + /app.js). Local + static —
-// no remote dependency — so the new tab loads instantly and privately. The
-// search field and widget cards navigate via plain window.location (no IPC
-// handler needed): a query goes to a private web search or straight to a URL,
-// and the cards are links to the AI, MoltNet, and Import surfaces.
+// no remote dependency — so the new tab loads instantly and privately. Its
+// microphone asks "Which site would you like me to open?" and starts voice
+// mode (molt_home_handler.h). The search field and widget cards navigate via
+// plain window.location: a query goes to a private web search or straight to
+// a URL, and the cards are links to the AI, MoltNet, and Import surfaces.
 class MoltHomeDataSource : public content::URLDataSource {
  public:
   MoltHomeDataSource() = default;
@@ -154,6 +200,21 @@ class MoltHomeDataSource : public content::URLDataSource {
     box-shadow:0 10px 24px -8px rgba(255,82,87,.6);transition:transform .15s,opacity .15s}
   .search .go:hover{transform:translateY(-1px)}
 
+  /* The microphone: big, high contrast, first on the page. */
+  .voice{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+  .voice[hidden]{display:none}
+  .mic{width:132px;height:132px;border-radius:50%;border:none;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    color:#fff;font-family:var(--font);font-size:1rem;font-weight:700;
+    background:linear-gradient(180deg,var(--brand-fill),var(--brand-fill-deep));
+    box-shadow:0 22px 50px -14px rgba(255,82,87,.7),inset 0 1px 0 var(--specular);
+    transition:transform .15s,box-shadow .2s}
+  .mic:hover{transform:scale(1.04)}
+  .mic .glyph{font-size:2.75rem;line-height:1}
+  .mic.on{box-shadow:0 0 0 8px rgba(167,139,250,.55),0 22px 50px -14px rgba(255,82,87,.7)}
+  .ask{font-size:clamp(1.5rem,4vw,2.25rem);font-weight:750;letter-spacing:-0.02em;line-height:1.2}
+  .hint{font-size:1rem;color:var(--muted);max-width:34em;line-height:1.5}
+
   /* Widget cards */
   .cards{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;width:min(620px,92vw)}
   .card{flex:1;min-width:170px;padding:16px 18px;border-radius:18px;cursor:pointer;text-align:left;
@@ -173,14 +234,14 @@ class MoltHomeDataSource : public content::URLDataSource {
   :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
-    .card:hover,.search .go:hover{transform:none}
+    .card:hover,.search .go:hover,.mic:hover{transform:none}
   }
   /* High contrast: the glass, the orbs and the gradients are gone, so
      every control keeps a system-coloured edge. */
   @media (forced-colors: active){
     .env{display:none}
     .search,.card{border:1px solid CanvasText}
-    .search .go{border:1px solid ButtonText}
+    .search .go,.mic{border:1px solid ButtonText}
     .card:hover{border-color:Highlight}
     :focus-visible,.search:has(#q:focus-visible){outline-color:Highlight}
   }
@@ -195,10 +256,22 @@ class MoltHomeDataSource : public content::URLDataSource {
     <p class="kick">Private &middot; On-device &middot; Agentic</p>
   </header>
 
+  <section class="voice" id="voice" aria-labelledby="voiceAsk">
+    <button class="mic" id="mic" type="button" autofocus
+            aria-label="Speak: which site would you like me to open?"
+            aria-describedby="voiceStatus">
+      <span class="glyph" aria-hidden="true">&#127897;</span>
+      <span>Speak</span>
+    </button>
+    <h2 class="ask" id="voiceAsk">Which site would you like me to open?</h2>
+    <p class="hint" id="voiceStatus" role="status" aria-live="polite">Click the
+      microphone, then say a site's name, like YouTube or Facebook.</p>
+  </section>
+
   <form class="search" id="searchForm" role="search">
     <input id="q" type="text" autocomplete="off" spellcheck="false"
            aria-label="Search the web or type a web address"
-           placeholder="Search the web, or ask any model&hellip;" autofocus>
+           placeholder="Or type a site or a search&hellip;">
     <button class="go" type="submit" aria-label="Search">&rarr;</button>
   </form>
 
@@ -233,6 +306,7 @@ class MoltHomeDataSource : public content::URLDataSource {
 
 MoltHomeUI::MoltHomeUI(content::WebUI* web_ui)
     : content::WebUIController(web_ui) {
+  web_ui->AddMessageHandler(std::make_unique<MoltHomeHandler>());
   content::URLDataSource::Add(
       web_ui->GetWebContents()->GetBrowserContext(),
       std::make_unique<MoltHomeDataSource>());

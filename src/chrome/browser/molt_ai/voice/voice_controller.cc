@@ -503,6 +503,16 @@ void VoiceController::SayNotice(const std::string& text) {
   SetStatus(notice);
 }
 
+void VoiceController::AskWhichSite(const std::string& intro) {
+  if (IsMoltNet()) {
+    return;
+  }
+  if (busy()) {
+    StopActivity();
+  }
+  RunTurn(PlanSiteQuestion(intro, Environment(), state_));
+}
+
 void VoiceController::SetListening(ListeningCaption caption) {
   if (caption == listening_) {
     return;
