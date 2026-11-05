@@ -499,7 +499,7 @@ said.
 
 - `[go to | switch to | move to] [the] next tab`
 - `[go to | switch to | move to] [the] previous tab`
-- `(switch | go | change | move | jump) to tab {tab}`
+- `(switch | go | change | move | jump) to (tab | tip) {tab}`
 - `tab {tab}`
 - `(switch | go | change | move | jump) to [the] {tab} tab`
 - `switch to {tab}`
@@ -533,7 +533,7 @@ said.
 
 **Go to the bottom of the page.** For example: "scroll to the bottom".
 
-- `(scroll | go | jump | move) [down] to the (bottom | end) [of the page]`
+- `(scroll | girl | go | jump | move) [down] to the (bottom | end) [of the page]`
 - `(bottom of [the] page | page bottom | scroll bottom)`
 
 **Make everything bigger.** For example: "zoom in".
@@ -546,7 +546,7 @@ said.
 
 **Back to the normal size.** For example: "reset zoom".
 
-- `((reset | normal | default) zoom | zoom (reset | normal | to normal | back to normal) | (actual | normal | original | default) size | reset [the] zoom level)`
+- `((reset | rosetta | normal | default) zoom | zoom (reset | normal | to normal | back to normal) | (actual | normal | original | default) size | reset [the] zoom level)`
 
 ## Media
 
@@ -782,7 +782,7 @@ said.
 
 **Put numbers on everything you can choose.** For example: "show numbers".
 
-- `(show [me] [the] (numbers | labels | number labels) | (numbers | labels) on | (number | label) everything | turn on [the] (numbers | labels))`
+- `((show | joe) [me] [the] (numbers | labels | number labels) | (numbers | labels) on | (number | label) everything | turn on [the] (numbers | labels))`
 
 **Take the numbers away.** For example: "hide numbers".
 
@@ -937,6 +937,7 @@ said.
 - `(open | show) [me] [the] downloads [page | folder]`
 - `what (did i | have i) download [recently]`
 - `my downloads`
+- `to my downloads`
 
 **Open a downloaded file: the last one, or by its number. A file that can run programs isn't opened by voice.** For example: "open the last download".
 

@@ -139,11 +139,17 @@ def word_errors(ref, hyp):
     return vbl.edit_distance(r, h), len(r)
 
 
+# How the bundled recognizer writes "hey molt", apart or run together
+# ("him old", "Himalt"): what precedes the command it heard.
+WAKE_WORDS = ("hey", "hi", "hay", "a", "he", "him", "molt", "mold", "malt",
+              "moult", "melt", "old", "alled", "himalt", "himold", "himaled",
+              "himalled", "heymolt")
+
+
 def strip_wake(text):
     words = normalized(text).split()
     i = 0
-    while i < len(words) and i < 3 and words[i] in ("hey", "hi", "hay", "a", "molt",
-                                                    "mold", "malt", "moult", "melt"):
+    while i < len(words) and i < 3 and words[i] in WAKE_WORDS:
         i += 1
     return " ".join(words[i:])
 

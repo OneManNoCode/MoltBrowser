@@ -166,6 +166,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kListDownloads, "(open|show) [me] [the] downloads [page|folder]"},
     {K::kListDownloads, "what (did i|have i) download [recently]"},
     {K::kListDownloads, "my downloads"},
+    // "Show" heard as "to" (the spoken suite's file run).
+    {K::kListDownloads, "to my downloads"},
     // Settings. Those that weaken a protection are only changed by a click.
     {K::kProtectedSetting,
      "[turn on|switch on|enable|always] say [the] [confirmation] word (aloud|"
@@ -325,7 +327,7 @@ constexpr CommandPattern kPatterns[] = {
      "the page]"},
     {K::kScrollToTop, "(top of [the] page|page top|scroll top|back to top)"},
     {K::kScrollToBottom,
-     "(scroll|go|jump|move) [down] to the (bottom|end) [of the page]"},
+     "(scroll|girl|go|jump|move) [down] to the (bottom|end) [of the page]"},
     {K::kScrollToBottom, "(bottom of [the] page|page bottom|scroll bottom)"},
     {K::kScrollDown, "page down", C::kAlways, V::kPageStep},
     {K::kScrollUp, "page up", C::kAlways, V::kPageStep},
@@ -381,14 +383,14 @@ constexpr CommandPattern kPatterns[] = {
      V::kNextTab},
     {K::kSwitchTab, "[go to|switch to|move to] [the] previous tab", C::kAlways,
      V::kPreviousTab},
-    {K::kSwitchTab, "(switch|go|change|move|jump) to tab {tab}"},
+    {K::kSwitchTab, "(switch|go|change|move|jump) to (tab|tip) {tab}"},
     {K::kSwitchTab, "tab {tab}"},
     {K::kSwitchTab, "(switch|go|change|move|jump) to [the] {tab} tab"},
     {K::kSwitchTab, "switch to {tab}"},
 
     // --- Viewing ------------------------------------------------------------
     {K::kZoomReset,
-     "((reset|normal|default) zoom|zoom (reset|normal|to normal|back to "
+     "((reset|rosetta|normal|default) zoom|zoom (reset|normal|to normal|back to "
      "normal)|(actual|normal|original|default) size|reset [the] zoom level)"},
     {K::kZoomIn,
      "(zoom in|zoom in more|magnify|enlarge|increase [the] zoom|(bigger|"
@@ -625,8 +627,8 @@ constexpr CommandPattern kPatterns[] = {
 
     // --- Choosing -----------------------------------------------------------
     {K::kShowNumbers,
-     "(show [me] [the] (numbers|labels|number labels)|(numbers|labels) on|"
-     "(number|label) everything|turn on [the] (numbers|labels))"},
+     "((show|joe) [me] [the] (numbers|labels|number labels)|(numbers|labels) "
+     "on|(number|label) everything|turn on [the] (numbers|labels))"},
     {K::kHideNumbers,
      "(hide [the] (numbers|labels)|(numbers|labels) off|(remove|clear) "
      "[the] (numbers|labels)|turn off [the] (numbers|labels)|no numbers)"},

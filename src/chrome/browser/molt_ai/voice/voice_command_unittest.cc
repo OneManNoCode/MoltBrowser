@@ -187,6 +187,18 @@ TEST(VoiceCommandTest, OpenSites) {
       {"Hey Molt, open YouTube.", "open_site", "site=youtube"},
       {"hey mold open youtube", "open_site", "site=youtube"},
       {"He Molt, open YouTube.", "open_site", "site=youtube"},
+      // What the bundled recognizer heard in the spoken suite's file run.
+      {"Hey, Molt, Rosetta zoom", "zoom_reset", ""},
+      {"Himalt to my downloads", "list_downloads", ""},
+      {"Himaled, girl to the bottom", "scroll_to_bottom", ""},
+      {"He mold, Joe numbers", "show_numbers", ""},
+      {"Hey, Malt, switch to tip two", "switch_tab", "choice=num:2"},
+      // The wake phrase run together by the recognizer.
+      {"him old. Open YouTube", "open_site", "site=youtube"},
+      {"Himalt. Open YouTube", "open_site", "site=youtube"},
+      {"Himaled. Go back", "back", ""},
+      {"him alled. Search for Bohemian rapsody.", "search",
+       "text=Bohemian rapsody"},
       {"OK Molt go to youtube", "open_site", "site=youtube"},
       {"go to example dot com", "open_site", "site=example.com;address=1"},
       {"go to example.com", "open_site", "site=example.com;address=1"},

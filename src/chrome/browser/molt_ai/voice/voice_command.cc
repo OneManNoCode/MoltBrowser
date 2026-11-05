@@ -978,8 +978,44 @@ bool SoundsAlike(std::string_view a,
   return !key.empty() && key == PhoneticKey(b);
 }
 
+// A one-word name the recognizer ran into its greeting ("Himalt", "him
+// old", "Himaled" for "hey molt"): the first word, or the first two
+// joined, sounds like a greeting and the name joined, to within one
+// half-edit of the phonetic key (far from words like "himalaya" or
+// "highmount"). Its length in words, or 0.
+size_t RunTogetherWakeLength(const WordList& words,
+                             const WordList& name,
+                             const LanguagePhrases& p) {
+  if (name.size() != 1 || words.empty() ||
+      p.language != Language::kEnglish) {
+    return 0;
+  }
+  for (size_t take = 1; take <= 2 && take <= words.size(); ++take) {
+    std::string joined;
+    for (size_t k = 0; k < take; ++k) {
+      joined.append(words[k]);
+    }
+    if (joined.size() < 5 || joined.size() > 24) {
+      continue;
+    }
+    const std::string key = PhoneticKey(joined);
+    if (key.empty()) {
+      continue;
+    }
+    for (std::string_view greeting : p.wake_greetings) {
+      const std::string target =
+          PhoneticKey(std::string(greeting) + std::string(name[0]));
+      if (!target.empty() && PhoneticDistance(key, target, 1) <= 1) {
+        return take;
+      }
+    }
+  }
+  return 0;
+}
+
 // Removes a leading wake phrase from |words| (the user's, or the
-// language's default), with sound-alikes of its name ("hey mold").
+// language's default), with sound-alikes of its name ("hey mold"), or run
+// together with its greeting ("Himalt").
 size_t WakePhraseLength(const WordList& words,
                         std::string_view wake_phrase,
                         const LanguagePhrases& p) {
@@ -1000,13 +1036,13 @@ size_t WakePhraseLength(const WordList& words,
          HasPhrase(p.wake_greetings, words[at])) {
     ++at;
   }
-  if (at + name.size() > words.size())
-    return 0;
-  for (size_t i = 0; i < name.size(); ++i) {
-    if (!SoundsAlike(words[at + i], name[i], p))
-      return 0;
+  bool matched = at + name.size() <= words.size();
+  for (size_t i = 0; matched && i < name.size(); ++i) {
+    matched = SoundsAlike(words[at + i], name[i], p);
   }
-  return at + name.size();
+  if (matched)
+    return at + name.size();
+  return RunTogetherWakeLength(words, name, p);
 }
 
 // kAskPage: which question, and its words. A topic ("what does it say
