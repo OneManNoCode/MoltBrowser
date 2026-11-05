@@ -78,7 +78,9 @@ PageTree BuildPageTree(const AXFrameTree& main,
 
 // Whether |tree| can take |update| at all, as the trees voice mode keeps
 // start empty (Chromium's own start with a placeholder document): a tree
-// without a root takes only a whole tree, its root first. There,
+// without a root takes only a whole tree, its root first and every child
+// it names in it (not the root sent again alone, as when a page comes back
+// from the back/forward cache: "Nodes left pending by the update"). There,
 // AXTree::Unserialize() reports anything else as an error ("Tree has no
 // root"), tree data alone included, and builds that fail fast on
 // accessibility errors (ax_common.h) stop the browser for it. A whole tree

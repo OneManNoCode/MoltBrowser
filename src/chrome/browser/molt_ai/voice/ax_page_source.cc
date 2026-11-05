@@ -140,8 +140,33 @@ bool TreeCanTakeUpdate(const ui::AXTree& tree, const ui::AXTreeUpdate& update) {
   if (tree.root()) {
     return true;
   }
-  return update.root_id != ui::kInvalidAXNodeID && !update.nodes.empty() &&
-         update.nodes[0].id == update.root_id;
+  if (update.root_id == ui::kInvalidAXNodeID || update.nodes.empty() ||
+      update.nodes[0].id != update.root_id) {
+    return false;
+  }
+  // A whole tree, not only its root: an update that sends the root again
+  // (its attributes changed, as when a page comes back from the
+  // back/forward cache) names children it doesn't carry, which an empty
+  // tree hasn't got either ("Nodes left pending by the update", fatal in a
+  // fail-fast build). Every node once, every child sent, under one parent,
+  // the root under none.
+  std::unordered_map<ui::AXNodeID, bool> parented;  // id -> has a parent
+  parented.reserve(update.nodes.size());
+  for (const ui::AXNodeData& node : update.nodes) {
+    if (!parented.emplace(node.id, false).second) {
+      return false;
+    }
+  }
+  for (const ui::AXNodeData& node : update.nodes) {
+    for (const ui::AXNodeID child : node.child_ids) {
+      auto it = parented.find(child);
+      if (it == parented.end() || it->second || child == update.root_id) {
+        return false;
+      }
+      it->second = true;
+    }
+  }
+  return true;
 }
 
 PageRole PageRoleFor(const ui::AXNodeData& data) {
