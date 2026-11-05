@@ -312,21 +312,24 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, TheWakePhraseThenACommand) {
 
 IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
                        WhatIsHeardWhileTheBrowserSpeaksDoesntCommandIt) {
-  // The browser says "Voice mode is on" for three seconds once the helper
-  // is ready. What the microphone gets meanwhile may be its own voice or a
-  // page's sound: no command without the wake phrase, but "stop" is heard.
-  tts_.set_duration(base::Seconds(3));
+  // The browser says "Voice mode is on" (ten seconds long here) once the
+  // helper is ready. What the microphone gets meanwhile may be its own
+  // voice or a page's sound: no command without the wake phrase, but
+  // "stop" is heard. The script counts audio, which can reach the helper in
+  // a burst on a busy machine: "stop" comes 4 s in, well into the notice.
+  tts_.set_duration(base::Seconds(10));
   Script(
       "ready\n"
-      "400 speech_start\n"
-      "900 speech_end\n"
-      "1000 final 0.95 open a new tab\n"
-      "1500 speech_start\n"
-      "1900 speech_end\n"
-      "2000 final 0.95 stop\n");
+      "2400 speech_start\n"
+      "2900 speech_end\n"
+      "3000 final 0.95 open a new tab\n"
+      "3500 speech_start\n"
+      "3900 speech_end\n"
+      "4000 final 0.95 stop\n");
   ASSERT_TRUE(session()->Start());
   // "Stop" cut the browser's speech short.
-  ASSERT_TRUE(base::test::RunUntil([&]() { return tts_.stops() > 0; }));
+  ASSERT_TRUE(base::test::RunUntil([&]() { return tts_.stops() > 0; }))
+      << "voice mode said: " << tts_.AllSpoken();
   Wait(base::Seconds(2));
   EXPECT_EQ(tabs(), 1);
 }

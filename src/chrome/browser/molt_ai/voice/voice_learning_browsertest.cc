@@ -88,6 +88,15 @@ class RecordingTtsPlatform : public content::TtsPlatform {
     }
     return out;
   }
+  // What it said last, newest first: a failure says what came of the last
+  // steps (the whole list cuts off in the test summary).
+  std::string Last(size_t count) const {
+    std::string out;
+    for (size_t i = spoken_.size(); i > 0 && count > 0; --i, --count) {
+      out += spoken_[i - 1].substr(0, 160) + "|";
+    }
+    return out;
+  }
 
   // content::TtsPlatform:
   bool PlatformImplSupported() override { return true; }
@@ -219,7 +228,8 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
         FROM_HERE, kWaitTimeout,
         base::BindRepeating(
             [](const RecordingTtsPlatform* tts, std::string what) {
-              return what + "; voice mode said: " + tts->All();
+              return what + "; voice mode said last (newest first): " +
+                     tts->Last(6);
             },
             base::Unretained(&tts_), std::move(waiting_for)));
   }
