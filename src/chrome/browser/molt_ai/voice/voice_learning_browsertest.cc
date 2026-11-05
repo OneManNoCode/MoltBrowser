@@ -413,21 +413,24 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), Url("video.test", "/molt_voice/video_home.html")));
   // The stand-in helper "mishears" Queen as Green; the user corrects it;
-  // the next time it writes Green, the browser searches for Queen.
+  // the next time it writes Green, the browser searches for Queen. The
+  // script counts audio, not the browser's work: each utterance comes well
+  // after the search before it can have loaded on a busy machine (said
+  // while the browser still works on the last, it would be set aside).
   Script(
       "ready\n"
       "300 wake\n"
       "500 speech_start\n"
       "1100 speech_end\n"
       "1200 final 0.9 Hey Molt, search for Green\n"
-      "4000 wake\n"
-      "4200 speech_start\n"
-      "4800 speech_end\n"
-      "4900 final 0.9 Hey Molt, no, I said Queen\n"
-      "8000 wake\n"
-      "8200 speech_start\n"
-      "8800 speech_end\n"
-      "8900 final 0.9 Hey Molt, search for Green\n");
+      "9000 wake\n"
+      "9200 speech_start\n"
+      "9800 speech_end\n"
+      "9900 final 0.9 Hey Molt, no, I said Queen\n"
+      "18000 wake\n"
+      "18200 speech_start\n"
+      "18800 speech_end\n"
+      "18900 final 0.9 Hey Molt, search for Green\n");
   VoiceSession* session = VoiceSession::GetOrCreateForBrowser(browser());
   ASSERT_TRUE(session);
   ASSERT_TRUE(session->Start());
