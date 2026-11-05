@@ -564,7 +564,10 @@ class VoiceController : public VoicePlanner::Delegate,
   bool caption_again_ = false;
   base::CallbackListSubscription deferred_trees_;
   base::OneShotTimer deferred_timer_;
-  base::ObserverList<Observer> observers_;
+  // Reentrant: observers answer synchronously (the listening session
+  // stops the voice or says a notice in answer to what it hears), which
+  // notifies them again; Chromium's default list refuses that (a CHECK).
+  base::ReentrantObserverList<Observer> observers_;
   // Routines, personal words and site hints (voice_learning_loop.h).
   std::unique_ptr<VoiceLearningLoop> learning_;
   // Questions about the page (voice_page_questions.h).
