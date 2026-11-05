@@ -69,6 +69,8 @@ TEST(VoicePromptsTest, PermissionAnswers) {
   EXPECT_EQ(Answer(prompt, "yes, harbor please"), PromptAnswer::kAllow);
   EXPECT_EQ(Answer(prompt, AnotherWord("harbor")), PromptAnswer::kWrongWord);
   EXPECT_EQ(Answer(prompt, "no"), PromptAnswer::kRefuse);
+  // "no" as the recognizer may write it.
+  EXPECT_EQ(Answer(prompt, "Now."), PromptAnswer::kRefuse);
   EXPECT_EQ(Answer(prompt, "Block it."), PromptAnswer::kRefuse);
   EXPECT_EQ(Answer(prompt, "don't allow"), PromptAnswer::kRefuse);
   EXPECT_EQ(Answer(prompt, "cancel"), PromptAnswer::kDecline);

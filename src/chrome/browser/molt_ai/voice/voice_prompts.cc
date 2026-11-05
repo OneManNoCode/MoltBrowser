@@ -30,12 +30,14 @@ using Phrases = std::span<const std::string_view>;
 constexpr auto kYes = std::to_array<std::string_view>(
     {"yes", "ok", "okay", "sure", "yeah", "yep", "yes please", "confirm",
      "ok yes", "okay yes", "thats fine", "fine"});
+// "now" is "no" as the recognizer may write it, in the lists where "no" is
+// the cautious answer (blocked, declined, stayed, not saved).
 constexpr auto kNo = std::to_array<std::string_view>(
     {"no", "nope", "cancel", "no thanks", "no thank you", "cancel it", "dont",
-     "no dont"});
+     "no dont", "now"});
 constexpr auto kBlock = std::to_array<std::string_view>(
     {"no", "block", "block it", "deny", "deny it", "dont allow", "never allow",
-     "no thanks", "no thank you", "dont allow it", "nope"});
+     "no thanks", "no thank you", "dont allow it", "nope", "now"});
 // A permission prompt dismissed, not blocked: nothing is remembered.
 constexpr auto kDismiss = std::to_array<std::string_view>(
     {"cancel", "not now", "dismiss", "dismiss it", "later", "ignore it"});
@@ -50,7 +52,7 @@ constexpr auto kLeave = std::to_array<std::string_view>(
      "reload", "reload it", "yes reload", "ok", "okay"});
 constexpr auto kStay = std::to_array<std::string_view>(
     {"stay", "stay here", "stay on the page", "stay on page", "no", "cancel",
-     "dont leave", "dont reload", "no stay"});
+     "dont leave", "dont reload", "no stay", "now"});
 constexpr auto kDiscard = std::to_array<std::string_view>(
     {"discard", "discard it", "delete", "delete it", "remove", "remove it",
      "no", "dont keep it", "cancel"});
@@ -61,7 +63,7 @@ constexpr auto kNever = std::to_array<std::string_view>(
     {"never", "never save", "never for this site", "never save it"});
 constexpr auto kNotNow = std::to_array<std::string_view>(
     {"not now", "no", "no thanks", "no thank you", "cancel", "later",
-     "not now thanks"});
+     "not now thanks", "now"});
 constexpr auto kDictationLeads = std::to_array<std::string_view>(
     {"answer ", "type ", "my answer is ", "the answer is ", "reply "});
 constexpr auto kPoliteBefore =
