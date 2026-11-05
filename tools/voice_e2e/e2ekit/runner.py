@@ -111,6 +111,9 @@ def unmet(requirements, config, pulse_ok):
     """Why a scenario can't run in |config| (or "")."""
     if "microphone" in requirements and config.typed:
         return "needs the microphone (typed text never answers with a word)"
+    if "listening" in requirements and config.typed:
+        return ("needs voice mode listening in its window (a typed command "
+                "runs in the last active window)")
     if "pulse" in requirements and (config.audio != "pulse" or not pulse_ok):
         return "needs live audio (PulseAudio)"
     if "model" in requirements and not config.model_available:

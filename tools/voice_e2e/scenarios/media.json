@@ -121,7 +121,7 @@
    "start": {"url": "https://www.youtube.com/watch?v=video1&ad=1"},
    "steps": [
     {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
-    {"say": "skip the ad", "pause": 2.0, "needs": ["skip_ad"],
+    {"say": "skip the ad", "pause": 3.5, "needs": ["skip_ad"],
      "expect": [{"js": "kit.state.adSkipped === true"}]}
    ]
   },

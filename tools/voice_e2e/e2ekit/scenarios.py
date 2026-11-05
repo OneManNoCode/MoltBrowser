@@ -28,7 +28,7 @@ Fields of a step: "needs" (the grammar's command names it relies on, as
 VoiceCommandKindName() gives them: the report says "not in the grammar
 yet" when the build has none of that name), "answer" (an answer to the
 browser's question: said without the wake phrase), "timeout" (seconds,
-default 20), "requires" ("microphone", "pulse", "model"), "name", "pause"
+default 20), "requires" ("microphone", "pulse", "model", "listening"), "name", "pause"
 (seconds to wait before it), "direct" (false for a step whose action isn't
 a direct command, left out of the latency figures), "barge_in" (said while
 the browser is still speaking: the kit doesn't wait for it to finish).
@@ -74,7 +74,7 @@ import re
 TASKS = ("go", "read", "choose", "act", "media", "browser", "recover",
          "prompts", "security", "owner")
 MODES = ("wake", "always")
-REQUIREMENTS = ("microphone", "pulse", "model")
+REQUIREMENTS = ("microphone", "pulse", "model", "listening")
 
 STEP_ACTIONS = ("say", "say_word", "replay", "wait")
 STEP_KEYS = set(STEP_ACTIONS) | {

@@ -4,9 +4,10 @@
 reports' artifacts aren't always reachable from where the results are
 read, the job log is.
 
-For each run, the scenarios that failed or couldn't run, grouped by the
-first fatal line of their browser.log (one crash prints once, with the
-names of the others it ended), each with:
+For each run, the scenarios that failed or couldn't run: those that
+couldn't run grouped by the first fatal line of their browser.log (one
+crash prints once, with the names of the others it ended), those that
+failed a check by its reason, each with:
   - the browser log's fatal lines and the stack after the first one;
   - the end of the browser log when nothing in it was fatal;
   - the voice test log's events (what was heard, said, the activity),
@@ -144,7 +145,13 @@ def build(report_dir, limit=150000, max_groups=30):
         name = res["id"] + ("" if res.get("mode", "wake") == "wake" else "-" + res["mode"])
         run_dir = os.path.join(report_dir, "runs", label.replace("/", "-"), name)
         key_line, blog = browser_log_digest(_read(os.path.join(run_dir, "browser.log")))
-        key = (label, key_line or ("no crash: " + (res.get("reason") or "")[:60]))
+        # A scenario that couldn't finish is grouped by the browser's crash;
+        # one that failed a check by its own reason: a crash at exit, after
+        # the check, would end every scenario's log alike.
+        if res.get("status") == "error" and key_line:
+            key = (label, key_line)
+        else:
+            key = (label, "failed: " + (res.get("reason") or "")[:60])
         if key not in groups:
             groups[key] = {"first": (name, res, run_dir, blog), "others": []}
             order.append(key)

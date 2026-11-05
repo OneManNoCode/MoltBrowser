@@ -65,6 +65,7 @@
    "id": "browser-new-window",
    "title": "A new window; voice mode stays in its own",
    "task": "browser",
+   "requires": ["listening"],
    "start": {"url": "https://news.test/"},
    "steps": [
     {"say": "new window", "needs": ["new_window"], "expect": [{"windows": 2}]},

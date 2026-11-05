@@ -53,6 +53,22 @@ class DigestTest(unittest.TestCase):
             self.assertIn('+1.5s activity  {"activity": "listening", "mic": true}', text)
             self.assertNotIn("### pulse/clean: c", text)
 
+    def test_a_crash_at_exit_doesnt_hide_each_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_report(d, [
+                {"id": "a", "mode": "wake", "status": "failed", "reason": "not checked"},
+                {"id": "b", "mode": "wake", "status": "failed", "reason": "no player"}])
+            for name in ("a", "b"):
+                write(os.path.join(d, "runs", "pulse-clean", name, "browser.log"), CRASH)
+                write(os.path.join(d, "runs", "pulse-clean", name, "voice.jsonl"),
+                      '{"t":1,"e":"heard","text":"%s"}\n' % name)
+            text = digest.build(d)
+            self.assertEqual(text.count("### "), 2)
+            self.assertIn("### pulse/clean: a (failed)", text)
+            self.assertIn("### pulse/clean: b (failed)", text)
+            self.assertIn('"text": "b"', text)
+            self.assertNotIn("the same in", text)
+
     def test_no_crash_shows_the_logs_end(self):
         with tempfile.TemporaryDirectory() as d:
             self.make_report(d, [
