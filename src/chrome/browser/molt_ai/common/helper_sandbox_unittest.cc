@@ -348,6 +348,27 @@ TEST(HelperSandboxTest, ReadsOnlyPlainFilesTheHelperMade) {
 #if BUILDFLAG(IS_LINUX)
 namespace hsl = helper_sandbox_linux;
 
+// In a forked child, before hsl::ApplyInChild(): the descriptors a resident
+// helper's launcher gives it (helper_resident_posix.cc). stderr goes to
+// /dev/null: the test launcher's output file would end the child with
+// SIGXFSZ at its first message, as a resident helper may write no file.
+// The ruleset goes to kChildRulesetFd, |keep| (an end of the test's pipe)
+// moved off that number first. Raw calls only.
+void SetUpChildAsTheLauncherDoes(const hsl::Prepared& prepared, int* keep) {
+  if (*keep == hsl::kChildRulesetFd || *keep == STDERR_FILENO) {
+    *keep = fcntl(*keep, F_DUPFD, hsl::kChildRulesetFd + 1);
+  }
+  const int null_fd = open("/dev/null", O_WRONLY);
+  if (null_fd >= 0 && null_fd != STDERR_FILENO) {
+    dup2(null_fd, STDERR_FILENO);
+    close(null_fd);
+  }
+  if (prepared.ruleset_fd >= 0 &&
+      prepared.ruleset_fd != hsl::kChildRulesetFd) {
+    dup2(prepared.ruleset_fd, hsl::kChildRulesetFd);
+  }
+}
+
 // Enough of a classic BPF interpreter for what BuildSeccompProgram() emits.
 uint32_t RunFilter(const std::vector<sock_filter>& program,
                    const seccomp_data& data) {
@@ -849,6 +870,7 @@ TEST(HelperSandboxLinuxTest, ConfinedHelperKeepsSchedulingToItself) {
   ASSERT_GE(child, 0);
   if (child == 0) {
     close(fds[0]);
+    SetUpChildAsTheLauncherDoes(prepared, &fds[1]);
     hsl::ApplyInChild(prepared);
     uint32_t bits = 0;
     bits |= setpriority(PRIO_PROCESS, other, 19) == 0 ? 1u : 0u;
@@ -976,6 +998,7 @@ TEST(HelperSandboxLinuxTest, SeccompAloneKeepsSignalsToTheHelper) {
   ASSERT_GE(child, 0);
   if (child == 0) {
     close(fds[0]);
+    SetUpChildAsTheLauncherDoes(prepared, &fds[1]);
     hsl::ApplyInChild(prepared);
     const uint32_t bits = ProbeSignals(parent, fds[1]);
     [[maybe_unused]] const ssize_t written = write(fds[1], &bits, sizeof(bits));
