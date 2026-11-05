@@ -50,6 +50,7 @@
 #include <stdint.h>
 
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -152,6 +153,9 @@ class VoiceListener {
   bool started() const { return started_; }
   // A helper is ready.
   bool ready() const { return ready_; }
+  // The microphone's samples dropped since the last call: no helper to take
+  // them, or its input backed up (for the test log, voice_test_log.h).
+  int64_t TakeDroppedSamples();
 
   void SendConfig(const HelperConfig& config);
   void SendReset();

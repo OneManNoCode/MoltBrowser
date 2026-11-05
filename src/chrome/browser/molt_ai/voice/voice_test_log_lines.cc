@@ -279,6 +279,7 @@ std::string TestLogLines::Map(int64_t ms,
 std::string TestLogLines::Microphone(int64_t ms,
                                      float peak,
                                      int64_t samples,
+                                     int64_t dropped,
                                      std::string_view echo) const {
   std::string out = Head(ms, "mic");
   const int db = peak > 1e-6f && std::isfinite(peak)
@@ -289,7 +290,20 @@ std::string TestLogLines::Microphone(int64_t ms,
   out.append(std::to_string(db));
   out.append(",\"samples\":");
   out.append(std::to_string(std::max<int64_t>(samples, 0)));
+  out.append(",\"dropped\":");
+  out.append(std::to_string(std::max<int64_t>(dropped, 0)));
   AppendString(out, "echo", CleanSpokenText(echo, 32));
+  out.append("}\n");
+  return out;
+}
+
+std::string TestLogLines::Dropped(int64_t ms,
+                                  std::string_view text,
+                                  std::string_view reason,
+                                  std::string_view pending_word) const {
+  std::string out = Head(ms, "dropped");
+  AppendString(out, "text", MaskConfirmationWords(text, pending_word));
+  AppendString(out, "reason", CleanSpokenText(reason, 64));
   out.append("}\n");
   return out;
 }

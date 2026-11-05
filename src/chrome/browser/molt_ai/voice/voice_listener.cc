@@ -299,11 +299,13 @@ class VoiceListener::Sink : public VoiceListener::AudioSink {
     }
     base::AutoLock lock(lock_);
     if (!connection_) {
+      dropped_samples_ += static_cast<int64_t>(samples.size());
       return;
     }
     // Backed up: dropped (the watchdog notices a helper that stopped
     // reading).
     if (connection_->queued() + frame.size() > kMaxQueuedAudioBytes) {
+      dropped_samples_ += static_cast<int64_t>(samples.size());
       return;
     }
     // In the order the writer sends them.
@@ -332,6 +334,13 @@ class VoiceListener::Sink : public VoiceListener::AudioSink {
     return connection_ ? connection_->queued() : 0;
   }
 
+  // The samples dropped since the last call (no helper, or its input
+  // backed up), for the test log.
+  int64_t TakeDropped() {
+    base::AutoLock lock(lock_);
+    return std::exchange(dropped_samples_, 0);
+  }
+
  private:
   ~Sink() override = default;
 
@@ -339,6 +348,8 @@ class VoiceListener::Sink : public VoiceListener::AudioSink {
   scoped_refptr<Connection> connection_ GUARDED_BY(lock_);
   // What went to that helper, and when it was captured.
   HelperAudioClock clock_ GUARDED_BY(lock_);
+  // Dropped since TakeDropped() (the test log's).
+  int64_t dropped_samples_ GUARDED_BY(lock_) = 0;
 };
 
 // static
@@ -589,6 +600,10 @@ void VoiceListener::EndConnection(StopReason reason, const std::string& why) {
   restart_timer_.Start(
       FROM_HERE, kRestartDelays[delay],
       base::BindOnce(&VoiceListener::Launch, base::Unretained(this)));
+}
+
+int64_t VoiceListener::TakeDroppedSamples() {
+  return sink_->TakeDropped();
 }
 
 void VoiceListener::SendConfig(const HelperConfig& config) {

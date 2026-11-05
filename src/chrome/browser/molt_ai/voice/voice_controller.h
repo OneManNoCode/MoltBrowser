@@ -296,7 +296,12 @@ class VoiceController : public VoicePlanner::Delegate,
 
   // What the microphone gave over the last few seconds, for the spoken
   // test kit's log (voice_test_log.h); nothing without the log.
-  void NoteMicrophoneLevels(float peak, int64_t samples, std::string_view echo);
+  void NoteMicrophoneLevels(float peak,
+                            int64_t samples,
+                            int64_t dropped,
+                            std::string_view echo);
+  // What the listening session set aside, and why: for the test log only.
+  void NoteDroppedUtterance(const std::string& text, std::string_view reason);
 
   // The planner open-ended requests go to (§6.2, layer 3): the web agent's
   // (agents/voice_agent_planner.h) unless replaced; null, the browser says

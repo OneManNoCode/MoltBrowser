@@ -75,7 +75,14 @@ class VoiceTestLog : public VoiceController::Observer {
 
   // What the microphone gave since the last call: its loudest sample (0
   // to 1), how many samples, and its echo cancellation.
-  void OnMicrophone(float peak, int64_t samples, std::string_view echo);
+  void OnMicrophone(float peak,
+                    int64_t samples,
+                    int64_t dropped,
+                    std::string_view echo);
+  // What the listening session set aside (voice_session_logic.h), and why.
+  void OnDropped(const std::string& text,
+                 std::string_view reason,
+                 const ConversationState& state);
 
   // The loop's state as the caption bar shows it.
   void OnLoop(VoiceActivity activity,

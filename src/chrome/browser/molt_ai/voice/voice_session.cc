@@ -674,6 +674,10 @@ void VoiceSession::Apply(SessionActions actions) {
   if (actions.say_again && controller_) {
     controller_->SayNotice(SayAgainNotice(SpeechLanguage()));
   }
+  if (actions.dropped && controller_) {
+    controller_->NoteDroppedUtterance(*actions.dropped,
+                                      actions.dropped_reason);
+  }
   bool caption = actions.state.has_value();
   if (actions.said_over_voice && speaking_hint_.empty() &&
       ControllerActivity() == BrowserActivity::kSpeaking) {
@@ -841,6 +845,7 @@ void VoiceSession::OnPoll() {
     const VoiceAudio::Levels levels = audio_->TakeLevels();
     controller_->NoteMicrophoneLevels(
         levels.peak, levels.samples,
+        listener_ ? listener_->TakeDroppedSamples() : 0,
         microphone_on_ ? EchoCancellationName(echo_) : "off");
   }
 }

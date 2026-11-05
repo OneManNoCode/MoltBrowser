@@ -15,8 +15,10 @@
 //   {"t":...,"w":1,"e":"prompt","op":"close","id":3}
 //   {"t":...,"w":1,"e":"confirm","op":"open","what":"press Buy now"}
 //   {"t":...,"w":1,"e":"confirm","op":"close"}
-//   {"t":...,"w":1,"e":"mic","peak_db":-23,"samples":80000,
+//   {"t":...,"w":1,"e":"mic","peak_db":-23,"samples":80000,"dropped":0,
 //    "echo":"chrome-wide"}
+//   {"t":...,"w":1,"e":"dropped","text":"open YouTube",
+//    "reason":"no wake phrase"}
 //   {"t":...,"w":1,"e":"map","items":12,"lists":1,"media":1,
 //    "selection":false,"selected_text":false,"labels":["Search",...]}
 //
@@ -136,7 +138,15 @@ class TestLogLines {
   std::string Microphone(int64_t ms,
                          float peak,
                          int64_t samples,
+                         int64_t dropped,
                          std::string_view echo) const;
+
+  // What the listening session set aside and why ("no wake phrase"),
+  // masked as every text is.
+  std::string Dropped(int64_t ms,
+                      std::string_view text,
+                      std::string_view reason,
+                      std::string_view pending_word) const;
 
   // The lines for what changed since the last call (the first call compares
   // with a TestLogState{}).

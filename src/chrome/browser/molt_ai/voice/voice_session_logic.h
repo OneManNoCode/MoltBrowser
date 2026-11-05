@@ -204,6 +204,11 @@ struct SessionActions {
 
   // The voice loop gets this, as if typed.
   std::optional<std::string> utterance;
+  // What the helper heard that the session set aside, and why (for the
+  // spoken test kit's log: voice_test_log.h); nothing for what is taken, or
+  // asked for again.
+  std::optional<std::string> dropped;
+  std::string_view dropped_reason;
   // |utterance| was heard cleanly enough for the voice gesture (above).
   bool heard_cleanly = false;
   // Something said while voice mode's own voice played with no echo

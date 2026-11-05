@@ -136,19 +136,26 @@ TEST(VoiceTestLogLinesTest, AMapLine) {
 
 TEST(VoiceTestLogLinesTest, AMicrophoneLine) {
   TestLogLines lines(2);
-  EXPECT_EQ(lines.Microphone(7, 0.1f, 80000, "chrome-wide"),
+  EXPECT_EQ(lines.Microphone(7, 0.1f, 80000, 160, "chrome-wide"),
             "{\"t\":7,\"w\":2,\"e\":\"mic\",\"peak_db\":-20,"
-            "\"samples\":80000,\"echo\":\"chrome-wide\"}\n");
+            "\"samples\":80000,\"dropped\":160,\"echo\":\"chrome-wide\"}\n");
   // Silence, no samples at all, and what can't be a level.
-  EXPECT_EQ(lines.Microphone(8, 0, 0, "off"),
+  EXPECT_EQ(lines.Microphone(8, 0, 0, 0, "off"),
             "{\"t\":8,\"w\":2,\"e\":\"mic\",\"peak_db\":-120,"
-            "\"samples\":0,\"echo\":\"off\"}\n");
-  EXPECT_NE(lines.Microphone(9, std::nanf(""), -5, "none")
-                .find("\"peak_db\":-120,\"samples\":0,"),
+            "\"samples\":0,\"dropped\":0,\"echo\":\"off\"}\n");
+  EXPECT_NE(lines.Microphone(9, std::nanf(""), -5, -1, "none")
+                .find("\"peak_db\":-120,\"samples\":0,\"dropped\":0,"),
             std::string::npos);
   // Full scale and over it.
-  EXPECT_NE(lines.Microphone(10, 3.0f, 1, "none").find("\"peak_db\":0,"),
+  EXPECT_NE(lines.Microphone(10, 3.0f, 1, 0, "none").find("\"peak_db\":0,"),
             std::string::npos);
+}
+
+TEST(VoiceTestLogLinesTest, ADroppedLineMasksTheWord) {
+  TestLogLines lines(1);
+  EXPECT_EQ(lines.Dropped(3, "the word is harbor", "no wake phrase", ""),
+            "{\"t\":3,\"w\":1,\"e\":\"dropped\",\"text\":\"the word is "
+            "[word]\",\"reason\":\"no wake phrase\"}\n");
 }
 
 TEST(VoiceTestLogLinesTest, WritesWhatChanged) {

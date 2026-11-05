@@ -178,6 +178,8 @@ def _fold_microphone(events):
         samples = ev.get("samples")
         peak = peak if isinstance(peak, (int, float)) else -120
         samples = samples if isinstance(samples, int) else 0
+        dropped = ev.get("dropped")
+        dropped = dropped if isinstance(dropped, int) else 0
         echo = str(ev.get("echo", ""))[:32]
         last = out[-1] if out else None
         if last is not None and last.get("e") == "mic" and "reports" in last:
@@ -185,12 +187,13 @@ def _fold_microphone(events):
             last["loudest_db"] = max(last["loudest_db"], peak)
             last["quietest_db"] = min(last["quietest_db"], peak)
             last["samples"] += samples
+            last["dropped"] += dropped
             if echo not in last["echo"]:
                 last["echo"].append(echo)
             continue
         out.append({"t": ev.get("t"), "e": "mic", "reports": 1,
                     "loudest_db": peak, "quietest_db": peak,
-                    "samples": samples, "echo": [echo]})
+                    "samples": samples, "dropped": dropped, "echo": [echo]})
     return out
 
 

@@ -89,6 +89,9 @@ TEST_F(VoiceSessionLogicTest, NothingCountsWithoutTheWakePhrase) {
   EXPECT_FALSE(final_text.utterance.has_value());
   EXPECT_FALSE(final_text.earcon.has_value());
   EXPECT_EQ(logic_->state(), SessionState::kWaiting);
+  // Set aside, and why (for the spoken test kit's log).
+  EXPECT_EQ(final_text.dropped, "open YouTube");
+  EXPECT_EQ(final_text.dropped_reason, "no wake phrase");
 }
 
 TEST_F(VoiceSessionLogicTest, StopAlwaysCounts) {

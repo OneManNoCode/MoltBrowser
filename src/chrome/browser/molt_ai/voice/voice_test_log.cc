@@ -111,8 +111,16 @@ class VoiceTestLog::Writer {
   void Microphone(int64_t ms,
                   float peak,
                   int64_t samples,
+                  int64_t dropped,
                   const std::string& echo) {
-    Write(lines_.Microphone(ms, peak, samples, echo));
+    Write(lines_.Microphone(ms, peak, samples, dropped, echo));
+  }
+
+  void Dropped(int64_t ms,
+               const std::string& text,
+               const std::string& reason,
+               const std::string& pending_word) {
+    Write(lines_.Dropped(ms, text, reason, pending_word));
   }
 
   void Changed(int64_t ms,
@@ -232,9 +240,18 @@ void VoiceTestLog::OnMap(const PageMap& map,
 
 void VoiceTestLog::OnMicrophone(float peak,
                                 int64_t samples,
+                                int64_t dropped,
                                 std::string_view echo) {
   writer_.AsyncCall(&Writer::Microphone)
-      .WithArgs(NowMs(), peak, samples, std::string(echo));
+      .WithArgs(NowMs(), peak, samples, dropped, std::string(echo));
+}
+
+void VoiceTestLog::OnDropped(const std::string& text,
+                             std::string_view reason,
+                             const ConversationState& state) {
+  writer_.AsyncCall(&Writer::Dropped)
+      .WithArgs(NowMs(), text, std::string(reason),
+                state.prompt.id != 0 ? state.prompt.word : std::string());
 }
 
 void VoiceTestLog::OnLoop(VoiceActivity activity,

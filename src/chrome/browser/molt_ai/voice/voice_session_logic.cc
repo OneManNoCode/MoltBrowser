@@ -430,6 +430,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   EndUtterance(&actions);
   wake_until_ms_ = 0;
   bool take = false;
+  std::string_view reason;
   if (!text.empty()) {
     if (IsAlwaysHeardCommand(text, settings_.language)) {
       take = true;
@@ -437,15 +438,27 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       // Another source spoke while this was said: it may be what was heard.
       take = false;
       actions.said_over_voice = OwnVoiceUnfilteredSince(utterance.begun_ms);
+      reason = actions.said_over_voice ? "over voice mode's own voice"
+                                       : "another source was speaking";
     } else if (utterance.woke) {
       take = true;
     } else if (utterance.open && !utterance.during_speech) {
       take = !page_audible_ || confidence >= kMinConfidenceWithoutWake;
+      if (!take) {
+        reason = "a tab's sound, and not heard surely";
+      }
+    } else if (!utterance.open) {
+      reason = "no wake phrase";
+    } else if (!utterance.echo_cancelled) {
+      reason = "during voice mode's speech, with no echo canceller";
     } else if (utterance.open && utterance.echo_cancelled) {
       // Said over the browser's own voice: a command unless it is that
       // voice heard back.
       take = confidence >= kMinConfidenceWithoutWake &&
              !EchoOfBrowser(text, utterance.begun_ms);
+      if (!take) {
+        reason = "voice mode's voice heard back, or not heard surely";
+      }
       // What needs the browser quiet stops it and is asked for again.
       if (take && !TakenOverOwnVoice(text, settings_.language)) {
         take = false;
@@ -456,6 +469,10 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
         actions.stop_speech = true;
       }
     }
+  }
+  if (!take && !actions.say_again && !reason.empty()) {
+    actions.dropped = std::string(text);
+    actions.dropped_reason = reason;
   }
   if (take) {
     actions.utterance = std::string(text);

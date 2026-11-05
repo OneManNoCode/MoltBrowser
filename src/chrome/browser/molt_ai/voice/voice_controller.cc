@@ -513,9 +513,17 @@ void VoiceController::SetListening(ListeningCaption caption) {
 
 void VoiceController::NoteMicrophoneLevels(float peak,
                                            int64_t samples,
+                                           int64_t dropped,
                                            std::string_view echo) {
   if (test_log_) {
-    test_log_->OnMicrophone(peak, samples, echo);
+    test_log_->OnMicrophone(peak, samples, dropped, echo);
+  }
+}
+
+void VoiceController::NoteDroppedUtterance(const std::string& text,
+                                           std::string_view reason) {
+  if (test_log_) {
+    test_log_->OnDropped(text, reason, state_);
   }
 }
 

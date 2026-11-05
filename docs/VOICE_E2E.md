@@ -223,7 +223,8 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"prompt","op":"open","id":3,"kind":"permission"}
 {"t":...,"w":1,"e":"confirm","op":"open","what":"press Place order"}
 {"t":...,"w":1,"e":"map","items":15,"lists":1,"media":1,"selection":false,"selected_text":false,"labels":["YouTube Home","Search",...]}
-{"t":...,"w":1,"e":"mic","peak_db":-23,"samples":80000,"echo":"chrome-wide"}
+{"t":...,"w":1,"e":"mic","peak_db":-23,"samples":80000,"dropped":0,"echo":"chrome-wide"}
+{"t":...,"w":1,"e":"dropped","text":"open YouTube","reason":"no wake phrase"}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -239,8 +240,13 @@ in `VoiceController`):
   could be read. What a failure saw on the page, in the digest.
 - `mic`: about every five seconds while voice mode listens, what the
   microphone gave since the last one: its loudest sample in dBFS (-120 for
-  silence), how many samples, and its echo cancellation (`off` until the
-  microphone starts). A run that heard nothing tells a silent microphone
+  silence), how many samples, how many the listener dropped (no helper to
+  take them, or its input backed up), and its echo cancellation (`off`
+  until the microphone starts).
+- `dropped`: what the speech helper heard that the listening session set
+  aside, and why (no wake phrase; another source was speaking; a tab's
+  sound and not heard surely; voice mode's voice heard back), masked as
+  every text is: an utterance that never reached `heard`. A run that heard nothing tells a silent microphone
   (the audio's routing) from sound that wasn't recognized.
 - `said`: what voice mode says, as it starts saying it.
 - `activity`: voice mode's state, the microphone, and whether only the wake
