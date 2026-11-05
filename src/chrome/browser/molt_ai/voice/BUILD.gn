@@ -1199,6 +1199,7 @@ source_set("voice_loop_browser_tests") {
 
   deps = [
     ":features",
+    ":page_reading",
     ":site_skills",
     ":voice_controller",
     ":voice_loop",

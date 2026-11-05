@@ -112,7 +112,7 @@ class PersonalVocabulary {
   bool NoteName(std::string_view phrase, int64_t now);
   // The user corrected |heard| (as recognized) to |meant|. False for a
   // pair either side of which LearnablePhrase() refuses, or that is the
-  // same phrase.
+  // same phrase. A name noted for |heard| goes: it was misheard.
   bool NoteCorrection(std::string_view heard,
                       std::string_view meant,
                       int64_t now);

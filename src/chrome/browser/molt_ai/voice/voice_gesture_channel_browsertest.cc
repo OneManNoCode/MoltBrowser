@@ -32,6 +32,7 @@
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -136,6 +137,15 @@ class RecordingTtsPlatform : public content::TtsPlatform {
     return false;
   }
 
+  // Everything it was asked to say, for a failure's message.
+  std::string AllSpoken() const {
+    std::string all;
+    for (const std::string& said : spoken_) {
+      all += (all.empty() ? "" : " | ") + said;
+    }
+    return all;
+  }
+
  private:
   std::vector<std::string> spoken_;
 };
@@ -199,18 +209,61 @@ class VoiceGestureChannelBrowserTest : public InProcessBrowserTest {
     return voice;
   }
 
+  // The waits are bounded (kWaitTimeout), and a failure says what it
+  // waited for and what the page logged or voice mode said.
   bool WaitForLog(std::string_view entry) {
+    std::string log;
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating(
+            [](std::string* log, std::string want) {
+              return "the page never logged \"" + want + "\"; its log: " +
+                     *log;
+            },
+            base::Unretained(&log), std::string(entry)));
     return base::test::RunUntil([&]() {
-      return content::EvalJs(tab(), "moltLog.join(' ')",
-                             content::EXECUTE_SCRIPT_NO_USER_GESTURE)
-                 .ExtractString()
-                 .find(entry) != std::string::npos;
+      log = content::EvalJs(tab(), "moltLog.join(' ')",
+                            content::EXECUTE_SCRIPT_NO_USER_GESTURE)
+                .ExtractString();
+      return log.find(entry) != std::string::npos;
     });
   }
 
   bool WaitForSpeech(std::string_view text) {
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating(
+            [](const RecordingTtsPlatform* tts, std::string want) {
+              return "voice mode never said \"" + want + "\"; it said: " +
+                     tts->AllSpoken();
+            },
+            base::Unretained(&tts_), std::string(text)));
     return base::test::RunUntil([&]() { return tts_.Spoke(text); });
   }
+
+  // Bounds the waits of a test body, saying what voice mode said and the
+  // prompt's state when one runs out.
+  std::unique_ptr<base::test::ScopedRunLoopTimeout> BoundedWaits(
+      VoiceController* voice) {
+    return std::make_unique<base::test::ScopedRunLoopTimeout>(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating(
+            [](const RecordingTtsPlatform* tts, VoiceController* voice) {
+              VoiceBrowserPrompts* prompts =
+                  voice->browser_prompts_for_testing();
+              std::string out = "voice mode said: " + tts->AllSpoken();
+              if (prompts) {
+                out += "; the word: \"" + prompts->current_word_for_testing() +
+                       "\"; a microphone captured: ";
+                out += prompts->word_channel_inputs_for_testing().audio_captured
+                           ? "yes"
+                           : "no";
+              }
+              return out;
+            },
+            base::Unretained(&tts_), base::Unretained(voice)));
+  }
+  static constexpr base::TimeDelta kWaitTimeout = base::Seconds(20);
 
   VoiceBrowserPrompts* Prompts(VoiceController* voice) {
     return voice->browser_prompts_for_testing();
@@ -292,6 +345,7 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
 IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
                        APagePlayingWordsCantTakeTheGestureAway) {
   VoiceController* voice = Start();
+  const auto bounded = BoundedWaits(voice);
   auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
   ASSERT_TRUE(manager);
   permissions::MockPermissionPromptFactory factory(manager);
@@ -345,6 +399,7 @@ IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
 IN_PROC_BROWSER_TEST_F(VoiceGestureChannelBrowserTest,
                        TheWordSaidInPassingWhileAPageListensChanges) {
   VoiceController* voice = Start();
+  const auto bounded = BoundedWaits(voice);
   auto* manager = permissions::PermissionRequestManager::FromWebContents(tab());
   ASSERT_TRUE(manager);
   permissions::MockPermissionPromptFactory factory(manager);

@@ -51,7 +51,8 @@
       log('present:no window');
       return;
     }
-    window.moltSlides.postMessage('go', {targetOrigin: '*',
+    // Delegation needs the receiver's origin named ('*' is refused).
+    window.moltSlides.postMessage('go', {targetOrigin: location.origin,
                                          delegate: 'fullscreen'});
     log('present:delegated');
   });

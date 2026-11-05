@@ -177,6 +177,9 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
         item->Cancel(/*user_cancel=*/false);
       }
     }
+    items.clear();
+    // The profile goes before the fixture does.
+    profile_ = nullptr;
     VoiceAiAnswers::SetModelForTesting(VoiceAiAnswers::ModelForTesting());
     for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
       if (VoiceController* voice = VoiceController::FromBrowser(window)) {
@@ -277,6 +280,8 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, Bookmarks) {
   const std::string said = tts_.TakeSpoken();
   EXPECT_NE(said.find("1 bookmark."), std::string::npos) << said;
   EXPECT_NE(said.find("Player - Fixture"), std::string::npos) << said;
+  // The manager loads in the tab after the list is read.
+  EXPECT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "bookmarks");
   Say("one");
   EXPECT_EQ(web_contents()->GetLastCommittedURL(), page);

@@ -388,12 +388,19 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, RestartsAfterACrash) {
       "300 exit 3\n");
   ASSERT_TRUE(session()->Start());
   ASSERT_TRUE(WaitForState(SessionState::kWaiting));
-  // It crashes: restarting.
-  ASSERT_TRUE(WaitForState(SessionState::kStarting));
-  // The next one doesn't.
+  // The helper read its script when it started: the next one, which the
+  // crash at 300 ms starts, doesn't crash. (Waiting to see the restart
+  // begin first could miss it, or let it read the old script.)
   Script("ready\n");
+  // The crash at 300 ms, then the first restart a second later
+  // (VoiceListener::kRestartDelays).
+  Wait(base::Milliseconds(2500));
+  // It crashed and came back: listening, and nothing said it stopped.
   ASSERT_TRUE(WaitForState(SessionState::kWaiting));
   EXPECT_TRUE(session()->listening());
+  EXPECT_EQ(tts_.AllSpoken().find("Speech recognition stopped working"),
+            std::string::npos)
+      << tts_.AllSpoken();
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, GivesUpAfterCrashesInARow) {

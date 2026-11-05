@@ -275,12 +275,20 @@ browser_test_filter() {
 rerun_silent_crashes() {
   local dir="$1" binary="$2" name
   mkdir -p "$dir/rerun"
+  # Under gdb when there is one: a crash that prints nothing (a stack
+  # overflow can take the crash handler with it) still gets its stack.
+  local gdb=()
+  if command -v gdb >/dev/null 2>&1 ||
+      sudo apt-get install -y -qq gdb >/dev/null 2>&1; then
+    gdb=(gdb -q -batch -ex "set pagination off" -ex run
+         -ex "bt 40" -ex "bt -25" -ex "info registers rip rsp" --args)
+  fi
   python3 "$ROOT/tools/ci/molt_test_summary.py" --silent-crashes "$dir" "$binary" |
     while read -r name; do
       [ -n "$name" ] || continue
       say "running $name again on its own"
-      timeout 300 xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/$binary" \
-        --single-process-tests --gtest_filter="$name" \
+      timeout 300 xvfb-run -a -s "-screen 0 1600x1200x24" "${gdb[@]}" \
+        "$OUT/$binary" --single-process-tests --gtest_filter="$name" \
         > "$dir/rerun/$binary.$name.log" 2>&1 || true
     done
 }

@@ -245,6 +245,9 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
         item->Cancel(/*user_cancel=*/false);
       }
     }
+    items.clear();
+    // The profile goes before the fixture does.
+    profile_ = nullptr;
     WebAgent::SetModelForTesting(WebAgent::ModelForTesting());
     agent_.reset();
     if (voice::VoiceController* voice =

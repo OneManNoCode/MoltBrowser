@@ -39,6 +39,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
@@ -517,11 +518,21 @@ class VoicePlannerBrowserTest : public AgentPageMapBrowserTest {
 
   // Waits until the browser has said |text| since TakeSpoken() last took
   // what it said.
+  // Waits, at most kHeardTimeout, for |text| to be said; a failure says
+  // what was.
   bool Heard(std::string_view text) {
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kHeardTimeout, base::BindRepeating(
+                                      [](FakeTtsPlatform* tts, std::string want) {
+                                        return "never heard \"" + want +
+                                               "\"; heard: " + tts->Untaken();
+                                      },
+                                      base::Unretained(&tts_), std::string(text)));
     return base::test::RunUntil([&]() {
       return tts_.Untaken().find(std::string(text)) != std::string::npos;
     });
   }
+  static constexpr base::TimeDelta kHeardTimeout = base::Seconds(20);
 };
 
 // Routines with the planner's steps: the profile's learning keeps them in
