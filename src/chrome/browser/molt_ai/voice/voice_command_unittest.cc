@@ -170,6 +170,7 @@ TEST(VoiceCommandTest, OpenSites) {
       {"open YouTube", "open_site", "site=youtube"},
       {"Hey Molt, open YouTube.", "open_site", "site=youtube"},
       {"hey mold open youtube", "open_site", "site=youtube"},
+      {"He Molt, open YouTube.", "open_site", "site=youtube"},
       {"OK Molt go to youtube", "open_site", "site=youtube"},
       {"go to example dot com", "open_site", "site=example.com;address=1"},
       {"go to example.com", "open_site", "site=example.com;address=1"},

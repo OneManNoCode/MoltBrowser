@@ -360,6 +360,38 @@ bool WakeKeywordLine(std::string_view phrase,
   return true;
 }
 
+bool WakeKeywordLines(std::string_view phrase,
+                      const PieceVocab& vocab,
+                      const TokenSet& tokens,
+                      std::vector<std::string>* lines) {
+  std::string line;
+  if (!WakeKeywordLine(phrase, vocab, tokens, &line)) {
+    return false;
+  }
+  lines->push_back(line);
+  constexpr std::string_view kHey = "hey ";
+  if (phrase.substr(0, kHey.size()) != kHey) {
+    return true;
+  }
+  const std::string short_phrase =
+      "he " + std::string(phrase.substr(kHey.size()));
+  std::string short_line;
+  if (!WakeKeywordLine(short_phrase, vocab, tokens, &short_line)) {
+    return true;
+  }
+  // The pieces and threshold of the short phrase, the label of the phrase.
+  const size_t label = line.rfind(" @");
+  const size_t short_label = short_line.rfind(" @");
+  if (label == std::string::npos || short_label == std::string::npos) {
+    return true;
+  }
+  short_line = short_line.substr(0, short_label) + line.substr(label);
+  if (short_line != line) {
+    lines->push_back(std::move(short_line));
+  }
+  return true;
+}
+
 std::string HotwordsArgument(const std::vector<std::string>& phrases,
                              const PieceVocab& vocab,
                              const TokenSet& tokens) {

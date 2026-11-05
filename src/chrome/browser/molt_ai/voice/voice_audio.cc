@@ -301,6 +301,10 @@ void VoiceAudio::OnDeviceParameters(
 void VoiceAudio::Open(EchoCancellation echo) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   echo_ = echo;
+  // For OnCaptureStarted(), which the audio thread calls; Stop()
+  // invalidates it, and no callback comes after Stop().
+  owner_ = base::SequencedTaskRunner::GetCurrentDefault();
+  started_self_ = weak_factory_.GetWeakPtr();
   if (echo == EchoCancellation::kNone) {
     LOG(WARNING) << "[MoltVoice] no echo cancellation for the microphone: "
                     "page audio and the browser's voice reach the recognizer";
@@ -328,7 +332,17 @@ void VoiceAudio::Stop() {
 }
 
 void VoiceAudio::OnCaptureStarted() {
+  // The audio thread (AudioInputDevice's AudioThreadCallback, once it has
+  // the stream's memory), like Capture().
+  owner_->PostTask(FROM_HERE, base::BindOnce(&VoiceAudio::CaptureStarted,
+                                             started_self_));
+}
+
+void VoiceAudio::CaptureStarted() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!source_) {
+    return;
+  }
   starting_ = false;
   delegate_->OnMicrophoneStarted(echo_);
 }
@@ -356,7 +370,19 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
 
 void VoiceAudio::OnCaptureError(media::AudioCapturerSource::ErrorCode code,
                                 const std::string& message) {
+  // This sequence (the stream's IPC, the dead stream check), or the audio
+  // thread (a socket or buffer error), where Stop() would join the thread
+  // it runs on: always here, after the call. Dropped once stopped.
+  owner_->PostTask(FROM_HERE, base::BindOnce(&VoiceAudio::CaptureError,
+                                             started_self_, code, message));
+}
+
+void VoiceAudio::CaptureError(media::AudioCapturerSource::ErrorCode code,
+                              const std::string& message) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!source_ && !starting_) {
+    return;
+  }
   LOG(WARNING) << "[MoltVoice] microphone error " << static_cast<int>(code)
                << ": " << message;
   Stop();
@@ -449,8 +475,11 @@ class VoiceEarcons::Player : public media::AudioRendererSink::RenderCallback {
 };
 
 VoiceEarcons::VoiceEarcons()
+    // The player's audio::OutputDevice joins its audio thread when it goes
+    // (AudioDeviceThread's destructor), which needs //base sync primitives.
     : player_(base::ThreadPool::CreateSequencedTaskRunner(
-          {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+          {base::MayBlock(), base::WithBaseSyncPrimitives(),
+           base::TaskPriority::USER_BLOCKING,
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN})) {}
 
 VoiceEarcons::~VoiceEarcons() = default;

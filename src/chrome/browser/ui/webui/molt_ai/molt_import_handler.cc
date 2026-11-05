@@ -253,11 +253,23 @@ void MoltImportHandler::HandleGetImportableBrowsers(
   AllowJavascript();
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
+  // DetectInstalled() looks at the disk: never on the UI thread.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+      base::BindOnce(&molt_ai::BrowserImporter::DetectInstalled),
+      base::BindOnce(&MoltImportHandler::OnImportableBrowsers,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
 
+void MoltImportHandler::OnImportableBrowsers(
+    const std::string& callback_id,
+    std::vector<molt_ai::DetectedBrowser> detected) {
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
   base::DictValue out;
   base::ListValue browsers;
-  for (const molt_ai::DetectedBrowser& b :
-       molt_ai::BrowserImporter::DetectInstalled()) {
+  for (const molt_ai::DetectedBrowser& b : detected) {
     base::DictValue entry;
     entry.Set("id", BrowserIdToString(b.id));
     entry.Set("display_name", b.display_name);

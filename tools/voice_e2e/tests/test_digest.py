@@ -58,8 +58,14 @@ class DigestTest(unittest.TestCase):
             self.make_report(d, [
                 {"id": "a", "mode": "wake", "status": "failed", "reason": "said nothing"}])
             write(os.path.join(d, "runs", "pulse-clean", "a", "browser.log"),
+                  "[1:2:3/4.5:WARNING:voice_audio.cc:9] [MoltVoice] microphone "
+                  "error 0: No audio\n"
+                  "[1:2:3/4.6:WARNING:voice_audio.cc:9] [MoltVoice] microphone "
+                  "error 0: No audio\n"
                   "[1:2:3/4.5:INFO:x.cc:1] the last line\n")
             text = digest.build(d)
+            self.assertEqual(text.count("[MoltVoice] microphone error 0"), 3)
+            self.assertIn("MoltBrowser's lines:", text)
             self.assertIn("(nothing fatal; the end of browser.log:)", text)
             self.assertIn("the last line", text)
             self.assertIn("(no voice test log)", text)

@@ -103,6 +103,26 @@ TEST(SpeechTextTest, MakesKeywordLines) {
   EXPECT_FALSE(WakeKeywordLine("hey #molt", vocab, tokens, &line));
 }
 
+// "hey" said short ("he molt") is a second line under the phrase's label;
+// other phrases have just their own.
+TEST(SpeechTextTest, MakesTheShortHeyLineToo) {
+  const PieceVocab vocab = KwsVocab();
+  const TokenSet tokens = TokensOf(vocab);
+  std::vector<std::string> lines;
+  ASSERT_TRUE(WakeKeywordLines("hey molt", vocab, tokens, &lines));
+  EXPECT_EQ(lines, (std::vector<std::string>{
+                       WS "HE Y " WS "MO L T #0.15 @HEY_MOLT",
+                       WS "HE " WS "MO L T #0.15 @HEY_MOLT"}));
+  lines.clear();
+  ASSERT_TRUE(WakeKeywordLines("molt", vocab, tokens, &lines));
+  EXPECT_EQ(lines,
+            (std::vector<std::string>{WS "MO L T #0.15 @MOLT"}));
+  // The phrase itself must be spelled; its short form needn't be.
+  lines.clear();
+  EXPECT_FALSE(WakeKeywordLines("hey max", vocab, tokens, &lines));
+  EXPECT_TRUE(lines.empty());
+}
+
 // A cased vocabulary like Kroko's: every ASCII letter, digit and the
 // apostrophe, the word-start mark, and a few longer pieces.
 PieceVocab RecognizerVocab(TokenSet* tokens) {

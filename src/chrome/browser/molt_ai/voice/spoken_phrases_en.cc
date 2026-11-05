@@ -259,7 +259,9 @@ LanguagePhrases MakeEnglishPhrases() {
   p.trailing_if_command = {"now", "right now", "for me"};
   p.leading_if_more = {"ok",    "okay", "alright", "all right",
                        "right", "hey",  "oh"};
-  p.wake_greetings = {"hey", "hi", "ok", "okay", "hello", "a", "hay"};
+  // "he": "hey" said short, as the speech helper also spots it
+  // (WakeKeywordLines()).
+  p.wake_greetings = {"hey", "hi", "ok", "okay", "hello", "a", "hay", "he"};
   p.default_wake_phrase = "hey molt";
 
   p.volume_words = {

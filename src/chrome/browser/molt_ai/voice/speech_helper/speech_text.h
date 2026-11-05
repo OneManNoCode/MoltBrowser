@@ -83,6 +83,18 @@ bool WakeKeywordLine(std::string_view phrase,
                      const TokenSet& tokens,
                      std::string* line);
 
+// All the spotter's lines for a wake phrase: WakeKeywordLine()'s, then,
+// for a phrase that starts with "hey", the same phrase with "hey" said
+// short ("he molt"), under the first line's label (so the spotter reports
+// the phrase the browser asked for, with its number of words). Several of
+// the test voices say "hey" so that the spotter hears "▁HE" and nothing
+// after it, and never woke (docs/VOICE_BENCH.md §3.8). False when the
+// phrase itself can't be spelled; a variant that can't is left out.
+bool WakeKeywordLines(std::string_view phrase,
+                      const PieceVocab& vocab,
+                      const TokenSet& tokens,
+                      std::vector<std::string>* lines);
+
 // sherpa-onnx's per-stream hotwords argument for |phrases| as the browser
 // sent them: phrases joined by '/', each cleaned
 // (docs/design/SPEECH_HELPER_PROTOCOL.md §2.2): anything but an ASCII

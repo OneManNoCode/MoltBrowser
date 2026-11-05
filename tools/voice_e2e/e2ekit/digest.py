@@ -48,15 +48,34 @@ def _normalized(line):
     return re.sub(r"\d{3,}", "N", line)[:200]
 
 
+def molt_lines(lines, limit=20):
+    """MoltBrowser's own log lines ("[MoltVoice] microphone error ..."),
+    each kind once."""
+    out, seen = [], set()
+    for line in lines:
+        if "[Molt" not in line:
+            continue
+        key = _normalized(line)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append("  " + line[:400])
+        if len(out) >= limit:
+            break
+    return out
+
+
 def browser_log_digest(text, stack_lines=40, tail_lines=25):
     """(the first fatal line normalized or '', the digest's lines)."""
     lines = text.splitlines()
+    own = molt_lines(lines)
+    own = (["MoltBrowser's lines:"] + own) if own else []
     fatal = [i for i, l in enumerate(lines)
              if any(s in l for s in FATAL) and not any(n in l for n in NOISE)]
     if not fatal:
         tail = [l for l in lines if not any(n in l for n in NOISE)][-tail_lines:]
-        return "", (["(nothing fatal; the end of browser.log:)"] + tail
-                    if tail else ["(browser.log is empty)"])
+        return "", own + (["(nothing fatal; the end of browser.log:)"] + tail
+                          if tail else ["(browser.log is empty)"])
     first = fatal[0]
     out = ["fatal lines (%d):" % len(fatal)]
     seen = set()
@@ -70,7 +89,7 @@ def browser_log_digest(text, stack_lines=40, tail_lines=25):
             break
     out.append("after the first:")
     out += ["  " + l[:400] for l in lines[first:first + stack_lines]]
-    return _normalized(lines[first]), out
+    return _normalized(lines[first]), own + out
 
 
 def voice_log_digest(path, limit_events=60):

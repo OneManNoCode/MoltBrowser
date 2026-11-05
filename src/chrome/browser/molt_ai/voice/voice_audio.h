@@ -53,6 +53,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequence_bound.h"
 #include "chrome/browser/molt_ai/voice/voice_audio_samples.h"
 #include "chrome/browser/molt_ai/voice/voice_listener.h"
@@ -112,7 +113,8 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   void Stop();
   bool capturing() const { return source_ != nullptr; }
 
-  // media::AudioCapturerSource::CaptureCallback:
+  // media::AudioCapturerSource::CaptureCallback (OnCaptureStarted() and
+  // Capture() on the audio thread, OnCaptureError() on either):
   void OnCaptureStarted() override;
   void Capture(const media::AudioBus* audio_source,
                base::TimeTicks audio_capture_time,
@@ -126,6 +128,10 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   void OnPermissionAsked();
   void OnDeviceParameters(const std::optional<media::AudioParameters>& params);
   void Open(EchoCancellation echo);
+  // OnCaptureStarted() and OnCaptureError(), back on this sequence.
+  void CaptureStarted();
+  void CaptureError(media::AudioCapturerSource::ErrorCode code,
+                    const std::string& message);
 
   SEQUENCE_CHECKER(sequence_checker_);
   raw_ptr<Delegate> delegate_;
@@ -134,6 +140,10 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   scoped_refptr<media::AudioCapturerSource> source_;
   EchoCancellation echo_ = EchoCancellation::kNone;
   bool starting_ = false;
+  // Set on this sequence before the stream starts, for the audio thread's
+  // OnCaptureStarted() (no callback comes after Stop()).
+  scoped_refptr<base::SequencedTaskRunner> owner_;
+  base::WeakPtr<VoiceAudio> started_self_;
   // The capture thread's.
   AudioFrameChunker chunker_;
   base::WeakPtrFactory<VoiceAudio> weak_factory_{this};

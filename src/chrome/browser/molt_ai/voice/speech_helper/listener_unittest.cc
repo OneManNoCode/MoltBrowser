@@ -251,7 +251,9 @@ class SpeechListenerTest : public testing::Test {
 
 TEST_F(SpeechListenerTest, StartsWithTheDefaultWakePhrase) {
   ASSERT_EQ(log_->keyword_sets.size(), 1u);
-  EXPECT_EQ(log_->keyword_sets[0], WS "HE Y " WS "MO L T #0.15 @HEY_MOLT\n");
+  // With "hey" said short, under the same label (WakeKeywordLines()).
+  EXPECT_EQ(log_->keyword_sets[0], WS "HE Y " WS "MO L T #0.15 @HEY_MOLT\n" WS
+                                   "HE " WS "MO L T #0.15 @HEY_MOLT\n");
   EXPECT_EQ(log_->vad_silences, std::vector<int>{500});
   EXPECT_TRUE(events_.empty());
 }
@@ -436,6 +438,7 @@ TEST_F(SpeechListenerTest, ChangesWakePhrases) {
   ASSERT_EQ(log_->keyword_sets.size(), 2u);
   EXPECT_EQ(log_->keyword_sets[1],
             WS "HELLO " WS "MO L T #0.15 @HELLO_MOLT\n" WS "HE Y " WS
+               "MO L T #0.15 @HEY_MOLT\n" WS "HE " WS
                "MO L T #0.15 @HEY_MOLT\n");
   std::string error;
   EXPECT_EQ(listener_->ApplyConfig(Config(R"({"wake_phrases":["hi molt"]})"),

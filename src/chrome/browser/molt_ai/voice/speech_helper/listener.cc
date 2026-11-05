@@ -78,16 +78,14 @@ Listener::ConfigResult Listener::ApplyConfig(const ConfigUpdate& update,
   if (update.has_wake_phrases) {
     std::vector<std::string> lines;
     for (const std::string& phrase : update.values.wake_phrases) {
-      std::string line;
-      if (!WakeKeywordLine(phrase, vocabularies_.kws_pieces,
-                           vocabularies_.kws_tokens, &line)) {
+      if (!WakeKeywordLines(phrase, vocabularies_.kws_pieces,
+                            vocabularies_.kws_tokens, &lines)) {
         if (error) {
           *error =
               "CONFIG: a wake phrase has a word the spotter can't spell";
         }
         return ConfigResult::kConfigError;
       }
-      lines.push_back(std::move(line));
     }
     // Every CONFIG the browser sends carries the wake phrases: the spotter
     // (and its model) is rebuilt only when they change.

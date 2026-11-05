@@ -104,8 +104,8 @@ struct DetectedBrowser {
 class BrowserImporter {
  public:
   // Stat-only discovery of installed, importable browsers. Performs NO keychain
-  // access and no decryption — safe to call on the UI thread cheaply, though
-  // it does touch the filesystem so prefer a worker. Cross-platform.
+  // access and no decryption, but it does touch the filesystem: BLOCKING,
+  // call it off the UI thread (a MayBlock() task). Cross-platform.
   static std::vector<DetectedBrowser> DetectInstalled();
 
   // BLOCKING — the caller MUST run this off the UI thread. Reads the given
