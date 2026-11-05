@@ -787,7 +787,7 @@ said.
 
 **Type into the selected field.** For example: "type hello world".
 
-- `(type | write | dictate) {text}`
+- `(type | write | dictate | tight) {text}`
 
 **Start a new line.** For example: "new line".
 
@@ -918,9 +918,9 @@ said.
 
 **Reopen the tab you closed last.** For example: "reopen the closed tab".
 
-- `(reopen | restore | bring back | undo close) [the] [last] [closed] tab`
+- `(reopen | restore | bring back | undo close | reuben) [the] [last] [closed | close] (tab | tip)`
 - `(reopen | restore | bring back | open again) the [last] tab i [just] closed`
-- `open [the] [last] closed tab`
+- `open [the] [last] (closed | close) (tab | tip)`
 
 **Open a page from your history by its site or title.** For example: "open the weather from my history".
 
@@ -968,8 +968,8 @@ said.
 
 - `(open | new | start | create) [a] [new] (private | incognito) window`
 - `(private | incognito) window`
-- `(open | new | start | create) [a] [new] (moltnet | molt net | mold net | tor) window`
-- `(moltnet | molt net | mold net) window`
+- `(open | new | start | create) [a] [new] (moltnet | molt net | mold net | moldnet | moldenet | moldenate | mold the | tor) window`
+- `(moltnet | molt net | mold net | moldnet | moldenet) window`
 - `(open | start | create) [a] new window`
 - `(new window | open [a] window | open another window)`
 
@@ -985,10 +985,11 @@ said.
 **Ask the on-device AI a question. Its answer is read to you, and nothing is done because of it.** For example: "ask the AI how far away is the moon".
 
 - `ask (the ai | ai | the assistant | the ai assistant | molt ai | the chat | the ai chat | the eye | the a chat) [about | whether | if] {query}`
+- `as (the ai | the assistant | the ai assistant) {query}`
 
 **Open the AI chat beside the page.** For example: "open the AI chat".
 
-- `(open | show | start) [me] [the] (ai chat | ai | chat | assistant | ai assistant | ai panel | chat panel | a chat | eye chat)`
+- `(open | show | start) [me] [the] (ai chat | ai | chat | assistant | ai assistant | ai panel | chat panel | a chat | achat | eye chat | ai checked)`
 
 **Hear the browser's own buttons (the toolbar, the tabs, the bookmarks bar, the side panel), to press one by number or name.** For example: "show the browser's buttons".
 
