@@ -316,11 +316,23 @@ class InferenceProcessHostTest : public testing::Test {
     mojo::SetDefaultProcessErrorHandler(base::NullCallback());
   }
 
+  // A read-only weights file, as the caller opens one: ModelLoadParams'
+  // |weights| isn't nullable, and a DCHECK build refuses to send a null one.
+  base::File WeightsFile() {
+    EXPECT_TRUE(temp_dir_.IsValid() || temp_dir_.CreateUniqueTempDir());
+    const base::FilePath path = temp_dir_.GetPath().AppendASCII("model.gguf");
+    EXPECT_TRUE(base::WriteFile(path, "G"));
+    base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+    EXPECT_TRUE(file.IsValid());
+    return file;
+  }
+
   scoped_refptr<InferenceMailbox> Load(bool with_projector = false,
                                        bool use_gpu = false) {
     InferenceProcessHost::LoadRequest r;
     r.model_id = "m";
     r.crash_key = "m:1:2";
+    r.file = WeightsFile();
     r.file_size = 1;
     r.max_context_tokens = 32768;
     r.use_gpu = use_gpu;
@@ -346,6 +358,7 @@ class InferenceProcessHostTest : public testing::Test {
     InferenceProcessHost::LoadRequest r;
     r.model_id = "m";
     r.crash_key = "m:1:2";
+    r.file = WeightsFile();
     r.file_size = 1;
     r.max_context_tokens = 32768;
     r.use_gpu = true;
@@ -759,6 +772,7 @@ TEST_F(InferenceProcessHostTest, GpuDeviceIsReportedBeforeTheLoad) {
   InferenceProcessHost::LoadRequest r;
   r.model_id = "m";
   r.crash_key = "m:1:2";
+  r.file = WeightsFile();
   r.file_size = 1;
   r.max_context_tokens = 32768;
   r.use_gpu = true;
