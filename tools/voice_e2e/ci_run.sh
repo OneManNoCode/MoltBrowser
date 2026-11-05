@@ -28,6 +28,8 @@
 #                           ~/.cache/moltbrowser-voice-e2e)
 #   VOICE_E2E_SPEECH_CHECK  0 to skip the recognizer check (default 1)
 #   VOICE_E2E_MODEL         1 when an on-device AI model is installed
+#   VOICE_E2E_VENV          where numpy goes when python3 has none
+#                           (default <VOICE_E2E_DATA>/venv)
 #
 # Exit status: the runner's (0 Phase 1's exit met, 1 not met, 2 couldn't
 # run); the reports are left either way.
@@ -35,7 +37,7 @@
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
-  sed -n '2,33p' "$0"
+  sed -n '2,35p' "$0"
   exit 2
 fi
 OUT_DIR="$(cd "$1" && pwd)"
@@ -75,8 +77,19 @@ if [[ ${#need[@]} -gt 0 ]]; then
   fi
 fi
 if ! python3 -I -c "import numpy" 2>/dev/null; then
-  log "installing numpy (pinned by hash)"
-  python3 -m pip install --user --require-hashes -r "$ROOT_DIR/tools/voice_bench/requirements.txt"
+  # In a venv: "python3 -I" ignores the user site, and Ubuntu 24.04's
+  # Python refuses "pip install --user" (it is externally managed).
+  VENV="${VOICE_E2E_VENV:-$DATA_DIR/venv}"
+  if ! python3 -c "import ensurepip, venv" 2>/dev/null; then
+    log "installing python3-venv"
+    $SUDO apt-get install -y --no-install-recommends python3-venv
+  fi
+  log "installing numpy (pinned by hash) into $VENV"
+  python3 -m venv "$VENV"
+  "$VENV/bin/python3" -m pip install -q --require-hashes \
+    -r "$ROOT_DIR/tools/voice_bench/requirements.txt"
+  export PATH="$VENV/bin:$PATH"
+  python3 -I -c "import numpy" || { log "numpy didn't install"; exit 2; }
 fi
 
 # ---------------------------------------------------------------- sandboxes

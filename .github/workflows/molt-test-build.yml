@@ -16,7 +16,8 @@
 # (gh workflow run molt-test-build.yml -f resume_run=<run id>), or a push
 # to a claude/ branch that changes .github/molt-test-build.json, whose
 # fields are the same inputs: {"resume_run": "<run id or empty>",
-# "run_tests": true}.
+# "run_tests": true, "e2e_only": false}. With e2e_only, only the spoken
+# suite runs, on the build resume_run's last stage saved.
 
 name: MoltBrowser test build
 
@@ -34,6 +35,10 @@ on:
         description: 'Run the tests once the build is complete'
         type: boolean
         default: true
+      e2e_only:
+        description: "Only the spoken suite, on resume_run's saved build"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -52,6 +57,7 @@ jobs:
     outputs:
       resume_run: ${{ steps.config.outputs.resume_run }}
       run_tests: ${{ steps.config.outputs.run_tests }}
+      e2e_only: ${{ steps.config.outputs.e2e_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -64,27 +70,38 @@ jobs:
           EVENT: ${{ github.event_name }}
           IN_RESUME: ${{ inputs.resume_run }}
           IN_TESTS: ${{ inputs.run_tests }}
+          IN_E2E_ONLY: ${{ inputs.e2e_only }}
         run: |
           set -euo pipefail
           if [ "$EVENT" = push ]; then
             RESUME="$(jq -r '.resume_run // ""' .github/molt-test-build.json)"
             TESTS="$(jq -r 'if .run_tests == false then "false" else "true" end' .github/molt-test-build.json)"
+            E2E_ONLY="$(jq -r 'if .e2e_only == true then "true" else "false" end' .github/molt-test-build.json)"
           else
-            RESUME="$IN_RESUME"; TESTS="$IN_TESTS"
+            RESUME="$IN_RESUME"; TESTS="$IN_TESTS"; E2E_ONLY="$IN_E2E_ONLY"
           fi
           if [ -n "$RESUME" ] && ! [[ "$RESUME" =~ ^[0-9]+$ ]]; then
             echo "::error::resume_run must be a run id"; exit 1
           fi
-          echo "resume_run=$RESUME" >> "$GITHUB_OUTPUT"
-          echo "run_tests=$TESTS" >> "$GITHUB_OUTPUT"
-          echo "resume_run='$RESUME' run_tests=$TESTS"
+          if [ "$E2E_ONLY" = true ] && [ -z "$RESUME" ]; then
+            echo "::error::e2e_only needs resume_run"; exit 1
+          fi
+          if [ "$E2E_ONLY" = true ]; then TESTS=true; fi
+          {
+            echo "resume_run=$RESUME"
+            echo "run_tests=$TESTS"
+            echo "e2e_only=$E2E_ONLY"
+          } >> "$GITHUB_OUTPUT"
+          echo "resume_run='$RESUME' run_tests=$TESTS e2e_only=$E2E_ONLY"
 
   # Alongside stage 1 of a resumed build: the steps the restored build
   # failed, rebuilt on their own, so their errors (or their fix) show in
   # this job's log within the hour.
   recheck:
     needs: config
-    if: needs.config.outputs.resume_run != ''
+    if: >-
+      needs.config.outputs.resume_run != '' &&
+      needs.config.outputs.e2e_only != 'true'
     uses: ./.github/workflows/molt-test-build-stage.yml
     with:
       stage: 1
@@ -94,6 +111,7 @@ jobs:
 
   stage-1:
     needs: config
+    if: needs.config.outputs.e2e_only != 'true'
     uses: ./.github/workflows/molt-test-build-stage.yml
     with:
       stage: 1
@@ -154,7 +172,8 @@ jobs:
     needs: [config, speech-bundle, stage-1, stage-2, stage-3, stage-4, stage-5]
     if: >-
       always() && !cancelled() && needs.speech-bundle.result == 'success' &&
-      contains(needs.*.outputs.tested, 'true')
+      (contains(needs.*.outputs.tested, 'true') ||
+       needs.config.outputs.e2e_only == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 355
     env:
@@ -164,6 +183,8 @@ jobs:
       T3: ${{ needs.stage-3.outputs.tested }}
       T4: ${{ needs.stage-4.outputs.tested }}
       T5: ${{ needs.stage-5.outputs.tested }}
+      E2E_ONLY: ${{ needs.config.outputs.e2e_only }}
+      RESUME_RUN: ${{ needs.config.outputs.resume_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -172,13 +193,23 @@ jobs:
       - name: The tested build and the speech bundle
         run: |
           set -euo pipefail
-          STAGE=""
-          for n in 1 2 3 4 5; do
-            v="T$n"; [ "${!v}" = true ] && STAGE=$n
-          done
-          echo "Build of stage $STAGE"
+          RUN="$GITHUB_RUN_ID"; STAGE=""
+          if [ "$E2E_ONLY" = true ]; then
+            RUN="$RESUME_RUN"
+            STAGE="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/artifacts" --paginate \
+              -q '.artifacts[] | select(.expired == false) | .name' \
+              | sed -nE 's/^molt-s([0-9]+)-meta$/\1/p' | sort -n | tail -1)"
+          else
+            for n in 1 2 3 4 5; do
+              v="T$n"; [ "${!v}" = true ] && STAGE=$n
+            done
+          fi
+          if [ -z "$STAGE" ]; then
+            echo "::error::run $RUN has no saved build"; exit 1
+          fi
+          echo "Build of run $RUN, stage $STAGE"
           mkdir -p "$RUNNER_TEMP/parts" "$RUNNER_TEMP/tree" "$RUNNER_TEMP/bundle"
-          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" \
             --pattern "molt-s${STAGE}-p*" --dir "$RUNNER_TEMP/parts"
           find "$RUNNER_TEMP/parts" -mindepth 2 -type f -exec mv -t "$RUNNER_TEMP/parts" {} +
           sudo apt-get install -y -q --no-install-recommends zstd
