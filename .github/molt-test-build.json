@@ -1,4 +1,4 @@
-{"resume_run": "42007519255", "run_tests": true, "e2e_only": false,
+{"resume_run": "42029212191", "run_tests": true, "e2e_only": false,
  "e2e_runs": "pulse:clean,pulse:clean:noloop,pulse:clean:noaec,file:clean,typed",
  "e2e_speech_check": false,
- "request": "Round 45, fifth build: the manifest test's stack overflow, bounded waits that say what they waited for, a selection as Blink gives it, a player in a frame as voice mode comes on, the file run's sound-alikes, skip-ad with MoltShield off; PulseAudio with and without the loopback and the echo canceller. Resume from run 42007519255 (stage 1 built)."}
+ "request": "Round 45, sixth build: no planner while a prompt waits for its word, play-to-planner, the crash test's script race, the no-loopback keep-alive, the microphone dump and the session's dropped utterances in the test log. Resume from run 42029212191 (stage 1 built)."}
