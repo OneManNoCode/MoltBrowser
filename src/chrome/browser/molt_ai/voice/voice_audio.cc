@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -215,9 +216,19 @@ EchoCancellation ChooseEchoCancellation(bool chrome_wide_enabled,
 }
 
 media::AudioParameters VoiceCaptureParameters(EchoCancellation echo) {
-  media::AudioParameters params(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                media::ChannelLayoutConfig::Mono(),
-                                kHelperSampleRate, kCaptureFramesPerBuffer);
+  // With --use-fake-device-for-media-stream (a test switch) the microphone
+  // is the fake device pages get: the audio service makes a fake input
+  // only for AUDIO_FAKE parameters, which MediaStreamManager sets for
+  // pages, and with --use-file-for-fake-audio-capture it plays that file.
+  // Otherwise voice mode would open the real default input, which a test
+  // machine may not have.
+  const bool fake = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kUseFakeDeviceForMediaStream);
+  media::AudioParameters params(
+      fake ? media::AudioParameters::AUDIO_FAKE
+           : media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      media::ChannelLayoutConfig::Mono(), kHelperSampleRate,
+      kCaptureFramesPerBuffer);
   if (echo == EchoCancellation::kPlatform) {
     params.set_effects(media::AudioParameters::ECHO_CANCELLER |
                        media::AudioParameters::NOISE_SUPPRESSION);
