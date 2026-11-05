@@ -234,6 +234,12 @@ def cmd_serve(args):
     return 0
 
 
+def cmd_digest(args):
+    from e2ekit import digest
+    print(digest.build(os.path.abspath(args.report), limit=args.limit))
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--scenarios-dir", default=SCENARIOS_DIR)
@@ -273,12 +279,15 @@ def main(argv=None):
                    help="the voices the scenarios rotate through (default all: "
                         "ljspeech,libritts-m,libritts-f)")
     s.add_argument("--speeds", default="", help="and the speeds (default 1,1.25)")
+    s = sub.add_parser("digest", help="what explains the failed scenarios, for a CI log")
+    s.add_argument("--report", required=True)
+    s.add_argument("--limit", type=int, default=150000)
     s = sub.add_parser("serve")
     s.add_argument("--port", type=int, default=0)
     s.add_argument("--dir", default=os.path.join(os.getcwd(), "voice-e2e-serve"))
     args = p.parse_args(argv)
     return {"list": cmd_list, "render": cmd_render, "check-speech": cmd_check_speech,
-            "run": cmd_run, "serve": cmd_serve}[args.cmd](args)
+            "run": cmd_run, "digest": cmd_digest, "serve": cmd_serve}[args.cmd](args)
 
 
 if __name__ == "__main__":

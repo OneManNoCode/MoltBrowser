@@ -107,7 +107,11 @@ turned on). No study touches a feature MoltBrowser overrides other than
 the ones the overrides are there for (`Aim3pEntrypoint`, `Indigo`,
 `Dictation`, `HistoryEmbeddingsV2Images`,
 `PredictionModelComponentDelivery`, `OnDeviceModelBackgroundDownload`,
-`EnableOnDeviceWebSpeechSmallExpertModel`), and the testing config cannot change
+`EnableOnDeviceWebSpeechSmallExpertModel`, and the WebUI toolbar buttons
+`WebUIBackForwardButton`, `WebUIReloadButton`, `WebUIHomeButton` and
+`WebUIToolbar`, whose `WebUIReloadButtonStudy` would draw Back, Forward,
+Reload and Home as a WebUI page that voice mode can't read or press; no
+network effect), and the testing config cannot change
 a pref, so the pref defaults below (DNS probes, captive portal, leak
 check) stand. The studies that do apply and make traffic are listed where
 their traffic is: Safe Browsing's V5 lists (section 1).

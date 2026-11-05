@@ -328,7 +328,11 @@ class Browser(object):
         return len(self.main_pages())
 
     def window_count(self):
-        return len({self.window_of(t["targetId"]) for t in self.pages()})
+        """The browser's windows, not counting the kit's own Agent mode
+        window (typed mode), whatever else opens in it."""
+        agent = self.window_of(self.agent_target) if self.agent_target else None
+        return len({w for w in (self.window_of(t["targetId"]) for t in self.pages())
+                    if agent is None or w != agent})
 
     def target_urls(self):
         return [t.get("url") or "" for t in self.cdp.targets()

@@ -102,6 +102,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -228,7 +229,10 @@ class VoiceController : public VoicePlanner::Delegate,
 
   // One utterance, as typed or recognized. Starts voice mode when it is
   // off (except in MoltNet windows), stops whatever runs, then plans and
-  // runs the new one. Does nothing while #molt-voice-mode is off.
+  // runs the new one: once the page's tree has come, when the tab is on a
+  // web page whose tree hasn't yet (the first thing said turned voice mode
+  // on, or the page just loaded), kMaxTreeWait at most. Does nothing while
+  // #molt-voice-mode is off.
   void HandleUtterance(const std::string& text);
   // One utterance the listening session heard (voice_session.h), and
   // whether it heard it cleanly enough for the voice gesture
@@ -367,6 +371,15 @@ class VoiceController : public VoicePlanner::Delegate,
   void OnTreeChanged();
   void OnMediaStarted();
   void OnTabGone();
+
+  // The utterance's planning: the map, the grammar, the turn.
+  void PlanAndRunUtterance(const std::string& text);
+  // Whether the active tab is a web page whose tree hasn't come yet: an
+  // utterance then waits for it (kMaxTreeWait at most).
+  bool PageTreeIsComing();
+  void OnDeferredTrees();
+  void RunDeferredUtterance();
+  void DropDeferredUtterance();
 
   void OnSpeakingChanged(bool speaking);
 
@@ -537,6 +550,14 @@ class VoiceController : public VoicePlanner::Delegate,
   bool say_word_aloud_ = false;
   HeardEvidence heard_evidence_;
   HeardEvidence next_evidence_;
+  // The utterance waiting for the page's tree (PageTreeIsComing()).
+  struct DeferredUtterance {
+    std::string text;
+    HeardEvidence evidence;
+  };
+  std::optional<DeferredUtterance> deferred_;
+  base::CallbackListSubscription deferred_trees_;
+  base::OneShotTimer deferred_timer_;
   base::ObserverList<Observer> observers_;
   // Routines, personal words and site hints (voice_learning_loop.h).
   std::unique_ptr<VoiceLearningLoop> learning_;

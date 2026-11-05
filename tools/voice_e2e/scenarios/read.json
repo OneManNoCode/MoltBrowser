@@ -68,7 +68,7 @@
    "start": {"url": "https://news.test/story"},
    "steps": [
     {"say": "find timetable on this page", "needs": ["find_in_page"],
-     "expect": [{"said_re": "(?i)timetable|found|match"}]}
+     "expect": [{"said_re": "(?i)found it"}]}
    ]
   },
   {

@@ -140,4 +140,8 @@ trap - ERR
 status=0
 python3 -I "$SCRIPT_DIR/run_e2e.py" "${args[@]}" || status=$?
 log "report: $REPORT_DIR/report.md (exit $status)"
+# The browser's and voice mode's logs of each failure, in the job's log
+# too (the reports' artifacts aren't always reachable where it's read).
+python3 -I "$SCRIPT_DIR/run_e2e.py" digest --report "$REPORT_DIR" \
+  > "$REPORT_DIR/digest.txt" 2>&1 || true
 exit "$status"

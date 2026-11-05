@@ -200,6 +200,22 @@ TEST(MoltFeatureOverridesTest, ListedFeaturesCountAsOverridden) {
   }
 }
 
+// The toolbar's buttons stay views, which voice mode reads and presses:
+// the testing config's WebUIReloadButtonStudy would make Back, Forward,
+// Reload and Home a WebUI page (ui_features.cc's IsWebUI*Enabled()).
+TEST(MoltFeatureOverridesTest, ToolbarButtonsStayViews) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList("", ""));
+  for (const base::Feature* feature :
+       {&features::kWebUIToolbar, &features::kWebUIBackForwardButton,
+        &features::kWebUIReloadButton, &features::kWebUIHomeButton}) {
+    EXPECT_FALSE(base::FeatureList::IsEnabled(*feature)) << feature->name;
+    std::optional<bool> state = base::FeatureList::GetStateIfOverridden(*feature);
+    ASSERT_TRUE(state.has_value()) << feature->name;
+    EXPECT_FALSE(*state) << feature->name;
+  }
+}
+
 }  // namespace
 }  // namespace privacy
 }  // namespace molt_ai

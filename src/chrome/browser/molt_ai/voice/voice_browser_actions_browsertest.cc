@@ -480,6 +480,21 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, Undo) {
             "/molt_voice/player.html");
 }
 
+// The first thing said turns voice mode on, and the page's tree comes a
+// moment after: the command waits for it instead of finding nothing (as
+// typed into Agent mode, or said right after a page loads).
+IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
+                       TheFirstCommandWaitsForThePage) {
+  Open(Url("/molt_voice/player.html"));
+  ASSERT_FALSE(voice()->active());
+  Say("click the note");
+  EXPECT_TRUE(voice()->active());
+  EXPECT_EQ("note", Js("document.activeElement.id"));
+  tts_.TakeSpoken();
+  Say("read the title");
+  EXPECT_NE(tts_.TakeSpoken().find("The title is"), std::string::npos);
+}
+
 IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, TheAppMenuByVoice) {
   Open(Url("/molt_voice/article.html"));
   Say("open the menu");
@@ -497,6 +512,8 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, TheAppMenuByVoice) {
   said = tts_.TakeSpoken();
   EXPECT_NE(said.find("buttons."), std::string::npos) << said;
   EXPECT_EQ(said.find("Voice mode"), std::string::npos) << said;
+  EXPECT_NE(said.find("Reload"), std::string::npos) << said;
+  EXPECT_NE(said.find("Back"), std::string::npos) << said;
   Say("open the menu");
   Say("close the menu");
   EXPECT_NE(tts_.TakeSpoken().find("Closed the menu."), std::string::npos);

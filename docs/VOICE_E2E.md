@@ -41,7 +41,18 @@ bundle's recognizer, and runs four runs: PulseAudio in quiet
 capture (`file:clean`) and typed (`typed`). It exits 0 when the exit is
 met, 1 when it isn't, 2 when it couldn't run. Expect about three hours for
 everything on a 4-core runner; `VOICE_E2E_RUNS`, `VOICE_E2E_SCENARIOS`
-and `VOICE_E2E_VOICES` narrow it.
+and `VOICE_E2E_VOICES` narrow it. It also leaves `digest.txt`
+(`run_e2e.py digest`): each failed scenario's browser log (its fatal lines
+and the stack after the first, one crash printed once with the names of
+the others it ended) and voice mode's test log, which the CI job prints
+after `report.md`, as the report's artifact isn't always reachable from
+where the results are read.
+
+In the test build workflow (`molt-test-build.yml`), the request file's
+`e2e_runs` and `e2e_scenarios` narrow the same way, one job per run, and
+`"e2e_speech_check": false` skips the recognizer check (about an hour);
+with `"e2e_only": true` and `resume_run` only the spoken suite runs, on
+that run's saved build.
 
 By hand, the same steps:
 
