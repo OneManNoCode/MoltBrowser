@@ -1,4 +1,4 @@
-{"resume_run": "42076517368", "run_tests": false, "e2e_only": true,
- "e2e_runs": "pulse:clean,pulse:music10,pulse:clean:noloop,file:clean",
+{"resume_run": "42076517368", "run_tests": true, "e2e_only": false,
+ "e2e_runs": "pulse:clean,pulse:music10,pulse:clean:noloop,file:clean,typed",
  "e2e_speech_check": false,
- "request": "Round 45, the spoken suite again on the seventh build (run 42076517368): the kit waits out voice mode's waiting tone before a Hey Molt step, and the speech helper finds the command after a phrase whose start was lost. With and without the speaker in the microphone."}
+ "request": "Round 45, eighth build: no listening tone over a command said in the same breath (the echo canceller took the command's first words with it when the speakers reach the microphone). Resume from run 42076517368 (the seventh build). The spoken suite with and without the speakers in the microphone, with music, by file and typed."}
