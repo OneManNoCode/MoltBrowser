@@ -682,7 +682,14 @@ from the tree before and after, on the same machine:
 | The command after it exactly right | 42 | 47 |
 | False wake-ups (chatter, set a, page audio) | 1, 1, 0 | 1, 1, 0 |
 
-The one false wake-up is the spotter's, in both: "a molten chocolate cake
+With music playing throughout the session (the kit's music bed, 10 dB
+under the speech, the clips 8 s apart): 79 woke before and 91 with the
+second chance, 31 and 35 commands exactly right, and one false wake-up in
+300 commands without the phrase either way. Hearing speech that goes on
+without a pause again every few seconds was tried and changed nothing
+here (the detector doesn't take this music for speech), so it isn't done.
+
+The one false wake-up in quiet is the spotter's, in both: "a molten chocolate cake
 sounds great", on the short-"hey" line (`WakeKeywordLines()`); the
 second chance adds none, as it takes only speech that starts with the
 phrase. Without the short line the spotter misses more and the second
