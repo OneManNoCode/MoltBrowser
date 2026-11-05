@@ -15,6 +15,8 @@
 //   {"t":...,"w":1,"e":"prompt","op":"close","id":3}
 //   {"t":...,"w":1,"e":"confirm","op":"open","what":"press Buy now"}
 //   {"t":...,"w":1,"e":"confirm","op":"close"}
+//   {"t":...,"w":1,"e":"map","items":12,"lists":1,"media":1,
+//    "selection":false,"selected_text":false,"labels":["Search",...]}
 //
 // "t" is the wall clock in milliseconds since the Unix epoch (the kit
 // compares it with its own clock), "w" the window's number in this run of
@@ -50,6 +52,9 @@ namespace voice {
 
 // A text is logged up to this many bytes (cut at a character).
 inline constexpr size_t kMaxTestLogTextBytes = 2048;
+// A "map" line's labels: at most this many, each up to this many bytes.
+inline constexpr size_t kMaxTestLogLabels = 40;
+inline constexpr size_t kMaxTestLogLabelBytes = 60;
 
 // What stands for a masked confirmation word.
 inline constexpr std::string_view kTestLogMaskedWord = "[word]";
@@ -105,6 +110,22 @@ class TestLogLines {
 
   // What voice mode said, as it starts saying it.
   std::string Said(int64_t ms, std::string_view text) const;
+
+  // What the page map held when an utterance was planned: its items'
+  // number and labels (masked, each capped at kMaxTestLogLabelBytes, at
+  // most kMaxTestLogLabels), its lists and media, and whether the page's
+  // tree had a selection and its text could be read.
+  struct MapSummary {
+    size_t items = 0;
+    size_t lists = 0;
+    size_t media = 0;
+    bool selection = false;
+    bool selected_text = false;
+    std::span<const std::string> labels;
+  };
+  std::string Map(int64_t ms,
+                  const MapSummary& map,
+                  std::string_view pending_word) const;
 
   // The lines for what changed since the last call (the first call compares
   // with a TestLogState{}).

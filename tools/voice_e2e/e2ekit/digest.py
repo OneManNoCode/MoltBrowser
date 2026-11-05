@@ -119,7 +119,8 @@ def voice_log_digest(path, limit_events=60):
         rest = {k: v for k, v in ev.items() if k not in ("t", "e")}
         out.append("  %7s %-9s %s" % (
             "%+.1fs" % ((t - t0) / 1000.0) if isinstance(t, (int, float)) else "",
-            ev.get("e", "?"), json.dumps(rest, ensure_ascii=False)[:300]))
+            ev.get("e", "?"),
+            json.dumps(rest, ensure_ascii=False)[:1500 if ev.get("e") == "map" else 300]))
     return out
 
 

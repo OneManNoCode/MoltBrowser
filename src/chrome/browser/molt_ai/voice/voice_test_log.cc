@@ -3,7 +3,9 @@
 
 #include "chrome/browser/molt_ai/voice/voice_test_log.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -16,6 +18,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/common/molt_regular_file.h"
+#include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
@@ -85,6 +88,24 @@ class VoiceTestLog::Writer {
 
   void Said(int64_t ms, const std::string& text) {
     Write(lines_.Said(ms, text));
+  }
+
+  void Map(int64_t ms,
+           size_t items,
+           size_t lists,
+           size_t media,
+           bool selection,
+           bool selected_text,
+           const std::vector<std::string>& labels,
+           const std::string& pending_word) {
+    TestLogLines::MapSummary map;
+    map.items = items;
+    map.lists = lists;
+    map.media = media;
+    map.selection = selection;
+    map.selected_text = selected_text;
+    map.labels = labels;
+    Write(lines_.Map(ms, map, pending_word));
   }
 
   void Changed(int64_t ms,
@@ -182,6 +203,23 @@ void VoiceTestLog::OnHeard(const std::string& text,
   writer_.AsyncCall(&Writer::Heard)
       .WithArgs(NowMs(), text, evidence.from_microphone, evidence.clean,
                 std::string(VoiceCommandKindName(kind)),
+                state.prompt.id != 0 ? state.prompt.word : std::string());
+}
+
+void VoiceTestLog::OnMap(const PageMap& map,
+                         bool selection,
+                         bool selected_text,
+                         const ConversationState& state) {
+  std::vector<std::string> labels;
+  for (const PageItem& item : map.items) {
+    if (labels.size() >= kMaxTestLogLabels) {
+      break;
+    }
+    labels.push_back(item.label);
+  }
+  writer_.AsyncCall(&Writer::Map)
+      .WithArgs(NowMs(), map.items.size(), map.lists.size(), map.media.size(),
+                selection, selected_text, std::move(labels),
                 state.prompt.id != 0 ? state.prompt.word : std::string());
 }
 

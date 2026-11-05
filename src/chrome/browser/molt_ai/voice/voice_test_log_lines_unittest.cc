@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/voice/voice_test_log_lines.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -104,6 +105,32 @@ TEST(VoiceTestLogLinesTest, Lines) {
   EXPECT_EQ(lines.Said(10, "To allow it, say the word on your screen."),
             "{\"t\":10,\"w\":2,\"e\":\"said\",\"text\":\"To allow it, say the "
             "word on your screen.\"}\n");
+}
+
+// What the page map held: counts, the selection, the labels masked and
+// capped.
+TEST(VoiceTestLogLinesTest, AMapLine) {
+  TestLogLines lines(1);
+  const std::vector<std::string> labels = {"Skip Ad", "harbor",
+                                           std::string(100, 'x')};
+  TestLogLines::MapSummary map;
+  map.items = 3;
+  map.lists = 1;
+  map.media = 1;
+  map.selection = true;
+  map.labels = labels;
+  EXPECT_EQ(lines.Map(5, map, "harbor"),
+            "{\"t\":5,\"w\":1,\"e\":\"map\",\"items\":3,\"lists\":1,"
+            "\"media\":1,\"selection\":true,\"selected_text\":false,"
+            "\"labels\":[\"Skip Ad\",\"[word]\",\"" +
+                std::string(kMaxTestLogLabelBytes, 'x') + "\"]}\n");
+  // At most kMaxTestLogLabels labels.
+  const std::vector<std::string> many(kMaxTestLogLabels + 5, "a");
+  map.labels = many;
+  const std::string line = lines.Map(6, map, "");
+  EXPECT_EQ(static_cast<size_t>(std::count(line.begin(), line.end(), '"')),
+            // the keys and values before the labels, then two per label
+            20u + 2 * kMaxTestLogLabels);
 }
 
 TEST(VoiceTestLogLinesTest, WritesWhatChanged) {

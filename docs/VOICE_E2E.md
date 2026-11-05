@@ -205,6 +205,7 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"activity","activity":"listening","mic":true,"waiting":true}
 {"t":...,"w":1,"e":"prompt","op":"open","id":3,"kind":"permission"}
 {"t":...,"w":1,"e":"confirm","op":"open","what":"press Place order"}
+{"t":...,"w":1,"e":"map","items":15,"lists":1,"media":1,"selection":false,"selected_text":false,"labels":["YouTube Home","Search",...]}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -214,6 +215,10 @@ in `VoiceController`):
 - `heard`: every utterance that reached the loop, typed or from the
   microphone (and whether heard cleanly), with the command it was
   understood as.
+- `map`: the page map it was planned on, just before the `heard` line:
+  how many items, lists and media, the first 40 items' labels (masked as
+  every text is), and whether the page's tree had a selection and its text
+  could be read. What a failure saw on the page, in the digest.
 - `said`: what voice mode says, as it starts saying it.
 - `activity`: voice mode's state, the microphone, and whether only the wake
   phrase counts.

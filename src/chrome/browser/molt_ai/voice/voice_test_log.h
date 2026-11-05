@@ -63,6 +63,14 @@ class VoiceTestLog : public VoiceController::Observer {
                const HeardEvidence& evidence,
                const ConversationState& state);
 
+  // The page map an utterance was planned on (its items' labels, lists and
+  // media), and whether the page's tree had a selection and its text could
+  // be read.
+  void OnMap(const PageMap& map,
+             bool selection,
+             bool selected_text,
+             const ConversationState& state);
+
   // The loop's state as the caption bar shows it.
   void OnLoop(VoiceActivity activity,
               bool mic,

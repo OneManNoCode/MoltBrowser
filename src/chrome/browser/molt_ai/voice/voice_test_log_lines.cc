@@ -248,6 +248,32 @@ std::string TestLogLines::Said(int64_t ms, std::string_view text) const {
   return out;
 }
 
+std::string TestLogLines::Map(int64_t ms,
+                              const MapSummary& map,
+                              std::string_view pending_word) const {
+  std::string out = Head(ms, "map");
+  out.append(",\"items\":");
+  out.append(std::to_string(map.items));
+  out.append(",\"lists\":");
+  out.append(std::to_string(map.lists));
+  out.append(",\"media\":");
+  out.append(std::to_string(map.media));
+  AppendBool(out, "selection", map.selection);
+  AppendBool(out, "selected_text", map.selected_text);
+  out.append(",\"labels\":[");
+  for (size_t i = 0; i < map.labels.size() && i < kMaxTestLogLabels; ++i) {
+    if (i) {
+      out.push_back(',');
+    }
+    AppendQuoted(out,
+                 MaskConfirmationWords(
+                     CleanSpokenText(map.labels[i], kMaxTestLogLabelBytes),
+                     pending_word));
+  }
+  out.append("]}\n");
+  return out;
+}
+
 std::string TestLogLines::Changed(int64_t ms, const TestLogState& now) {
   std::string out;
   if (now.activity != activity_ || now.mic != mic_ || now.waiting != waiting_) {

@@ -866,7 +866,9 @@ source_set("voice_controller") {
     ":site_skills",
     ":voice_page",
 
-    # The test log's lines (voice_test_log.h).
+    # The test log's lines (voice_test_log.h), and the selection it notes
+    # (page_reading.h).
+    ":page_reading",
     ":voice_test_log_lines",
 
     # Questions about the page, answered by the on-device model.

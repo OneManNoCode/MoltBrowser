@@ -22,6 +22,7 @@
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/page_reading.h"
 #include "chrome/browser/molt_ai/voice/site_skills.h"
 #include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
@@ -1057,6 +1058,21 @@ void VoiceController::PlanAndRunUtterance(const std::string& text) {
   const PageMap map = CurrentMap();
   for (Observer& observer : observers_) {
     observer.OnVoicePageMapped(map);
+  }
+  if (test_log_) {
+    // What the utterance is planned on, for the spoken test kit.
+    bool selection = false;
+    bool selected_text = false;
+    if (VoicePageController* page = ActivePage()) {
+      const PageTree tree =
+          page->BuildTree(VoicePageController::kMaxReadingStringBytes);
+      selection = tree.selection.valid();
+      selected_text =
+          selection &&
+          SelectedText(tree, VoiceReader::kMaxSelectionChars, ReadingLimits())
+              .has_value();
+    }
+    test_log_->OnMap(map, selection, selected_text, state_);
   }
   const VoiceEnvironment env = Environment();
   // As PlanUtterance() does, with the numbers on screen checked between.
