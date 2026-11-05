@@ -1,4 +1,4 @@
-{"resume_run": "42076517368", "run_tests": true, "e2e_only": false,
+{"resume_run": "42109641249", "run_tests": true, "e2e_only": false,
  "e2e_runs": "pulse:clean,pulse:music10,pulse:clean:noloop,file:clean,typed",
  "e2e_speech_check": false,
- "request": "Round 45, eighth build: no listening tone over a command said in the same breath (the echo canceller took the command's first words with it when the speakers reach the microphone). Resume from run 42076517368 (the seventh build). The spoken suite with and without the speakers in the microphone, with music, by file and typed."}
+ "request": "Round 45, ninth build: voice mode on by default, the home page's microphone (\"Which site would you like me to open?\") and 38 more verified sites. Resume from run 42109641249 (the eighth build). Unit and browser tests (new: VoiceSessionBrowserTest.TheHomePagesMicrophoneAsksWhichSiteToOpen), then the spoken suite with and without the speakers in the microphone, with music, by file and typed."}
