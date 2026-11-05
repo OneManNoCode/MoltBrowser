@@ -509,6 +509,14 @@ class VoicePlannerBrowserTest : public AgentPageMapBrowserTest {
     voice::VoiceController* controller = voice();
     ASSERT_TRUE(controller);
     controller->HandleUtterance(std::string(text));
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kHeardTimeout,
+        base::BindRepeating(
+            [](FakeTtsPlatform* tts, std::string said) {
+              return "still busy after \"" + said +
+                     "\"; heard since: " + tts->Untaken();
+            },
+            base::Unretained(&tts_), std::string(text)));
     ASSERT_TRUE(base::test::RunUntil([&]() {
       return !controller->busy() &&
              controller->activity() != voice::VoiceActivity::kSpeaking;
@@ -547,6 +555,11 @@ class VoicePlannerRoutinesBrowserTest : public VoicePlannerBrowserTest {
       ASSERT_TRUE(automations_.CreateUniqueTempDir());
     }
     learning()->SetAutomationsRootForTesting(automations_.GetPath());
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kHeardTimeout,
+        base::BindRepeating([]() {
+          return std::string("voice mode's learning never loaded");
+        }));
     ASSERT_TRUE(base::test::RunUntil([&]() { return learning()->loaded(); }));
   }
 

@@ -216,11 +216,13 @@ class VoiceGestureChannelBrowserTest : public InProcessBrowserTest {
     const base::test::ScopedRunLoopTimeout timeout(
         FROM_HERE, kWaitTimeout,
         base::BindRepeating(
-            [](std::string* log, std::string want) {
+            [](std::string* log, const RecordingTtsPlatform* tts,
+               std::string want) {
               return "the page never logged \"" + want + "\"; its log: " +
-                     *log;
+                     *log + "; voice mode said: " + tts->AllSpoken();
             },
-            base::Unretained(&log), std::string(entry)));
+            base::Unretained(&log), base::Unretained(&tts_),
+            std::string(entry)));
     return base::test::RunUntil([&]() {
       log = content::EvalJs(tab(), "moltLog.join(' ')",
                             content::EXECUTE_SCRIPT_NO_USER_GESTURE)

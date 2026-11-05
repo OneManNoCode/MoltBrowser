@@ -19,8 +19,10 @@
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "components/optimization_guide/core/model_execution/manifest_broker/manifest_asset_manager.h"
@@ -50,10 +52,16 @@ class CountingDelegate final : public ManifestAssetManager::Delegate {
     return ready_callbacks_.Add(std::move(on_ready));
   }
 
+  // Later, as Chrome's delegate answers (from a blocking task), and with a
+  // size: the asset manager asks again until it knows one, so "unknown"
+  // would never end, and answered at once it recursed until the stack ran
+  // out. Too little for any on-device model to be installed.
   void GetFreeDiskSpace(
       base::OnceCallback<void(std::optional<base::ByteSize>)> callback)
       const override {
-    std::move(callback).Run(std::nullopt);
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(callback),
+                                  std::optional<base::ByteSize>(base::GiB(1))));
   }
 
   void RegisterOnDemandComponent(

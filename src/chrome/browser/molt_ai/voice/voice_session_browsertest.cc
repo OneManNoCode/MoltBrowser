@@ -39,6 +39,7 @@
 #include "base/task/thread_pool.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -249,10 +250,26 @@ class VoiceSessionBrowserTest : public InProcessBrowserTest {
 
   int tabs() { return browser()->GetTabStripModel()->count(); }
 
+  // Bounded (kWaitTimeout); a failure says the state the session was in
+  // and what voice mode said.
   bool WaitForState(SessionState state) {
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating(
+            [](VoiceSessionBrowserTest* test, SessionState want) {
+              VoiceSession* now = VoiceSession::FromBrowser(test->browser());
+              return "the session was never " +
+                     std::string(SessionStateName(want)) + "; it is " +
+                     (now ? std::string(SessionStateName(now->state()))
+                          : std::string("gone")) +
+                     (now && now->listening() ? ", listening" : "") +
+                     "; voice mode said: " + test->tts_.AllSpoken();
+            },
+            base::Unretained(this), state));
     return base::test::RunUntil(
         [&]() { return session() && session()->state() == state; });
   }
+  static constexpr base::TimeDelta kWaitTimeout = base::Seconds(20);
 
   // Lets the browser run for |delay|.
   void Wait(base::TimeDelta delay) {

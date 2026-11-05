@@ -76,10 +76,16 @@ def summarize(dir_path, binary, lines, details):
               for name, status, snippet in failed]
     # A timeout's first error is the launcher's kill, the same for every
     # test that ran out of time: each is its own.
+    # A failure's first line alone ("base/test/test_future.h:249: Failure",
+    # any bounded wait that ran out) can be the same for unrelated tests:
+    # what the expectation saw (which wait, what the page logged) is part of
+    # the key.
     groups = {}
     for name, status, snippet in failed:
         first = first_error(snippet)
-        key = (normalized(first) or name) + ' | ' + freed_at(snippet)
+        saw = ' / '.join(normalized(l) for l in expectation(snippet, first)[:3])
+        key = (normalized(first) or name) + ' | ' + saw + ' | ' + \
+            freed_at(snippet)
         if status == 'TIMEOUT':
             key = name
         groups.setdefault(key, []).append((name, status, snippet, first))

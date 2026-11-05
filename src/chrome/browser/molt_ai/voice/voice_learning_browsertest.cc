@@ -22,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/command_line.h"
@@ -34,6 +35,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -209,10 +211,25 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
     return embedded_test_server()->GetURL(host, path);
   }
 
+  // The waits are bounded (kWaitTimeout); a failure says what it waited
+  // for and what voice mode said.
+  std::unique_ptr<base::test::ScopedRunLoopTimeout> Bounded(
+      std::string waiting_for) {
+    return std::make_unique<base::test::ScopedRunLoopTimeout>(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating(
+            [](const RecordingTtsPlatform* tts, std::string what) {
+              return what + "; voice mode said: " + tts->All();
+            },
+            base::Unretained(&tts_), std::move(waiting_for)));
+  }
+
   void Say(std::string_view text, BrowserWindowInterface* window = nullptr) {
     VoiceController* controller = voice(window);
     ASSERT_TRUE(controller);
     controller->HandleUtterance(std::string(text));
+    const auto bounded =
+        Bounded("still busy after \"" + std::string(text) + "\"");
     ASSERT_TRUE(base::test::RunUntil([&]() {
       return !controller->busy() &&
              controller->activity() != VoiceActivity::kSpeaking;
@@ -225,10 +242,13 @@ class VoiceLearningBrowserTest : public InProcessBrowserTest {
   }
 
   bool Spoke(std::string_view text) {
+    const auto bounded =
+        Bounded("never said \"" + std::string(text) + "\"");
     return base::test::RunUntil([&]() {
       return tts_.All().find(std::string(text)) != std::string::npos;
     });
   }
+  static constexpr base::TimeDelta kWaitTimeout = base::Seconds(20);
 
   content::EvalJsResult Js(std::string_view script) {
     return content::EvalJs(web_contents(), script,
