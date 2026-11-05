@@ -363,10 +363,17 @@ IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, BadgesSitOnTheItemsAt200Zoom) {
   ASSERT_TRUE(overlay()->ShowNumbers(map));
   LayOut();
   EXPECT_GE(CheckBadges(map), 2);
-  // The badges are the browser's: the page's zoom doesn't size them.
-  const BadgePlacement* at_200 = Badge(map.lists[0].entries[0].number);
-  ASSERT_TRUE(at_200);
-  EXPECT_FLOAT_EQ(at_200->badge.height, badge_height);
+  // The badges are the browser's: the page's zoom doesn't size them. (At
+  // twice the size the first result can sit below the window, without a
+  // badge: any badge shown at full size will do.)
+  int full_size = 0;
+  for (const BadgePlacement& badge : numbers_view()->plan().badges) {
+    if (badge.scale == 1) {
+      EXPECT_FLOAT_EQ(badge.badge.height, badge_height) << badge.number;
+      ++full_size;
+    }
+  }
+  EXPECT_GE(full_size, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceOverlayBrowserTest, NumbersFollowScrolling) {
