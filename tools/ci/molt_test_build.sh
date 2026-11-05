@@ -270,6 +270,21 @@ browser_test_filter() {
     | sed -E 's/.*\(\s*//' | sort -u | sed 's/.*/*&.*/' | paste -sd: -
 }
 
+# A crashed test that printed nothing, run again on its own, in-process, so
+# its output reaches the summary (molt_test_summary.py), at most 3.
+rerun_silent_crashes() {
+  local dir="$1" binary="$2" name
+  mkdir -p "$dir/rerun"
+  python3 "$ROOT/tools/ci/molt_test_summary.py" --silent-crashes "$dir" "$binary" |
+    while read -r name; do
+      [ -n "$name" ] || continue
+      say "running $name again on its own"
+      timeout 300 xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/$binary" \
+        --single-process-tests --gtest_filter="$name" \
+        > "$dir/rerun/$binary.$name.log" 2>&1 || true
+    done
+}
+
 cmd_test() {
   local dir="$1" rc=0
   mkdir -p "$dir"
@@ -291,6 +306,7 @@ cmd_test() {
     rc=$((rc | $?))
     set -e
     tail -5 "$dir/molt_ai_unittests.log"
+    rerun_silent_crashes "$dir" molt_ai_unittests
   else
     echo "molt_ai_unittests was not built" | tee "$dir/molt_ai_unittests.log"
     rc=1

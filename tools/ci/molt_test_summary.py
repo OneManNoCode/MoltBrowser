@@ -10,6 +10,8 @@
 # with the output around each failure's errors.
 #
 # Usage: molt_test_summary.py <report dir>
+#        molt_test_summary.py --silent-crashes <report dir> <binary>
+#          (the crashed tests that printed no error, to run again)
 
 import json
 import os
@@ -66,6 +68,12 @@ def summarize(dir_path, binary, lines, details):
                  (binary, len(last), passed, ', ' + parts if parts else ''))
     # Failures with the same first error (a fixture's shared setup, say)
     # are one section: its first test's output, then the others' names.
+    # A crash that printed nothing (a stack overflow can take the crash
+    # handler with it) was run again on its own, in-process
+    # (molt_test_build.sh): its output stands in.
+    failed = [(name, status, snippet + rerun_output(dir_path, binary, name)
+               if not first_error(snippet) else snippet)
+              for name, status, snippet in failed]
     groups = {}
     for name, status, snippet in failed:
         first = first_error(snippet)
@@ -92,6 +100,32 @@ def summarize(dir_path, binary, lines, details):
                        (name, binary, status.lower(), lines_of_others,
                         clip(snippet)))
     return 1 if failed else 0
+
+
+def rerun_output(dir_path, binary, name, limit=12000):
+    path = os.path.join(dir_path, 'rerun', '%s.%s.log' % (binary, name))
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            text = f.read()
+    except OSError:
+        return ''
+    return '\n[run again on its own, in-process:]\n' + text[-limit:]
+
+
+def silent_crashes(dir_path, binary, limit=3):
+    """The crashed tests whose output names no error, at most |limit|."""
+    try:
+        with open(os.path.join(dir_path, binary + '.json'),
+                  encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    out = []
+    for name, run in sorted(last_runs(data).items()):
+        if run.get('status') == 'CRASH' and \
+                not first_error(run.get('output_snippet') or ''):
+            out.append(name)
+    return out[:limit]
 
 
 STRONG = ('FATAL', 'Check failed', 'DCHECK failed', 'Failure',
@@ -175,8 +209,12 @@ def clip(snippet, before=1500, after=4500, tail=1500, limit=14000):
 
 
 def main(argv):
+    if len(argv) == 3 and argv[0] == '--silent-crashes':
+        print('\n'.join(silent_crashes(argv[1], argv[2])))
+        return 0
     if len(argv) != 1:
-        print('usage: molt_test_summary.py <report dir>')
+        print('usage: molt_test_summary.py <report dir>\n'
+              '       molt_test_summary.py --silent-crashes <report dir> <binary>')
         return 2
     dir_path = argv[0]
     lines = ['### Tests', '']
