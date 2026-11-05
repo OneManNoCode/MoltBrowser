@@ -62,7 +62,8 @@ those three are heard, "Hey Molt" included: say "stop", then what you want,
 or wait until it has finished. Voice mode tells you so when it starts. Voice mode never cuts a page's reading
 short: its own answer waits until the page has finished, and "stop" stops
 only voice mode's speech. Each state has a short sound: a rising tone when it
-heard "Hey Molt", a tick when it took a command, a falling tone when it
+heard "Hey Molt" and you paused (none when you go straight on, so it never
+plays over your words), a tick when it took a command, a falling tone when it
 goes back to waiting for "Hey Molt".
 
 You can also type the commands, without the microphone, in Agent mode's

@@ -271,6 +271,7 @@ SessionActions VoiceSessionLogic::Start(int64_t now_ms) {
   ready_ = false;
   follow_up_until_ms_ = 0;
   wake_until_ms_ = 0;
+  wake_earcon_at_ms_ = 0;
   return Finish(std::move(actions), now_ms);
 }
 
@@ -284,6 +285,7 @@ SessionActions VoiceSessionLogic::Stop(int64_t now_ms) {
   ready_ = false;
   follow_up_until_ms_ = 0;
   wake_until_ms_ = 0;
+  wake_earcon_at_ms_ = 0;
   actions.earcon = EarconKind::kOff;
   return Finish(std::move(actions), now_ms);
 }
@@ -309,6 +311,7 @@ SessionActions VoiceSessionLogic::OnHelperLost(int64_t now_ms) {
   EndUtterance(&actions);
   ready_ = false;
   wake_until_ms_ = 0;
+  wake_earcon_at_ms_ = 0;
   return Finish(std::move(actions), now_ms);
 }
 
@@ -370,7 +373,8 @@ SessionActions VoiceSessionLogic::OnWake(int64_t now_ms,
   if (activity_ == BrowserActivity::kSpeaking) {
     actions.stop_speech = true;
   }
-  actions.earcon = EarconKind::kListening;
+  // The tone, if the user pauses (kWakeEarconDelayMs).
+  wake_earcon_at_ms_ = now_ms + kWakeEarconDelayMs;
   return Finish(std::move(actions), now_ms);
 }
 
@@ -385,6 +389,7 @@ SessionActions VoiceSessionLogic::OnSpeechStart(int64_t now_ms,
     utterance_->started_ms = now_ms;
     utterance_->lagged = utterance_->lagged || Lagged(lag_ms);
     wake_until_ms_ = 0;
+    wake_earcon_at_ms_ = 0;
     return Finish(std::move(actions), now_ms);
   }
   EndUtterance(&actions);
@@ -408,6 +413,7 @@ SessionActions VoiceSessionLogic::OnPartial(std::string_view text,
     utterance_->started = true;
     utterance_->started_ms = now_ms;
     wake_until_ms_ = 0;
+    wake_earcon_at_ms_ = 0;
   }
   if (Counts(*utterance_) && !text.empty()) {
     actions.partial = std::string(text);
@@ -429,6 +435,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   utterance.lagged = utterance.lagged || Lagged(lag_ms);
   EndUtterance(&actions);
   wake_until_ms_ = 0;
+  wake_earcon_at_ms_ = 0;
   bool take = false;
   std::string_view reason;
   if (!text.empty()) {
@@ -598,6 +605,14 @@ SessionActions VoiceSessionLogic::OnTick(int64_t now_ms) {
   if (!Listening()) {
     return Finish(std::move(actions), now_ms);
   }
+  if (wake_earcon_at_ms_ > 0 && now_ms >= wake_earcon_at_ms_) {
+    // The wake phrase, and the user paused: the tone says go ahead.
+    wake_earcon_at_ms_ = 0;
+    if (utterance_ && utterance_->woke && !utterance_->started &&
+        !actions.earcon) {
+      actions.earcon = EarconKind::kListening;
+    }
+  }
   if (wake_until_ms_ > 0 && now_ms >= wake_until_ms_) {
     // The wake phrase, then nothing.
     wake_until_ms_ = 0;
@@ -635,6 +650,9 @@ std::optional<int64_t> VoiceSessionLogic::NextDeadline() const {
   }
   if (wake_until_ms_ > 0) {
     consider(wake_until_ms_);
+  }
+  if (wake_earcon_at_ms_ > 0) {
+    consider(wake_earcon_at_ms_);
   }
   if (utterance_) {
     if (utterance_->ended_ms >= 0) {

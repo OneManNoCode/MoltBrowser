@@ -122,6 +122,11 @@ inline constexpr int64_t kFollowUpWindowMs = 8000;
 inline constexpr int64_t kAnswerWindowMs = 30000;
 // After the wake phrase, how long the user has to start speaking.
 inline constexpr int64_t kWakeTimeoutMs = 6000;
+// After the wake phrase, the listening tone waits this long, and doesn't
+// play once the command has started: said in the same breath ("Hey Molt,
+// click ..."), a tone from the speakers over its first words reaches the
+// microphone, and the echo canceller takes those words with it.
+inline constexpr int64_t kWakeEarconDelayMs = 700;
 // After the browser stops speaking, how long its voice may still reach the
 // microphone (the room, the recognizer's lag).
 inline constexpr int64_t kEchoTailMs = 700;
@@ -389,6 +394,9 @@ class VoiceSessionLogic {
   std::optional<Utterance> utterance_;
   // After the wake phrase, until speech starts.
   int64_t wake_until_ms_ = 0;
+  // When the listening tone plays after a wake, unless the command started
+  // first (0: none due).
+  int64_t wake_earcon_at_ms_ = 0;
   // What the browser said: when, and its words folded.
   std::deque<std::pair<int64_t, std::string>> said_;
 
