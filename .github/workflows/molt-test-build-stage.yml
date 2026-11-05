@@ -295,7 +295,7 @@ jobs:
         # within a share of it, then the summary, last.
         run: |
           for binary in browser_tests molt_ai_unittests; do
-            head -c 200000 "$RUNNER_TEMP/reports/failures-$binary.md" 2>/dev/null || true
+            head -c 600000 "$RUNNER_TEMP/reports/failures-$binary.md" 2>/dev/null || true
             echo
           done
           cat "$RUNNER_TEMP/reports/summary.md" 2>/dev/null || true

@@ -449,6 +449,18 @@ TEST(PageMapTest, ClassifiesCredentialFields) {
   node.autocomplete = "";
   node.name = "Enter the verification code";
   EXPECT_EQ(ClassifyCredential(node), CredentialKind::kOneTimeCode);
+  // autocomplete isn't in a real accessibility tree: a bare "Code", or a
+  // code sent to the user, is one; promo and postal codes aren't.
+  for (const char* label : {"Code", "Enter the code", "SMS code",
+                            "6-digit code", "Confirmation code"}) {
+    node.name = label;
+    EXPECT_EQ(ClassifyCredential(node), CredentialKind::kOneTimeCode) << label;
+  }
+  for (const char* label : {"Promo code", "ZIP code", "Postal code",
+                            "Gift card code", "Country code", "Coupon"}) {
+    node.name = label;
+    EXPECT_EQ(ClassifyCredential(node), CredentialKind::kNone) << label;
+  }
   node.name = "CVV";
   EXPECT_EQ(ClassifyCredential(node), CredentialKind::kPaymentCard);
   node.name = "Search";

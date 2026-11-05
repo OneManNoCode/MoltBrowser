@@ -161,6 +161,8 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
 
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
+    // The profile, which outlives the windows: a test may close browser().
+    profile_ = browser()->GetProfile();
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
     content::TtsController::GetInstance()->SetTtsPlatform(&tts_);
@@ -169,7 +171,7 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
   void TearDownOnMainThread() override {
     // A download still in progress would hold up closing the browser.
     std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> items;
-    browser()->GetProfile()->GetDownloadManager()->GetAllDownloads(&items);
+    profile_->GetDownloadManager()->GetAllDownloads(&items);
     for (download::DownloadItem* item : items) {
       if (item->GetState() == download::DownloadItem::IN_PROGRESS) {
         item->Cancel(/*user_cancel=*/false);
@@ -187,6 +189,8 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
   }
 
  protected:
+  raw_ptr<Profile> profile_ = nullptr;
+
   content::WebContents* web_contents(BrowserWindowInterface* window = nullptr) {
     return (window ? window : browser())
         ->GetTabStripModel()

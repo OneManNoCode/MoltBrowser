@@ -229,6 +229,8 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
 
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
+    // The profile, which outlives the windows: a test may close browser().
+    profile_ = browser()->GetProfile();
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
     content::TtsController::GetInstance()->SetTtsPlatform(&tts_);
@@ -237,7 +239,7 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
   void TearDownOnMainThread() override {
     // A download still in progress would hold up closing the browser.
     std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> items;
-    browser()->GetProfile()->GetDownloadManager()->GetAllDownloads(&items);
+    profile_->GetDownloadManager()->GetAllDownloads(&items);
     for (download::DownloadItem* item : items) {
       if (item->GetState() == download::DownloadItem::IN_PROGRESS) {
         item->Cancel(/*user_cancel=*/false);
@@ -357,6 +359,7 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
   bool observing_ = false;
   bool holds_page_ = false;
   std::unique_ptr<WebAgent> agent_;
+  raw_ptr<Profile> profile_ = nullptr;
 
  private:
   base::test::ScopedFeatureList features_;

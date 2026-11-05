@@ -450,9 +450,12 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
   ON_CALL(*manager, IsFetchCompleted()).WillByDefault(testing::Return(true));
   // "Not now" is the bubble's own button: the same as its X (the key stays
   // in the omnibox, the password unsaved).
+  // (Once for "not now", and again when the tab goes and the bubble with
+  // it.)
   bool dismissed = false;
   EXPECT_CALL(*manager, OnNoInteraction(/*is_update=*/false))
-      .WillOnce([&dismissed](bool) { dismissed = true; });
+      .Times(testing::AtLeast(1))
+      .WillRepeatedly([&dismissed](bool) { dismissed = true; });
   passwords->OnPasswordSubmitted(std::move(manager));
   ASSERT_EQ(passwords->GetState(),
             password_manager::ui::PENDING_PASSWORD_STATE);

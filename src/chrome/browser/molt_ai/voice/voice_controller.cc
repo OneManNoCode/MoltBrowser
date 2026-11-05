@@ -84,6 +84,10 @@ constexpr char kPlannerNoAnswer[] = "I didn't hear yes, so I stopped.";
 constexpr base::TimeDelta kNumbersRefreshDelay = base::Milliseconds(700);
 constexpr int kMaxNumbersRefreshAttempts = 10;
 
+// Caption updates an observer asks for while one is being sent, at most
+// (each sends the latest caption).
+constexpr int kMaxCaptionRounds = 4;
+
 // An utterance that comes before the page's tree (the first thing said
 // turned voice mode on, or the tab is on a page that just loaded) waits
 // for the tree this long at most, then is planned with what there is.
@@ -668,6 +672,29 @@ VoiceActivity VoiceController::activity() const {
 }
 
 void VoiceController::NotifyCaption() {
+  // An observer that changes the caption in answer (the listening session
+  // sets what it shows, SetListening()) calls back in here, and observer
+  // lists don't take a second round inside the first (Chromium's default
+  // policy): it waits for the round under way, then gets one of its own.
+  if (notifying_caption_) {
+    caption_again_ = true;
+    return;
+  }
+  base::WeakPtr<VoiceController> self = weak_factory_.GetWeakPtr();
+  int rounds = 0;
+  do {
+    caption_again_ = false;
+    notifying_caption_ = true;
+    NotifyCaptionOnce();
+    if (!self) {
+      return;
+    }
+    notifying_caption_ = false;
+  } while (caption_again_ && ++rounds < kMaxCaptionRounds);
+  caption_again_ = false;
+}
+
+void VoiceController::NotifyCaptionOnce() {
   const VoiceActivity now = activity();
   if (test_log_) {
     test_log_->OnLoop(now, listening_.listening, listening_.waiting, state_);

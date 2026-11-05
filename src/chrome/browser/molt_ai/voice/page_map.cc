@@ -226,6 +226,27 @@ CredentialKind CredentialFromLabel(std::string_view text) {
       return CredentialKind::kOneTimeCode;
     }
   }
+  // A field labelled "code" and nothing else, or a code sent to the user.
+  // The page's autocomplete="one-time-code" isn't in the accessibility
+  // tree (Blink sends aria-autocomplete there, and HTML attributes only for
+  // snapshots), so the label is what's left. Promo, gift, ZIP, postal,
+  // country and area codes match none of these.
+  for (std::string_view label :
+       {"code", "enter code", "enter the code", "enter your code",
+        "your code"}) {
+    if (folded == label) {
+      return CredentialKind::kOneTimeCode;
+    }
+  }
+  for (std::string_view word :
+       {"sms code", "text code", "texted code", "email code",
+        "emailed code", "confirmation code", "login code", "log in code",
+        "sign in code", "sign-in code", "access code", "auth code",
+        "digit code", "two-step code", "2-step code"}) {
+    if (HasWords(folded, word)) {
+      return CredentialKind::kOneTimeCode;
+    }
+  }
   return CredentialKind::kNone;
 }
 

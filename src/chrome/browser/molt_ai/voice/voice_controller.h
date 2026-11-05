@@ -372,6 +372,9 @@ class VoiceController : public VoicePlanner::Delegate,
   void OnMediaStarted();
   void OnTabGone();
 
+  // The caption round NotifyCaption() sends.
+  void NotifyCaptionOnce();
+
   // The utterance's planning: the map, the grammar, the turn.
   void PlanAndRunUtterance(const std::string& text);
   // Whether the active tab is a web page whose tree hasn't come yet: an
@@ -556,6 +559,9 @@ class VoiceController : public VoicePlanner::Delegate,
     HeardEvidence evidence;
   };
   std::optional<DeferredUtterance> deferred_;
+  // NotifyCaption() is sending a round; another was asked for meanwhile.
+  bool notifying_caption_ = false;
+  bool caption_again_ = false;
   base::CallbackListSubscription deferred_trees_;
   base::OneShotTimer deferred_timer_;
   base::ObserverList<Observer> observers_;
