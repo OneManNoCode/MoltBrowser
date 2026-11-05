@@ -167,7 +167,8 @@ jobs:
 
   # The spoken end-to-end suite (tools/voice_e2e, docs/VOICE_E2E.md) on the
   # build the stage that ran the tests saved. It needs no Chromium checkout:
-  # the out dir of a component build runs on its own.
+  # the out dir of a component build runs on its own. One job per run (the
+  # verdict is per run: each must meet Phase 1's exit), in parallel.
   voice-e2e:
     needs: [config, speech-bundle, stage-1, stage-2, stage-3, stage-4, stage-5]
     if: >-
@@ -176,8 +177,18 @@ jobs:
        needs.config.outputs.e2e_only == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {run: 'pulse:clean', name: pulse-clean, speech_check: '1'}
+          - {run: 'pulse:music10', name: pulse-music10, speech_check: '0'}
+          - {run: 'file:clean', name: file-clean, speech_check: '0'}
+          - {run: 'typed', name: typed, speech_check: '0'}
     env:
       GH_TOKEN: ${{ github.token }}
+      VOICE_E2E_RUNS: ${{ matrix.run }}
+      VOICE_E2E_SPEECH_CHECK: ${{ matrix.speech_check }}
       T1: ${{ needs.stage-1.outputs.tested }}
       T2: ${{ needs.stage-2.outputs.tested }}
       T3: ${{ needs.stage-3.outputs.tested }}
@@ -238,7 +249,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          name: molt-voice-e2e-report
+          name: molt-voice-e2e-report-${{ matrix.name }}
           path: ${{ runner.temp }}/e2e-report/
           if-no-files-found: ignore
           retention-days: 30
