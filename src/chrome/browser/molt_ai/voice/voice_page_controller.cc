@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -457,6 +458,35 @@ void VoicePageController::WebContentsDestroyed() {
   voice_mode_hold_ = false;
   web_agent_holds_ = 0;
   Stop(Holder::kVoiceMode);
+}
+
+bool VoicePageController::FrameTreesComing() {
+  if (!HasPageTree() || trees_.size() >= max_trees_) {
+    return false;
+  }
+  for (const auto& [tree_id, held] : trees_) {
+    std::vector<const ui::AXNode*> stack;
+    if (held.tree->root()) {
+      stack.push_back(held.tree->root());
+    }
+    // Every held node once at most (kMaxTreeNodes a tree).
+    size_t visited = 0;
+    while (!stack.empty() && visited++ <= kMaxTreeNodes) {
+      const ui::AXNode* node = stack.back();
+      stack.pop_back();
+      if (std::optional<ui::AXTreeID> child = node->data().GetChildTreeID();
+          child && *child != ui::AXTreeIDUnknown() && !trees_.contains(*child) &&
+          FrameFor(*child)) {
+        return true;
+      }
+      for (size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (const ui::AXNode* next = node->GetChildAtIndex(i)) {
+          stack.push_back(next);
+        }
+      }
+    }
+  }
+  return false;
 }
 
 bool VoicePageController::HasPageTree() {

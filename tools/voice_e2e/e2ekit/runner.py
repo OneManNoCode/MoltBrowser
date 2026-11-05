@@ -180,7 +180,7 @@ class Runner(object):
 
     # ---- the browser's launch -------------------------------------------
 
-    def flags(self, log_path, wav=None):
+    def flags(self, log_path, wav=None, shields=True):
         f = ["--user-data-dir=%s", "--no-first-run", "--no-default-browser-check",
              "--password-store=basic", "--disable-search-engine-choice-screen",
              "--enable-features=MoltVoiceMode",
@@ -191,6 +191,10 @@ class Runner(object):
              "--window-size=1280,900", "--lang=en-US"]
         if not self.config.sandbox:
             f.append("--no-sandbox")
+        if not shields:
+            # MoltShield off for this run: what a page shows that its
+            # filters would hide (a YouTube ad's skip button) is there.
+            f.append("--disable-molt-shield")
         if wav:
             f += ["--use-fake-device-for-media-stream",
                   "--use-file-for-fake-audio-capture=%s%%noloop" % wav]
@@ -279,7 +283,8 @@ class Runner(object):
                         "voice_language": "en"}
             settings.update(sc.start.get("settings", {}))
             browserlib.write_settings(os.path.join(run_dir, "home"), settings)
-            flags = self.flags(log_path, plan.get("file_wav"))
+            flags = self.flags(log_path, plan.get("file_wav"),
+                               shields=sc.start.get("shields", True))
             flags[0] = flags[0] % os.path.join(run_dir, "profile")
             browser = self.browser_factory(self.exe, run_dir, flags, self.env(run_dir),
                                            log=self.log)

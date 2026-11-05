@@ -507,6 +507,8 @@ class VoiceController : public VoicePlanner::Delegate,
   // Changes with every committed navigation of the active tab and every
   // change of the active tab.
   int64_t page_id_ = 1;
+  // The page an utterance last waited for trees on (PageTreeIsComing()).
+  int64_t frames_waited_page_id_ = 0;
   // Committed navigations of the active tab, in all and when the current
   // utterance came, and when the last one committed: a wait that starts
   // after its navigation already committed (a quick submit) knows it.

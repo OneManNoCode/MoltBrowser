@@ -492,6 +492,7 @@ said.
 **Close this tab, or a tab by number or name.** For example: "close this tab".
 
 - `close [this | the | current] tab`
+- `close (this | the) ted`
 - `close tab {tab}`
 - `close [the] {tab} tab`
 
@@ -499,6 +500,7 @@ said.
 
 - `[go to | switch to | move to] [the] next tab`
 - `[go to | switch to | move to] [the] previous tab`
+- `[go to | switch to | move to] [the] previous tomb`
 - `(switch | go | change | move | jump) to (tab | tip) {tab}`
 - `tab {tab}`
 - `(switch | go | change | move | jump) to [the] {tab} tab`
@@ -575,6 +577,7 @@ said.
 
 - `[set | turn | change | put] [the] volume [to | at] {level}`
 - `{level} volume`
+- `said [the] volume (to | at) {level}`
 
 **Mute the sound.** For example: "mute".
 
@@ -656,6 +659,7 @@ said.
 **Skip the ad, once the player lets you.** For example: "skip the ad".
 
 - `skip [the | this | these] (ad | ads | advert | adverts | advertisement | advertisements | commercial)`
+- `skip (the | this) ed`
 
 ## Reading
 
@@ -685,6 +689,7 @@ said.
 **Read the page's title.** For example: "read the title".
 
 - `(read | say | tell me) the (title | page title | title of the page | name of the page | page name)`
+- `read the tile`
 - `(what is | whats) the (title | page title | title of the page | name of (this | the) page)`
 
 **Read the selected text.** For example: "read the selection".
@@ -830,6 +835,7 @@ said.
 
 - `(no | nope | nah | negative | wrong | incorrect | no way) [dont | dont do it | do not | i dont | its not | it isnt | it is not | not that one | cancel]` (when the browser has asked a yes-or-no question)
 - `(dont | do not) [do it | do that]` (when the browser has asked a yes-or-no question)
+- `now` (when the browser has asked a yes-or-no question)
 
 **Cancel what you asked for.** For example: "cancel".
 
@@ -937,7 +943,7 @@ said.
 - `(open | show) [me] [the] downloads [page | folder]`
 - `what (did i | have i) download [recently]`
 - `my downloads`
-- `to my downloads`
+- `(to | draw) my downloads`
 
 **Open a downloaded file: the last one, or by its number. A file that can run programs isn't opened by voice.** For example: "open the last download".
 

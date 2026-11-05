@@ -37,6 +37,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/voice/voice_ai_answers.h"
@@ -547,6 +548,32 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
   EXPECT_EQ("disabled", Js("state().tracks[1]"));
   Say("captions off");
   EXPECT_EQ("disabled", Js("state().tracks[0]"));
+}
+
+// Said as voice mode comes on (the first thing said turns it on), before
+// the frame's tree came: the command waits for it, so the frame's player is
+// the one played (not "There's nothing to play on this page").
+IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
+                       APlayerInAFrameAsVoiceModeComesOn) {
+  const GURL inner = Url("/molt_voice/frame_player_inner.html", "player.test");
+  Open(Url("/molt_voice/frame_player.html?frame=" + inner.spec(), "host.test"));
+  content::RenderFrameHost* frame =
+      content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0);
+  ASSERT_TRUE(frame);
+  ASSERT_TRUE(content::EvalJs(frame, "player.paused").ExtractBool());
+  Say("play");
+  const base::test::ScopedRunLoopTimeout timeout(
+      FROM_HERE, base::Seconds(20),
+      base::BindRepeating([]() {
+        return std::string("the frame's player never played");
+      }));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return content::EvalJs(frame, "!player.paused").ExtractBool();
+  }));
+  VoicePageController* page =
+      VoicePageController::FromWebContents(web_contents());
+  ASSERT_TRUE(page);
+  EXPECT_FALSE(page->FrameTreesComing());
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, APlayerInAFrame) {

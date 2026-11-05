@@ -193,6 +193,13 @@ TEST(VoiceCommandTest, OpenSites) {
       {"Himaled, girl to the bottom", "scroll_to_bottom", ""},
       {"He mold, Joe numbers", "show_numbers", ""},
       {"Hey, Malt, switch to tip two", "switch_tab", "choice=num:2"},
+      {"Hey, Malt, previous tomb.", "switch_tab", "choice=rel:previous"},
+      {"Hey, Malt, close this ted.", "close_tab", ""},
+      {"Hey, Malt, skip the ed.", "skip_ad", ""},
+      {"Hey, Molt, read the tile", "read_title", ""},
+      {"He mold, draw my downloads", "list_downloads", ""},
+      {"Hey mold, said the volume to fifty percent.", "set_volume",
+       "level=50"},
       // The wake phrase run together by the recognizer.
       {"him old. Open YouTube", "open_site", "site=youtube"},
       {"Himalt. Open YouTube", "open_site", "site=youtube"},
@@ -659,6 +666,8 @@ TEST(VoiceCommandTest, Conversation) {
       {"that's right", "yes", "", kYesNo},
       {"no", "no", "", kYesNo},
       {"nope", "no", "", kYesNo},
+      // "No" heard as "now": only as an answer.
+      {"Now", "no", "", kYesNo},
       {"no thanks", "no", "", kYesNo},
       {"don't", "no", "", kYesNo},
       {"no don't do it", "no", "", kYesNo},

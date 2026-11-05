@@ -64,7 +64,9 @@ TOUCHLESS_BROWSING.md §2: go, read, choose, act, media, browser, recover;
 or prompts, security, owner), "counts" (one of the scripted tasks,
 default true), "modes" (listening modes: "wake", "always"; default
 ["wake"]), "start" ({"url", "tabs": [urls], "settings": {...},
-"js": "..."}), "requires", "steps".
+"js": "...", "shields": false for a browser run with MoltShield off
+(--disable-molt-shield), as for a site the user turned it off on}),
+"requires", "steps".
 """
 
 import json
@@ -82,7 +84,7 @@ STEP_KEYS = set(STEP_ACTIONS) | {
     "direct", "barge_in", "note"}
 SCENARIO_KEYS = {"id", "title", "task", "counts", "modes", "start",
                  "requires", "steps", "note"}
-START_KEYS = {"url", "tabs", "settings", "js"}
+START_KEYS = {"url", "tabs", "settings", "js", "shields"}
 SETTINGS_KEYS = {"voice_say_word_aloud", "voice_speech_rate",
                  "voice_language"}
 
@@ -353,6 +355,8 @@ def parse_scenario(obj, source=""):
                 not isinstance(u, str) or not u.startswith("https://")
                 for u in start["tabs"]):
             _fail(where, "start.tabs takes https:// URLs")
+    if "shields" in start and not isinstance(start["shields"], bool):
+        _fail(where, "start.shields takes true or false")
     if "settings" in start:
         st = start["settings"]
         if not isinstance(st, dict) or set(st) - SETTINGS_KEYS:

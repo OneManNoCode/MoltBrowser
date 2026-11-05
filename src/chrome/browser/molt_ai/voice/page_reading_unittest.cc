@@ -432,6 +432,18 @@ TEST(PageReadingTest, TheSelection) {
   EXPECT_EQ(select(last, 8, first, 4), "quick brown fox jumps over the");
   // An element end: a child index.
   EXPECT_EQ(select(p, 0, p, 1), "The quick brown fox");
+  // As Blink gives a selection of the paragraph's children
+  // (selectAllChildren()): it starts in the first text and ends on the
+  // paragraph, past its children; either way round.
+  EXPECT_EQ(select(first, 0, p, 3),
+            "The quick brown fox jumps over the lazy dog.");
+  EXPECT_EQ(select(p, 3, first, 0),
+            "The quick brown fox jumps over the lazy dog.");
+  // From before the link (a child index) into the last text.
+  EXPECT_EQ(select(p, 1, last, 4), "jumps over");
+  EXPECT_EQ(select(last, 4, p, 1), "jumps over");
+  // A point before a node and one inside it: nothing between.
+  EXPECT_FALSE(select(p, 0, first, 0));
   // In a text field: its value, by UTF-16 offsets.
   EXPECT_EQ(select(field, 0, field, 4), "caf\xC3\xA9");
   // Never a password.

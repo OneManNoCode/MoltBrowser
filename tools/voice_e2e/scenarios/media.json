@@ -118,7 +118,8 @@
    "id": "media-skip-ad",
    "title": "Skip the ad once the player lets you",
    "task": "media",
-   "start": {"url": "https://www.youtube.com/watch?v=video1&ad=1"},
+   "note": "MoltShield hides YouTube's ad overlay (.video-ads, .ytp-ad-module) and blocks its ads: this is the ad that shows with it off for the site.",
+   "start": {"url": "https://www.youtube.com/watch?v=video1&ad=1", "shields": false},
    "steps": [
     {"say": "play", "needs": ["play"], "expect": [{"media": {"paused": false}}]},
     {"say": "skip the ad", "pause": 3.5, "needs": ["skip_ad"],

@@ -704,8 +704,7 @@ std::optional<std::string> SelectedText(const PageTree& tree,
   }
   size_t start_offset = static_cast<size_t>(selection.anchor_offset);
   size_t end_offset = static_cast<size_t>(selection.focus_offset);
-  if (start > end || (start == end && start_offset > end_offset)) {
-    std::swap(start, end);
+  if (start == end && start_offset > end_offset) {
     std::swap(start_offset, end_offset);
   }
   // UTF-16 offsets into UTF-8 text, as bytes (clamped to the text).
@@ -734,33 +733,55 @@ std::optional<std::string> SelectedText(const PageTree& tree,
         std::string_view(first.value).substr(from, to - from), max_chars);
     return text.empty() ? std::nullopt : std::optional<std::string>(text);
   }
-  // Across nodes: the static text between the two ends. An end on an
-  // element is a child index: the selection starts at that child's
-  // subtree, or ends before it.
-  auto child_pos = [&](uint32_t pos, size_t index, bool* past) {
+  // Across nodes: the static text between the two ends. An end on static
+  // text is a character offset in it; an end on an element is a child
+  // index: the point before that child's subtree, or after the element's
+  // when past its children. Blink gives both kinds at once (a selection of
+  // a paragraph's children starts in its first text and ends on the
+  // paragraph), so the ends are put in order as points in the walk, never
+  // by their nodes' places: an element comes before its own text.
+  struct End {
+    uint32_t pos;   // the text node, or the node the point is before
+    bool text;      // inside the text node at |offset|
+    size_t offset;
+  };
+  auto child_pos = [&](uint32_t pos, size_t index) {
     size_t k = 0;
     for (uint32_t c = pos + 1; c < walk.end(pos); c = walk.end(c)) {
       if (k++ == index) {
         return c;
       }
     }
-    *past = true;
     return walk.end(pos);
   };
-  uint32_t from = start;
-  uint32_t to = end;
-  bool from_text = walk.node(start).role == PageRole::kStaticText;
-  bool to_text = walk.node(end).role == PageRole::kStaticText;
-  if (!from_text) {
-    bool past = false;
-    from = child_pos(start, start_offset, &past);
+  auto end_at = [&](uint32_t pos, size_t offset) {
+    return walk.node(pos).role == PageRole::kStaticText
+               ? End{pos, true, offset}
+               : End{child_pos(pos, offset), false, 0};
+  };
+  End a = end_at(start, start_offset);
+  End b = end_at(end, end_offset);
+  // Before a node comes before any point inside it.
+  auto before = [](const End& x, const End& y) {
+    if (x.pos != y.pos) {
+      return x.pos < y.pos;
+    }
+    if (x.text != y.text) {
+      return !x.text;
+    }
+    return x.offset < y.offset;
+  };
+  if (before(b, a)) {
+    std::swap(a, b);
   }
-  if (!to_text) {
-    bool past = false;
-    to = child_pos(end, end_offset, &past);
-  } else {
-    to = end + 1;
-  }
+  start = a.pos;
+  end = b.pos;
+  start_offset = a.offset;
+  end_offset = b.offset;
+  const uint32_t from = a.pos;
+  const bool from_text = a.text;
+  const bool to_text = b.text;
+  const uint32_t to = b.text ? b.pos + 1 : b.pos;
   std::string raw;
   const size_t max_bytes = max_chars * 4 + 16;
   for (uint32_t p = from; p < to && p < walk.size() && raw.size() < max_bytes;

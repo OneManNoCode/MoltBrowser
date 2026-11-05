@@ -990,6 +990,8 @@ void VoiceController::HandleUtterance(const std::string& text) {
     CancelRun(/*keep_planner=*/true);
     deferred_ = DeferredUtterance{text, heard_evidence_};
     VoicePageController* page = ActivePage();
+    // One wait a page (it takes in the frames' trees too).
+    frames_waited_page_id_ = page_id_;
     deferred_trees_ = page->AddTreesUpdatedCallback(base::BindRepeating(
         &VoiceController::OnDeferredTrees, weak_factory_.GetWeakPtr()));
     deferred_timer_.Start(FROM_HERE, kMaxTreeWait,
@@ -1006,8 +1008,14 @@ bool VoiceController::PageTreeIsComing() {
   }
   VoicePageController* page = ActivePage();
   content::WebContents* contents = ActiveContents();
-  if (!page || !page->active() || !contents || page->HasPageTree() ||
-      contents->IsCrashed()) {
+  if (!page || !page->active() || !contents || contents->IsCrashed()) {
+    return false;
+  }
+  // The page's tree is here: its frames' trees (an embedded player) may
+  // still be coming. Waited for once a page, so a frame that never sends
+  // one can't slow every command on it.
+  if (page->HasPageTree() &&
+      (frames_waited_page_id_ == page_id_ || !page->FrameTreesComing())) {
     return false;
   }
   // Only a web page has a tree for voice mode to read (agent_safety.h);
@@ -1018,7 +1026,7 @@ bool VoiceController::PageTreeIsComing() {
 
 void VoiceController::OnDeferredTrees() {
   VoicePageController* page = ActivePage();
-  if (deferred_ && page && page->HasPageTree()) {
+  if (deferred_ && page && page->HasPageTree() && !page->FrameTreesComing()) {
     // After the observers that are still handling this update.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&VoiceController::RunDeferredUtterance,

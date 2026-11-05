@@ -250,15 +250,15 @@ LanguagePhrases MakeEnglishPhrases() {
                        "lets",
                        "let us",
                        "just",
-                       "now",
                        "and",
                        "then",
                        "and then",
                        "so"};
   p.trailing_phrases = {"please", "thanks", "thank you", "thank you very much"};
   p.trailing_if_command = {"now", "right now", "for me"};
+  // "now" alone stays: it can be "no" heard as "now" (an answer).
   p.leading_if_more = {"ok",    "okay", "alright", "all right",
-                       "right", "hey",  "oh"};
+                       "right", "hey",  "oh",      "now"};
   // "he": "hey" said short, as the speech helper also spots it
   // (WakeKeywordLines()).
   p.wake_greetings = {"hey", "hi", "ok", "okay", "hello", "a", "hay", "he"};

@@ -99,6 +99,14 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(res["t-quiet"]["status"], "passed", res["t-quiet"])
         self.assertEqual(res["t-word"]["status"], "skipped")
 
+    def test_shields_off_disables_molt_shield(self):
+        cfg = runner.RunConfig(audio="typed", settle=0.2)
+        r = runner.Runner(self.exe, os.path.join(self.d, "speech"),
+                          os.path.join(self.d, "report"), FakeServer(), "spki", cfg,
+                          log=lambda *a: None)
+        self.assertNotIn("--disable-molt-shield", r.flags("log"))
+        self.assertIn("--disable-molt-shield", r.flags("log", shields=False))
+
     def test_typed(self):
         cfg = runner.RunConfig(audio="typed", settle=0.2)
         r = runner.Runner(self.exe, os.path.join(self.d, "speech"),

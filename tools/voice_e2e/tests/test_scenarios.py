@@ -92,6 +92,11 @@ class RefusedTest(unittest.TestCase):
             scen.parse_scenario(obj, "x.json")
         self.assertIn(needle, str(cm.exception))
 
+    def test_shields_off(self):
+        sc = scen.parse_scenario(
+            one(start={"url": "https://news.test/", "shields": False}), "x.json")
+        self.assertIs(sc.start["shields"], False)
+
     def test_good_one(self):
         sc = scen.parse_scenario(one(), "x.json")
         self.assertEqual(sc.steps[0].text, "open YouTube")
@@ -121,6 +126,8 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(steps=[{"say": "x", "expect": [{"tabs": -1}]}]), "count")
         self.bad(one(steps=[{"say": "x", "timeout": 999}]), "timeout")
         self.bad(one(requires=["telepathy"]), "requires takes")
+        self.bad(one(start={"url": "https://news.test/", "shields": "off"}),
+                 "start.shields takes")
 
     def test_word_and_replay_need_live_audio(self):
         sc = scen.parse_scenario(one(steps=[

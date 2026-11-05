@@ -64,6 +64,9 @@ constexpr CommandPattern kPatterns[] = {
      "i dont|its not|it isnt|it is not|not that one|cancel]",
      C::kYesNo},
     {K::kNo, "(dont|do not) [do it|do that]", C::kYesNo},
+    // "No" heard as "now" (the spoken suite's file run), only as the answer
+    // to a yes-or-no question: no is the answer that does nothing.
+    {K::kNo, "now", C::kYesNo},
     {K::kUndo,
      "undo [that|it|this|the last (thing|action|step|change)|what you did]"},
     {K::kRepeat,
@@ -166,8 +169,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kListDownloads, "(open|show) [me] [the] downloads [page|folder]"},
     {K::kListDownloads, "what (did i|have i) download [recently]"},
     {K::kListDownloads, "my downloads"},
-    // "Show" heard as "to" (the spoken suite's file run).
-    {K::kListDownloads, "to my downloads"},
+    // "Show" heard as "to" and "draw" (the spoken suite's file run).
+    {K::kListDownloads, "(to|draw) my downloads"},
     // Settings. Those that weaken a protection are only changed by a click.
     {K::kProtectedSetting,
      "[turn on|switch on|enable|always] say [the] [confirmation] word (aloud|"
@@ -377,12 +380,17 @@ constexpr CommandPattern kPatterns[] = {
     {K::kNewTab, "(open|new|start|create) [a] new tab"},
     {K::kNewTab, "(new tab|open [a] tab|open another tab)"},
     {K::kCloseTab, "close [this|the|current] tab"},
+    // "Tab" heard as "ted" (the spoken suite's file run).
+    {K::kCloseTab, "close (this|the) ted"},
     {K::kCloseTab, "close tab {tab}"},
     {K::kCloseTab, "close [the] {tab} tab"},
     {K::kSwitchTab, "[go to|switch to|move to] [the] next tab", C::kAlways,
      V::kNextTab},
     {K::kSwitchTab, "[go to|switch to|move to] [the] previous tab", C::kAlways,
      V::kPreviousTab},
+    // "Tab" heard as "tomb" (the spoken suite's file run).
+    {K::kSwitchTab, "[go to|switch to|move to] [the] previous tomb",
+     C::kAlways, V::kPreviousTab},
     {K::kSwitchTab, "(switch|go|change|move|jump) to (tab|tip) {tab}"},
     {K::kSwitchTab, "tab {tab}"},
     {K::kSwitchTab, "(switch|go|change|move|jump) to [the] {tab} tab"},
@@ -407,6 +415,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kSkipAd,
      "skip [the|this|these] (ad|ads|advert|adverts|advertisement|"
      "advertisements|commercial)"},
+    // "Ad" heard as "ed" (the spoken suite's file run).
+    {K::kSkipAd, "skip (the|this) ed"},
     {K::kResume,
      "(resume|unpause|continue|keep playing|continue playing|carry on) "
      "[it|playback|the video|the music|the song|playing]"},
@@ -460,6 +470,8 @@ constexpr CommandPattern kPatterns[] = {
      "lower|reduce) [the] volume|a (bit|little) quieter|much quieter)"},
     {K::kSetVolume, "[set|turn|change|put] [the] volume [to|at] {level}"},
     {K::kSetVolume, "{level} volume"},
+    // "Set" heard as "said" (the spoken suite's file run).
+    {K::kSetVolume, "said [the] volume (to|at) {level}"},
     {K::kMute,
      "mute [it|this|everything|the (sound|audio|video|tab|volume|music)]"},
     {K::kMute,
@@ -480,6 +492,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kReadTitle,
      "(read|say|tell me) the (title|page title|title of the page|name of "
      "the page|page name)"},
+    // "Title" heard as "tile" (the spoken suite's file run).
+    {K::kReadTitle, "read the tile"},
     {K::kReadTitle,
      "(what is|whats) the (title|page title|title of the page|name of "
      "(this|the) page)"},

@@ -164,6 +164,11 @@ class VoicePageController
   // Whether the top-level document's tree is here (the map is empty until
   // it is).
   bool HasPageTree();
+  // Whether a frame the held trees embed (a player, a form in an iframe)
+  // has a tree still to come: the frame is this page's, its tree isn't
+  // here, and the trees aren't at their cap. Frames' trees come apart
+  // from the page's, often after it.
+  bool FrameTreesComing();
   // The page map of the trees held now, with the site's skill
   // (site_skills.h) when the top-level document is an http(s) page of a site
   // that has one.

@@ -386,6 +386,8 @@ IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
   EXPECT_LT(home->number, like->number);
   EXPECT_LT(like->number, after->number);
   EXPECT_NE(like->handle.tree, home->handle.tree);
+  // Every frame's tree it embeds is here.
+  EXPECT_FALSE(controller()->FrameTreesComing());
 
   content::RenderFrameHost* frame =
       content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0);
