@@ -32,6 +32,7 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
@@ -53,6 +54,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/download/public/common/download_item.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/tts_controller.h"
@@ -165,6 +167,14 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
   }
 
   void TearDownOnMainThread() override {
+    // A download still in progress would hold up closing the browser.
+    std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> items;
+    browser()->GetProfile()->GetDownloadManager()->GetAllDownloads(&items);
+    for (download::DownloadItem* item : items) {
+      if (item->GetState() == download::DownloadItem::IN_PROGRESS) {
+        item->Cancel(/*user_cancel=*/false);
+      }
+    }
     VoiceAiAnswers::SetModelForTesting(VoiceAiAnswers::ModelForTesting());
     for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
       if (VoiceController* voice = VoiceController::FromBrowser(window)) {
@@ -210,6 +220,9 @@ class VoiceBrowserActionsBrowserTest : public InProcessBrowserTest {
 
   // The voice loop has the page's tree (lists, the player, fields).
   void WaitForPage() {
+    // Voice mode on, as the first thing said turns it on: the active tab
+    // then has its page controller.
+    ASSERT_TRUE(voice()->Start());
     VoicePageController* page =
         VoicePageController::FromWebContents(web_contents());
     ASSERT_TRUE(page);
@@ -308,7 +321,10 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
   content::DownloadTestObserverTerminal done(
       manager, 1, content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_DENY);
   ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), Url("/molt_voice/tool.bat")));
+      // From localhost: Chrome holds a download over plain http from another
+      // host as insecure, which never finishes here.
+      ui_test_utils::NavigateToURL(browser(),
+                                   Url("/molt_voice/tool.bat", "localhost")));
   done.WaitForFinished();
   Open(Url("/molt_voice/article.html"));
   Say("show my downloads");
@@ -329,11 +345,15 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
 IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, Settings) {
   Open(Url("/molt_voice/article.html"));
   Say("open settings");
+  // The settings page opens in a tab of its own: once it has loaded.
+  ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "settings");
   Say("open privacy settings");
+  ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "settings");
   EXPECT_EQ(web_contents()->GetLastCommittedURL().path(), "/privacy");
   Say("open voice mode settings");
+  ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "molt-ai-settings");
   EXPECT_EQ(web_contents()->GetLastCommittedURL().query(), "section=voice");
   tts_.TakeSpoken();

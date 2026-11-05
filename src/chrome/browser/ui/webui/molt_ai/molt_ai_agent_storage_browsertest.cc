@@ -22,6 +22,8 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
@@ -72,14 +74,13 @@ class AgentStudioStorageBrowserTest : public InProcessBrowserTest {
       base::ScopedAllowBlockingForTesting allow_blocking;
       ASSERT_TRUE(automations_.CreateUniqueTempDir());
     }
-    // The studio's shared storage is this test's (the automation service
-    // isn't made in browser tests).
+    // Voice learning's shared root is this test's.
     learning()->SetAutomationsRootForTesting(automations_.GetPath());
     ASSERT_TRUE(base::test::RunUntil([&]() { return learning()->loaded(); }));
     {
       base::ScopedAllowBlockingForTesting allow_blocking;
       AutomationStorage shared(
-          AutomationStorage::SharedDirectory(automations_.GetPath()));
+          SharedDir());
       ASSERT_TRUE(shared.Save(Workflow("wf_1", "Prices")));
     }
     ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
@@ -88,6 +89,17 @@ class AgentStudioStorageBrowserTest : public InProcessBrowserTest {
 
   voice::VoiceLearning* learning() {
     return voice::VoiceLearning::Get(browser()->GetProfile());
+  }
+  // The shared storage the studio lists (AgentStudioHandler::Places()): the
+  // profile's automation service's, under this test's MoltBrowser home, or
+  // without the service the root voice learning was given.
+  base::FilePath SharedDir() {
+    if (automation::AutomationSchedulerService* service =
+            automation::AutomationSchedulerServiceFactory::GetForProfile(
+                browser()->GetProfile())) {
+      return service->storage_dir();
+    }
+    return AutomationStorage::SharedDirectory(automations_.GetPath());
   }
   content::WebContents* studio() {
     return browser()->GetTabStripModel()->GetActiveWebContents();
@@ -155,7 +167,7 @@ IN_PROC_BROWSER_TEST_F(AgentStudioStorageBrowserTest,
   {
     base::ScopedAllowBlockingForTesting allow_blocking;
     AutomationStorage shared(
-        AutomationStorage::SharedDirectory(automations_.GetPath()));
+        SharedDir());
     EXPECT_FALSE(shared.Load("wf_1"));
     EXPECT_EQ(shared.ListIds().size(), 2u);
   }
@@ -187,7 +199,7 @@ IN_PROC_BROWSER_TEST_F(AgentStudioStorageBrowserTest,
     AutomationStorage mine(learning()->routines_dir());
     EXPECT_TRUE(mine.Load("wf_import"));
     AutomationStorage shared(
-        AutomationStorage::SharedDirectory(automations_.GetPath()));
+        SharedDir());
     EXPECT_FALSE(shared.Load("wf_import"));
   }
   EXPECT_EQ(Ask("deleteWorkflow", "'wf_import'"), "{\"ok\":true}");
@@ -226,7 +238,7 @@ IN_PROC_BROWSER_TEST_F(AgentStudioStorageBrowserTest,
   {
     base::ScopedAllowBlockingForTesting allow_blocking;
     AutomationStorage shared(
-        AutomationStorage::SharedDirectory(automations_.GetPath()));
+        SharedDir());
     ASSERT_TRUE(shared.Save(Workflow("wf_2", "Weather")));
   }
   // getWorkflow(|id|) sent as "getWorkflow_101" (whatever the page sent

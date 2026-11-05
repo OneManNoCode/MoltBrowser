@@ -235,6 +235,14 @@ class ActivationGuardBrowserTest : public InProcessBrowserTest {
   }
 
   void TearDownOnMainThread() override {
+    // A download still in progress would hold up closing the browser.
+    std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> items;
+    browser()->GetProfile()->GetDownloadManager()->GetAllDownloads(&items);
+    for (download::DownloadItem* item : items) {
+      if (item->GetState() == download::DownloadItem::IN_PROGRESS) {
+        item->Cancel(/*user_cancel=*/false);
+      }
+    }
     WebAgent::SetModelForTesting(WebAgent::ModelForTesting());
     agent_.reset();
     if (voice::VoiceController* voice =

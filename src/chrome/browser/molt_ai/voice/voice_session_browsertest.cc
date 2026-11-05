@@ -572,6 +572,10 @@ IN_PROC_BROWSER_TEST_F(MoltSettingsFileBrowserTest,
     EXPECT_TRUE(ReadVoiceModeSettings().start_with_browser);
   }
   SetMoltSettingsFilePathForTesting(std::nullopt);
+  // Removed here, where blocking is allowed, not by |dir|'s destructor on
+  // the UI thread.
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  EXPECT_TRUE(dir.Delete());
 }
 
 }  // namespace

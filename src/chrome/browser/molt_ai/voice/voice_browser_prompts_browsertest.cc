@@ -448,6 +448,11 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
   ON_CALL(*manager, GetPendingCredentials())
       .WillByDefault(testing::ReturnRef(form_));
   ON_CALL(*manager, IsFetchCompleted()).WillByDefault(testing::Return(true));
+  // "Not now" is the bubble's own button: the same as its X (the key stays
+  // in the omnibox, the password unsaved).
+  bool dismissed = false;
+  EXPECT_CALL(*manager, OnNoInteraction(/*is_update=*/false))
+      .WillOnce([&dismissed](bool) { dismissed = true; });
   passwords->OnPasswordSubmitted(std::move(manager));
   ASSERT_EQ(passwords->GetState(),
             password_manager::ui::PENDING_PASSWORD_STATE);
@@ -455,10 +460,7 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
   EXPECT_TRUE(WaitForSpeech("Save your password for localhost?"));
   EXPECT_FALSE(speech_.Heard("ada"));
   voice->HandleHeardUtterance("not now", /*heard_cleanly=*/false);
-  EXPECT_TRUE(base::test::RunUntil([&]() {
-    return passwords->GetState() !=
-           password_manager::ui::PENDING_PASSWORD_STATE;
-  }));
+  EXPECT_TRUE(base::test::RunUntil([&]() { return dismissed; }));
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
@@ -467,9 +469,15 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
   download::DownloadItem* item = DownloadDangerousFile();
   ASSERT_TRUE(item);
   ASSERT_TRUE(WaitForSpeech("may be harmful."));
+  // Discarding removes the download, |item| with it: looked up by its id.
+  const std::string guid = item->GetGuid();
+  content::DownloadManager* manager =
+      browser()->GetProfile()->GetDownloadManager();
   voice->HandleHeardUtterance("discard", /*heard_cleanly=*/false);
-  EXPECT_TRUE(base::test::RunUntil(
-      [&]() { return item->GetState() == download::DownloadItem::CANCELLED; }));
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    download::DownloadItem* now = manager->GetDownloadByGuid(guid);
+    return !now || now->GetState() == download::DownloadItem::CANCELLED;
+  }));
 }
 
 }  // namespace

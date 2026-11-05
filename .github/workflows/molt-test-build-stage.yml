@@ -291,6 +291,11 @@ jobs:
 
       - name: Test failures
         if: always() && steps.tests.outputs.ran == 'true'
+        # The API serves only the end of a long log: each binary's failures
+        # within a share of it, then the summary, last.
         run: |
+          for binary in browser_tests molt_ai_unittests; do
+            head -c 200000 "$RUNNER_TEMP/reports/failures-$binary.md" 2>/dev/null || true
+            echo
+          done
           cat "$RUNNER_TEMP/reports/summary.md" 2>/dev/null || true
-          head -c 400000 "$RUNNER_TEMP/reports/failures.md" 2>/dev/null || true

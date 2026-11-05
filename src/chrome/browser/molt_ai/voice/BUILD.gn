@@ -443,6 +443,7 @@ source_set("voice_browser_actions_browser_tests") {
     "//chrome/test:test_support_ui",
     "//components/bookmarks/browser",
     "//components/bookmarks/test",
+    "//components/download/public/common:public",
     "//content/public/browser",
     "//content/test:test_support",
     "//media:media_buildflags",

@@ -989,7 +989,13 @@ void VoiceController::HandleUtterance(const std::string& text) {
   learning_->OnPlanned(command, turn, state_, map, env);
   heard_ = turn.heard;
   status_ = turn.status;
+  base::WeakPtr<VoiceController> self = weak_factory_.GetWeakPtr();
   RunTurn(std::move(turn));
+  // A turn that closed this window deleted this controller
+  // (OnBrowserDidClose()).
+  if (!self) {
+    return;
+  }
   // Any other command drops the guard's question: a "no" for the page.
   DropPageRequestQuestionIfGone();
 }

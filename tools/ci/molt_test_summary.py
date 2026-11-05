@@ -5,9 +5,9 @@
 # Reads the --test-launcher-summary-output JSON files that
 # tools/ci/molt_test_build.sh's "test" command writes (one per test binary)
 # and prints a Markdown summary: per binary, how many tests passed, failed,
-# crashed, timed out or didn't run, and each failure with the start of its
-# output. It also writes <dir>/failures.md with each failure's whole
-# snippet.
+# crashed, timed out or didn't run, and each failure with its first error.
+# It also writes <dir>/failures.md, and failures-<binary>.md per binary,
+# with the output around each failure's errors.
 #
 # Usage: molt_test_summary.py <report dir>
 
@@ -89,8 +89,13 @@ def summarize(dir_path, binary, lines, details):
 
 
 STRONG = ('FATAL', 'Check failed', 'DCHECK failed', 'Failure',
-          'Assertion', 'Sanitizer', 'Timeout')
+          'Assertion', 'Sanitizer', 'Timeout', '[DanglingSignature]',
+          'received signal')
 RELEASED = 'Memory was released on:'
+# base's dangling raw_ptr reports: at exit (RELEASED), and when the pointer
+# is released (its signature line names where the memory was freed and
+# where the pointer was released).
+DANGLING = (RELEASED, '[DanglingSignature]', '[DanglingPtr](1/3)')
 
 
 def first_error(snippet):
@@ -105,6 +110,9 @@ def freed_at(snippet):
     """For a dangling raw_ptr report (base's CheckDanglingRawPtrBufferEmpty),
     the first frame past the allocator where the memory was freed: which
     object the pointer outlived."""
+    for line in snippet.splitlines():
+        if '[DanglingSignature]' in line:
+            return line.split('[DanglingSignature]', 1)[1].strip()
     at = snippet.find(RELEASED)
     if at < 0:
         return ''
@@ -132,7 +140,8 @@ def clip(snippet, before=1500, after=4500, tail=1500, limit=14000):
     around each dangling raw_ptr report, and the end."""
     if len(snippet) <= limit:
         return snippet
-    anchors = [m.start() for m in re.finditer(re.escape(RELEASED), snippet)]
+    anchors = [m.start() for anchor in DANGLING
+               for m in re.finditer(re.escape(anchor), snippet)]
     first = first_error(snippet)
     if first:
         anchors.append(snippet.find(first))
@@ -168,7 +177,13 @@ def main(argv):
     details = ['# Test failures', '']
     rc = 0
     for binary in BINARIES:
-        rc |= summarize(dir_path, binary, lines, details)
+        mine = ['# %s failures' % binary, '']
+        rc |= summarize(dir_path, binary, lines, mine)
+        # One file per binary too, so the job log can give each its share.
+        with open(os.path.join(dir_path, 'failures-%s.md' % binary), 'w',
+                  encoding='utf-8') as f:
+            f.write('\n'.join(mine))
+        details.extend(mine[2:])
     print('\n'.join(lines))
     with open(os.path.join(dir_path, 'failures.md'), 'w',
               encoding='utf-8') as f:
