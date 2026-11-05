@@ -1,5 +1,1 @@
-{
-  "resume_run": "41895812780",
-  "run_tests": true,
-  "request": "the chrome and browser_tests link fix: resume from run 41895812780 (its unit tests ran: 2814 of 2920 passed)"
-}
+{"resume_run": "41944827120", "run_tests": true, "e2e_only": false, "request": "unit and browser test fixes, the launcher switch, the spoken suite in four parallel jobs: resume from run 41944827120 (stage 1 built and tested)"}
