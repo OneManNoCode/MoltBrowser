@@ -665,6 +665,8 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardLateServerBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL("localhost", "/title1.html")));
   OpenPage();
+  // Attached now (an action would attach it), so that its clock is set first.
+  ActivationGuard::CreateForWebContents(page_);
   ActivationGuard* guard = ActivationGuard::FromWebContents(page_);
   ASSERT_TRUE(guard);
   base::TimeTicks now = base::TimeTicks::Now();
@@ -716,6 +718,8 @@ IN_PROC_BROWSER_TEST_F(ActivationGuardLateServerBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL("localhost", "/title1.html")));
   OpenPage();
+  // Attached now (an action would attach it), so that its clock is set first.
+  ActivationGuard::CreateForWebContents(page_);
   ActivationGuard* guard = ActivationGuard::FromWebContents(page_);
   ASSERT_TRUE(guard);
   base::TimeTicks now = base::TimeTicks::Now();

@@ -281,8 +281,11 @@ cmd_test() {
   if [ -x "$OUT/molt_ai_unittests" ]; then
     say "molt_ai_unittests"
     set +e
+    # One retry: a crash takes the rest of its batch with it (NOTRUN), and
+    # the retry runs those on their own. A test that needed it is reported
+    # as flaky, not passed (molt_test_summary.py).
     xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/molt_ai_unittests" \
-      --test-launcher-jobs=4 --test-launcher-retry-limit=0 \
+      --test-launcher-jobs=4 --test-launcher-retry-limit=1 \
       --test-launcher-summary-output="$dir/molt_ai_unittests.json" \
       > "$dir/molt_ai_unittests.log" 2>&1
     rc=$((rc | $?))

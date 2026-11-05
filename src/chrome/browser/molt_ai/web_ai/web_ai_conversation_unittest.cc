@@ -222,7 +222,9 @@ TEST(WebAIConversationTest, ImagesCountAFixedAmount) {
 }
 
 TEST(WebAIConversationTest, TheContextKeepsTheNewestImages) {
-  Conversation c(kLargeInputQuota);
+  // Room for all three turns (nine images' tokens): only the image count
+  // drops anything.
+  Conversation c(kLargeInputQuota * 4);
   std::vector<Turn> first;
   first.push_back(ImageTurn("a", {40, 41, 42}));
   c.Add(c.PlanAdd(first), std::move(first));

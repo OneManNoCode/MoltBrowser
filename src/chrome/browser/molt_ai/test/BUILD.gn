@@ -4,17 +4,17 @@
 # Standalone test binary for the MoltBrowser molt_ai modules.
 #
 # Why standalone vs. piggybacking on //chrome/test:unit_tests:
-#   - chrome/test/BUILD.gn is ~13000 lines. Adding our deps there
-#     means mirroring that file in src/ and merging conflicts on
-#     every Chromium upgrade.
-#   - The modules here are pure-CPU logic (PDF parsing, vault
-#     encryption, automation step matrix). They don't need the
-#     ProfileManager / RenderThread / TestingProfile setup that
-#     chrome unit_tests pulls in.
+# chrome/test/BUILD.gn is ~13000 lines. Adding our deps there means
+# mirroring that file in src/ and merging conflicts on every Chromium
+# upgrade.
 #
-# The runner initializes Mojo: the document parser tests talk to fakes
-# over real message pipes, and BigBuffers over 64 KiB use shared memory.
-# Everything else runs as it did under base's runner.
+# It runs on chrome unit_tests' own launcher (//chrome/test:
+# test_support_unit, depended on, not mirrored): Mojo (the document
+# parser tests talk to fakes over real message pipes), the en-US
+# resource bundle (MoltNet's languages read the locale's defaults), Blink
+# (the data decoder decodes images with it) and Chrome's content clients,
+# as Chrome's own unit tests have them. A test that needs no resource
+# bundle swaps it out (ui::ResourceBundle::SharedInstanceSwapperForTesting).
 #
 # Build: autoninja -C out/MoltBrowser molt_ai_unittests
 # Run:   ./out/MoltBrowser/molt_ai_unittests
@@ -27,7 +27,7 @@ import("//third_party/llama_cpp/llama_cpp.gni")
 
 test("molt_ai_unittests") {
   deps = [
-    "//mojo/core/test:run_all_unittests",
+    "//chrome/test:test_support_unit",
 
     # Each module under molt_ai/ that has tests adds itself here.
     "//chrome/browser/molt_ai/agents:unit_tests",
@@ -101,6 +101,11 @@ test("molt_ai_unittests") {
     # MoltNet letterboxing geometry, checked against Blink's rounding.
     "//chrome/browser/molt_ai/fingerprinting:unit_tests",
   ]
+
+  # The paks the launcher's resource bundle loads.
+  if (is_linux || is_chromeos || is_win) {
+    data_deps = [ "//chrome:packed_resources" ]
+  }
 
   # GPU inference on Linux: what the inference service's GPU broker may
   # open.

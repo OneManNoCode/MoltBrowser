@@ -24,7 +24,6 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
-#include "mojo/core/embedder/embedder.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -280,14 +279,7 @@ class RecordingDelegate : public InferenceProcessHost::Delegate {
 
 class InferenceProcessHostTest : public testing::Test {
  protected:
-  static void SetUpTestSuite() {
-    static bool mojo_initialized = false;
-    if (!mojo_initialized) {
-      mojo::core::Init();
-      mojo_initialized = true;
-    }
-  }
-
+  // The test launcher has initialized Mojo.
   void SetUp() override {
     mojo::SetDefaultProcessErrorHandler(base::BindRepeating(
         [](std::vector<std::string>* out, const std::string& error) {
@@ -316,11 +308,23 @@ class InferenceProcessHostTest : public testing::Test {
     mojo::SetDefaultProcessErrorHandler(base::NullCallback());
   }
 
+  // A read-only weights file, as the caller opens one: ModelLoadParams'
+  // |weights| isn't nullable, and a DCHECK build refuses to send a null one.
+  base::File WeightsFile() {
+    EXPECT_TRUE(temp_dir_.IsValid() || temp_dir_.CreateUniqueTempDir());
+    const base::FilePath path = temp_dir_.GetPath().AppendASCII("model.gguf");
+    EXPECT_TRUE(base::WriteFile(path, "G"));
+    base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+    EXPECT_TRUE(file.IsValid());
+    return file;
+  }
+
   scoped_refptr<InferenceMailbox> Load(bool with_projector = false,
                                        bool use_gpu = false) {
     InferenceProcessHost::LoadRequest r;
     r.model_id = "m";
     r.crash_key = "m:1:2";
+    r.file = WeightsFile();
     r.file_size = 1;
     r.max_context_tokens = 32768;
     r.use_gpu = use_gpu;
@@ -346,6 +350,7 @@ class InferenceProcessHostTest : public testing::Test {
     InferenceProcessHost::LoadRequest r;
     r.model_id = "m";
     r.crash_key = "m:1:2";
+    r.file = WeightsFile();
     r.file_size = 1;
     r.max_context_tokens = 32768;
     r.use_gpu = true;
@@ -759,6 +764,7 @@ TEST_F(InferenceProcessHostTest, GpuDeviceIsReportedBeforeTheLoad) {
   InferenceProcessHost::LoadRequest r;
   r.model_id = "m";
   r.crash_key = "m:1:2";
+  r.file = WeightsFile();
   r.file_size = 1;
   r.max_context_tokens = 32768;
   r.use_gpu = true;

@@ -120,7 +120,9 @@ class AgentStudioStorageBrowserTest : public InProcessBrowserTest {
     ASSERT_TRUE(content::ExecJs(
         studio(), "window.answer = null; sendWithPromise('" + message + "'" +
                       (args.empty() ? "" : ", " + args) +
-                      ").then(r => { window.answer = JSON.stringify(r); });"));
+                      ").then(r => { window.answer = JSON.stringify(r); });",
+        // Not waited for: the script's value is the reply's promise.
+        content::EXECUTE_SCRIPT_NO_RESOLVE_PROMISES));
   }
   bool Answered() {
     return content::EvalJs(studio(), "window.answer !== null").ExtractBool();
@@ -234,7 +236,8 @@ IN_PROC_BROWSER_TEST_F(AgentStudioStorageBrowserTest,
         studio(),
         "idCounter = 100; window.answer = null; sendWithPromise("
         "'getWorkflow', '" +
-            id + "').then(r => { window.answer = JSON.stringify(r); });");
+            id + "').then(r => { window.answer = JSON.stringify(r); });",
+        content::EXECUTE_SCRIPT_NO_RESOLVE_PROMISES);
   };
   std::unique_ptr<base::WaitableEvent> shared =
       Hold(AutomationStorage::SharedSequence());

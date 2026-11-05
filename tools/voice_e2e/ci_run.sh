@@ -28,6 +28,8 @@
 #                           ~/.cache/moltbrowser-voice-e2e)
 #   VOICE_E2E_SPEECH_CHECK  0 to skip the recognizer check (default 1)
 #   VOICE_E2E_MODEL         1 when an on-device AI model is installed
+#   VOICE_E2E_VENV          where numpy goes when python3 has none
+#                           (default <VOICE_E2E_DATA>/venv)
 #
 # Exit status: the runner's (0 Phase 1's exit met, 1 not met, 2 couldn't
 # run); the reports are left either way.
@@ -35,7 +37,7 @@
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
-  sed -n '2,33p' "$0"
+  sed -n '2,35p' "$0"
   exit 2
 fi
 OUT_DIR="$(cd "$1" && pwd)"
@@ -48,6 +50,10 @@ DATA_DIR="${VOICE_E2E_DATA:-$HOME/.cache/moltbrowser-voice-e2e}"
 RUNS="${VOICE_E2E_RUNS:-pulse:clean,pulse:music10,file:clean,typed}"
 
 log() { echo "[voice-e2e] $*"; }
+
+# Until the suite itself runs, a failed step means it couldn't run (2), not
+# that it ran and missed Phase 1's exit (1).
+trap 'log "a setup step failed (line $LINENO)"; exit 2' ERR
 
 BROWSER="$OUT_DIR/chrome"
 [[ -x "$BROWSER" ]] || { log "no browser at $BROWSER"; exit 2; }
@@ -75,8 +81,19 @@ if [[ ${#need[@]} -gt 0 ]]; then
   fi
 fi
 if ! python3 -I -c "import numpy" 2>/dev/null; then
-  log "installing numpy (pinned by hash)"
-  python3 -m pip install --user --require-hashes -r "$ROOT_DIR/tools/voice_bench/requirements.txt"
+  # In a venv: "python3 -I" ignores the user site, and Ubuntu 24.04's
+  # Python refuses "pip install --user" (it is externally managed).
+  VENV="${VOICE_E2E_VENV:-$DATA_DIR/venv}"
+  if ! python3 -c "import ensurepip, venv" 2>/dev/null; then
+    log "installing python3-venv"
+    $SUDO apt-get install -y --no-install-recommends python3-venv
+  fi
+  log "installing numpy (pinned by hash) into $VENV"
+  python3 -m venv "$VENV"
+  "$VENV/bin/python3" -m pip install -q --require-hashes \
+    -r "$ROOT_DIR/tools/voice_bench/requirements.txt"
+  export PATH="$VENV/bin:$PATH"
+  python3 -I -c "import numpy" || { log "numpy didn't install"; exit 2; }
 fi
 
 # ---------------------------------------------------------------- sandboxes
@@ -119,6 +136,7 @@ args=(run --browser "$BROWSER" --bundle "$BUNDLE_DIR" --speech "$SPEECH_DIR"
 [[ "${VOICE_E2E_MODEL:-0}" == 1 ]] && args+=(--model)
 args+=("${SANDBOX_FLAGS[@]}")
 log "running: ${args[*]}"
+trap - ERR
 status=0
 python3 -I "$SCRIPT_DIR/run_e2e.py" "${args[@]}" || status=$?
 log "report: $REPORT_DIR/report.md (exit $status)"

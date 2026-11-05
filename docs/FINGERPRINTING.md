@@ -6359,8 +6359,9 @@ no other thread reads strings yet.)
 
 **Pinned although pages can't read them:** the labels of the date, month,
 week and colour picker popups ("Today", "Clear", "This month", "This
-week", "Week", "Other..."), so the popup, whose month and weekday names
-now follow the en-US default language, isn't half English.
+week", "Week", "Other…", with the ellipsis character grit writes for
+"..."), so the popup, whose month and weekday names now follow the en-US
+default language, isn't half English.
 
 **Left in the UI language** (only the user sees them): the media
 controls (their overflow and captions menus, cast and picture-in-picture

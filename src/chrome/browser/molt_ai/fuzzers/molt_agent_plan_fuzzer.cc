@@ -44,6 +44,7 @@
 
 #include "base/check.h"
 #include "base/json/json_reader.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/agent_plan.h"
@@ -53,6 +54,19 @@
 
 namespace molt_ai {
 namespace {
+
+// What a page can hand the browser: a script's strings arrive as UTF-8, and
+// a base::Value holds nothing else (its constructors DCHECK it).
+std::string PageString(std::string s) {
+  if (!base::IsStringUTF8AllowingNoncharacters(s)) {
+    for (char& c : s) {
+      if (static_cast<unsigned char>(c) >= 0x80) {
+        c = '?';
+      }
+    }
+  }
+  return s;
+}
 
 using agent_actions::ActionType;
 using agent_actions::PlanSteps;
@@ -173,7 +187,7 @@ void CheckTracker(const PlanTracker& t, const Reference& r) {
 base::Value PageValue(const std::string& json) {
   std::optional<base::Value> v =
       base::JSONReader::Read(json, base::JSON_PARSE_RFC);
-  return v ? std::move(*v) : base::Value(json);
+  return v ? std::move(*v) : base::Value(PageString(json));
 }
 
 std::string ConsumeText(FuzzedDataProvider* p, size_t max) {

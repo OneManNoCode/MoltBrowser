@@ -28,12 +28,26 @@
 
 #include "base/check.h"
 #include "base/json/json_reader.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "url/gurl.h"
 
 namespace molt_ai::agent_safety {
 namespace {
+
+// What a page can hand the browser: a script's strings arrive as UTF-8, and
+// a base::Value holds nothing else (its constructors DCHECK it).
+std::string PageString(std::string s) {
+  if (!base::IsStringUTF8AllowingNoncharacters(s)) {
+    for (char& c : s) {
+      if (static_cast<unsigned char>(c) >= 0x80) {
+        c = '?';
+      }
+    }
+  }
+  return s;
+}
 
 std::string Lower(std::string_view s) {
   std::string out(s);
@@ -130,7 +144,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
             probe.navigates_to.empty());
     }
   }
-  BuildElementProbeScript({selector, text.substr(0, 64)});
+  BuildElementProbeScript(
+      {PageString(selector), PageString(text.substr(0, 64))});
 
   const GURL url(text.substr(0, 512));
   if (IsAllowedNavigationURL(url)) {

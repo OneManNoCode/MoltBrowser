@@ -85,6 +85,8 @@ TEST(MoltNetLocaleStringsTest, MatchesTheEnUsPaks) {
 // In a renderer whose UI language is French, the pinned strings come out in
 // English and the others stay French.
 TEST(MoltNetLocaleStringsTest, OverridesTheResourceBundle) {
+  // The test launcher's own bundle, out of the way until the end.
+  ui::ResourceBundle::SharedInstanceSwapperForTesting launchers_bundle;
   ASSERT_FALSE(ui::ResourceBundle::HasSharedInstance());
   ui::ResourceBundle::InitSharedInstanceWithPakPath(
       StringsPak("blink_strings_fr.pak"));
@@ -109,6 +111,7 @@ TEST(MoltNetLocaleStringsTest, OverridesTheResourceBundle) {
 }
 
 TEST(MoltNetLocaleStringsTest, NoResourceBundleNoCrash) {
+  ui::ResourceBundle::SharedInstanceSwapperForTesting launchers_bundle;
   ASSERT_FALSE(ui::ResourceBundle::HasSharedInstance());
   EXPECT_EQ(PinMoltNetLocaleStrings(), 0u);
 }

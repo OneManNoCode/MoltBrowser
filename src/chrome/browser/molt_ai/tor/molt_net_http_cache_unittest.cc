@@ -15,10 +15,12 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_clock.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"
+#include "net/base/features.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_isolation_key.h"
@@ -98,6 +100,10 @@ TEST_F(MoltNetHttpCacheTest, OnlyMoltNetsContextsKeepLimitsPerSite) {
 // The key net::HttpCache makes for a request is filed under its top-level
 // site.
 TEST_F(MoltNetHttpCacheTest, HttpCacheKeysAreFiledByTopLevelSite) {
+  // Split by network isolation key, as the browser turns it on at startup
+  // (net::HttpCache::SplitCacheFeatureEnableByDefault()).
+  base::test::ScopedFeatureList split_cache(
+      net::features::kSplitCacheByNetworkIsolationKey);
   const net::SchemefulSite top(GURL("https://a.test"));
   const net::SchemefulSite frame(GURL("https://cdn.test"));
   const std::optional<std::string> key = net::HttpCache::GenerateCacheKey(

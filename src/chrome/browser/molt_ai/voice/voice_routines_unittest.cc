@@ -675,7 +675,6 @@ TEST(VoiceRoutinesTest, AHostilePlannerStepIsntRun) {
                         "b");
        }},
       {4, [](automation::Step& s) { VoiceOf(s).Set("label", "{{pin}}"); }},
-      {4, [](automation::Step& s) { VoiceOf(s).Set("label", "\xC3"); }},
       {4,
        [](automation::Step& s) {
          s.extra.GetDict().Remove(automation::kStepHostKey);

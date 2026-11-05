@@ -14,7 +14,9 @@
 //  * integers that fit an int are ints, all other numbers doubles; a number
 //    beyond double range is refused;
 //  * duplicate keys: the last one wins;
-//  * at most |max_depth| nested containers.
+//  * at most |max_depth| - 1 nested containers: |max_depth| counts the
+//    levels, the innermost container's values included (as the real
+//    reader's: {"a":{"b":{}}} needs 4).
 // As in the real header, |options| has no default: callers must say which
 // grammar they accept.
 
@@ -118,7 +120,7 @@ class JSONReader {
     }
 
     std::optional<Value> ParseObject(size_t depth) {
-      if (depth > max_depth) return std::nullopt;
+      if (depth >= max_depth) return std::nullopt;
       ++pos;  // {
       DictValue d;
       SkipWs();
@@ -157,7 +159,7 @@ class JSONReader {
     }
 
     std::optional<Value> ParseArray(size_t depth) {
-      if (depth > max_depth) return std::nullopt;
+      if (depth >= max_depth) return std::nullopt;
       ++pos;  // [
       ListValue l;
       SkipWs();

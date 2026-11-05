@@ -1,5 +1,1 @@
-{
-  "resume_run": "41841116156",
-  "run_tests": true,
-  "request": "the first real build's 8 failed steps fixed: resume from run 41841116156"
-}
+{"resume_run": "41944827120", "run_tests": true, "e2e_only": false, "request": "unit and browser test fixes, the launcher switch, the spoken suite in four parallel jobs: resume from run 41944827120 (stage 1 built and tested)"}
