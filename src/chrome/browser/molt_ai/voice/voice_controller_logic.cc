@@ -1273,6 +1273,20 @@ class Planner : public TurnPlanner {
     if (ChooseOption(ref, /*any_select=*/true)) {
       return;
     }
+    // "Play the live aid version of Bohemian Rhapsody" where nothing is so
+    // named: a task for the planner, which can search and then choose (it
+    // says what NoMatch would where there is none). Not an answer to a
+    // list the browser offered.
+    if (verb == ChoiceVerb::kPlay && ref.kind == ChoiceRef::Kind::kDescription &&
+        (reason == NoMatchReason::kNothingMatched ||
+         reason == NoMatchReason::kNoCandidates) &&
+        !s.expecting_choice && PlannerMayTakeIt()) {
+      VoiceStep planner = Step(VoiceStepKind::kToPlanner);
+      planner.text = turn_.heard;
+      planner.preface = NoMatchText(ref, reason);
+      Add(std::move(planner));
+      return;
+    }
     NoMatch(ref, reason);
   }
 
@@ -1440,27 +1454,39 @@ class Planner : public TurnPlanner {
   }
 
   void NoMatch(const ChoiceRef& ref, NoMatchReason reason) {
+    Say(NoMatchText(ref, reason));
+  }
+
+  std::string NoMatchText(const ChoiceRef& ref, NoMatchReason reason) const {
     switch (reason) {
       case NoMatchReason::kNoCandidates:
-        Say("There's nothing here to choose from.");
-        return;
+        return Tr("There's nothing here to choose from.");
       case NoMatchReason::kOutOfRange: {
         const int n = ref.kind == ChoiceRef::Kind::kNumber ? ref.number
                                                            : ref.ordinal;
-        Say(Tr("There's no number {0} here. {1}",
-               {std::to_string(n), ChooseHint(env_.language)}));
-        return;
+        return Tr("There's no number {0} here. {1}",
+                  {std::to_string(n), ChooseHint(env_.language)});
       }
       case NoMatchReason::kNoCurrentItem:
-        Say("Choose one first: say a number or a name.");
-        return;
+        return Tr("Choose one first: say a number or a name.");
       case NoMatchReason::kEmptyReference:
       case NoMatchReason::kNothingMatched:
       case NoMatchReason::kNone:
-        Say(Tr("Nothing here matches {0}. {1}",
-               {Quoted(turn_.heard), ChooseHint(env_.language)}));
-        return;
+        break;
     }
+    return Tr("Nothing here matches {0}. {1}",
+              {Quoted(turn_.heard), ChooseHint(env_.language)});
+  }
+
+  // Whether what the loop doesn't do itself may go to the planner: not
+  // while the browser's prompt waits for its word (a sentence holding the
+  // word would hand it to the model, and the planner's words after the
+  // prompt would make the word said next only read the question again:
+  // prompt.after_page_text).
+  bool PlannerMayTakeIt() const {
+    const PendingPrompt& prompt = turn_.state.prompt;
+    return !(PromptWaits(prompt, env_.now_ms) && NeedsGesture(prompt.kind) &&
+             !prompt.word.empty());
   }
 
   // Asks before |steps| run when pressing |name| can't be undone; returns
@@ -2932,6 +2958,15 @@ class Planner : public TurnPlanner {
     const std::string echo = PageText(command.heard);
     if (echo.empty()) {
       Say("I didn't catch that.");
+      return;
+    }
+    // While the browser's prompt waits for its word, what isn't a command
+    // goes to no planner (PlannerMayTakeIt()): it is asked again.
+    if (!PlannerMayTakeIt()) {
+      PromptReply again;
+      again.answer = PromptAnswer::kSayAgain;
+      SayWithWord(ReplySpeech(state().prompt, again),
+                  ReplySpeechWithoutWord(state().prompt, again));
       return;
     }
     // A "yes" or "no" with no question pending (it expired, or another

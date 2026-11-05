@@ -404,10 +404,22 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, RestartsAfterACrash) {
       "ready\n"
       "300 exit 3\n");
   ASSERT_TRUE(session()->Start());
-  ASSERT_TRUE(WaitForState(SessionState::kWaiting));
-  // The helper read its script when it started: the next one, which the
-  // crash at 300 ms starts, doesn't crash. (Waiting to see the restart
-  // begin first could miss it, or let it read the old script.)
+  // The helper read its script when it started, before its "ready": the
+  // next one, which the crash at 300 ms starts, doesn't crash. Rewritten
+  // as soon as the first is ready (waiting for the session's state would
+  // wait out the slow greeting, by which time the restarts have read the
+  // old script, and the third crash ends voice mode).
+  {
+    const base::test::ScopedRunLoopTimeout timeout(
+        FROM_HERE, kWaitTimeout,
+        base::BindRepeating([]() {
+          return std::string("the speech helper was never ready");
+        }));
+    ASSERT_TRUE(base::test::RunUntil([&]() {
+      VoiceListener* listener = session()->listener_for_testing();
+      return listener && listener->ready();
+    }));
+  }
   Script("ready\n");
   // The crash at 300 ms, then the first restart a second later
   // (VoiceListener::kRestartDelays).

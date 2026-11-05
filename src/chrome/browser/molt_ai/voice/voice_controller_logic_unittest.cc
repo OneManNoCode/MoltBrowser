@@ -348,6 +348,20 @@ TEST(VoiceControllerLogicTest, ChoosingByNumberRelationAndNoMatch) {
   EXPECT_EQ(Said(turn),
             "Nothing here matches \"the jazz one\". Say a number or a name.");
 
+  {
+    // "Play" what a page without such an item hasn't got: the planner's
+    // task (it says the same where there's no planner).
+    Conversation fresh(BuildPageMap(ShopPage(false)), Env());
+    VoiceTurn asked =
+        fresh.Say("play the live aid version of bohemian rhapsody");
+    const VoiceStep* planner = Find(asked, K::kToPlanner);
+    ASSERT_TRUE(planner);
+    EXPECT_EQ(planner->text, "play the live aid version of bohemian rhapsody");
+    EXPECT_EQ(planner->preface,
+              "Nothing here matches \"play the live aid version of bohemian "
+              "rhapsody\". Say a number or a name.");
+  }
+
   turn = c.Say("open the second one");
   ASSERT_TRUE(Find(turn, K::kPress));
   EXPECT_EQ(c.state().current_position, 2);
@@ -1574,6 +1588,30 @@ TEST(VoiceControllerLogicTest, APermissionPromptIsReadAndWaitsForItsWord) {
   EXPECT_EQ(Said(turn), "Allowed.");
   EXPECT_EQ(BrowserPromptHeld(c.state(), c.env().now_ms), 0);
   EXPECT_EQ(Find(c.Say("harbor"), K::kPromptAnswer), nullptr);
+}
+
+// What isn't a command while the prompt waits for its word goes to no
+// planner: a sentence holding the word would hand it to the model.
+TEST(VoiceControllerLogicTest, NoPlannerWhileAPromptWaitsForItsWord) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  VoiceTurn turn =
+      PlanBrowserPrompt(11, Permission(), "harbor", c.env(), c.state());
+  c.state() = turn.state;
+  turn = c.Say("the word is harbor");
+  EXPECT_TRUE(Actions(turn).empty());
+  EXPECT_EQ(Find(turn, K::kToPlanner), nullptr);
+  EXPECT_EQ(Said(turn), "I didn't catch that. Say the word again.");
+  EXPECT_EQ(BrowserPromptHeld(c.state(), c.env().now_ms), 11);
+  turn = c.Say("find me a cheap flight");
+  EXPECT_EQ(Find(turn, K::kToPlanner), nullptr);
+  // The word answers it.
+  turn = c.Say("harbor");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPromptAnswer}));
+  turn = PlanBrowserPromptGone(11, "Allowed.", c.env(), c.state());
+  c.state() = turn.state;
+  // With no prompt, the planner again.
+  turn = c.Say("find me a cheap flight");
+  EXPECT_NE(Find(turn, K::kToPlanner), nullptr);
 }
 
 TEST(VoiceControllerLogicTest, APermissionPromptRefusedOrLeft) {
