@@ -1,4 +1,4 @@
-{"resume_run": "42044402843", "run_tests": true, "e2e_only": false,
- "e2e_runs": "pulse:clean,pulse:music10,file:clean,typed",
+{"resume_run": "42076517368", "run_tests": false, "e2e_only": true,
+ "e2e_runs": "pulse:clean,pulse:music10,pulse:clean:noloop,file:clean",
  "e2e_speech_check": false,
- "request": "Round 45, seventh build: the speech helper's second chance at the wake phrase (and its detector kept across CONFIGs, the spotter on the audio before the window closes), the kit speaking once voice mode says it's on and saying wake steps once voice mode waits for the phrase, prompt answers and sound-alikes, planner steps kept out of routines. Resume from run 42044402843 (stage 1 built)."}
+ "request": "Round 45, the spoken suite again on the seventh build (run 42076517368): the kit waits out voice mode's waiting tone before a Hey Molt step, and the speech helper finds the command after a phrase whose start was lost. With and without the speaker in the microphone."}
