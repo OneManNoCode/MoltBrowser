@@ -10,6 +10,7 @@ import re
 import stat
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +48,7 @@ class Player(object):
     def __init__(self, scs):
         self.texts = {s.id: [st.value for st in s.steps] for s in scs}
         self.played = []
+        self.played_at = {}
 
     def play(self, wav):
         run_dir = os.path.dirname(os.path.dirname(wav))
@@ -54,6 +56,7 @@ class Player(object):
         i = int(re.search(r"step(\d+)\.wav$", wav).group(1)) - 1
         text = self.texts[sid][i]
         self.played.append(text)
+        self.played_at.setdefault(sid, []).append(time.time())
         with open(os.path.join(run_dir, "fake-mic.txt"), "a") as f:
             f.write(text + "\n")
 
@@ -166,7 +169,7 @@ class RunnerTest(unittest.TestCase):
         render.render_all(StubTts(speech, words), speech, texts, voices=render.VOICES[:1],
                           speeds=(1.0,), conditions=("clean",), log=lambda *a: None)
         player = Player(self.scs)
-        cfg = runner.RunConfig(audio="pulse", settle=0.2, voices=["ljspeech"], speeds=[1.0])
+        cfg = runner.RunConfig(audio="pulse", settle=0.5, voices=["ljspeech"], speeds=[1.0])
         r = runner.Runner(self.exe, speech, os.path.join(self.d, "report"), FakeServer(),
                           "spki", cfg, player=player, log=lambda *a: None)
         run = r.run(self.scs, modes=["wake"])
@@ -175,9 +178,16 @@ class RunnerTest(unittest.TestCase):
         # Each step with the wake phrase was said once voice mode waited for
         # it again (the follow-up window closed), not as a follow-up.
         with open(os.path.join(self.d, "report", by_id(run)["t-owner"]["log"])) as f:
-            heard = [json.loads(line) for line in f if '"heard"' in line]
+            lines = [json.loads(line) for line in f]
+        heard = [e for e in lines if e["e"] == "heard"]
         self.assertEqual(len(heard), 4)
         self.assertTrue(all(h["waiting"] for h in heard), heard)
+        # And not at once: the settle time after it started waiting (its tone).
+        waits = [e["t"] / 1000.0 for e in lines
+                 if e["e"] == "activity" and e.get("waiting")]
+        for at in player.played_at["t-owner"]:
+            since = at - max(w for w in waits if w <= at)
+            self.assertGreaterEqual(since, 0.45, (at, waits))
         owner = by_id(run)["t-owner"]
         self.assertEqual(owner["voice"], "ljspeech")
         # The WAV the player got starts with the wake phrase.

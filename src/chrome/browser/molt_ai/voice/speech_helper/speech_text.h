@@ -126,6 +126,15 @@ std::string HotwordsArgument(const std::vector<std::string>& phrases,
 size_t WakePhraseWordsAtStart(std::string_view text,
                               const std::vector<std::string>& phrases);
 
+// For a wake the spotter already heard, where the phrase ends in |text|
+// when its start was lost ("Emold. Click", "A mold. Close this tab": the
+// greeting clipped or misheard): the number of words up to a phrase's last
+// word (its name), as written or with the same consonants (three at
+// least), if it is the first or second word; else 0. Never a reason to
+// wake: only to find the command after a wake.
+size_t WakeNameWordsAtStart(std::string_view text,
+                            const std::vector<std::string>& phrases);
+
 // Text for an event: well-formed UTF-8 only (other bytes dropped), no
 // control characters (C0, DEL, C1, line and paragraph separators), runs of
 // white space as one space, trimmed, at most |max_bytes|: cut at the last

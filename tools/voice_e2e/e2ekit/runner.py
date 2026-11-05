@@ -386,7 +386,11 @@ class Runner(object):
                     continue
                 if self.config.audio == "pulse" and step.action == "say" and \
                         self.wake_for(step, mode) and not step.barge_in:
-                    self.wait_waiting(tlog)
+                    # Then the settle time, as a user waits for the tone
+                    # voice mode plays as it starts waiting: said over the
+                    # tone, the phrase's start is lost to the echo canceller.
+                    if self.wait_waiting(tlog):
+                        self.wait_idle(tlog)
                 sres = self.run_step(sc, step, i, world, tlog, plan, stream_start, mode,
                                      run_dir)
                 res["steps"].append(sres)

@@ -276,5 +276,23 @@ TEST(SpeechTextTest, FindsTheWakePhraseInATranscript) {
   EXPECT_EQ(WakePhraseWordsAtStart(std::string(100000, 'a'), en), 0u);
 }
 
+TEST(SpeechTextTest, FindsTheWakeNameAfterALostStart) {
+  const std::vector<std::string> en = {"hey molt"};
+  // What the recognizer wrote when the phrase's start was lost.
+  EXPECT_EQ(WakeNameWordsAtStart("Emold. Click", en), 1u);
+  EXPECT_EQ(WakeNameWordsAtStart("Malt zoom in", en), 1u);
+  EXPECT_EQ(WakeNameWordsAtStart("A mold. Read the title", en), 2u);
+  EXPECT_EQ(WakeNameWordsAtStart("pain molt close tech", en), 2u);
+  // Not the name, or past the second word.
+  EXPECT_EQ(WakeNameWordsAtStart("Walt. Switch to tab two", en), 0u);
+  EXPECT_EQ(WakeNameWordsAtStart("click the molt button", en), 0u);
+  EXPECT_EQ(WakeNameWordsAtStart("", en), 0u);
+  // Spanish's name is "molt" too.
+  EXPECT_EQ(WakeNameWordsAtStart("Oi, malt, pausa", {"oye molt"}), 2u);
+  // A name with fewer than three consonants is only taken as written.
+  EXPECT_EQ(WakeNameWordsAtStart("hey you there", {"hey you"}), 2u);
+  EXPECT_EQ(WakeNameWordsAtStart("hey yo there", {"hey you"}), 0u);
+}
+
 }  // namespace
 }  // namespace molt_speech

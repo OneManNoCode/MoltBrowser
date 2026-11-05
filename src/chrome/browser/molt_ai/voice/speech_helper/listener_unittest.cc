@@ -363,6 +363,19 @@ TEST_F(SpeechListenerTest, CountsAPhraseRunTogetherAsOneWord) {
                                                "final:Himalt. stop"}));
 }
 
+TEST_F(SpeechListenerTest, CountsAPhraseWhoseStartWasLost) {
+  // As the spotter heard it; the recognizer lost "hey" ("Emold"): "stop"
+  // is still the command.
+  scene_->word_lag = Ms(600);
+  scene_->words = {{"Emold.", Ms(1000)}, {"stop", Ms(1400)}};
+  scene_->wakes = {Ms(1750)};
+  scene_->speech = {{Ms(1000), Ms(1700)}};
+  FeedUntil(Ms(3500));
+  EXPECT_EQ(Types(), (std::vector<std::string>{"wake", "speech_start",
+                                               "speech_end",
+                                               "final:Emold. stop"}));
+}
+
 TEST_F(SpeechListenerTest, WaitsForTheCommandAfterAPause) {
   WakePhrase(scene_.get());
   scene_->speech = {{Ms(1000), Ms(1650)}, {Ms(3000), Ms(3800)}};

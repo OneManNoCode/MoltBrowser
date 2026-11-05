@@ -379,12 +379,15 @@ bool Listener::HasWordsAfterWake(const RecognizerResult& result,
   }
   // The spotter may fire late (in noise): then a short command said in
   // the same breath starts before the cut, but the words still outnumber
-  // the phrase's, as the recognizer wrote it ("Himalt" is one word).
+  // the phrase's, as the recognizer wrote it ("Himalt" is one word, and
+  // "Emold" is all that is left of a phrase whose start was lost).
   if (!whole) {
     return false;
   }
-  const size_t phrase =
-      WakePhraseWordsAtStart(result.text, config_.wake_phrases);
+  size_t phrase = WakePhraseWordsAtStart(result.text, config_.wake_phrases);
+  if (phrase == 0) {
+    phrase = WakeNameWordsAtStart(result.text, config_.wake_phrases);
+  }
   return CountWords(result.text) > (phrase > 0 ? phrase : wake_words_);
 }
 

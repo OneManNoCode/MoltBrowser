@@ -193,8 +193,11 @@ before the speech helper is ready, and what's said until then reaches no
 recognizer (the listener drops it, and the `mic` lines count it as
 `dropped`). In wake mode, a step said with the wake phrase also waits until
 voice mode waits for the phrase again (its follow-up window closed; at most
-30 s), as when a user says "Hey Molt" after a pause: so the suite tests the
-wake phrase itself, which in the window would be just part of a follow-up.
+30 s), then for the settle time, as when a user says "Hey Molt" after a
+pause and after the tone voice mode plays as it starts waiting (said over
+the tone, the echo canceller takes the phrase's start with it: "Emold"):
+so the suite tests the wake phrase itself, which in the window would be
+just part of a follow-up.
 Answers (steps without the wake phrase) are said in the window.
 
 Before the first scenario the kit checks its own route: a 440 Hz tone at

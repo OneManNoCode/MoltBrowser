@@ -310,8 +310,10 @@ wake  [speech_start  partial*  speech_end]  final
 - If the speech that held the wake phrase ends first, the helper finishes
   recognizing it. Words after the phrase by that rule, or more words than
   the phrase has as the recognizer wrote it (a short command in the same
-  breath, when the spotter fired late; "Himalt" is one word), make it the
-  command: `speech_start`, `speech_end` and
+  breath, when the spotter fired late; "Himalt" is one word, and when the
+  phrase's start was lost the phrase ends at its name: "Emold. Click",
+  `WakeNameWordsAtStart()`, which only ever finds a command after a wake
+  and never wakes the helper), make it the command: `speech_start`, `speech_end` and
   `final` at once. Otherwise it was the wake phrase alone ("Hey Molt."
   pause "Open YouTube."), and the helper waits for the command: its speech
   starts a new utterance, with `speech_start` when the detector hears it.

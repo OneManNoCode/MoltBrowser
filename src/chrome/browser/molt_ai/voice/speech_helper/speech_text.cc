@@ -646,4 +646,23 @@ size_t WakePhraseWordsAtStart(std::string_view text,
   return 0;
 }
 
+size_t WakeNameWordsAtStart(std::string_view text,
+                            const std::vector<std::string>& phrases) {
+  const std::vector<std::string> heard = FirstWakeWords(text, 2);
+  for (const std::string& phrase : phrases) {
+    const std::vector<std::string> words = FirstWakeWords(phrase, 8);
+    if (words.empty()) {
+      continue;
+    }
+    const std::string& name = words.back();
+    const std::string key = Consonants(name);
+    for (size_t i = 0; i < heard.size(); ++i) {
+      if (heard[i] == name || (key.size() >= 3 && Consonants(heard[i]) == key)) {
+        return i + 1;
+      }
+    }
+  }
+  return 0;
+}
+
 }  // namespace molt_speech
