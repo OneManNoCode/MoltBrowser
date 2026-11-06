@@ -1,4 +1,4 @@
-{"resume_run": "42131880231", "run_tests": true, "e2e_only": false,
+{"resume_run": "42145511237", "run_tests": true, "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
- "request": "Round 45, tenth build: the ninth build's fixes (Gmail's host is Gmail's, the home page test's host rule in its fixture, \"open the menu\" waits for the menu, an unknown-site scenario the test log doesn't mask). Resume from run 42131880231 (the ninth build). Unit and browser tests, then the typed spoken suite."}
+ "request": "Round 45, eleventh build: the home page browser test reads the page without a user gesture (the tenth build's EvalJs calls gave the page the activation the microphone then took), and checks that opening the home page alone starts nothing. Resume from run 42145511237 (the tenth build). Unit and browser tests, then the typed spoken suite."}

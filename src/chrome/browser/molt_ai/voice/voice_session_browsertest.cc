@@ -544,14 +544,21 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionHomePageBrowserTest,
       ui_test_utils::NavigateToURL(browser(), GURL("chrome://molt-home/")));
   content::WebContents* page =
       browser()->GetTabStripModel()->GetActiveWebContents();
-  // The microphone shows, with its question.
+  // The microphone shows, with its question. (Read without a user gesture:
+  // one would be the page's activation, which the microphone takes.)
   ASSERT_TRUE(base::test::RunUntil([&]() {
-    return content::EvalJs(page, "document.getElementById('voice').hidden")
+    return content::EvalJs(page, "document.getElementById('voice').hidden",
+                           content::EXECUTE_SCRIPT_NO_USER_GESTURE)
                .ExtractBool() == false;
   }));
-  EXPECT_EQ(content::EvalJs(page, "document.getElementById('voiceAsk')"
-                                  ".textContent"),
+  EXPECT_EQ(content::EvalJs(page,
+                            "document.getElementById('voiceAsk').textContent",
+                            content::EXECUTE_SCRIPT_NO_USER_GESTURE),
             "Which site would you like me to open?");
+  // Opening the home page doesn't start voice mode.
+  Wait(base::Milliseconds(500));
+  VoiceSession* loaded = VoiceSession::FromBrowser(browser());
+  EXPECT_FALSE(loaded && loaded->listening());
 
   // A script's click isn't the user's: nothing starts.
   ASSERT_TRUE(content::ExecJs(page, "document.getElementById('mic').click()",
