@@ -13,11 +13,16 @@ For longer narrative posts behind each entry see
 
 ---
 
-## [Unreleased] — v0.3.0 "Private by default" (in release testing)
+## [Unreleased]
 
-The result of a full security and privacy audit (October 2026). Everything
-below is code complete and in release testing; it ships once it passes a
-full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
+## 2026-11-06 — v0.3.0: Private by default
+
+The result of a full security and privacy audit (October 2026), on
+Chromium 156, with voice mode (touchless browsing) on by default. Built and
+tested on Linux (unit tests, browser tests and a spoken end-to-end suite);
+macOS arm64 is built for release on the build machine, and the Windows
+build stays at v0.2.1. The release is published once it is signed offline
+(`docs/SIGNED_UPDATES.md`). Detail: [ROADMAP.md](ROADMAP.md).
 
 ### Security
 - The automations page (`molt://ai-automation`) checks every message from
@@ -2101,4 +2106,4 @@ Days 3–5: schedule editor, manual create / import / export, trust UX.
 
 ---
 
-[unreleased]: https://github.com/OneManNoCode/MoltBrowser/compare/v0.2.5...HEAD
+[unreleased]: https://github.com/OneManNoCode/MoltBrowser/compare/v0.3.0...HEAD

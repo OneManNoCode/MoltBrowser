@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
-index a462094cd3d23066539c26d202e2df0b6decf0f9..50b35ca18f054b862a22ed333f5b315d37350162 100644
+index a462094cd3d23066539c26d202e2df0b6decf0f9..6d97dc27b4d5c3cdb2fcd5e138bc186b1243a1f8 100644
 --- a/chrome/common/webui_url_constants.h
 +++ b/chrome/common/webui_url_constants.h
 @@ -217,6 +217,69 @@ inline constexpr char16_t kChromeUIManagementURL16[] = u"chrome://management";
@@ -74,7 +74,7 @@ index a462094cd3d23066539c26d202e2df0b6decf0f9..50b35ca18f054b862a22ed333f5b315d
 +// updater's "current version". Chromium's version_info reports the upstream
 +// Chromium version, not ours, so the updater compares THIS against the GitHub
 +// release tag. Bump on each release (keep in sync with release.sh --version).
-+inline constexpr char kMoltBrowserVersion[] = "0.2.5";
++inline constexpr char kMoltBrowserVersion[] = "0.3.0";
  inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
  inline constexpr char kChromeUINetExportHost[] = "net-export";
  inline constexpr char kChromeUINetInternalsHost[] = "net-internals";
