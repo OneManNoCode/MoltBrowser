@@ -76,6 +76,8 @@ constexpr int kMaxHistoryEntries = 50;
 // A menu's items are read once it has opened (a submenu opens from the
 // press that asked for it).
 constexpr base::TimeDelta kMenuSettle = base::Milliseconds(150);
+// How long the list waits for the app menu "open the menu" asked for.
+constexpr base::TimeDelta kMenuOpenTimeout = base::Seconds(3);
 // How recent the closed tab's entry is, to be the one voice mode closed.
 constexpr base::TimeDelta kJustClosed = base::Seconds(3);
 
@@ -266,7 +268,9 @@ VoiceBrowserActions::Result VoiceBrowserActions::Run(const VoiceStep& step,
     case BrowserAction::kOpenMenu:
       if (!chrome::ExecuteCommand(browser_, IDC_SHOW_APP_MENU)) {
         result.outcome = Outcome::kFailed;
+        return result;
       }
+      menu_requested_until_ = base::TimeTicks::Now() + kMenuOpenTimeout;
       return result;
     case BrowserAction::kCloseMenu:
       if (VoiceBrowserUi* ui = VoiceBrowserUi::Get()) {
@@ -640,34 +644,45 @@ VoiceBrowserActions::Result VoiceBrowserActions::OpenDownload(
 
 void VoiceBrowserActions::ListBrowserUi(const VoiceStep& step, int run) {
   // A menu that is opening (the app menu, a submenu) has its items in a
-  // moment.
+  // moment; the app menu "open the menu" asked for, once it shows.
+  const base::TimeTicks menu_until = menu_requested_until_;
+  menu_requested_until_ = base::TimeTicks();
   base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
-      base::BindOnce(
-          [](base::WeakPtr<VoiceBrowserActions> self, int run, VoiceStep step) {
-            if (!self) {
-              return;
-            }
-            std::vector<BrowserItem> items;
-            if (VoiceBrowserUi* ui = VoiceBrowserUi::Get()) {
-              const BrowserUiMap map =
-                  BuildBrowserUiMap(ui->Collect(self->browser_));
-              for (const BrowserUiItem& found : map.items) {
-                BrowserItem item;
-                item.title = found.name;
-                item.id = found.id;
-                item.region = found.region;
-                item.role = found.role;
-                item.enabled = found.enabled;
-                item.checked = found.checked;
-                item.has_submenu = found.has_submenu;
-                items.push_back(std::move(item));
-              }
-            }
-            self->Deliver(run, std::move(step), std::move(items));
-          },
-          run_weak_factory_.GetWeakPtr(), run, step),
+      base::BindOnce(&VoiceBrowserActions::CollectBrowserUi,
+                     run_weak_factory_.GetWeakPtr(), run, step, menu_until),
       kMenuSettle);
+}
+
+void VoiceBrowserActions::CollectBrowserUi(int run,
+                                           VoiceStep step,
+                                           base::TimeTicks menu_until) {
+  VoiceBrowserUi* ui = VoiceBrowserUi::Get();
+  if (ui && !ui->MenuOpen(browser_) && base::TimeTicks::Now() < menu_until) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&VoiceBrowserActions::CollectBrowserUi,
+                       run_weak_factory_.GetWeakPtr(), run, std::move(step),
+                       menu_until),
+        kMenuSettle);
+    return;
+  }
+  std::vector<BrowserItem> items;
+  if (ui) {
+    const BrowserUiMap map = BuildBrowserUiMap(ui->Collect(browser_));
+    for (const BrowserUiItem& found : map.items) {
+      BrowserItem item;
+      item.title = found.name;
+      item.id = found.id;
+      item.region = found.region;
+      item.role = found.role;
+      item.enabled = found.enabled;
+      item.checked = found.checked;
+      item.has_submenu = found.has_submenu;
+      items.push_back(std::move(item));
+    }
+  }
+  Deliver(run, std::move(step), std::move(items));
 }
 
 VoiceBrowserActions::Result VoiceBrowserActions::PressBrowserUi(

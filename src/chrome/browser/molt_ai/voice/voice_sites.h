@@ -67,8 +67,9 @@ const std::vector<KnownSite>& KnownSites();
 const KnownSite* FindKnownSite(std::string_view site);
 
 // The known site whose pages |host| serves ("www.youtube.com",
-// "m.youtube.com" -> YouTube), or null. |host| is compared in ASCII lower
-// case.
+// "m.youtube.com" -> YouTube), or null; of two, the one whose domain is the
+// more specific ("mail.google.com" -> Gmail, "www.google.com" -> Google).
+// |host| is compared in ASCII lower case.
 const KnownSite* KnownSiteForHost(std::string_view host);
 
 // |query| form-encoded for a URL's query string: ASCII letters, digits and

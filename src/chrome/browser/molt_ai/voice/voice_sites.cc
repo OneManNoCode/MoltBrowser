@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -143,13 +144,16 @@ bool HasName(const KnownSite& known, std::string_view folded) {
   return false;
 }
 
-bool ServesHost(const KnownSite& known, std::string_view folded) {
+// The length of the longest of |known|'s domains that |folded| is or is
+// under, or 0 when it serves none of them.
+size_t ServedDomainLength(const KnownSite& known, std::string_view folded) {
+  size_t longest = 0;
   for (std::string_view domain : known.domains) {
-    if (HostIsOrIsUnder(folded, domain)) {
-      return true;
+    if (domain.size() > longest && HostIsOrIsUnder(folded, domain)) {
+      longest = domain.size();
     }
   }
-  return false;
+  return longest;
 }
 
 }  // namespace
@@ -364,15 +368,20 @@ const KnownSite* KnownSiteForHost(std::string_view host) {
   if (folded.empty()) {
     return nullptr;
   }
-  if (TestSite() && ServesHost(*TestSite(), folded)) {
+  if (TestSite() && ServedDomainLength(*TestSite(), folded) > 0) {
     return TestSite();
   }
+  // The most specific: mail.google.com is Gmail's, not Google's.
+  const KnownSite* best = nullptr;
+  size_t best_length = 0;
   for (const KnownSite& known : KnownSites()) {
-    if (ServesHost(known, folded)) {
-      return &known;
+    const size_t length = ServedDomainLength(known, folded);
+    if (length > best_length) {
+      best = &known;
+      best_length = length;
     }
   }
-  return nullptr;
+  return best;
 }
 
 std::string FormEncode(std::string_view query) {

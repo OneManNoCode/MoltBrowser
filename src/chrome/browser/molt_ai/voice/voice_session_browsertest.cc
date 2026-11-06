@@ -512,13 +512,22 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
   EXPECT_TRUE(session()->listening());
 }
 
-IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
+// The home page's microphone, with a site the test server serves.
+class VoiceSessionHomePageBrowserTest : public VoiceSessionBrowserTest {
+ public:
+  void SetUpOnMainThread() override {
+    VoiceSessionBrowserTest::SetUpOnMainThread();
+    // Host rules can change only until the test body runs.
+    host_resolver()->AddRule("*", "127.0.0.1");
+    ASSERT_TRUE(embedded_test_server()->Start());
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(VoiceSessionHomePageBrowserTest,
                        TheHomePagesMicrophoneAsksWhichSiteToOpen) {
   // The home page (chrome://molt-home, molt_home_handler.h): its microphone
   // starts voice mode with the click only; voice mode greets the user, asks
   // which site to open, and the site's name alone opens it.
-  host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(embedded_test_server()->Start());
   const std::string site_home =
       embedded_test_server()
           ->GetURL("video.test", "/molt_voice/video_home.html")

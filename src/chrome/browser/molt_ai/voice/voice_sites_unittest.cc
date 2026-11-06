@@ -115,6 +115,10 @@ TEST(VoiceSitesTest, SitesForHosts) {
   EXPECT_EQ(KnownSiteForHost("youtube.com.")->name, "YouTube");
   EXPECT_EQ(KnownSiteForHost("de.wikipedia.org")->name, "Wikipedia");
   EXPECT_EQ(KnownSiteForHost("search.brave.com")->name, "Brave Search");
+  // The most specific site: Gmail is on a host under google.com.
+  EXPECT_EQ(KnownSiteForHost("mail.google.com")->name, "Gmail");
+  EXPECT_EQ(KnownSiteForHost("www.google.com")->name, "Google");
+  EXPECT_EQ(KnownSiteForHost("outlook.live.com")->name, "Outlook");
   EXPECT_FALSE(KnownSiteForHost("brave.com"));
   EXPECT_FALSE(KnownSiteForHost("notyoutube.com"));
   EXPECT_FALSE(KnownSiteForHost("youtube.com.example.net"));

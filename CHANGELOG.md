@@ -1434,7 +1434,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   its voice activity detector on every change of the window, losing the
   speech it was following; neither happens now. At a browser prompt,
   "no" heard as "now" blocks or declines, and four more misheard
-  commands are understood.
+  commands are understood. "Open the menu" on a slow machine read out the
+  toolbar's buttons instead of the menu; it now waits for the menu to
+  show.
 - **Workflows, routines and settings files hold up to crashes, odd files
   and a busy window** (round 44, storage-robustness). A routine being kept
   from before profiles when the browser closed is put back to be offered
