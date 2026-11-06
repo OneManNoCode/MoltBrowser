@@ -1,4 +1,4 @@
-{"resume_run": "42109641249", "run_tests": true, "e2e_only": false,
- "e2e_runs": "pulse:clean,pulse:music10,pulse:clean:noloop,file:clean,typed",
+{"resume_run": "42131880231", "run_tests": true, "e2e_only": false,
+ "e2e_runs": "typed",
  "e2e_speech_check": false,
- "request": "Round 45, ninth build: voice mode on by default, the home page's microphone (\"Which site would you like me to open?\") and 38 more verified sites. Resume from run 42109641249 (the eighth build). Unit and browser tests (new: VoiceSessionBrowserTest.TheHomePagesMicrophoneAsksWhichSiteToOpen), then the spoken suite with and without the speakers in the microphone, with music, by file and typed."}
+ "request": "Round 45, tenth build: the ninth build's fixes (Gmail's host is Gmail's, the home page test's host rule in its fixture, \"open the menu\" waits for the menu, an unknown-site scenario the test log doesn't mask). Resume from run 42131880231 (the ninth build). Unit and browser tests, then the typed spoken suite."}
