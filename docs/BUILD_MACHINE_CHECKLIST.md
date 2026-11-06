@@ -561,7 +561,7 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 
 ### 2.6 The version
 
-- [ ] Bump `kMoltBrowserVersion` from `"0.2.5"` to `"0.3.0"` in
+- [x] Bump `kMoltBrowserVersion` from `"0.2.5"` to `"0.3.0"` in
   `src/chrome/common/webui_url_constants.h`, then
   `python3 tools/chromium/overlay_to_patches.py && python3 tools/chromium/verify_patches.py`.
   This file fans out a ~2 h recompile (from CLAUDE.md), so do it in this PR,
