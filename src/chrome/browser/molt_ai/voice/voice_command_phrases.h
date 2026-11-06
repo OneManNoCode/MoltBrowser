@@ -60,6 +60,7 @@ enum class PatternContext : uint8_t {
   kYesNo,      // ParseContext::expecting_yes_no
   kChoice,     // ParseContext::expecting_choice
   kTextField,  // ParseContext::text_field_focused
+  kSite,       // ParseContext::expecting_site
 };
 
 // What a pattern sets beyond its kind.

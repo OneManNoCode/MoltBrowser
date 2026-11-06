@@ -168,6 +168,31 @@ void Check(const std::vector<Case>& cases) {
 // A verb glued to the next word, as the bundled English recognizer hears
 // "click name a colour": read as the two words; "clicking" and a known
 // command are left as they are.
+TEST(VoiceCommandTest, ASiteNameAloneAnswersWhichSite) {
+  ParseContext asked;
+  asked.expecting_site = true;
+  VoiceCommand c = ParseVoiceCommand("Facebook", asked);
+  EXPECT_EQ(c.kind, VoiceCommandKind::kOpenSite);
+  EXPECT_EQ(c.site, "facebook");
+  EXPECT_EQ(ParseVoiceCommand("the New York Times", asked).site,
+            "newyorktimes");
+  EXPECT_EQ(ParseVoiceCommand("Hey Molt, YouTube.", asked).site, "youtube");
+  EXPECT_EQ(ParseVoiceCommand("example dot com", asked).site, "example.com");
+  // Answers that aren't a site, and commands, still mean themselves.
+  EXPECT_EQ(ParseVoiceCommand("no thanks", asked).kind,
+            VoiceCommandKind::kCancel);
+  EXPECT_EQ(ParseVoiceCommand("never mind", asked).kind,
+            VoiceCommandKind::kCancel);
+  EXPECT_EQ(ParseVoiceCommand("scroll down", asked).kind,
+            VoiceCommandKind::kScrollDown);
+  EXPECT_EQ(ParseVoiceCommand("stop", asked).kind, VoiceCommandKind::kStop);
+  EXPECT_EQ(ParseVoiceCommand("search for Queen", asked).kind,
+            VoiceCommandKind::kSearch);
+  // Not asked: a name alone opens nothing.
+  EXPECT_NE(ParseVoiceCommand("Facebook", ParseContext()).kind,
+            VoiceCommandKind::kOpenSite);
+}
+
 TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
   const ParseContext context = MakeContext(kNone);
   const VoiceCommand glued = ParseVoiceCommand("Clickname a color", context);
@@ -896,6 +921,7 @@ TEST(VoiceCommandPhrasesTest, EveryKindIsDocumentedAndItsExampleWorks) {
     context.expecting_yes_no = info.context == PatternContext::kYesNo;
     context.expecting_choice = info.context == PatternContext::kChoice;
     context.text_field_focused = info.context == PatternContext::kTextField;
+    context.expecting_site = info.context == PatternContext::kSite;
     EXPECT_EQ(ParseVoiceCommand(info.example, context).kind, info.kind)
         << info.example;
   }

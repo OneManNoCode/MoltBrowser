@@ -46,7 +46,8 @@ struct KnownSite {
   std::string_view name;
   // Its home page.
   std::string_view home_url;
-  // Its search page; the form-encoded query is appended.
+  // Its search page; the form-encoded query is appended. Empty when it
+  // has none voice mode can use.
   std::string_view search_url;
   // The names the grammar may give it (folded, no spaces): "youtube".
   std::vector<std::string_view> names;
@@ -55,8 +56,10 @@ struct KnownSite {
 };
 
 // The built-in sites: YouTube, Google, DuckDuckGo, Wikipedia, Brave
-// Search (the web agent's engine) and Bing. Kept for the life of the
-// process.
+// Search (the web agent's engine), Bing, then popular sites at their
+// official addresses (Facebook, Amazon, Netflix, Gmail...), so a spoken
+// name never reaches a look-alike domain. Some have no search page
+// (|search_url| empty). Kept for the life of the process.
 const std::vector<KnownSite>& KnownSites();
 
 // The known site |site| names (the grammar's host-like text, any case),
@@ -64,8 +67,9 @@ const std::vector<KnownSite>& KnownSites();
 const KnownSite* FindKnownSite(std::string_view site);
 
 // The known site whose pages |host| serves ("www.youtube.com",
-// "m.youtube.com" -> YouTube), or null. |host| is compared in ASCII lower
-// case.
+// "m.youtube.com" -> YouTube), or null; of two, the one whose domain is the
+// more specific ("mail.google.com" -> Gmail, "www.google.com" -> Google).
+// |host| is compared in ASCII lower case.
 const KnownSite* KnownSiteForHost(std::string_view host);
 
 // |query| form-encoded for a URL's query string: ASCII letters, digits and

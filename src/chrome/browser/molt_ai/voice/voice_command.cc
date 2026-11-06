@@ -948,6 +948,8 @@ bool ContextAllows(PatternContext context, const ParseContext& parse) {
       return parse.expecting_choice;
     case PatternContext::kTextField:
       return parse.text_field_focused;
+    case PatternContext::kSite:
+      return parse.expecting_site;
   }
   return false;
 }

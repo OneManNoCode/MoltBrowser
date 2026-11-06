@@ -8,18 +8,24 @@ entiende directamente, sin su modelo de IA, y que funcionan al momento,
 incluso en un ordenador lento. Lo demás que digas va a la IA del
 dispositivo, que intenta entender qué quieres a partir de la página.
 
-El modo de voz es una vista previa, detrás de una opción experimental. Con
+El modo de voz está activado de forma predeterminada
+(`chrome://flags/#molt-voice-mode` lo desactiva); el micrófono solo se abre
+cuando lo enciendes: con el micrófono grande de la página de inicio ("Which
+site would you like me to open?"), con el botón Voice de la barra de
+herramientas o en la configuración. Desde la página de inicio, el modo de
+voz pregunta "¿Qué sitio quieres que abra?": di solo su nombre, como
+"Facebook". Los sitios conocidos se abren en su dirección oficial; cualquier
+otro nombre se busca en la web, nunca se adivina como dirección. Con
 `chrome://flags/#molt-voice-mode-at-first-run` también activada (está
 desactivada hasta que se decida), el modo de voz empieza a escuchar en la
 primera ventana la primera vez que se abre el navegador y dice cómo usarlo.
 
 ## El español en el modo de voz
 
-1. Activa `chrome://flags/#molt-voice-mode` y reinicia el navegador.
-2. En **Configuración** (`molt://ai-settings`), "Voice mode", elige
+1. En **Configuración** (`molt://ai-settings`), "Voice mode", elige
    **Español** en "Language" (o deja "The browser's language" si el
    navegador ya está en español).
-3. Desde entonces, el modo de voz entiende las órdenes en español y responde
+2. Desde entonces, el modo de voz entiende las órdenes en español y responde
    en español, con una voz en español del sistema (en macOS y Windows
    vienen voces en español; en Linux, una voz de speech-dispatcher). Si el
    ordenador no tiene ninguna, la configuración lo dice: añade una en los
@@ -143,6 +149,7 @@ primera que encaja con todo lo que dijiste.
 - `(abre | abrir | abra | ve a | ir a | vaya a | llevame a | visita | navega a | carga | lanza | entra en | entrar en | entra a) {site} en [una] (nueva pestana | pestana nueva | otra pestana)`
 - `(abre | abrir | abra | ve a | ir a | vaya a | llevame a | visita | navega a | carga | lanza | entra en | entrar en | entra a) {site}`
 - `{address}`
+- `{site}` (cuando el navegador te ha preguntado qué sitio abrir)
 
 **Busca: en el sitio en el que estás (o en el buscador si no tiene cuadro de búsqueda), en la web, o en el sitio que digas.** Por ejemplo: "busca Bohemian Rhapsody".
 
@@ -550,6 +557,7 @@ primera que encaja con todo lo que dijiste.
 **Cancela lo que pediste.** Por ejemplo: "cancela".
 
 - `(cancela | cancelar | cancele | cancelalo | anula | anular | anulalo | olvidalo | olvidate | olvida eso | da igual | no importa | dejalo | dejalo estar | cancela eso)`
+- `(no | no gracias | nada | ninguno | ninguna | da igual | ahora no)` (cuando el navegador te ha preguntado qué sitio abrir)
 
 **Para: de hablar, y lo que esté en marcha.** Por ejemplo: "para".
 

@@ -266,6 +266,13 @@ class VoiceController : public VoicePlanner::Delegate,
   // "I can't use the microphone") and shows it as the status.
   void SayNotice(const std::string& text);
 
+  // "Which site would you like me to open?" (PlanSiteQuestion()): asked when
+  // the user starts voice mode from the home page's microphone, after
+  // |intro| (the greeting, when this starts voice mode; already in the
+  // window's language) unless it's empty; what it was doing stops first.
+  // Nothing in a MoltNet window.
+  void AskWhichSite(const std::string& intro);
+
   // The language voice mode understands and speaks in this window
   // (voice_language.h): the setting's, read when the window's voice mode is
   // made, else the browser's own language when voice mode has it, else

@@ -1493,6 +1493,7 @@ source_set("voice_session_browser_tests") {
     ":features",
     ":voice_controller",
     ":voice_listening",
+    ":voice_loop",
     ":voice_session",
     "//base",
     "//base/test:test_support",
@@ -1510,6 +1511,7 @@ source_set("voice_session_browser_tests") {
     "//content/public/browser",
     "//content/test:test_support",
     "//media",
+    "//net:test_support",
     "//testing/gtest",
     "//url",
   ]

@@ -12,8 +12,9 @@
 // "stop" does; a page's speech (speechSynthesis) is never cut short by
 // voice mode, and what a page says doesn't command it; a crash and the
 // restart; giving up after crashes in a row, and after `error` lines from
-// a helper that carries on; and MoltNet windows, where the microphone is
-// never opened.
+// a helper that carries on; MoltNet windows, where the microphone is
+// never opened; and the home page's microphone, which starts voice mode
+// with its click only and asks which site to open.
 //
 // Linux and macOS: on Windows the helper's AppContainer reads only the
 // folders MoltBrowser's installer grants, which a test binary's isn't.
@@ -51,17 +52,23 @@
 #include "chrome/browser/molt_ai/voice/voice_reading_settings.h"
 #include "chrome/browser/molt_ai/voice/voice_session_logic.h"
 #include "chrome/browser/molt_ai/voice/voice_session_settings.h"
+#include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_platform.h"
 #include "content/public/browser/tts_utterance.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
 #include "media/base/media_switches.h"
+#include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -502,6 +509,76 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
   controller->SetLanguage(Language::kEnglish);
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return session()->listener_for_testing() != nullptr; }));
+  EXPECT_TRUE(session()->listening());
+}
+
+// The home page's microphone, with a site the test server serves.
+class VoiceSessionHomePageBrowserTest : public VoiceSessionBrowserTest {
+ public:
+  void SetUpOnMainThread() override {
+    VoiceSessionBrowserTest::SetUpOnMainThread();
+    // Host rules can change only until the test body runs.
+    host_resolver()->AddRule("*", "127.0.0.1");
+    ASSERT_TRUE(embedded_test_server()->Start());
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(VoiceSessionHomePageBrowserTest,
+                       TheHomePagesMicrophoneAsksWhichSiteToOpen) {
+  // The home page (chrome://molt-home, molt_home_handler.h): its microphone
+  // starts voice mode with the click only; voice mode greets the user, asks
+  // which site to open, and the site's name alone opens it.
+  const std::string site_home =
+      embedded_test_server()
+          ->GetURL("video.test", "/molt_voice/video_home.html")
+          .spec();
+  const ScopedTestSite site(
+      KnownSite{"VideoSite", site_home, "", {"videosite"}, {"video.test"}});
+  // The answer comes well after the greeting and the question.
+  Script(
+      "ready\n"
+      "4000 speech_start\n"
+      "4300 speech_end\n"
+      "4400 final 0.9 VideoSite\n");
+  ASSERT_TRUE(
+      ui_test_utils::NavigateToURL(browser(), GURL("chrome://molt-home/")));
+  content::WebContents* page =
+      browser()->GetTabStripModel()->GetActiveWebContents();
+  // The microphone shows, with its question. (Read without a user gesture:
+  // one would be the page's activation, which the microphone takes.)
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return content::EvalJs(page, "document.getElementById('voice').hidden",
+                           content::EXECUTE_SCRIPT_NO_USER_GESTURE)
+               .ExtractBool() == false;
+  }));
+  EXPECT_EQ(content::EvalJs(page,
+                            "document.getElementById('voiceAsk').textContent",
+                            content::EXECUTE_SCRIPT_NO_USER_GESTURE),
+            "Which site would you like me to open?");
+  // Opening the home page doesn't start voice mode.
+  Wait(base::Milliseconds(500));
+  VoiceSession* loaded = VoiceSession::FromBrowser(browser());
+  EXPECT_FALSE(loaded && loaded->listening());
+
+  // A script's click isn't the user's: nothing starts.
+  ASSERT_TRUE(content::ExecJs(page, "document.getElementById('mic').click()",
+                              content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+  Wait(base::Milliseconds(500));
+  VoiceSession* before = VoiceSession::FromBrowser(browser());
+  EXPECT_FALSE(before && before->listening());
+
+  // The user's click: voice mode starts and asks; "VideoSite" opens it.
+  ASSERT_TRUE(content::ExecJs(page, "document.getElementById('mic').click()"));
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return page->GetLastCommittedURL().spec() == site_home;
+  })) << "voice mode said: " << tts_.AllSpoken();
+  const std::string said = tts_.AllSpoken();
+  const size_t greeting =
+      said.find("Voice mode is on. Say Hey Molt, then what you want.");
+  const size_t question = said.find("Which site would you like me to open?");
+  ASSERT_NE(greeting, std::string::npos) << said;
+  ASSERT_NE(question, std::string::npos) << said;
+  EXPECT_LT(greeting, question) << said;
   EXPECT_TRUE(session()->listening());
 }
 

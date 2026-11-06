@@ -45,6 +45,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_types.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_logic.h"
@@ -172,6 +173,9 @@ class VoiceBrowserActions {
                  std::vector<BrowserItem> items);
   void ListDownloads(const VoiceStep& step, int run);
   void ListBrowserUi(const VoiceStep& step, int run);
+  // The browser's buttons, or the open menu's items: once the menu "open
+  // the menu" asked for shows, or by |menu_until|.
+  void CollectBrowserUi(int run, VoiceStep step, base::TimeTicks menu_until);
   void Deliver(int run, VoiceStep step, std::vector<BrowserItem> items);
 
   Result OpenUrl(const VoiceStep& step);
@@ -196,6 +200,9 @@ class VoiceBrowserActions {
   raw_ptr<Delegate> delegate_;
   // The run the asynchronous step belongs to (0: none).
   int pending_run_ = 0;
+  // "Open the menu" asked for the app menu: until then, the list waits for
+  // it to show (a slow machine draws it later than kMenuSettle).
+  base::TimeTicks menu_requested_until_;
   // The tab voice mode closed last, in the recently closed tabs.
   std::optional<SessionID> closed_by_voice_;
   // Always listening, as settings last said.

@@ -50,6 +50,8 @@ std::string_view ContextNote(PatternContext context, Language language) {
                "números a la vista)";
       case PatternContext::kTextField:
         return " (mientras escribes en un campo)";
+      case PatternContext::kSite:
+        return " (cuando el navegador te ha preguntado qué sitio abrir)";
     }
     return "";
   }
@@ -62,6 +64,8 @@ std::string_view ContextNote(PatternContext context, Language language) {
       return " (right after the browser read a list, or with numbers shown)";
     case PatternContext::kTextField:
       return " (while you are typing in a field)";
+    case PatternContext::kSite:
+      return " (when the browser has asked which site to open)";
   }
   return "";
 }
@@ -94,6 +98,7 @@ int main(int argc, char** argv) {
     context.expecting_yes_no = info.context == PatternContext::kYesNo;
     context.expecting_choice = info.context == PatternContext::kChoice;
     context.text_field_focused = info.context == PatternContext::kTextField;
+    context.expecting_site = info.context == PatternContext::kSite;
     // The reference only shows examples that work.
     if (ParseVoiceCommand(info.example, context).kind != info.kind) {
       std::fprintf(stderr, "example \"%.*s\" does not parse to its command\n",

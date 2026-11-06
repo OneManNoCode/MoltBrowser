@@ -35,12 +35,20 @@ TEST(VoiceSitesAgentSafetyTest, KnownSitesPassTheNavigationCheck) {
     SCOPED_TRACE(site.name);
     const GURL home{std::string(site.home_url)};
     EXPECT_TRUE(agent_safety::IsAllowedNavigationURL(home));
-    EXPECT_EQ(KnownSiteForHost(home.host()), &site);
+    // Its pages are its own; one without domains of its own lives on a
+    // known site's (Google Maps on Google's).
+    const KnownSite* owner = site.domains.empty() ? KnownSiteForHost(home.host())
+                                                  : &site;
+    ASSERT_TRUE(owner);
+    EXPECT_EQ(KnownSiteForHost(home.host()), owner);
+    if (site.search_url.empty()) {
+      continue;
+    }
     for (const char* query : kQueries) {
       SCOPED_TRACE(query);
       const GURL search(SiteSearchURL(site, query));
       EXPECT_TRUE(agent_safety::IsAllowedNavigationURL(search));
-      EXPECT_EQ(search.host(), home.host());
+      EXPECT_EQ(KnownSiteForHost(search.host()), owner);
     }
   }
 }

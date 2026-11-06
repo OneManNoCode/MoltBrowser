@@ -690,6 +690,7 @@ TEST(SpanishPhrasesTest, EveryKindIsDocumentedAndItsExampleWorks) {
     context.expecting_yes_no = info.context == PatternContext::kYesNo;
     context.expecting_choice = info.context == PatternContext::kChoice;
     context.text_field_focused = info.context == PatternContext::kTextField;
+    context.expecting_site = info.context == PatternContext::kSite;
     EXPECT_EQ(ParseVoiceCommand(info.example, context).kind, info.kind)
         << info.example;
   }

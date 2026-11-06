@@ -27,8 +27,8 @@
    "task": "go",
    "start": {"url": "about:blank"},
    "steps": [
-    {"say": "open Netflix", "needs": ["open_site"],
-     "expect": [{"url_has": "q=Netflix"}, {"said_has": "I don't know a site called Netflix"}]}
+    {"say": "open telescope", "needs": ["open_site"],
+     "expect": [{"url_has": "elescope"}, {"said_has": "I don't know a site called telescope"}]}
    ]
   },
   {

@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -143,21 +144,25 @@ bool HasName(const KnownSite& known, std::string_view folded) {
   return false;
 }
 
-bool ServesHost(const KnownSite& known, std::string_view folded) {
+// The length of the longest of |known|'s domains that |folded| is or is
+// under, or 0 when it serves none of them.
+size_t ServedDomainLength(const KnownSite& known, std::string_view folded) {
+  size_t longest = 0;
   for (std::string_view domain : known.domains) {
-    if (HostIsOrIsUnder(folded, domain)) {
-      return true;
+    if (domain.size() > longest && HostIsOrIsUnder(folded, domain)) {
+      longest = domain.size();
     }
   }
-  return false;
+  return longest;
 }
 
 }  // namespace
 
 const std::vector<KnownSite>& KnownSites() {
   // The four sites of the design's Phase 1 (§10), the engine the web agent
-  // already uses (agent_actions.h kSearchURLPrefix), and the other major
-  // engine. Search pages take the query as the last parameter.
+  // already uses (agent_actions.h kSearchURLPrefix), the other major
+  // engine, then popular sites. Search pages take the query as the last
+  // parameter.
   static const std::vector<KnownSite>* const sites =
       new std::vector<KnownSite>{
           {"YouTube",
@@ -190,6 +195,150 @@ const std::vector<KnownSite>& KnownSites() {
            "https://www.bing.com/search?q=",
            {"bing", "bingcom", "bingsearch"},
            {"bing.com"}},
+          // Popular sites by their official addresses, so that "open
+          // Facebook" goes to facebook.com and never to a look-alike. An
+          // empty search page: "search <site> for ..." searches the web.
+          {"Facebook",
+           "https://www.facebook.com/",
+           "https://www.facebook.com/search/top/?q=",
+           {"facebook", "facebookcom", "fb"},
+           {"facebook.com"}},
+          {"Instagram", "https://www.instagram.com/", "",
+           {"instagram", "instagramcom", "insta"}, {"instagram.com"}},
+          {"WhatsApp", "https://web.whatsapp.com/", "",
+           {"whatsapp", "whatsappweb", "whatsup"}, {"whatsapp.com"}},
+          {"Messenger", "https://www.messenger.com/", "",
+           {"messenger", "facebookmessenger"}, {"messenger.com"}},
+          {"X",
+           "https://x.com/",
+           "https://x.com/search?q=",
+           {"x", "xcom", "twitter", "twittercom"},
+           {"x.com", "twitter.com"}},
+          {"LinkedIn",
+           "https://www.linkedin.com/",
+           "https://www.linkedin.com/search/results/all/?keywords=",
+           {"linkedin", "linkedincom"},
+           {"linkedin.com"}},
+          {"Reddit",
+           "https://www.reddit.com/",
+           "https://www.reddit.com/search/?q=",
+           {"reddit", "redditcom"},
+           {"reddit.com"}},
+          {"TikTok",
+           "https://www.tiktok.com/",
+           "https://www.tiktok.com/search?q=",
+           {"tiktok", "ticktock", "tiktokcom"},
+           {"tiktok.com"}},
+          {"Pinterest",
+           "https://www.pinterest.com/",
+           "https://www.pinterest.com/search/pins/?q=",
+           {"pinterest", "pinterestcom"},
+           {"pinterest.com"}},
+          {"Amazon",
+           "https://www.amazon.com/",
+           "https://www.amazon.com/s?k=",
+           {"amazon", "amazoncom"},
+           {"amazon.com"}},
+          {"eBay",
+           "https://www.ebay.com/",
+           "https://www.ebay.com/sch/i.html?_nkw=",
+           {"ebay", "ebaycom"},
+           {"ebay.com"}},
+          {"Walmart",
+           "https://www.walmart.com/",
+           "https://www.walmart.com/search?q=",
+           {"walmart", "walmartcom"},
+           {"walmart.com"}},
+          {"Etsy",
+           "https://www.etsy.com/",
+           "https://www.etsy.com/search?q=",
+           {"etsy", "etsycom"},
+           {"etsy.com"}},
+          {"Netflix",
+           "https://www.netflix.com/",
+           "https://www.netflix.com/search?q=",
+           {"netflix", "netflixcom"},
+           {"netflix.com"}},
+          {"Spotify", "https://open.spotify.com/", "",
+           {"spotify", "spotifycom"}, {"spotify.com"}},
+          {"Twitch",
+           "https://www.twitch.tv/",
+           "https://www.twitch.tv/search?term=",
+           {"twitch", "twitchtv"},
+           {"twitch.tv"}},
+          {"Disney+", "https://www.disneyplus.com/", "",
+           {"disneyplus", "disney+"}, {"disneyplus.com"}},
+          {"Prime Video", "https://www.primevideo.com/", "",
+           {"primevideo", "amazonprime", "amazonprimevideo"},
+           {"primevideo.com"}},
+          {"Gmail", "https://mail.google.com/", "",
+           {"gmail", "googlemail", "gmailcom"}, {"mail.google.com"}},
+          {"Outlook", "https://outlook.live.com/", "",
+           {"outlook", "hotmail", "outlookcom"},
+           {"outlook.live.com", "outlook.com"}},
+          {"Yahoo",
+           "https://www.yahoo.com/",
+           "https://search.yahoo.com/search?p=",
+           {"yahoo", "yahoocom"},
+           {"yahoo.com"}},
+          {"Google Maps",
+           "https://www.google.com/maps",
+           "https://www.google.com/maps/search/?api=1&query=",
+           {"googlemaps", "maps"},
+           {}},
+          {"BBC",
+           "https://www.bbc.com/",
+           "https://www.bbc.co.uk/search?q=",
+           {"bbc", "bbcnews", "bbccom"},
+           {"bbc.com", "bbc.co.uk"}},
+          {"CNN",
+           "https://www.cnn.com/",
+           "https://www.cnn.com/search?q=",
+           {"cnn", "cnncom"},
+           {"cnn.com"}},
+          {"The New York Times",
+           "https://www.nytimes.com/",
+           "https://www.nytimes.com/search?query=",
+           {"newyorktimes", "nytimes", "nyt"},
+           {"nytimes.com"}},
+          {"The Guardian",
+           "https://www.theguardian.com/",
+           "",
+           {"guardian", "theguardian"},
+           {"theguardian.com"}},
+          {"ESPN", "https://www.espn.com/", "", {"espn", "espncom"},
+           {"espn.com"}},
+          {"The Weather Channel", "https://weather.com/", "",
+           {"weather", "weathercom", "weatherchannel", "theweatherchannel"},
+           {"weather.com"}},
+          {"IMDb",
+           "https://www.imdb.com/",
+           "https://www.imdb.com/find/?q=",
+           {"imdb", "imdbcom"},
+           {"imdb.com"}},
+          {"GitHub",
+           "https://github.com/",
+           "https://github.com/search?q=",
+           {"github", "githubcom"},
+           {"github.com"}},
+          {"PayPal", "https://www.paypal.com/", "", {"paypal", "paypalcom"},
+           {"paypal.com"}},
+          {"Zoom", "https://zoom.us/", "", {"zoom", "zoomus"}, {"zoom.us"}},
+          {"Apple", "https://www.apple.com/", "", {"apple", "applecom"},
+           {"apple.com"}},
+          {"Microsoft", "https://www.microsoft.com/", "",
+           {"microsoft", "microsoftcom"}, {"microsoft.com"}},
+          {"ChatGPT", "https://chatgpt.com/", "", {"chatgpt", "chatgptcom"},
+           {"chatgpt.com"}},
+          {"Claude", "https://claude.ai/", "", {"claude", "claudeai"},
+           {"claude.ai"}},
+          {"Airbnb",
+           "https://www.airbnb.com/",
+           "",
+           {"airbnb", "airbnbcom"},
+           {"airbnb.com"}},
+          {"Craigslist", "https://www.craigslist.org/", "",
+           {"craigslist", "craigslistorg"}, {"craigslist.org"}},
       };
   return *sites;
 }
@@ -219,15 +368,20 @@ const KnownSite* KnownSiteForHost(std::string_view host) {
   if (folded.empty()) {
     return nullptr;
   }
-  if (TestSite() && ServesHost(*TestSite(), folded)) {
+  if (TestSite() && ServedDomainLength(*TestSite(), folded) > 0) {
     return TestSite();
   }
+  // The most specific: mail.google.com is Gmail's, not Google's.
+  const KnownSite* best = nullptr;
+  size_t best_length = 0;
   for (const KnownSite& known : KnownSites()) {
-    if (ServesHost(known, folded)) {
-      return &known;
+    const size_t length = ServedDomainLength(known, folded);
+    if (length > best_length) {
+      best = &known;
+      best_length = length;
     }
   }
-  return nullptr;
+  return best;
 }
 
 std::string FormEncode(std::string_view query) {

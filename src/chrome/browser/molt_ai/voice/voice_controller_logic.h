@@ -399,6 +399,13 @@ struct ConversationState {
   int current_position = 0;
   // A bare number or description now picks from the list.
   bool expecting_choice = false;
+  // The browser asked which site to open (the home page's microphone) on
+  // |site_question_page_id|: a site's name alone opens it there, until a
+  // command the grammar understands is planned or |site_question_expires_ms|
+  // (SiteQuestionWaits()).
+  bool expecting_site = false;
+  int64_t site_question_page_id = -1;
+  int64_t site_question_expires_ms = 0;
 
   // A confirmation the browser asked for: |confirm_steps| run on "yes".
   bool confirming = false;
@@ -486,6 +493,17 @@ VoiceTurn PlanFollowUp(const VoiceStep& wait,
                        const VoiceEnvironment& env,
                        const ConversationState& state);
 
+// "Which site would you like me to open?", asked when the user starts voice
+// mode from the home page's microphone: on this page, a site's name alone
+// ("Facebook") then opens it (ParseContext::expecting_site), from the
+// built-in table of verified sites (voice_sites.h) or by its address; any
+// other name is searched for, never guessed as an address. |intro|, said
+// first when not empty, is voice mode's greeting when this starts it.
+// Nothing in a MoltNet window.
+VoiceTurn PlanSiteQuestion(std::string_view intro,
+                           const VoiceEnvironment& env,
+                           const ConversationState& state);
+
 // The planner (voice_planner.h) asks the user to confirm |what| (its words,
 // built from model output and page text: cleaned here), as the loop asks
 // before pressing Buy: "Say yes to <what>, or no to cancel.", on this page,
@@ -537,6 +555,14 @@ VoiceTurn PlanBrowserPromptGone(int id,
 
 // The browser's prompt |state| holds and that waits at |now_ms|, or 0.
 int BrowserPromptHeld(const ConversationState& state, int64_t now_ms);
+
+// Whether "Which site would you like me to open?" still waits for its
+// answer at |now_ms|: for kConfirmationTimeoutMs after it was asked, so
+// what is heard after can't keep voice mode listening without "Hey Molt".
+inline bool SiteQuestionWaits(const ConversationState& state,
+                              int64_t now_ms) {
+  return state.expecting_site && now_ms < state.site_question_expires_ms;
+}
 
 // The browser's list the glue gathered for |asked|, the kBrowserAction step
 // that asked for it: read aloud to choose from, or the entry it names

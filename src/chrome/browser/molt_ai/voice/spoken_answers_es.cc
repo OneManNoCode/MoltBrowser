@@ -550,6 +550,10 @@ constexpr SpokenAnswer kAnswers[] = {
     {"I can't listen: {0}.", "No puedo escuchar: {0}."},
     {"Voice mode is on. I'm listening.",
      "El modo de voz está activado. Te escucho."},
+    {"Which site would you like me to open?", "¿Qué sitio quieres que abra?"},
+    {"{0} has no search I can use, so I searched the web for {1}.",
+     "{0} no tiene una búsqueda que pueda usar, así que he buscado {1} en la "
+     "web."},
     {"Voice mode is on. Say Hey Molt, then what you want.",
      "El modo de voz está activado. Di Oye Molt y luego lo que quieras."},
     {"Speech recognition is restarting",

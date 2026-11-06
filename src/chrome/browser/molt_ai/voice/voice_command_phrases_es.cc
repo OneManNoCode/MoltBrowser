@@ -812,6 +812,12 @@ constexpr CommandPattern kPatterns[] = {
     {K::kChoose, "{number}", C::kChoice},
     {K::kChoose, "{position}"},
     {K::kChoose, "{pick}", C::kChoice},
+
+    // --- La respuesta a "¿Qué sitio quieres que abra?" ---------------------
+    // Al final: cada orden sigue significando lo suyo.
+    {K::kCancel, "(no|no gracias|nada|ninguno|ninguna|da igual|ahora no)",
+     C::kSite},
+    {K::kOpenSite, "{site}", C::kSite},
 };
 
 constexpr CommandInfo kInfos[] = {

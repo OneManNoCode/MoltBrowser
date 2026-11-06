@@ -706,6 +706,12 @@ constexpr CommandPattern kPatterns[] = {
     {K::kChoose, "{number}", C::kChoice},
     {K::kChoose, "{position}"},
     {K::kChoose, "{pick}", C::kChoice},
+
+    // --- The answer to "Which site would you like me to open?" ------------
+    // Last, so that every command still means itself.
+    {K::kCancel, "(no|no thanks|no thank you|nothing|none|never mind|not now)",
+     C::kSite},
+    {K::kOpenSite, "{site}", C::kSite},
 };
 
 constexpr CommandInfo kInfos[] = {

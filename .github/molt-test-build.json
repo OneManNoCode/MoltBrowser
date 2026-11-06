@@ -1,4 +1,4 @@
-{"resume_run": "42076517368", "run_tests": true, "e2e_only": false,
- "e2e_runs": "pulse:clean,pulse:music10,pulse:clean:noloop,file:clean,typed",
+{"resume_run": "42145511237", "run_tests": true, "e2e_only": false,
+ "e2e_runs": "typed",
  "e2e_speech_check": false,
- "request": "Round 45, eighth build: no listening tone over a command said in the same breath (the echo canceller took the command's first words with it when the speakers reach the microphone). Resume from run 42076517368 (the seventh build). The spoken suite with and without the speakers in the microphone, with music, by file and typed."}
+ "request": "Round 45, eleventh build: the home page browser test reads the page without a user gesture (the tenth build's EvalJs calls gave the page the activation the microphone then took), and checks that opening the home page alone starts nothing. Resume from run 42145511237 (the tenth build). Unit and browser tests, then the typed spoken suite."}
