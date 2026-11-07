@@ -214,13 +214,13 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
     echo ""
     # Touchless browsing's helpers, built from pinned sources: the speech
     # helper (Contents/Resources/speech) and voice mode's own voice
-    # (Contents/Resources/voice). Opt-in while voice mode is behind
-    # chrome://flags/#molt-voice-mode: MOLT_BUNDLE_SPEECH=1 and
-    # MOLT_BUNDLE_VOICE=1. The first run builds ONNX Runtime (about an
+    # (Contents/Resources/voice). Bundled by default, as voice mode is on
+    # by default; MOLT_BUNDLE_SPEECH=0 or MOLT_BUNDLE_VOICE=0 leaves one out
+    # (a quick dev build). The first run builds ONNX Runtime (about an
     # hour); later runs reuse the cache.
     speech_parts=""
-    [ "${MOLT_BUNDLE_SPEECH:-0}" = "1" ] && speech_parts="speech"
-    [ "${MOLT_BUNDLE_VOICE:-0}" = "1" ] && speech_parts="${speech_parts:+$speech_parts,}voice"
+    [ "${MOLT_BUNDLE_SPEECH:-1}" = "1" ] && speech_parts="speech"
+    [ "${MOLT_BUNDLE_VOICE:-1}" = "1" ] && speech_parts="${speech_parts:+$speech_parts,}voice"
     if [ -n "$speech_parts" ]; then
       echo "=== Bundling the speech helpers ($speech_parts) ==="
       "$SCRIPT_DIR/bundle-speech.sh" --app "$APP" --parts "$speech_parts" || {

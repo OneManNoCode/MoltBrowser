@@ -1290,8 +1290,8 @@ build stays at v0.2.1. The release is published once it is signed offline
   isn't taken as a command. It never listens in MoltNet windows. How:
   `docs/VOICE_COMMANDS.md`.
 - **Touchless browsing: voice mode speaks with its own voice** (preview,
-  behind `chrome://flags/#molt-voice-mode`, bundled with
-  `MOLT_BUNDLE_VOICE=1`). Answers are spoken by an on-device voice that
+  behind `chrome://flags/#molt-voice-mode`, bundled with every download).
+  Answers are spoken by an on-device voice that
   sounds the same on every OS, in a sandboxed helper like the speech
   engine's, and every word is said: numbers, prices, dates, times, counts
   like "1.2M", abbreviations and web addresses ("example dot com") are read
@@ -1424,7 +1424,9 @@ build stays at v0.2.1. The release is published once it is signed offline
   page voice mode can use. The microphone still opens only when you start
   it: the home page's script can't start it without your click, and
   MoltNet windows don't show it. `chrome://flags/#molt-voice-mode` turns
-  voice mode off.
+  voice mode off. Every download now carries voice mode's speech engine
+  and its own voice (about 180 MB more), so it listens and speaks with
+  nothing else to install.
 
 ### Fixed
 - **Voice mode (preview) hears "Hey Molt" far more reliably** (round 45,
@@ -1561,7 +1563,7 @@ build stays at v0.2.1. The release is published once it is signed offline
   recognizer, bounds everything it holds and writes, and stops at the first
   malformed message from the browser. `scripts/bundle-speech.sh` builds it
   and ONNX Runtime from pinned sources into one executable, with its three
-  models (about 80 MB, bundled only with `MOLT_BUNDLE_SPEECH=1` for now); a
+  models (about 80 MB, bundled with every download); a
   new fuzzer covers what the browser sends it.
 - **Voice mode end to end** (`tools/voice_e2e/`, `docs/VOICE_E2E.md`): a
   kit that speaks to a built browser through a virtual microphone and

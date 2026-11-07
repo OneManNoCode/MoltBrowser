@@ -516,7 +516,8 @@ it varies with the compiler, so it is recorded, not pinned.
 | Linux | `/opt/moltbrowser/speech/` (next to the executable) | `scripts/package-linux.sh` |
 | Windows | `<install dir>\speech\` (next to `MoltBrowser.exe`) | (the Windows workflow, paused) |
 
-Bundling is opt-in until voice listening ships: `MOLT_BUNDLE_SPEECH=1`.
+Bundled by default, as voice mode is on by default (`MOLT_BUNDLE_SPEECH=0`
+leaves it out of a dev build).
 
 ```
 speech/molt-speech[.exe]

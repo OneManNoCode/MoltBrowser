@@ -241,12 +241,12 @@ if ! "$SCRIPT_DIR/bundle-fonts.sh" --verify "$APP_PATH/Contents/Resources"; then
   exit 1
 fi
 
-# The speech helper and the voice, when the build bundled them
-# (MOLT_BUNDLE_SPEECH=1, MOLT_BUNDLE_VOICE=1): present, and their models
-# matching their pins.
+# The speech helper and the voice, bundled by default (scripts/build.sh;
+# MOLT_BUNDLE_SPEECH=0 or MOLT_BUNDLE_VOICE=0 leaves one out): present, and
+# their models matching their pins.
 speech_parts=""
-[ "${MOLT_BUNDLE_SPEECH:-0}" = "1" ] && speech_parts="speech"
-[ "${MOLT_BUNDLE_VOICE:-0}" = "1" ] && speech_parts="${speech_parts:+$speech_parts,}voice"
+[ "${MOLT_BUNDLE_SPEECH:-1}" = "1" ] && speech_parts="speech"
+[ "${MOLT_BUNDLE_VOICE:-1}" = "1" ] && speech_parts="${speech_parts:+$speech_parts,}voice"
 if [ -n "$speech_parts" ] &&
    ! "$SCRIPT_DIR/bundle-speech.sh" --verify "$APP_PATH/Contents/Resources" --parts "$speech_parts"; then
   echo ""

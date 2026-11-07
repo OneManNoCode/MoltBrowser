@@ -66,6 +66,11 @@ permissions:
 env:
   # Bundle downloads must match their pinned hashes; no dev override.
   MOLT_RELEASE_BUILD: "1"
+  # Voice mode is on by default, so every release carries its speech helper
+  # and its voice (the scripts' default too; said here so no runner's
+  # environment can leave them out).
+  MOLT_BUNDLE_SPEECH: "1"
+  MOLT_BUNDLE_VOICE: "1"
 
 jobs:
   # -------------------------------------------------------------------

@@ -313,7 +313,8 @@ sherpa-onnx's C API, stdout and `main`), linked statically.
 | Linux | `/opt/moltbrowser/voice/` |
 | Windows | `<install dir>\voice\` (needs the installer's read grant, like `speech\`) |
 
-Opt-in, like the speech helper: `MOLT_BUNDLE_VOICE=1`.
+Bundled by default, like the speech helper (`MOLT_BUNDLE_VOICE=0` leaves it
+out of a dev build).
 
 ```
 voice/molt-voice[.exe]

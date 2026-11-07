@@ -690,8 +690,8 @@ static), sherpa-onnx 2.0.1 (static, no TTS) and the helper, linked into one
 executable, plus three models (about 80 MB). The first run builds ONNX
 Runtime (40 minutes at `--jobs 2` on a 4-core server; allow an hour) and
 sherpa-onnx (5 minutes), and needs about 2 GB of disk for its cache; later
-runs relink in a minute. Bundling is
-opt-in until voice listening ships (`MOLT_BUNDLE_SPEECH=1`, §11).
+runs relink in a minute. Bundled by default (round 45: voice mode is on
+by default); `MOLT_BUNDLE_SPEECH=0` leaves it out of a dev build.
 
 - [ ] macOS arm64 (from speech-helper; verify the command, not run on a
   Mac yet): needs CMake 3.28 or later, Xcode's clang, `python3`, `git`,
@@ -764,7 +764,7 @@ script from the same ONNX Runtime and sherpa-onnx (now built with its TTS
 code: the first run after this change rebuilds sherpa-onnx, 5 minutes, and
 relinks `molt-speech`, which gets smaller), with the Piper
 `en_US-ljspeech-medium` voice and sherpa-onnx's English lexicon (70 MB,
-pinned). Opt-in: `MOLT_BUNDLE_VOICE=1`, or `--parts voice`.
+pinned). Bundled by default; `MOLT_BUNDLE_VOICE=0` leaves it out.
 
 - [ ] macOS arm64 (from bundled-voice; not run on a Mac yet):
   ```bash
@@ -4970,10 +4970,12 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   memory limits (item 4), pre-warming after idle unload (5), keeping prompts
   out of crash dumps (9), whether the agent and automation reload a model
   after an idle unload (12), the macOS `sysctl` denial noise (14) (from #15).
-- [ ] **The speech helper in releases** (from speech-helper): bundle it
-  by default (`MOLT_BUNDLE_SPEECH=1` in the release scripts and workflows)
-  once voice listening ships, about 80 MB of models and a 27 MB
-  helper per platform (§3.4). And the wake-phrase model's training data:
+- [x] **The speech helper in releases** (from speech-helper): bundled by
+  default, with the voice (round 45, the owner's decision: the scripts'
+  default, and `MOLT_BUNDLE_SPEECH`/`MOLT_BUNDLE_VOICE` set in
+  `release.yml` and `release-linux.yml`), about 80 MB of models and a
+  27 MB helper per platform (§3.4), plus the voice's 70 MB.
+- [ ] And the wake-phrase model's training data:
   the GigaSpeech spotter's model card says Apache-2.0, but GigaSpeech's own
   terms of use couldn't be read (they sit behind a request form). Confirm
   with its authors, or spot the wake phrase in Kroko's own transcript
