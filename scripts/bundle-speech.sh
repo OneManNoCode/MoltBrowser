@@ -53,8 +53,10 @@
 #   scripts/bundle-speech.sh --verify DIR      # check DIR/speech's models
 # Options:
 #   --parts LIST   speech (the default), voice, or speech,voice: which
-#                  helpers to build, install or verify. Callers bundle the
-#                  voice with MOLT_BUNDLE_VOICE=1.
+#                  helpers to build, install or verify. build.sh,
+#                  package-linux.sh and release.sh bundle both by default
+#                  (MOLT_BUNDLE_SPEECH=0 / MOLT_BUNDLE_VOICE=0 leave one
+#                  out).
 #   --cache DIR    work directory (default <repo>/.molt-speech-cache, ~6 GB
 #                  during the ONNX Runtime build)
 #   --jobs N       parallel compile jobs (default 2; ONNX Runtime needs

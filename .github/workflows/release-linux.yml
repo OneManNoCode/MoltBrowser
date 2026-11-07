@@ -70,6 +70,9 @@ jobs:
     env:
       # Bundle downloads must match their pinned hashes; no dev override.
       MOLT_RELEASE_BUILD: "1"
+      # Voice mode's speech helper and voice, in every release.
+      MOLT_BUNDLE_SPEECH: "1"
+      MOLT_BUNDLE_VOICE: "1"
 
     steps:
       - name: Check out repo (no submodules — Chromium synced separately)
