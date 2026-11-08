@@ -128,6 +128,23 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(runner.onset_levels(struct.pack("<16000h", *([0] * 16000)), 8000),
                          (None, []))
 
+    def test_waits_for_voice_mode_to_answer(self):
+        class Log(object):
+            def __init__(self, evs):
+                self.evs = evs
+
+            def events(self, since=0.0):
+                return [e for e in self.evs if e["ts"] >= since]
+
+        r = runner.Runner.__new__(runner.Runner)
+        t = time.time()
+        # An old "listening" isn't an answer; a "said" after the kit spoke is.
+        self.assertTrue(r.wait_reply(Log([{"e": "activity", "activity": "listening",
+                                            "ts": t - 30},
+                                           {"e": "said", "ts": t + 0.1}]), t, timeout=1))
+        self.assertFalse(r.wait_reply(Log([{"e": "activity", "activity": "listening",
+                                             "ts": t - 30}]), t, timeout=0.3))
+
     def test_a_run_without_the_loopback_is_labelled(self):
         self.assertEqual(runner.RunConfig(audio="pulse").label, "pulse/clean")
         self.assertEqual(runner.RunConfig(audio="pulse", loopback=False).label,

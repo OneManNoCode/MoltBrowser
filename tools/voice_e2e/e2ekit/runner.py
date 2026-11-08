@@ -36,6 +36,9 @@ LISTEN_TIMEOUT_S = 45
 IDLE_TIMEOUT_S = 60
 # The longest wait for voice mode's follow-up window to close.
 WINDOW_TIMEOUT_S = 30
+# The longest wait for voice mode to answer what the kit said (the end of
+# speech, a short command's wait, the answer).
+REPLY_TIMEOUT_S = 10
 POLL_S = 0.2
 # File mode's fixed times (the recording can't wait on the browser): past
 # voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
@@ -348,6 +351,17 @@ class Runner(object):
             time.sleep(POLL_S)
         return False
 
+    def wait_reply(self, log, since, timeout=REPLY_TIMEOUT_S):
+        """Until voice mode says something, or starts to, after |since|."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            for e in log.events(since):
+                if e["e"] == "said" or (e["e"] == "activity" and
+                                        e.get("activity") in ("thinking", "speaking")):
+                    return True
+            time.sleep(POLL_S)
+        return False
+
     # ---- one scenario -------------------------------------------------------
 
     def voice_for(self, index):
@@ -591,6 +605,10 @@ class Runner(object):
                 since = time.time()
                 (self.player or self.pulse).play(
                     render.clip_path(self.speech, voice, speed, render.REPEAT))
+                # Voice mode was idle before "repeat" too: wait for it to
+                # answer (the prompt said again) before waiting for quiet,
+                # or the kit says "repeat" again into the same utterance.
+                self.wait_reply(tlog, since)
                 self.wait_idle(tlog)
             pcm = audio_path.read_pcm_since(plan["recording"], plan["rec_t0"], since)
             heard = self.ears.transcribe(pcm)
