@@ -64,7 +64,7 @@
     {"say": "skip ahead one minute", "needs": ["skip_forward"],
      "expect": [{"media": {"time_min": 55}}]},
     {"say": "go back 30 seconds", "needs": ["skip_back"],
-     "expect": [{"media": {"time_max": 50}}]},
+     "expect": [{"media": {"seeked": [-45, -15]}}]},
     {"say": "play from the beginning", "needs": ["restart"],
      "expect": [{"media": {"time_max": 12}}]}
    ]

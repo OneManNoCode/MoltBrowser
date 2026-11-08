@@ -309,6 +309,21 @@ IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
                         "!document.getElementById('player').muted"));
 }
 
+// The tree says its page has loaded only once the loaded page is in it: the
+// tab stops loading apart from the trees (NavigateToURL() returns then, the
+// tree maybe still on its way), and voice mode's wait for a page reads the
+// results once both say so (DecidePageWait()).
+IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
+                       TreeSaysLoadedWithTheWholePage) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), Url("video.test", "/molt_voice/video_results.html")));
+  WaitForMap([this](const PageMap&) { return controller()->PageTreeLoaded(); });
+  ASSERT_TRUE(controller()->PageTreeLoaded());
+  const PageMap map = controller()->BuildMap();
+  ASSERT_FALSE(map.lists.empty()) << Describe(map);
+  EXPECT_EQ(map.lists[0].entries.size(), std::size(kVideos)) << Describe(map);
+}
+
 IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest, MapsSearchResults) {
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), Url("search.test", "/molt_voice/search_results.html")));

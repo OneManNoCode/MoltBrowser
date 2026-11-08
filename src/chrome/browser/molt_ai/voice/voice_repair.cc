@@ -22,7 +22,7 @@ using K = VoiceCommandKind;
 
 // How far, in the phonetic key's half-edits, a word may be from the
 // grammar's word it is taken for: the same sounds, or one dropped or
-// close sound ("groll"/"scroll", "pores"/"pause", "head"/"ad").
+// close sound ("groll"/"scroll", "flay"/"play", "head"/"ad").
 constexpr int kWordMargin = 2;
 // How far a scrap may be from the wake phrase's name, or from the whole
 // phrase ("halt", "him all", "Timolt" for "Hey Molt").
@@ -182,21 +182,29 @@ struct Candidate {
   std::string text;
   VoiceCommand command;
   int cost = 0;
+  // Only a scrap of the wake phrase dropped: the command's words as heard.
+  bool as_said = false;
 };
 
 class Repairer {
  public:
   explicit Repairer(const ParseContext& context) : context_(context) {}
 
-  // |text| as the grammar understands it, when that is a command a repair
-  // may run; after a swap, only a command that carries no words as heard.
-  void Try(std::string text, int cost, bool swapped) {
+  // |text| as the grammar understands it, kept when that is a command a
+  // repair may run: after a swap, one RepairableKind() allows that carries
+  // no words as heard; as said (a scrap of the wake phrase dropped), one
+  // RepairableAsSaidKind() allows. Returns the kind understood.
+  VoiceCommandKind Try(std::string text, int cost, bool swapped) {
     VoiceCommand command = ParseVoiceCommand(text, context_);
-    if (!RepairableKind(command.kind) ||
-        (swapped && HasFreeWords(command))) {
-      return;
+    const VoiceCommandKind kind = command.kind;
+    const bool allowed = swapped
+                             ? RepairableKind(kind) && !HasFreeWords(command)
+                             : RepairableAsSaidKind(kind);
+    if (allowed) {
+      candidates_.push_back(
+          {std::move(text), std::move(command), cost, /*as_said=*/!swapped});
     }
-    candidates_.push_back({std::move(text), std::move(command), cost});
+    return kind;
   }
 
   // One word of |text|, or two run together, swapped for a grammar word
@@ -373,6 +381,44 @@ bool RepairableKind(VoiceCommandKind kind) {
   }
 }
 
+bool RepairableAsSaidKind(VoiceCommandKind kind) {
+  if (RepairableKind(kind)) {
+    return true;
+  }
+  switch (kind) {
+    // What the user said, once "Hey Molt" heard as "Kalt," is dropped: a
+    // press ("click empty the cart", which asks first when it buys, deletes
+    // or sends, as said in full), a form's submission (likewise), editing,
+    // a correction, a routine run or listed, a bookmark made or opened,
+    // history, settings' page, windows opened or switched, the AI.
+    case K::kChoose:
+    case K::kSubmit:
+    case K::kCancel:
+    case K::kDeleteLastWord:
+    case K::kClearField:
+    case K::kCorrection:
+    case K::kStartOver:
+    case K::kRunRoutine:
+    case K::kListRoutines:
+    case K::kBookmarkPage:
+    case K::kOpenBookmark:
+    case K::kOpenFromHistory:
+    case K::kOpenSettings:
+    case K::kNewWindow:
+    case K::kSwitchWindow:
+    case K::kAskAI:
+    case K::kOpenAIChat:
+      return true;
+    default:
+      // An answer to a question nobody asked, what voice mode learned
+      // (remembered or forgotten), voice mode itself and always listening,
+      // a protected setting, a downloaded file opened, a window closed, a
+      // bookmark removed: the scrap is a guess too, and these wait for the
+      // wake phrase heard as it is.
+      return false;
+  }
+}
+
 std::optional<RepairedCommand> RepairMisheardCommand(
     std::string_view utterance,
     const ParseContext& context) {
@@ -394,6 +440,9 @@ std::optional<RepairedCommand> RepairMisheardCommand(
 
   // 1. Without a scrap of the wake phrase.
   std::string rest;
+  // What follows the scrap is a command as it was said, one this doesn't
+  // run: no swap makes it another.
+  bool understood_as_said = false;
   const auto [name_key, whole_key] =
       WakeKeys(context, PhrasesFor(context.language));
   std::string head_key;
@@ -412,7 +461,8 @@ std::optional<RepairedCommand> RepairMisheardCommand(
         Distance(head_key, whole_key, kWakeScrapMargin) <= kWakeScrapMargin;
     if (scrap && w.source_end + 1 <= heard.size()) {
       rest = heard.substr(w.source_end + 1);
-      repairer.Try(rest, 1, /*swapped=*/false);
+      understood_as_said =
+          repairer.Try(rest, 1, /*swapped=*/false) != K::kUnknown;
       break;
     }
   }
@@ -421,7 +471,7 @@ std::optional<RepairedCommand> RepairMisheardCommand(
   // without one, in all of it. A command after the scrap as it was heard
   // is taken as it is.
   std::optional<Candidate> best = repairer.Best();
-  if (!best) {
+  if (!best && !understood_as_said) {
     if (!rest.empty()) {
       repairer.TrySwaps(rest, 1);
     } else {
@@ -436,6 +486,7 @@ std::optional<RepairedCommand> RepairMisheardCommand(
   repaired.command = std::move(best->command);
   repaired.command.heard = original.heard;
   repaired.text = CleanSpokenText(best->text, kMaxUtteranceBytes);
+  repaired.as_said = best->as_said;
   return repaired;
 }
 

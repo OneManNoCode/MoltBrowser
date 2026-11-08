@@ -154,7 +154,7 @@ def voice_log_digest(path, limit_events=60):
 
 
 def microphone_digest(res, limit=90):
-    """What voice mode's microphone gave in a pulse run (the runner's
+    """What voice mode's microphone gave in a failed run (the runner's
     note_microphone()): each second's peak, and what the kit's recognizer
     made of it."""
     out = []

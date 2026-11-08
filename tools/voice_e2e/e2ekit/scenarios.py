@@ -41,8 +41,14 @@ Expectations (expect.py checks them):
   {"js": "expression", "is": true}           on the active tab
   {"media": {"paused": false, "volume": [0.4, 0.6], "muted": false,
              "rate": 1.5, "time_min": 55, "time_max": 70,
+             "seeked": [-45, -15],      how far the player moved from
+                                        where it would be had nothing
+                                        happened since the step began
              "captions": true, "fullscreen": true, "src_has": "..."}}
   {"said": "..."}  {"said_has": "..."}  {"said_re": "..."}
+                                             said_re: ^ and $ match at
+                                             each line said, not only
+                                             the step's first
   {"said_none": "..."}                       no line has it
   {"heard_intent": "open_site"}
   {"prompt": "open", "kind": "permission"}  {"prompt": "close"}
@@ -101,7 +107,7 @@ EXPECT_EXTRA = {"js": {"is"}, "prompt": {"kind"}, "no_action": {"quiet"},
 # Checked once, at the end of their quiet period, not polled.
 QUIET_KINDS = ("no_action", "said_none")
 MEDIA_KEYS = {"paused", "muted", "volume", "rate", "time_min", "time_max",
-              "captions", "fullscreen", "src_has"}
+              "seeked", "captions", "fullscreen", "src_has"}
 
 DEFAULT_TIMEOUT = 20.0
 MAX_TIMEOUT = 180.0
@@ -249,6 +255,14 @@ def parse_expectation(where, e):
         for k in ("time_min", "time_max", "rate"):
             if k in value:
                 _number(where, value[k], "media." + k, 0, 36000)
+        if "seeked" in value:
+            v = value["seeked"]
+            if not isinstance(v, list) or len(v) != 2:
+                _fail(where, "media.seeked takes [low, high] (seconds)")
+            lo = _number(where, v[0], "media.seeked", -36000, 36000)
+            hi = _number(where, v[1], "media.seeked", -36000, 36000)
+            if lo > hi:
+                _fail(where, "media.seeked: low is above high")
         if "volume" in value:
             v = value["volume"]
             if isinstance(v, list):

@@ -2391,8 +2391,16 @@ class Planner : public TurnPlanner {
       return;
     }
     // The words in a row, each as said or as its plural or singular
-    // ("tram" finds "Trams return to Lyon").
+    // ("tram" finds "Trams return to Lyon"); or the same letters split
+    // into other words, as a recognizer splits or joins a compound ("time
+    // table" finds "Timetable", "timetable" finds "Time table"), from one
+    // word's start to another's end and five letters or more.
     const std::vector<std::string> wanted = SplitWords(needle);
+    std::string joined;
+    for (const std::string& word : wanted) {
+      joined += word;
+    }
+    constexpr size_t kMinJoinedLetters = 5;
     auto has = [&](const std::string& text) {
       const std::vector<std::string> words =
           SplitWords(FoldForComparison(text));
@@ -2403,6 +2411,20 @@ class Planner : public TurnPlanner {
         }
         if (all) {
           return true;
+        }
+      }
+      if (joined.size() < kMinJoinedLetters) {
+        return false;
+      }
+      for (size_t i = 0; i < words.size(); ++i) {
+        std::string run;
+        for (size_t k = i; k < words.size() && run.size() <= joined.size();
+             ++k) {
+          run += words[k];
+          // Split as said is the loop above.
+          if ((k > i || wanted.size() > 1) && SameWordOrPlural(run, joined)) {
+            return true;
+          }
         }
       }
       return false;
@@ -3371,6 +3393,40 @@ LoopActivity DecideLoopActivity(bool active,
     return LoopActivity::kThinking;
   }
   return active ? LoopActivity::kListening : LoopActivity::kOff;
+}
+
+PageWaitDecision DecidePageWait(const PageWaitFacts& facts) {
+  if (facts.navigation_expected) {
+    return PageWaitDecision::kKeepWaiting;
+  }
+  if (!facts.tree_expected) {
+    return facts.loading ? PageWaitDecision::kKeepWaiting
+                         : PageWaitDecision::kFinish;
+  }
+  if (facts.loading) {
+    return PageWaitDecision::kKeepWaiting;
+  }
+  // Loaded, but no tree came (a page back from the back-forward cache may
+  // not send it by itself): the renderers send their trees again, whole.
+  if (!facts.has_tree) {
+    return facts.tree_asked ? PageWaitDecision::kKeepWaiting
+                            : PageWaitDecision::kAskForTrees;
+  }
+  if (!facts.tree_loaded) {
+    // The tree is the page part way through: its update with the rest is
+    // still to come.
+    if (!facts.settle_passed) {
+      return PageWaitDecision::kKeepWaiting;
+    }
+    // A few seconds on, it still doesn't say the page loaded: asked for
+    // again, whole, as the page is now, once. Asked and still not, what it
+    // holds is read, as a tree that never rests is: the hold is no longer
+    // than kMaxSettle's.
+    if (!facts.tree_asked) {
+      return PageWaitDecision::kAskForTrees;
+    }
+  }
+  return PageWaitDecision::kFinish;
 }
 
 // What a Spanish page's buttons say for the same actions (folded).

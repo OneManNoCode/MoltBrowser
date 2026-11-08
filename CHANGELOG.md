@@ -15,6 +15,32 @@ For longer narrative posts behind each entry see
 
 ## [Unreleased]
 
+### Fixed
+
+- **Voice mode takes a press said after a scrap of "Hey Molt"**
+  ("Kalt, click empty the cart.", "halt, click country."). With only the
+  scrap dropped, the rest is the command as said, so presses, form
+  submissions, editing, corrections, routines and the AI chat are taken
+  too; a press still asks first when it buys, deletes or sends. Turning
+  voice mode off, forgetting what it learned, protected settings,
+  opening a downloaded file, closing a window and removing a bookmark
+  still wait for the wake phrase heard as it is, and a guessed word
+  still never makes a press. Four of the live microphone run's misses on
+  the twelfth build were this; offline, 18 of the ninth build's 65 and 12
+  of the twelfth build's 37 not-understood utterances are now understood
+  as meant, and none of 100 everyday sentences became a command.
+- **Voice mode no longer reads a page's results before they have all
+  arrived.** On a slow machine the tab could stop loading while the
+  browser's copy of the page was still part way through ("3 results" for
+  a page of 10). It now also waits for the page to say it has loaded,
+  for at most the few seconds it already allowed.
+- **"Find time table on this page" finds "Timetable".** Find on the page
+  matches a word the recognizer split or joined ("time table",
+  "notebook" for "Note book"), from a word's start to another's end. And
+  "bookmarked this page", as the recognizer hears "bookmark this page" in
+  some voices, bookmarks it; "pores" and "paws", "pause" as it sounds
+  without an r, pause.
+
 ## 2026-11-06 — v0.3.0: Private by default
 
 The result of a full security and privacy audit (October 2026), on

@@ -498,6 +498,15 @@ bool VoicePageController::HasPageTree() {
   return it != trees_.end() && it->second.tree->root();
 }
 
+bool VoicePageController::PageTreeLoaded() {
+  if (!HasPageTree()) {
+    return false;
+  }
+  return trees_.find(web_contents()->GetPrimaryMainFrame()->GetAXTreeID())
+      ->second.tree->data()
+      .loaded;
+}
+
 PageTree VoicePageController::JoinedTree(size_t max_nodes,
                                          size_t max_depth,
                                          size_t max_string_bytes) {

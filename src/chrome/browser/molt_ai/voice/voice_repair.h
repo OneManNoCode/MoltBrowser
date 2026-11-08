@@ -16,12 +16,16 @@
 //      "tip"/"tab", "joe"/"show", "on mute"/"unmute"), the rest as heard.
 //
 // A repair counts only when the grammar then understands a command of a
-// kind that is safe to run from a guess (RepairableKind(): moving around,
-// reading, media, scrolling, zoom, tabs, typing; never an answer to a
-// question, a choice, a form's submission, a setting, a routine, voice
-// mode itself or closing a window), and only when every way of repairing
-// the utterance gives the same command: two different commands, and it
-// stays not understood. Never while voice mode waits for a yes or no, and
+// kind that may run on it, and only when every way of repairing the
+// utterance gives the same command: two different commands, and it stays
+// not understood. After a swap, a kind safe to run from a guessed word
+// (RepairableKind(): moving around, reading, media, scrolling, zoom, tabs,
+// typing; never an answer to a question, a choice, a form's submission, a
+// setting, a routine, voice mode itself or closing a window). With only a
+// scrap dropped, the command's words are as said ("Kalt, click empty the
+// cart."), and more kinds may run (RepairableAsSaidKind(): presses and
+// submissions too, which ask first as they would in full); a command as
+// said that isn't one of them is never swapped into another. Never while voice mode waits for a yes or no, and
 // only in English (the phonetic key is English's).
 //
 // The planner applies it last, to what nothing else took: after the
@@ -60,10 +64,19 @@ struct RepairedCommand {
   VoiceCommand command;
   // The utterance as repaired: "close this tab".
   std::string text;
+  // Only a scrap of the wake phrase was dropped: |text| is the rest as
+  // heard, and |command| one RepairableAsSaidKind() allows.
+  bool as_said = false;
 };
 
-// Whether a command of |kind| may run on a repaired utterance.
+// Whether a command of |kind| may run on an utterance with a word swapped.
 bool RepairableKind(VoiceCommandKind kind);
+
+// Whether a command of |kind| may run on what was said after a scrap of the
+// wake phrase: RepairableKind()'s, and presses, submissions, editing, a
+// correction, routines run or listed, bookmarks made or opened, history,
+// settings' page, windows opened or switched and the AI.
+bool RepairableAsSaidKind(VoiceCommandKind kind);
 
 // The command a misheard |utterance| meant, as described above, or none.
 // |context| is the one the grammar was given.

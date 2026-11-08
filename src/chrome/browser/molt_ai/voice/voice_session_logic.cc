@@ -461,10 +461,13 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
     } else if (utterance.open && utterance.echo_cancelled) {
       // Said over the browser's own voice: a command unless it is that
       // voice heard back.
-      take = confidence >= kMinConfidenceWithoutWake &&
-             !EchoOfBrowser(text, utterance.begun_ms);
-      if (!take) {
-        reason = "voice mode's voice heard back, or not heard surely";
+      const bool sure = confidence >= kMinConfidenceWithoutWake;
+      const bool echo = sure && EchoOfBrowser(text, utterance.begun_ms);
+      take = sure && !echo;
+      if (!sure) {
+        reason = "over voice mode's voice, and not heard surely";
+      } else if (echo) {
+        reason = "voice mode's voice heard back";
       }
       // What needs the browser quiet stops it and is asked for again.
       if (take && !TakenOverOwnVoice(text, settings_.language)) {

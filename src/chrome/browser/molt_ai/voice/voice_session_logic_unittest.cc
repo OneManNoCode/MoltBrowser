@@ -285,10 +285,13 @@ TEST_F(VoiceSessionLogicTest, TheOwnVoiceHeardBackIsNotACommand) {
       logic_->OnFinal("open settings and delete history", 0.9, now_ + 1600);
   EXPECT_FALSE(echo.utterance.has_value());
   EXPECT_FALSE(echo.stop_speech);
+  EXPECT_EQ(echo.dropped_reason, "voice mode's voice heard back");
   // Unsure: not a command either.
   logic_->OnSpeechStart(now_ + 1700);
-  EXPECT_FALSE(
-      logic_->OnFinal("go back", 0.3, now_ + 2200).utterance.has_value());
+  SessionActions unsure = logic_->OnFinal("go back", 0.3, now_ + 2200);
+  EXPECT_FALSE(unsure.utterance.has_value());
+  EXPECT_EQ(unsure.dropped_reason,
+            "over voice mode's voice, and not heard surely");
   // In the moment after it stops, with the same rules.
   logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 2500);
   logic_->OnSpeechStart(now_ + 2600);

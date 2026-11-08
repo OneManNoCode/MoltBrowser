@@ -78,13 +78,17 @@ When the recognizer gets one word of a command wrong ("close this tip",
 "Joe my downloads", "read the tile") or leaves a scrap of "Hey Molt" in
 front of it ("halt. Play the live one"), voice mode takes it as the
 command it sounds like, but only when nothing else fits (not a routine's
-or a site's name), when exactly one command fits, and only for commands
-that are safe on a guess: moving around, reading, media, scrolling,
-zooming, tabs. Never an answer to a question, a choice from a list,
-sending a form, a setting, a routine or turning voice mode off; never
-while it waits for a "yes" or "no"; and a swapped word never becomes the
-start of free text ("take hello there" isn't typed). English only for
-now.
+or a site's name) and when exactly one command fits. A swapped word works
+only for commands that are safe on a guess: moving around, reading,
+media, scrolling, zooming, tabs; never an answer to a question, a choice
+from a list, sending a form, a setting, a routine or turning voice mode
+off, and never the start of free text ("take hello there" isn't typed).
+When only the scrap is dropped, the rest is what you said, so a press
+works too ("Kalt, click empty the cart."), and asks first, as it would in
+full, when it buys, deletes or sends; still never turning voice mode off,
+forgetting what it learned, a protected setting, opening a downloaded
+file, closing a window or removing a bookmark. Never while it waits for a
+"yes" or "no". English only for now.
 
 You can also type the commands, without the microphone, in Agent mode's
 "Type what you would say": the browser does it in the tab you are on and
@@ -241,7 +245,9 @@ and the bar only.
 - **Find on the page:** "find opening hours on this page" says where it is
   first and, when it is in more places, "Say next match to go on."; "next
   match" and "previous match" go through them ("Match 2 of 3: the link
-  Opening hours.").
+  Opening hours."). A word finds its plural, and a word the recognizer
+  split or joined finds it as the page writes it ("time table" finds
+  "Timetable").
 - **A site's name on its own:** "YouTube" (or "Wikipedia", "Google",
   "DuckDuckGo", "Bing", "Brave Search") opens it, saying "Opening YouTube."
   then "YouTube is open."; so does the name of a site you opened by voice
@@ -587,6 +593,7 @@ said.
 
 - `stop (the video | the music | the song | playback | playing | the movie | the audio)`
 - `(pause | hold on) [it | this | that | the video | the music | the song | playback | the movie | the audio | reading | the reading]`
+- `(pores | paws) [it | this | that | the video | the music | the song]`
 
 **Carry on playing.** For example: "resume".
 
@@ -927,7 +934,7 @@ said.
 
 **Bookmark this page.** For example: "bookmark this page".
 
-- `bookmark (this | it | this page | the page | this site | this tab | that)`
+- `(bookmark | bookmarked) (this | it | this page | the page | this site | this tab | that)`
 - `(add | save | put) (this | it | this page | the page | this site | this tab) (to | in | as) [a | my | the] (bookmarks | bookmark)`
 - `(add | make | create) a bookmark [for this page | for this site | here]`
 

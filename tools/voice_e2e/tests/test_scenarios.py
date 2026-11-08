@@ -120,6 +120,10 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(steps=[{"say": "x", "expect": [{"said_re": "("}]}]), "said_re")
         self.bad(one(steps=[{"say": "x", "expect": [{"media": {"loud": True}}]}]),
                  "media takes")
+        self.bad(one(steps=[{"say": "x", "expect": [{"media": {"seeked": [-15, -45]}}]}]),
+                 "seeked")
+        self.bad(one(steps=[{"say": "x", "expect": [{"media": {"seeked": -30}}]}]),
+                 "seeked")
         self.bad(one(steps=[{"say": "x", "expect": [{"media": {"volume": [0.9, 0.1]}}]}]),
                  "low above high")
         self.bad(one(steps=[{"say": "x", "expect": [{"prompt": "maybe"}]}]), "prompt takes")

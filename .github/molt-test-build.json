@@ -1,6 +1,6 @@
-{"resume_run": "42464161404",
+{"resume_run": "42479666491",
  "run_tests": true,
  "e2e_only": false,
- "e2e_runs": "typed,file:clean,pulse:clean:noloop",
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, twelfth build again: voice mode repairs a misheard command word (voice_repair.h). The first try didn't compile (a reference member, chromium-rawref) and its spoken suite couldn't download its voices (HTTP 504). Resume from run 42464161404, which recorded the failed step: recheck, then unit and browser tests, then the spoken suite typed, by file and through the live microphone without the speakers, against the ninth build (68% file, 67% noloop)."}
+ "request": "Round 45, fourteenth build: find on the page matches a compound split or joined (\"time table\" for \"Timetable\"), \"bookmarked this page\" and \"pores\"/\"paws\" for pause as the recognizer hears them, and a drop over voice mode's voice says why. The kit: said_re per line, file runs keep the microphone as voice mode got it for a failed scenario, media \"seeked\" for a seek measured from where the player was. Resume from run 42479666491 (the thirteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the thirteenth build (72% file, 75% noloop)."}

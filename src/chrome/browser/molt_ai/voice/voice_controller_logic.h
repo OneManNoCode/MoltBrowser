@@ -633,6 +633,46 @@ LoopActivity DecideLoopActivity(bool active,
                                 bool waiting,
                                 bool busy);
 
+// Waiting for a page (a kWaitForPage step, VoiceController::OnQuiet()):
+// what the browser knows each time the page's tree has been quiet for a
+// moment, or has had a few seconds to rest.
+struct PageWaitFacts {
+  // The navigation the steps started hasn't committed, and is under way or
+  // may still start (within the grace after the wait began).
+  bool navigation_expected = false;
+  // The tab is loading (WebContents::IsLoading()).
+  bool loading = false;
+  // The tab has voice mode's page controller: there is a tree to wait for.
+  bool tree_expected = false;
+  // The top-level document's tree is here.
+  bool has_tree = false;
+  // That tree says its document has finished loading (AXTreeData::loaded).
+  bool tree_loaded = false;
+  // The page committed long enough ago that a tree that never rests is
+  // read (VoiceController::kMaxSettle).
+  bool settle_passed = false;
+  // The renderers were asked for their trees again in this wait (once).
+  bool tree_asked = false;
+};
+
+enum class PageWaitDecision : uint8_t {
+  kKeepWaiting,  // another quiet moment (the wait's deadline still holds)
+  kAskForTrees,  // ask the renderers for their trees again, then wait
+  kFinish,       // the page has settled: plan the follow-up
+};
+
+// The tab stopping loading doesn't mean the browser's tree holds the loaded
+// page: the renderer sends its tree updates apart from its loading state,
+// so the tab can stop loading while the tree is still the page part way
+// through (three results of ten), and an update with the rest can come
+// after the quiet moment. The tree's own "loaded" comes with the update
+// that carries the loaded page, so the wait ends once the tab has stopped
+// loading and the tree says it has loaded. A tree that still doesn't say so
+// once the page has had kMaxSettle is asked for again, whole, once, and then
+// read as it is, as a tree that never rests is: the wait holds for "loaded"
+// no longer than kMaxSettle (and the re-sent tree's arrival).
+PageWaitDecision DecidePageWait(const PageWaitFacts& facts);
+
 }  // namespace voice
 }  // namespace molt_ai
 

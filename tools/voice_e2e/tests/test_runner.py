@@ -125,6 +125,19 @@ class RunnerTest(unittest.TestCase):
                           log=lambda *a: None)
         self.assertIn("--disable-features=ChromeWideEchoCancellation", r.flags("log"))
 
+    def test_the_microphone_dump_in_file_and_pulse_runs(self):
+        def flags(audio, wav=None):
+            r = runner.Runner(self.exe, os.path.join(self.d, "speech"),
+                              os.path.join(self.d, "report"), FakeServer(), "spki",
+                              runner.RunConfig(audio=audio), log=lambda *a: None)
+            return r.flags(os.path.join(self.d, "run", "voice.jsonl"), wav)
+        dump = "--molt-voice-test-audio=" + os.path.join(self.d, "run", runner.MIC_DUMP)
+        self.assertIn(dump, flags("pulse"))
+        f = flags("file", wav="/x/scenario.wav")
+        self.assertIn(dump, f)
+        self.assertIn("--use-file-for-fake-audio-capture=/x/scenario.wav%noloop", f)
+        self.assertNotIn(dump, flags("typed"))
+
     def test_shields_off_disables_molt_shield(self):
         cfg = runner.RunConfig(audio="typed", settle=0.2)
         r = runner.Runner(self.exe, os.path.join(self.d, "speech"),

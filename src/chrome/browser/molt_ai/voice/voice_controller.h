@@ -14,10 +14,11 @@
 //        tab's mute; speech through VoiceSpeech.
 //
 // Navigation and submits are asynchronous: a kWaitForPage step waits until
-// the navigation commits, the page stops loading and its accessibility
-// tree has been quiet for a moment (or a deadline passes), then plans the
-// follow-up ("20 results. 1: ..."). A page opened to play waits briefly
-// for the site's own autoplay before it clicks the video.
+// the navigation commits, the page stops loading (the tab, and the tree the
+// browser holds, which comes apart from it: DecidePageWait()) and its
+// accessibility tree has been quiet for a moment (or a deadline passes),
+// then plans the follow-up ("20 results. 1: ..."). A page opened to play
+// waits briefly for the site's own autoplay before it clicks the video.
 //
 //   - Stop: a new utterance, "stop" and StopActivity() cancel the steps
 //     still to run, a wait, a pending submit, and voice mode's speech.

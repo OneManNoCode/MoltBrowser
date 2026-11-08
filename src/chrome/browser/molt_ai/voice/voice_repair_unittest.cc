@@ -65,6 +65,53 @@ TEST(VoiceRepairTest, AScrapOfTheWakePhraseBeforeACommand) {
   EXPECT_FALSE(RepairMisheardCommand("Broccoli. Play", context));
 }
 
+// The twelfth build's live run: "Hey Molt" heard as a scrap, then a press
+// as it was said. With only the scrap dropped, the press runs (and asks
+// first, as in full, when it buys or deletes).
+TEST(VoiceRepairTest, APressAsSaidAfterAScrapOfTheWakePhrase) {
+  const ParseContext context;
+  for (const char* heard : {"Kalt, click empty the cart.",
+                            "Kalt, click write a note", "halt, click country.",
+                            "halt. Click place border", "Kalt, submit the form"}) {
+    SCOPED_TRACE(heard);
+    ASSERT_EQ(ParseVoiceCommand(heard, context).kind, K::kUnknown);
+    const std::optional<RepairedCommand> r =
+        RepairMisheardCommand(heard, context);
+    ASSERT_TRUE(r);
+    EXPECT_TRUE(r->as_said);
+    EXPECT_TRUE(r->command.kind == K::kChoose || r->command.kind == K::kSubmit)
+        << static_cast<int>(r->command.kind);
+    EXPECT_FALSE(RepairableKind(r->command.kind));
+  }
+  // A guessed word never makes a press: "klick" swapped for "click".
+  EXPECT_FALSE(RepairMisheardCommand("Hey mold, klick country", context));
+  // Nor does a scrap that sounds nothing like the wake phrase.
+  EXPECT_FALSE(RepairMisheardCommand("Broccoli, click country", context));
+}
+
+// After a scrap, a command as said that may not run on a guess stays not
+// understood, and no swap makes it another one.
+TEST(VoiceRepairTest, NotEveryCommandAsSaidAfterAScrap) {
+  const ParseContext context;
+  struct Case {
+    const char* said;
+    K kind;
+  } kCases[] = {
+      {"voice mode off", K::kVoiceModeOff},
+      {"stop listening", K::kVoiceModeOff},
+      {"close this window", K::kCloseWindow},
+      {"unbookmark this page", K::kRemoveBookmark},
+      {"forget everything you learned", K::kForgetLearning},
+  };
+  for (const Case& c : kCases) {
+    SCOPED_TRACE(c.said);
+    ASSERT_EQ(ParseVoiceCommand(c.said, context).kind, c.kind);
+    EXPECT_FALSE(RepairableAsSaidKind(c.kind));
+    EXPECT_FALSE(
+        RepairMisheardCommand(std::string("Kalt, ") + c.said, context));
+  }
+}
+
 TEST(VoiceRepairTest, TwoDifferentCommandsAndNeitherIsTaken) {
   // "fog" sounds like "back" and like "pause": not a guess to act on.
   const ParseContext context;
@@ -138,6 +185,21 @@ TEST(VoiceRepairTest, OnlyCommandsSafeToRunOnAGuess) {
                  K::kOpenDownload, K::kClearField, K::kAskAI,
                  K::kRemoveBookmark}) {
     EXPECT_FALSE(RepairableKind(kind)) << static_cast<int>(kind);
+  }
+  // As said after a scrap: every kind a guess may run, and presses,
+  // submissions, corrections, routines run, the AI; never an answer, what
+  // voice mode learned, voice mode itself, a protected setting, a download
+  // opened, a window closed or a bookmark removed.
+  for (K kind : {K::kCloseTab, K::kPlay, K::kChoose, K::kSubmit,
+                 K::kCorrection, K::kRunRoutine, K::kAskAI}) {
+    EXPECT_TRUE(RepairableAsSaidKind(kind)) << static_cast<int>(kind);
+  }
+  for (K kind : {K::kUnknown, K::kRefused, K::kYes, K::kNo,
+                 K::kForgetLearning, K::kRememberRoutine, K::kForgetRoutine,
+                 K::kForgetWord, K::kVoiceModeOff, K::kVoiceModeOn,
+                 K::kAlwaysListening, K::kProtectedSetting, K::kOpenDownload,
+                 K::kCloseWindow, K::kRemoveBookmark}) {
+    EXPECT_FALSE(RepairableAsSaidKind(kind)) << static_cast<int>(kind);
   }
 }
 
