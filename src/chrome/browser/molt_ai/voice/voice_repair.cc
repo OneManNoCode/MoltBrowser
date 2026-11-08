@@ -161,6 +161,23 @@ bool HasFreeWords(const VoiceCommand& command) {
          !command.choice.from_words.empty();
 }
 
+// Whether |a| and |b| are the same command: the same kind and the same
+// values ("girl to the bottom" and "scroll to the bottom" are).
+bool SameCommand(const VoiceCommand& a, const VoiceCommand& b) {
+  return a.kind == b.kind && a.text == b.text && a.site == b.site &&
+         a.new_tab == b.new_tab && a.scope == b.scope && a.verb == b.verb &&
+         a.seconds == b.seconds && a.level == b.level && a.rate == b.rate &&
+         a.settings_page == b.settings_page && a.scroll == b.scroll &&
+         a.count == b.count && a.verbosity == b.verbosity &&
+         a.page_question == b.page_question &&
+         a.choice.kind == b.choice.kind &&
+         a.choice.ordinal == b.choice.ordinal &&
+         a.choice.from_end == b.choice.from_end &&
+         a.choice.number == b.choice.number &&
+         a.choice.relative == b.choice.relative &&
+         a.choice.words == b.choice.words;
+}
+
 struct Candidate {
   std::string text;
   VoiceCommand command;
@@ -226,28 +243,20 @@ class Repairer {
     }
   }
 
-  // The best candidate, when they all mean the same kind of command and
-  // one repair costs least.
+  // The cheapest candidate, when every candidate is the same command: two
+  // different commands, and none is a guess to act on.
   std::optional<Candidate> Best() const {
     if (candidates_.empty()) {
       return std::nullopt;
     }
-    const K kind = candidates_.front().command.kind;
-    const Candidate* best = nullptr;
-    bool tie = false;
+    const Candidate* best = &candidates_.front();
     for (const Candidate& c : candidates_) {
-      if (c.command.kind != kind) {
-        return std::nullopt;  // two different commands: not a guess to act on
+      if (!SameCommand(c.command, best->command)) {
+        return std::nullopt;
       }
-      if (!best || c.cost < best->cost) {
+      if (c.cost < best->cost) {
         best = &c;
-        tie = false;
-      } else if (c.cost == best->cost && c.text != best->text) {
-        tie = true;
       }
-    }
-    if (tie) {
-      return std::nullopt;
     }
     return *best;
   }
@@ -395,14 +404,15 @@ std::optional<RepairedCommand> RepairMisheardCommand(
     if (!IsSentenceBreak(w.trailing)) {
       continue;
     }
+    // "Hey, more, ...": a greeting may come first, with its own comma.
     const bool scrap =
         Distance(head_key, name_key, kWakeScrapMargin) <= kWakeScrapMargin ||
         Distance(head_key, whole_key, kWakeScrapMargin) <= kWakeScrapMargin;
     if (scrap && w.source_end + 1 <= heard.size()) {
       rest = heard.substr(w.source_end + 1);
       repairer.Try(rest, 1, /*swapped=*/false);
+      break;
     }
-    break;
   }
 
   // 2. One word swapped for the grammar's: in what follows the scrap, or,

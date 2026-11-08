@@ -1452,7 +1452,7 @@ the releases page to reinstall).
   of it ("halt. Play the live one") is now taken as the command it sounds
   like, when nothing else fits and only one command does, and only for
   commands safe on a guess; on the spoken suite's misheard utterances it
-  understands 11 of 65 it didn't, and none of 100 everyday sentences
+  understands 15 of 65 it didn't, and none of 100 everyday sentences
   became a command. "Open the menu" on a slow machine read out the
   toolbar's buttons instead of the menu; it now waits for the menu to
   show.

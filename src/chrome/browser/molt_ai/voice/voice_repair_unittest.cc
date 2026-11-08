@@ -31,6 +31,11 @@ TEST(VoiceRepairTest, RepairsWhatTheSpokenSuiteMisheard) {
       {"Himalde. Flay", K::kPlay, "play"},
       {"Hey, Malt, meet", K::kMute, "mute"},
       {"He more. Next video", K::kNextTrack, "Next video"},
+      {"He mold. Groll to the bottom", K::kScrollToBottom,
+       "scroll to the bottom"},
+      // A greeting, then a scrap of the name, each with its comma.
+      {"Hey, more, skip the head", K::kSkipAd, "skip the ad"},
+      {"Hey, Mol, read the tile", K::kReadTitle, "read the tile"},
   };
   for (const Case& c : kCases) {
     SCOPED_TRACE(c.heard);
@@ -58,6 +63,12 @@ TEST(VoiceRepairTest, AScrapOfTheWakePhraseBeforeACommand) {
   }
   // Not a scrap: a word that sounds nothing like "Molt".
   EXPECT_FALSE(RepairMisheardCommand("Broccoli. Play", context));
+}
+
+TEST(VoiceRepairTest, TwoDifferentCommandsAndNeitherIsTaken) {
+  // "fog" sounds like "back" and like "pause": not a guess to act on.
+  const ParseContext context;
+  EXPECT_FALSE(RepairMisheardCommand("Hey mold, fog", context));
 }
 
 TEST(VoiceRepairTest, NeverMakesACommandOutOfEverydaySpeech) {
