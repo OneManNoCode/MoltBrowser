@@ -70,6 +70,12 @@ def read_pcm(path):
         return w.readframes(w.getnframes())
 
 
+# Silence fed after a clip so that the helper finishes it: the end of
+# speech (0.5 s) and a short command's wait, up to 1 s with sound in it
+# (SPEECH_HELPER_PROTOCOL.md §3.5), with a margin.
+TAIL_SILENCE_S = 2.0
+
+
 def silence(seconds):
     return b"\x00\x00" * int(seconds * SR)
 
@@ -262,7 +268,7 @@ def step_protocol(args):
                                 "\u202ebidi\u202c", "Beyonc\u00e9", "o'clock"] * 50,
                    "wake_required": False}))
     if clip:
-        for f in audio_frames(clip + silence(1.0)):
+        for f in audio_frames(clip + silence(TAIL_SILENCE_S)):
             h.send(f)
         got = h.wait_for(lambda e: e.get("type") == "final", 20)
     else:
@@ -275,7 +281,7 @@ def step_protocol(args):
         # CONFIG between audio frames, and a RESET in an utterance.
         h = Helper(args)
         ready(h)
-        frames = audio_frames(clip + silence(1.0))
+        frames = audio_frames(clip + silence(TAIL_SILENCE_S))
         half = len(frames) // 2
         h.send(config({"wake_required": False}))
         for f in frames[:half]:
@@ -337,7 +343,7 @@ def step_protocol(args):
         h.send(config({"wake_required": False}))
         t0 = time.monotonic()
         status = None
-        frames = audio_frames(clip + silence(1.0))
+        frames = audio_frames(clip + silence(TAIL_SILENCE_S))
         try:
             while time.monotonic() - t0 < 120:
                 for f in frames:
@@ -369,7 +375,7 @@ def step_protocol(args):
 # ------------------------------------------------------------------ accuracy
 
 
-def run_clips(h, rows, realtime=False, pad=1.0, reset_after=False, wait=20.0,
+def run_clips(h, rows, realtime=False, pad=None, reset_after=False, wait=20.0,
               before=None):
     """Feeds each clip and collects its events. A clip is done when nothing
     it opened (a wake, a speech_start) waits for its final and the helper
@@ -378,7 +384,7 @@ def run_clips(h, rows, realtime=False, pad=1.0, reset_after=False, wait=20.0,
     out = []
     for row in rows:
         clip_id, path = row[0], row[2]
-        pcm = read_pcm(path) + silence(pad)
+        pcm = read_pcm(path) + silence(TAIL_SILENCE_S if pad is None else pad)
         n = len(h.lines)
         if before:
             h.send(before(row))

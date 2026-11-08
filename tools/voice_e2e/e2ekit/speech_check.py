@@ -25,9 +25,14 @@ shc = earslib.shc
 vbl = earslib.vbl
 
 
-def _feed(h, pcm, wait=20.0):
+# The pause after "Hey Molt" in the set that checks the helper waits it out
+# (SPEECH_HELPER_PROTOCOL.md §3.5): a command cut there is two utterances.
+PAUSE_AFTER_WAKE_S = 0.7
+
+
+def _feed(h, pcm, wait=20.0, pieces=False):
     n = len(h.lines)
-    h.send(b"".join(shc.audio_frames(pcm + shc.silence(1.0))))
+    h.send(b"".join(shc.audio_frames(pcm + shc.silence(shc.TAIL_SILENCE_S))))
     sent = time.monotonic()
     settle = 0.6 + len(pcm) / 2 / render.SR * 0.1
     while time.monotonic() - sent < wait:
@@ -45,8 +50,12 @@ def _feed(h, pcm, wait=20.0):
         time.sleep(0.02)
     h.send(shc.frame(shc.RESET))
     events = [e for _, e in h.lines[n:]]
-    text = " ".join(e.get("text", "") for e in events if e.get("type") == "final").strip()
-    return text, any(e.get("type") == "wake" for e in events)
+    finals = [e.get("text", "") for e in events if e.get("type") == "final"]
+    text = " ".join(finals).strip()
+    woke = any(e.get("type") == "wake" for e in events)
+    if pieces:
+        return text, woke, len([t for t in finals if t.strip()])
+    return text, woke
 
 
 def _helper(bundle, wake_required):
@@ -66,7 +75,7 @@ def run(speech_dir, bundle, utterances, conditions=("clean", "pink10", "music10"
     keys = [render.voice_key(v["name"], sp) for v in manifest["voices"]
             for sp in manifest["speeds"]]
     out = {"helper": os.path.join(bundle, "speech", "molt-speech"), "sets": {},
-           "words": {}, "wake": {}}
+           "words": {}, "wake": {}, "pause": {}}
     for key in keys:
         voice, _, speed = key.partition("@")
         for cond in conditions:
@@ -118,6 +127,21 @@ def run(speech_dir, bundle, utterances, conditions=("clean", "pink10", "music10"
         h.close()
         out["wake"][key] = {"n": len(utterances), "woke": woke, "right_after_wake": right}
         log("%-22s wake %d/%d, then right %d" % (key + "/clean", woke, len(utterances), right))
+        # "Hey Molt", a pause, then the utterance, every utterance counting:
+        # one utterance, not two.
+        h = _helper(bundle, False)
+        whole = 0
+        for text in utterances:
+            x, _ = audio.read_wav(render.clip_path(speech_dir, voice, float(speed), text))
+            y = np.concatenate([np.zeros(int(0.4 * render.SR), np.float32), w,
+                                np.zeros(int(PAUSE_AFTER_WAKE_S * render.SR), np.float32), x])
+            _, _, n_finals = _feed(h, render.pcm16(y), pieces=True)
+            whole += n_finals == 1
+        h.close()
+        out["pause"][key] = {"n": len(utterances), "whole": whole,
+                             "pause_s": PAUSE_AFTER_WAKE_S}
+        log("%-22s after a %.1f s pause: %d/%d in one piece"
+            % (key + "/clean", PAUSE_AFTER_WAKE_S, whole, len(utterances)))
     clean = [s for name, s in out["sets"].items() if name.endswith("/clean")]
     out["consistently_misheard"] = sorted(
         t for t in utterances
@@ -152,6 +176,12 @@ def markdown(res):
         for key in sorted(res["wake"]):
             w = res["wake"][key]
             lines.append("| %s | %d/%d | %d |" % (key, w["woke"], w["n"], w["right_after_wake"]))
+    if res.get("pause"):
+        lines += ["", "| Voice, speed | \"Hey Molt\", a pause, the command: in one piece |",
+                  "|---|---|"]
+        for key in sorted(res["pause"]):
+            p = res["pause"][key]
+            lines.append("| %s | %d/%d (%.1f s) |" % (key, p["whole"], p["n"], p["pause_s"]))
     if res.get("consistently_misheard"):
         lines += ["", "Misheard by every voice, clean:"]
         for t in res["consistently_misheard"]:

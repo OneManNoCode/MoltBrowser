@@ -401,7 +401,11 @@ scenarios, the action latency (median, 90th percentile, share within
 exact transcripts over the spoken steps), every scenario's result and
 reason, what went wrong step by step with screenshots, and what was
 misheard; and the speech check's table when `speech-check.json` is in the
-report directory. The verdict fails on a run under 90%, an owner's
+report directory. The speech check feeds every rendered utterance to the
+bundle's helper: as said, with the wake phrase before it, and with the
+wake phrase, a 0.7 s pause and then the utterance, every utterance
+counting, which must come out as one utterance (the helper waits out the
+pause, SPEECH_HELPER_PROTOCOL.md §3.5). The verdict fails on a run under 90%, an owner's
 scenario that didn't pass, a security scenario that acted, or a scenario
 that couldn't run (and on the latency median with `--gate-latency`).
 

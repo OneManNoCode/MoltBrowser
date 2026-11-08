@@ -108,6 +108,26 @@ class RunnerTest(unittest.TestCase):
             struct.pack("<16000h", *([16384] + [0] * 15999))
         self.assertEqual(runner.mic_levels(pcm), [-120, -6])
 
+    def test_levels_around_where_speech_starts(self):
+        import struct
+        # 2 s of silence, then speech at -6 dBFS whose first 0.3 s is held
+        # back to -40 dBFS (an echo canceller's onset), from 2.0 s.
+        quiet = [0] * 32000
+        held = [328] * 4800
+        loud = [16384] * 16000
+        pcm = struct.pack("<%dh" % (len(quiet) + len(held) + len(loud)),
+                          *(quiet + held + loud))
+        at, levels = runner.onset_levels(pcm, 30000)
+        # The onset is where it gets to -30 dBFS: after the held-back start.
+        self.assertAlmostEqual(at, 2.3, places=2)
+        # From 0.5 s before it: silence, the held-back start, the speech.
+        self.assertEqual(levels[:6], [-120, -120, -40, -40, -40, -6])
+        # Up to 2 s after it, or the dump's end (1 s after, here).
+        self.assertEqual(len(levels), 15)
+        # Nothing that loud near it.
+        self.assertEqual(runner.onset_levels(struct.pack("<16000h", *([0] * 16000)), 8000),
+                         (None, []))
+
     def test_a_run_without_the_loopback_is_labelled(self):
         self.assertEqual(runner.RunConfig(audio="pulse").label, "pulse/clean")
         self.assertEqual(runner.RunConfig(audio="pulse", loopback=False).label,
