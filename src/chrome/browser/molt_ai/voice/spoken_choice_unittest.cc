@@ -380,6 +380,37 @@ TEST(SpokenChoiceMatchTest, RoleWordsCountWithinTheirRole) {
   EXPECT_EQ(m.index, 2u);
 }
 
+// A role word for a role no item has is a word no item has: the spoken
+// suite's live run heard "open Wikipedia in a new tab" as "Open Wikipedia
+// and A new tab", and "new" alone pressed "A new library opens by the
+// river".
+TEST(SpokenChoiceMatchTest, ARoleNoItemHasIsAWordNoItemHas) {
+  const std::vector<ChoiceCandidate> list = MakeList(
+      {{"Home", ""},
+       {"Sport", ""},
+       {"Weather", ""},
+       {"Trams return to Lyon after ten years", ""},
+       {"A new library opens by the river", ""},
+       {"Bus timetables change in March", ""},
+       {"A quiz you will love", ""}},
+      ChoiceRole::kLink);
+  ChoiceMatch m = Match("wikipedia and a new tab", list);
+  EXPECT_EQ(m.outcome, ChoiceOutcome::kNoMatch);
+  EXPECT_EQ(m.reason, NoMatchReason::kNothingMatched);
+  EXPECT_EQ(Match("the search box", list).outcome, ChoiceOutcome::kNoMatch);
+  // A word that names one item still does, role word or not.
+  m = Match("the sport button", list);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(m.index, 1u);
+  m = Match("the new library", list);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(m.index, 4u);
+  // "One" and "thing" name an item, not a role.
+  m = Match("the weather one", list);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(m.index, 2u);
+}
+
 TEST(SpokenChoiceMatchTest, ByNumber) {
   auto list = SongResults();
   // Without numbers on screen, a number is a position.

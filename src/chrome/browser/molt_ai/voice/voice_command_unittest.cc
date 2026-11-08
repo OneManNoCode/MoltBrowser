@@ -819,6 +819,12 @@ TEST(VoiceCommandTest, RecognizerForms) {
       {"Hey, Malt, pores", "pause"},
       {"paws the video", "pause"},
       {"Hey mold, bookmarked this page.", "bookmark_page"},
+      // "Scroll" with its start lost to the wake phrase.
+      {"roll to the top", "scroll_to_top"},
+      {"Hey mold. Roll to the bottom", "scroll_to_bottom"},
+      // "In a new tab" heard as "and a new tab".
+      {"Himald. Open Wikipedia and A new tab", "open_site",
+       "site=wikipedia;new_tab=1"},
   });
 }
 

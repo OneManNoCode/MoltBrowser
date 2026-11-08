@@ -18,8 +18,12 @@
 //   - Without it: every utterance in always-listening mode, and in the
 //     follow-up window: kFollowUpWindowMs after the browser has finished
 //     answering, or kAnswerWindowMs while it waits for a yes or no or a
-//     choice ("the fourth one"). While a page plays sound, such an
-//     utterance also needs kMinConfidenceWithoutWake (§7.2).
+//     choice ("the fourth one"), also while what it was doing waits on
+//     that answer (a page's "Leave site?" holds up the "go back" that
+//     raised it). One begun just before the window ran out, as the
+//     helper places it, counts too (kWindowCloseGraceMs). While a page
+//     plays sound, such an utterance also needs kMinConfidenceWithoutWake
+//     (§7.2).
 //   - "Stop", "cancel", "stop talking" and "turn off voice mode" always
 //     count: the helper hears everything (wake_required false) while the
 //     browser thinks or speaks, so they work without the wake phrase.
@@ -35,10 +39,12 @@
 //     in the echo canceller's reference; OnOwnSpeechInReference()), the
 //     user can interrupt it with a command, no wake phrase needed: an
 //     utterance begun then counts if it has kMinConfidenceWithoutWake and
-//     isn't the browser's own words heard back (all its words among what
-//     the browser said in the last kSpokenMemoryMs, as written or as its
-//     voice says them, voice_said_aloud.h: "example dot com" for
-//     "example.com"; that is what an echo the canceller missed would be).
+//     isn't the browser's own words heard back (its words in the order
+//     the browser said them in the last kSpokenMemoryMs, at most one
+//     skipped between two, as written or as its voice says them,
+//     voice_said_aloud.h: "example dot com" for "example.com"; that is
+//     what an echo the canceller missed would be. One word: anywhere in
+//     it. "Number two" over "1: ..., 2: ... Say a number" is the user's).
 //     It stops the browser's speech. Only commands that stay with what the
 //     browser is reading or doing are taken that way (TakenOverOwnVoice()):
 //     one that reaches another site, types or sends text, closes a tab,
@@ -120,6 +126,11 @@ namespace voice {
 // and while it waits for an answer to its own question.
 inline constexpr int64_t kFollowUpWindowMs = 8000;
 inline constexpr int64_t kAnswerWindowMs = 30000;
+// An utterance whose speech the helper places up to this long after the
+// window closed began in it: the helper's detector hears speech a moment
+// in, and the helper was told of the close a moment late
+// (SPEECH_HELPER_PROTOCOL.md section 2.2).
+inline constexpr int64_t kWindowCloseGraceMs = 500;
 // After the wake phrase, how long the user has to start speaking.
 inline constexpr int64_t kWakeTimeoutMs = 6000;
 // After the wake phrase, the listening tone waits this long, and doesn't
@@ -127,6 +138,15 @@ inline constexpr int64_t kWakeTimeoutMs = 6000;
 // click ..."), a tone from the speakers over its first words reaches the
 // microphone, and the echo canceller takes those words with it.
 inline constexpr int64_t kWakeEarconDelayMs = 700;
+// And it waits for a pause: the microphone quiet this long
+// (NoteMicrophoneLoud()). The helper says the command started only once
+// the recognizer wrote one of its words, often more than
+// kWakeEarconDelayMs after the phrase; a tone over the command's last
+// words takes them with it as well (the spoken suite's run with the
+// speakers' sound in the microphone heard "open Wikipedia" as "open
+// wikip"). It never waits past kWakeEarconLatestMs after the phrase.
+inline constexpr int64_t kQuietBeforeToneMs = 300;
+inline constexpr int64_t kWakeEarconLatestMs = 2500;
 // After the browser stops speaking, how long its voice may still reach the
 // microphone (the room, the recognizer's lag).
 inline constexpr int64_t kEchoTailMs = 700;
@@ -180,6 +200,8 @@ enum class EarconKind : uint8_t {
   kSpeaking,
 };
 
+std::string_view EarconKindName(EarconKind kind);
+
 struct ListeningSettings {
   ListeningSettings();
   ~ListeningSettings();
@@ -214,6 +236,9 @@ struct SessionActions {
   // asked for again.
   std::optional<std::string> dropped;
   std::string_view dropped_reason;
+  // A wake from the helper set aside (OnWake()), and why; empty when it
+  // was taken. For the test log.
+  std::string_view wake_ignored;
   // |utterance| was heard cleanly enough for the voice gesture (above).
   bool heard_cleanly = false;
   // Something said while voice mode's own voice played with no echo
@@ -278,6 +303,10 @@ class VoiceSessionLogic {
   SessionActions OnBrowserSaid(std::string_view text, int64_t now_ms);
   SessionActions OnAwaitingAnswer(bool awaiting, int64_t now_ms);
   SessionActions OnPageAudible(bool audible, int64_t now_ms);
+  // When the microphone last gave something as loud as speech, after the
+  // browser's processing (VoiceAudio::LastLoud()); -1 never. Noted before
+  // each OnTick(), for the listening tone.
+  void NoteMicrophoneLoud(int64_t loud_ms) { microphone_loud_ms_ = loud_ms; }
   // Whether the speech engine is speaking for someone else (a page's
   // speechSynthesis, an extension): looked at often, and at each of the
   // helper's events.
@@ -362,9 +391,12 @@ class VoiceSessionLogic {
   // kMaxHeardLagMs when it doesn't fit).
   static int64_t HeardAt(int64_t now_ms, std::optional<int64_t> lag_ms);
   static bool Lagged(std::optional<int64_t> lag_ms);
+  // |at_start|: the event marks where its speech began (speech_start, a
+  // first partial), not where it ended (a final with nothing before it).
   Utterance NewUtterance(bool woke,
                          int64_t now_ms,
-                         std::optional<int64_t> lag_ms) const;
+                         std::optional<int64_t> lag_ms,
+                         bool at_start = true) const;
   SessionState ComputeState(int64_t now_ms) const;
   // Fills in what changed (state, wake_required, ducking) and the earcon
   // of a return to waiting.
@@ -378,6 +410,9 @@ class VoiceSessionLogic {
   int64_t speaking_ended_ms_ = -1;
   // The follow-up window's end; 0 when it is closed.
   int64_t follow_up_until_ms_ = 0;
+  // When it last ran out with nothing said in it (kWindowCloseGraceMs);
+  // -1 if it didn't, or something happened since.
+  int64_t follow_up_closed_ms_ = -1;
   bool awaiting_answer_ = false;
   bool page_audible_ = false;
   // When a tab was last seen playing sound; -1 never.
@@ -395,8 +430,10 @@ class VoiceSessionLogic {
   // After the wake phrase, until speech starts.
   int64_t wake_until_ms_ = 0;
   // When the listening tone plays after a wake, unless the command started
-  // first (0: none due).
+  // first (0: none due), and the latest it may (kWakeEarconLatestMs).
   int64_t wake_earcon_at_ms_ = 0;
+  int64_t wake_earcon_latest_ms_ = 0;
+  int64_t microphone_loud_ms_ = -1;
   // What the browser said: when, and its words folded.
   std::deque<std::pair<int64_t, std::string>> said_;
 

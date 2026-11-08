@@ -355,6 +355,12 @@ void VoiceAudio::Release() {
   delegate_ = nullptr;
 }
 
+base::TimeTicks VoiceAudio::LastLoud() const {
+  const int64_t us = loud_at_us_.load(std::memory_order_relaxed);
+  return us > 0 ? base::TimeTicks() + base::Microseconds(us)
+                : base::TimeTicks();
+}
+
 VoiceAudio::Levels VoiceAudio::TakeLevels() {
   Levels levels;
   levels.peak = peak_millionths_.exchange(0, std::memory_order_relaxed) / 1e6f;
@@ -400,6 +406,11 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
                                                  std::memory_order_relaxed)) {
   }
   samples_.fetch_add(audio_source->frames(), std::memory_order_relaxed);
+  if (peak >= kVoiceLoudPeak && !audio_capture_time.is_null()) {
+    loud_at_us_.store(
+        (audio_capture_time - base::TimeTicks()).InMicroseconds(),
+        std::memory_order_relaxed);
+  }
 
   std::vector<std::vector<int16_t>> frames;
   chunker_.Add(audio_source->channel(0), &frames);

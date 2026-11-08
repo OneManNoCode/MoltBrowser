@@ -328,12 +328,16 @@ constexpr CommandPattern kPatterns[] = {
     {K::kType, "(type|write|dictate|tight) {text}"},
 
     // --- Scrolling (before "go back": "go back to the top") --------------
+    // "Roll", "girl": "scroll" with its start lost to the wake phrase
+    // before it ("Hey Molt. Sc|roll to the top"), as the spoken suite's
+    // runs heard it.
     {K::kScrollToTop,
-     "(scroll|go|jump|move|go back) [up] to the (top|beginning|start) [of "
-     "the page]"},
+     "(scroll|roll|go|jump|move|go back) [up] to the (top|beginning|start) "
+     "[of the page]"},
     {K::kScrollToTop, "(top of [the] page|page top|scroll top|back to top)"},
     {K::kScrollToBottom,
-     "(scroll|girl|go|jump|move) [down] to the (bottom|end) [of the page]"},
+     "(scroll|roll|girl|go|jump|move) [down] to the (bottom|end) [of the "
+     "page]"},
     {K::kScrollToBottom, "(bottom of [the] page|page bottom|scroll bottom)"},
     {K::kScrollDown, "page down", C::kAlways, V::kPageStep},
     {K::kScrollUp, "page up", C::kAlways, V::kPageStep},
@@ -679,9 +683,11 @@ constexpr CommandPattern kPatterns[] = {
      C::kChoice, V::kVerbOpen},
 
     // --- Sites and searches -------------------------------------------------
+    // "And a new tab": "in a new tab" as the recognizer hears it (the
+    // spoken suite's live run).
     {K::kOpenSite,
      "(open|go to|take me to|visit|navigate to|launch|load|bring up|pull "
-     "up) {site} in [a] new tab",
+     "up) {site} (in|and) [a] new tab",
      C::kAlways, V::kNewTab},
     {K::kOpenSite,
      "(open|go to|take me to|visit|navigate to|launch|load|bring up|pull "

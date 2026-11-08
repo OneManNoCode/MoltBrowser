@@ -121,6 +121,11 @@ class Listener {
   // this much of the audio before (none an utterance used), so a phrase
   // begun just before isn't cut in half.
   static constexpr int64_t kRespotSamples = kSampleRate * 3 / 2;
+  // When the browser asks for the wake phrase again, speech the detector
+  // notices within this much audio began while it wasn't needed (the
+  // detector hears speech 0.1 s in, a step later at most): it counts
+  // without the phrase, from its start.
+  static constexpr int64_t kLateOpenSamples = kSampleRate * 3 / 10;
   // How long speech is heard for a wake phrase the spotter missed
   // (|State::kHearing|) before the helper gives up on it: the phrase comes
   // first.
@@ -155,7 +160,8 @@ class Listener {
     // Wake phrase required, someone speaking, and the spotter hasn't fired:
     // it goes on listening, and the recognizer hears the speech too, for
     // the wake phrase the spotter may miss (WakePhraseWordsAtStart()).
-    // Nothing is written unless the phrase is there.
+    // Nothing is written unless the phrase is there, or the speech began
+    // before the phrase was needed (kLateOpenSamples).
     kHearing,
     // Every utterance counts; waiting for speech.
     kOpen,
@@ -230,6 +236,13 @@ class Listener {
   // The sample after the last one an utterance used.
   int64_t consumed_ = 0;
   int64_t wake_at_ = 0;
+  // kWaitWake: speech the detector notices up to this sample began before
+  // the browser asked for the wake phrase again (kLateOpenSamples); -1 if
+  // none.
+  int64_t open_until_ = -1;
+  // kHearing: where speech begun before the phrase was needed started (it
+  // counts without the phrase); -1 if it didn't.
+  int64_t hearing_open_from_ = -1;
   // Words in the wake phrase heard last.
   size_t wake_words_ = 0;
   int64_t utterance_from_ = 0;

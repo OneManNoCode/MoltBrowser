@@ -22,6 +22,10 @@ namespace {
 // What the browser said is folded from at most this many bytes.
 constexpr size_t kMaxSaidBytes = 4096;
 
+// Between the two forms of what the browser said (SaidWords()): never a
+// folded word, so no run of words reaches across it.
+constexpr std::string_view kFormSeam = "|";
+
 // What the browser said, as folded words: as written, and as its voice
 // says them (voice_said_aloud.h: "example dot com", "two", "molt
 // browser"), which is how an echo the canceller missed is heard.
@@ -33,10 +37,67 @@ std::string SaidWords(std::string_view text) {
   if (!aloud.empty()) {
     if (!words.empty()) {
       words.push_back(' ');
+      words.append(kFormSeam);
+      words.push_back(' ');
     }
     words.append(aloud);
   }
   return words;
+}
+
+std::vector<std::string_view> SplitWords(std::string_view text) {
+  std::vector<std::string_view> words;
+  size_t start = 0;
+  while (start < text.size()) {
+    size_t end = text.find(' ', start);
+    if (end == std::string_view::npos) {
+      end = text.size();
+    }
+    if (end > start) {
+      words.push_back(text.substr(start, end - start));
+    }
+    start = end + 1;
+  }
+  return words;
+}
+
+// Whether |wanted| is in |said| in order, from any word of it, with at
+// most one word skipped between two of them (one the recognizer lost):
+// how the browser's own words sound heard back. Not across kFormSeam.
+bool SaysInOrder(const std::vector<std::string_view>& said,
+                 const std::vector<std::string_view>& wanted) {
+  if (wanted.empty()) {
+    return false;
+  }
+  for (size_t start = 0; start < said.size(); ++start) {
+    if (said[start] != wanted[0]) {
+      continue;
+    }
+    size_t at = start;
+    size_t matched = 1;
+    while (matched < wanted.size()) {
+      bool found = false;
+      for (size_t next = at + 1; next < said.size() && next <= at + 2;
+           ++next) {
+        if (said[next] == kFormSeam) {
+          break;
+        }
+        if (said[next] == wanted[matched]) {
+          at = next;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        break;
+      }
+      ++matched;
+    }
+    if (matched == wanted.size()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Whether |word| sounds like the folded name |name| (the wake phrase's
@@ -128,6 +189,22 @@ bool HasWords(std::string_view haystack, std::string_view needle) {
 }
 
 }  // namespace
+
+std::string_view EarconKindName(EarconKind kind) {
+  switch (kind) {
+    case EarconKind::kOff:
+      return "off";
+    case EarconKind::kWaiting:
+      return "waiting";
+    case EarconKind::kListening:
+      return "listening";
+    case EarconKind::kThinking:
+      return "thinking";
+    case EarconKind::kSpeaking:
+      return "speaking";
+  }
+  return "";
+}
 
 std::string_view SessionStateName(SessionState state) {
   switch (state) {
@@ -270,6 +347,7 @@ SessionActions VoiceSessionLogic::Start(int64_t now_ms) {
   running_ = true;
   ready_ = false;
   follow_up_until_ms_ = 0;
+  follow_up_closed_ms_ = -1;
   wake_until_ms_ = 0;
   wake_earcon_at_ms_ = 0;
   return Finish(std::move(actions), now_ms);
@@ -284,6 +362,7 @@ SessionActions VoiceSessionLogic::Stop(int64_t now_ms) {
   running_ = false;
   ready_ = false;
   follow_up_until_ms_ = 0;
+  follow_up_closed_ms_ = -1;
   wake_until_ms_ = 0;
   wake_earcon_at_ms_ = 0;
   actions.earcon = EarconKind::kOff;
@@ -335,12 +414,19 @@ bool VoiceSessionLogic::Lagged(std::optional<int64_t> lag_ms) {
 VoiceSessionLogic::Utterance VoiceSessionLogic::NewUtterance(
     bool woke,
     int64_t now_ms,
-    std::optional<int64_t> lag_ms) const {
+    std::optional<int64_t> lag_ms,
+    bool at_start) const {
   const int64_t heard_ms = HeardAt(now_ms, lag_ms);
   Utterance utterance;
   utterance.woke = woke;
-  utterance.open = !woke && (settings_.always_listening ||
-                             FollowUpOpen(now_ms) || BargeInOpen());
+  // Begun just before the window ran out, as the helper places it.
+  const bool begun_in_window =
+      at_start && lag_ms && follow_up_closed_ms_ >= 0 &&
+      activity_ == BrowserActivity::kIdle &&
+      heard_ms <= follow_up_closed_ms_ + kWindowCloseGraceMs;
+  utterance.open =
+      !woke && (settings_.always_listening || FollowUpOpen(now_ms) ||
+                BargeInOpen() || begun_in_window);
   // When its audio was captured: the browser's echo tail reaches back
   // that far for a helper that runs behind.
   utterance.during_speech = SpeakingOrTail(heard_ms);
@@ -355,16 +441,21 @@ SessionActions VoiceSessionLogic::OnWake(int64_t now_ms,
                                          std::optional<int64_t> lag_ms) {
   SessionActions actions;
   if (!Listening()) {
+    actions.wake_ignored = "not listening";
     return actions;
   }
   // The browser's own voice saying the wake phrase (a page's title read
   // out), or another source's speech (a page saying it, or voice mode's
   // own voice with no echo canceller): not the user.
   const int64_t heard_ms = HeardAt(now_ms, lag_ms);
-  if ((SpeakingOrTail(heard_ms) && SaidWakePhrase(heard_ms)) ||
-      OtherSpeechSince(heard_ms)) {
+  const bool own_words = SpeakingOrTail(heard_ms) && SaidWakePhrase(heard_ms);
+  if (own_words || OtherSpeechSince(heard_ms)) {
     actions.reset_helper = true;
     actions.said_over_voice = OwnVoiceUnfilteredSince(heard_ms);
+    actions.wake_ignored = own_words ? "voice mode's own words had it"
+                           : actions.said_over_voice
+                               ? "over voice mode's own voice"
+                               : "another source was speaking";
     return Finish(std::move(actions), now_ms);
   }
   EndUtterance(&actions);
@@ -375,6 +466,7 @@ SessionActions VoiceSessionLogic::OnWake(int64_t now_ms,
   }
   // The tone, if the user pauses (kWakeEarconDelayMs).
   wake_earcon_at_ms_ = now_ms + kWakeEarconDelayMs;
+  wake_earcon_latest_ms_ = now_ms + kWakeEarconLatestMs;
   return Finish(std::move(actions), now_ms);
 }
 
@@ -431,7 +523,9 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
     return actions;
   }
   Utterance utterance =
-      utterance_ ? *utterance_ : NewUtterance(/*woke=*/false, now_ms, lag_ms);
+      utterance_ ? *utterance_
+                 : NewUtterance(/*woke=*/false, now_ms, lag_ms,
+                                /*at_start=*/false);
   utterance.lagged = utterance.lagged || Lagged(lag_ms);
   EndUtterance(&actions);
   wake_until_ms_ = 0;
@@ -489,6 +583,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
     actions.heard_cleanly = HeardCleanly(utterance, confidence);
     actions.earcon = EarconKind::kThinking;
     follow_up_until_ms_ = 0;
+    follow_up_closed_ms_ = -1;
     // Until the controller says what it does with it.
     if (activity_ == BrowserActivity::kSpeaking) {
       speaking_ended_ms_ = now_ms;
@@ -521,6 +616,7 @@ SessionActions VoiceSessionLogic::OnBrowserActivity(BrowserActivity activity,
   }
   const BrowserActivity before = activity_;
   activity_ = activity;
+  follow_up_closed_ms_ = -1;
   if (before == BrowserActivity::kSpeaking) {
     speaking_ended_ms_ = now_ms;
   }
@@ -530,6 +626,11 @@ SessionActions VoiceSessionLogic::OnBrowserActivity(BrowserActivity activity,
   if (activity == BrowserActivity::kIdle) {
     follow_up_until_ms_ =
         now_ms + (awaiting_answer_ ? kAnswerWindowMs : kFollowUpWindowMs);
+  } else if (activity == BrowserActivity::kThinking &&
+             before == BrowserActivity::kSpeaking && awaiting_answer_) {
+    // It asked, and what it was doing waits for the answer (a page's
+    // "Leave site?" holds up the "go back" that raised it).
+    follow_up_until_ms_ = now_ms + kAnswerWindowMs;
   }
   return Finish(std::move(actions), now_ms);
 }
@@ -609,11 +710,19 @@ SessionActions VoiceSessionLogic::OnTick(int64_t now_ms) {
     return Finish(std::move(actions), now_ms);
   }
   if (wake_earcon_at_ms_ > 0 && now_ms >= wake_earcon_at_ms_) {
-    // The wake phrase, and the user paused: the tone says go ahead.
-    wake_earcon_at_ms_ = 0;
-    if (utterance_ && utterance_->woke && !utterance_->started &&
-        !actions.earcon) {
-      actions.earcon = EarconKind::kListening;
+    const int64_t quiet_at = microphone_loud_ms_ + kQuietBeforeToneMs;
+    if (microphone_loud_ms_ >= 0 && quiet_at > now_ms &&
+        now_ms < wake_earcon_latest_ms_) {
+      // Still speaking, ahead of the recognizer: the tone waits for the
+      // pause.
+      wake_earcon_at_ms_ = std::min(quiet_at, wake_earcon_latest_ms_);
+    } else {
+      // The wake phrase, and the user paused: the tone says go ahead.
+      wake_earcon_at_ms_ = 0;
+      if (utterance_ && utterance_->woke && !utterance_->started &&
+          !actions.earcon) {
+        actions.earcon = EarconKind::kListening;
+      }
     }
   }
   if (wake_until_ms_ > 0 && now_ms >= wake_until_ms_) {
@@ -636,6 +745,7 @@ SessionActions VoiceSessionLogic::OnTick(int64_t now_ms) {
   }
   if (follow_up_until_ms_ > 0 && now_ms >= follow_up_until_ms_ &&
       !(utterance_ && utterance_->open && utterance_->ended_ms < 0)) {
+    follow_up_closed_ms_ = follow_up_until_ms_;
     follow_up_until_ms_ = 0;
   }
   return Finish(std::move(actions), now_ms);
@@ -674,7 +784,14 @@ std::optional<int64_t> VoiceSessionLogic::NextDeadline() const {
 // ---- Helpers ---------------------------------------------------------------
 
 bool VoiceSessionLogic::FollowUpOpen(int64_t now_ms) const {
-  if (activity_ != BrowserActivity::kIdle || follow_up_until_ms_ == 0) {
+  if (follow_up_until_ms_ == 0) {
+    return false;
+  }
+  // While it is busy, only an answer it waits for: its question holds up
+  // what it was doing (OnBrowserActivity()).
+  const bool answer_awaited =
+      awaiting_answer_ && activity_ == BrowserActivity::kThinking;
+  if (activity_ != BrowserActivity::kIdle && !answer_awaited) {
     return false;
   }
   // An utterance begun in the window keeps it open until it ends.
@@ -749,30 +866,25 @@ bool VoiceSessionLogic::BargeInOpen() const {
 bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
                                       int64_t now_ms) const {
   const std::string folded = FoldForComparison(text.substr(0, kMaxSaidBytes));
-  if (folded.empty()) {
+  const std::vector<std::string_view> wanted = SplitWords(folded);
+  if (wanted.empty()) {
     return false;
   }
-  size_t start = 0;
-  while (start < folded.size()) {
-    size_t end = folded.find(' ', start);
-    if (end == std::string::npos) {
-      end = folded.size();
+  // What it said lately, in the order it said it.
+  std::vector<std::string_view> said;
+  for (const auto& [when, words] : said_) {
+    if (!SaidLately(when, now_ms)) {
+      continue;
     }
-    const std::string_view word =
-        std::string_view(folded).substr(start, end - start);
-    bool said = false;
-    for (const auto& [when, words] : said_) {
-      if (SaidLately(when, now_ms) && HasWords(words, word)) {
-        said = true;
-        break;
-      }
-    }
-    if (!said) {
-      return false;
-    }
-    start = end + 1;
+    const std::vector<std::string_view> these = SplitWords(words);
+    said.insert(said.end(), these.begin(), these.end());
   }
-  return true;
+  // One word: anywhere in it. More: in its order, as it would be heard
+  // back. "Number two" is not "1: ..., 2: ... Say a number or a name."
+  if (wanted.size() == 1) {
+    return std::find(said.begin(), said.end(), wanted[0]) != said.end();
+  }
+  return SaysInOrder(said, wanted);
 }
 
 bool VoiceSessionLogic::SaidLately(int64_t noted_ms, int64_t at_ms) const {

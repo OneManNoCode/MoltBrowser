@@ -123,9 +123,15 @@ is cased, as the screen is.
 - When `wake_required` turns true while the helper waits for speech (the
   browser's follow-up window closed), the spotter starts on the last 1.5 s
   of audio no utterance used, so a wake phrase begun just before isn't
-  cut in half. When it turns false while speech is being heard for a wake
-  phrase (§4.1), that speech is an utterance from its start:
-  `speech_start` at once.
+  cut in half. Speech the voice activity detector notices within 0.3 s of
+  audio after that CONFIG began before it (the detector hears speech
+  0.1 s in): it is heard for a wake phrase as usual (§4.1), and without
+  one it still counts, as an utterance from its start, once it ends:
+  `speech_start` dated where it began, then `speech_end` and `final`. The
+  browser takes it if, as the helper places it, it began in its window
+  (`kWindowCloseGraceMs` in `voice_session_logic.h`). When it turns false
+  while speech is being heard for a wake phrase (§4.1), that speech is an
+  utterance from its start: `speech_start` at once.
 - `hotwords` apply from the next utterance; `vad_silence_ms` from the next
   time the helper is waiting (it rebuilds the voice activity detector,
   which forgets the speech it was following, so only when the value

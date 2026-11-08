@@ -158,6 +158,18 @@ TEST(VoiceTestLogLinesTest, ADroppedLineMasksTheWord) {
             "[word]\",\"reason\":\"no wake phrase\"}\n");
 }
 
+TEST(VoiceTestLogLinesTest, HelperAndEarconLines) {
+  TestLogLines lines(1);
+  EXPECT_EQ(lines.Helper(5, "wake", 120, "taken"),
+            "{\"t\":5,\"w\":1,\"e\":\"helper\",\"event\":\"wake\","
+            "\"lag_ms\":120,\"note\":\"taken\"}\n");
+  EXPECT_EQ(lines.Helper(6, "speech_start", -7, ""),
+            "{\"t\":6,\"w\":1,\"e\":\"helper\",\"event\":\"speech_"
+            "start\",\"lag_ms\":-1}\n");
+  EXPECT_EQ(lines.Earcon(7, "listening"),
+            "{\"t\":7,\"w\":1,\"e\":\"earcon\",\"kind\":\"listening\"}\n");
+}
+
 TEST(VoiceTestLogLinesTest, WritesWhatChanged) {
   TestLogLines lines(1);
   TestLogState state;

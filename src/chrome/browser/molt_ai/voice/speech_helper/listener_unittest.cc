@@ -525,6 +525,45 @@ TEST_F(SpeechListenerTest, SpotsAPhraseBegunAsTheWindowCloses) {
   EXPECT_EQ(Types().back(), "final:Hello there pause");
 }
 
+// The spoken suite's file run: "no, I said YouTube" begun as the follow-up
+// window closed, before the detector noticed it, was heard for a wake
+// phrase and dropped. Begun while every utterance counted, it counts.
+TEST_F(SpeechListenerTest, CountsSpeechBegunAsTheWindowCloses) {
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  scene_->speech = {{Ms(1000), Ms(2300)}};
+  scene_->words = {{"no,", Ms(1000)}, {"I", Ms(1300)}, {"said", Ms(1450)},
+                   {"YouTube", Ms(1750)}};
+  // The browser asks for the wake phrase again 40 ms into it.
+  FeedUntil(Ms(1040));
+  listener_->ApplyConfig(Config(R"({"wake_required":true})"), nullptr);
+  FeedUntil(Ms(4000));
+  EXPECT_EQ(Types(),
+            (std::vector<std::string>{"speech_start", "speech_end",
+                                      "final:no, I said YouTube"}));
+  // When it began, for the browser's window.
+  ASSERT_EQ(AudioMs(events_, "speech_start").size(), 1u);
+  EXPECT_LE(AudioMs(events_, "speech_start")[0], 1200);
+  ASSERT_EQ(log_->utterance_starts.size(), 1u);
+  EXPECT_LE(log_->utterance_starts[0], Ms(1000));
+  // Speech begun later needs the phrase again.
+  scene_->speech.push_back({Ms(5000), Ms(5800)});
+  scene_->words.push_back({"next", Ms(5000)});
+  scene_->words.push_back({"page", Ms(5300)});
+  const size_t before = events_.size();
+  FeedUntil(Ms(7000));
+  EXPECT_EQ(events_.size(), before);
+}
+
+TEST_F(SpeechListenerTest, SpeechBegunAfterTheWindowClosedNeedsThePhrase) {
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  scene_->speech = {{Ms(1500), Ms(2300)}};
+  scene_->words = {{"next", Ms(1500)}, {"page", Ms(1800)}};
+  FeedUntil(Ms(1000));
+  listener_->ApplyConfig(Config(R"({"wake_required":true})"), nullptr);
+  FeedUntil(Ms(4000));
+  EXPECT_TRUE(events_.empty());
+}
+
 TEST_F(SpeechListenerTest, KeepsTheDetectorWhenItsSilenceDoesntChange) {
   // Every CONFIG carries the silence; a new detector forgets the speech it
   // was following.

@@ -260,13 +260,15 @@ bool IsSingleLetter(std::string_view word) {
 }
 
 // The description words of |words[begin, end)|: stopwords dropped, role
-// words collected into |roles| (when |roles| is given), spelled letters
-// joined ("b b c" -> "bbc"), number words as digits.
+// words collected into |roles| (when |roles| is given; |role_words| counts
+// those with a role), spelled letters joined ("b b c" -> "bbc"), number
+// words as digits.
 std::vector<std::string> DescriptionWords(const WordList& all_words,
                                           size_t begin,
                                           size_t end,
                                           const LanguagePhrases& phrases,
-                                          ChoiceRoleMask* roles) {
+                                          ChoiceRoleMask* roles,
+                                          int* role_words = nullptr) {
   std::vector<std::string> out;
   if (begin >= end)
     return out;
@@ -290,6 +292,9 @@ std::vector<std::string> DescriptionWords(const WordList& all_words,
     if (roles) {
       if (const RoleWord* role = FindRoleWord(phrases, w)) {
         *roles |= role->roles;
+        if (role_words && role->roles) {
+          ++*role_words;
+        }
         ++i;
         continue;
       }
@@ -474,7 +479,8 @@ std::optional<ChoiceRef> ParseChoiceRefWords(const WordList& all_words,
   }
   const size_t description_end = std::min(by_at, from_at);
   ChoiceRoleMask roles = 0;
-  ref.words = DescriptionWords(words, i, description_end, phrases, &roles);
+  ref.words = DescriptionWords(words, i, description_end, phrases, &roles,
+                               &ref.role_words);
   if (by_at < words.size()) {
     const size_t end = from_at > by_at ? from_at : words.size();
     ref.by_words =
@@ -720,6 +726,7 @@ ChoiceMatch NoMatch(NoMatchReason reason) {
 ChoiceMatch MatchDescription(const ChoiceRef& ref,
                              const std::vector<ChoiceCandidate>& candidates,
                              const std::vector<size_t>& eligible,
+                             int unmatched_role_words,
                              const MatchOptions& options) {
   // A role and nothing else ("the search box"): the items with the role.
   std::vector<std::string> words = ref.words;
@@ -922,6 +929,10 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   add(word_best, words, false);
   add(by_best, by_words, true);
   add(from_best, from_words, false);
+  // A role no item has: a word no item has.
+  total_weight += kUnmatchedWordWeight *
+                  std::clamp(unmatched_role_words, 0,
+                             static_cast<int>(kMaxChoiceRefWords));
 
   std::vector<Scored> scored(n);
   for (size_t e = 0; e < n; ++e) {
@@ -1030,6 +1041,8 @@ ChoiceMatch MatchSpokenChoice(const ChoiceRef& ref,
         eligible.push_back(i);
     }
   }
+  // Otherwise each such word is one no item has.
+  const int unmatched_role_words = eligible.empty() ? ref.role_words : 0;
   if (eligible.empty()) {
     for (size_t i = 0; i < count; ++i)
       eligible.push_back(i);
@@ -1089,7 +1102,8 @@ ChoiceMatch MatchSpokenChoice(const ChoiceRef& ref,
       return Unique(*found);
     }
     case ChoiceRef::Kind::kDescription:
-      return MatchDescription(ref, candidates, eligible, options);
+      return MatchDescription(ref, candidates, eligible, unmatched_role_words,
+                              options);
   }
   return NoMatch(NoMatchReason::kEmptyReference);
 }

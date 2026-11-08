@@ -130,6 +130,8 @@ Listener::ConfigResult Listener::ApplyConfig(const ConfigUpdate& update,
       state_ = State::kOpen;
     } else if (state_ == State::kOpen && config_.wake_required) {
       state_ = State::kWaitWake;
+      // Speech already begun that the detector hasn't noticed yet.
+      open_until_ = vad_in_speech_ ? -1 : received_ + kLateOpenSamples;
       engines_->ResetSpotter();
       RespotRecent();
     }
@@ -185,8 +187,14 @@ void Listener::Step(const std::vector<float>& samples) {
       if (!vad.in_speech) {
         heard_off_ = false;
       } else if (!heard_off_) {
-        // Heard as well, in case the spotter misses the phrase.
         const int64_t onset = speech_onset_ >= 0 ? speech_onset_ : step_start;
+        // Begun as the browser asked for the wake phrase again, before the
+        // detector noticed it: while every utterance counted
+        // (kLateOpenSamples). Heard for a wake phrase as usual; without
+        // one it still counts.
+        hearing_open_from_ = onset <= open_until_ ? onset : -1;
+        open_until_ = -1;
+        // Heard as well, in case the spotter misses the phrase.
         BeginFrom(onset - kPrerollSamples);
         state_ = State::kHearing;
       }
@@ -267,6 +275,7 @@ void Listener::Step(const std::vector<float>& samples) {
 }
 
 void Listener::OnWake(int64_t at) {
+  hearing_open_from_ = -1;
   wake_at_ = at;
   Emit(WakeEvent(At(at)));
   int64_t from = wake_at_ - kWakePrerollSamples;
@@ -285,6 +294,15 @@ void Listener::OnHeard(const RecognizerResult& result, bool whole) {
   // The phrase is complete once a word follows it, or the speech ended.
   if (words > 0 && (whole || heard > words)) {
     OnHeardWake(result, words, whole);
+    return;
+  }
+  if (hearing_open_from_ >= 0) {
+    // Begun before the phrase was needed: an utterance from its start,
+    // once it ends (the spotter may still hear the phrase in it).
+    if (whole) {
+      Emit(SpeechStartEvent(At(hearing_open_from_)));
+      EndUtterance(result);
+    }
     return;
   }
   if (whole) {
@@ -317,6 +335,7 @@ void Listener::OnHeardWake(const RecognizerResult& result,
          static_cast<int64_t>(result.word_seconds[words] * kSampleRate);
   }
   at = std::clamp(at, std::max(consumed_, utterance_from_), received_);
+  hearing_open_from_ = -1;
   wake_at_ = at;
   wake_words_ = words;
   Emit(WakeEvent(At(at)));
@@ -425,6 +444,8 @@ void Listener::EndWithoutCommand() {
 void Listener::ToBaseState() {
   last_partial_.clear();
   heard_off_ = false;
+  open_until_ = -1;
+  hearing_open_from_ = -1;
   state_ = config_.wake_required ? State::kWaitWake : State::kOpen;
   engines_->ResetSpotter();
   ApplyPendingVad();

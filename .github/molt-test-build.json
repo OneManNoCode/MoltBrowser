@@ -1,6 +1,6 @@
-{"resume_run": "42479666491",
+{"resume_run": "42487956831",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, fourteenth build: find on the page matches a compound split or joined (\"time table\" for \"Timetable\"), \"bookmarked this page\" and \"pores\"/\"paws\" for pause as the recognizer hears them, and a drop over voice mode's voice says why. The kit: said_re per line, file runs keep the microphone as voice mode got it for a failed scenario, media \"seeked\" for a seek measured from where the player was. Resume from run 42479666491 (the thirteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the thirteenth build (72% file, 75% noloop)."}
+ "request": "Round 45, fifteenth build: the listening tone waits for a pause in what the microphone hears (with the speakers' sound in the microphone it took a command's last words), something said just as the follow-up window closes counts (helper and session), a page's prompt is answered while what raised it waits, the echo check needs the browser's words in order (\"Number two\"), a role word for a kind of item the page lacks counts against a match (\"open Wikipedia and a new tab\" pressed a link), \"and a new tab\" and \"roll to the top\" as heard, and test-log lines for helper events and earcons. Resume from run 42487956831 (the fourteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the fourteenth build (70% file, 77% noloop, 57% with the speakers)."}

@@ -310,6 +310,13 @@ class VoiceController : public VoicePlanner::Delegate,
                             std::string_view echo);
   // What the listening session set aside, and why: for the test log only.
   void NoteDroppedUtterance(const std::string& text, std::string_view reason);
+  // A speech helper event the listening session saw ("wake",
+  // "speech_start", "speech_end"), its audio's lag behind the microphone,
+  // and what became of a wake; an earcon it played. The test log only.
+  void NoteHelperEvent(std::string_view event,
+                       std::optional<int64_t> lag_ms,
+                       std::string_view note);
+  void NoteEarcon(std::string_view kind);
 
   // The planner open-ended requests go to (§6.2, layer 3): the web agent's
   // (agents/voice_agent_planner.h) unless replaced; null, the browser says

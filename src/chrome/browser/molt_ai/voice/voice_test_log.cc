@@ -123,6 +123,17 @@ class VoiceTestLog::Writer {
     Write(lines_.Dropped(ms, text, reason, pending_word));
   }
 
+  void Helper(int64_t ms,
+              const std::string& event,
+              int64_t lag_ms,
+              const std::string& note) {
+    Write(lines_.Helper(ms, event, lag_ms, note));
+  }
+
+  void Earcon(int64_t ms, const std::string& kind) {
+    Write(lines_.Earcon(ms, kind));
+  }
+
   void Changed(int64_t ms,
                const std::string& activity,
                bool mic,
@@ -252,6 +263,17 @@ void VoiceTestLog::OnDropped(const std::string& text,
   writer_.AsyncCall(&Writer::Dropped)
       .WithArgs(NowMs(), text, std::string(reason),
                 state.prompt.id != 0 ? state.prompt.word : std::string());
+}
+
+void VoiceTestLog::OnHelper(std::string_view event,
+                            int64_t lag_ms,
+                            std::string_view note) {
+  writer_.AsyncCall(&Writer::Helper)
+      .WithArgs(NowMs(), std::string(event), lag_ms, std::string(note));
+}
+
+void VoiceTestLog::OnEarcon(std::string_view kind) {
+  writer_.AsyncCall(&Writer::Earcon).WithArgs(NowMs(), std::string(kind));
 }
 
 void VoiceTestLog::OnLoop(VoiceActivity activity,
