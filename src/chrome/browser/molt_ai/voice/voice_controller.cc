@@ -2182,26 +2182,38 @@ void VoiceController::OnQuiet() {
   if (!wait_ || wait_->autoplay) {
     return;
   }
-  const base::TimeDelta waited = base::TimeTicks::Now() - wait_->started;
-  // Still expecting the navigation the steps started.
-  if (!wait_->navigated &&
-      (wait_->navigation_started || waited < kNavigationGrace)) {
-    RestartQuietTimer();
-    return;
-  }
+  const base::TimeTicks now = base::TimeTicks::Now();
   content::WebContents* contents = ActiveContents();
   VoicePageController* page = ActivePage();
-  if (contents && page && !page->HasPageTree() && !wait_->tree_asked &&
-      !contents->IsLoading()) {
-    // Loaded, but no tree came: ask the renderers for their trees again.
-    wait_->tree_asked = true;
-    contents->ResetAccessibility();
+  PageWaitFacts facts;
+  // Still expecting the navigation the steps started.
+  facts.navigation_expected =
+      !wait_->navigated &&
+      (wait_->navigation_started || now - wait_->started < kNavigationGrace);
+  facts.loading = contents && contents->IsLoading();
+  facts.tree_expected = page != nullptr;
+  facts.has_tree = page && page->HasPageTree();
+  // The tab can stop loading before the tree of the loaded page has come
+  // (DecidePageWait()): the results would be read from the page part way
+  // through.
+  facts.tree_loaded = page && page->PageTreeLoaded();
+  facts.settle_passed = wait_->navigated && now - wait_->committed > kMaxSettle;
+  facts.tree_asked = wait_->tree_asked;
+  switch (DecidePageWait(facts)) {
+    case PageWaitDecision::kAskForTrees:
+      wait_->tree_asked = true;
+      if (contents) {
+        contents->ResetAccessibility();
+      }
+      RestartQuietTimer();
+      return;
+    case PageWaitDecision::kKeepWaiting:
+      RestartQuietTimer();
+      return;
+    case PageWaitDecision::kFinish:
+      FinishWait();
+      return;
   }
-  if ((contents && contents->IsLoading()) || (page && !page->HasPageTree())) {
-    RestartQuietTimer();
-    return;
-  }
-  FinishWait();
 }
 
 void VoiceController::OnWaitDeadline() {

@@ -3373,6 +3373,40 @@ LoopActivity DecideLoopActivity(bool active,
   return active ? LoopActivity::kListening : LoopActivity::kOff;
 }
 
+PageWaitDecision DecidePageWait(const PageWaitFacts& facts) {
+  if (facts.navigation_expected) {
+    return PageWaitDecision::kKeepWaiting;
+  }
+  if (!facts.tree_expected) {
+    return facts.loading ? PageWaitDecision::kKeepWaiting
+                         : PageWaitDecision::kFinish;
+  }
+  if (facts.loading) {
+    return PageWaitDecision::kKeepWaiting;
+  }
+  // Loaded, but no tree came (a page back from the back-forward cache may
+  // not send it by itself): the renderers send their trees again, whole.
+  if (!facts.has_tree) {
+    return facts.tree_asked ? PageWaitDecision::kKeepWaiting
+                            : PageWaitDecision::kAskForTrees;
+  }
+  if (!facts.tree_loaded) {
+    // The tree is the page part way through: its update with the rest is
+    // still to come.
+    if (!facts.settle_passed) {
+      return PageWaitDecision::kKeepWaiting;
+    }
+    // A few seconds on, it still doesn't say the page loaded: asked for
+    // again, whole, as the page is now, once. Asked and still not, what it
+    // holds is read, as a tree that never rests is: the hold is no longer
+    // than kMaxSettle's.
+    if (!facts.tree_asked) {
+      return PageWaitDecision::kAskForTrees;
+    }
+  }
+  return PageWaitDecision::kFinish;
+}
+
 // What a Spanish page's buttons say for the same actions (folded).
 constexpr std::string_view kSpanishConfirmWords[] = {
     "comprar",     "compra",    "pagar",       "pago",          "pedido",

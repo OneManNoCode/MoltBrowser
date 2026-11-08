@@ -164,6 +164,12 @@ class VoicePageController
   // Whether the top-level document's tree is here (the map is empty until
   // it is).
   bool HasPageTree();
+  // Whether that tree says its document has finished loading
+  // (AXTreeData::loaded, Blink's IsLoadCompleted(), which comes with the
+  // update that carries the loaded document's nodes). The tab's loading
+  // state comes apart from the trees, so the tab can stop loading while
+  // the tree held here is still the page part way through.
+  bool PageTreeLoaded();
   // Whether a frame the held trees embed (a player, a form in an iframe)
   // has a tree still to come: the frame is this page's, its tree isn't
   // here, and the trees aren't at their cap. Frames' trees come apart

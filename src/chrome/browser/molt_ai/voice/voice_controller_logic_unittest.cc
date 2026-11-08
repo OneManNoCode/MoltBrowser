@@ -2084,6 +2084,89 @@ TEST(VoiceControllerLogicTest, SpeakingWinsOverWaiting) {
   EXPECT_EQ(DecideLoopActivity(false, false, false, false), LoopActivity::kOff);
 }
 
+// A results page that has loaded, as the browser holds it.
+PageWaitFacts LoadedPage() {
+  PageWaitFacts facts;
+  facts.tree_expected = true;
+  facts.has_tree = true;
+  facts.tree_loaded = true;
+  return facts;
+}
+
+TEST(VoiceControllerLogicTest, PageWaitEndsOnceTheTabAndItsTreeHaveLoaded) {
+  EXPECT_EQ(DecidePageWait(LoadedPage()), PageWaitDecision::kFinish);
+
+  // The navigation the steps started is still to commit.
+  PageWaitFacts facts = LoadedPage();
+  facts.navigation_expected = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
+
+  // The tab is still loading.
+  facts = LoadedPage();
+  facts.loading = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
+
+  // No page controller: only the tab's loading counts.
+  facts = PageWaitFacts();
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kFinish);
+  facts.loading = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
+}
+
+// The flake in VoiceSkillsBrowserTest.SearchYouTubeThroughItsSkill: the tab
+// had stopped loading and the tree had been quiet a moment, but the tree
+// the browser held was the results page part way through its parse (3 of
+// its 10 results); the update with the rest came later. Until the tree says
+// its page has loaded, the wait goes on.
+TEST(VoiceControllerLogicTest, PageWaitHoldsForATreeThatHasntLoaded) {
+  PageWaitFacts facts = LoadedPage();
+  facts.tree_loaded = false;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
+  // The update with the rest comes, saying the page has loaded.
+  facts.tree_loaded = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kFinish);
+}
+
+// The hold for "loaded" is bounded by kMaxSettle: a tree that still doesn't
+// say so is asked for again, once, and then read as it is, not held to the
+// wait's 15 s deadline.
+TEST(VoiceControllerLogicTest, PageWaitHoldsForLoadedNoLongerThanTheSettle) {
+  PageWaitFacts facts = LoadedPage();
+  facts.tree_loaded = false;
+  facts.settle_passed = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kAskForTrees);
+  facts.tree_asked = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kFinish);
+  // Asked already because no tree had come: not asked twice.
+  facts = LoadedPage();
+  facts.tree_loaded = false;
+  facts.settle_passed = true;
+  facts.tree_asked = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kFinish);
+}
+
+// Trees asked for again, once a wait: when the tab has loaded and no tree
+// came, and when the tree still doesn't say it loaded after kMaxSettle.
+TEST(VoiceControllerLogicTest, PageWaitAsksForTheTreesAgainOnce) {
+  PageWaitFacts facts = LoadedPage();
+  facts.has_tree = false;
+  facts.tree_loaded = false;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kAskForTrees);
+  facts.tree_asked = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
+  // Not while the tab still loads: its tree is on its way.
+  facts.tree_asked = false;
+  facts.loading = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
+
+  // A tree that doesn't say it loaded: not asked for before kMaxSettle.
+  facts = LoadedPage();
+  facts.tree_loaded = false;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
+  facts.settle_passed = true;
+  EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kAskForTrees);
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai
