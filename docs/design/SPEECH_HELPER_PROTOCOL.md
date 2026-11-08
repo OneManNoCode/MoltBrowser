@@ -222,7 +222,12 @@ change completely until the `final`.
 ```
 
 The user stopped speaking: `vad_silence_ms` of silence, or the utterance
-reached 20 s.
+reached 20 s. When the utterance so far has at most one word after the
+wake phrase (or one word, without it), the helper waits 0.4 s more,
+recognizing on, before it ends: a short pause inside a command ("Hey Molt,
+select" ... "by letter"), or an unvoiced sound the detector took for
+silence, is the same command, which an utterance of its own would hear
+from its middle. If speech resumes in that time, the utterance goes on.
 
 ### 3.6 `final`
 

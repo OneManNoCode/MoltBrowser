@@ -56,6 +56,13 @@ For longer narrative posts behind each entry see
 - **Something said just as the follow-up window closes still counts.** The
   speech helper notices speech a moment in and hears of the close a
   moment late, so "no, I said YouTube" begun just before it was dropped.
+- **A short pause inside a command no longer cuts it in two.** "Hey Molt,
+  select ... by letter" ended at the pause, and "by letter" came as a
+  command of its own, heard from its middle. When what was said so far is
+  one word after "Hey Molt", voice mode now waits 0.4 s more for the rest;
+  longer commands end as quickly as before. And "Hey Molt" alone, said in
+  the moments after an answer, waits for the command instead of being
+  answered with "I didn't catch that".
 - **The listening tone waits until you pause.** After "Hey Molt" it
   played once 0.7 s had passed with no command recognized yet, which
   could be over the command's last words; with the speakers' sound

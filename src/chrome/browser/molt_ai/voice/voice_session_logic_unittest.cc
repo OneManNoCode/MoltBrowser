@@ -307,6 +307,45 @@ TEST_F(VoiceSessionLogicTest, TheListeningToneWaitsForAPause) {
   EXPECT_EQ(At(noisy + kWakeEarconLatestMs).earcon, EarconKind::kListening);
 }
 
+// The spoken suite's file run: "Himalt." and a pause, then "Scroll down",
+// in the follow-up window: the wake phrase alone went to the loop ("I
+// didn't catch that") and the command came over its answer.
+TEST_F(VoiceSessionLogicTest, TheWakePhraseAloneInTheWindowIsAWake) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the shop", 0.9, now_ + 500);
+  BrowserAnswers();
+  const int64_t answered = now_;
+  // Late in the window.
+  logic_->OnSpeechStart(answered + 6500);
+  SessionActions alone = logic_->OnFinal("Himalt.", 0.9, answered + 7000);
+  EXPECT_FALSE(alone.utterance.has_value());
+  EXPECT_FALSE(alone.dropped.has_value());
+  EXPECT_EQ(logic_->state(), SessionState::kListening);
+  EXPECT_FALSE(logic_->wake_required());
+  // The tone, once the microphone is quiet.
+  EXPECT_EQ(At(answered + 7000).earcon, EarconKind::kListening);
+  // The command, past the window's first end.
+  const int64_t late = answered + kFollowUpWindowMs + 1000;
+  At(late);
+  EXPECT_FALSE(logic_->wake_required());
+  logic_->OnSpeechStart(late + 100);
+  EXPECT_EQ(logic_->OnFinal("Scroll down", 0.9, late + 800).utterance,
+            "Scroll down");
+
+  // And with nothing after it: back to waiting.
+  now_ = late + 1000;
+  BrowserAnswers();
+  const int64_t again = now_;
+  logic_->OnSpeechStart(again + 1000);
+  EXPECT_FALSE(
+      logic_->OnFinal("Hey Molt", 0.9, again + 1600).utterance.has_value());
+  SessionActions gave_up = At(again + 1600 + kWakeTimeoutMs);
+  EXPECT_TRUE(gave_up.reset_helper);
+  At(again + kFollowUpWindowMs + kWakeTimeoutMs);
+  EXPECT_EQ(logic_->state(), SessionState::kWaiting);
+}
+
 TEST_F(VoiceSessionLogicTest, TheListeningToneWhenTheUserPauses) {
   Begin();
   EXPECT_FALSE(logic_->OnWake(now_).earcon.has_value());

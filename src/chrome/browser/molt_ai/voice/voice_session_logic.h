@@ -21,7 +21,9 @@
 //     choice ("the fourth one"), also while what it was doing waits on
 //     that answer (a page's "Leave site?" holds up the "go back" that
 //     raised it). One begun just before the window ran out, as the
-//     helper places it, counts too (kWindowCloseGraceMs). While a page
+//     helper places it, counts too (kWindowCloseGraceMs). The wake
+//     phrase alone there ("Himalt." and a pause) is a wake, not a command
+//     (OnlyTheWakePhrase()): the command after it counts. While a page
 //     plays sound, such an utterance also needs kMinConfidenceWithoutWake
 //     (§7.2).
 //   - "Stop", "cancel", "stop talking" and "turn off voice mode" always
@@ -458,6 +460,10 @@ bool IsAlwaysHeardCommand(std::string_view text, Language language);
 // a site called "three" without one); a bare number is let through.
 // Parsed in |language|, as the loop parses it ("el tercero", "abre tres").
 bool TakenOverOwnVoice(std::string_view text);
+// Whether |text| is a wake phrase and nothing else, as the grammar strips
+// it ("Hey Molt.", "Himalt", "him old"): heard on its own in the follow-up
+// window, it is a wake, and the command follows.
+bool OnlyTheWakePhrase(std::string_view text, Language language);
 bool TakenOverOwnVoice(std::string_view text, Language language);
 
 }  // namespace voice

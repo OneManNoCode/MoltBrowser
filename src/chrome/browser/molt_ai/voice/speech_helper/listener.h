@@ -126,6 +126,13 @@ class Listener {
   // detector hears speech 0.1 s in, a step later at most): it counts
   // without the phrase, from its start.
   static constexpr int64_t kLateOpenSamples = kSampleRate * 3 / 10;
+  // When an utterance's speech ends with at most one word after the wake
+  // phrase (or one word, without it), the helper waits this much more
+  // audio before finishing it, recognizing on: a short pause inside a
+  // command ("Hey Molt, select [pause] by letter", or an unvoiced sound
+  // the detector takes for silence) is the same command, which a new
+  // utterance would hear from its middle. Only short commands wait.
+  static constexpr int64_t kShortCommandHangoverSamples = kSampleRate * 4 / 10;
   // How long speech is heard for a wake phrase the spotter missed
   // (|State::kHearing|) before the helper gives up on it: the phrase comes
   // first.
@@ -197,6 +204,9 @@ class Listener {
   // after the cut, or (|whole|, at the end of the speech) more words than
   // the phrase has.
   bool HasWordsAfterWake(const RecognizerResult& result, bool whole) const;
+  // Whether |result| has at most one word after the wake phrase (or at
+  // most one word, without one).
+  bool ShortCommand(const RecognizerResult& result) const;
   void EmitPartial(const RecognizerResult& result);
   void ApplyPendingVad();
   EventTime Now() const;
@@ -240,6 +250,9 @@ class Listener {
   // the browser asked for the wake phrase again (kLateOpenSamples); -1 if
   // none.
   int64_t open_until_ = -1;
+  // kUtterance: its speech ended short (kShortCommandHangoverSamples); it
+  // finishes at this sample unless speech resumes. 0 if not waiting.
+  int64_t hangover_until_ = 0;
   // kHearing: where speech begun before the phrase was needed started (it
   // counts without the phrase); -1 if it didn't.
   int64_t hearing_open_from_ = -1;

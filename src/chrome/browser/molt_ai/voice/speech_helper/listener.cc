@@ -208,6 +208,19 @@ void Listener::Step(const std::vector<float>& samples) {
         return;
       }
       engines_->Recognize(samples);
+      if (vad.segment_ended &&
+          received_ - utterance_from_ < kMaxUtteranceSamples) {
+        // The phrase and one word, and a pause: the command may go on
+        // (kShortCommandHangoverSamples).
+        const RecognizerResult partial = engines_->Partial();
+        const size_t words =
+            WakePhraseWordsAtStart(partial.text, config_.wake_phrases);
+        if (words > 0 && CountWords(partial.text) == words + 1) {
+          OnHeardWake(partial, words, /*whole=*/false);
+          hangover_until_ = received_ + kShortCommandHangoverSamples;
+          return;
+        }
+      }
       if (vad.segment_ended ||
           received_ - utterance_from_ >= kMaxUtteranceSamples) {
         OnHeard(engines_->Finish(), /*whole=*/true);
@@ -233,7 +246,11 @@ void Listener::Step(const std::vector<float>& samples) {
       }
       if (vad.segment_ended) {
         if (state_ == State::kUtterance) {
-          FinishUtterance();
+          if (ShortCommand(result)) {
+            hangover_until_ = received_ + kShortCommandHangoverSamples;
+          } else {
+            FinishUtterance();
+          }
           return;
         }
         // The speech that held the wake phrase ended. Was there more?
@@ -263,14 +280,32 @@ void Listener::Step(const std::vector<float>& samples) {
         EndWithoutCommand();
       }
       return;
-    case State::kUtterance:
+    case State::kUtterance: {
       engines_->Recognize(samples);
-      EmitPartial(engines_->Partial());
-      if (vad.segment_ended ||
-          received_ - utterance_from_ >= kMaxUtteranceSamples) {
+      const RecognizerResult partial = engines_->Partial();
+      EmitPartial(partial);
+      if (received_ - utterance_from_ >= kMaxUtteranceSamples) {
+        FinishUtterance();
+        return;
+      }
+      if (hangover_until_ > 0) {
+        if (vad.in_speech) {
+          // It went on: the same command.
+          hangover_until_ = 0;
+        } else if (received_ >= hangover_until_) {
+          FinishUtterance();
+        }
+        return;
+      }
+      if (vad.segment_ended) {
+        if (ShortCommand(partial)) {
+          hangover_until_ = received_ + kShortCommandHangoverSamples;
+          return;
+        }
         FinishUtterance();
       }
       return;
+    }
   }
 }
 
@@ -410,6 +445,15 @@ bool Listener::HasWordsAfterWake(const RecognizerResult& result,
   return CountWords(result.text) > (phrase > 0 ? phrase : wake_words_);
 }
 
+bool Listener::ShortCommand(const RecognizerResult& result) const {
+  const size_t words = CountWords(result.text);
+  size_t phrase = WakePhraseWordsAtStart(result.text, config_.wake_phrases);
+  if (phrase == 0) {
+    phrase = WakeNameWordsAtStart(result.text, config_.wake_phrases);
+  }
+  return words <= phrase + 1;
+}
+
 void Listener::EmitPartial(const RecognizerResult& result) {
   if (result.text == last_partial_) {
     return;
@@ -444,6 +488,7 @@ void Listener::EndWithoutCommand() {
 void Listener::ToBaseState() {
   last_partial_.clear();
   heard_off_ = false;
+  hangover_until_ = 0;
   open_until_ = -1;
   hearing_open_from_ = -1;
   state_ = config_.wake_required ? State::kWaitWake : State::kOpen;

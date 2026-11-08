@@ -294,6 +294,13 @@ bool TakenOverOwnVoice(std::string_view text) {
   return TakenOverOwnVoice(text, Language::kEnglish);
 }
 
+bool OnlyTheWakePhrase(std::string_view text, Language language) {
+  ParseContext context;
+  context.language = language;
+  return !FoldForComparison(text).empty() &&
+         ParseVoiceCommand(text, context).heard.empty();
+}
+
 bool TakenOverOwnVoice(std::string_view text, Language language) {
   // As the browser reads a list: a bare number or description chooses.
   ParseContext list;
@@ -573,6 +580,19 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
         actions.stop_speech = true;
       }
     }
+  }
+  if (take && activity_ == BrowserActivity::kIdle &&
+      OnlyTheWakePhrase(text, settings_.language)) {
+    // The wake phrase alone, and a pause ("Himalt." ... "Scroll down"),
+    // heard in the follow-up window: not a command, but a wake. The
+    // command after it counts, as after any wake, and the helper keeps
+    // hearing everything until then.
+    utterance_ = NewUtterance(/*woke=*/true, now_ms, lag_ms);
+    wake_until_ms_ = now_ms + kWakeTimeoutMs;
+    wake_earcon_at_ms_ = now_ms;
+    wake_earcon_latest_ms_ = now_ms + kWakeEarconLatestMs;
+    follow_up_until_ms_ = std::max(follow_up_until_ms_, wake_until_ms_);
+    return Finish(std::move(actions), now_ms);
   }
   if (!take && !actions.say_again && !reason.empty()) {
     actions.dropped = std::string(text);
