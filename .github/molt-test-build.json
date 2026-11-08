@@ -1,6 +1,6 @@
-{"resume_run": "42487956831",
+{"resume_run": "42498331739",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, fifteenth build: the listening tone waits for a pause in what the microphone hears (with the speakers' sound in the microphone it took a command's last words), something said just as the follow-up window closes counts (helper and session), a page's prompt is answered while what raised it waits, the echo check needs the browser's words in order (\"Number two\"), a role word for a kind of item the page lacks counts against a match (\"open Wikipedia and a new tab\" pressed a link), \"and a new tab\" and \"roll to the top\" as heard, and test-log lines for helper events and earcons. Resume from run 42487956831 (the fourteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the fourteenth build (70% file, 77% noloop, 57% with the speakers)."}
+ "request": "Round 45, sixteenth build: the speech helper waits 0.4 s more when a command has at most one word after the wake phrase (commands were cut at a short pause), the wake phrase alone in the follow-up window is a wake, \"clickad\" for \"click add\" is read apart, the app menu is waited for up to 8 s, and the digest no longer takes the GPU sandbox warning for a crash (so every failure's log fits). Resume from run 42498331739 (the fifteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the fifteenth build (73% file, 79% noloop, 67% with the speakers)."}

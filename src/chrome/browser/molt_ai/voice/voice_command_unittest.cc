@@ -204,6 +204,17 @@ TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
             Fields(ParseVoiceCommand("press submit", context)));
   EXPECT_NE(ParseVoiceCommand("clicking", context).kind,
             VoiceCommandKind::kChoose);
+  // A short word after the verb, with more after it: apart too
+  // ("clickad toaster to cart" for "click add toaster to cart").
+  EXPECT_EQ(Fields(ParseVoiceCommand("clickad toaster to cart", context)),
+            Fields(ParseVoiceCommand("click ad toaster to cart", context)));
+  // Never an ending ("clicked the button", "pressing on"), nor a short
+  // word alone.
+  for (const char* said : {"clicked the button", "clicking on it",
+                           "pressed for time", "tapping away", "clickad"}) {
+    EXPECT_NE(ParseVoiceCommand(said, context).kind, VoiceCommandKind::kChoose)
+        << said;
+  }
 }
 
 TEST(VoiceCommandTest, OpenSites) {
@@ -819,6 +830,9 @@ TEST(VoiceCommandTest, RecognizerForms) {
       {"Hey, Malt, pores", "pause"},
       {"paws the video", "pause"},
       {"Hey mold, bookmarked this page.", "bookmark_page"},
+      // "Click" glued to a short word after it.
+      {"He mold. Clickad toaster to cart", "choose"},
+      {"clickon sport", "choose"},
       // "Scroll" with its start lost to the wake phrase.
       {"roll to the top", "scroll_to_top"},
       {"Hey mold. Roll to the bottom", "scroll_to_bottom"},

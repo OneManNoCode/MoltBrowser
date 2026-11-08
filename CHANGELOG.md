@@ -62,7 +62,9 @@ For longer narrative posts behind each entry see
   one word after "Hey Molt", voice mode now waits 0.4 s more for the rest;
   longer commands end as quickly as before. And "Hey Molt" alone, said in
   the moments after an answer, waits for the command instead of being
-  answered with "I didn't catch that".
+  answered with "I didn't catch that". "Clickad toaster to cart", "click
+  add" run together as the recognizer heard it, presses "Add toaster to
+  cart".
 - **The listening tone waits until you pause.** After "Hey Molt" it
   played once 0.7 s had passed with no command recognized yet, which
   could be over the command's last words; with the speakers' sound

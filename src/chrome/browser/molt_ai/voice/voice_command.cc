@@ -1450,11 +1450,29 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
   // A verb heard glued to the next word ("clickname a color", as the
   // bundled English recognizer hears "click name a colour"): once more,
   // apart. Only when nothing understood it, a remainder of at least four
-  // letters ("clicking" stays as it is), and once (the retry starts with
-  // the verb alone).
+  // letters ("clicking" stays as it is), or of two or three that isn't an
+  // ending ("ed", "ing") with more words after it ("clickad toaster to
+  // cart"), and once (the retry starts with the verb alone).
+  constexpr std::string_view kEndings[] = {"s",  "es",  "ed",  "er",
+                                           "ers", "ing", "y",   "ly",
+                                           "ies", "est", "ery", "able"};
   const std::string_view first = u.words[0];
   for (std::string_view verb : p.glued_verbs) {
-    if (first.size() < verb.size() + 4 || !first.starts_with(verb)) {
+    if (!first.starts_with(verb) || first.size() < verb.size() + 2) {
+      continue;
+    }
+    const std::string_view rest = first.substr(verb.size());
+    // "tapping", "tapped": the verb's last letter doubled, then an ending.
+    const std::string_view after_double =
+        rest.size() > 1 && rest[0] == verb.back() ? rest.substr(1) : rest;
+    const auto is_ending = [&kEndings](std::string_view s) {
+      return std::find(std::begin(kEndings), std::end(kEndings), s) !=
+             std::end(kEndings);
+    };
+    if (is_ending(rest) || is_ending(after_double)) {
+      continue;
+    }
+    if (rest.size() < 4 && u.words.size() < 2) {
       continue;
     }
     std::string apart = std::string(verb) + " " +
