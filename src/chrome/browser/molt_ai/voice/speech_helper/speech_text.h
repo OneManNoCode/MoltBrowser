@@ -135,6 +135,14 @@ size_t WakePhraseWordsAtStart(std::string_view text,
 size_t WakeNameWordsAtStart(std::string_view text,
                             const std::vector<std::string>& phrases);
 
+// Whether |text| is only the start of a wake phrase, as a recognizer
+// writes it before the phrase is over: its words begin one of |phrases|,
+// as written or with the same consonants, and its last word may be cut
+// short ("Hey, Mal" for "Hey Molt"). Never a reason to wake: only to wait
+// a moment longer for the command (Listener::ShortCommand()).
+bool OnlyAWakePhraseBegun(std::string_view text,
+                          const std::vector<std::string>& phrases);
+
 // Text for an event: well-formed UTF-8 only (other bytes dropped), no
 // control characters (C0, DEL, C1, line and paragraph separators), runs of
 // white space as one space, trimmed, at most |max_bytes|: cut at the last

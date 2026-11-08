@@ -166,6 +166,7 @@ class AudioDrivenEngines : public SpeechEngines {
     }
     VadUpdate update;
     update.in_speech = loud;
+    update.sound = loud;
     update.segment_ended = was_loud_ && !loud;
     was_loud_ = loud;
     return update;

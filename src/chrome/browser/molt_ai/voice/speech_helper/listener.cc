@@ -217,7 +217,7 @@ void Listener::Step(const std::vector<float>& samples) {
             WakePhraseWordsAtStart(partial.text, config_.wake_phrases);
         if (words > 0 && CountWords(partial.text) == words + 1) {
           OnHeardWake(partial, words, /*whole=*/false);
-          hangover_until_ = received_ + kShortCommandHangoverSamples;
+          StartHangover();
           return;
         }
       }
@@ -247,7 +247,7 @@ void Listener::Step(const std::vector<float>& samples) {
       if (vad.segment_ended) {
         if (state_ == State::kUtterance) {
           if (ShortCommand(result)) {
-            hangover_until_ = received_ + kShortCommandHangoverSamples;
+            StartHangover();
           } else {
             FinishUtterance();
           }
@@ -292,14 +292,23 @@ void Listener::Step(const std::vector<float>& samples) {
         if (vad.in_speech) {
           // It went on: the same command.
           hangover_until_ = 0;
-        } else if (received_ >= hangover_until_) {
+          return;
+        }
+        if (vad.sound) {
+          // Perhaps it goes on: long enough for the detector to tell.
+          hangover_until_ =
+              std::min(std::max(hangover_until_,
+                                received_ + kSoundHangoverSamples),
+                       hangover_limit_);
+        }
+        if (received_ >= hangover_until_) {
           FinishUtterance();
         }
         return;
       }
       if (vad.segment_ended) {
         if (ShortCommand(partial)) {
-          hangover_until_ = received_ + kShortCommandHangoverSamples;
+          StartHangover();
           return;
         }
         FinishUtterance();
@@ -446,12 +455,22 @@ bool Listener::HasWordsAfterWake(const RecognizerResult& result,
 }
 
 bool Listener::ShortCommand(const RecognizerResult& result) const {
+  // The recognizer writes a word a moment after it is said: at the pause
+  // after "Hey Molt" it may have written only "Hey, Mal".
+  if (OnlyAWakePhraseBegun(result.text, config_.wake_phrases)) {
+    return true;
+  }
   const size_t words = CountWords(result.text);
   size_t phrase = WakePhraseWordsAtStart(result.text, config_.wake_phrases);
   if (phrase == 0) {
     phrase = WakeNameWordsAtStart(result.text, config_.wake_phrases);
   }
   return words <= phrase + 1;
+}
+
+void Listener::StartHangover() {
+  hangover_until_ = received_ + kShortCommandHangoverSamples;
+  hangover_limit_ = received_ + kMaxHangoverSamples;
 }
 
 void Listener::EmitPartial(const RecognizerResult& result) {
@@ -489,6 +508,7 @@ void Listener::ToBaseState() {
   last_partial_.clear();
   heard_off_ = false;
   hangover_until_ = 0;
+  hangover_limit_ = 0;
   open_until_ = -1;
   hearing_open_from_ = -1;
   state_ = config_.wake_required ? State::kWaitWake : State::kOpen;

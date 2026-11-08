@@ -228,6 +228,21 @@ recognizing on, before it ends: a short pause inside a command ("Hey Molt,
 select" ... "by letter"), or an unvoiced sound the detector took for
 silence, is the same command, which an utterance of its own would hear
 from its middle. If speech resumes in that time, the utterance goes on.
+Only the start of the wake phrase counts as short too: the recognizer
+writes a word a moment after it is said, and at the pause after "Hey
+Molt" it may have written only "Hey, Mal". The detector notices speech
+0.25 to 0.3 s in, so sound well above the quiet before it (12 dB, and
+-50 dBFS RMS) keeps the wait going 0.4 s more for it to tell, up to 1 s
+after the speech ended in all. Measured with the helper on the spoken
+suite's voices, "Hey Molt", a pause of 0.5 to 0.75 s and a command: 9 of
+36 were cut in two before, none after.
+
+Audio quieter than -70 dBFS (no sample over it in a 32 ms window) is not
+given to the detector and counts as silence: only a muted or virtual
+microphone gives it (digital zeros and dither), and Silero took the edges
+between zeros and dither for speech, once for its whole 20 s limit, which
+swallowed the command said in it (measured on the spoken suite's
+microphone).
 
 ### 3.6 `final`
 

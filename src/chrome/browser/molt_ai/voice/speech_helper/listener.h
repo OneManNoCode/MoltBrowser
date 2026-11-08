@@ -34,6 +34,10 @@ struct VadUpdate {
   // A stretch of speech ended within them (|vad_silence_ms| of silence
   // after it, or it reached the detector's 20 s limit).
   bool segment_ended = false;
+  // The samples are much louder than the quiet before them: speech may
+  // have begun, before the detector can tell (it notices speech 0.25 to
+  // 0.3 s in). Noise and music set it too; only ever a reason to wait.
+  bool sound = false;
 };
 
 struct RecognizerResult {
@@ -133,6 +137,11 @@ class Listener {
   // the detector takes for silence) is the same command, which a new
   // utterance would hear from its middle. Only short commands wait.
   static constexpr int64_t kShortCommandHangoverSamples = kSampleRate * 4 / 10;
+  // Sound in that wait (VadUpdate::sound) keeps it going this much longer,
+  // for the detector to notice the speech, and the wait never goes on for
+  // more than kMaxHangoverSamples in all.
+  static constexpr int64_t kSoundHangoverSamples = kSampleRate * 4 / 10;
+  static constexpr int64_t kMaxHangoverSamples = kSampleRate;
   // How long speech is heard for a wake phrase the spotter missed
   // (|State::kHearing|) before the helper gives up on it: the phrase comes
   // first.
@@ -207,6 +216,8 @@ class Listener {
   // Whether |result| has at most one word after the wake phrase (or at
   // most one word, without one).
   bool ShortCommand(const RecognizerResult& result) const;
+  // The short-command hangover, from now.
+  void StartHangover();
   void EmitPartial(const RecognizerResult& result);
   void ApplyPendingVad();
   EventTime Now() const;
@@ -253,6 +264,8 @@ class Listener {
   // kUtterance: its speech ended short (kShortCommandHangoverSamples); it
   // finishes at this sample unless speech resumes. 0 if not waiting.
   int64_t hangover_until_ = 0;
+  // The latest it may go on to (kMaxHangoverSamples).
+  int64_t hangover_limit_ = 0;
   // kHearing: where speech begun before the phrase was needed started (it
   // counts without the phrase); -1 if it didn't.
   int64_t hearing_open_from_ = -1;

@@ -665,4 +665,39 @@ size_t WakeNameWordsAtStart(std::string_view text,
   return 0;
 }
 
+bool OnlyAWakePhraseBegun(std::string_view text,
+                          const std::vector<std::string>& phrases) {
+  for (const std::string& phrase : phrases) {
+    const std::vector<std::string> wanted = FirstWakeWords(phrase, 8);
+    const std::vector<std::string> heard =
+        FirstWakeWords(text, wanted.size() + 1);
+    if (heard.empty() || heard.size() > wanted.size()) {
+      continue;
+    }
+    bool begun = true;
+    for (size_t i = 0; i < heard.size() && begun; ++i) {
+      const std::string& want = wanted[i];
+      const std::string& got = heard[i];
+      if (got == want) {
+        continue;
+      }
+      const std::string want_key = Consonants(want);
+      const std::string got_key = Consonants(got);
+      if (i + 1 < heard.size()) {
+        begun = !want_key.empty() && got_key == want_key;
+      } else {
+        // The last word, perhaps cut short: its letters or its consonants
+        // begin the phrase's word.
+        begun = want.compare(0, got.size(), got) == 0 ||
+                (!got_key.empty() &&
+                 want_key.compare(0, got_key.size(), got_key) == 0);
+      }
+    }
+    if (begun) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace molt_speech

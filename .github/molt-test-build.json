@@ -1,6 +1,6 @@
-{"resume_run": "42498331739",
+{"resume_run": "42507397909",
  "run_tests": true,
- "e2e_only": false,
- "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
+ "e2e_only": true,
+ "e2e_runs": "file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, sixteenth build: the speech helper waits 0.4 s more when a command has at most one word after the wake phrase (commands were cut at a short pause), the wake phrase alone in the follow-up window is a wake, \"clickad\" for \"click add\" is read apart, the app menu is waited for up to 8 s, and the digest no longer takes the GPU sandbox warning for a crash (so every failure's log fits). Resume from run 42498331739 (the fifteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the fifteenth build (73% file, 79% noloop, 67% with the speakers)."}
+ "request": "Round 45, seventeenth build (spoken suite only, on the sixteenth build's browser with a new speech helper): a pause right after \"Hey Molt\" no longer ends the command (the helper counts the wake phrase begun, \"Hey, Mal\", as a short command, and sound in the short-command wait keeps it going up to 1 s until the detector can tell it is speech), and audio under -70 dBFS isn't given to the detector (it took a virtual microphone's digital silence and dither for speech for up to 20 s). Against the sixteenth build: 72% file, 79% noloop, 66% with the speakers."}
