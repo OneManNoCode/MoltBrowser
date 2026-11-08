@@ -167,6 +167,13 @@ def microphone_digest(res, limit=90):
         out.append("microphone, each second's peak (dBFS): " +
                    " ".join(str(int(v)) for v in levels[:limit]
                             if isinstance(v, (int, float))))
+    onset = res.get("mic_onset")
+    if isinstance(onset, dict) and isinstance(onset.get("levels"), list):
+        out.append("microphone at step %s's speech (%.2f s into the dump), each 100 ms "
+                   "from 0.5 s before (dBFS): %s" % (
+                       onset.get("step"), float(onset.get("at_s") or 0),
+                       " ".join(str(int(v)) for v in onset["levels"][:40]
+                                if isinstance(v, (int, float)))))
     heard = res.get("mic_heard")
     if isinstance(heard, str):
         out.append("microphone, as the kit's recognizer hears it: %s" %

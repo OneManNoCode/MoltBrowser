@@ -59,7 +59,7 @@ class Ears(object):
         if not self.h:
             self.start()
         n = len(self.h.lines)
-        self.h.send(b"".join(shc.audio_frames(pcm + shc.silence(1.0))))
+        self.h.send(b"".join(shc.audio_frames(pcm + shc.silence(shc.TAIL_SILENCE_S))))
         sent = time.monotonic()
         while time.monotonic() - sent < wait:
             pending, last = False, sent

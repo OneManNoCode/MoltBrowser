@@ -64,7 +64,17 @@ For longer narrative posts behind each entry see
   the moments after an answer, waits for the command instead of being
   answered with "I didn't catch that". "Clickad toaster to cart", "click
   add" run together as the recognizer heard it, presses "Add toaster to
-  cart".
+  cart". A pause right after "Hey Molt" is waited out as well, even
+  before the recognizer has written all of "Molt", and the wait goes on
+  while there is sound, for up to 1 s, until the speech detector can tell
+  it is speech (it takes a quarter of a second). With the test voices and
+  a pause of 0.5 to 0.75 s after "Hey Molt", 9 of 36 commands were cut in
+  two before; none are now.
+- **Silence no longer counts as speech.** Between words a virtual or
+  muted microphone gives digital silence and faint noise, and the speech
+  detector took the edges between them for speech, once for 20 s, which
+  swallowed "Hey Molt, exit full screen" said in that time. Sound that
+  quiet (under -70 dBFS) now counts as silence.
 - **The listening tone waits until you pause.** After "Hey Molt" it
   played once 0.7 s had passed with no command recognized yet, which
   could be over the command's last words; with the speakers' sound

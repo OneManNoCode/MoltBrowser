@@ -93,6 +93,14 @@ class SherpaEngines : public SpeechEngines {
   int64_t vad_speech_samples_ = 0;
   // How long it has heard no speech since it last started fresh.
   int64_t vad_quiet_samples_ = 0;
+  // How long the samples have been silent (kSilentPeak) within a stretch
+  // of speech, and how long ends it (the end-of-speech silence).
+  int64_t vad_silent_samples_ = 0;
+  int64_t vad_silence_samples_ = kSampleRate / 2;
+  // The quietest recent level (RMS of a Detect() call's samples), for
+  // VadUpdate::sound: it follows a quieter level at once and a louder one
+  // slowly. 0 before any.
+  double quiet_rms_ = 0;
 
   const SherpaOnnxOnlineRecognizer* asr_ = nullptr;
   const SherpaOnnxOnlineStream* asr_stream_ = nullptr;

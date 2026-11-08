@@ -36,6 +36,9 @@ LISTEN_TIMEOUT_S = 45
 IDLE_TIMEOUT_S = 60
 # The longest wait for voice mode's follow-up window to close.
 WINDOW_TIMEOUT_S = 30
+# The longest wait for voice mode to answer what the kit said (the end of
+# speech, a short command's wait, the answer).
+REPLY_TIMEOUT_S = 10
 POLL_S = 0.2
 # File mode's fixed times (the recording can't wait on the browser): past
 # voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
@@ -55,6 +58,40 @@ WORD_TRIES = 3
 MIC_DUMP = "mic.pcm"
 # How much of it the kit's recognizer hears back for a failed scenario.
 MIC_DUMP_MAX_S = 90
+
+
+def onset_levels(pcm, around, rate=16000, search_s=3.0, before_s=0.5, after_s=2.0,
+                 step_s=0.1, onset_db=-30):
+    """Around sample |around| of |pcm| (16-bit little-endian): where speech
+    starts, the first 10 ms within |search_s| of it with a peak of
+    |onset_db| or more, and each |step_s|'s peak in dBFS from |before_s|
+    before it to |after_s| after (-120 for silence). (None, []) when nothing
+    is that loud there. The dump starts a moment after the microphone
+    opens, so a step's time is only roughly where its speech is."""
+    import array
+    import math
+    samples = array.array("h")
+    samples.frombytes(pcm[:len(pcm) // 2 * 2])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    level = 32768.0 * 10 ** (onset_db / 20.0)
+    ten = rate // 100
+    lo = max(0, int(around - search_s * rate))
+    hi = min(len(samples), int(around + search_s * rate))
+    onset = None
+    for at in range(lo, hi, ten):
+        if max((abs(x) for x in samples[at:at + ten]), default=0) >= level:
+            onset = at
+            break
+    if onset is None:
+        return None, []
+    out = []
+    step = int(step_s * rate)
+    for at in range(max(0, onset - int(before_s * rate)),
+                    min(len(samples), onset + int(after_s * rate)), step):
+        peak = max((abs(x) for x in samples[at:at + step]), default=0)
+        out.append(round(20 * math.log10(peak / 32768.0)) if peak else -120)
+    return onset / float(rate), out
 
 
 def mic_levels(pcm, rate=16000):
@@ -314,6 +351,17 @@ class Runner(object):
             time.sleep(POLL_S)
         return False
 
+    def wait_reply(self, log, since, timeout=REPLY_TIMEOUT_S):
+        """Until voice mode says something, or starts to, after |since|."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            for e in log.events(since):
+                if e["e"] == "said" or (e["e"] == "activity" and
+                                        e.get("activity") in ("thinking", "speaking")):
+                    return True
+            time.sleep(POLL_S)
+        return False
+
     # ---- one scenario -------------------------------------------------------
 
     def voice_for(self, index):
@@ -455,6 +503,23 @@ class Runner(object):
         except OSError:
             return
         res["mic_levels"] = mic_levels(pcm)
+        # Each 100 ms around the start of the failed step's speech: whether
+        # its first words reached the helper (an echo canceller can hold
+        # back the start of speech said over the browser's own sound).
+        origin = None
+        tlog = testlog.TestLog(os.path.join(run_dir, "voice.jsonl"))
+        for ev in tlog.events(0):
+            if ev["e"] == "activity" and ev.get("mic") is True:
+                origin = ev["ts"]
+                break
+        failed = [st for st in res.get("steps", []) if st.get("status") != "passed"]
+        if origin is not None and failed and failed[-1].get("said_at"):
+            start = failed[-1]["said_at"][0]
+            at_s, levels = onset_levels(pcm, (start - origin) * audio_path.PCM_RATE,
+                                        rate=audio_path.PCM_RATE)
+            if levels:
+                res["mic_onset"] = {"step": failed[-1].get("index", 0) + 1,
+                                    "at_s": round(at_s, 2), "levels": levels}
         if self.ears and pcm:
             try:
                 res["mic_heard"] = (self.ears.transcribe(pcm) or "")[:600]
@@ -540,6 +605,10 @@ class Runner(object):
                 since = time.time()
                 (self.player or self.pulse).play(
                     render.clip_path(self.speech, voice, speed, render.REPEAT))
+                # Voice mode was idle before "repeat" too: wait for it to
+                # answer (the prompt said again) before waiting for quiet,
+                # or the kit says "repeat" again into the same utterance.
+                self.wait_reply(tlog, since)
                 self.wait_idle(tlog)
             pcm = audio_path.read_pcm_since(plan["recording"], plan["rec_t0"], since)
             heard = self.ears.transcribe(pcm)
@@ -569,6 +638,14 @@ class Runner(object):
             self.screenshot(world, run_dir, i, sres)
             return sres
         sres["said_as"] = said
+        if step.action == "say" and not self.config.typed:
+            # When its speech played (wall clock), for the microphone notes.
+            if self.config.audio == "file":
+                a, b = plan["times"][i]
+                sres["said_at"] = [round(stream_start + a, 3), round(stream_start + b, 3)]
+            elif i in plan["wavs"]:
+                length = plan["wavs"][i][1]
+                sres["said_at"] = [round(t_end - length, 3), round(t_end, 3)]
         checks = [e for e in step.expect if expect.applies(e, self.config.typed)]
         polled = [e for e in checks if not is_quiet(e)]
         quiet = [e for e in checks if is_quiet(e)]

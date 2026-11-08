@@ -208,6 +208,15 @@ void Listener::Step(const std::vector<float>& samples) {
         return;
       }
       engines_->Recognize(samples);
+      if (hangover_until_ > 0) {
+        if (!HangoverOver(vad)) {
+          return;
+        }
+        if (!vad.in_speech) {
+          OnHeard(engines_->Finish(), /*whole=*/true);
+          return;
+        }
+      }
       if (vad.segment_ended &&
           received_ - utterance_from_ < kMaxUtteranceSamples) {
         // The phrase and one word, and a pause: the command may go on
@@ -215,9 +224,18 @@ void Listener::Step(const std::vector<float>& samples) {
         const RecognizerResult partial = engines_->Partial();
         const size_t words =
             WakePhraseWordsAtStart(partial.text, config_.wake_phrases);
-        if (words > 0 && CountWords(partial.text) == words + 1) {
+        const size_t heard = CountWords(partial.text);
+        if (words > 0 && heard == words + 1) {
           OnHeardWake(partial, words, /*whole=*/false);
-          hangover_until_ = received_ + kShortCommandHangoverSamples;
+          StartHangover();
+          return;
+        }
+        // Only the phrase, or the phrase begun, written so far: the
+        // recognizer writes a word a moment after it is said, so a word
+        // and a pause may follow it ("Hey, Malt, click" ... "sport").
+        if ((words > 0 && heard == words) ||
+            OnlyAWakePhraseBegun(partial.text, config_.wake_phrases)) {
+          StartHangover();
           return;
         }
       }
@@ -244,15 +262,33 @@ void Listener::Step(const std::vector<float>& samples) {
         state_ = State::kUtterance;
         EmitPartial(result);
       }
-      if (vad.segment_ended) {
-        if (state_ == State::kUtterance) {
+      if (state_ == State::kUtterance) {
+        // A wait begun below goes on as the utterance's own.
+        if (hangover_until_ == 0 && vad.segment_ended) {
           if (ShortCommand(result)) {
-            hangover_until_ = received_ + kShortCommandHangoverSamples;
+            StartHangover();
           } else {
             FinishUtterance();
           }
-          return;
         }
+        return;
+      }
+      if (hangover_until_ == 0) {
+        if (vad.segment_ended) {
+          // The speech that held the wake phrase ended with no word after
+          // it written yet: the recognizer writes a word a moment after it
+          // is said, so a word and a pause may follow ("Hey Molt, click"
+          // ... "sport"). Waited out as a short command's.
+          StartHangover();
+        } else if (received_ - wake_at_ >= kWakeWindowSamples) {
+          EndWithoutCommand();
+        }
+        return;
+      }
+      if (!HangoverOver(vad) || vad.in_speech) {
+        return;
+      }
+      {
         // The speech that held the wake phrase ended. Was there more?
         const RecognizerResult whole = engines_->Finish();
         consumed_ = received_;
@@ -264,9 +300,6 @@ void Listener::Step(const std::vector<float>& samples) {
           // Only the wake phrase: wait for the command.
           state_ = State::kAwaitCommand;
         }
-      } else if (state_ == State::kAfterWake &&
-                 received_ - wake_at_ >= kWakeWindowSamples) {
-        EndWithoutCommand();
       }
       return;
     }
@@ -289,17 +322,14 @@ void Listener::Step(const std::vector<float>& samples) {
         return;
       }
       if (hangover_until_ > 0) {
-        if (vad.in_speech) {
-          // It went on: the same command.
-          hangover_until_ = 0;
-        } else if (received_ >= hangover_until_) {
+        if (HangoverOver(vad) && !vad.in_speech) {
           FinishUtterance();
         }
         return;
       }
       if (vad.segment_ended) {
         if (ShortCommand(partial)) {
-          hangover_until_ = received_ + kShortCommandHangoverSamples;
+          StartHangover();
           return;
         }
         FinishUtterance();
@@ -311,6 +341,7 @@ void Listener::Step(const std::vector<float>& samples) {
 
 void Listener::OnWake(int64_t at) {
   hearing_open_from_ = -1;
+  hangover_until_ = 0;
   wake_at_ = at;
   Emit(WakeEvent(At(at)));
   int64_t from = wake_at_ - kWakePrerollSamples;
@@ -368,6 +399,10 @@ void Listener::OnHeardWake(const RecognizerResult& result,
   if (words < result.word_seconds.size()) {
     at = utterance_from_ +
          static_cast<int64_t>(result.word_seconds[words] * kSampleRate);
+  } else if (speech_ended_at_ > 0) {
+    // The phrase alone, heard once the short-command wait was over: where
+    // its speech ended.
+    at = speech_ended_at_;
   }
   at = std::clamp(at, std::max(consumed_, utterance_from_), received_);
   hearing_open_from_ = -1;
@@ -446,12 +481,43 @@ bool Listener::HasWordsAfterWake(const RecognizerResult& result,
 }
 
 bool Listener::ShortCommand(const RecognizerResult& result) const {
+  // The recognizer writes a word a moment after it is said: at the pause
+  // after "Hey Molt" it may have written only "Hey, Mal".
+  if (OnlyAWakePhraseBegun(result.text, config_.wake_phrases)) {
+    return true;
+  }
   const size_t words = CountWords(result.text);
   size_t phrase = WakePhraseWordsAtStart(result.text, config_.wake_phrases);
   if (phrase == 0) {
     phrase = WakeNameWordsAtStart(result.text, config_.wake_phrases);
   }
   return words <= phrase + 1;
+}
+
+void Listener::StartHangover() {
+  speech_ended_at_ = received_;
+  hangover_until_ = received_ + kShortCommandHangoverSamples;
+  hangover_limit_ = received_ + kMaxHangoverSamples;
+}
+
+bool Listener::HangoverOver(const VadUpdate& vad) {
+  if (vad.in_speech) {
+    // It went on: the same command.
+    hangover_until_ = 0;
+    speech_ended_at_ = 0;
+    return true;
+  }
+  if (vad.sound) {
+    // Perhaps it goes on: long enough for the detector to tell.
+    hangover_until_ = std::min(
+        std::max(hangover_until_, received_ + kSoundHangoverSamples),
+        hangover_limit_);
+  }
+  if (received_ < hangover_until_) {
+    return false;
+  }
+  hangover_until_ = 0;
+  return true;
 }
 
 void Listener::EmitPartial(const RecognizerResult& result) {
@@ -489,6 +555,8 @@ void Listener::ToBaseState() {
   last_partial_.clear();
   heard_off_ = false;
   hangover_until_ = 0;
+  hangover_limit_ = 0;
+  speech_ended_at_ = 0;
   open_until_ = -1;
   hearing_open_from_ = -1;
   state_ = config_.wake_required ? State::kWaitWake : State::kOpen;

@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,6 +37,19 @@ constexpr int64_t kVadFreshAfterSamples = 10 * kSampleRate;
 constexpr int kTailPaddingSamples = kSampleRate * 12 / 10;
 // Hotword boost (docs/VOICE_BENCH.md §3.7: no loss anywhere at 1.5).
 constexpr float kHotwordsScore = 1.5f;
+// VadUpdate::sound: samples 12 dB over the quietest recent level, and over
+// -50 dBFS (RMS). The quiet level rises by this factor a call (0.2 dB per
+// 100 ms step) when the samples are louder.
+constexpr double kSoundOverQuiet = 4.0;
+constexpr double kMinSoundRms = 0.00316;
+constexpr double kQuietRise = 1.023;
+// A Silero window with no sample over this (-70 dBFS) is the silence no
+// microphone gives between words, only a muted or virtual one: digital
+// zeros and dither. Silero took the edges between them for speech, and
+// held one such "speech" for its 20 s limit (measured on the spoken
+// suite's microphone), so such a window isn't given to it: it counts as
+// silence, and ends a stretch of speech after the end-of-speech silence.
+constexpr float kSilentPeak = 0.000316f;
 
 std::string Join(const std::string& dir, const char* name) {
   if (!dir.empty() && (dir.back() == '/' || dir.back() == '\\')) {
@@ -186,6 +201,7 @@ void SherpaEngines::DestroyVad() {
   vad_pending_.clear();
   vad_speech_samples_ = 0;
   vad_quiet_samples_ = 0;
+  vad_silent_samples_ = 0;
 }
 
 bool SherpaEngines::SetKeywords(const std::vector<std::string>& lines) {
@@ -287,6 +303,7 @@ void SherpaEngines::SetVadSilenceMs(int ms) {
   c.silero_vad.model = paths_.vad.c_str();
   c.silero_vad.threshold = 0.5f;
   c.silero_vad.min_silence_duration = static_cast<float>(ms) / 1000.0f;
+  vad_silence_samples_ = int64_t{ms} * kSampleRate / 1000;
   c.silero_vad.min_speech_duration = 0.1f;
   c.silero_vad.max_speech_duration = 20.0f;
   c.silero_vad.window_size = kSileroWindow;
@@ -309,13 +326,47 @@ VadUpdate SherpaEngines::Detect(const std::vector<float>& samples) {
   if (!vad_) {
     return update;
   }
+  if (!samples.empty()) {
+    double sum = 0;
+    for (const float sample : samples) {
+      sum += static_cast<double>(sample) * sample;
+    }
+    const double rms = std::sqrt(sum / static_cast<double>(samples.size()));
+    update.sound =
+        rms >= std::max(quiet_rms_ * kSoundOverQuiet, kMinSoundRms);
+    quiet_rms_ =
+        quiet_rms_ <= 0 ? rms : std::min(rms, quiet_rms_ * kQuietRise);
+  }
   vad_pending_.insert(vad_pending_.end(), samples.begin(), samples.end());
   size_t used = 0;
   try {
     while (vad_pending_.size() - used >= kSileroWindow) {
-      SherpaOnnxVoiceActivityDetectorAcceptWaveform(
-          vad_, vad_pending_.data() + used, kSileroWindow);
+      const float* window = vad_pending_.data() + used;
       used += kSileroWindow;
+      float peak = 0;
+      for (int i = 0; i < kSileroWindow; ++i) {
+        peak = std::max(peak, std::fabs(window[i]));
+      }
+      if (peak < kSilentPeak) {
+        vad_speech_samples_ = 0;
+        vad_quiet_samples_ += kSileroWindow;
+        if (SherpaOnnxVoiceActivityDetectorDetected(vad_)) {
+          vad_silent_samples_ += kSileroWindow;
+          if (vad_silent_samples_ >= vad_silence_samples_) {
+            update.segment_ended = true;
+            SherpaOnnxVoiceActivityDetectorReset(vad_);
+            vad_quiet_samples_ = 0;
+            vad_silent_samples_ = 0;
+          }
+        } else if (vad_quiet_samples_ >= kVadFreshAfterSamples) {
+          SherpaOnnxVoiceActivityDetectorReset(vad_);
+          vad_quiet_samples_ = 0;
+        }
+        continue;
+      }
+      vad_silent_samples_ = 0;
+      SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad_, window,
+                                                    kSileroWindow);
       if (!SherpaOnnxVoiceActivityDetectorEmpty(vad_)) {
         update.segment_ended = true;
         // Reset() also drops the finished segments.
@@ -362,6 +413,7 @@ void SherpaEngines::ResetVad() {
   vad_pending_.clear();
   vad_speech_samples_ = 0;
   vad_quiet_samples_ = 0;
+  vad_silent_samples_ = 0;
 }
 
 void SherpaEngines::BeginUtterance(const std::string& hotwords) {

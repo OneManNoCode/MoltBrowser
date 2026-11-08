@@ -294,5 +294,23 @@ TEST(SpeechTextTest, FindsTheWakeNameAfterALostStart) {
   EXPECT_EQ(WakeNameWordsAtStart("hey yo there", {"hey you"}), 0u);
 }
 
+// What the recognizer had written at the pause after "Hey Molt": only the
+// phrase begun, its last word perhaps cut short.
+TEST(SpeechTextTest, KnowsTheWakePhraseBegun) {
+  const std::vector<std::string> en = {"hey molt"};
+  for (const char* text : {"Hey", "Hey,", "Hey, Mal", "Hey mol", "Hey, Malt",
+                           "Hey molt.", "He mo"}) {
+    SCOPED_TRACE(text);
+    EXPECT_TRUE(OnlyAWakePhraseBegun(text, en));
+  }
+  // A word after the phrase, a word that doesn't begin it, or nothing.
+  for (const char* text : {"Hey Molt pause", "Hey, Malt, said", "Hey there",
+                           "help", "scroll down", "", "  "}) {
+    SCOPED_TRACE(text);
+    EXPECT_FALSE(OnlyAWakePhraseBegun(text, en));
+  }
+  EXPECT_TRUE(OnlyAWakePhraseBegun("Oye, mo", {"oye molt"}));
+}
+
 }  // namespace
 }  // namespace molt_speech
