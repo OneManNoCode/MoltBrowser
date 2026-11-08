@@ -263,7 +263,9 @@ void CheckUtterance(uint8_t flags,
     CHECK(command.kind == K::kUnknown);
     CHECK(!context.expecting_yes_no);
     CHECK(language == Language::kEnglish);
-    CHECK(molt_ai::voice::RepairableKind(repaired->command.kind));
+    CHECK(repaired->as_said
+              ? molt_ai::voice::RepairableAsSaidKind(repaired->command.kind)
+              : molt_ai::voice::RepairableKind(repaired->command.kind));
     CHECK_EQ(repaired->command.heard, command.heard);
     CheckClean(repaired->text, kMaxUtteranceBytes);
     CheckClean(repaired->command.text, kMaxCommandTextBytes);

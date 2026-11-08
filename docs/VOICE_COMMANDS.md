@@ -78,13 +78,17 @@ When the recognizer gets one word of a command wrong ("close this tip",
 "Joe my downloads", "read the tile") or leaves a scrap of "Hey Molt" in
 front of it ("halt. Play the live one"), voice mode takes it as the
 command it sounds like, but only when nothing else fits (not a routine's
-or a site's name), when exactly one command fits, and only for commands
-that are safe on a guess: moving around, reading, media, scrolling,
-zooming, tabs. Never an answer to a question, a choice from a list,
-sending a form, a setting, a routine or turning voice mode off; never
-while it waits for a "yes" or "no"; and a swapped word never becomes the
-start of free text ("take hello there" isn't typed). English only for
-now.
+or a site's name) and when exactly one command fits. A swapped word works
+only for commands that are safe on a guess: moving around, reading,
+media, scrolling, zooming, tabs; never an answer to a question, a choice
+from a list, sending a form, a setting, a routine or turning voice mode
+off, and never the start of free text ("take hello there" isn't typed).
+When only the scrap is dropped, the rest is what you said, so a press
+works too ("Kalt, click empty the cart."), and asks first, as it would in
+full, when it buys, deletes or sends; still never turning voice mode off,
+forgetting what it learned, a protected setting, opening a downloaded
+file, closing a window or removing a bookmark. Never while it waits for a
+"yes" or "no". English only for now.
 
 You can also type the commands, without the microphone, in Agent mode's
 "Type what you would say": the browser does it in the tab you are on and
