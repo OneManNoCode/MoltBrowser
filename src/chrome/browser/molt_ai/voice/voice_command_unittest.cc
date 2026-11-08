@@ -246,6 +246,10 @@ TEST(VoiceCommandTest, OpenSites) {
       {"Himaled. Go back", "back", ""},
       {"him alled. Search for Bohemian rapsody.", "search",
        "text=Bohemian rapsody"},
+      // ... with the name's last sound lost (said over a playing video).
+      {"Him all. Full screen", "full_screen", ""},
+      {"him all louder", "volume_up", ""},
+      {"Hamol, pause", "pause", ""},
       {"OK Molt go to youtube", "open_site", "site=youtube"},
       {"go to example dot com", "open_site", "site=example.com;address=1"},
       {"go to example.com", "open_site", "site=example.com;address=1"},
@@ -290,6 +294,20 @@ TEST(VoiceCommandTest, OpenSites) {
       {"open example.slash news", "choose", "verb=open"},
       {"oll.slash. dgw", "unknown"},
   });
+}
+
+TEST(VoiceCommandTest, AWakePhraseWithItsLastSoundLost) {
+  // Run together, the name's stop may be lost ("him all", "Hamol")...
+  const ParseContext context;
+  EXPECT_EQ(ParseVoiceCommand("him all next video", context).heard,
+            "next video");
+  EXPECT_EQ(ParseVoiceCommand("Hamol, pause", context).heard, "pause");
+  // ... but not after a greeting as it is ("hey mall" is a mall), and not
+  // in words that go on past it.
+  for (const char* said : {"hey mall opening times", "he mall opening times",
+                           "Himalaya trip", "Himalayan salt", "homely food"}) {
+    EXPECT_EQ(ParseVoiceCommand(said, context).heard, said);
+  }
 }
 
 TEST(VoiceCommandTest, Search) {

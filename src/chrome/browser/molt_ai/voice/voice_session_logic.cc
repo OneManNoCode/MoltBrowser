@@ -538,6 +538,8 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   wake_until_ms_ = 0;
   wake_earcon_at_ms_ = 0;
   bool take = false;
+  // Begun with the wake phrase over the browser's own voice.
+  bool addressed = false;
   std::string_view reason;
   if (!text.empty()) {
     if (IsAlwaysHeardCommand(text, settings_.language)) {
@@ -551,7 +553,8 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
     } else if (utterance.woke) {
       take = true;
     } else if (utterance.open && !utterance.during_speech) {
-      take = !page_audible_ || confidence >= kMinConfidenceWithoutWake;
+      take = !page_audible_ || confidence >= kMinConfidenceWithoutWake ||
+             AddressedToVoiceMode(text, utterance.begun_ms);
       if (!take) {
         reason = "a tab's sound, and not heard surely";
       }
@@ -561,8 +564,10 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       reason = "during voice mode's speech, with no echo canceller";
     } else if (utterance.open && utterance.echo_cancelled) {
       // Said over the browser's own voice: a command unless it is that
-      // voice heard back.
-      const bool sure = confidence >= kMinConfidenceWithoutWake;
+      // voice heard back. Begun with the wake phrase, it is the user
+      // speaking to voice mode, as after a wake the helper heard.
+      addressed = AddressedToVoiceMode(text, utterance.begun_ms);
+      const bool sure = addressed || confidence >= kMinConfidenceWithoutWake;
       const bool echo = sure && EchoOfBrowser(text, utterance.begun_ms);
       take = sure && !echo;
       if (!sure) {
@@ -571,7 +576,8 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
         reason = "voice mode's voice heard back";
       }
       // What needs the browser quiet stops it and is asked for again.
-      if (take && !TakenOverOwnVoice(text, settings_.language)) {
+      if (take && !addressed &&
+          !TakenOverOwnVoice(text, settings_.language)) {
         take = false;
         actions.say_again = true;
         actions.stop_speech = activity_ == BrowserActivity::kSpeaking;
@@ -581,12 +587,13 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       }
     }
   }
-  if (take && activity_ == BrowserActivity::kIdle &&
+  if (take && (activity_ == BrowserActivity::kIdle || addressed) &&
       OnlyTheWakePhrase(text, settings_.language)) {
     // The wake phrase alone, and a pause ("Himalt." ... "Scroll down"),
-    // heard in the follow-up window: not a command, but a wake. The
-    // command after it counts, as after any wake, and the helper keeps
-    // hearing everything until then.
+    // heard in the follow-up window or over the browser's own voice (which
+    // it stops): not a command, but a wake. The command after it counts,
+    // as after any wake, and the helper keeps hearing everything until
+    // then.
     utterance_ = NewUtterance(/*woke=*/true, now_ms, lag_ms);
     wake_until_ms_ = now_ms + kWakeTimeoutMs;
     wake_earcon_at_ms_ = now_ms;
@@ -912,6 +919,22 @@ bool VoiceSessionLogic::SaidLately(int64_t noted_ms, int64_t at_ms) const {
     return true;
   }
   return at_ms - std::max(noted_ms, speaking_ended_ms_) <= kSpokenMemoryMs;
+}
+
+bool VoiceSessionLogic::AddressedToVoiceMode(std::string_view text,
+                                             int64_t heard_ms) const {
+  if (SpeakingOrTail(heard_ms) && SaidWakePhrase(heard_ms)) {
+    return false;
+  }
+  ParseContext context;
+  context.language = settings_.language;
+  for (const std::string& phrase : settings_.wake_phrases) {
+    context.wake_phrase = phrase;
+    if (BeginsWithWakePhrase(text, context)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool VoiceSessionLogic::SaidWakePhrase(int64_t now_ms) const {

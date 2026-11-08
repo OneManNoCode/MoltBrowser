@@ -465,6 +465,70 @@ TEST_F(VoiceSessionLogicTest, TheOwnVoiceHeardBackIsNotACommand) {
   EXPECT_EQ(logic_->OnFinal("go back", 0.9, now_ + 3500).utterance, "go back");
 }
 
+TEST_F(VoiceSessionLogicTest, TheWakePhraseOverTheOwnVoiceIsTheUser) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("search for Bohemian Rhapsody", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "20 results. 1: Queen - Bohemian Rhapsody, Queen Official.", now_);
+  // The spotter missed the phrase, and the recognizer was unsure of it
+  // ("Himalt"): begun with it, the user is speaking to voice mode.
+  logic_->OnSpeechStart(now_ + 800);
+  SessionActions taken =
+      logic_->OnFinal("Himalt. Play the fourth one.", 0.3, now_ + 1800);
+  EXPECT_EQ(taken.utterance, "Himalt. Play the fourth one.");
+  EXPECT_TRUE(taken.stop_speech);
+  // As after a wake the helper heard, what needs the browser quiet runs
+  // too.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 2000);
+  logic_->OnSpeechStart(now_ + 2200);
+  SessionActions site =
+      logic_->OnFinal("Hey mold, open Wikipedia.", 0.3, now_ + 3000);
+  EXPECT_EQ(site.utterance, "Hey mold, open Wikipedia.");
+  EXPECT_FALSE(site.say_again);
+  // Without it, unsure, still not.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 3200);
+  logic_->OnSpeechStart(now_ + 3400);
+  EXPECT_EQ(logic_->OnFinal("Play the fourth one.", 0.3, now_ + 4200)
+                .dropped_reason,
+            "over voice mode's voice, and not heard surely");
+  // The phrase alone stops the browser and waits for the command, as a
+  // wake does.
+  logic_->OnSpeechStart(now_ + 4400);
+  SessionActions wake = logic_->OnFinal("Himalt.", 0.3, now_ + 5000);
+  EXPECT_FALSE(wake.utterance.has_value());
+  EXPECT_TRUE(wake.stop_speech);
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 5100);
+  logic_->OnSpeechStart(now_ + 5800);
+  EXPECT_EQ(logic_->OnFinal("pause", 0.3, now_ + 6400).utterance, "pause");
+}
+
+TEST_F(VoiceSessionLogicTest, TheOwnVoiceSayingTheWakePhraseIsNotTheUser) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("what can I say", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("Say Hey Molt, then open a site.", now_);
+  logic_->OnSpeechStart(now_ + 800);
+  SessionActions heard =
+      logic_->OnFinal("Hey Molt, open Wikipedia.", 0.3, now_ + 1800);
+  EXPECT_FALSE(heard.utterance.has_value());
+  EXPECT_FALSE(heard.stop_speech);
+}
+
+TEST_F(VoiceSessionLogicTest, TheWakePhraseOverPageSound) {
+  Begin(/*always_listening=*/true);
+  logic_->OnPageAudible(true, now_);
+  logic_->OnSpeechStart(now_);
+  EXPECT_EQ(logic_->OnFinal("He mold. Pause", 0.3, now_ + 900).utterance,
+            "He mold. Pause");
+}
+
 TEST_F(VoiceSessionLogicTest, ThePlatformVoiceStillNeedsTheWakePhrase) {
   Begin();
   // The bundled voice failed: the platform's voice speaks, out of the echo

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/phonetic_key_es.h"
 #include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_browser_logic.h"
@@ -2445,30 +2446,73 @@ class Planner : public TurnPlanner {
         matches.push_back(std::move(match));
       }
     };
-    for (const PageHeading& heading : map_.headings) {
-      if (has(heading.text)) {
+    const auto search = [&](const auto& matches_text) {
+      for (const PageHeading& heading : map_.headings) {
+        if (!matches_text(heading.text)) {
+          continue;
+        }
         note(Tr("the heading {0}", {PageText(heading.text)}), heading.handle,
              0);
+        if (found++ == 0) {
+          where = Tr("the heading {0}", {PageText(heading.text)});
+          target = heading.handle;
+        }
       }
-      if (has(heading.text) && found++ == 0) {
-        where = Tr("the heading {0}", {PageText(heading.text)});
-        target = heading.handle;
-      }
-    }
-    for (const PageItem& item : map_.items) {
-      if (has(item.label)) {
-        note(Localized(env_.language,
-                       "the " + std::string(ItemKindName(item.kind))) +
-                 " " + PageText(item.label),
-             item.handle, item.number);
-      }
-      if (has(item.label) && found++ == 0) {
+      for (const PageItem& item : map_.items) {
+        if (!matches_text(item.label)) {
+          continue;
+        }
         // "the link", "the button": in the window's language.
-        where = Localized(env_.language,
-                          "the " + std::string(ItemKindName(item.kind))) +
-                " " + PageText(item.label);
-        target = item.handle;
-        number = item.number;
+        const std::string place =
+            Localized(env_.language,
+                      "the " + std::string(ItemKindName(item.kind))) +
+            " " + PageText(item.label);
+        note(place, item.handle, item.number);
+        if (found++ == 0) {
+          where = place;
+          target = item.handle;
+          number = item.number;
+        }
+      }
+    };
+    search(has);
+    if (!found) {
+      // Nothing as said: the words as they sound, in a row ("find trim"
+      // for the page's "Trams": the recognizer got a vowel wrong), each of
+      // three letters or more with the same sound-alike key
+      // (phonetic_key.h) as said or as its singular.
+      std::vector<std::string> keys;
+      for (const std::string& word : wanted) {
+        std::string key = word.size() >= 3
+                              ? PhoneticKeyFor(env_.language, word)
+                              : std::string();
+        if (key.size() < 3) {
+          keys.clear();
+          break;
+        }
+        keys.push_back(std::move(key));
+      }
+      const auto sounds = [&](const std::string& text) {
+        const std::vector<std::string> words =
+            SplitWords(FoldForComparison(text));
+        for (size_t i = 0; i + keys.size() <= words.size(); ++i) {
+          bool all = !keys.empty();
+          for (size_t k = 0; all && k < keys.size(); ++k) {
+            const std::string& word = words[i + k];
+            all = PhoneticKeyFor(env_.language, word) == keys[k] ||
+                  (word.size() > 3 && word.back() == 's' &&
+                   PhoneticKeyFor(env_.language,
+                                  std::string_view(word).substr(
+                                      0, word.size() - 1)) == keys[k]);
+          }
+          if (all) {
+            return true;
+          }
+        }
+        return false;
+      };
+      if (!keys.empty()) {
+        search(sounds);
       }
     }
     NoteFindMatches(state(), query, std::move(matches), env_.page_id);

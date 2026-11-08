@@ -410,6 +410,12 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
 std::string CommandWords(std::string_view utterance,
                          const ParseContext& context);
 
+// Whether |utterance| begins with the wake phrase as the grammar strips it
+// (context.wake_phrase or the language's default, sound-alikes and the
+// name run into its greeting: "Himalt. Play the fourth one").
+bool BeginsWithWakePhrase(std::string_view utterance,
+                          const ParseContext& context);
+
 }  // namespace voice
 }  // namespace molt_ai
 

@@ -1,6 +1,6 @@
 {"resume_run": "42507397909",
  "run_tests": true,
- "e2e_only": true,
- "e2e_runs": "file:clean,pulse:clean:noloop,pulse:clean",
+ "e2e_only": false,
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, eighteenth build (spoken suite only, on the sixteenth build's browser with main's speech helper and kit after PR #99): the short-command wait now also follows a wake phrase alone (a wake the spotter heard, or one read from the transcript), the kit's ears feed 2 s after a clip and wait for voice mode to answer \"repeat\", and a failed step's notes show the microphone level every 100 ms around its speech. Against the seventeenth build: 77% file, 78% noloop, 73% with the speakers."}
+ "request": "Round 45, nineteenth build: \"Hey Molt\" said over a playing video, heard as \"him all\" or \"Hamol\" (the echo canceller swallows its last sound), wakes the speech helper and is stripped by the grammar; a command said over voice mode's own voice that begins with the wake phrase is taken as after a wake (\"Himalt. Play the fourth one.\" was dropped as unsure); find on the page falls back to words that sound the same (\"trim\" finds \"Trams\"). Against the eighteenth build: 77% file, 79% noloop, 71% with the speakers."}

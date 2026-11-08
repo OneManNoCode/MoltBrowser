@@ -17,6 +17,22 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **"Hey Molt" said over a playing video wakes voice mode.** The echo
+  canceller working over the video's sound can swallow the phrase's last
+  sound, and the recognizer then writes "him all" or "Hamol": both the
+  speech helper and voice mode's grammar now take the phrase run together
+  with its final t lost, but not after the greeting heard as it is ("hey
+  mall") or in longer words ("Himalaya"). This was every media failure
+  of the eighteenth build's file run. And a command that begins with
+  "Hey Molt" said while voice mode is talking ("Himalt. Play the fourth
+  one.") is the user speaking to it, as after a wake the helper heard:
+  it no longer needs the recognizer to be sure of the phrase's odd
+  spelling, any command runs, and the phrase alone stops voice mode and
+  waits for the command. Not when voice mode's own words had the phrase
+  then, nor when it is those words heard back.
+- **"Find trim on this page" finds "Trams".** When nothing on the page
+  has the words as said, find on the page looks for words that sound the
+  same, in a row: the recognizer gets vowels wrong more than anything.
 - **Voice mode takes a press said after a scrap of "Hey Molt"**
   ("Kalt, click empty the cart.", "halt, click country."). With only the
   scrap dropped, the rest is the command as said, so presses, form
