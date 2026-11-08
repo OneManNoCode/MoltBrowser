@@ -504,6 +504,7 @@ bool Listener::HangoverOver(const VadUpdate& vad) {
   if (vad.in_speech) {
     // It went on: the same command.
     hangover_until_ = 0;
+    speech_ended_at_ = 0;
     return true;
   }
   if (vad.sound) {
