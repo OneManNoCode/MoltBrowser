@@ -1453,7 +1453,9 @@ the releases page to reinstall).
   like, when nothing else fits and only one command does, and only for
   commands safe on a guess; on the spoken suite's misheard utterances it
   understands 15 of 65 it didn't, and none of 100 everyday sentences
-  became a command. "Open the menu" on a slow machine read out the
+  became a command; on a real build the spoken suite by file went from
+  68% to 70%, typed stayed at 100% and the live microphone at 67%.
+  "Open the menu" on a slow machine read out the
   toolbar's buttons instead of the menu; it now waits for the menu to
   show.
 - **Workflows, routines and settings files hold up to crashes, odd files
