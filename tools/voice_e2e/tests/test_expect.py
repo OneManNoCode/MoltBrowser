@@ -102,6 +102,11 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(ok({"said": "Say a number or a name."}, w))
         self.assertTrue(ok({"said_has": "20 results. 1: Queen"}, w))
         self.assertTrue(ok({"said_re": "^20 results\\."}, w))
+        # ^ at any line: a line said before it (the last step's answer).
+        w.events.insert(0, {"e": "said", "ts": 9.5, "text": "YouTube is open."})
+        self.assertTrue(ok({"said_re": "^20 results\\."}, w))
+        self.assertTrue(ok({"said_re": "^Say a number or a name\\.$"}, w))
+        self.assertFalse(ok({"said_re": "^1: Queen"}, w))
         self.assertFalse(ok({"said": "Paused."}, w))
         self.assertTrue(ok({"said_none": "Paused."}, w))
         self.assertFalse(ok({"said_none": "number"}, w))

@@ -124,8 +124,11 @@ constexpr CommandPattern kPatterns[] = {
      "(remove|delete|take) (this|it|this page|the page|this site) (from|out "
      "of) [my|the] bookmarks"},
     {K::kRemoveBookmark, "unbookmark [this|it|this page|the page|this site]"},
+    // "Bookmarked this page": how the bundled English recognizer hears
+    // "bookmark this page" in some voices.
     {K::kBookmarkPage,
-     "bookmark (this|it|this page|the page|this site|this tab|that)"},
+     "(bookmark|bookmarked) (this|it|this page|the page|this site|this "
+     "tab|that)"},
     {K::kBookmarkPage,
      "(add|save|put) (this|it|this page|the page|this site|this tab) (to|in|"
      "as) [a|my|the] (bookmarks|bookmark)"},

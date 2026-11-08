@@ -245,7 +245,9 @@ and the bar only.
 - **Find on the page:** "find opening hours on this page" says where it is
   first and, when it is in more places, "Say next match to go on."; "next
   match" and "previous match" go through them ("Match 2 of 3: the link
-  Opening hours.").
+  Opening hours."). A word finds its plural, and a word the recognizer
+  split or joined finds it as the page writes it ("time table" finds
+  "Timetable").
 - **A site's name on its own:** "YouTube" (or "Wikipedia", "Google",
   "DuckDuckGo", "Bing", "Brave Search") opens it, saying "Opening YouTube."
   then "YouTube is open."; so does the name of a site you opened by voice
@@ -931,7 +933,7 @@ said.
 
 **Bookmark this page.** For example: "bookmark this page".
 
-- `bookmark (this | it | this page | the page | this site | this tab | that)`
+- `(bookmark | bookmarked) (this | it | this page | the page | this site | this tab | that)`
 - `(add | save | put) (this | it | this page | the page | this site | this tab) (to | in | as) [a | my | the] (bookmarks | bookmark)`
 - `(add | make | create) a bookmark [for this page | for this site | here]`
 

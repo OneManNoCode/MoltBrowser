@@ -2391,8 +2391,16 @@ class Planner : public TurnPlanner {
       return;
     }
     // The words in a row, each as said or as its plural or singular
-    // ("tram" finds "Trams return to Lyon").
+    // ("tram" finds "Trams return to Lyon"); or the same letters split
+    // into other words, as a recognizer splits or joins a compound ("time
+    // table" finds "Timetable", "timetable" finds "Time table"), from one
+    // word's start to another's end and five letters or more.
     const std::vector<std::string> wanted = SplitWords(needle);
+    std::string joined;
+    for (const std::string& word : wanted) {
+      joined += word;
+    }
+    constexpr size_t kMinJoinedLetters = 5;
     auto has = [&](const std::string& text) {
       const std::vector<std::string> words =
           SplitWords(FoldForComparison(text));
@@ -2403,6 +2411,20 @@ class Planner : public TurnPlanner {
         }
         if (all) {
           return true;
+        }
+      }
+      if (joined.size() < kMinJoinedLetters) {
+        return false;
+      }
+      for (size_t i = 0; i < words.size(); ++i) {
+        std::string run;
+        for (size_t k = i; k < words.size() && run.size() <= joined.size();
+             ++k) {
+          run += words[k];
+          // Split as said is the loop above.
+          if ((k > i || wanted.size() > 1) && SameWordOrPlural(run, joined)) {
+            return true;
+          }
         }
       }
       return false;

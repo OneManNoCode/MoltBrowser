@@ -34,6 +34,11 @@ For longer narrative posts behind each entry see
   browser's copy of the page was still part way through ("3 results" for
   a page of 10). It now also waits for the page to say it has loaded,
   for at most the few seconds it already allowed.
+- **"Find time table on this page" finds "Timetable".** Find on the page
+  matches a word the recognizer split or joined ("time table",
+  "notebook" for "Note book"), from a word's start to another's end. And
+  "bookmarked this page", as the recognizer hears "bookmark this page" in
+  some voices, bookmarks it.
 
 ## 2026-11-06 — v0.3.0: Private by default
 

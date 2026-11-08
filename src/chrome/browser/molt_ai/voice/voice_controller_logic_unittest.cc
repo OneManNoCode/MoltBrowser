@@ -642,6 +642,32 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
     turn = c.Say("find bus on this page");
     EXPECT_EQ(Said(turn).find("I can't find"), 0u) << Said(turn);
   }
+  // Find: a compound split or joined as a recognizer hears it.
+  {
+    TreeBuilder b("Lines");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Lines", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    b.Heading(main, 2, "Timetable");
+    b.Heading(main, 2, "Note book sale");
+    b.Heading(main, 2, "At home");
+    Conversation c(BuildPageMap(b.Take()), Env());
+    for (const char* found :
+         {"find time table on this page", "find time tables on this page",
+          "find timetable on this page", "find notebook on this page",
+          "find note books on this page"}) {
+      VoiceTurn turn = c.Say(found);
+      EXPECT_EQ(Said(turn).find("Found it"), 0u) << found << ": " << Said(turn);
+    }
+    // From a word's start to another's end only, and not too short.
+    for (const char* not_found :
+         {"find time tab on this page", "find imetable on this page",
+          "find ebook on this page", "find a t on this page"}) {
+      VoiceTurn turn = c.Say(not_found);
+      EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
+          << not_found << ": " << Said(turn);
+    }
+  }
 }
 
 TEST(VoiceControllerLogicTest, ShownNumbersAreChosenAsShown) {

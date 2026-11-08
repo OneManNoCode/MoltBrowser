@@ -260,7 +260,8 @@ in `VoiceController`):
   until the microphone starts).
 - `dropped`: what the speech helper heard that the listening session set
   aside, and why (no wake phrase; another source was speaking; a tab's
-  sound and not heard surely; voice mode's voice heard back), masked as
+  sound and not heard surely; over voice mode's voice and not heard
+  surely; voice mode's voice heard back), masked as
   every text is: an utterance that never reached `heard`. A run that heard nothing tells a silent microphone
   (the audio's routing) from sound that wasn't recognized.
 - `said`: what voice mode says, as it starts saying it.

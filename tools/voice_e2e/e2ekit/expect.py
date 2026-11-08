@@ -122,7 +122,10 @@ def check(e, world, since):
         elif kind == "said_has":
             ok = _norm(value) in " ".join(lines)
         elif kind == "said_re":
-            ok = re.search(value, joined) is not None
+            # Each line on its own: in file mode the step begins while
+            # the line before it (the greeting, the last step's answer) is
+            # still being said.
+            ok = re.search(value, joined, re.MULTILINE) is not None
         else:
             ok = _norm(value) not in " ".join(lines)
         shown = " | ".join(lines)

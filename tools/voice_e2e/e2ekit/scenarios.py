@@ -43,6 +43,9 @@ Expectations (expect.py checks them):
              "rate": 1.5, "time_min": 55, "time_max": 70,
              "captions": true, "fullscreen": true, "src_has": "..."}}
   {"said": "..."}  {"said_has": "..."}  {"said_re": "..."}
+                                             said_re: ^ and $ match at
+                                             each line said, not only
+                                             the step's first
   {"said_none": "..."}                       no line has it
   {"heard_intent": "open_site"}
   {"prompt": "open", "kind": "permission"}  {"prompt": "close"}

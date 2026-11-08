@@ -175,6 +175,10 @@ def cmd_run(args):
                     continue
                 pulse = audio_path.Pulse(report_dir, loopback=loopback,
                                          log=log).start()
+            if audio in ("pulse", "file") and the_ears is None:
+                # The kit's own recognizer: the confirmation word in the
+                # browser's speech, and the digest's note of what voice
+                # mode's microphone gave in a failed scenario.
                 helper = os.path.join(bundle, "speech", "molt-speech")
                 if os.path.exists(helper):
                     the_ears = ears.Ears(helper, os.path.join(bundle, "speech", "models"))

@@ -233,14 +233,16 @@ class Runner(object):
             # MoltShield off for this run: what a page shows that its
             # filters would hide (a YouTube ad's skip button) is there.
             f.append("--disable-molt-shield")
+        if wav or self.config.audio == "pulse":
+            # What voice mode's microphone gave, as its speech helper gets
+            # it after the echo canceller (voice_test_audio.h), for the
+            # digest: in file mode too, where the file is what was said.
+            f.append("--molt-voice-test-audio=" +
+                     os.path.join(os.path.dirname(log_path), MIC_DUMP))
         if wav:
             f += ["--use-fake-device-for-media-stream",
                   "--use-file-for-fake-audio-capture=%s%%noloop" % wav]
         elif self.config.audio == "pulse":
-            # What voice mode's microphone gave, as its speech helper gets
-            # it (voice_test_audio.h), for the digest.
-            f.append("--molt-voice-test-audio=" +
-                     os.path.join(os.path.dirname(log_path), MIC_DUMP))
             # What Chromium's audio manager opens (PulseAudio or ALSA, which
             # device), for the digest's audio lines.
             f += ["--enable-logging=stderr", "--vmodule=" + ",".join(
@@ -414,6 +416,12 @@ class Runner(object):
                 browser.close()
             if res.get("status") in ("failed", "error"):
                 self.note_microphone(res, run_dir)
+            elif self.config.audio == "file":
+                # A passed file run's dump says nothing the file doesn't.
+                try:
+                    os.remove(os.path.join(run_dir, MIC_DUMP))
+                except OSError:
+                    pass
         res["duration_s"] = round(time.time() - t_start, 1)
         res["kinds"] = tlog.kinds()
         res["bad_log_lines"] = tlog.bad_lines
@@ -435,7 +443,7 @@ class Runner(object):
     # ---- audio ----------------------------------------------------------------
 
     def note_microphone(self, res, run_dir):
-        """For a failed pulse scenario: what voice mode's microphone gave
+        """For a failed scenario: what voice mode's microphone gave
         (its dump, voice_test_audio.h), each second's peak and what the
         kit's own recognizer makes of it, so the report tells a microphone
         that got nothing from audio voice mode's recognizer didn't make
