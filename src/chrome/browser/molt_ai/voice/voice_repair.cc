@@ -262,7 +262,9 @@ class Repairer {
   }
 
  private:
-  const ParseContext& context_;
+  // A copy: a few flags and a view of the wake phrase, which outlives
+  // the Repairer.
+  const ParseContext context_;
   std::vector<Candidate> candidates_;
 };
 

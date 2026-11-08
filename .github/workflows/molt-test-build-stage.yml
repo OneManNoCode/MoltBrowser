@@ -299,3 +299,16 @@ jobs:
             echo
           done
           cat "$RUNNER_TEMP/reports/summary.md" 2>/dev/null || true
+
+      # Red when the build had failed steps and the tests ran on it: the
+      # binaries those steps feed were not rebuilt, so the tests ran on an
+      # earlier build of them and their verdict isn't this commit's. A build
+      # with errors whose tests haven't run stays green here: the next stage
+      # runs them, and its verdict is this one.
+      - name: Verdict
+        if: >-
+          always() && steps.build.outputs.status == 'errors' &&
+          (steps.tests.outputs.ran == 'true' || !inputs.run_tests)
+        run: |
+          echo "::error::The build had failed steps (see Build errors): the tests ran on binaries built before them."
+          exit 1

@@ -204,12 +204,14 @@ jobs:
   # The spoken end-to-end suite (tools/voice_e2e, docs/VOICE_E2E.md) on the
   # build the stage that ran the tests saved. It needs no Chromium checkout:
   # the out dir of a component build runs on its own. One job per run (the
-  # verdict is per run: each must meet Phase 1's exit), in parallel.
+  # verdict is per run: each must meet Phase 1's exit), in parallel. Not on
+  # a build with failed steps: its browser may be an earlier build's.
   voice-e2e:
     needs: [config, speech-bundle, stage-1, stage-2, stage-3, stage-4, stage-5]
     if: >-
       always() && !cancelled() && needs.speech-bundle.result == 'success' &&
-      (contains(needs.*.outputs.tested, 'true') ||
+      ((contains(needs.*.outputs.tested, 'true') &&
+        !contains(needs.*.outputs.status, 'errors')) ||
        needs.config.outputs.e2e_only == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 355
@@ -262,6 +264,25 @@ jobs:
             --name molt-speech-bundle --dir "$RUNNER_TEMP/bundle"
           chmod +x "$RUNNER_TEMP"/bundle/speech/molt-speech "$RUNNER_TEMP"/bundle/voice/molt-voice 2>/dev/null || true
           ls "$RUNNER_TEMP/tree/out/MoltCI/chrome" "$RUNNER_TEMP/bundle"
+      # The engine and voices the suite renders its speech with, pinned
+      # (tools/voice_bench/artifacts.json), kept between runs so a download
+      # host's outage doesn't stop the suite. Saved on their own: the job
+      # fails while the suite is short of Phase 1's exit.
+      - name: The pinned voices, kept
+        id: voices
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/moltbrowser-voice-e2e/a
+          key: voice-e2e-voices-${{ hashFiles('tools/voice_bench/artifacts.json', 'tools/voice_e2e/ci_run.sh') }}
+      - name: The pinned voices
+        if: steps.voices.outputs.cache-hit != 'true'
+        run: tools/voice_e2e/ci_run.sh --fetch-voices
+      - name: Keep the pinned voices
+        if: steps.voices.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/moltbrowser-voice-e2e/a
+          key: ${{ steps.voices.outputs.cache-primary-key }}
       - name: The spoken suite
         id: e2e
         run: |

@@ -14,6 +14,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -311,6 +312,49 @@ class FetchTest(unittest.TestCase):
                 fetch.download(a, dest)
             self.assertFalse(os.path.exists(dest))
             self.assertFalse(os.path.exists(dest + ".part"))
+
+    def test_server_errors_retried_refusals_not(self):
+        a = {"id": "t", "url": "https://example.invalid/x", "size": 5, "sha256": "0" * 64}
+        calls, waited = [], []
+
+        def fails_with(errors):
+            def once(art, dest):
+                calls.append(dest)
+                e = errors.pop(0)
+                if e is None:
+                    return None
+                raise e
+            return once
+
+        def http(code):
+            return urllib.error.HTTPError(a["url"], code, "x", {}, None)
+
+        real = fetch.download_once
+        try:
+            # A 504 and a dropped connection, then it comes: three tries.
+            fetch.download_once = fails_with([http(504), ConnectionResetError(), None])
+            fetch.download(a, "/nonexistent/d", waits=(1, 2, 3), sleep=waited.append)
+            self.assertEqual((len(calls), waited), (3, [1, 2]))
+            # A 404 is not tried again.
+            calls.clear(); waited.clear()
+            fetch.download_once = fails_with([http(404)])
+            with self.assertRaises(urllib.error.HTTPError):
+                fetch.download(a, "/nonexistent/d", waits=(1, 2, 3), sleep=waited.append)
+            self.assertEqual((len(calls), waited), (1, []))
+            # Nor is a wrong hash; and a server that never recovers fails
+            # after the last wait.
+            calls.clear(); waited.clear()
+            fetch.download_once = fails_with([RuntimeError("hash")])
+            with self.assertRaises(RuntimeError):
+                fetch.download(a, "/nonexistent/d", waits=(1,), sleep=waited.append)
+            self.assertEqual(len(calls), 1)
+            calls.clear(); waited.clear()
+            fetch.download_once = fails_with([http(503)] * 3)
+            with self.assertRaises(urllib.error.HTTPError):
+                fetch.download(a, "/nonexistent/d", waits=(1, 2), sleep=waited.append)
+            self.assertEqual((len(calls), waited), (3, [1, 2]))
+        finally:
+            fetch.download_once = real
 
 
 class LexiconTest(unittest.TestCase):

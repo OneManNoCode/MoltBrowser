@@ -1,2 +1,6 @@
-{"resume_run": "42152052307",
- "run_tests": true, "e2e_only": false, "e2e_runs": "typed,file:clean,pulse:clean:noloop", "e2e_speech_check": false, "request": "Round 45, twelfth build: voice mode repairs a misheard command word (voice_repair.h), with equal repairs merged and a scrap after a greeting. Resume from run 42152052307 (the eleventh build). Unit and browser tests, then the spoken suite typed, by file and through the live microphone without the speakers, to measure the repair against the ninth build (68% file, 67% noloop)."}
+{"resume_run": "42464161404",
+ "run_tests": true,
+ "e2e_only": false,
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop",
+ "e2e_speech_check": false,
+ "request": "Round 45, twelfth build again: voice mode repairs a misheard command word (voice_repair.h). The first try didn't compile (a reference member, chromium-rawref) and its spoken suite couldn't download its voices (HTTP 504). Resume from run 42464161404, which recorded the failed step: recheck, then unit and browser tests, then the spoken suite typed, by file and through the live microphone without the speakers, against the ninth build (68% file, 67% noloop)."}
