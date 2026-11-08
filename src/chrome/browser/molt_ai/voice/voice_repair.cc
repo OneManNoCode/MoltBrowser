@@ -22,7 +22,7 @@ using K = VoiceCommandKind;
 
 // How far, in the phonetic key's half-edits, a word may be from the
 // grammar's word it is taken for: the same sounds, or one dropped or
-// close sound ("groll"/"scroll", "pores"/"pause", "head"/"ad").
+// close sound ("groll"/"scroll", "flay"/"play", "head"/"ad").
 constexpr int kWordMargin = 2;
 // How far a scrap may be from the wake phrase's name, or from the whole
 // phrase ("halt", "him all", "Timolt" for "Hey Molt").

@@ -583,7 +583,7 @@ class Runner(object):
                 if results.get(j, (False,))[0]:
                     continue
                 try:
-                    results[j] = expect.check(e, world, t0)
+                    results[j] = expect.check(e, world, t0, before)
                 except Exception as err:  # a page gone mid-check
                     results[j] = (False, "%s: %s" % (type(err).__name__, err))
                 if results[j][0]:
@@ -603,7 +603,7 @@ class Runner(object):
                 if "no_action" in e:
                     results[len(polled) + k] = expect.quiet_check(before, world, t_end)
                 else:
-                    results[len(polled) + k] = expect.check(e, world, t0)
+                    results[len(polled) + k] = expect.check(e, world, t0, before)
         sres["expectations"] = []
         for j, e in enumerate(polled + quiet):
             r = results.get(j, (False, "not checked"))

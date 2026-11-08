@@ -38,7 +38,8 @@ For longer narrative posts behind each entry see
   matches a word the recognizer split or joined ("time table",
   "notebook" for "Note book"), from a word's start to another's end. And
   "bookmarked this page", as the recognizer hears "bookmark this page" in
-  some voices, bookmarks it.
+  some voices, bookmarks it; "pores" and "paws", "pause" as it sounds
+  without an r, pause.
 
 ## 2026-11-06 — v0.3.0: Private by default
 

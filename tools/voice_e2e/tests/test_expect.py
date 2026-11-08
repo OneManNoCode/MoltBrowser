@@ -94,6 +94,34 @@ class CheckTest(unittest.TestCase):
         w._media = None
         self.assertFalse(ok({"media": {"paused": False}}, w))
 
+    def test_media_seeked(self):
+        w = World()
+        w._media = {"paused": False, "rate": 1.0, "time": 80.0}
+        before = expect.snapshot(w)
+        before["t"] -= 6.0  # the step began 6 s ago, at 80 s
+        # Back 30 s: 80 + 6 played - 30.
+        w._media = {"paused": False, "rate": 1.0, "time": 56.0}
+        self.assertTrue(expect.check({"media": {"seeked": [-45, -15]}}, w, 0, before)[0])
+        # Played on, not moved: 86.
+        w._media = {"paused": False, "rate": 1.0, "time": 86.0}
+        okay, detail = expect.check({"media": {"seeked": [-45, -15]}}, w, 0, before)
+        self.assertFalse(okay)
+        self.assertIn("moved +0 s", detail)
+        # Paused when the step began: no time played.
+        w._media = {"paused": True, "rate": 1.0, "time": 80.0}
+        before = expect.snapshot(w)
+        before["t"] -= 6.0
+        w._media = {"paused": True, "rate": 1.0, "time": 50.0}
+        self.assertTrue(expect.check({"media": {"seeked": [-45, -15]}}, w, 0, before)[0])
+        # At twice the speed: 12 s played in 6.
+        w._media = {"paused": False, "rate": 2.0, "time": 80.0}
+        before = expect.snapshot(w)
+        before["t"] -= 6.0
+        w._media = {"paused": False, "rate": 2.0, "time": 62.0}
+        self.assertTrue(expect.check({"media": {"seeked": [-45, -15]}}, w, 0, before)[0])
+        # No player as the step began.
+        self.assertFalse(expect.check({"media": {"seeked": [-45, -15]}}, w, 0, None)[0])
+
     def test_said_and_heard(self):
         w = World()
         w.events = [{"e": "said", "ts": 10.0, "text": "20 results.  1: Queen"},

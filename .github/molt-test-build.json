@@ -1,6 +1,6 @@
-{"resume_run": "42471183272",
+{"resume_run": "42479666491",
  "run_tests": true,
  "e2e_only": false,
- "e2e_runs": "typed,file:clean,pulse:clean:noloop",
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, thirteenth build: a press said after a scrap of the wake phrase (voice_repair.h, RepairableAsSaidKind), and the wait for a page also waits for its tree to say it has loaded (DecidePageWait). Resume from run 42471183272 (the twelfth build). Unit and browser tests, then the spoken suite typed, by file and through the live microphone without the speakers, against the twelfth build (70% file, 67% noloop)."}
+ "request": "Round 45, fourteenth build: find on the page matches a compound split or joined (\"time table\" for \"Timetable\"), \"bookmarked this page\" and \"pores\"/\"paws\" for pause as the recognizer hears them, and a drop over voice mode's voice says why. The kit: said_re per line, file runs keep the microphone as voice mode got it for a failed scenario, media \"seeked\" for a seek measured from where the player was. Resume from run 42479666491 (the thirteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the thirteenth build (72% file, 75% noloop)."}

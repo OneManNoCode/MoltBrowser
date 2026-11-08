@@ -20,6 +20,7 @@ quiet period.
 """
 
 import re
+import time
 import urllib.parse
 
 # The player of the active tab: the first <video> or <audio> of the page,
@@ -55,7 +56,7 @@ def _norm(text):
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def _media(world, want):
+def _media(world, want, before=None):
     got = world.media()
     if not isinstance(got, dict):
         return False, "no player on the page"
@@ -79,6 +80,21 @@ def _media(world, want):
         problems.append("time is %s" % t)
     if "time_max" in want and (not isinstance(t, (int, float)) or t > want["time_max"]):
         problems.append("time is %s" % t)
+    if "seeked" in want:
+        # How far the player moved from where it would be had nothing
+        # happened since the step began: its time then, plus the time
+        # since at its rate while it played.
+        lo, hi = want["seeked"]
+        b = (before or {}).get("media")
+        bt = b.get("time") if isinstance(b, dict) else None
+        if not isinstance(bt, (int, float)) or not isinstance(t, (int, float)):
+            problems.append("no player time before the step")
+        else:
+            rate = b.get("rate") if isinstance(b.get("rate"), (int, float)) else 1.0
+            played = 0.0 if b.get("paused") else (time.time() - before["t"]) * rate
+            moved = t - (bt + played)
+            if not lo <= moved <= hi:
+                problems.append("moved %+d s" % int(round(moved)))
     if "src_has" in want and want["src_has"] not in str(got.get("src") or ""):
         problems.append("src is %s" % got.get("src"))
     if problems:
@@ -86,8 +102,9 @@ def _media(world, want):
     return True, "player as expected"
 
 
-def check(e, world, since):
-    """(ok, detail) for expectation |e| now."""
+def check(e, world, since, before=None):
+    """(ok, detail) for expectation |e| now; |before| is the step's
+    snapshot()."""
     kind = next(k for k in e if k not in ("typed", "is", "kind", "quiet"))
     value = e[kind]
     if kind in ("url", "url_has", "host", "path", "query"):
@@ -113,7 +130,7 @@ def check(e, world, since):
             return False, "%s failed: %s" % (value, err)
         return got == want, "%s is %r" % (value, got)
     if kind == "media":
-        return _media(world, value)
+        return _media(world, value, before)
     if kind in ("said", "said_has", "said_re", "said_none"):
         lines = [_norm(t) for t in _said_lines(world, since)]
         joined = "\n".join(lines)
@@ -167,9 +184,14 @@ def applies(e, typed):
 
 
 def snapshot(world):
-    """What a no_action expectation compares with."""
+    """What a no_action expectation compares with, and the player as the
+    step began (media "seeked")."""
+    try:
+        media = world.media()
+    except Exception:  # no page, or one going away: no player then
+        media = None
     return {"url": world.url(), "tabs": world.tab_count(),
-            "windows": world.window_count()}
+            "windows": world.window_count(), "media": media, "t": time.time()}
 
 
 def quiet_check(before, world, since):

@@ -815,6 +815,10 @@ TEST(VoiceCommandTest, RecognizerForms) {
       {"play number nine hundred ninety nine", "choose", "choice=num:999"},
       {"play the hundredth one", "choose", "choice=pos:100"},
       {"skip ahead 1,000 seconds", "skip_forward", "seconds=1000"},
+      // Heard as sounded: "pause" without an r, "bookmark" as a past.
+      {"Hey, Malt, pores", "pause"},
+      {"paws the video", "pause"},
+      {"Hey mold, bookmarked this page.", "bookmark_page"},
   });
 }
 

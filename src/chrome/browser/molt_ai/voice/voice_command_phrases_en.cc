@@ -419,6 +419,10 @@ constexpr CommandPattern kPatterns[] = {
     {K::kPause,
      "(pause|hold on) [it|this|that|the video|the music|the song|playback|"
      "the movie|the audio|reading|the reading]"},
+    // "Pores", "paws": "pause" as it sounds without an r, how the bundled
+    // English recognizer hears it from a British voice (the spoken suite's
+    // runs, file and live microphone).
+    {K::kPause, "(pores|paws) [it|this|that|the video|the music|the song]"},
     {K::kSkipAd,
      "skip [the|this|these] (ad|ads|advert|adverts|advertisement|"
      "advertisements|commercial)"},
