@@ -816,7 +816,7 @@ The synthetic speech set, the end-to-end runs and the security tests are the spo
 ## 13. Risks
 
 - **Latency on modest machines:** the planner is slow on a CPU, so the direct-command grammar has to cover the common cases.
-- **Recognition errors,** especially with atypical speech, accents and noise. Mitigations: confirmations, sound-alike matching, a personal vocabulary, and adaptation later on.
+- **Recognition errors,** especially with atypical speech, accents and noise. Mitigations: confirmations, sound-alike matching, a personal vocabulary, the repair of a misheard command word (round 45, `voice/voice_repair.h`: last before the planner, one swap to a sound-alike grammar word or a wake-phrase scrap dropped, only when one command fits, only commands safe on a guess, never answers or free text; on the twelfth build by file 68% to 70%, typed 100%, live microphone 67% as before, where four of the live run's misses were a scrap of the wake phrase before a click, which the allow-list refuses), and adaptation later on.
 - **Sites change.** Skills are data with tests, and the generic page map is the fallback.
 - **OS setup a touchless user can't do alone:** the first microphone permission, installing, and starting at login. It needs either one-time help or the OS's own voice control. MoltBrowser can then start at login with voice mode on and recover by itself after a crash.
 - **CAPTCHAs:** the browser may offer a site's audio challenge, but it doesn't solve challenges.

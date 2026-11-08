@@ -39,12 +39,17 @@ import shutil
 import sys
 import tarfile
 import time
+import urllib.error
 import urllib.request
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANIFEST = os.path.join(HERE, "artifacts.json")
 CHUNK = 1 << 20
+# A download the server failed (5xx, 429) or the network dropped is tried
+# again after these many seconds; a refusal (other 4xx) or a wrong size or
+# hash fails at once.
+RETRY_WAITS = (5, 20, 60)
 
 
 def default_dir():
@@ -78,7 +83,29 @@ def file_name(a):
     return a.get("file") or a["url"].rsplit("/", 1)[1].split("?", 1)[0]
 
 
-def download(a, dest):
+def _transient(e):
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code >= 500 or e.code == 429
+    return isinstance(e, (urllib.error.URLError, TimeoutError, ConnectionError))
+
+
+def download(a, dest, waits=RETRY_WAITS, sleep=time.sleep):
+    """download_once(), tried again after each of |waits| while it fails
+    with a server or network error."""
+    for wait in tuple(waits) + (None,):
+        try:
+            return download_once(a, dest)
+        except OSError as e:
+            part = dest + ".part"
+            if os.path.exists(part):
+                os.remove(part)
+            if wait is None or not _transient(e):
+                raise
+            print("retry   %s in %d s: %s" % (a["id"], wait, e), file=sys.stderr, flush=True)
+            sleep(wait)
+
+
+def download_once(a, dest):
     """Streams a["url"] to dest, checking size and SHA-256. Raises on mismatch."""
     part = dest + ".part"
     h = hashlib.sha256()

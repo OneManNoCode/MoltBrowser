@@ -57,7 +57,11 @@ In the test build workflow (`molt-test-build.yml`), the request file's
 `e2e_runs` and `e2e_scenarios` narrow the same way, one job per run, and
 `"e2e_speech_check": false` skips the recognizer check (about an hour);
 with `"e2e_only": true` and `resume_run` only the spoken suite runs, on
-that run's saved build.
+that run's saved build. The pinned voices are kept between runs (keyed by
+`artifacts.json`), and a download the server failed is tried again
+(`fetch.py`), so a download host's outage doesn't stop the suite. The
+suite doesn't run on a build with failed steps: `ninja -k 0` links what it
+can, so its browser may be an earlier build's, and that stage ends red.
 
 By hand, the same steps:
 

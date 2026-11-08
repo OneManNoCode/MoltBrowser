@@ -117,6 +117,10 @@ source_set("voice_command") {
     "voice_command_phrases.h",
     "voice_command_phrases_en.cc",
     "voice_command_phrases_es.cc",
+
+    # A misheard command repaired: a wake phrase's scrap, a sound-alike word.
+    "voice_repair.cc",
+    "voice_repair.h",
   ]
   public_deps = [ ":spoken_choice" ]
 }
@@ -185,6 +189,7 @@ source_set("voice_intent_unit_tests") {
     "spoken_numbers_unittest.cc",
     "spoken_text_unittest.cc",
     "voice_command_unittest.cc",
+    "voice_repair_unittest.cc",
     "voice_spanish_unittest.cc",
   ]
   deps = [

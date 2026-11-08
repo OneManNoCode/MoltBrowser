@@ -91,7 +91,9 @@ jobs:
       - name: Install actionlint (pinned, checksum-verified)
         run: |
           set -euo pipefail
-          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
+          # Retried: GitHub's release downloads sometimes answer 504.
+          curl -fsSL --retry 5 --retry-delay 10 --retry-connrefused \
+            -o "$RUNNER_TEMP/actionlint.tgz" \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint

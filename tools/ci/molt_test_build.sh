@@ -344,6 +344,18 @@ cmd_test() {
     rc=1
   fi
   python3 "$ROOT/tools/ci/molt_test_summary.py" "$dir" > "$dir/summary.md" || rc=1
+  # ninja -k 0 links what it can: after a failed step, a binary it feeds is
+  # the last build's, and so are its tests' results.
+  if [ "$(cat "$STATE/status" 2>/dev/null)" = errors ]; then
+    {
+      echo "> **The build had $(wc -l < "$STATE/failed-steps.txt") failed steps:**" \
+        "the binaries they feed were not rebuilt, so these tests may have run" \
+        "on an earlier build of this code."
+      echo
+      cat "$dir/summary.md"
+    } > "$dir/summary.md.new"
+    mv "$dir/summary.md.new" "$dir/summary.md"
+  fi
   cat "$dir/summary.md"
   summary < "$dir/summary.md"
   output tests_rc "$rc"

@@ -2,6 +2,7 @@
 # MoltBrowser voice mode, end to end, on a CI machine (docs/VOICE_E2E.md)
 # Copyright 2026 GenEye AI Labs Inc. Licensed under GPLv3.
 #
+#   tools/voice_e2e/ci_run.sh --fetch-voices   (only the pinned voices)
 #   tools/voice_e2e/ci_run.sh <out dir> <bundle dir> <report dir>
 #
 #   <out dir>     the build's output directory, with the chrome binary
@@ -36,6 +37,22 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DATA_DIR="${VOICE_E2E_DATA:-$HOME/.cache/moltbrowser-voice-e2e}"
+# The engine and voices the scenarios' speech is rendered with, pinned in
+# tools/voice_bench/artifacts.json. "ci_run.sh --fetch-voices" fetches only
+# these (the workflow does, to keep them between runs).
+VOICES_TO_FETCH=sherpa-onnx-linux-x64,tts-piper-en_US-ljspeech-medium,tts-piper-en_US-libritts_r-medium-int8,tts-lexicon-en-us
+fetch_voices() {
+  python3 -I "$ROOT_DIR/tools/voice_bench/fetch.py" --dir "$DATA_DIR" \
+    --only "$VOICES_TO_FETCH"
+}
+if [[ $# -eq 1 && "$1" == --fetch-voices ]]; then
+  fetch_voices
+  exit
+fi
+
 if [[ $# -ne 3 ]]; then
   sed -n '2,35p' "$0"
   exit 2
@@ -44,9 +61,6 @@ OUT_DIR="$(cd "$1" && pwd)"
 BUNDLE_DIR="$(cd "$2" && pwd)"
 mkdir -p "$3"
 REPORT_DIR="$(cd "$3" && pwd)"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DATA_DIR="${VOICE_E2E_DATA:-$HOME/.cache/moltbrowser-voice-e2e}"
 RUNS="${VOICE_E2E_RUNS:-pulse:clean,pulse:music10,file:clean,typed}"
 
 log() { echo "[voice-e2e] $*"; }
@@ -113,8 +127,7 @@ fi
 
 # ---------------------------------------------------------------- speech
 log "fetching the pinned voices into $DATA_DIR"
-python3 -I "$ROOT_DIR/tools/voice_bench/fetch.py" --dir "$DATA_DIR" \
-  --only sherpa-onnx-linux-x64,tts-piper-en_US-ljspeech-medium,tts-piper-en_US-libritts_r-medium-int8,tts-lexicon-en-us
+fetch_voices
 python3 -I "$ROOT_DIR/tools/voice_bench/run_bench.py" --dir "$DATA_DIR" --build
 SPEECH_DIR="$REPORT_DIR/speech"
 log "rendering the scenarios' speech"
