@@ -15,6 +15,7 @@
 #include "chrome/browser/molt_ai/voice/voice_command_phrases.h"
 #include "chrome/browser/molt_ai/voice/voice_dictation.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture_channel.h"
+#include "chrome/browser/molt_ai/voice/voice_repair.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 #include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
@@ -394,7 +395,7 @@ class Planner : public TurnPlanner {
 
     switch (command.kind) {
       case K::kUnknown:
-        Unknown(command);
+        Unknown(command, depth, confirming);
         break;
       case K::kRefused:
         Say(command.refusal == RefusalReason::kTooLong
@@ -2982,7 +2983,8 @@ class Planner : public TurnPlanner {
 
   // ---- Conversation ------------------------------------------------------
 
-  void Unknown(const VoiceCommand& command) {
+  // |confirming|: a confirmation was pending when it was heard.
+  void Unknown(const VoiceCommand& command, int depth, bool confirming) {
     // What was heard is said back cleaned and capped, as page text is: an
     // utterance can hold characters no voice should be given.
     const std::string echo = PageText(command.heard);
@@ -3019,6 +3021,17 @@ class Planner : public TurnPlanner {
     // opened by voice here (voice_browser_logic.h).
     if (PlanSiteNameAlone(command, *this)) {
       return;
+    }
+    // A misheard command ("close this tip" for "close this tab", a scrap of
+    // "Hey Molt" in front of one), repaired before the planner is asked
+    // (voice_repair.h); not when it may have been a confirmation's answer.
+    if (depth == 0 && !confirming) {
+      const ParseContext context = ContextFor(state(), map_, env_);
+      if (std::optional<RepairedCommand> repaired =
+              RepairMisheardCommand(command.heard, context)) {
+        Plan(repaired->command, depth + 1);
+        return;
+      }
     }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;

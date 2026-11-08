@@ -76,7 +76,7 @@ VOICE_INTENT_SOURCES = [
         "spoken_numbers", "spoken_phrases", "spoken_phrases_en",
         "spoken_phrases_es", "spoken_text", "voice_command",
         "voice_command_phrases_en", "voice_command_phrases_es",
-        "voice_language")
+        "voice_language", "voice_repair")
 ]
 
 # name -> where the fuzzer lives (its .cc, BUILD.gn and corpus/<name>/), the

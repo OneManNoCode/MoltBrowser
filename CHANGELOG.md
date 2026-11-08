@@ -1447,7 +1447,13 @@ the releases page to reinstall).
   its voice activity detector on every change of the window, losing the
   speech it was following; neither happens now. At a browser prompt,
   "no" heard as "now" blocks or declines, and four more misheard
-  commands are understood. "Open the menu" on a slow machine read out the
+  commands are understood. A command with one word misheard ("close this
+  tip", "Joe my downloads", "on mute") or a scrap of "Hey Molt" in front
+  of it ("halt. Play the live one") is now taken as the command it sounds
+  like, when nothing else fits and only one command does, and only for
+  commands safe on a guess; on the spoken suite's misheard utterances it
+  understands 11 of 65 it didn't, and none of 100 everyday sentences
+  became a command. "Open the menu" on a slow machine read out the
   toolbar's buttons instead of the menu; it now waits for the menu to
   show.
 - **Workflows, routines and settings files hold up to crashes, odd files

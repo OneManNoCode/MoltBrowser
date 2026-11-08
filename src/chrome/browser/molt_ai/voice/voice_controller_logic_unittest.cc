@@ -275,6 +275,32 @@ TEST(VoiceControllerLogicTest, WhichSiteFromTheHomePage) {
   EXPECT_FALSE(PlanSiteQuestion("", moltnet, ConversationState()).state.expecting_site);
 }
 
+TEST(VoiceControllerLogicTest, AMisheardCommandIsRepaired) {
+  // "Close this tab" heard as "close this tip" (voice_repair.h): planned as
+  // the command meant.
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  VoiceTurn turn = c.Say("Hey, Malt, close this tip.");
+  EXPECT_EQ(turn.kind, VoiceCommandKind::kCloseTab);
+  ASSERT_FALSE(turn.steps.empty());
+  EXPECT_EQ(turn.steps[0].kind, K::kCloseTab);
+
+  // Not while a yes or no is awaited: "click buy now" asks first, and a
+  // misheard word can't become anything but what it was heard as.
+  turn = c.Say("click buy now");
+  ASSERT_TRUE(c.state().confirming);
+  turn = c.Say("close this tip");
+  EXPECT_NE(turn.kind, VoiceCommandKind::kCloseTab);
+  EXPECT_EQ(Find(turn, K::kCloseTab), nullptr);
+
+  // Nor in a MoltNet window.
+  VoiceEnvironment moltnet = Env();
+  moltnet.moltnet = true;
+  EXPECT_EQ(PlanUtterance("close this tip", PageMap(), moltnet,
+                          ConversationState())
+                .kind,
+            VoiceCommandKind::kUnknown);
+}
+
 TEST(VoiceControllerLogicTest, ASiteWithNoSearchPageIsSearchedOnTheWeb) {
   Conversation c(PageMap(), Env());
   const VoiceTurn turn = c.Say("search Instagram for cats");

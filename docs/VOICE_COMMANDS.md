@@ -74,6 +74,18 @@ heard "Hey Molt" and you paused (none when you go straight on, so it never
 plays over your words), a tick when it took a command, a falling tone when it
 goes back to waiting for "Hey Molt".
 
+When the recognizer gets one word of a command wrong ("close this tip",
+"Joe my downloads", "read the tile") or leaves a scrap of "Hey Molt" in
+front of it ("halt. Play the live one"), voice mode takes it as the
+command it sounds like, but only when nothing else fits (not a routine's
+or a site's name), when exactly one command fits, and only for commands
+that are safe on a guess: moving around, reading, media, scrolling,
+zooming, tabs. Never an answer to a question, a choice from a list,
+sending a form, a setting, a routine or turning voice mode off; never
+while it waits for a "yes" or "no"; and a swapped word never becomes the
+start of free text ("take hello there" isn't typed). English only for
+now.
+
 You can also type the commands, without the microphone, in Agent mode's
 "Type what you would say": the browser does it in the tab you are on and
 says the answer aloud with your system's voices.
@@ -84,8 +96,10 @@ and the bar only.
 
 ## What it does
 
-- **"Open YouTube"** opens the site. Six sites are known by name: YouTube,
-  Google, DuckDuckGo, Wikipedia, Brave Search and Bing. A spoken address
+- **"Open YouTube"** opens the site. The search engines (YouTube, Google,
+  DuckDuckGo, Wikipedia, Brave Search, Bing) and 38 popular sites
+  (Facebook, Instagram, WhatsApp, X, Amazon, Netflix, Gmail and others)
+  are known by name, at their official addresses. A spoken address
   ("example dot com") opens that address. Any other name is searched for
   with your default search engine, and the browser tells you so: it never
   guesses a web address.

@@ -17,10 +17,14 @@
 // no mark at either end or twice in a row) within kMaxSiteBytes; "yes" and
 // "no" only when a yes/no question was asked, the dictation edits only in
 // a text field; levels, seconds, counts and choice references are within
-// their ranges, and a choice always says what it chooses.
+// their ranges, and a choice always says what it chooses. A misheard
+// command repaired (voice_repair.h) only from what wasn't understood, never
+// while a yes or no is awaited, only to a kind safe to run on a guess, and
+// as clean as any other command.
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -30,6 +34,7 @@
 #include "chrome/browser/molt_ai/voice/spoken_numbers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
+#include "chrome/browser/molt_ai/voice/voice_repair.h"
 
 namespace {
 
@@ -249,6 +254,23 @@ void CheckUtterance(uint8_t flags,
   if (command.kind == K::kUnknown) {
     CHECK(command.text.empty());
     CHECK(command.site.empty());
+  }
+
+  // The repair of a misheard command.
+  const std::optional<molt_ai::voice::RepairedCommand> repaired =
+      molt_ai::voice::RepairMisheardCommand(utterance, context);
+  if (repaired) {
+    CHECK(command.kind == K::kUnknown);
+    CHECK(!context.expecting_yes_no);
+    CHECK(language == Language::kEnglish);
+    CHECK(molt_ai::voice::RepairableKind(repaired->command.kind));
+    CHECK_EQ(repaired->command.heard, command.heard);
+    CheckClean(repaired->text, kMaxUtteranceBytes);
+    CheckClean(repaired->command.text, kMaxCommandTextBytes);
+    CHECK_EQ(!repaired->command.text.empty(),
+             CarriesText(repaired->command.kind));
+    CheckSite(repaired->command.site);
+    CheckChoice(repaired->command.choice);
   }
 }
 

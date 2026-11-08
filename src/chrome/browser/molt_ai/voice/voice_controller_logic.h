@@ -475,7 +475,9 @@ ParseContext ContextFor(const ConversationState& state,
                         const VoiceEnvironment& env);
 
 // One utterance (text, as typed or recognized): parsed with ContextFor()
-// and planned.
+// and planned. What the grammar didn't understand goes, in order, to the
+// browser's prompt, a routine's name, a site's name, a misheard command
+// repaired (voice_repair.h) and the planner.
 VoiceTurn PlanUtterance(std::string_view utterance,
                         const PageMap& map,
                         const VoiceEnvironment& env,
