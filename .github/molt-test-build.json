@@ -1,4 +1,4 @@
-{"resume_run": "42145511237", "run_tests": true, "e2e_only": false,
- "e2e_runs": "typed",
+{"resume_run": "42152052307", "run_tests": true, "e2e_only": false,
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop",
  "e2e_speech_check": false,
- "request": "Round 45, eleventh build: the home page browser test reads the page without a user gesture (the tenth build's EvalJs calls gave the page the activation the microphone then took), and checks that opening the home page alone starts nothing. Resume from run 42145511237 (the tenth build). Unit and browser tests, then the typed spoken suite."}
+ "request": "Round 45, twelfth build: voice mode repairs a misheard command word (voice_repair.h). Resume from run 42152052307 (the eleventh build). Unit and browser tests, then the spoken suite typed, by file and through the live microphone without the speakers, to measure the repair against the ninth build (68% file, 67% noloop)."}
