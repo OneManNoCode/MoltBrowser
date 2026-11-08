@@ -230,7 +230,11 @@ silence, is the same command, which an utterance of its own would hear
 from its middle. If speech resumes in that time, the utterance goes on.
 Only the start of the wake phrase counts as short too: the recognizer
 writes a word a moment after it is said, and at the pause after "Hey
-Molt" it may have written only "Hey, Mal". The detector notices speech
+Molt" it may have written only "Hey, Mal". The same goes when the
+phrase alone has been written so far after a wake the spotter heard, or
+when the spotter missed it and the helper is reading the transcript for
+it ("Hey Molt, click" ... "sport" ended as "Hey, Malt, close"); a wake
+found that way is dated where the speech ended, not where the wait did. The detector notices speech
 0.25 to 0.3 s in, so sound well above the quiet before it (12 dB, and
 -50 dBFS RMS) keeps the wait going 0.4 s more for it to tell, up to 1 s
 after the speech ended in all. Measured with the helper on the spoken

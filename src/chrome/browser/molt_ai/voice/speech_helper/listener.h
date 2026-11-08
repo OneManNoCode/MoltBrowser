@@ -218,6 +218,10 @@ class Listener {
   bool ShortCommand(const RecognizerResult& result) const;
   // The short-command hangover, from now.
   void StartHangover();
+  // In the hangover: whether it is over, because speech resumed (and
+  // |vad.in_speech|; the hangover is then cleared) or its time ran out.
+  // Sound keeps it going a little (kSoundHangoverSamples).
+  bool HangoverOver(const VadUpdate& vad);
   void EmitPartial(const RecognizerResult& result);
   void ApplyPendingVad();
   EventTime Now() const;
@@ -264,8 +268,10 @@ class Listener {
   // kUtterance: its speech ended short (kShortCommandHangoverSamples); it
   // finishes at this sample unless speech resumes. 0 if not waiting.
   int64_t hangover_until_ = 0;
-  // The latest it may go on to (kMaxHangoverSamples).
+  // The latest it may go on to (kMaxHangoverSamples), and where the
+  // speech it waits after ended.
   int64_t hangover_limit_ = 0;
+  int64_t speech_ended_at_ = 0;
   // kHearing: where speech begun before the phrase was needed started (it
   // counts without the phrase); -1 if it didn't.
   int64_t hearing_open_from_ = -1;

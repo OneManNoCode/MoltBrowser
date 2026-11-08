@@ -635,6 +635,41 @@ TEST_F(SpeechListenerTest, SoundInTheWaitKeepsItGoing) {
   EXPECT_EQ(std::count(types.begin(), types.end(), "speech_start"), 1);
 }
 
+// The recognizer writes a word a moment after it is said. The spotter
+// missed "Hey Molt", and at the pause after "click" the recognizer had
+// written only "Hey Molt,": "Hey, Malt, close" ended there, and "sport"
+// was lost (the sixteenth build). The phrase alone so far is waited out.
+TEST_F(SpeechListenerTest, WaitsOutAPauseAfterAPhraseTheSpotterMissed) {
+  scene_->word_lag = Ms(750);
+  scene_->speech = {{Ms(1000), Ms(1700)}, {Ms(2300), Ms(2800)}};
+  scene_->words = {{"Hey", Ms(1000)},
+                   {"Molt,", Ms(1250)},
+                   {"click", Ms(1500)},
+                   {"sport", Ms(2350)}};
+  FeedUntil(Ms(5000));
+  const std::vector<std::string> types = Types();
+  ASSERT_FALSE(types.empty());
+  EXPECT_EQ(types.front(), "wake");
+  EXPECT_EQ(types.back(), "final:Hey Molt, click sport");
+  EXPECT_EQ(std::count(types.begin(), types.end(), "speech_start"), 1);
+}
+
+// The same after a wake the spotter heard: at the pause no word after the
+// phrase was written yet.
+TEST_F(SpeechListenerTest, WaitsOutAPauseAfterASpottedPhraseAndAWord) {
+  WakePhrase(scene_.get());
+  scene_->word_lag = Ms(900);
+  scene_->speech = {{Ms(1000), Ms(2000)}, {Ms(2600), Ms(3000)}};
+  scene_->words.push_back({"click", Ms(1700)});
+  scene_->words.push_back({"sport", Ms(2650)});
+  FeedUntil(Ms(6000));
+  const std::vector<std::string> types = Types();
+  ASSERT_FALSE(types.empty());
+  EXPECT_EQ(types.front(), "wake");
+  EXPECT_EQ(types.back(), "final:Hey Molt click sport");
+  EXPECT_EQ(std::count(types.begin(), types.end(), "speech_start"), 1);
+}
+
 // Sound that isn't speech holds a short command back a little, never more
 // than kMaxHangoverSamples.
 TEST_F(SpeechListenerTest, SoundThatIsntSpeechHoldsACommandBackALittle) {
