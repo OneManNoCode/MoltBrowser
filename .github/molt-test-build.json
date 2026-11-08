@@ -1,6 +1,6 @@
-{"resume_run": "42464161404",
+{"resume_run": "42471183272",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop",
  "e2e_speech_check": false,
- "request": "Round 45, twelfth build again: voice mode repairs a misheard command word (voice_repair.h). The first try didn't compile (a reference member, chromium-rawref) and its spoken suite couldn't download its voices (HTTP 504). Resume from run 42464161404, which recorded the failed step: recheck, then unit and browser tests, then the spoken suite typed, by file and through the live microphone without the speakers, against the ninth build (68% file, 67% noloop)."}
+ "request": "Round 45, thirteenth build: a press said after a scrap of the wake phrase (voice_repair.h, RepairableAsSaidKind), and the wait for a page also waits for its tree to say it has loaded (DecidePageWait). Resume from run 42471183272 (the twelfth build). Unit and browser tests, then the spoken suite typed, by file and through the live microphone without the speakers, against the twelfth build (70% file, 67% noloop)."}
