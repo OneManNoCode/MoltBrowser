@@ -89,6 +89,21 @@ class DigestTest(unittest.TestCase):
             self.assertIn("the last line", text)
             self.assertIn("(no voice test log)", text)
 
+    def test_the_gpu_sandbox_warning_isnt_fatal(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_report(d, [
+                {"id": "a", "mode": "wake", "status": "failed", "reason": "no player"}])
+            write(os.path.join(d, "runs", "pulse-clean", "a", "browser.log"),
+                  "[1:1:1/1.1:WARNING:sandbox/policy/linux/sandbox_linux.cc:406] "
+                  "InitializeSandbox() called with multiple threads in process "
+                  "gpu-process.\n"
+                  + "[1:1:1/1.2:ERROR:dbus/bus.cc:405] Failed to connect\n" * 30
+                  + "[1:1:1/1.3:INFO:x.cc:1] the last line\n")
+            text = digest.build(d)
+            self.assertNotIn("fatal lines", text)
+            self.assertNotIn("InitializeSandbox", text)
+            self.assertIn("the last line", text)
+
     def test_bounded(self):
         with tempfile.TemporaryDirectory() as d:
             scs = [{"id": "s%d" % i, "mode": "wake", "status": "failed",

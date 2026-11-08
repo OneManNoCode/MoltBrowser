@@ -240,6 +240,8 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"map","items":15,"lists":1,"media":1,"selection":false,"selected_text":false,"labels":["YouTube Home","Search",...]}
 {"t":...,"w":1,"e":"mic","peak_db":-23,"samples":80000,"dropped":0,"echo":"chrome-wide"}
 {"t":...,"w":1,"e":"dropped","text":"open YouTube","reason":"no wake phrase"}
+{"t":...,"w":1,"e":"helper","event":"wake","lag_ms":140,"note":"taken"}
+{"t":...,"w":1,"e":"earcon","kind":"listening"}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -264,6 +266,16 @@ in `VoiceController`):
   surely; voice mode's voice heard back), masked as
   every text is: an utterance that never reached `heard`. A run that heard nothing tells a silent microphone
   (the audio's routing) from sound that wasn't recognized.
+- `helper`: the speech helper's `wake`, `speech_start` and `speech_end` as
+  the listening session saw them, how far their audio was behind the
+  microphone (`lag_ms`, -1 unknown), and what became of a wake (`taken`,
+  or why it was set aside: voice mode's own words had it, over its own
+  voice, another source was speaking, not listening). With `dropped`, a
+  command that left no `heard` line says where it went missing: no wake
+  at all, a wake set aside, or a wake with no command after it.
+- `earcon`: each tone voice mode played (`listening`, `waiting`,
+  `thinking`, `speaking`, `off`): with the speakers' sound in the
+  microphone, a tone over the user's words takes some with it.
 - `said`: what voice mode says, as it starts saying it.
 - `activity`: voice mode's state, the microphone, and whether only the wake
   phrase counts.

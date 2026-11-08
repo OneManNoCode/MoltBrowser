@@ -549,10 +549,20 @@ void VoiceSession::OnListenerEvent(const HelperEvent& event) {
   // The event's lag behind the microphone (the listener's audio clock).
   const std::optional<int64_t> lag = event.lag_ms;
   switch (event.type) {
-    case HelperEventType::kWake:
-      Apply(logic_.OnWake(now, lag));
+    case HelperEventType::kWake: {
+      SessionActions actions = logic_.OnWake(now, lag);
+      if (controller_) {
+        controller_->NoteHelperEvent(
+            "wake", lag,
+            actions.wake_ignored.empty() ? "taken" : actions.wake_ignored);
+      }
+      Apply(std::move(actions));
       return;
+    }
     case HelperEventType::kSpeechStart:
+      if (controller_) {
+        controller_->NoteHelperEvent("speech_start", lag, {});
+      }
       Apply(logic_.OnSpeechStart(now, lag));
       return;
     case HelperEventType::kPartial:
@@ -562,6 +572,9 @@ void VoiceSession::OnListenerEvent(const HelperEvent& event) {
       Apply(logic_.OnFinal(event.text, event.confidence, now, lag));
       return;
     case HelperEventType::kSpeechEnd:
+      if (controller_) {
+        controller_->NoteHelperEvent("speech_end", lag, {});
+      }
       Apply(logic_.OnSpeechEnd(now, lag));
       return;
     case HelperEventType::kError:
@@ -690,6 +703,9 @@ void VoiceSession::OnVoiceLanguageChanged(Language language) {
 void VoiceSession::Apply(SessionActions actions) {
   if (actions.earcon && earcons_) {
     earcons_->Play(*actions.earcon);
+    if (controller_) {
+      controller_->NoteEarcon(EarconKindName(*actions.earcon));
+    }
   }
   if (actions.duck) {
     SetDucking(*actions.duck);
@@ -825,6 +841,12 @@ void VoiceSession::ScheduleTick() {
 }
 
 void VoiceSession::OnTick() {
+  if (audio_) {
+    // The listening tone waits for a pause in what the microphone hears.
+    const base::TimeTicks loud = audio_->LastLoud();
+    logic_.NoteMicrophoneLoud(
+        loud.is_null() ? -1 : (loud - base::TimeTicks()).InMilliseconds());
+  }
   Apply(logic_.OnTick(NowMs()));
 }
 

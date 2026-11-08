@@ -525,6 +525,85 @@ TEST_F(SpeechListenerTest, SpotsAPhraseBegunAsTheWindowCloses) {
   EXPECT_EQ(Types().back(), "final:Hello there pause");
 }
 
+// The spoken suite's file run: "no, I said YouTube" begun as the follow-up
+// window closed, before the detector noticed it, was heard for a wake
+// phrase and dropped. Begun while every utterance counted, it counts.
+TEST_F(SpeechListenerTest, CountsSpeechBegunAsTheWindowCloses) {
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  scene_->speech = {{Ms(1000), Ms(2300)}};
+  scene_->words = {{"no,", Ms(1000)}, {"I", Ms(1300)}, {"said", Ms(1450)},
+                   {"YouTube", Ms(1750)}};
+  // The browser asks for the wake phrase again 40 ms into it.
+  FeedUntil(Ms(1040));
+  listener_->ApplyConfig(Config(R"({"wake_required":true})"), nullptr);
+  FeedUntil(Ms(4000));
+  EXPECT_EQ(Types(),
+            (std::vector<std::string>{"speech_start", "speech_end",
+                                      "final:no, I said YouTube"}));
+  // When it began, for the browser's window.
+  ASSERT_EQ(AudioMs(events_, "speech_start").size(), 1u);
+  EXPECT_LE(AudioMs(events_, "speech_start")[0], 1200);
+  ASSERT_EQ(log_->utterance_starts.size(), 1u);
+  EXPECT_LE(log_->utterance_starts[0], Ms(1000));
+  // Speech begun later needs the phrase again.
+  scene_->speech.push_back({Ms(5000), Ms(5800)});
+  scene_->words.push_back({"next", Ms(5000)});
+  scene_->words.push_back({"page", Ms(5300)});
+  const size_t before = events_.size();
+  FeedUntil(Ms(7000));
+  EXPECT_EQ(events_.size(), before);
+}
+
+TEST_F(SpeechListenerTest, SpeechBegunAfterTheWindowClosedNeedsThePhrase) {
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  scene_->speech = {{Ms(1500), Ms(2300)}};
+  scene_->words = {{"next", Ms(1500)}, {"page", Ms(1800)}};
+  FeedUntil(Ms(1000));
+  listener_->ApplyConfig(Config(R"({"wake_required":true})"), nullptr);
+  FeedUntil(Ms(4000));
+  EXPECT_TRUE(events_.empty());
+}
+
+// The spoken suite's runs: "Hey Molt, select [pause] by letter" ended at
+// the pause, and "by letter" came as an utterance of its own, heard from
+// its middle ("I looked by letter"). A pause after one word is waited out.
+TEST_F(SpeechListenerTest, WaitsOutAPauseAfterOneWord) {
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  scene_->speech = {{Ms(1000), Ms(1500)}, {Ms(2100), Ms(2800)}};
+  scene_->words = {{"select", Ms(1000)}, {"by", Ms(2150)},
+                   {"letter", Ms(2400)}};
+  FeedUntil(Ms(5000));
+  const std::vector<std::string> types = Types();
+  EXPECT_EQ(types.back(), "final:select by letter");
+  EXPECT_EQ(std::count(types.begin(), types.end(), "speech_start"), 1);
+  ASSERT_EQ(log_->utterance_starts.size(), 1u);
+}
+
+TEST_F(SpeechListenerTest, WaitsOutAPauseAfterTheWakePhraseAndOneWord) {
+  scene_->speech = {{Ms(1000), Ms(1900)}, {Ms(2500), Ms(3300)}};
+  scene_->words = {{"Hey", Ms(1000)},     {"Molt,", Ms(1250)},
+                   {"skip", Ms(1600)},    {"ahead", Ms(2550)},
+                   {"one", Ms(2850)},     {"minute", Ms(3050)}};
+  FeedUntil(Ms(6000));
+  const std::vector<std::string> types = Types();
+  EXPECT_EQ(types.front(), "wake");
+  EXPECT_EQ(types.back(), "final:Hey Molt, skip ahead one minute");
+  EXPECT_EQ(std::count(types.begin(), types.end(), "speech_start"), 1);
+}
+
+TEST_F(SpeechListenerTest, ALongerCommandEndsAtItsPause) {
+  listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
+  scene_->speech = {{Ms(1000), Ms(1800)}, {Ms(2400), Ms(2900)}};
+  scene_->words = {{"scroll", Ms(1000)}, {"down", Ms(1400)},
+                   {"stop", Ms(2450)}};
+  FeedUntil(Ms(5000));
+  EXPECT_EQ(Types(), (std::vector<std::string>{
+                         "speech_start", "partial:scroll",
+                         "partial:scroll down", "speech_end",
+                         "final:scroll down", "speech_start", "partial:stop",
+                         "speech_end", "final:stop"}));
+}
+
 TEST_F(SpeechListenerTest, KeepsTheDetectorWhenItsSilenceDoesntChange) {
   // Every CONFIG carries the silence; a new detector forgets the speech it
   // was following.
@@ -614,12 +693,14 @@ TEST_F(SpeechListenerTest, SwitchesWakeModesBetweenUtterances) {
   scene_->words = {{"pause", Ms(1000)}};
   FeedUntil(Ms(500));
   listener_->ApplyConfig(Config(R"({"wake_required":false})"), nullptr);
-  FeedUntil(Ms(2500));
+  // A one-word command waits kShortCommandHangoverSamples longer.
+  FeedUntil(Ms(2900));
   EXPECT_EQ(Types().back(), "final:pause");
   listener_->ApplyConfig(Config(R"({"wake_required":true})"), nullptr);
-  scene_->speech.push_back({Ms(3000), Ms(3600)});
-  scene_->words.push_back({"play", Ms(3000)});
-  FeedUntil(Ms(5000));
+  // Begun well after (not within kLateOpenSamples of) the switch.
+  scene_->speech.push_back({Ms(3500), Ms(4100)});
+  scene_->words.push_back({"play", Ms(3500)});
+  FeedUntil(Ms(5500));
   EXPECT_EQ(Types().back(), "final:pause");
 }
 

@@ -13,6 +13,9 @@ voice_test_log.cc): one JSON object per line, appended as it happens.
    "labels"}
   {"e": "mic", "peak_db", "samples", "dropped", "echo"}
   {"e": "dropped", "text", "reason"}
+  {"e": "helper", "event": "wake"|"speech_start"|"speech_end", "lag_ms",
+   "note"}  (a wake's note: "taken", or why it was set aside)
+  {"e": "earcon", "kind"}
 
 The browser writes it; the kit reads it as untrusted input all the same
 (a line too long, not JSON or not an object is skipped and counted).
@@ -25,7 +28,7 @@ import threading
 
 MAX_LINE = 64 * 1024
 EVENTS = ("start", "heard", "said", "activity", "prompt", "confirm", "map",
-          "mic", "dropped")
+          "mic", "dropped", "helper", "earcon")
 
 
 class TestLog(object):

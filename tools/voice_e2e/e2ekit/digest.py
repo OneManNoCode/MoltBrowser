@@ -29,7 +29,10 @@ FATAL = ("FATAL", "Check failed", "DCHECK failed", "Received signal",
 NOISE = ("dbus/", "ALSA lib", "alsa_util.cc", "Failed to set realtime",
          "kill_posix.cc", "ui/gfx/linux/gpu_memory_buffer_support_x11.cc",
          "viz_main_impl.cc", "gl_surface_presentation_helper",
-         "Fontconfig", "fontconfig")
+         "Fontconfig", "fontconfig",
+         # Every GPU process on the runners says it; it isn't the sandbox
+         # failing, and as a "fatal" line it took 40 lines of each digest.
+         "InitializeSandbox() called with multiple threads")
 
 
 def _read(path, limit=4 * 1024 * 1024):
@@ -117,7 +120,8 @@ def browser_log_digest(text, stack_lines=40, tail_lines=25):
         if len(seen) >= 12:
             break
     out.append("after the first:")
-    out += ["  " + l[:400] for l in lines[first:first + stack_lines]]
+    after = [l for l in lines[first + 1:] if not any(n in l for n in NOISE)]
+    out += ["  " + l[:400] for l in [lines[first]] + after[:stack_lines - 1]]
     return _normalized(lines[first]), own + out
 
 

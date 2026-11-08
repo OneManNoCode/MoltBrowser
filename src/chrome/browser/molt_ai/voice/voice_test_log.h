@@ -84,6 +84,12 @@ class VoiceTestLog : public VoiceController::Observer {
                  std::string_view reason,
                  const ConversationState& state);
 
+  // A speech helper event the listening session saw, its audio's lag behind
+  // the microphone (-1 unknown) and what became of a wake; an earcon it
+  // played.
+  void OnHelper(std::string_view event, int64_t lag_ms, std::string_view note);
+  void OnEarcon(std::string_view kind);
+
   // The loop's state as the caption bar shows it.
   void OnLoop(VoiceActivity activity,
               bool mic,

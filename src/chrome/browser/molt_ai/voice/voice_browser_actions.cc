@@ -76,8 +76,10 @@ constexpr int kMaxHistoryEntries = 50;
 // A menu's items are read once it has opened (a submenu opens from the
 // press that asked for it).
 constexpr base::TimeDelta kMenuSettle = base::Milliseconds(150);
-// How long the list waits for the app menu "open the menu" asked for.
-constexpr base::TimeDelta kMenuOpenTimeout = base::Seconds(3);
+// How long the list waits for the app menu "open the menu" asked for. It
+// opens in a moment on a quiet machine; on a busy one (the browser tests'
+// CI runner) it took more than 3 s, and the toolbar was read instead.
+constexpr base::TimeDelta kMenuOpenTimeout = base::Seconds(8);
 // How recent the closed tab's entry is, to be the one voice mode closed.
 constexpr base::TimeDelta kJustClosed = base::Seconds(3);
 

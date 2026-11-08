@@ -213,6 +213,11 @@ struct ChoiceRef {
   Relative relative = Relative::kCurrent;
   // Roles named by a role word ("video", "link", "button"); 0 for none.
   ChoiceRoleMask roles = 0;
+  // kDescription: how many of its words were role words with a role (not
+  // "one" or "thing"). When no item has a role they name, each counts as a
+  // word no item has: "Wikipedia ... new tab" on a page without tabs is
+  // not "A new library opens".
+  int role_words = 0;
   // kDescription: folded words (spoken_text.h), stopwords and role words
   // removed, number words as digits. |by_words| follow "by" ("by Queen"),
   // |from_words| follow "from" ("from the BBC").

@@ -72,6 +72,12 @@ namespace voice {
 
 class VoiceTestAudio;
 
+// A buffer whose loudest sample reaches this (-30 dBFS), after the echo
+// canceller and noise suppression, has speech in it (VoiceAudio::LastLoud()):
+// the spoken suite's commands peak at -8 to -13 dBFS there, and the room
+// and what the canceller leaves of the browser's own sound at -50 or less.
+inline constexpr float kVoiceLoudPeak = 0.0316f;
+
 // Which echo canceller the microphone gets.
 enum class EchoCancellation {
   kChromeWide,  // WebRTC's, in the audio service; the browser's output
@@ -129,6 +135,12 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   };
   Levels TakeLevels();
 
+  // When the microphone last gave something as loud as speech
+  // (kVoiceLoudPeak), after the browser's processing: the capture time of
+  // that buffer; null before. The listening tone waits for a pause
+  // (voice_session_logic.h).
+  base::TimeTicks LastLoud() const;
+
   // media::AudioCapturerSource::CaptureCallback (OnCaptureStarted() and
   // Capture() on the audio thread, OnCaptureError() on either):
   void OnCaptureStarted() override;
@@ -169,6 +181,8 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   // millionths, and the samples.
   std::atomic<uint32_t> peak_millionths_{0};
   std::atomic<int64_t> samples_{0};
+  // LastLoud(), in microseconds of base::TimeTicks; 0 before.
+  std::atomic<int64_t> loud_at_us_{0};
   base::WeakPtrFactory<VoiceAudio> weak_factory_{this};
 };
 

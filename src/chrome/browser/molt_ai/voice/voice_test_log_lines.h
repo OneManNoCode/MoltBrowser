@@ -148,6 +148,18 @@ class TestLogLines {
                       std::string_view reason,
                       std::string_view pending_word) const;
 
+  // A speech helper event the listening session saw ("wake",
+  // "speech_start", "speech_end"), how far its audio was behind the
+  // microphone (-1 unknown) and, for a wake, what became of it ("taken",
+  // or why it was set aside): where a command went missing.
+  std::string Helper(int64_t ms,
+                     std::string_view event,
+                     int64_t lag_ms,
+                     std::string_view note) const;
+
+  // An earcon voice mode played ("listening", "waiting", ...).
+  std::string Earcon(int64_t ms, std::string_view kind) const;
+
   // The lines for what changed since the last call (the first call compares
   // with a TestLogState{}).
   std::string Changed(int64_t ms, const TestLogState& now);

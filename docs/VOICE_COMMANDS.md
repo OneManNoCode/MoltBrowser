@@ -454,7 +454,7 @@ said.
 
 **Open a site by its name or its address.** For example: "open YouTube".
 
-- `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site} in [a] new tab`
+- `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site} (in | and) [a] new tab`
 - `(open | go to | take me to | visit | navigate to | launch | load | bring up | pull up) {site}`
 - `hoping {site}`
 - `{address}`
@@ -563,12 +563,12 @@ said.
 
 **Go to the top of the page.** For example: "scroll to the top".
 
-- `(scroll | go | jump | move | go back) [up] to the (top | beginning | start) [of the page]`
+- `(scroll | roll | go | jump | move | go back) [up] to the (top | beginning | start) [of the page]`
 - `(top of [the] page | page top | scroll top | back to top)`
 
 **Go to the bottom of the page.** For example: "scroll to the bottom".
 
-- `(scroll | girl | go | jump | move) [down] to the (bottom | end) [of the page]`
+- `(scroll | roll | girl | go | jump | move) [down] to the (bottom | end) [of the page]`
 - `(bottom of [the] page | page bottom | scroll bottom)`
 
 **Make everything bigger.** For example: "zoom in".

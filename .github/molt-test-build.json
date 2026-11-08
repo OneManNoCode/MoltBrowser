@@ -1,6 +1,6 @@
-{"resume_run": "42479666491",
+{"resume_run": "42498331739",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, fourteenth build: find on the page matches a compound split or joined (\"time table\" for \"Timetable\"), \"bookmarked this page\" and \"pores\"/\"paws\" for pause as the recognizer hears them, and a drop over voice mode's voice says why. The kit: said_re per line, file runs keep the microphone as voice mode got it for a failed scenario, media \"seeked\" for a seek measured from where the player was. Resume from run 42479666491 (the thirteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the thirteenth build (72% file, 75% noloop)."}
+ "request": "Round 45, sixteenth build: the speech helper waits 0.4 s more when a command has at most one word after the wake phrase (commands were cut at a short pause), the wake phrase alone in the follow-up window is a wake, \"clickad\" for \"click add\" is read apart, the app menu is waited for up to 8 s, and the digest no longer takes the GPU sandbox warning for a crash (so every failure's log fits). Resume from run 42498331739 (the fifteenth build). Unit and browser tests, then the spoken suite typed, by file, through the live microphone without the speakers and with them, against the fifteenth build (73% file, 79% noloop, 67% with the speakers)."}

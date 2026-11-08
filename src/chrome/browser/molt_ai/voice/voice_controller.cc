@@ -537,6 +537,20 @@ void VoiceController::NoteDroppedUtterance(const std::string& text,
   }
 }
 
+void VoiceController::NoteHelperEvent(std::string_view event,
+                                      std::optional<int64_t> lag_ms,
+                                      std::string_view note) {
+  if (test_log_) {
+    test_log_->OnHelper(event, lag_ms.value_or(-1), note);
+  }
+}
+
+void VoiceController::NoteEarcon(std::string_view kind) {
+  if (test_log_) {
+    test_log_->OnEarcon(kind);
+  }
+}
+
 void VoiceController::SetNumbersShown(bool shown) {
   state_.numbers_shown = shown;
 }

@@ -308,6 +308,28 @@ std::string TestLogLines::Dropped(int64_t ms,
   return out;
 }
 
+std::string TestLogLines::Helper(int64_t ms,
+                                 std::string_view event,
+                                 int64_t lag_ms,
+                                 std::string_view note) const {
+  std::string out = Head(ms, "helper");
+  AppendString(out, "event", CleanSpokenText(event, 32));
+  out.append(",\"lag_ms\":");
+  out.append(std::to_string(std::clamp<int64_t>(lag_ms, -1, 3'600'000)));
+  if (!note.empty()) {
+    AppendString(out, "note", CleanSpokenText(note, 64));
+  }
+  out.append("}\n");
+  return out;
+}
+
+std::string TestLogLines::Earcon(int64_t ms, std::string_view kind) const {
+  std::string out = Head(ms, "earcon");
+  AppendString(out, "kind", CleanSpokenText(kind, 32));
+  out.append("}\n");
+  return out;
+}
+
 std::string TestLogLines::Changed(int64_t ms, const TestLogState& now) {
   std::string out;
   if (now.activity != activity_ || now.mic != mic_ || now.waiting != waiting_) {

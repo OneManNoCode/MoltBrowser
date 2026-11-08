@@ -40,6 +40,36 @@ For longer narrative posts behind each entry see
   "bookmarked this page", as the recognizer hears "bookmark this page" in
   some voices, bookmarks it; "pores" and "paws", "pause" as it sounds
   without an r, pause.
+- **A misheard "open ... in a new tab" no longer presses a link on the
+  page.** "Open Wikipedia and a new tab" pressed "A new library opens by
+  the river": "tab" names a kind of item, and on a page with no tabs it
+  was set aside, leaving "new" to pick the link. A word for a kind of
+  item the page doesn't have now counts against a match like any word no
+  item has, and "and a new tab" opens the site in a new tab.
+- **A page's "Leave site?" can be answered without "Hey Molt".** The
+  "go back" that raised it was still waiting, so voice mode wasn't
+  listening for answers; it now is while its question waits.
+- **Answers that repeat the question's words are taken.** "Number two"
+  over "Did you mean 1: ..., 2: ...? Say a number or a name" was taken
+  for voice mode's own voice heard back. Heard back, its words come in
+  the order it said them; the answer's don't.
+- **Something said just as the follow-up window closes still counts.** The
+  speech helper notices speech a moment in and hears of the close a
+  moment late, so "no, I said YouTube" begun just before it was dropped.
+- **A short pause inside a command no longer cuts it in two.** "Hey Molt,
+  select ... by letter" ended at the pause, and "by letter" came as a
+  command of its own, heard from its middle. When what was said so far is
+  one word after "Hey Molt", voice mode now waits 0.4 s more for the rest;
+  longer commands end as quickly as before. And "Hey Molt" alone, said in
+  the moments after an answer, waits for the command instead of being
+  answered with "I didn't catch that". "Clickad toaster to cart", "click
+  add" run together as the recognizer heard it, presses "Add toaster to
+  cart".
+- **The listening tone waits until you pause.** After "Hey Molt" it
+  played once 0.7 s had passed with no command recognized yet, which
+  could be over the command's last words; with the speakers' sound
+  reaching the microphone the echo canceller then took those words with
+  it ("open Wikipedia" heard as "open wikip").
 
 ## 2026-11-06 — v0.3.0: Private by default
 

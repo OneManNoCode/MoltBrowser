@@ -182,6 +182,170 @@ TEST_F(VoiceSessionLogicTest, AnUtteranceBegunInTheWindowFinishes) {
   EXPECT_EQ(taken.utterance, "number two");
 }
 
+// The spoken suite's file run: "no, I said YouTube" begun just before the
+// window closed reached the browser after it had. As the helper places it
+// (its lag), it began in the window.
+TEST_F(VoiceSessionLogicTest, AnUtteranceBegunAsTheWindowClosed) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open Wikipedia", 0.9, now_ + 500);
+  BrowserAnswers();
+  const int64_t closes = now_ + kFollowUpWindowMs;
+  EXPECT_EQ(At(closes).wake_required, true);
+  // Arrives 400 ms after, 300 ms behind its audio.
+  logic_->OnSpeechStart(closes + 400, 300);
+  EXPECT_EQ(logic_->state(), SessionState::kListening);
+  EXPECT_EQ(logic_->OnFinal("no, I said YouTube", 0.9, closes + 1800, 0)
+                .utterance,
+            "no, I said YouTube");
+
+  // Begun well after it closed: the wake phrase is needed.
+  BrowserAnswers();
+  const int64_t later = now_ + kFollowUpWindowMs;
+  At(later);
+  logic_->OnSpeechStart(later + kWindowCloseGraceMs + 400, 300);
+  SessionActions late = logic_->OnFinal("next page", 0.9, later + 2000, 0);
+  EXPECT_FALSE(late.utterance.has_value());
+  EXPECT_EQ(late.dropped_reason, "no wake phrase");
+  // A helper whose lag isn't known isn't placed at all.
+  BrowserAnswers();
+  const int64_t unknown = now_ + kFollowUpWindowMs;
+  At(unknown);
+  logic_->OnSpeechStart(unknown + 100, std::nullopt);
+  EXPECT_FALSE(logic_->OnFinal("next page", 0.9, unknown + 1500, 0)
+                   .utterance.has_value());
+  // Nor is a final with nothing before it (it says when speech ended).
+  BrowserAnswers();
+  const int64_t bare = now_ + kFollowUpWindowMs;
+  At(bare);
+  EXPECT_FALSE(
+      logic_->OnFinal("next page", 0.9, bare + 100, 0).utterance.has_value());
+}
+
+// The spoken suite's file run: "Leave dialogs.test? ... Say leave or stay."
+// held up the "go back" that raised it, so the browser stayed busy after
+// asking; "stay" without the wake phrase was dropped.
+TEST_F(VoiceSessionLogicTest, AnAnswerWhileWhatAskedItWaits) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("go back", 0.9, now_ + 500);
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 600);
+  // The page's prompt, and its question.
+  logic_->OnAwaitingAnswer(true, now_ + 700);
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 700);
+  now_ += 5000;
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_);
+  EXPECT_FALSE(logic_->wake_required());
+  At(now_ + kFollowUpWindowMs + 4000);
+  logic_->OnSpeechStart(now_);
+  EXPECT_EQ(logic_->OnFinal("stay", 0.9, now_ + 600).utterance, "stay");
+
+  // Busy with no question waiting: only the wake phrase.
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("search for cats", 0.9, now_ + 500);
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 600);
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 700);
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 2000);
+  now_ += 3000;
+  logic_->OnSpeechStart(now_);
+  SessionActions busy = logic_->OnFinal("stay", 0.9, now_ + 600);
+  EXPECT_FALSE(busy.utterance.has_value());
+  EXPECT_EQ(busy.dropped_reason, "no wake phrase");
+  // Nor once the question is answered another way (the prompt closed).
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("go back", 0.9, now_ + 500);
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 600);
+  logic_->OnAwaitingAnswer(true, now_ + 700);
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 700);
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 3000);
+  logic_->OnAwaitingAnswer(false, now_ + 4000);
+  now_ += 5000;
+  logic_->OnSpeechStart(now_);
+  EXPECT_FALSE(
+      logic_->OnFinal("stay", 0.9, now_ + 600).utterance.has_value());
+}
+
+// The helper says the command started once the recognizer wrote one of
+// its words; the microphone hears it first. With the speakers' sound in
+// the microphone, a tone over the command took its last words with it.
+TEST_F(VoiceSessionLogicTest, TheListeningToneWaitsForAPause) {
+  Begin();
+  const int64_t woke = now_;
+  logic_->OnWake(woke);
+  // Still speaking when the tone is due.
+  logic_->NoteMicrophoneLoud(woke + kWakeEarconDelayMs - 50);
+  EXPECT_FALSE(At(woke + kWakeEarconDelayMs).earcon.has_value());
+  EXPECT_EQ(logic_->NextDeadline(),
+            woke + kWakeEarconDelayMs - 50 + kQuietBeforeToneMs);
+  // The command started after all: no tone.
+  logic_->OnSpeechStart(woke + 900);
+  EXPECT_FALSE(At(woke + 1000).earcon.has_value());
+  EXPECT_FALSE(At(woke + 3000).earcon.has_value());
+
+  // Speaking, then a pause: the tone then.
+  now_ += 10000;
+  const int64_t again = now_;
+  logic_->OnWake(again);
+  logic_->NoteMicrophoneLoud(again + 900);
+  EXPECT_FALSE(At(again + kWakeEarconDelayMs).earcon.has_value());
+  EXPECT_FALSE(At(again + 1100).earcon.has_value());
+  EXPECT_EQ(At(again + 900 + kQuietBeforeToneMs).earcon,
+            EarconKind::kListening);
+
+  // A microphone that never goes quiet (a noisy room): at the latest.
+  now_ += 10000;
+  const int64_t noisy = now_;
+  logic_->OnWake(noisy);
+  for (int64_t t = noisy + kWakeEarconDelayMs;
+       t < noisy + kWakeEarconLatestMs; t += 100) {
+    logic_->NoteMicrophoneLoud(t);
+    EXPECT_FALSE(At(t).earcon.has_value()) << t - noisy;
+  }
+  logic_->NoteMicrophoneLoud(noisy + kWakeEarconLatestMs);
+  EXPECT_EQ(At(noisy + kWakeEarconLatestMs).earcon, EarconKind::kListening);
+}
+
+// The spoken suite's file run: "Himalt." and a pause, then "Scroll down",
+// in the follow-up window: the wake phrase alone went to the loop ("I
+// didn't catch that") and the command came over its answer.
+TEST_F(VoiceSessionLogicTest, TheWakePhraseAloneInTheWindowIsAWake) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("open the shop", 0.9, now_ + 500);
+  BrowserAnswers();
+  const int64_t answered = now_;
+  // Late in the window.
+  logic_->OnSpeechStart(answered + 6500);
+  SessionActions alone = logic_->OnFinal("Himalt.", 0.9, answered + 7000);
+  EXPECT_FALSE(alone.utterance.has_value());
+  EXPECT_FALSE(alone.dropped.has_value());
+  EXPECT_EQ(logic_->state(), SessionState::kListening);
+  EXPECT_FALSE(logic_->wake_required());
+  // The tone, once the microphone is quiet.
+  EXPECT_EQ(At(answered + 7000).earcon, EarconKind::kListening);
+  // The command, past the window's first end.
+  const int64_t late = answered + kFollowUpWindowMs + 1000;
+  At(late);
+  EXPECT_FALSE(logic_->wake_required());
+  logic_->OnSpeechStart(late + 100);
+  EXPECT_EQ(logic_->OnFinal("Scroll down", 0.9, late + 800).utterance,
+            "Scroll down");
+
+  // And with nothing after it: back to waiting.
+  now_ = late + 1000;
+  BrowserAnswers();
+  const int64_t again = now_;
+  logic_->OnSpeechStart(again + 1000);
+  EXPECT_FALSE(
+      logic_->OnFinal("Hey Molt", 0.9, again + 1600).utterance.has_value());
+  SessionActions gave_up = At(again + 1600 + kWakeTimeoutMs);
+  EXPECT_TRUE(gave_up.reset_helper);
+  At(again + kFollowUpWindowMs + kWakeTimeoutMs);
+  EXPECT_EQ(logic_->state(), SessionState::kWaiting);
+}
+
 TEST_F(VoiceSessionLogicTest, TheListeningToneWhenTheUserPauses) {
   Begin();
   EXPECT_FALSE(logic_->OnWake(now_).earcon.has_value());
@@ -594,6 +758,39 @@ TEST_F(VoiceSessionLogicTest, TheOwnVoiceHeardBackAsItSpeaks) {
   SessionActions taken = logic_->OnFinal("go back", 0.9, now_ + 2200);
   EXPECT_EQ(taken.utterance, "go back");
   EXPECT_TRUE(taken.stop_speech);
+}
+
+// Heard back, its words come in the order it said them. The spoken suite's
+// file run: "Number two" over "Did you mean 1: ..., 2: ..., or 3: ...? Say
+// a number or a name" was taken for the browser's own voice.
+TEST_F(VoiceSessionLogicTest, AnAnswerFromItsQuestionsWordsIsNotItsEcho) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("play the live one by queen", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "Did you mean 1: Live at Rock Montreal, 2: Live Aid, or 3: Live at "
+      "Wembley? Say a number or a name.",
+      now_);
+  // Its own words heard back, one lost.
+  logic_->OnSpeechStart(now_ + 500);
+  EXPECT_EQ(logic_->OnFinal("live at montreal", 0.9, now_ + 1200)
+                .dropped_reason,
+            "voice mode's voice heard back");
+  logic_->OnSpeechStart(now_ + 1300);
+  EXPECT_EQ(logic_->OnFinal("two live aid", 0.9, now_ + 1900).dropped_reason,
+            "voice mode's voice heard back");
+  // One word: anywhere in what it said.
+  logic_->OnSpeechStart(now_ + 2000);
+  EXPECT_FALSE(
+      logic_->OnFinal("wembley", 0.9, now_ + 2400).utterance.has_value());
+  // The user's answer, from words it said apart.
+  logic_->OnSpeechStart(now_ + 2500);
+  SessionActions answer = logic_->OnFinal("Number two.", 0.9, now_ + 3000);
+  EXPECT_EQ(answer.utterance, "Number two.");
+  EXPECT_TRUE(answer.stop_speech);
 }
 
 // Its own reading of a page's sound-alike of the wake phrase ("Hey Mold",
