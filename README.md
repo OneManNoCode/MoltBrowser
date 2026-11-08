@@ -176,7 +176,7 @@ The macOS and Linux builds are current at **v0.2.5**; the Windows desktop build 
 
 | Platform | Version | Download |
 |----------|---------|----------|
-| **macOS** (Apple Silicon) | **v0.2.5** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
+| **macOS** (Apple Silicon, macOS 13 Ventura or later from v0.3.0) | **v0.2.5** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
 | **Windows** (10/11 x64) | v0.2.1 | [Setup.exe](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe) (installer) · [.zip](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64.zip) (portable, unzip & run `MoltBrowser.exe`) |
 | **Linux** (x64) | **v0.2.5** | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.tar.gz) — install with `sudo apt install ./MoltBrowser-Linux-x64.deb` |
 

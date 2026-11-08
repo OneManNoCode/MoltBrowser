@@ -24,6 +24,12 @@ macOS arm64 is built for release on the build machine, and the Windows
 build stays at v0.2.1. The release is published once it is signed offline
 (`docs/SIGNED_UPDATES.md`). Detail: [ROADMAP.md](ROADMAP.md).
 
+**macOS 13 (Ventura) or later.** Chromium 156 no longer runs on macOS 12.
+On macOS 12, stay on v0.2.5 and turn its automatic updates off before
+v0.3.0 is published: v0.2.5's updater doesn't check the macOS version, so
+it would replace the browser with one that won't open (v0.2.5 stays on
+the releases page to reinstall).
+
 ### Security
 - The automations page (`molt://ai-automation`) checks every message from
   its page before using it, and changes a workflow's trust only on a real
