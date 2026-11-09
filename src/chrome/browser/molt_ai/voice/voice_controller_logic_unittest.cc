@@ -677,6 +677,35 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
           << not_found << ": " << Said(turn);
     }
   }
+  // Find: a compound split into words that sound like it, as the spoken
+  // suite's recognizer heard "timetable" ("time to bull"): the same
+  // consonants in order, in another number of words.
+  {
+    TreeBuilder b("Story");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Story", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    b.Heading(main, 2, "Timetable");
+    b.Heading(main, 2, "Planet news");
+    Conversation c(BuildPageMap(b.Take()), Env());
+    for (const char* found :
+         {"find time to bull on this page", "find tie metable on this page",
+          "find plan it on this page"}) {
+      VoiceTurn turn = c.Say(found);
+      EXPECT_EQ(Said(turn).find("Found it"), 0u) << found << ": " << Said(turn);
+    }
+    EXPECT_EQ(Said(c.Say("find time to bull on this page")),
+              "Found it in the heading Timetable.");
+    // Not a word heard with other vowels in it, word for word ("plant" for
+    // "Planet"), other consonants, or fewer than four of them.
+    for (const char* not_found :
+         {"find plant news on this page", "find time to dull on this page",
+          "find tie mabble on this page", "find at om on this page"}) {
+      VoiceTurn turn = c.Say(not_found);
+      EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
+          << not_found << ": " << Said(turn);
+    }
+  }
 }
 
 TEST(VoiceControllerLogicTest, ShownNumbersAreChosenAsShown) {

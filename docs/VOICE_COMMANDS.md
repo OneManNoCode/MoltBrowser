@@ -247,7 +247,7 @@ and the bar only.
   match" and "previous match" go through them ("Match 2 of 3: the link
   Opening hours."). A word finds its plural, and a word the recognizer
   split or joined finds it as the page writes it ("time table" finds
-  "Timetable").
+  "Timetable"), or split into words that sound like it ("time to bull").
 - **A site's name on its own:** "YouTube" (or "Wikipedia", "Google",
   "DuckDuckGo", "Bing", "Brave Search") opens it, saying "Opening YouTube."
   then "YouTube is open."; so does the name of a site you opened by voice
