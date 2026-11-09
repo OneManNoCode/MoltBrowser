@@ -126,9 +126,10 @@ std::string HotwordsArgument(const std::vector<std::string>& phrases,
 // ("hey mall" isn't the phrase) and the words are no longer than the
 // phrase and end on its last sound but the stop, one vowel after it at
 // most ("Himalaya" isn't). A two-word phrase whose greeting is an "h"
-// and vowels ("hey") may also have lost the "h" into its name: one word,
-// a vowel and then the name's sounds as they are ("Immalt", not
-// "omelet"). For the speech helper's second chance at a
+// and vowels ("hey") may also have lost the "h": one word, a vowel and
+// then the name's sounds as they are ("Immalt", not "omelet"), or the
+// vowel and the name apart, set off by a comma or a stop ("A mold, do
+// the volume"; not "a mold grew"). For the speech helper's second chance at a
 // wake phrase its spotter missed (docs/design/SPEECH_HELPER_PROTOCOL.md
 // §4.1); the browser's grammar strips the phrase as before. Linear in
 // |text|.

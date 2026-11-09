@@ -236,6 +236,8 @@ TEST(VoiceCommandTest, OpenSites) {
       {"He mold, draw my downloads", "list_downloads", ""},
       {"Hoping YouTube.", "open_site", "site=youtube"},
       {"Hey, Molt, roulette", "reload", ""},
+      {"Hey, Malt, Roledge", "reload", ""},
+      {"Hey, Malt, Rolete", "reload", ""},
       {"Hey, Malt, feel back", "back", ""},
       {"Hey, Malt, turn on catchens.", "captions_on", ""},
       {"Hey mold, said the volume to fifty percent.", "set_volume",

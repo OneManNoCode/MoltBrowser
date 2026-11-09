@@ -410,8 +410,9 @@ constexpr CommandPattern kPatterns[] = {
     {K::kNextPage, "(more results|show more results|load more results)"},
     {K::kReload, "(reload|refresh) [the|this] [page|tab|site|website|it]"},
     {K::kReload, "load [the|this] page again"},
-    // "Reload" heard as "roulette" (the spoken suite's file run).
-    {K::kReload, "roulette"},
+    // "Reload" heard as "roulette" (the spoken suite's file run), "Roledge"
+    // and "Rolete" (its microphone runs).
+    {K::kReload, "(roulette|roledge|rolete)"},
     {K::kNewTab, "(open|new|start|create) [a] new tab"},
     // "Open a new tip": "tab" heard as "tip", before a site of that name.
     {K::kNewTab, "(open|start|create) [a] new tip"},

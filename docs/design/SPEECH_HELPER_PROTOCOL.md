@@ -336,7 +336,9 @@ wake  [speech_start  partial*  speech_end]  final
   mall" is not the phrase; or one word with the greeting's "h" lost, the
   vowel left of it and then the name's sounds as they are, "Immalt" or
   "Emolt", not "omelet" or "Amulet", which only share its consonants, and
-  no word of a 104,000-word dictionary that didn't count before), it was a
+  no word of a 104,000-word dictionary that didn't count before, or the
+  vowel and the name apart and set off as a name called is, by a comma or
+  a stop, "A mold, do the volume to half", not "a mold grew"), it was a
   wake phrase all the same: `wake` once a word
   follows it, dated where that word starts (where the phrase ended, which
   the browser's checks for its own voice and other sources go by), then

@@ -38,9 +38,13 @@ For longer narrative posts behind each entry see
   recognizer ran "Hey Molt" into one word and lost the "h" ("Immalt, set
   the volume to half") and the wake detector missed it too, voice mode,
   waiting for the wake phrase, heard nothing. A word made of that one
-  vowel and then the name's sounds now counts. Words that only share its
-  consonants ("omelet", "Amulet") still don't, and no word of a
-  104,000-word dictionary counts that didn't before.
+  vowel and then the name's sounds now counts, and so do the vowel and
+  the name written apart when a comma or full stop sets the name off
+  ("A mold, do the volume to half"; not "a mold grew"). Words that only
+  share its consonants ("omelet", "Amulet") still don't, and no word of
+  a 104,000-word dictionary counts that didn't before.
+- **"Reload" heard as "Roledge" or "Rolete" reloads**, as "roulette"
+  already did.
 - **The spoken suite's report no longer says a security scenario
   "acted" when it never got to its check.** The replayed confirmation word
   failed because the user's own word was misheard, so the replay it is

@@ -623,6 +623,24 @@ std::string SoundShape(std::string_view word) {
   return out;
 }
 
+// Whether |text|'s second space-separated word (with a letter or digit)
+// ends at a comma, a full stop, or a question or exclamation mark.
+bool SecondWordEndsAPhrase(std::string_view text) {
+  size_t at = 0;
+  size_t words = 0;
+  while (at < text.size()) {
+    const size_t space = text.find(' ', at);
+    const size_t end = space == std::string_view::npos ? text.size() : space;
+    const std::string_view token = text.substr(at, end - at);
+    if (!WakeWord(token).empty() && ++words == 2) {
+      const char last = token.back();
+      return last == ',' || last == '.' || last == '?' || last == '!';
+    }
+    at = end + 1;
+  }
+  return false;
+}
+
 // Whether |heard| is a two-word phrase whose greeting is only an "h" and
 // vowels ("hey") run into its name with the "h" lost: the one vowel sound
 // left of the greeting (a letter or two), then the name's sounds as they
@@ -688,6 +706,15 @@ size_t WakePhraseWordsAtStart(std::string_view text,
     // Run together with the greeting's "h" lost.
     if (!heard.empty() && GreetingLostIntoName(heard[0], phrase)) {
       return 1;
+    }
+    // Or kept apart, a vowel and the name called by it ("A mold, do the
+    // volume"): set off as a name is, by a comma or a stop ("a mold grew"
+    // isn't).
+    if (heard.size() >= 2 && heard[0].size() <= 2 &&
+        SoundShape(heard[0]) == "V" &&
+        GreetingLostIntoName(heard[0] + heard[1], phrase) &&
+        SecondWordEndsAPhrase(text)) {
+      return 2;
     }
     // Run together.
     if (key.size() < 4) {
