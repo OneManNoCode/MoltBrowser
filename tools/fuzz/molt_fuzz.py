@@ -771,14 +771,36 @@ def obj_path(source, flags):
     return os.path.join(OUT, "obj", digest, stem + ".o")
 
 
+def up_to_date(out, source):
+    """Whether |out| is newer than |source| and every header it included,
+    as the compiler listed them (-MMD). An object from before depfiles, or
+    a header gone, builds again: a stale object with an old struct layout
+    reads as a sanitizer's crash."""
+    depfile = os.path.splitext(out)[0] + ".d"
+    if not os.path.exists(out) or not os.path.exists(depfile):
+        return False
+    built = os.path.getmtime(out)
+    with open(depfile, encoding="utf-8", errors="replace") as f:
+        _, _, deps = f.read().replace("\\\n", " ").partition(":")
+    for dep in [source] + deps.split():
+        path = dep if os.path.isabs(dep) else os.path.join(ROOT, dep)
+        try:
+            if os.path.getmtime(path) > built:
+                return False
+        except OSError:
+            return False
+    return True
+
+
 def compile_one(source, flags):
-    """Compiles |source| unless its object is newer (headers aren't tracked:
-    use --clean after editing one)."""
+    """Compiles |source| unless its object is newer than it and the headers
+    it includes."""
     out = obj_path(source, flags)
-    if os.path.exists(out) and os.path.getmtime(out) > os.path.getmtime(source):
+    if up_to_date(out, source):
         return out, None
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cmd = [CC if source.endswith(".c") else CXX] + flags
+    cmd += ["-MMD", "-MF", os.path.splitext(out)[0] + ".d"]
     cmd += ["-c", source, "-o", out]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if proc.returncode != 0:

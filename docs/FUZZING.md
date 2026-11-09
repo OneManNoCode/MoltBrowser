@@ -63,8 +63,9 @@ mkdir /tmp/min
 out/fuzz/bin/molt_x_fuzzer -merge=1 /tmp/min <dir>/corpus/molt_x_fuzzer out/fuzz/corpus/molt_x_fuzzer
 ```
 
-Objects are cached by source and flags. After editing a header, use
-`build --clean`.
+Objects are cached by source and flags, and built again when the source
+or a header it includes changes (the compiler's `-MMD` dependency file).
+`build --clean` starts from nothing.
 
 ### Tiers
 
