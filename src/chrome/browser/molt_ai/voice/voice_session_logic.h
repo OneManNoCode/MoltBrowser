@@ -49,7 +49,10 @@
 //     skipped between two, as written or as its voice says them,
 //     voice_said_aloud.h: "example dot com" for "example.com"; that is
 //     what an echo the canceller missed would be. One word: anywhere in
-//     it. "Number two" over "1: ..., 2: ... Say a number" is the user's).
+//     it. "Number two" over "1: ..., 2: ... Say a number" is the user's;
+//     so is one that stood out of a quiet stretch that was the browser
+//     speaking, kEchoCancellerSettledMs into its speech: "three" over
+//     "3: ...").
 //     It stops the browser's speech. Only commands that stay with what the
 //     browser is reading or doing are taken that way (TakenOverOwnVoice()):
 //     one that reaches another site, types or sends text, closes a tab,
@@ -188,6 +191,12 @@ inline constexpr double kMinConfidenceWithoutWake = 0.5;
 // spoken suite with the speakers' sound in the microphone).
 inline constexpr int64_t kLoudnessOnsetMarginMs = 400;
 inline constexpr int64_t kQuietBeforeUtteranceMs = 1500;
+// One that stood out of a quiet stretch which was itself the browser
+// speaking, begun at least this long before it (the echo canceller has
+// settled on the voice by then), is the user even in words the browser
+// also said: the canceller was taking that voice out right before, so what
+// is loud now isn't it ("three" over "3: ..." as the results are read).
+inline constexpr int64_t kEchoCancellerSettledMs = 2000;
 // After another source's speech was last seen, how long what is heard may
 // still be it (the room, the spotter's and the recognizer's lag, and the
 // time between two looks at the speech engine).
@@ -434,6 +443,10 @@ class VoiceSessionLogic {
   // Whether every word of |text| is among what the browser said lately:
   // its own voice heard back.
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
+  // Whether |utterance| stood out of a quiet stretch that was the browser
+  // speaking, kEchoCancellerSettledMs and more into its speech: someone
+  // speaking, not its voice heard back.
+  bool StoodOutOfCancelledVoice(const Utterance& utterance) const;
   // Whether what the browser noted at |noted_ms| may still be heard at
   // |at_ms|: while it speaks (a long answer, or reading aloud, can last far
   // longer than kSpokenMemoryMs), and kSpokenMemoryMs after the later of
@@ -466,6 +479,8 @@ class VoiceSessionLogic {
   bool ready_ = false;
   BrowserActivity activity_ = BrowserActivity::kIdle;
   int64_t speaking_ended_ms_ = -1;
+  // When it last began speaking; -1 never.
+  int64_t speaking_began_ms_ = -1;
   // The follow-up window's end; 0 when it is closed.
   int64_t follow_up_until_ms_ = 0;
   // When it last ran out with nothing said in it (kWindowCloseGraceMs);

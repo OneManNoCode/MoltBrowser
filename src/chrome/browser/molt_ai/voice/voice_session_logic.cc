@@ -588,7 +588,8 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       addressed = AddressedToVoiceMode(text, utterance.begun_ms);
       const bool sure = addressed || utterance.stood_out ||
                         confidence >= kMinConfidenceWithoutWake;
-      const bool echo = sure && EchoOfBrowser(text, utterance.begun_ms);
+      const bool echo = sure && !StoodOutOfCancelledVoice(utterance) &&
+                        EchoOfBrowser(text, utterance.begun_ms);
       take = sure && !echo;
       if (!sure) {
         reason = "over voice mode's voice, and not heard surely";
@@ -667,6 +668,9 @@ SessionActions VoiceSessionLogic::OnBrowserActivity(BrowserActivity activity,
   follow_up_closed_ms_ = -1;
   if (before == BrowserActivity::kSpeaking) {
     speaking_ended_ms_ = now_ms;
+  }
+  if (activity == BrowserActivity::kSpeaking) {
+    speaking_began_ms_ = now_ms;
   }
   if (activity == BrowserActivity::kSpeaking && Listening()) {
     actions.earcon = EarconKind::kSpeaking;
@@ -952,6 +956,23 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
     return std::find(said.begin(), said.end(), wanted[0]) != said.end();
   }
   return SaysInOrder(said, wanted);
+}
+
+bool VoiceSessionLogic::StoodOutOfCancelledVoice(
+    const Utterance& utterance) const {
+  if (!utterance.stood_out || !utterance.during_speech ||
+      speaking_began_ms_ < 0) {
+    return false;
+  }
+  // The stretch NoteUtteranceLoudness() found quiet, all of it within the
+  // browser's speech, once the echo canceller had settled on it.
+  const int64_t quiet_to = utterance.begun_ms - kLoudnessOnsetMarginMs;
+  const int64_t quiet_from = quiet_to - kQuietBeforeUtteranceMs;
+  const bool speaking_through = activity_ == BrowserActivity::kSpeaking ||
+                                (speaking_ended_ms_ >= speaking_began_ms_ &&
+                                 speaking_ended_ms_ >= quiet_to);
+  return speaking_through &&
+         quiet_from - speaking_began_ms_ >= kEchoCancellerSettledMs;
 }
 
 bool VoiceSessionLogic::SaidLately(int64_t noted_ms, int64_t at_ms) const {

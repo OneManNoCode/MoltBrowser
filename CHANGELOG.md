@@ -36,6 +36,13 @@ For longer narrative posts behind each entry see
   scroll to the top" scrolls to the top: after a wake phrase, a first word
   that is only the sound the name ends on is dropped, when what follows is
   a command as said.
+- **A number said while voice mode reads the list is taken.** "Three",
+  said over "1: ..., 2: ..., 3: ..." as the results were read, was dropped
+  as voice mode's own voice heard back, because the reading has the word
+  in it. A word that stands out as loud as speech, after a moment in which
+  the microphone was quiet while voice mode was speaking (so the echo
+  canceller was taking its voice out), is you, once voice mode has spoken
+  for a few seconds. Its own words heard back are still dropped otherwise.
 - **"Hey Molt" the wake detector heard counts however it was written.**
   Over a playing video, the detector heard "Hey Molt" but the recognizer
   wrote it as "cabled" or "Hey, Lord", and the command after it ("set the
