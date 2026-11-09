@@ -3,5 +3,5 @@
  "e2e_only": true,
  "e2e_runs": "file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "e2e_field_trials": "WebRTC-Aec3TransparentModeHmm/Enabled/",
- "request": "Round 45, twenty-first run (again: the first passed the field trial as two arguments, which the kit's parser refused) (spoken suite only, on the nineteenth build's browser) with WebRTC's headset transparent mode (WebRTC-Aec3TransparentModeHmm): the twentieth run showed the echo canceller removing up to 60 dB of \"Hey Molt\" and commands said over a playing video in file mode, where there is no echo. Does the speech survive in file and noloop runs, and is the speakers' sound still removed in the loop run? Against the nineteenth/twentieth: 75-77% file, 80% noloop, 70% with the speakers."}
+ "e2e_field_trials": "WebRTC-Aec3TransparentModeHmm/Disabled/",
+ "request": "Round 45, twenty-first run (spoken suite only, on the nineteenth build's browser) with the echo canceller's legacy transparent mode instead of the HMM one: Chromium's field trial testing config, which MoltBrowser builds apply, already enables WebRTC-Aec3TransparentModeHmm, and the twentieth run showed the echo canceller removing up to 60 dB of \"Hey Molt\" and commands said over a playing video in file mode, where there is no echo. The legacy mode turns transparent after 6 s of sound played with no echo found. Does the speech survive in file and noloop runs, and is the speakers' sound still removed in the loop run? Against the nineteenth/twentieth: 75-77% file, 80% noloop, 70% with the speakers."}
