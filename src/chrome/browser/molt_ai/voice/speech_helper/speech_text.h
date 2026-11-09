@@ -120,9 +120,15 @@ std::string HotwordsArgument(const std::vector<std::string>& phrases,
 // c/g/k/q, f/v and s/z alike, repeats collapsed. A phrase whose consonants
 // are fewer than three is only taken as written, and running words
 // together needs four ("oye molt" never runs together: "molt" alone
-// would be it). For the speech helper's second chance at a wake phrase
-// its spotter missed (docs/design/SPEECH_HELPER_PROTOCOL.md §4.1); the
-// browser's grammar strips the phrase as before. Linear in |text|.
+// would be it). Run together, a phrase ending in a stop (p, t, k) may
+// have lost it ("him all", "Hamol": an echo canceller working over a
+// tab's sound swallows it) when the first word heard isn't the greeting
+// ("hey mall" isn't the phrase) and the words are no longer than the
+// phrase and end on its last sound but the stop, one vowel after it at
+// most ("Himalaya" isn't). For the speech helper's second chance at a
+// wake phrase its spotter missed (docs/design/SPEECH_HELPER_PROTOCOL.md
+// §4.1); the browser's grammar strips the phrase as before. Linear in
+// |text|.
 size_t WakePhraseWordsAtStart(std::string_view text,
                               const std::vector<std::string>& phrases);
 

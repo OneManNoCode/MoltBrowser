@@ -245,6 +245,21 @@ TEST(SpeechTextTest, FindsTheWakePhraseInATranscript) {
                            "him old"}) {
     EXPECT_EQ(WakePhraseWordsAtStart(text, en), 2u) << text;
   }
+  // Run together with its last sound, the stop, lost: what the spoken
+  // suite's microphone gave for "Hey Molt" said over a playing video.
+  for (const char* text : {"him all. Full screen", "him all louder"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 2u) << text;
+  }
+  for (const char* text : {"Hamol, pause", "Himal next video"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 1u) << text;
+  }
+  // But not with the greeting heard as it is ("hey mall" is a mall, "he
+  // mall" too), nor longer than the phrase or going on past the sound.
+  // (Speech that begins "him all" is taken: few sentences start so.)
+  for (const char* text : {"hey mall", "he mall", "hey malls", "Himalaya trip",
+                           "himallow", "himalayan"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 0u) << text;
+  }
   // Not the phrase, or not at the start: the bench's chatter written to
   // sound like it, and lost ones.
   for (const char* text :

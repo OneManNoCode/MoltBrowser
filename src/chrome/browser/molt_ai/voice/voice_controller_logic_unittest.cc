@@ -641,6 +641,15 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
     EXPECT_EQ(Said(turn).find("Found it"), 0u) << Said(turn);
     turn = c.Say("find bus on this page");
     EXPECT_EQ(Said(turn).find("I can't find"), 0u) << Said(turn);
+    // Nothing as said: the words as they sound ("trim" for "tram", as the
+    // spoken suite's recognizer heard it), in a row.
+    turn = c.Say("find trim on this page");
+    EXPECT_EQ(Said(turn), "Found it in the heading Trams return to Lyon "
+                          "after ten years.");
+    turn = c.Say("find trim return on this page");
+    EXPECT_EQ(Said(turn).find("Found it"), 0u) << Said(turn);
+    turn = c.Say("find return trim on this page");
+    EXPECT_EQ(Said(turn).find("I can't find"), 0u) << Said(turn);
   }
   // Find: a compound split or joined as a recognizer hears it.
   {

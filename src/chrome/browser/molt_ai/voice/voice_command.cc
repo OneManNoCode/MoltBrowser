@@ -984,7 +984,8 @@ bool SoundsAlike(std::string_view a,
 // old", "Himaled" for "hey molt"): the first word, or the first two
 // joined, sounds like a greeting and the name joined, to within one
 // half-edit of the phonetic key (far from words like "himalaya" or
-// "highmount"). Its length in words, or 0.
+// "highmount"), or of the key with the name's last sound lost when that is
+// a stop ("him all", "Hamol"). Its length in words, or 0.
 size_t RunTogetherWakeLength(const WordList& words,
                              const WordList& name,
                              const LanguagePhrases& p) {
@@ -1004,10 +1005,31 @@ size_t RunTogetherWakeLength(const WordList& words,
     if (key.empty()) {
       continue;
     }
+    // The name's last sound, a stop, may be lost ("him all", "Hamol" for
+    // "hey molt": an echo canceller working over a tab's sound swallows
+    // it), unless the first word is a greeting as it is ("hey mall" is a
+    // mall); the words then end on the sound before it ("Himalaya"
+    // doesn't).
+    const bool may_be_clipped =
+        take == 1 || !HasPhrase(p.wake_greetings, words[0]);
     for (std::string_view greeting : p.wake_greetings) {
       const std::string target =
           PhoneticKey(std::string(greeting) + std::string(name[0]));
-      if (!target.empty() && PhoneticDistance(key, target, 1) <= 1) {
+      if (target.empty()) {
+        continue;
+      }
+      if (PhoneticDistance(key, target, 1) <= 1) {
+        return take;
+      }
+      const char last = target.back();
+      if (!may_be_clipped || target.size() < 5 ||
+          (last != 'P' && last != 'T' && last != 'K')) {
+        continue;
+      }
+      const std::string_view clipped =
+          std::string_view(target).substr(0, target.size() - 1);
+      if (key.back() == clipped.back() &&
+          PhoneticDistance(key, clipped, 1) <= 1) {
         return take;
       }
     }
@@ -1185,6 +1207,16 @@ std::string CommandWords(std::string_view utterance,
     out += word;
   }
   return out;
+}
+
+bool BeginsWithWakePhrase(std::string_view utterance,
+                          const ParseContext& context) {
+  if (utterance.size() > kMaxUtteranceBytes || !IsValidUtf8(utterance)) {
+    return false;
+  }
+  Utterance u;
+  return CleanUp(utterance, context, PhrasesFor(context.language), u).wake >
+         0;
 }
 
 VoiceCommand::VoiceCommand() = default;

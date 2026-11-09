@@ -25,7 +25,8 @@
 //     phrase alone there ("Himalt." and a pause) is a wake, not a command
 //     (OnlyTheWakePhrase()): the command after it counts. While a page
 //     plays sound, such an utterance also needs kMinConfidenceWithoutWake
-//     (§7.2).
+//     (§7.2), unless it begins with the wake phrase
+//     (AddressedToVoiceMode()).
 //   - "Stop", "cancel", "stop talking" and "turn off voice mode" always
 //     count: the helper hears everything (wake_required false) while the
 //     browser thinks or speaks, so they work without the wake phrase.
@@ -55,6 +56,14 @@
 //     again once the browser is quiet. Audio the voice's helper chose
 //     would have to survive the echo canceller to be heard at all; this
 //     keeps what it could do then to the page being read.
+//     An utterance begun with the wake phrase ("Himalt. Play the fourth
+//     one": the helper's spotter missed it, and the recognizer is unsure
+//     of the phrase's odd spelling) is the user speaking to voice mode, as
+//     after a wake the helper heard (AddressedToVoiceMode()): it needs no
+//     confidence and any command runs, and the phrase alone is a wake;
+//     not when the browser's own words had a wake phrase then
+//     (SaidWakePhrase(), as for the helper's wake), nor when it is those
+//     words heard back.
 //   - While the speech engine speaks for someone else (a page's
 //     speechSynthesis; OnOtherSpeech()), and kOtherSpeechTailMs after,
 //     only the commands that always count do: no wake phrase, no command
@@ -375,6 +384,11 @@ class VoiceSessionLogic {
   bool Counts(const Utterance& utterance) const;
   // Whether what the browser said lately holds a wake phrase.
   bool SaidWakePhrase(int64_t now_ms) const;
+  // Whether |text|, heard from |heard_ms|, begins with one of the wake
+  // phrases (BeginsWithWakePhrase(): "Himalt. Play the fourth one", the
+  // helper's spotter having missed it), and the browser's own words didn't
+  // have one then (SaidWakePhrase(), as for a wake the helper heard).
+  bool AddressedToVoiceMode(std::string_view text, int64_t heard_ms) const;
   // Whether every word of |text| is among what the browser said lately:
   // its own voice heard back.
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;

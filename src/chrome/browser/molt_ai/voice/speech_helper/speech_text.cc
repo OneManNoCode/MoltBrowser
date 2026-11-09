@@ -588,6 +588,18 @@ size_t Letters(const std::vector<std::string>& words, size_t from,
   return n;
 }
 
+bool IsVowel(char c) {
+  return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u' || c == 'y';
+}
+
+// Whether |word| ends on a consonant, or on one vowel after one.
+bool EndsOnAConsonant(std::string_view word) {
+  if (!word.empty() && IsVowel(word.back())) {
+    word.remove_suffix(1);
+  }
+  return !word.empty() && !IsVowel(word.back());
+}
+
 }  // namespace
 
 size_t WakePhraseWordsAtStart(std::string_view text,
@@ -629,6 +641,18 @@ size_t WakePhraseWordsAtStart(std::string_view text,
     if (key.size() < 4) {
       continue;
     }
+    // The phrase with the stop that ends it lost ("him all", "Hamol" for
+    // "hey molt": an echo canceller working over a tab's sound swallows
+    // it), when the first word heard isn't the greeting itself ("hey
+    // mall" is a mall).
+    const bool ends_in_stop =
+        key.back() == 't' || key.back() == 'p' || key.back() == 'k';
+    const std::string clipped = key.substr(0, key.size() - 1);
+    const std::string first = Consonants(phrase[0]);
+    const bool greeting_heard =
+        n > 1 && !heard.empty() &&
+        (heard[0] == phrase[0] ||
+         (!first.empty() && Consonants(heard[0]) == first));
     for (size_t k = 1; k <= n + 1 && k <= heard.size(); ++k) {
       std::string run;
       for (size_t i = 0; i < k; ++i) {
@@ -638,7 +662,14 @@ size_t WakePhraseWordsAtStart(std::string_view text,
       const size_t diff =
           letters > joined.size() ? letters - joined.size()
                                   : joined.size() - letters;
-      if (diff <= 2 && Consonants(run) == key) {
+      const std::string run_key = Consonants(run);
+      if (diff <= 2 && run_key == key) {
+        return k;
+      }
+      // Clipped: no longer than the phrase, and ending on its last sound
+      // but the stop (a vowel after it at most: not "Himalaya").
+      if (ends_in_stop && !greeting_heard && letters <= joined.size() &&
+          run_key == clipped && EndsOnAConsonant(run)) {
         return k;
       }
     }

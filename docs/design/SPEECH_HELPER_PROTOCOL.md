@@ -330,7 +330,10 @@ wake  [speech_start  partial*  speech_end]  final
 - If the spotter hasn't fired but the recognizer's text starts with a wake
   phrase, as written or sounding like it ("Hey, Malt", "he mold", "Himalt",
   "him old": the same consonants, `WakePhraseWordsAtStart()` in
-  `speech_text.h`), it was a wake phrase all the same: `wake` once a word
+  `speech_text.h`; run together, also with the stop that ends the phrase
+  lost, "him all" or "Hamol", as the microphone gives "Hey Molt" said
+  over a playing video, but not after the greeting heard as it is: "hey
+  mall" is not the phrase), it was a wake phrase all the same: `wake` once a word
   follows it, dated where that word starts (where the phrase ended, which
   the browser's checks for its own voice and other sources go by), then
   `speech_start` with the same time, and the command goes on as any
