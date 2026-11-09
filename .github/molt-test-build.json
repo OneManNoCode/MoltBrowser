@@ -3,5 +3,5 @@
  "e2e_only": true,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "e2e_field_trials": "",
- "request": "Round 48, the twenty-seventh build's spoken suite again (e2e only, on its saved build): its typed run died downloading the speech bundle (HTTP 500 from GitHub's API) and the re-run isn't allowed from here; the kit's ears now take a confirmation word mangled the same way twice (\"say keptus\" twice: cactus), which failed three prompt scenarios. The twenty-seventh gave 89% file, 88% noloop, 78% with the speakers."}
+ "e2e_field_trials": "WebRTC-Aec3UseLowEarlyReflectionsDefaultGain/Enabled/WebRTC-Aec3UseLowLateReflectionsDefaultGain/Enabled/",
+ "request": "Round 48, an echo-canceller trial on the twenty-seventh build's saved build (e2e only): while AEC3 isn't transparent and has no usable linear filter, it takes the echo path gain as 1.0 (residual_echo_estimator.cc GetEchoPathGain), so it suppresses speech over a playing video even with no echo in the microphone (the file run's \"play faster\" lost 46 dB mid-command). These two trials take it as 0.1. Compare the media scenarios with the twenty-seventh build's two runs (file 77 and 78 of 87, headphones 80 and 76, speakers 71 and 72), and check the speakers run's security scenarios don't regress. The kit also says the confirmation word again when voice mode asks for it."}
