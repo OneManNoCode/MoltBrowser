@@ -17,6 +17,16 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **What you say over a playing video keeps its words when the
+  microphone doesn't hear the speakers** (a headset, or speakers far from
+  the microphone). Chromium's echo canceller, in the mode Chromium's
+  test settings choose, went on suppressing for a long time after a video
+  started even with no echo to remove, and took parts of "Hey Molt" and
+  the command with it: up to 60 dB, measured against what was said.
+  MoltBrowser now uses the echo canceller's own default mode, which turns
+  transparent once it finds no echo; with the speakers' sound in the
+  microphone it still removes it. In the spoken suite's live microphone
+  run, media commands failing went from 4-5 to 1.
 - **"Hey Molt" said over a playing video wakes voice mode.** The echo
   canceller working over the video's sound can swallow the phrase's last
   sound, and the recognizer then writes "him all" or "Hamol": both the

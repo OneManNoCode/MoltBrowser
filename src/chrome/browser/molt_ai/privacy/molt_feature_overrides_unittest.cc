@@ -8,7 +8,10 @@
 #include <string>
 #include <vector>
 
+#include "base/base_switches.h"
+#include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/metrics/field_trial.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/dictation/features.h"
 #include "chrome/common/chrome_features.h"
@@ -44,6 +47,41 @@ std::unique_ptr<base::FeatureList> BuildFeatureList(
 
 // Everything is forced off except Global Privacy Control and the Writer and
 // Rewriter web APIs, which are forced on.
+TEST(MoltFeatureOverridesTest, ReadsWhichTrialsAreForced) {
+  EXPECT_TRUE(ForcedFieldTrialsName("WebRTC-Aec3TransparentModeHmm/Enabled/",
+                                    "WebRTC-Aec3TransparentModeHmm"));
+  EXPECT_TRUE(ForcedFieldTrialsName("A/B/*WebRTC-Aec3TransparentModeHmm/x/",
+                                    "WebRTC-Aec3TransparentModeHmm"));
+  // Without the trailing slash too.
+  EXPECT_TRUE(ForcedFieldTrialsName("A/B/C/D", "C"));
+  // A group of that name isn't the trial.
+  EXPECT_FALSE(ForcedFieldTrialsName("A/C/", "C"));
+  EXPECT_FALSE(ForcedFieldTrialsName("AC/D/", "C"));
+  EXPECT_FALSE(ForcedFieldTrialsName("", "C"));
+  EXPECT_FALSE(ForcedFieldTrialsName("///", "C"));
+}
+
+TEST(MoltFeatureOverridesTest, ChoosesTheEchoCancellersTransparentMode) {
+  {
+    base::test::ScopedFeatureList scoped;
+    scoped.InitWithEmptyFeatureAndFieldTrialLists();
+    CreateDefaultFieldTrials(base::CommandLine(base::CommandLine::NO_PROGRAM));
+    EXPECT_EQ(base::FieldTrialList::FindFullName("WebRTC-Aec3TransparentModeHmm"),
+              "Disabled");
+  }
+  {
+    // Forced on the command line: left to it.
+    base::test::ScopedFeatureList scoped;
+    scoped.InitWithEmptyFeatureAndFieldTrialLists();
+    base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
+    command_line.AppendSwitchASCII(switches::kForceFieldTrials,
+                                   "WebRTC-Aec3TransparentModeHmm/Enabled/");
+    CreateDefaultFieldTrials(command_line);
+    EXPECT_EQ(base::FieldTrialList::FindFullName("WebRTC-Aec3TransparentModeHmm"),
+              "");
+  }
+}
+
 TEST(MoltFeatureOverridesTest, OnlyTheListedFeaturesAreEnabled) {
   std::vector<base::FeatureList::FeatureOverrideInfo> overrides;
   AppendDefaultFeatureOverrides(overrides);

@@ -23,8 +23,10 @@
 #ifndef CHROME_BROWSER_MOLT_AI_PRIVACY_MOLT_FEATURE_OVERRIDES_H_
 #define CHROME_BROWSER_MOLT_AI_PRIVACY_MOLT_FEATURE_OVERRIDES_H_
 
+#include <string_view>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/feature_list.h"
 
 namespace molt_ai {
@@ -34,6 +36,29 @@ namespace privacy {
 // the FeatureList is being built, before field trials are associated.
 void AppendDefaultFeatureOverrides(
     std::vector<base::FeatureList::FeatureOverrideInfo>& overrides);
+
+// The field trials MoltBrowser chooses itself, created before Chromium's
+// own (the testing config, and --force-fieldtrials) so that the testing
+// config's study of the same name is skipped:
+//   * WebRTC-Aec3TransparentModeHmm/Disabled: the echo canceller's legacy
+//     transparent mode, WebRTC's own default, instead of the hidden Markov
+//     model the testing config turns on. With no echo to remove (a headset,
+//     a microphone that doesn't hear the speakers) the HMM mode keeps
+//     suppressing for long after sound starts playing, and took words of
+//     what the user said over a playing video with it (the spoken suite's
+//     live microphone run: media steps passing went from 4-5 failures to 1
+//     with the legacy mode, and none were lost where the speakers' sound
+//     reaches the microphone).
+// A trial --force-fieldtrials names is left to it: a test or a user can
+// still choose (the switch would otherwise refuse the clash and exit).
+// Call once, after the FieldTrialList exists and before
+// VariationsService::SetUpFieldTrials().
+void CreateDefaultFieldTrials(const base::CommandLine& command_line);
+
+// Whether `force_fieldtrials` (a --force-fieldtrials value: "Trial/Group/"
+// pairs, a trial's name possibly after "*") names `trial`.
+bool ForcedFieldTrialsName(std::string_view force_fieldtrials,
+                           std::string_view trial);
 
 }  // namespace privacy
 }  // namespace molt_ai
