@@ -473,6 +473,7 @@ said.
 **Find words on this page.** For example: "find opening hours on this page".
 
 - `find [the word] {query} (on | in) (this | the) page`
+- `fine [the word] {query} (on | in) (this | the) page`
 - `(find on page | find in page | find on this page) {query}`
 - `search (this | the) page for {query}`
 
@@ -496,6 +497,7 @@ said.
 
 - `(go | navigate) forward [a page | one page]`
 - `forward`
+- `feel forward`
 
 **Load the page again.** For example: "reload".
 
@@ -520,6 +522,7 @@ said.
 **Open a new tab.** For example: "open a new tab".
 
 - `(open | new | start | create) [a] new tab`
+- `(open | start | create) [a] new tip`
 - `(new tab | open [a] tab | open another tab)`
 
 **Close this tab, or a tab by number or name.** For example: "close this tab".
@@ -564,12 +567,14 @@ said.
 **Go to the top of the page.** For example: "scroll to the top".
 
 - `(scroll | roll | go | jump | move | go back) [up] to the (top | beginning | start) [of the page]`
+- `(scroll | roll) [up] to the tar`
 - `(top of [the] page | page top | scroll top | back to top)`
 
 **Go to the bottom of the page.** For example: "scroll to the bottom".
 
 - `(scroll | roll | girl | go | jump | move) [down] to the (bottom | end) [of the page]`
 - `(bottom of [the] page | page bottom | scroll bottom)`
+- `(scroll | roll) [down] to the borrow`
 
 **Make everything bigger.** For example: "zoom in".
 
@@ -582,6 +587,7 @@ said.
 **Back to the normal size.** For example: "reset zoom".
 
 - `((reset | rosetta | normal | default) zoom | zoom (reset | normal | to normal | back to normal) | (actual | normal | original | default) size | reset [the] zoom level)`
+- `(resetzum | rosetzum | resetzoom)`
 
 ## Media
 
@@ -671,6 +677,7 @@ said.
 
 - `(turn off | hide | disable | switch off | stop | remove | take off) [the] (captions | subtitles | closed captions | cc | subtitle)`
 - `((captions | subtitles | closed captions | cc) off | no (captions | subtitles))`
+- `(captions | subtitles) of`
 
 **Play faster.** For example: "speed up".
 
@@ -734,7 +741,7 @@ said.
 
 **Describe what is on the screen.** For example: "what's on the screen".
 
-- `((whats | what is) on [the | my | this] (screen | page) | what do you see | what can you see | describe [the | this] (screen | page | view) | (whats | what is) here)`
+- `((whats | what is) on [the | my | this | a] (screen | page) | what do you see | what can you see | describe [the | this] (screen | page | view) | (whats | what is) here)`
 
 **Move to the next heading.** For example: "next heading".
 
@@ -833,6 +840,7 @@ said.
 **Type into the selected field.** For example: "type hello world".
 
 - `(type | write | dictate | tight) {text}`
+- `(take | tech) {text}` (while you are typing in a field)
 
 **Start a new line.** For example: "new line".
 
@@ -893,6 +901,7 @@ said.
 **Start over: forget the list, the question and what was being done, and listen again. While something plays, play it from the start.** For example: "start over".
 
 - `(start over | start again | begin again | lets start over | lets start again | start from scratch | start afresh | reset | reset everything | clear the conversation | new conversation)`
+- `start of`
 
 **Say that again.** For example: "repeat".
 
@@ -954,6 +963,7 @@ said.
 **Open a bookmark by its name.** For example: "open the bookmark news".
 
 - `(open | go to | load) [the | my] bookmark [called | named | for] {name}`
+- `(open | go to | load) [the | my] book mark [called | named | for] {name}`
 - `(open | go to | load) {name} (from | in) [my | the] bookmarks`
 
 **Hear the pages you visited, to open one by number or name.** For example: "show my history".
@@ -962,6 +972,7 @@ said.
 - `(open | show) [me] [the] [browsing] history [page]`
 - `(what | which) (pages | sites) did i (visit | open | look at) [recently]`
 - `my history`
+- `to my history`
 
 **Reopen the tab you closed last.** For example: "reopen the closed tab".
 
@@ -979,7 +990,7 @@ said.
 - `(open | show) [me] [the] downloads [page | folder]`
 - `what (did i | have i) download [recently]`
 - `my downloads`
-- `(to | draw) my downloads`
+- `(to | draw | sure) my downloads`
 
 **Open a downloaded file: the last one, or by its number. A file that can run programs isn't opened by voice.** For example: "open the last download".
 
@@ -1020,6 +1031,9 @@ said.
 - `(moltnet | molt net | mold net | moldnet | moldenet) window`
 - `(open | start | create) [a] new window`
 - `(new window | open [a] window | open another window)`
+- `[open] [a] new (windjo | winjo | windel)`
+- `[open] [a] new (private | incognito) (windjo | winjo | windel)`
+- `[open] [a] new (molten at | molten | moldnet | moltnet) (window | windjo | winjo)`
 
 **Close this window, after your yes; voice mode moves to another window.** For example: "close this window".
 
