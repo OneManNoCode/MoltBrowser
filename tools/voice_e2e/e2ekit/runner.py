@@ -60,6 +60,33 @@ MIC_DUMP = "mic.pcm"
 MIC_DUMP_MAX_S = 90
 
 
+def recording_levels(plan, index):
+    """File mode: the levels onset_levels() gives for step |index|'s speech
+    in the WAV the fake device played (plan["file_wav"], its first
+    channel), each 100 ms from 0.5 s before its onset; [] otherwise."""
+    import array
+    import wave
+    if not plan or not plan.get("file_wav") or index not in plan.get("times", {}):
+        return []
+    try:
+        with wave.open(plan["file_wav"], "rb") as w:
+            rate, channels = w.getframerate(), w.getnchannels()
+            if w.getsampwidth() != 2:
+                return []
+            frames = w.readframes(w.getnframes())
+    except (OSError, EOFError, wave.Error):
+        return []
+    samples = array.array("h")
+    samples.frombytes(frames[:len(frames) // 2 * 2])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    first = samples[::channels] if channels > 1 else samples
+    if sys.byteorder != "little":
+        first.byteswap()
+    a = plan["times"][index][0]
+    return onset_levels(first.tobytes(), a * rate, rate=rate, search_s=1.0)[1]
+
+
 def onset_levels(pcm, around, rate=16000, search_s=3.0, before_s=0.5, after_s=2.0,
                  step_s=0.1, onset_db=-30):
     """Around sample |around| of |pcm| (16-bit little-endian): where speech
@@ -389,6 +416,7 @@ class Runner(object):
         tlog = testlog.TestLog(log_path)
         t_start = time.time()
         browser = None
+        plan = None
         try:
             plan = self.prepare_audio(sc, mode, voice, speed, run_dir)
             browserlib.seed_profile(os.path.join(run_dir, "profile"),
@@ -463,7 +491,7 @@ class Runner(object):
             if browser:
                 browser.close()
             if res.get("status") in ("failed", "error"):
-                self.note_microphone(res, run_dir)
+                self.note_microphone(res, run_dir, plan)
             elif self.config.audio == "file":
                 # A passed file run's dump says nothing the file doesn't.
                 try:
@@ -490,12 +518,14 @@ class Runner(object):
 
     # ---- audio ----------------------------------------------------------------
 
-    def note_microphone(self, res, run_dir):
+    def note_microphone(self, res, run_dir, plan=None):
         """For a failed scenario: what voice mode's microphone gave
         (its dump, voice_test_audio.h), each second's peak and what the
         kit's own recognizer makes of it, so the report tells a microphone
         that got nothing from audio voice mode's recognizer didn't make
-        out."""
+        out. In file mode, also the recording's own levels at the failed
+        step's speech, to set against the microphone's: what the
+        browser's processing (echo canceller, noise suppressor) took."""
         path = os.path.join(run_dir, MIC_DUMP)
         try:
             with open(path, "rb") as f:
@@ -512,14 +542,20 @@ class Runner(object):
             if ev["e"] == "activity" and ev.get("mic") is True:
                 origin = ev["ts"]
                 break
-        failed = [st for st in res.get("steps", []) if st.get("status") != "passed"]
-        if origin is not None and failed and failed[-1].get("said_at"):
-            start = failed[-1]["said_at"][0]
+        # The step that failed (those after it weren't run).
+        failing = next((st for st in res.get("steps", [])
+                        if st.get("status") not in ("passed", "not run")
+                        and st.get("said_at")), None)
+        if origin is not None and failing:
+            start = failing["said_at"][0]
             at_s, levels = onset_levels(pcm, (start - origin) * audio_path.PCM_RATE,
                                         rate=audio_path.PCM_RATE)
             if levels:
-                res["mic_onset"] = {"step": failed[-1].get("index", 0) + 1,
+                res["mic_onset"] = {"step": failing.get("index", 0) + 1,
                                     "at_s": round(at_s, 2), "levels": levels}
+                played = recording_levels(plan, failing.get("index"))
+                if played:
+                    res["mic_onset"]["played_levels"] = played
         if self.ears and pcm:
             try:
                 res["mic_heard"] = (self.ears.transcribe(pcm) or "")[:600]

@@ -1,6 +1,7 @@
-{"resume_run": "42507397909",
+{"resume_run": "42535000305",
  "run_tests": true,
- "e2e_only": false,
- "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
+ "e2e_only": true,
+ "e2e_runs": "file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, nineteenth build: \"Hey Molt\" said over a playing video, heard as \"him all\" or \"Hamol\" (the echo canceller swallows its last sound), wakes the speech helper and is stripped by the grammar; a command said over voice mode's own voice that begins with the wake phrase is taken as after a wake (\"Himalt. Play the fourth one.\" was dropped as unsure); find on the page falls back to words that sound the same (\"trim\" finds \"Trams\"). Against the eighteenth build: 77% file, 79% noloop, 71% with the speakers."}
+ "e2e_field_trials": "WebRTC-Aec3TransparentModeHmm/Disabled/",
+ "request": "Round 45, twenty-first run (spoken suite only, on the nineteenth build's browser) with the echo canceller's legacy transparent mode instead of the HMM one: Chromium's field trial testing config, which MoltBrowser builds apply, already enables WebRTC-Aec3TransparentModeHmm, and the twentieth run showed the echo canceller removing up to 60 dB of \"Hey Molt\" and commands said over a playing video in file mode, where there is no echo. The legacy mode turns transparent after 6 s of sound played with no echo found. Does the speech survive in file and noloop runs, and is the speakers' sound still removed in the loop run? Against the nineteenth/twentieth: 75-77% file, 80% noloop, 70% with the speakers."}

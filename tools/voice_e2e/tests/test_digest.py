@@ -126,6 +126,11 @@ class DigestTest(unittest.TestCase):
                                                       "levels": [-70, -40, -12]}})
         self.assertEqual(out[0], "microphone at step 2's speech (31.50 s into the dump), "
                                  "each 100 ms from 0.5 s before (dBFS): -70 -40 -12")
+        out = digest.microphone_digest({"mic_onset": {"step": 2, "at_s": 31.5,
+                                                      "levels": [-70, -12, -60],
+                                                      "played_levels": [-70, -12, -12]}})
+        self.assertEqual(out[1], "the recording played into it there, each 100 ms from "
+                                 "0.5 s before its speech (dBFS): -70 -12 -12")
 
     def test_audio_lines(self):
         log = ("[1:2:1105/0248.1:WARNING:media/audio/linux/audio_manager_linux.cc:55] "

@@ -57,7 +57,9 @@ In the test build workflow (`molt-test-build.yml`), the request file's
 `e2e_runs` and `e2e_scenarios` narrow the same way, one job per run, and
 `"e2e_speech_check": false` skips the recognizer check (about an hour);
 with `"e2e_only": true` and `resume_run` only the spoken suite runs, on
-that run's saved build. The pinned voices are kept between runs (keyed by
+that run's saved build. `e2e_field_trials` (`Trial/Group/` pairs) starts
+the browser with `--force-fieldtrials`, to try a setting such as the echo
+canceller's without a build (`VOICE_E2E_FIELD_TRIALS` for `ci_run.sh`). The pinned voices are kept between runs (keyed by
 `artifacts.json`), and a download the server failed is tried again
 (`fetch.py`), so a download host's outage doesn't stop the suite. The
 suite doesn't run on a build with failed steps: `ninja -k 0` links what it

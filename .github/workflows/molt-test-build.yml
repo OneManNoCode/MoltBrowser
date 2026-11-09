@@ -21,7 +21,9 @@
 # resume_run's last stage saved. e2e_runs picks the spoken suite's runs
 # (default pulse:clean,pulse:music10,file:clean,typed), e2e_scenarios its
 # scenarios (comma-separated ids; default all); "e2e_speech_check": false
-# skips checking the rendered speech against the recognizer (an hour).
+# skips checking the rendered speech against the recognizer (an hour);
+# "e2e_field_trials": "Trial/Group/" pairs start the suite's browser with
+# --force-fieldtrials (a setting tried without a build).
 
 name: MoltBrowser test build
 
@@ -72,6 +74,7 @@ jobs:
       e2e_only: ${{ steps.config.outputs.e2e_only }}
       e2e_matrix: ${{ steps.config.outputs.e2e_matrix }}
       e2e_scenarios: ${{ steps.config.outputs.e2e_scenarios }}
+      e2e_field_trials: ${{ steps.config.outputs.e2e_field_trials }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -96,7 +99,9 @@ jobs:
             E2E_RUNS="$(jq -r '.e2e_runs // ""' .github/molt-test-build.json)"
             E2E_SCENARIOS="$(jq -r '.e2e_scenarios // ""' .github/molt-test-build.json)"
             SPEECH_CHECK="$(jq -r 'if .e2e_speech_check == false then "0" else "1" end' .github/molt-test-build.json)"
+            FIELD_TRIALS="$(jq -r '.e2e_field_trials // ""' .github/molt-test-build.json)"
           else
+            FIELD_TRIALS=""
             SPEECH_CHECK=1
             RESUME="$IN_RESUME"; TESTS="$IN_TESTS"; E2E_ONLY="$IN_E2E_ONLY"
             E2E_RUNS="$IN_E2E_RUNS"; E2E_SCENARIOS="$IN_E2E_SCENARIOS"
@@ -107,6 +112,12 @@ jobs:
           fi
           if ! [[ "$E2E_SCENARIOS" =~ ^[a-z0-9,-]*$ ]]; then
             echo "::error::e2e_scenarios must be scenario ids, comma-separated"; exit 1
+          fi
+          # Field trials for the browser the spoken suite runs
+          # (--force-fieldtrials), to try a setting without a build:
+          # Trial/Group/ pairs only.
+          if ! [[ "$FIELD_TRIALS" =~ ^([A-Za-z0-9_-]+/[A-Za-z0-9_-]+/)*$ ]]; then
+            echo "::error::e2e_field_trials must be Trial/Group/ pairs"; exit 1
           fi
           # One job per run; the first checks the speech against the
           # recognizer too.
@@ -126,9 +137,10 @@ jobs:
             echo "e2e_only=$E2E_ONLY"
             echo "e2e_matrix=$MATRIX"
             echo "e2e_scenarios=$E2E_SCENARIOS"
+            echo "e2e_field_trials=$FIELD_TRIALS"
           } >> "$GITHUB_OUTPUT"
           echo "resume_run='$RESUME' run_tests=$TESTS e2e_only=$E2E_ONLY"
-          echo "e2e: $MATRIX scenarios='$E2E_SCENARIOS'"
+          echo "e2e: $MATRIX scenarios='$E2E_SCENARIOS' field trials='$FIELD_TRIALS'"
 
   # Alongside stage 1 of a resumed build: the steps the restored build
   # failed, rebuilt on their own, so their errors (or their fix) show in
@@ -223,6 +235,7 @@ jobs:
       VOICE_E2E_RUNS: ${{ matrix.run }}
       VOICE_E2E_SPEECH_CHECK: ${{ matrix.speech_check }}
       VOICE_E2E_SCENARIOS: ${{ needs.config.outputs.e2e_scenarios }}
+      VOICE_E2E_FIELD_TRIALS: ${{ needs.config.outputs.e2e_field_trials }}
       T1: ${{ needs.stage-1.outputs.tested }}
       T2: ${{ needs.stage-2.outputs.tested }}
       T3: ${{ needs.stage-3.outputs.tested }}
