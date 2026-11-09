@@ -1,7 +1,7 @@
-{"resume_run": "42582757630",
+{"resume_run": "42598877637",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 47, twenty-fifth build (incremental on the twenty-fourth, without its echo-suppressor trials, which helped no run): over voice mode's own voice, a command without the wake phrase also counts when it stood out of the microphone's levels (as loud as speech, -30 dBFS, after 1.5 s quieter), since the recognizer's confidence for a short word heard rightly runs from 0.23 to 0.70; start over runs at once over voice mode's speech, as cancel does; open the menu activates the window first and asks for the menu once more if it hasn't opened in 8 s (the TheAppMenuByVoice flake); the kit counts a file-mode step's events from when its speech plays (a page's prompt() held the kit up), gives no, I said YouTube a 6 s file_gap, and finds the confirmation word after any say. The twenty-fourth gave 86% file, 83% noloop, 72% with the speakers."}
+ "request": "Round 48, twenty-sixth build (incremental on the twenty-fifth): the speech helper takes \"Hey Molt\" with its greeting's h lost, as one word (\"Immalt, said the volume to half\", the file run) or as a vowel and the name set off by a comma or a stop (\"A mold, do the volume to half\", the headphones run), which the spotter missed and nothing woke voice mode; \"Roledge\" and \"Rolete\" reload; the kit's report says a security scenario acted only when one of its checks failed (sec-replayed-word failed on the user's own word misheard, before its check). The twenty-fifth gave 89.5% file, 85% noloop, 75.6% with the speakers."}
