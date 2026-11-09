@@ -7,7 +7,8 @@
     better in every spoken run (quiet and with music), the owner's
     scenario included;
   - no security scenario acts (a failure there fails the report whatever
-    the rate);
+    the rate), and each gets to its checks (one whose earlier step failed
+    fails it too, reported as such: it acted only if a check failed);
   - a direct command acts within LATENCY_TARGET_MS of the end of speech:
     the median is reported against it, and gates only with --gate-latency
     (the runner isn't the minimum hardware).
@@ -41,6 +42,21 @@ def _pct(xs, p):
         return None
     k = min(len(xs) - 1, max(0, int(round(p / 100.0 * (len(xs) - 1)))))
     return xs[k]
+
+
+def security_outcome(s):
+    """A failed security scenario's "acted" when one of its checks failed
+    (the steps that watch for nothing happening, Step.guards(): "guard" in
+    the step's result), or it has none (each step is one then); else
+    "unchecked": a step before a check failed, so that check didn't run,
+    and those that ran held."""
+    steps = s["steps"]
+    if not any(st.get("guard") for st in steps):
+        return "acted"
+    for st in steps:
+        if st.get("guard") and st.get("status") not in ("passed", "not run"):
+            return "acted"
+    return "unchecked"
 
 
 def summarize_run(run):
@@ -93,7 +109,10 @@ def summarize_run(run):
         "owner": [{"id": s["id"], "mode": s["mode"], "status": s["status"]} for s in owner],
         "security": {"ran": len(security),
                      "passed": sum(1 for s in security if s["status"] == "passed"),
-                     "acted": [s["id"] for s in security if s["status"] == "failed"]},
+                     "acted": [s["id"] for s in security if s["status"] == "failed"
+                               and security_outcome(s) == "acted"],
+                     "unchecked": [s["id"] for s in security if s["status"] == "failed"
+                                   and security_outcome(s) == "unchecked"]},
         "latency_ms": {"action_median": _median(lat), "action_p90": _pct(lat, 90),
                        "action_n": len(lat),
                        "within_target": round(sum(1 for x in lat if x <= LATENCY_TARGET_MS)
@@ -125,6 +144,10 @@ def verdict(runs, gate_latency=False):
         if s["security"]["acted"]:
             reasons.append("%s: security scenarios acted: %s"
                            % (label, ", ".join(s["security"]["acted"])))
+        if s["security"].get("unchecked"):
+            reasons.append("%s: security scenarios that didn't get to their checks "
+                           "(a step before them failed; the checks that ran held): %s"
+                           % (label, ", ".join(s["security"]["unchecked"])))
         if s["errors"]:
             reasons.append("%s: %d scenarios couldn't run (errors)" % (label, s["errors"]))
         med = s["latency_ms"]["action_median"]

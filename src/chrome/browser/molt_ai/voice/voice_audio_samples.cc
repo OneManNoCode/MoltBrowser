@@ -4,9 +4,12 @@
 #include "chrome/browser/molt_ai/voice/voice_audio_samples.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -125,6 +128,74 @@ std::vector<int16_t> MakeEarcon(EarconKind kind) {
   }
   out.resize(std::min(out.size(), kMaxEarconSamples));
   return out;
+}
+
+MicrophoneLevelHistory::MicrophoneLevelHistory() {
+  // No slot's number: never matched.
+  for (std::atomic<uint64_t> &slot : slots_) {
+    slot.store(std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
+  }
+}
+
+MicrophoneLevelHistory::~MicrophoneLevelHistory() = default;
+
+void MicrophoneLevelHistory::Note(int64_t start_us, int64_t duration_us,
+                                  float peak) {
+  constexpr int64_t kMaxSlot = (int64_t{1} << (64 - kPeakBits)) - 2;
+  if (start_us < 0 || duration_us < 0 || !std::isfinite(peak) ||
+      start_us > kMaxSlot * kLevelSlotUs - duration_us) {
+    return;
+  }
+  const uint64_t millionths =
+      static_cast<uint64_t>(std::clamp(peak, 0.0f, 1.0f) * 1e6f);
+  const int64_t first = start_us / kLevelSlotUs;
+  const int64_t last =
+      (start_us + std::max<int64_t>(duration_us - 1, 0)) / kLevelSlotUs;
+  const int64_t latest = latest_slot_.load(std::memory_order_relaxed);
+  if (last < latest) {
+    return; // out of order: what is held is later
+  }
+  // A buffer longer than the history keeps only its last slots.
+  const int64_t from =
+      std::max(first, last - static_cast<int64_t>(kLevelSlots) + 1);
+  for (int64_t slot = from; slot <= last; ++slot) {
+    std::atomic<uint64_t> &cell =
+        slots_[static_cast<size_t>(slot) % kLevelSlots];
+    const uint64_t number = static_cast<uint64_t>(slot);
+    uint64_t value = (number << kPeakBits) | millionths;
+    const uint64_t held = cell.load(std::memory_order_relaxed);
+    if ((held >> kPeakBits) == number) {
+      value = std::max(value, held); // the same slot: the louder
+    }
+    cell.store(value, std::memory_order_relaxed);
+  }
+  latest_slot_.store(last, std::memory_order_release);
+}
+
+std::optional<float>
+MicrophoneLevelHistory::LoudestBetween(int64_t from_us, int64_t to_us) const {
+  const int64_t latest = latest_slot_.load(std::memory_order_acquire);
+  if (from_us < 0 || to_us < from_us || latest < 0) {
+    return std::nullopt;
+  }
+  const int64_t first = from_us / kLevelSlotUs;
+  const int64_t last = std::min(to_us / kLevelSlotUs, latest);
+  // Reaching back past what is held, or all of it later: not known.
+  if (first <= latest - static_cast<int64_t>(kLevelSlots) || last < first) {
+    return std::nullopt;
+  }
+  constexpr uint64_t kPeakMask = (uint64_t{1} << kPeakBits) - 1;
+  std::optional<float> loudest;
+  for (int64_t slot = first; slot <= last; ++slot) {
+    const uint64_t held = slots_[static_cast<size_t>(slot) % kLevelSlots].load(
+        std::memory_order_relaxed);
+    if ((held >> kPeakBits) != static_cast<uint64_t>(slot)) {
+      continue; // not captured, or written over since
+    }
+    const float peak = static_cast<float>(held & kPeakMask) / 1e6f;
+    loudest = std::max(loudest.value_or(0.0f), peak);
+  }
+  return loudest;
 }
 
 }  // namespace voice

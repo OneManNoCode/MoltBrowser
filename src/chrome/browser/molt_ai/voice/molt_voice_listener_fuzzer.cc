@@ -270,6 +270,14 @@ void FuzzSession(std::string_view data) {
         said = text();
         const double confidence = (next() % 101) / 100.0;
         final_lag = lag();
+        // What the microphone's levels said of it, as the session notes
+        // before each final: any, even with no utterance begun.
+        const uint8_t loudness = next();
+        if (const std::optional<int64_t> begun = logic.UtteranceBegunMs()) {
+          CHECK_LE(*begun, now);
+        }
+        logic.NoteUtteranceLoudness(
+            {.loud = (loudness & 1) != 0, .quiet_before = (loudness & 2) != 0});
         actions = logic.OnFinal(said, confidence, now, final_lag);
         break;
       }

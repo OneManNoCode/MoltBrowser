@@ -236,10 +236,15 @@ TEST(VoiceCommandTest, OpenSites) {
       {"He mold, draw my downloads", "list_downloads", ""},
       {"Hoping YouTube.", "open_site", "site=youtube"},
       {"Hey, Molt, roulette", "reload", ""},
+      {"Hey, Malt, Roledge", "reload", ""},
+      {"Hey, Malt, Rolete", "reload", ""},
       {"Hey, Malt, feel back", "back", ""},
       {"Hey, Malt, turn on catchens.", "captions_on", ""},
       {"Hey mold, said the volume to fifty percent.", "set_volume",
        "level=50"},
+      // ... and with the greeting's "h" lost, run into the name.
+      {"Immalt, said the volume to half.", "set_volume", "level=50"},
+      {"Emolt. Go back", "back", ""},
       // The wake phrase run together by the recognizer.
       {"him old. Open YouTube", "open_site", "site=youtube"},
       {"Himalt. Open YouTube", "open_site", "site=youtube"},

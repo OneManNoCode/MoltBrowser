@@ -62,7 +62,7 @@
    "steps": [
     {"say": "open Wikipedia", "needs": ["open_site"], "expect": [{"host": "en.wikipedia.org"}]},
     {"say": "no, I said YouTube", "answer": true, "needs": ["correction"],
-     "expect": [{"host": "www.youtube.com"}]}
+     "file_gap": 6, "expect": [{"host": "www.youtube.com"}]}
    ]
   },
   {

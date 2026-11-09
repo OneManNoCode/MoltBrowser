@@ -28,6 +28,14 @@ class FindWordTest(unittest.TestCase):
         self.assertEqual(self.e.find_word("To allow it, say tarbon."), "harbor")
         self.assertEqual(self.e.find_word("To allow it, say Rick it."), "rocket")
         self.assertEqual(self.e.find_word("to allow it say tamboo"), "bamboo")
+        # Not only after the last "say": the whole prompt heard (the
+        # spoken suite's twenty-fourth build).
+        self.assertEqual(self.e.find_word(
+            "to know your location, to allow it, say Micaroni, to block it, say now"),
+            "macaroni")
+        self.assertEqual(self.e.find_word(
+            "to show nowifications, to allow it, say Netkin, to blark it, say no."),
+            "napkin")
 
     def test_nothing_rather_than_a_guess(self):
         # A wrong word refuses the prompt: when unsure, none.

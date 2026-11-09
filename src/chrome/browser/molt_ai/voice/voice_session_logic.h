@@ -41,8 +41,10 @@
 //   - While it speaks with its own voice (voice_speech.h: browser output,
 //     in the echo canceller's reference; OnOwnSpeechInReference()), the
 //     user can interrupt it with a command, no wake phrase needed: an
-//     utterance begun then counts if it has kMinConfidenceWithoutWake and
-//     isn't the browser's own words heard back (its words in the order
+//     utterance begun then counts if it has kMinConfidenceWithoutWake or
+//     stood out of what the microphone gave before it (as loud as speech
+//     after a quiet moment, NoteUtteranceLoudness()), and isn't the
+//     browser's own words heard back (its words in the order
 //     the browser said them in the last kSpokenMemoryMs, at most one
 //     skipped between two, as written or as its voice says them,
 //     voice_said_aloud.h: "example dot com" for "example.com"; that is
@@ -169,8 +171,20 @@ inline constexpr int64_t kMaxUtteranceMs = 30000;
 // noted, if later).
 inline constexpr int64_t kSpokenMemoryMs = 20000;
 inline constexpr size_t kMaxSpokenTexts = 32;
-// An utterance without the wake phrase while a page plays sound.
+// An utterance without the wake phrase while a page plays sound, or over
+// the browser's own voice.
 inline constexpr double kMinConfidenceWithoutWake = 0.5;
+// Over the browser's own voice, also one that stood out
+// (NoteUtteranceLoudness()): as loud as speech while it was said, from
+// kLoudnessOnsetMarginMs before the helper placed its start, where the
+// microphone was quiet in the kQuietBeforeUtteranceMs before that. The
+// recognizer's confidence hardly tells a short word heard rightly from one
+// heard wrongly (0.23 to 0.70 for "okay", "three", "start over" said
+// cleanly), and what the echo canceller leaves of that voice is 20 dB and
+// more below someone speaking (-50 dBFS or less against -8 to -14 in the
+// spoken suite with the speakers' sound in the microphone).
+inline constexpr int64_t kLoudnessOnsetMarginMs = 400;
+inline constexpr int64_t kQuietBeforeUtteranceMs = 1500;
 // After another source's speech was last seen, how long what is heard may
 // still be it (the room, the spotter's and the recognizer's lag, and the
 // time between two looks at the speech engine).
@@ -318,6 +332,19 @@ class VoiceSessionLogic {
   // browser's processing (VoiceAudio::LastLoud()); -1 never. Noted before
   // each OnTick(), for the listening tone.
   void NoteMicrophoneLoud(int64_t loud_ms) { microphone_loud_ms_ = loud_ms; }
+  // When the audio of the utterance being heard begins (its begun_ms), or
+  // nullopt with none: what the session looks up the microphone's levels
+  // for, before OnFinal().
+  std::optional<int64_t> UtteranceBegunMs() const;
+  // How the microphone sounded for that utterance, after the browser's
+  // processing (VoiceAudio's level history): as loud as speech while it
+  // was said, and quiet just before (kQuietBeforeUtteranceMs). Unknown is
+  // neither.
+  struct Loudness {
+    bool loud = false;
+    bool quiet_before = false;
+  };
+  void NoteUtteranceLoudness(Loudness loudness);
   // Whether the speech engine is speaking for someone else (a page's
   // speechSynthesis, an extension): looked at often, and at each of the
   // helper's events.
@@ -365,6 +392,9 @@ class VoiceSessionLogic {
     // One of its events lagged past kMaxHeardLagMs, or reported audio that
     // doesn't fit what the helper was sent.
     bool lagged = false;
+    // It stood out of what the microphone gave before it
+    // (NoteUtteranceLoudness()).
+    bool stood_out = false;
     int64_t ended_ms = -1;
     bool partial_shown = false;
   };

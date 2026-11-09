@@ -174,8 +174,15 @@ class VoiceBrowserActions {
   void ListDownloads(const VoiceStep& step, int run);
   void ListBrowserUi(const VoiceStep& step, int run);
   // The browser's buttons, or the open menu's items: once the menu "open
-  // the menu" asked for shows, or by |menu_until|.
-  void CollectBrowserUi(int run, VoiceStep step, base::TimeTicks menu_until);
+  // the menu" asked for shows, or by |menu_until|, after asking for it once
+  // more (|asked_again|) if it hasn't.
+  void CollectBrowserUi(int run,
+                        VoiceStep step,
+                        base::TimeTicks menu_until,
+                        bool asked_again);
+  // Shows the app menu over this window, made active first. False if the
+  // command didn't run.
+  bool ShowAppMenu();
   void Deliver(int run, VoiceStep step, std::vector<BrowserItem> items);
 
   Result OpenUrl(const VoiceStep& step);

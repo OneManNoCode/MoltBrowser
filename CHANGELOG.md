@@ -17,6 +17,50 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **Interrupting voice mode works when you speak up.** While voice mode
+  reads a list or a question, a command said over it without "Hey Molt"
+  ("three", "start over") was dropped about half the time as "not heard
+  surely". The recognizer's confidence for a short word heard rightly runs
+  from 0.23 to 0.70, so it can't tell. What counts now is that the command
+  was as loud as someone speaking right after a quiet moment, while what the
+  echo canceller leaves of voice mode's own voice is 20 dB and more below
+  that. Voice mode's own words heard back are still never taken, and
+  commands that need it quiet are still asked for again.
+- **"Start over" works while voice mode is still speaking**, as "cancel"
+  does: it drops the question or list and listens again, where before it
+  stopped and asked you to say it again.
+- **"Open the menu" brings the browser's window to the front first.** A
+  menu closes at once over a window that isn't active, so with another
+  window or app in front (which someone who can't click can't fix),
+  voice mode read the toolbar's buttons instead. It also asks for the menu
+  once more if it hasn't opened after 8 seconds.
+- **"Hey Molt" heard without its "h" wakes voice mode.** When the
+  recognizer ran "Hey Molt" into one word and lost the "h" ("Immalt, set
+  the volume to half") and the wake detector missed it too, voice mode,
+  waiting for the wake phrase, heard nothing. A word made of that one
+  vowel and then the name's sounds now counts, and so do the vowel and
+  the name written apart when a comma or full stop sets the name off
+  ("A mold, do the volume to half"; not "a mold grew"). Words that only
+  share its consonants ("omelet", "Amulet") still don't, and no word of
+  a 104,000-word dictionary counts that didn't before.
+- **"Reload" heard as "Roledge" or "Rolete" reloads**, as "roulette"
+  already did.
+- **The spoken suite's report no longer says a security scenario
+  "acted" when it never got to its check.** The replayed confirmation word
+  failed because the user's own word was misheard, so the replay it is
+  about never ran, and the report called that "acted". Now only a failed
+  check (a step that watches for nothing happening) is "acted"; the rest
+  still fail the verdict, as "didn't get to their checks".
+- **Three spoken-suite tests that couldn't pass.**
+  - File mode: a step's events now count from when its speech plays, not
+    from when the kit gets to it. A page's own dialog holds up the kit's
+    look at the page, so the "yes" to a page's `prompt()` was missed.
+  - File mode: "no, I said YouTube" now comes 6 s after the command it
+    corrects (a new `file_gap` step key), inside the follow-up window, not
+    after it closes.
+  - The kit's ears now find the confirmation word after any "say" in what
+    voice mode said, not only after the last one ("To block it, say no").
+
 - **"OK" closes a page's dialog after voice mode's own "I can't do that
   yet".** Everything the on-device agent's planner said counted as page
   text, including the browser's own "Working on it." and "no on-device AI

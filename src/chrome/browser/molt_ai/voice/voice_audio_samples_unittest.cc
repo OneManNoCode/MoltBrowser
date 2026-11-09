@@ -101,6 +101,59 @@ TEST(VoiceAudioSamplesTest, Earcons) {
             MakeEarcon(EarconKind::kThinking).size());
 }
 
+// What the microphone gave lately, slot by slot of capture time.
+TEST(VoiceAudioSamplesTest, LevelHistoryHoldsTheLoudestOfEachSlot) {
+  MicrophoneLevelHistory history;
+  EXPECT_FALSE(history.LoudestBetween(0, 1'000'000).has_value());
+  // One second of 10 ms buffers, quiet but for 300 to 500 ms.
+  for (int64_t at = 0; at < 1'000'000; at += 10'000) {
+    const bool loud = at >= 300'000 && at < 500'000;
+    history.Note(at, 10'000, loud ? 0.5f : 0.001f);
+  }
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(0, 999'999), 0.5f);
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(350'000, 400'000), 0.5f);
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(0, 249'999), 0.001f);
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(550'000, 999'999), 0.001f);
+  // Later than what was captured: only what was.
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(900'000, 5'000'000), 0.001f);
+  EXPECT_FALSE(history.LoudestBetween(2'000'000, 3'000'000).has_value());
+  // An empty or backwards span, or one before the clock's start.
+  EXPECT_FALSE(history.LoudestBetween(500'000, 400'000).has_value());
+  EXPECT_FALSE(history.LoudestBetween(-10, 400'000).has_value());
+}
+
+TEST(VoiceAudioSamplesTest, LevelHistoryForgetsWhatIsTooOld) {
+  MicrophoneLevelHistory history;
+  history.Note(0, 50'000, 0.9f);
+  const int64_t held = static_cast<int64_t>(kLevelSlots) * kLevelSlotUs;
+  // Quiet since, up to the whole history's length later.
+  for (int64_t at = 50'000; at < held + 50'000; at += 50'000) {
+    history.Note(at, 50'000, 0.01f);
+  }
+  // The loud slot was written over: a span reaching back to it isn't known.
+  EXPECT_FALSE(history.LoudestBetween(0, held).has_value());
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(held - 100'000, held), 0.01f);
+  // A buffer noted out of order changes nothing.
+  history.Note(held - 100'000, 10'000, 1.0f);
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(held - 100'000, held), 0.01f);
+  // Nor does a bad one.
+  history.Note(held + 50'000, -1, 1.0f);
+  history.Note(held + 50'000, 10'000, std::numeric_limits<float>::quiet_NaN());
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(held - 100'000, held + 100'000),
+                  0.01f);
+}
+
+TEST(VoiceAudioSamplesTest, LevelHistoryBuffersSpanningSlots) {
+  MicrophoneLevelHistory history;
+  // A 120 ms buffer covers three slots; a peak above 1 is 1.
+  history.Note(1'000'000, 120'000, 2.0f);
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(1'100'000, 1'110'000), 1.0f);
+  // A gap in the capture: nothing there.
+  history.Note(2'000'000, 10'000, 0.2f);
+  EXPECT_FALSE(history.LoudestBetween(1'500'000, 1'600'000).has_value());
+  EXPECT_FLOAT_EQ(*history.LoudestBetween(1'500'000, 2'000'000), 0.2f);
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai

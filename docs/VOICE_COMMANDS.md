@@ -503,7 +503,7 @@ said.
 
 - `(reload | refresh) [the | this] [page | tab | site | website | it]`
 - `load [the | this] page again`
-- `roulette`
+- `(roulette | roledge | rolete)`
 
 **Stop loading the page.** For example: "stop loading".
 

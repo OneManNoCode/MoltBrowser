@@ -361,6 +361,13 @@ base::TimeTicks VoiceAudio::LastLoud() const {
                 : base::TimeTicks();
 }
 
+std::optional<float> VoiceAudio::LoudestBetween(base::TimeTicks from,
+                                                base::TimeTicks to) const {
+  return level_history_.LoudestBetween(
+      (from - base::TimeTicks()).InMicroseconds(),
+      (to - base::TimeTicks()).InMicroseconds());
+}
+
 VoiceAudio::Levels VoiceAudio::TakeLevels() {
   Levels levels;
   levels.peak = peak_millionths_.exchange(0, std::memory_order_relaxed) / 1e6f;
@@ -406,10 +413,15 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
                                                  std::memory_order_relaxed)) {
   }
   samples_.fetch_add(audio_source->frames(), std::memory_order_relaxed);
-  if (peak >= kVoiceLoudPeak && !audio_capture_time.is_null()) {
-    loud_at_us_.store(
-        (audio_capture_time - base::TimeTicks()).InMicroseconds(),
-        std::memory_order_relaxed);
+  if (!audio_capture_time.is_null()) {
+    const int64_t at_us =
+        (audio_capture_time - base::TimeTicks()).InMicroseconds();
+    if (peak >= kVoiceLoudPeak) {
+      loud_at_us_.store(at_us, std::memory_order_relaxed);
+    }
+    level_history_.Note(
+        at_us, int64_t{audio_source->frames()} * 1000000 / kHelperSampleRate,
+        peak);
   }
 
   std::vector<std::vector<int16_t>> frames;

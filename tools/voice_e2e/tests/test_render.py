@@ -153,6 +153,13 @@ class DeterminismTest(unittest.TestCase):
             again = os.path.join(a, "again.wav")
             audio_path.scenario_wav(again, pieces, "music10", 6.0, 9.0, "seed")
             self.assertEqual(render.sha256_file(wav), render.sha256_file(again))
+            # A gap of its own for a step (file_gap); the first's is not used.
+            own = os.path.join(a, "own.wav")
+            times = audio_path.scenario_wav(own, pieces, "music10", 6.0, [30.0, 4.0], "seed")
+            self.assertAlmostEqual(times[0][0], 6.0)
+            self.assertAlmostEqual(times[1][0], times[0][1] + 4.0, places=3)
+            with self.assertRaises(ValueError):
+                audio_path.scenario_wav(own, pieces, "music10", 6.0, [9.0], "seed")
 
     def test_mixes(self):
         with tempfile.TemporaryDirectory() as a:

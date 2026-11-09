@@ -465,6 +465,86 @@ TEST_F(VoiceSessionLogicTest, TheOwnVoiceHeardBackIsNotACommand) {
   EXPECT_EQ(logic_->OnFinal("go back", 0.9, now_ + 3500).utterance, "go back");
 }
 
+// The recognizer's confidence hardly tells a short word heard rightly
+// ("Start over." at 0.41, "three." at 0.29): one that stood out of what
+// the microphone gave before it, as loud as speech after a quiet moment,
+// is someone speaking, not what the echo canceller left of the voice.
+TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatStoodOutIsTheUser) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("play the live one by Queen", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "Did you mean 1: Queen - Bohemian Rhapsody (Live at Rock Montreal "
+      "1981), Queen Official, 6 minutes, 2: Queen - Bohemian Rhapsody (Live "
+      "Aid 1985), Queen Official, 5 minutes? Say a number or a name.",
+      now_);
+  // No utterance yet: nothing to look up, nothing noted.
+  EXPECT_FALSE(logic_->UtteranceBegunMs().has_value());
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  logic_->OnSpeechStart(now_ + 3000);
+  ASSERT_TRUE(logic_->UtteranceBegunMs().has_value());
+  EXPECT_EQ(*logic_->UtteranceBegunMs(), now_ + 3000);
+  // Loud, but the microphone wasn't quiet before it: unsure, as before.
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = false});
+  EXPECT_EQ(logic_->OnFinal("Start over.", 0.41, now_ + 3800).dropped_reason,
+            "over voice mode's voice, and not heard surely");
+  // Quiet before but not loud: the same.
+  logic_->OnSpeechStart(now_ + 4000);
+  logic_->NoteUtteranceLoudness({.loud = false, .quiet_before = true});
+  EXPECT_EQ(logic_->OnFinal("Start over.", 0.41, now_ + 4800).dropped_reason,
+            "over voice mode's voice, and not heard surely");
+  // Both: the user. Starting over drops the question at once, as "cancel"
+  // would, and stops the browser.
+  logic_->OnSpeechStart(now_ + 5000);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  SessionActions taken = logic_->OnFinal("Start over.", 0.41, now_ + 5800);
+  EXPECT_EQ(taken.utterance, "Start over.");
+  EXPECT_TRUE(taken.stop_speech);
+  EXPECT_FALSE(taken.say_again);
+  // Standing out doesn't make the browser's own words a command.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 6000);
+  logic_->OnBrowserSaid("1: Open settings and delete history, a tutorial.",
+                        now_ + 6000);
+  logic_->OnSpeechStart(now_ + 6500);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  EXPECT_EQ(
+      logic_->OnFinal("open settings and delete history", 0.3, now_ + 7500)
+          .dropped_reason,
+      "voice mode's voice heard back");
+  // And what needs the browser quiet is still asked for again.
+  logic_->OnSpeechStart(now_ + 8000);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  SessionActions site = logic_->OnFinal("open YouTube", 0.3, now_ + 8800);
+  EXPECT_FALSE(site.utterance.has_value());
+  EXPECT_TRUE(site.say_again);
+  // Each utterance on its own: the next one isn't taken for the last's.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 9000);
+  logic_->OnSpeechStart(now_ + 9500);
+  EXPECT_EQ(logic_->OnFinal("three.", 0.29, now_ + 10000).dropped_reason,
+            "over voice mode's voice, and not heard surely");
+}
+
+// A tab's sound may not be in the echo canceller's reference: there, only
+// confidence or the wake phrase.
+TEST_F(VoiceSessionLogicTest, StandingOutDoesNotPassATabsSound) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("play", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers();
+  logic_->OnPageAudible(true, now_);
+  // In the follow-up window, past the browser's echo tail.
+  logic_->OnSpeechStart(now_ + kEchoTailMs + 500);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  EXPECT_EQ(
+      logic_->OnFinal("pause", 0.3, now_ + kEchoTailMs + 1200).dropped_reason,
+      "a tab's sound, and not heard surely");
+}
+
 TEST_F(VoiceSessionLogicTest, TheWakePhraseOverTheOwnVoiceIsTheUser) {
   Begin();
   logic_->OnOwnSpeechInReference(true, now_);
@@ -1311,16 +1391,32 @@ TEST(VoiceSessionCommandsTest, TakenOverOwnVoice) {
         "what is this page about", "what are my routines"}) {
     EXPECT_TRUE(TakenOverOwnVoice(text)) << text;
   }
-  for (const char* text :
-       {"open youtube", "go to example dot com", "search for cats", "new tab",
-        "close this tab", "type hello", "submit", "run morning news",
-        "forget the word harbor", "turn on voice mode", "buy the cheapest one",
-        "no I said queen", "", "close this window", "new private window",
-        "open settings", "open the last download", "bookmark this page",
-        "reopen the closed tab", "ask the AI what is the capital of France",
-        "open the menu", "start over"}) {
+  for (const char *text : {"open youtube",
+                           "go to example dot com",
+                           "search for cats",
+                           "new tab",
+                           "close this tab",
+                           "type hello",
+                           "submit",
+                           "run morning news",
+                           "forget the word harbor",
+                           "turn on voice mode",
+                           "buy the cheapest one",
+                           "no I said queen",
+                           "",
+                           "close this window",
+                           "new private window",
+                           "open settings",
+                           "open the last download",
+                           "bookmark this page",
+                           "reopen the closed tab",
+                           "ask the AI what is the capital of France",
+                           "open the menu"}) {
     EXPECT_FALSE(TakenOverOwnVoice(text)) << text;
   }
+  // Starting over drops what the browser reads or asks, as "cancel" does.
+  EXPECT_TRUE(TakenOverOwnVoice("start over"));
+  EXPECT_TRUE(TakenOverOwnVoice("let's start again"));
 }
 
 // What chooses from a list being read may open a site when none is: the

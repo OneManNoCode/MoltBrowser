@@ -1254,8 +1254,6 @@ bool ActsOnTheBrowser(VoiceCommandKind kind) {
     case K::kShowBrowserButtons:
     case K::kOpenMenu:
     case K::kCloseMenu:
-    // Starting over drops a question the browser waits on.
-    case K::kStartOver:
       return true;
     default:
       return false;

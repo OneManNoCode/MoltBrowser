@@ -54,6 +54,9 @@ POLL_S = 0.2
 # answer of up to 4 s, most of them, ends its window well before it.
 FILE_LEAD_S = 11.0
 FILE_GAP_S = 14.0
+# A file-mode step's events count from this long before its speech begins
+# (the log's whole milliseconds, the browser's clock against the kit's).
+FILE_STEP_SLACK_S = 0.3
 DEFAULT_QUIET_S = 8.0
 WORD_TRIES = 3
 
@@ -185,12 +188,30 @@ class RunConfig(object):
         return self.audio == "typed"
 
 
+# A page's own dialogs (alert(), confirm(), prompt(), leaving the page):
+# while one is open its page runs no script, and a look at it (Runtime.
+# evaluate) waits until the dialog closes or the look times out.
+PAGE_DIALOG_KINDS = ("alert", "confirm", "prompt", "beforeunload")
+
+
 class World(object):
     """What expect.py looks at: the browser and its test log."""
 
     def __init__(self, browser, log):
         self.browser = browser
         self.log = log
+
+    def page_dialog_open(self):
+        """Whether the test log shows a page's dialog open now."""
+        shown = {}
+        for e in self.log.events(0):
+            if e.get("e") != "prompt":
+                continue
+            if e.get("op") == "open":
+                shown[e.get("id")] = e.get("kind") in PAGE_DIALOG_KINDS
+            elif e.get("op") == "close":
+                shown.pop(e.get("id"), None)
+        return any(shown.values())
 
     def url(self):
         return self.browser.url()
@@ -463,9 +484,12 @@ class Runner(object):
             ok = True
             for i, step in enumerate(sc.steps):
                 if not ok:
-                    res["steps"].append({"index": i, "action": step.action,
-                                         "status": "not run",
-                                         "detail": "an earlier step failed"})
+                    skipped = {"index": i, "action": step.action,
+                               "status": "not run",
+                               "detail": "an earlier step failed"}
+                    if step.guards():
+                        skipped["guard"] = True
+                    res["steps"].append(skipped)
                     continue
                 if self.config.audio == "pulse" and step.action == "say" and \
                         self.wake_for(step, mode) and not step.barge_in:
@@ -593,8 +617,9 @@ class Runner(object):
         else:
             order = [i for i in sorted(plan["wavs"])]
             wav = os.path.join(adir, "scenario.wav")
+            gaps = [sc.steps[i].file_gap or FILE_GAP_S for i in order]
             times = audio_path.scenario_wav(wav, [plan["wavs"][i][0] for i in order],
-                                            self.config.condition, FILE_LEAD_S, FILE_GAP_S,
+                                            self.config.condition, FILE_LEAD_S, gaps,
                                             sc.id)
             plan["file_wav"] = wav
             plan["times"] = dict(zip(order, times))
@@ -666,11 +691,19 @@ class Runner(object):
 
     def run_step(self, sc, step, i, world, tlog, plan, stream_start, mode, run_dir):
         sres = {"index": i, "action": step.action, "status": "passed"}
+        if step.guards():
+            sres["guard"] = True
         if step.action == "say":
             sres["say"] = step.value
         if step.pause:
             time.sleep(step.pause)
         t0 = time.time()
+        if self.config.audio == "file" and i in plan.get("times", {}):
+            # What the browser does from when the step's speech begins is
+            # the step's, however late the kit is to it: the file plays on
+            # its own clock (a page's dialog holds the kit's looks at the
+            # page until it closes).
+            t0 = min(t0, stream_start + plan["times"][i][0] - FILE_STEP_SLACK_S)
         before = expect.snapshot(world)
         try:
             t_end, said = self.say(step, i, plan, stream_start, world, tlog, mode)
@@ -763,8 +796,9 @@ class Runner(object):
             out["said_ms"] = int(round((said[0]["ts"] - t_end) * 1000))
         acts = []
         try:
-            acts = [ev["t"] / 1000.0 for ev in world.page_events(t_end - 0.3)
-                    if ev.get("trusted", True)]
+            if not world.page_dialog_open():
+                acts = [ev["t"] / 1000.0 for ev in world.page_events(t_end - 0.3)
+                        if ev.get("trusted", True)]
         except Exception:
             pass
         if world.url() != before.get("url"):

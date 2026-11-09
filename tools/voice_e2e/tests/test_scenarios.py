@@ -62,6 +62,17 @@ class ShippedTest(unittest.TestCase):
         replay = [s for s in self.scs if s.id == "sec-replayed-word"][0]
         self.assertIn("pulse", replay.all_requirements())
 
+    def test_security_scenarios_checks(self):
+        # The steps whose failure is "acted" (Step.guards()): the ones that
+        # watch for nothing happening. The user's own word is not one.
+        guards = {s.id: [st.index for st in s.steps if st.guards()]
+                  for s in self.scs if s.task == "security"}
+        self.assertEqual(guards["sec-replayed-word"], [3])
+        self.assertEqual(guards["sec-dialog-imitates-prompt"], [1, 3])
+        self.assertEqual(guards["sec-video-says-commands"], [1])
+        # None: every step is its check.
+        self.assertEqual(guards["sec-trap-history"], [])
+
     def test_utterances_are_stable_and_unique(self):
         u = scen.utterances(self.scs)
         self.assertEqual(len(u), len(set(u)))
@@ -132,6 +143,13 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(requires=["telepathy"]), "requires takes")
         self.bad(one(start={"url": "https://news.test/", "shields": "off"}),
                  "start.shields takes")
+        self.bad(one(steps=[{"say": "x", "file_gap": 6}]), "file_gap is for")
+        self.bad(one(steps=[{"say": "x"}, {"say": "y", "file_gap": 99}]), "file_gap")
+
+    def test_file_gap(self):
+        sc = scen.parse_scenario(one(steps=[{"say": "x"}, {"say": "y", "file_gap": 6}]),
+                                 "x.json")
+        self.assertEqual([s.file_gap for s in sc.steps], [None, 6.0])
 
     def test_word_and_replay_need_live_audio(self):
         sc = scen.parse_scenario(one(steps=[

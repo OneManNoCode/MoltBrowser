@@ -78,11 +78,13 @@ class Ears(object):
 
     def find_word(self, text):
         """The confirmation word |text| gives ("... say harbor"), if any:
-        the last word of the list in it, else what follows the last "say"
-        (one word, or two run together: "rick it") when exactly one word of
-        the list is nearest to it, within a third of its letters (at least
-        two). The browser's voice and the recognizer both mangle a lone
-        noun ("harbot", "tarbon"); the list's words are far apart."""
+        the last word of the list in it, else what follows a "say" (one
+        word, or two run together: "rick it") when exactly one word of the
+        list is nearest to it, within a third of its letters (at least two),
+        the nearest of all the "say"s ("to allow it, say Mcaroni, to block
+        it, say no": the last one is the "no"). The browser's voice and the
+        recognizer both mangle a lone noun ("harbot", "tarbon"); the list's
+        words are far apart."""
         found = None
         heard = vbl.normalize(text).split()
         for w in heard:
@@ -93,11 +95,12 @@ class Ears(object):
         if found:
             return found
         says = [i for i, w in enumerate(heard) if w == "say"]
-        start = says[-1] + 1 if says else 0
-        tries = heard[start:start + 1] + (
-            ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
         if not says and len(heard) > 2:
             return None
+        tries = []
+        for start in ([i + 1 for i in says] or [0]):
+            tries += heard[start:start + 1] + (
+                ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
         best = None
         for t in tries:
             scored = sorted((letter_distance(t, c), c) for c in self.words)
