@@ -296,6 +296,50 @@ TEST(VoiceCommandTest, OpenSites) {
   });
 }
 
+// How the bundled recognizer heard the spoken suite's commands in its test
+// voices (tools/voice_e2e's phrases through the real helper).
+TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
+  Check({
+      {"He mold. Open the book, Mark Trams return to Lyon after ten years.",
+       "open_bookmark", "text=Trams return to Lyon after ten years"},
+      {"He mold to my history.", "list_history", ""},
+      {"Hey, Malt, sure my downloads.", "list_downloads", ""},
+      {"Hey, Malt, new windjo.", "new_window", ""},
+      {"Hey, Malt, new private windjo.", "new_window"},
+      {"Hey, Malt, new molten at Winjo.", "new_window"},
+      {"Hey, Malt, scroll to the borrow.", "scroll_to_bottom", ""},
+      {"Hey, Malt, scroll to the tar.", "scroll_to_top", ""},
+      {"Hey, Malt, feel forward.", "forward", ""},
+      {"Hey, Malt, open a new tip.", "new_tab", ""},
+      {"Himalt. Rosetzum.", "zoom_reset", ""},
+      {"He mold. Resetzum.", "zoom_reset", ""},
+      {"Hey, Malt, captions of", "captions_off", ""},
+      {"Hey, Malt, what's on a screen?", "describe_screen", ""},
+      {"Start of", "start_over", ""},
+      {"Hey, Malt, fine timetable on this page", "find_in_page",
+       "text=timetable"},
+      // "Take", "tech" for "type": into a focused text field only...
+      {"Hey, Malt, take hello there.", "type", "text=hello there", kField},
+      {"Hey, Malt, tech hello.", "type", "text=hello", kField},
+      // ... where "take me to", "take me home" and "take me back" still
+      // mean themselves.
+      {"take me to the new york times", "open_site", "site=newyorktimes",
+       kField},
+      {"take me home", "home", "", kField},
+      {"take me back", "back", "", kField},
+  });
+  // Without a focused text field, "take" types nothing.
+  EXPECT_NE(ParseVoiceCommand("take hello there", MakeContext(kNone)).kind,
+            VoiceCommandKind::kType);
+  // The windows' sound-alikes are the window kinds the words say.
+  EXPECT_EQ(
+      Fields(ParseVoiceCommand("new private windjo", MakeContext(kNone))),
+      Fields(ParseVoiceCommand("new private window", MakeContext(kNone))));
+  EXPECT_EQ(
+      Fields(ParseVoiceCommand("new molten at winjo", MakeContext(kNone))),
+      Fields(ParseVoiceCommand("new moltnet window", MakeContext(kNone))));
+}
+
 TEST(VoiceCommandTest, AWakePhraseWithItsLastSoundLost) {
   // Run together, the name's stop may be lost ("him all", "Hamol")...
   const ParseContext context;

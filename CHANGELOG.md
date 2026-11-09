@@ -17,6 +17,14 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **More command words are understood as the recognizer hears them.**
+  Run through the speech helper, the spoken suite's 139 phrases in its
+  three test voices showed the recurring ones: "open the book, Mark ..."
+  (open the bookmark), "windjo" and "molten at" (window, MoltNet), "fine"
+  (find), "scroll to the borrow / tar", "feel forward", "open a new tip",
+  "Resetzum", "captions of", "start of", "sure my downloads", and "take" or
+  "tech" for "type" into a focused text field ("take me to ..." still
+  opens a site). The right command for 92% of those utterances, from 88%.
 - **What you say over a playing video keeps its words when the
   microphone doesn't hear the speakers** (a headset, or speakers far from
   the microphone). Chromium's echo canceller, in the mode Chromium's
