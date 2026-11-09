@@ -1,7 +1,7 @@
 {"resume_run": "42631099158",
  "run_tests": true,
- "e2e_only": true,
+ "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "e2e_field_trials": "WebRTC-Aec3UseLowEarlyReflectionsDefaultGain/Enabled/WebRTC-Aec3UseLowLateReflectionsDefaultGain/Enabled/",
- "request": "Round 48, an echo-canceller trial on the twenty-seventh build's saved build (e2e only): while AEC3 isn't transparent and has no usable linear filter, it takes the echo path gain as 1.0 (residual_echo_estimator.cc GetEchoPathGain), so it suppresses speech over a playing video even with no echo in the microphone (the file run's \"play faster\" lost 46 dB mid-command). These two trials take it as 0.1. Compare the media scenarios with the twenty-seventh build's two runs (file 77 and 78 of 87, headphones 80 and 76, speakers 71 and 72), and check the speakers run's security scenarios don't regress. The kit also says the confirmation word again when voice mode asks for it."}
+ "e2e_field_trials": "",
+ "request": "Round 48, twenty-eighth build (incremental on the twenty-seventh): the echo canceller takes an unknown echo path as 0.1 of what plays (WebRTC-Aec3UseLowEarlyReflectionsDefaultGain and LowLateReflectionsDefaultGain, now MoltBrowser's defaults; the e2e trial gave headphones 82 of 91 with no media failures, the speakers' security scenarios held); \"bouquet\" closes a page's alert; \"read it, Beck\" reads a field back; the kit says the confirmation word again when asked. The twenty-seventh gave file 77/78 of 87, headphones 80/76 of 91, speakers 71/72 of 91 over two runs."}
