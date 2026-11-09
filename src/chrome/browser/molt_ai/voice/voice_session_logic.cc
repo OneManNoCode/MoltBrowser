@@ -248,8 +248,9 @@ namespace {
 // (TakenOverOwnVoice()).
 bool StaysWithWhatIsRead(const VoiceCommand& command) {
   // The browser's own actions (windows, settings, downloads, bookmarks,
-  // the AI, its menus, starting over) wait for the browser to be quiet,
-  // as opening a site does.
+  // the AI, its menus) wait for the browser to be quiet, as opening a site
+  // does. Starting over drops what it reads or asks, as "cancel" does: at
+  // once.
   if (ActsOnTheBrowser(command.kind)) {
     return false;
   }
@@ -521,6 +522,19 @@ SessionActions VoiceSessionLogic::OnPartial(std::string_view text,
   return Finish(std::move(actions), now_ms);
 }
 
+std::optional<int64_t> VoiceSessionLogic::UtteranceBegunMs() const {
+  if (!utterance_) {
+    return std::nullopt;
+  }
+  return utterance_->begun_ms;
+}
+
+void VoiceSessionLogic::NoteUtteranceLoudness(Loudness loudness) {
+  if (utterance_) {
+    utterance_->stood_out = loudness.loud && loudness.quiet_before;
+  }
+}
+
 SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
                                           double confidence,
                                           int64_t now_ms,
@@ -565,9 +579,12 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
     } else if (utterance.open && utterance.echo_cancelled) {
       // Said over the browser's own voice: a command unless it is that
       // voice heard back. Begun with the wake phrase, it is the user
-      // speaking to voice mode, as after a wake the helper heard.
+      // speaking to voice mode, as after a wake the helper heard; standing
+      // out of what the echo canceller leaves of that voice (always in its
+      // reference), it is someone speaking, not the voice.
       addressed = AddressedToVoiceMode(text, utterance.begun_ms);
-      const bool sure = addressed || confidence >= kMinConfidenceWithoutWake;
+      const bool sure = addressed || utterance.stood_out ||
+                        confidence >= kMinConfidenceWithoutWake;
       const bool echo = sure && EchoOfBrowser(text, utterance.begun_ms);
       take = sure && !echo;
       if (!sure) {

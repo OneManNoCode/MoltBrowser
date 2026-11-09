@@ -31,7 +31,10 @@ browser's question: said without the wake phrase), "timeout" (seconds,
 default 20), "requires" ("microphone", "pulse", "model", "listening"), "name", "pause"
 (seconds to wait before it), "direct" (false for a step whose action isn't
 a direct command, left out of the latency figures), "barge_in" (said while
-the browser is still speaking: the kit doesn't wait for it to finish).
+the browser is still speaking: the kit doesn't wait for it to finish),
+"file_gap" (file mode only: seconds from the end of the step before to
+this one's speech, instead of the fixed gap; for an answer said while
+voice mode still listens after a short reply).
 say_word and replay need live audio ("pulse"): a scenario with one runs
 only with PulseAudio.
 
@@ -87,7 +90,7 @@ REQUIREMENTS = ("microphone", "pulse", "model", "listening")
 STEP_ACTIONS = ("say", "say_word", "replay", "wait")
 STEP_KEYS = set(STEP_ACTIONS) | {
     "needs", "answer", "timeout", "requires", "name", "pause", "expect",
-    "direct", "barge_in", "note"}
+    "direct", "barge_in", "file_gap", "note"}
 SCENARIO_KEYS = {"id", "title", "task", "counts", "modes", "start",
                  "requires", "steps", "note"}
 START_KEYS = {"url", "tabs", "settings", "js", "shields"}
@@ -136,6 +139,7 @@ class Step(object):
         self.expect = list(expect)
         self.direct = direct
         self.barge_in = False
+        self.file_gap = None
 
     @property
     def text(self):
@@ -331,6 +335,10 @@ def parse_step(where, i, s, names):
                 timeout=timeout, requires=requires, name=name, pause=pause,
                 expect=expect, direct=s.get("direct", True))
     step.barge_in = s.get("barge_in", False)
+    if "file_gap" in s:
+        if action != "say" or i == 0:
+            _fail(where, "file_gap is for a say step after another step")
+        step.file_gap = _number(where, s["file_gap"], "file_gap", 2, 30)
     return step
 
 

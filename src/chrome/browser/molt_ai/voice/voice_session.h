@@ -199,6 +199,9 @@ class VoiceSession : public VoiceController::Observer,
   // whether the speech engine speaks for someone else.
   void OnPoll();
   int64_t NowMs() const;
+  // Before a final: whether the utterance being heard stood out of what the
+  // microphone gave before it (VoiceSessionLogic::NoteUtteranceLoudness()).
+  void NoteUtteranceLoudness(int64_t now_ms);
   BrowserActivity ControllerActivity() const;
   // Whether the speech engine speaks for someone else (voice_speech.h).
   bool OthersSpeaking() const;

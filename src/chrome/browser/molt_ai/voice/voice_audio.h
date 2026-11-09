@@ -140,6 +140,11 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   // that buffer; null before. The listening tone waits for a pause
   // (voice_session_logic.h).
   base::TimeTicks LastLoud() const;
+  // The loudest sample the microphone gave from |from| to |to| (capture
+  // times), after the browser's processing; nullopt where its level history
+  // doesn't reach (MicrophoneLevelHistory, kLevelSlots of kLevelSlotUs).
+  std::optional<float> LoudestBetween(base::TimeTicks from,
+                                      base::TimeTicks to) const;
 
   // media::AudioCapturerSource::CaptureCallback (OnCaptureStarted() and
   // Capture() on the audio thread, OnCaptureError() on either):
@@ -183,6 +188,8 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   std::atomic<int64_t> samples_{0};
   // LastLoud(), in microseconds of base::TimeTicks; 0 before.
   std::atomic<int64_t> loud_at_us_{0};
+  // Noted by the capture thread, read here (LoudestBetween()).
+  MicrophoneLevelHistory level_history_;
   base::WeakPtrFactory<VoiceAudio> weak_factory_{this};
 };
 

@@ -223,7 +223,13 @@ each next 14 s after the end of the one before: past the usual answer, as
 an utterance over voice mode's own speech can be dropped, and clear of the
 tone that closes the follow-up window 8 s after an answer, which over the
 fake output device takes the start of a "Hey Molt" said on it), timed from
-the moment the test log shows the microphone on. No
+the moment the test log shows the microphone on. A step's `file_gap`
+(seconds) replaces the 14 s before it: an answer said while voice mode
+still listens after a short reply ("no, I said YouTube" 6 s after "open
+Wikipedia"). A step's events count from when its speech plays (0.3 s
+before), however late the kit is to it: a page's own dialog holds up the
+kit's looks at the page until it closes, so the kit doesn't look at the
+page while the test log shows one open. No
 loopback and no recording: the scenarios that need the confirmation word
 or a page's sound are skipped there.
 

@@ -184,6 +184,26 @@ class RunnerTest(unittest.TestCase):
         self.assertFalse(r.wait_reply(Log([{"e": "activity", "activity": "listening",
                                              "ts": t - 30}]), t, timeout=0.3))
 
+    def test_a_page_dialog_open_in_the_log(self):
+        class Log(object):
+            def __init__(self, events):
+                self.evs = events
+
+            def events(self, since=0.0, window=None):
+                return [e for e in self.evs if e.get("ts", 0) >= since]
+
+        def world(*events):
+            return runner.World(None, Log(list(events)))
+
+        self.assertFalse(world().page_dialog_open())
+        opened = {"e": "prompt", "op": "open", "id": 1, "kind": "prompt"}
+        self.assertTrue(world(opened).page_dialog_open())
+        self.assertFalse(world(opened, {"e": "prompt", "op": "close", "id": 1})
+                         .page_dialog_open())
+        # A permission prompt is the browser's: the page still runs.
+        self.assertFalse(world({"e": "prompt", "op": "open", "id": 2,
+                                "kind": "permission"}).page_dialog_open())
+
     def test_a_run_without_the_loopback_is_labelled(self):
         self.assertEqual(runner.RunConfig(audio="pulse").label, "pulse/clean")
         self.assertEqual(runner.RunConfig(audio="pulse", loopback=False).label,

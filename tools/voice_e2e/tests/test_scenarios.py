@@ -132,6 +132,13 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(requires=["telepathy"]), "requires takes")
         self.bad(one(start={"url": "https://news.test/", "shields": "off"}),
                  "start.shields takes")
+        self.bad(one(steps=[{"say": "x", "file_gap": 6}]), "file_gap is for")
+        self.bad(one(steps=[{"say": "x"}, {"say": "y", "file_gap": 99}]), "file_gap")
+
+    def test_file_gap(self):
+        sc = scen.parse_scenario(one(steps=[{"say": "x"}, {"say": "y", "file_gap": 6}]),
+                                 "x.json")
+        self.assertEqual([s.file_gap for s in sc.steps], [None, 6.0])
 
     def test_word_and_replay_need_live_audio(self):
         sc = scen.parse_scenario(one(steps=[

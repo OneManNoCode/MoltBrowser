@@ -186,8 +186,12 @@ def applies(e, typed):
 def snapshot(world):
     """What a no_action expectation compares with, and the player as the
     step began (media "seeked")."""
+    media = None
+    dialog = getattr(world, "page_dialog_open", None)
     try:
-        media = world.media()
+        # Not while a page's dialog is open: the look would wait for it.
+        if not (dialog and dialog()):
+            media = world.media()
     except Exception:  # no page, or one going away: no player then
         media = None
     return {"url": world.url(), "tabs": world.tab_count(),

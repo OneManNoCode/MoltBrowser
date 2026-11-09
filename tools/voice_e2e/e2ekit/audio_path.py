@@ -313,15 +313,23 @@ def utterance_wav(speech_dir, out_path, voice, speed, text, wake):
 def scenario_wav(out_path, pieces, cond, lead_s, gap_s, seed):
     """One WAV for the fake capture device: |pieces| (WAV paths of each
     step's utterance, 16 kHz) at fixed times: the first after |lead_s|, each
-    next |gap_s| after the end of the one before; under |cond|; 44.1 kHz
-    stereo. Returns each piece's (start, end) in seconds."""
+    next |gap_s| after the end of the one before (one number, or one per
+    piece: the first's is not used); under |cond|; 44.1 kHz stereo. Returns
+    each piece's (start, end) in seconds."""
     import numpy as np
     audio = render._audio()
     xs = [audio.read_wav(p)[0] for p in pieces]
+    gaps = list(gap_s) if isinstance(gap_s, (list, tuple)) else [gap_s] * len(xs)
+    if len(gaps) != len(xs):
+        raise ValueError("one gap per piece")
     times, t = [], lead_s
-    for x in xs:
+    for k, x in enumerate(xs):
+        if k:
+            t += gaps[k]
         times.append((t, t + len(x) / render.SR))
-        t += len(x) / render.SR + gap_s
+        t += len(x) / render.SR
+    # The last piece's gap, as before, then the tail.
+    t += gaps[-1] if gaps else 0
     n = int((t + 2.0) * render.SR)
     y = np.zeros(n, np.float32)
     for x, (a, _) in zip(xs, times):

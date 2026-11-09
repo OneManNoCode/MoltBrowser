@@ -17,6 +17,33 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **Interrupting voice mode works when you speak up.** While voice mode
+  reads a list or a question, a command said over it without "Hey Molt"
+  ("three", "start over") was dropped about half the time as "not heard
+  surely". The recognizer's confidence for a short word heard rightly runs
+  from 0.23 to 0.70, so it can't tell. What counts now is that the command
+  was as loud as someone speaking right after a quiet moment, while what the
+  echo canceller leaves of voice mode's own voice is 20 dB and more below
+  that. Voice mode's own words heard back are still never taken, and
+  commands that need it quiet are still asked for again.
+- **"Start over" works while voice mode is still speaking**, as "cancel"
+  does: it drops the question or list and listens again, where before it
+  stopped and asked you to say it again.
+- **"Open the menu" brings the browser's window to the front first.** A
+  menu closes at once over a window that isn't active, so with another
+  window or app in front (which someone who can't click can't fix),
+  voice mode read the toolbar's buttons instead. It also asks for the menu
+  once more if it hasn't opened after 8 seconds.
+- **Three spoken-suite tests that couldn't pass.**
+  - File mode: a step's events now count from when its speech plays, not
+    from when the kit gets to it. A page's own dialog holds up the kit's
+    look at the page, so the "yes" to a page's `prompt()` was missed.
+  - File mode: "no, I said YouTube" now comes 6 s after the command it
+    corrects (a new `file_gap` step key), inside the follow-up window, not
+    after it closes.
+  - The kit's ears now find the confirmation word after any "say" in what
+    voice mode said, not only after the last one ("To block it, say no").
+
 - **"OK" closes a page's dialog after voice mode's own "I can't do that
   yet".** Everything the on-device agent's planner said counted as page
   text, including the browser's own "Working on it." and "no on-device AI

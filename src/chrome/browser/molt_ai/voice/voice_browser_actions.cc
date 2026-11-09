@@ -268,7 +268,7 @@ VoiceBrowserActions::Result VoiceBrowserActions::Run(const VoiceStep& step,
       result.outcome = Outcome::kFailed;
       return result;
     case BrowserAction::kOpenMenu:
-      if (!chrome::ExecuteCommand(browser_, IDC_SHOW_APP_MENU)) {
+      if (!ShowAppMenu()) {
         result.outcome = Outcome::kFailed;
         return result;
       }
@@ -652,22 +652,45 @@ void VoiceBrowserActions::ListBrowserUi(const VoiceStep& step, int run) {
   base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&VoiceBrowserActions::CollectBrowserUi,
-                     run_weak_factory_.GetWeakPtr(), run, step, menu_until),
+                     run_weak_factory_.GetWeakPtr(), run, step, menu_until,
+                     /*asked_again=*/false),
       kMenuSettle);
+}
+
+bool VoiceBrowserActions::ShowAppMenu() {
+  // A menu stays open only over the active window: shown over another (the
+  // person can't click theirs back to the front), or when another takes
+  // the focus as it opens, it closes at once.
+  ui::BaseWindow* window = browser_->GetWindow();
+  if (window && !window->IsActive()) {
+    window->Activate();
+  }
+  return chrome::ExecuteCommand(browser_, IDC_SHOW_APP_MENU);
 }
 
 void VoiceBrowserActions::CollectBrowserUi(int run,
                                            VoiceStep step,
-                                           base::TimeTicks menu_until) {
+                                           base::TimeTicks menu_until,
+                                           bool asked_again) {
   VoiceBrowserUi* ui = VoiceBrowserUi::Get();
-  if (ui && !ui->MenuOpen(browser_) && base::TimeTicks::Now() < menu_until) {
-    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
-        FROM_HERE,
-        base::BindOnce(&VoiceBrowserActions::CollectBrowserUi,
-                       run_weak_factory_.GetWeakPtr(), run, std::move(step),
-                       menu_until),
-        kMenuSettle);
-    return;
+  if (ui && !menu_until.is_null() && !ui->MenuOpen(browser_)) {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    if (now >= menu_until && !asked_again) {
+      // It didn't show, or closed as it showed: once more, as a person
+      // would press the button again (the browser tests' runner, several
+      // windows of other tests taking the focus, read the toolbar).
+      asked_again = true;
+      menu_until = ShowAppMenu() ? now + kMenuOpenTimeout : now;
+    }
+    if (now < menu_until) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&VoiceBrowserActions::CollectBrowserUi,
+                         run_weak_factory_.GetWeakPtr(), run, std::move(step),
+                         menu_until, asked_again),
+          kMenuSettle);
+      return;
+    }
   }
   std::vector<BrowserItem> items;
   if (ui) {

@@ -570,6 +570,7 @@ void VoiceSession::OnListenerEvent(const HelperEvent& event) {
       Apply(logic_.OnPartial(event.text, now, lag));
       return;
     case HelperEventType::kFinal:
+      NoteUtteranceLoudness(now);
       Apply(logic_.OnFinal(event.text, event.confidence, now, lag));
       return;
     case HelperEventType::kSpeechEnd:
@@ -858,6 +859,25 @@ void VoiceSession::OnTick() {
         loud.is_null() ? -1 : (loud - base::TimeTicks()).InMilliseconds());
   }
   Apply(logic_.OnTick(NowMs()));
+}
+
+void VoiceSession::NoteUtteranceLoudness(int64_t now_ms) {
+  const std::optional<int64_t> begun = logic_.UtteranceBegunMs();
+  if (!audio_ || !begun) {
+    return;
+  }
+  // Session times are base::TimeTicks in milliseconds (NowMs()), as the
+  // capture times of the microphone's levels are.
+  const base::TimeTicks onset =
+      base::TimeTicks() + base::Milliseconds(*begun - kLoudnessOnsetMarginMs);
+  const std::optional<float> during = audio_->LoudestBetween(
+      onset, base::TimeTicks() + base::Milliseconds(now_ms));
+  const std::optional<float> before = audio_->LoudestBetween(
+      onset - base::Milliseconds(kQuietBeforeUtteranceMs), onset);
+  VoiceSessionLogic::Loudness loudness;
+  loudness.loud = during && *during >= kVoiceLoudPeak;
+  loudness.quiet_before = before && *before < kVoiceLoudPeak;
+  logic_.NoteUtteranceLoudness(loudness);
 }
 
 bool VoiceSession::OthersSpeaking() const {
