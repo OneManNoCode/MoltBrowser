@@ -27,8 +27,9 @@ For longer narrative posts behind each entry see
 - **More command words as the recognizer hears them.** "Lickname color"
   ("click name a colour" with its first sound lost) clicks, "to leap the
   last word" deletes the last word, and "for setta zoom" and "Bosetta
-  zoom" reset the zoom. "Lick" counts only glued to a word of four letters
-  or more ("lickety split" stays as it is).
+  zoom" reset the zoom, and "read it, Beck" in a text field reads it back.
+  "Lick" counts only glued to a word of four letters or more ("lickety
+  split" stays as it is).
 - **The spoken suite's ears take a confirmation word mangled the same way
   twice.** The kit's recognizer heard the browser's "cactus" as "keptus"
   on every "repeat", too many letters off to take, and three prompt

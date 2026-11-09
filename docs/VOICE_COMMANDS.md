@@ -860,7 +860,7 @@ said.
 
 **Read back what you typed.** For example: "read it back".
 
-- `read (it | that | this | what i (typed | wrote | said)) back` (while you are typing in a field)
+- `read (it | that | this | what i (typed | wrote | said)) (back | beck)` (while you are typing in a field)
 - `read back [what i (typed | wrote)]` (while you are typing in a field)
 - `(what did i (type | write) | read what i (typed | wrote))` (while you are typing in a field)
 
