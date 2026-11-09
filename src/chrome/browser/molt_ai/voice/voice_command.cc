@@ -1315,6 +1315,7 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
   const size_t soft_end = cleaned.soft_end;
   const NormalizedText& normalized = u.normalized;
   const size_t all_size = normalized.words.size();
+  command.wake_said = wake > 0;
   if (wake < all_size) {
     command.heard = CleanSpokenText(
         SourceText(utterance, normalized, wake, all_size - 1, {}),
@@ -1474,6 +1475,9 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
         command.choice.kind = ChoiceRef::Kind::kPosition;
         command.choice.ordinal = 1;
         break;
+      case PatternVariant::kOnGlued:
+        command.on_glued = true;
+        break;
     }
     return command;
   }
@@ -1518,6 +1522,7 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     if (again.kind != VoiceCommandKind::kUnknown &&
         again.kind != VoiceCommandKind::kRefused) {
       again.heard = command.heard;
+      again.wake_said = command.wake_said;
       return again;
     }
     break;

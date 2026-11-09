@@ -339,6 +339,9 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"Start of", "start_over", ""},
       {"Hey, Malt, fine timetable on this page", "find_in_page",
        "text=timetable"},
+      // "On" heard glued to the word before "this page".
+      {"Hey mold, find time to belong this page.", "find_in_page",
+       "text=time to belong"},
       // "Take", "tech" for "type": into a focused text field only...
       {"Hey, Malt, take hello there.", "type", "text=hello there", kField},
       {"Hey, Malt, tech hello.", "type", "text=hello", kField},
@@ -349,6 +352,25 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"take me home", "home", "", kField},
       {"take me back", "back", "", kField},
   });
+  // Said so, the "on" may be the last word's end; with it, it isn't.
+  EXPECT_TRUE(
+      ParseVoiceCommand("find time to belong this page", MakeContext(kNone))
+          .on_glued);
+  const VoiceCommand with_on =
+      ParseVoiceCommand("find london on this page", MakeContext(kNone));
+  EXPECT_EQ(with_on.text, "london");
+  EXPECT_FALSE(with_on.on_glued);
+  // Whether the grammar took a wake phrase in front.
+  EXPECT_FALSE(with_on.wake_said);
+  const VoiceCommand woken =
+      ParseVoiceCommand("Hey, Malt to close this tab.", MakeContext(kNone));
+  EXPECT_TRUE(woken.wake_said);
+  EXPECT_EQ(woken.heard, "to close this tab");
+  // So too when a verb glued to the next word was taken apart.
+  const VoiceCommand glued =
+      ParseVoiceCommand("Hey Molt, clickname a color", MakeContext(kNone));
+  EXPECT_EQ(glued.kind, VoiceCommandKind::kChoose);
+  EXPECT_TRUE(glued.wake_said);
   // Without a focused text field, "take" types nothing.
   EXPECT_NE(ParseVoiceCommand("take hello there", MakeContext(kNone)).kind,
             VoiceCommandKind::kType);

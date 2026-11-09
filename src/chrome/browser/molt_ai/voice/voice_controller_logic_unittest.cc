@@ -316,6 +316,16 @@ TEST(VoiceControllerLogicTest, AMisheardCommandIsRepaired) {
       ContextFor(typed.state(), typed.map(), typed.env()).wake_heard);
   EXPECT_NE(typed.Say("cabled, close this tip.").kind,
             VoiceCommandKind::kCloseTab);
+
+  // The "t" of "Molt", clipped, heard as "to" after the wake phrase the
+  // grammar took (the twenty-ninth build's live run): the command as said.
+  Conversation clipped(BuildPageMap(ShopPage(false)), Env());
+  turn = clipped.Say("Hey, Malt to close this tab.");
+  EXPECT_EQ(turn.kind, VoiceCommandKind::kCloseTab);
+  EXPECT_NE(Find(turn, K::kCloseTab), nullptr);
+  // Without a wake phrase in front, "to" is a word of the utterance.
+  EXPECT_NE(clipped.Say("to close this tab.").kind,
+            VoiceCommandKind::kCloseTab);
 }
 
 TEST(VoiceControllerLogicTest, ASiteWithNoSearchPageIsSearchedOnTheWeb) {
@@ -718,6 +728,21 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
     for (const char* not_found :
          {"find plant news on this page", "find time to dull on this page",
           "find tie mabble on this page", "find at om on this page"}) {
+      VoiceTurn turn = c.Say(not_found);
+      EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
+          << not_found << ": " << Said(turn);
+    }
+    // The "on" before "this page" heard as the end of the last word ("time
+    // to bull on" as "time to belong"): once more without it.
+    EXPECT_EQ(Said(c.Say("Hey mold, find time to belong this page.")),
+              "Found it in the heading Timetable.");
+    EXPECT_EQ(Said(c.Say("find planet newsong this page")),
+              "Found it in the heading Planet news.");
+    EXPECT_EQ(Said(c.Say("find planet news this page")),
+              "Found it in the heading Planet news.");
+    // Only when the "on" is missing.
+    for (const char* not_found : {"find time to belong on this page",
+                                  "find planet newsong on this page"}) {
       VoiceTurn turn = c.Say(not_found);
       EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
           << not_found << ": " << Said(turn);

@@ -476,12 +476,13 @@ std::optional<RepairedCommand> RepairMisheardCommand(
   }
   // Or without the name's last sound heard as a word of its own, after a
   // wake phrase the grammar took ("him all to scroll to the top" for "Hey
-  // Molt, scroll to the top": the "t" of "Molt", clipped, as "to"): a
-  // first word of one consonant, the stop the name ends on. Only when
-  // what follows is a command as said.
+  // Molt, scroll to the top": the "t" of "Molt", clipped, as "to"), in
+  // |utterance| or before it (ParseContext::wake_said: the controller
+  // repairs a command's |heard|): a first word of one consonant, the stop
+  // the name ends on. Only when what follows is a command as said.
   if (rest.empty() && !understood_as_said && n.words.size() >= 2 &&
       n.words[0].ascii && !n.words[0].numeric && !name_key.empty() &&
-      BeginsWithWakePhrase(utterance, context)) {
+      (context.wake_said || BeginsWithWakePhrase(utterance, context))) {
     const char last = name_key.back();
     std::string first;
     for (char c : PhoneticKey(n.Word(0))) {

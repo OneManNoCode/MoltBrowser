@@ -13,10 +13,10 @@
 //      three words, that sound like the wake phrase's name (any words
 //      there when the wake detector heard the wake phrase begin the
 //      utterance: ParseContext::wake_heard, "cabled, set the volume to
-//      half"); or, after a
-//      wake phrase the grammar took, a first word that is only the stop
-//      the name ends on ("him all to scroll to the top": the "t" of
-//      "Molt" heard as "to").
+//      half"); or, after a wake phrase the grammar took (in the utterance,
+//      or before it: ParseContext::wake_said), a first word that is only
+//      the stop the name ends on ("him all to scroll to the top": the "t"
+//      of "Molt" heard as "to").
 //   2. One word, or two run together, swapped for a word of the grammar's
 //      own patterns that sounds the same or nearly (phonetic_key.h:
 //      "tip"/"tab", "joe"/"show", "on mute"/"unmute"), the rest as heard.

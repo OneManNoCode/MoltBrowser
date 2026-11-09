@@ -32,10 +32,16 @@ For longer narrative posts behind each entry see
   another number of words ("time to bull" is "Timetable"). A word heard
   with other vowels in the same number of words still doesn't count
   ("plant" isn't "Planet").
+- **"Find" with its "on" heard as the end of a word.** "Find timetable on
+  this page" was heard as "find time to belong this page", which no
+  command matched. Said without the "on" before "this page", it is a find:
+  for the words as heard first, then without an "on", "ong" or "in" at the
+  end of the last word ("time to bel" is "Timetable").
 - **"Hey Molt" with its "t" heard as "to" before a command.** "Him all to
-  scroll to the top" scrolls to the top: after a wake phrase, a first word
-  that is only the sound the name ends on is dropped, when what follows is
-  a command as said.
+  scroll to the top" scrolls to the top, and "Hey, Malt to play the live
+  one by Queen" plays it: after a wake phrase, a first word that is only
+  the sound the name ends on is dropped, when what follows is a command as
+  said.
 - **A number said while voice mode reads the list is taken.** "Three",
   said over "1: ..., 2: ..., 3: ..." as the results were read, was dropped
   as voice mode's own voice heard back, because the reading has the word

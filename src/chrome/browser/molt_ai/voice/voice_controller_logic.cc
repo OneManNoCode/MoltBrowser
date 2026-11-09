@@ -440,7 +440,7 @@ class Planner : public TurnPlanner {
         Search(command);
         break;
       case K::kFindInPage:
-        FindInPage(command.text);
+        FindInPage(command.text, command.on_glued);
         break;
       case K::kBack:
         if (!env_.can_go_back) {
@@ -2413,51 +2413,12 @@ class Planner : public TurnPlanner {
     }
   }
 
-  void FindInPage(const std::string& query) {
+  void FindInPage(const std::string& query, bool on_glued) {
     const std::string needle = FoldForComparison(query);
     if (needle.empty()) {
       Say("Find what? Say find, then the words.");
       return;
     }
-    // The words in a row, each as said or as its plural or singular
-    // ("tram" finds "Trams return to Lyon"); or the same letters split
-    // into other words, as a recognizer splits or joins a compound ("time
-    // table" finds "Timetable", "timetable" finds "Time table"), from one
-    // word's start to another's end and five letters or more.
-    const std::vector<std::string> wanted = SplitWords(needle);
-    std::string joined;
-    for (const std::string& word : wanted) {
-      joined += word;
-    }
-    constexpr size_t kMinJoinedLetters = 5;
-    auto has = [&](const std::string& text) {
-      const std::vector<std::string> words =
-          SplitWords(FoldForComparison(text));
-      for (size_t i = 0; i + wanted.size() <= words.size(); ++i) {
-        bool all = !wanted.empty();
-        for (size_t k = 0; all && k < wanted.size(); ++k) {
-          all = SameWordOrPlural(words[i + k], wanted[k]);
-        }
-        if (all) {
-          return true;
-        }
-      }
-      if (joined.size() < kMinJoinedLetters) {
-        return false;
-      }
-      for (size_t i = 0; i < words.size(); ++i) {
-        std::string run;
-        for (size_t k = i; k < words.size() && run.size() <= joined.size();
-             ++k) {
-          run += words[k];
-          // Split as said is the loop above.
-          if ((k > i || wanted.size() > 1) && SameWordOrPlural(run, joined)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    };
     size_t found = 0;
     std::string where;
     PageNodeHandle target;
@@ -2503,80 +2464,135 @@ class Planner : public TurnPlanner {
         }
       }
     };
-    search(has);
-    if (!found) {
-      // Nothing as said: the words as they sound, in a row ("find trim"
-      // for the page's "Trams": the recognizer got a vowel wrong), each of
-      // three letters or more with the same sound-alike key
-      // (phonetic_key.h) as said or as its singular.
-      std::vector<std::string> keys;
+    const auto look_for = [&](const std::vector<std::string>& wanted) {
+      // The words in a row, each as said or as its plural or singular
+      // ("tram" finds "Trams return to Lyon"); or the same letters split
+      // into other words, as a recognizer splits or joins a compound ("time
+      // table" finds "Timetable", "timetable" finds "Time table"), from one
+      // word's start to another's end and five letters or more.
+      std::string joined;
       for (const std::string& word : wanted) {
-        std::string key = word.size() >= 3
-                              ? PhoneticKeyFor(env_.language, word)
-                              : std::string();
-        if (key.size() < 3) {
-          keys.clear();
-          break;
-        }
-        keys.push_back(std::move(key));
+        joined += word;
       }
-      const auto sounds = [&](const std::string& text) {
+      constexpr size_t kMinJoinedLetters = 5;
+      auto has = [&](const std::string& text) {
         const std::vector<std::string> words =
             SplitWords(FoldForComparison(text));
-        for (size_t i = 0; i + keys.size() <= words.size(); ++i) {
-          bool all = !keys.empty();
-          for (size_t k = 0; all && k < keys.size(); ++k) {
-            const std::string& word = words[i + k];
-            all = PhoneticKeyFor(env_.language, word) == keys[k] ||
-                  (word.size() > 3 && word.back() == 's' &&
-                   PhoneticKeyFor(env_.language,
-                                  std::string_view(word).substr(
-                                      0, word.size() - 1)) == keys[k]);
+        for (size_t i = 0; i + wanted.size() <= words.size(); ++i) {
+          bool all = !wanted.empty();
+          for (size_t k = 0; all && k < wanted.size(); ++k) {
+            all = SameWordOrPlural(words[i + k], wanted[k]);
           }
           if (all) {
             return true;
           }
         }
-        return false;
-      };
-      if (!keys.empty()) {
-        search(sounds);
-      }
-    }
-    if (!found) {
-      // Nor word for word as it sounds: the same consonants, in order,
-      // split into another number of words ("time to bull" for the page's
-      // "Timetable": the recognizer heard a compound as three words), from
-      // a word's start to another's end and four sounds or more. The
-      // vowels between the words fall where the recognizer put them; the
-      // number of words differs, so a word heard with another vowel
-      // ("plant", "planet") is never one.
-      const std::string said = ConsonantSounds(env_.language, wanted);
-      constexpr size_t kMinConsonantSounds = 4;
-      const auto split = [&](const std::string& text) {
-        const std::vector<std::string> words =
-            SplitWords(FoldForComparison(text));
+        if (joined.size() < kMinJoinedLetters) {
+          return false;
+        }
         for (size_t i = 0; i < words.size(); ++i) {
           std::string run;
-          for (size_t k = i; k < words.size(); ++k) {
-            const std::string key = PhoneticKeyFor(env_.language, words[k]);
-            if (key.empty()) {
-              break;
-            }
-            run = run.empty() ? key : JoinPhoneticKeys(run, key);
-            const std::string sounds = WithoutVowelSounds(run);
-            if (sounds.size() > said.size()) {
-              break;
-            }
-            if (k - i + 1 != wanted.size() && sounds == said) {
+          for (size_t k = i; k < words.size() && run.size() <= joined.size();
+               ++k) {
+            run += words[k];
+            // Split as said is the loop above.
+            if ((k > i || wanted.size() > 1) && SameWordOrPlural(run, joined)) {
               return true;
             }
           }
         }
         return false;
       };
-      if (said.size() >= kMinConsonantSounds) {
-        search(split);
+      search(has);
+      if (!found) {
+        // Nothing as said: the words as they sound, in a row ("find trim"
+        // for the page's "Trams": the recognizer got a vowel wrong), each of
+        // three letters or more with the same sound-alike key
+        // (phonetic_key.h) as said or as its singular.
+        std::vector<std::string> keys;
+        for (const std::string& word : wanted) {
+          std::string key = word.size() >= 3
+                                ? PhoneticKeyFor(env_.language, word)
+                                : std::string();
+          if (key.size() < 3) {
+            keys.clear();
+            break;
+          }
+          keys.push_back(std::move(key));
+        }
+        const auto sounds = [&](const std::string& text) {
+          const std::vector<std::string> words =
+              SplitWords(FoldForComparison(text));
+          for (size_t i = 0; i + keys.size() <= words.size(); ++i) {
+            bool all = !keys.empty();
+            for (size_t k = 0; all && k < keys.size(); ++k) {
+              const std::string& word = words[i + k];
+              all = PhoneticKeyFor(env_.language, word) == keys[k] ||
+                    (word.size() > 3 && word.back() == 's' &&
+                     PhoneticKeyFor(env_.language,
+                                    std::string_view(word).substr(
+                                        0, word.size() - 1)) == keys[k]);
+            }
+            if (all) {
+              return true;
+            }
+          }
+          return false;
+        };
+        if (!keys.empty()) {
+          search(sounds);
+        }
+      }
+      if (!found) {
+        // Nor word for word as it sounds: the same consonants, in order,
+        // split into another number of words ("time to bull" for the page's
+        // "Timetable": the recognizer heard a compound as three words), from
+        // a word's start to another's end and four sounds or more. The
+        // vowels between the words fall where the recognizer put them; the
+        // number of words differs, so a word heard with another vowel
+        // ("plant", "planet") is never one.
+        const std::string said = ConsonantSounds(env_.language, wanted);
+        constexpr size_t kMinConsonantSounds = 4;
+        const auto split = [&](const std::string& text) {
+          const std::vector<std::string> words =
+              SplitWords(FoldForComparison(text));
+          for (size_t i = 0; i < words.size(); ++i) {
+            std::string run;
+            for (size_t k = i; k < words.size(); ++k) {
+              const std::string key = PhoneticKeyFor(env_.language, words[k]);
+              if (key.empty()) {
+                break;
+              }
+              run = run.empty() ? key : JoinPhoneticKeys(run, key);
+              const std::string sounds = WithoutVowelSounds(run);
+              if (sounds.size() > said.size()) {
+                break;
+              }
+              if (k - i + 1 != wanted.size() && sounds == said) {
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+        if (said.size() >= kMinConsonantSounds) {
+          search(split);
+        }
+      }
+    };
+    std::vector<std::string> wanted = SplitWords(needle);
+    look_for(wanted);
+    if (!found && on_glued && !wanted.empty()) {
+      // Said without the "on" before "this page": it may be the last
+      // word's end ("time to belong" for "time to bull on"). Once more
+      // without it, keeping two letters or more.
+      std::string& last = wanted.back();
+      for (const std::string_view glued : {"ong", "on", "in"}) {
+        if (last.size() >= glued.size() + 2 && last.ends_with(glued)) {
+          last.resize(last.size() - glued.size());
+          look_for(wanted);
+          break;
+        }
       }
     }
     NoteFindMatches(state(), query, std::move(matches), env_.page_id);
@@ -3156,7 +3172,8 @@ class Planner : public TurnPlanner {
     // "Hey Molt" in front of one), repaired before the planner is asked
     // (voice_repair.h); not when it may have been a confirmation's answer.
     if (depth == 0 && !confirming) {
-      const ParseContext context = ContextFor(state(), map_, env_);
+      ParseContext context = ContextFor(state(), map_, env_);
+      context.wake_said = command.wake_said;
       if (std::optional<RepairedCommand> repaired =
               RepairMisheardCommand(command.heard, context)) {
         Plan(repaired->command, depth + 1);

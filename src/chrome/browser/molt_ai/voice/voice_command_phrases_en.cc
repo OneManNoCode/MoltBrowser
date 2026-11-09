@@ -738,6 +738,10 @@ constexpr CommandPattern kPatterns[] = {
     {K::kFindInPage, "fine [the word] {query} (on|in) (this|the) page"},
     {K::kFindInPage, "(find on page|find in page|find on this page) {query}"},
     {K::kFindInPage, "search (this|the) page for {query}"},
+    // "Find time to belong this page": the "on" heard as the end of the
+    // last word ("time to bull on", for "timetable on").
+    {K::kFindInPage, "find [the word] {query} (this|the) page", C::kAlways,
+     V::kOnGlued},
     {K::kSearch, "search (the web|the internet|online|the net) for {query}",
      C::kAlways, V::kScopeDefaultEngine},
     {K::kSearch, "(web search|internet search|search online for) {query}",
