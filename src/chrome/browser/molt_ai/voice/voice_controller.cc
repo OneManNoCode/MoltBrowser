@@ -942,6 +942,7 @@ VoiceEnvironment VoiceController::Environment() {
   env.moltnet = IsMoltNet();
   env.language = language_;
   env.listening = listening_.listening;
+  env.wake_heard = heard_evidence_.woke;
   env.page_id = page_id_;
   env.reading = reader_->StateFor(page_id_);
   env.now_ms = (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
@@ -1007,9 +1008,16 @@ VoiceEnvironment VoiceController::Environment() {
 // ---- Running --------------------------------------------------------------
 
 void VoiceController::HandleHeardUtterance(const std::string& text,
-                                           bool heard_cleanly) {
-  next_evidence_ = HeardEvidence{/*from_microphone=*/true, heard_cleanly};
+                                           bool heard_cleanly,
+                                           bool woke) {
+  next_evidence_ =
+      HeardEvidence{/*from_microphone=*/true, heard_cleanly, woke};
   HandleUtterance(text);
+}
+
+void VoiceController::HandleHeardUtterance(const std::string& text,
+                                           bool heard_cleanly) {
+  HandleHeardUtterance(text, heard_cleanly, /*woke=*/false);
 }
 
 void VoiceController::HandleUtterance(const std::string& text) {

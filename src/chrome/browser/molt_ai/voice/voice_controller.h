@@ -239,7 +239,12 @@ class VoiceController : public VoicePlanner::Delegate,
   // One utterance the listening session heard (voice_session.h), and
   // whether it heard it cleanly enough for the voice gesture
   // (SessionActions::heard_cleanly). Only this can answer a prompt with its
-  // confirmation word; typed text (HandleUtterance()) never does.
+  // confirmation word; typed text (HandleUtterance()) never does. |woke|:
+  // the wake detector heard the wake phrase begin it
+  // (SessionActions::woke).
+  void HandleHeardUtterance(const std::string& text,
+                            bool heard_cleanly,
+                            bool woke);
   void HandleHeardUtterance(const std::string& text, bool heard_cleanly);
 
   // The learning workstream's "confirm these sites" seam

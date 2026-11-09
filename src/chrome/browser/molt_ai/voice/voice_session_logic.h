@@ -269,6 +269,12 @@ struct SessionActions {
   std::string_view wake_ignored;
   // |utterance| was heard cleanly enough for the voice gesture (above).
   bool heard_cleanly = false;
+  // |utterance| began with the wake phrase as the helper's detector heard
+  // it, or followed the wake phrase said alone ("Himalt." and a pause): not
+  // one heard in the follow-up window or while always listening. The
+  // recognizer may have written the wake phrase as anything
+  // (ParseContext::wake_heard).
+  bool woke = false;
   // Something said while voice mode's own voice played with no echo
   // canceller was dropped (OnOwnVoiceUnfiltered()): the caption tells the
   // user to say stop first, or wait.

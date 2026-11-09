@@ -456,14 +456,22 @@ std::optional<RepairedCommand> RepairMisheardCommand(
       continue;
     }
     // "Hey, more, ...": a greeting may come first, with its own comma.
+    // When the wake detector heard the wake phrase begin the utterance,
+    // the words before the break are it, however the recognizer wrote them
+    // ("cabled, set the volume to half").
     const bool scrap =
+        context.wake_heard ||
         Distance(head_key, name_key, kWakeScrapMargin) <= kWakeScrapMargin ||
         Distance(head_key, whole_key, kWakeScrapMargin) <= kWakeScrapMargin;
     if (scrap && w.source_end + 1 <= heard.size()) {
       rest = heard.substr(w.source_end + 1);
       understood_as_said =
           repairer.Try(rest, 1, /*swapped=*/false) != K::kUnknown;
-      break;
+      // Heard by the detector, a greeting with its own comma may come
+      // first ("Hey, Lord, skip the head"): the second word is tried too.
+      if (understood_as_said || !context.wake_heard) {
+        break;
+      }
     }
   }
   // Or without the name's last sound heard as a word of its own, after a

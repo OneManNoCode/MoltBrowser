@@ -103,6 +103,46 @@ TEST(VoiceRepairTest, TheWakePhrasesLastSoundAsAWordOfItsOwn) {
   EXPECT_FALSE(RepairMisheardCommand("him all to close this window", context));
 }
 
+// The twenty-eighth build's headphones run: the wake detector heard "Hey
+// Molt", and the recognizer wrote it as words that sound nothing like it.
+// Up to the first break, they are the wake phrase.
+TEST(VoiceRepairTest, AWakePhraseTheDetectorHeardWrittenAsAnything) {
+  ParseContext heard;
+  heard.wake_heard = true;
+  struct Case {
+    const char* heard;
+    K kind;
+    const char* repaired;
+  } kCases[] = {
+      {"cabled, set the volume to half.", K::kSetVolume,
+       "set the volume to half"},
+      // A greeting with its own comma first, then a word swapped.
+      {"Hey, Lord, skip the head", K::kSkipAd, "skip the ad"},
+      {"Lord. Pause", K::kPause, "Pause"},
+  };
+  const ParseContext unheard;
+  for (const Case& c : kCases) {
+    SCOPED_TRACE(c.heard);
+    ASSERT_EQ(ParseVoiceCommand(c.heard, heard).kind, K::kUnknown);
+    // Without the detector, they don't sound like "Hey Molt".
+    EXPECT_FALSE(RepairMisheardCommand(c.heard, unheard));
+    const std::optional<RepairedCommand> r =
+        RepairMisheardCommand(c.heard, heard);
+    ASSERT_TRUE(r);
+    EXPECT_EQ(r->command.kind, c.kind);
+    EXPECT_EQ(r->text, c.repaired);
+  }
+  // Only up to a break in the first two words; what follows is a command
+  // as said that may run on a guess, and the scrap is never swapped in.
+  for (const char* not_repaired :
+       {"cabled set the volume to half", "one two three, pause",
+        "cabled, close this window", "cabled, voice mode off",
+        "cabled, the cat is asleep on the sofa again"}) {
+    SCOPED_TRACE(not_repaired);
+    EXPECT_FALSE(RepairMisheardCommand(not_repaired, heard));
+  }
+}
+
 // The twelfth build's live run: "Hey Molt" heard as a scrap, then a press
 // as it was said. With only the scrap dropped, the press runs (and asks
 // first, as in full, when it buys or deletes).

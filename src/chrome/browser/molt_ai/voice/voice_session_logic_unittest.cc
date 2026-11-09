@@ -353,6 +353,34 @@ TEST_F(VoiceSessionLogicTest, TheToneBackToWaitingWaitsForAPause) {
   EXPECT_EQ(At(noisy + kWakeEarconLatestMs).earcon, EarconKind::kWaiting);
 }
 
+// What the detector's wake began says so (SessionActions::woke), and only
+// that: the controller's repair takes the words before its first break for
+// the wake phrase, however the recognizer wrote them.
+TEST_F(VoiceSessionLogicTest, AnUtteranceTheWakeBeganSaysSo) {
+  Begin();
+  logic_->OnWake(now_);
+  SessionActions woken =
+      logic_->OnFinal("cabled, set the volume to half", 0.9, now_ + 500);
+  ASSERT_TRUE(woken.utterance);
+  EXPECT_TRUE(woken.woke);
+  BrowserAnswers();
+  // In the follow-up window, without the wake phrase: not woken.
+  const int64_t answered = now_;
+  logic_->OnSpeechStart(answered + 1000);
+  SessionActions open = logic_->OnFinal("louder", 0.9, answered + 1500);
+  ASSERT_TRUE(open.utterance);
+  EXPECT_FALSE(open.woke);
+  BrowserAnswers();
+  // After the wake phrase said alone and a pause: woken.
+  const int64_t later = now_;
+  logic_->OnSpeechStart(later + 1000);
+  EXPECT_FALSE(logic_->OnFinal("Himalt.", 0.9, later + 1500).utterance);
+  logic_->OnSpeechStart(later + 3000);
+  SessionActions after_alone = logic_->OnFinal("Lord, pause", 0.9, later + 3500);
+  ASSERT_TRUE(after_alone.utterance);
+  EXPECT_TRUE(after_alone.woke);
+}
+
 // The spoken suite's file run: "Himalt." and a pause, then "Scroll down",
 // in the follow-up window: the wake phrase alone went to the loop ("I
 // didn't catch that") and the command came over its answer.

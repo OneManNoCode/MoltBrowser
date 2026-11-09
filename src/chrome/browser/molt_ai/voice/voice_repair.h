@@ -10,7 +10,10 @@
 //
 //   1. Without a scrap of the wake phrase: one or two words ending at a
 //      full stop, comma, question or exclamation mark within the first
-//      three words, that sound like the wake phrase's name; or, after a
+//      three words, that sound like the wake phrase's name (any words
+//      there when the wake detector heard the wake phrase begin the
+//      utterance: ParseContext::wake_heard, "cabled, set the volume to
+//      half"); or, after a
 //      wake phrase the grammar took, a first word that is only the stop
 //      the name ends on ("him all to scroll to the top": the "t" of
 //      "Molt" heard as "to").

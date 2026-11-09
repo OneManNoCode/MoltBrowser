@@ -3379,6 +3379,7 @@ ParseContext ContextFor(const ConversationState& state,
   context.text_field_focused = FieldInFocus(state, map, env) != nullptr;
   context.expecting_site = SiteQuestionWaits(state, env.now_ms) &&
                            state.site_question_page_id == env.page_id;
+  context.wake_heard = env.wake_heard;
   return context;
 }
 

@@ -299,6 +299,23 @@ TEST(VoiceControllerLogicTest, AMisheardCommandIsRepaired) {
                           ConversationState())
                 .kind,
             VoiceCommandKind::kUnknown);
+
+  // The wake detector heard "Hey Molt" begin it, written as "cabled": the
+  // words before the comma are the wake phrase (ParseContext::wake_heard).
+  VoiceEnvironment woken = Env();
+  woken.wake_heard = true;
+  Conversation heard(BuildPageMap(ShopPage(false)), woken);
+  EXPECT_TRUE(
+      ContextFor(heard.state(), heard.map(), heard.env()).wake_heard);
+  turn = heard.Say("cabled, close this tip.");
+  EXPECT_EQ(turn.kind, VoiceCommandKind::kCloseTab);
+  EXPECT_NE(Find(turn, K::kCloseTab), nullptr);
+  // Typed, or heard without the detector: not a scrap of "Hey Molt".
+  Conversation typed(BuildPageMap(ShopPage(false)), Env());
+  EXPECT_FALSE(
+      ContextFor(typed.state(), typed.map(), typed.env()).wake_heard);
+  EXPECT_NE(typed.Say("cabled, close this tip.").kind,
+            VoiceCommandKind::kCloseTab);
 }
 
 TEST(VoiceControllerLogicTest, ASiteWithNoSearchPageIsSearchedOnTheWeb) {

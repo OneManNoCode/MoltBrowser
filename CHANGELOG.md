@@ -36,6 +36,14 @@ For longer narrative posts behind each entry see
   scroll to the top" scrolls to the top: after a wake phrase, a first word
   that is only the sound the name ends on is dropped, when what follows is
   a command as said.
+- **"Hey Molt" the wake detector heard counts however it was written.**
+  Over a playing video, the detector heard "Hey Molt" but the recognizer
+  wrote it as "cabled" or "Hey, Lord", and the command after it ("set the
+  volume to half", "skip the ad") went unanswered. When the detector heard
+  the wake phrase begin what you said, the first word or two before a
+  comma or full stop are taken for it, if what follows is a command voice
+  mode may run that way. Typed text, and what is heard without the wake
+  phrase, are read as before.
 - **"Okay" heard as "bouquet" closes a page's alert.** One of the spoken
   suite's voices is heard that way every time. It counts for an alert only,
   which never asks for a confirmation word. Where a word allows something,
