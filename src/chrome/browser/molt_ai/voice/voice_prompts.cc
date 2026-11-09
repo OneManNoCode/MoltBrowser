@@ -47,6 +47,11 @@ constexpr auto kAllowWords = std::to_array<std::string_view>(
 constexpr auto kClose = std::to_array<std::string_view>(
     {"ok", "okay", "yes", "close", "close it", "dismiss", "got it",
      "ok close it", "no", "cancel"});
+// "Okay" as the recognizer writes it, for a page's alert only: an alert
+// never takes a confirmation word, so these needn't stay clear of the word
+// list as every other answer must (PromptAnswerPhrases()). "Bouquet" (in
+// every run of the spoken suite for one of its voices) sounds like one.
+constexpr auto kAlertCloseHeard = std::to_array<std::string_view>({"bouquet"});
 constexpr auto kLeave = std::to_array<std::string_view>(
     {"leave", "leave it", "leave the page", "leave page", "yes", "yes leave",
      "reload", "reload it", "yes reload", "ok", "okay"});
@@ -787,8 +792,11 @@ PromptReply ParsePromptReply(const PendingPrompt& prompt,
       }
       return PromptReply();
     case PromptKind::kAlert:
-      return In(answers.close, folded) ? Reply(PromptAnswer::kAccept)
-                                       : PromptReply();
+      return In(answers.close, folded) ||
+                     (prompt.language == Language::kEnglish &&
+                      In(kAlertCloseHeard, folded))
+                 ? Reply(PromptAnswer::kAccept)
+                 : PromptReply();
     case PromptKind::kConfirm:
       if (In(answers.yes, folded)) {
         return Reply(PromptAnswer::kAccept);

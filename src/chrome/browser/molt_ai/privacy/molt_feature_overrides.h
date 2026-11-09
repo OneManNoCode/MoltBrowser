@@ -49,6 +49,16 @@ void AppendDefaultFeatureOverrides(
 //     live microphone run: media steps passing went from 4-5 failures to 1
 //     with the legacy mode, and none were lost where the speakers' sound
 //     reaches the microphone).
+//   * WebRTC-Aec3UseLowEarlyReflectionsDefaultGain/Enabled and
+//     WebRTC-Aec3UseLowLateReflectionsDefaultGain/Enabled: until the echo
+//     canceller has learned the echo path (or turned transparent), it takes
+//     the echo to be 0.1 of what plays, not as loud as it (the default
+//     gain of 1.0). With no echo in the microphone, the default suppressed
+//     what was said over a playing video (the spoken suite's file run: "play
+//     faster" lost 46 dB in its middle); with these, the headphones run had
+//     no media step fail where two runs before had three, and the speakers
+//     run's security scenarios held (a video's and a page's speech still
+//     command nothing).
 // A trial --force-fieldtrials names is left to it: a test or a user can
 // still choose (the switch would otherwise refuse the clash and exit).
 // Call once, after the FieldTrialList exists and before

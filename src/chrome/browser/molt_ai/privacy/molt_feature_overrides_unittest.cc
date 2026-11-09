@@ -68,6 +68,12 @@ TEST(MoltFeatureOverridesTest, ChoosesTheEchoCancellersTransparentMode) {
     CreateDefaultFieldTrials(base::CommandLine(base::CommandLine::NO_PROGRAM));
     EXPECT_EQ(base::FieldTrialList::FindFullName("WebRTC-Aec3TransparentModeHmm"),
               "Disabled");
+    EXPECT_EQ(base::FieldTrialList::FindFullName(
+                  "WebRTC-Aec3UseLowEarlyReflectionsDefaultGain"),
+              "Enabled");
+    EXPECT_EQ(base::FieldTrialList::FindFullName(
+                  "WebRTC-Aec3UseLowLateReflectionsDefaultGain"),
+              "Enabled");
   }
   {
     // Forced on the command line: left to it.
