@@ -551,6 +551,12 @@ void VoiceController::NoteEarcon(std::string_view kind) {
   }
 }
 
+void VoiceController::NoteDucking(bool on, int tabs) {
+  if (test_log_) {
+    test_log_->OnDuck(on, tabs);
+  }
+}
+
 void VoiceController::SetNumbersShown(bool shown) {
   state_.numbers_shown = shown;
 }

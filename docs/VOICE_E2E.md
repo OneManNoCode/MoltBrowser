@@ -245,6 +245,7 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"dropped","text":"open YouTube","reason":"no wake phrase"}
 {"t":...,"w":1,"e":"helper","event":"wake","lag_ms":140,"note":"taken"}
 {"t":...,"w":1,"e":"earcon","kind":"listening"}
+{"t":...,"w":1,"e":"duck","on":true,"tabs":1}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -279,6 +280,9 @@ in `VoiceController`):
 - `earcon`: each tone voice mode played (`listening`, `waiting`,
   `thinking`, `speaking`, `off`): with the speakers' sound in the
   microphone, a tone over the user's words takes some with it.
+- `duck`: other tabs' media lowered while a command is said after the
+  wake phrase (`on`), and restored, with how many tabs had a media session
+  to lower (`tabs`; 0 means a page's sound went on at full volume).
 - `said`: what voice mode says, as it starts saying it.
 - `activity`: voice mode's state, the microphone, and whether only the wake
   phrase counts.

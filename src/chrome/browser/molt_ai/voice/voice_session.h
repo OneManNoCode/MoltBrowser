@@ -81,6 +81,14 @@ class WebContents;
 namespace molt_ai {
 namespace voice {
 
+// How far other tabs' media is lowered while a command is said after the
+// wake phrase: about -26 dB (Chromium's own ducking, 0.2, is -14 dB). With
+// the speakers heard in the microphone, the echo canceller's suppressor
+// took words of a command said over a playing video ("louder" heard as
+// "lou"); the quieter the video, the less it takes. Back to Chromium's 0.2
+// once the command ends.
+inline constexpr double kVoiceDuckingVolumeMultiplier = 0.05;
+
 class VoiceSession : public VoiceController::Observer,
                      public VoiceListener::Delegate,
                      public VoiceAudio::Delegate {
@@ -181,6 +189,8 @@ class VoiceSession : public VoiceController::Observer,
   // Carries out what the logic decided.
   void Apply(SessionActions actions);
   void SendConfig();
+  // Lowers every tab's media to kVoiceDuckingVolumeMultiplier while a
+  // command is said (VoiceSessionLogic decides when), and back.
   void SetDucking(bool duck);
   void UpdateCaption();
   void ScheduleTick();

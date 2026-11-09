@@ -89,6 +89,9 @@ class VoiceTestLog : public VoiceController::Observer {
   // played.
   void OnHelper(std::string_view event, int64_t lag_ms, std::string_view note);
   void OnEarcon(std::string_view kind);
+  // Other tabs' media lowered or restored while a command is said, and in
+  // how many tabs.
+  void OnDuck(bool on, int tabs);
 
   // The loop's state as the caption bar shows it.
   void OnLoop(VoiceActivity activity,

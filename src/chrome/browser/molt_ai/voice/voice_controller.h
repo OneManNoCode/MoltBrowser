@@ -317,6 +317,8 @@ class VoiceController : public VoicePlanner::Delegate,
                        std::optional<int64_t> lag_ms,
                        std::string_view note);
   void NoteEarcon(std::string_view kind);
+  // Other tabs' media lowered (|on|) or restored, in |tabs| tabs.
+  void NoteDucking(bool on, int tabs);
 
   // The planner open-ended requests go to (§6.2, layer 3): the web agent's
   // (agents/voice_agent_planner.h) unless replaced; null, the browser says

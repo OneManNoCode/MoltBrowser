@@ -32,6 +32,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/web_contents.h"
+#include "media/audio/audio_constants.h"
 
 namespace molt_ai {
 namespace voice {
@@ -783,7 +784,12 @@ void VoiceSession::SetDucking(bool duck) {
       if (content::MediaSession* session =
               content::MediaSession::GetIfExists(contents.get())) {
         session->StopDucking();
+        session->SetDuckingVolumeMultiplier(
+            media::kDefaultDuckingVolumeMultiplier);
       }
+    }
+    if (controller_) {
+      controller_->NoteDucking(false, static_cast<int>(ducked_.size()));
     }
     ducked_.clear();
     return;
@@ -806,10 +812,14 @@ void VoiceSession::SetDucking(bool duck) {
       content::MediaSession* session =
           contents ? content::MediaSession::GetIfExists(contents) : nullptr;
       if (session) {
+        session->SetDuckingVolumeMultiplier(kVoiceDuckingVolumeMultiplier);
         session->StartDucking();
         ducked_.push_back(contents->GetWeakPtr());
       }
     }
+  }
+  if (controller_) {
+    controller_->NoteDucking(true, static_cast<int>(ducked_.size()));
   }
 }
 

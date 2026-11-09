@@ -134,6 +134,10 @@ class VoiceTestLog::Writer {
     Write(lines_.Earcon(ms, kind));
   }
 
+  void Duck(int64_t ms, bool on, int tabs) {
+    Write(lines_.Duck(ms, on, tabs));
+  }
+
   void Changed(int64_t ms,
                const std::string& activity,
                bool mic,
@@ -274,6 +278,10 @@ void VoiceTestLog::OnHelper(std::string_view event,
 
 void VoiceTestLog::OnEarcon(std::string_view kind) {
   writer_.AsyncCall(&Writer::Earcon).WithArgs(NowMs(), std::string(kind));
+}
+
+void VoiceTestLog::OnDuck(bool on, int tabs) {
+  writer_.AsyncCall(&Writer::Duck).WithArgs(NowMs(), on, tabs);
 }
 
 void VoiceTestLog::OnLoop(VoiceActivity activity,

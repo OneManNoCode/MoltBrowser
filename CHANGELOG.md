@@ -17,6 +17,11 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **A playing video is lowered further while you give a command.** After
+  "Hey Molt", other tabs' sound now drops to about 5% of its volume
+  (Chromium's own ducking leaves 20%) until the command ends. With laptop
+  speakers, the echo canceller was cutting words of a command said over a
+  video ("louder" heard as "lou").
 - **A name said alone presses what it names.** "Hey Molt, the cart", with
   the verb lost or never said, now presses the one item on the page named
   just that (asking first where "click" would), where voice mode said "I
