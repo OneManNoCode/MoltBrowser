@@ -484,9 +484,12 @@ class Runner(object):
             ok = True
             for i, step in enumerate(sc.steps):
                 if not ok:
-                    res["steps"].append({"index": i, "action": step.action,
-                                         "status": "not run",
-                                         "detail": "an earlier step failed"})
+                    skipped = {"index": i, "action": step.action,
+                               "status": "not run",
+                               "detail": "an earlier step failed"}
+                    if step.guards():
+                        skipped["guard"] = True
+                    res["steps"].append(skipped)
                     continue
                 if self.config.audio == "pulse" and step.action == "say" and \
                         self.wake_for(step, mode) and not step.barge_in:
@@ -688,6 +691,8 @@ class Runner(object):
 
     def run_step(self, sc, step, i, world, tlog, plan, stream_start, mode, run_dir):
         sres = {"index": i, "action": step.action, "status": "passed"}
+        if step.guards():
+            sres["guard"] = True
         if step.action == "say":
             sres["say"] = step.value
         if step.pause:

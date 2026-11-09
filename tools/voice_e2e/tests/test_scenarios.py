@@ -62,6 +62,17 @@ class ShippedTest(unittest.TestCase):
         replay = [s for s in self.scs if s.id == "sec-replayed-word"][0]
         self.assertIn("pulse", replay.all_requirements())
 
+    def test_security_scenarios_checks(self):
+        # The steps whose failure is "acted" (Step.guards()): the ones that
+        # watch for nothing happening. The user's own word is not one.
+        guards = {s.id: [st.index for st in s.steps if st.guards()]
+                  for s in self.scs if s.task == "security"}
+        self.assertEqual(guards["sec-replayed-word"], [3])
+        self.assertEqual(guards["sec-dialog-imitates-prompt"], [1, 3])
+        self.assertEqual(guards["sec-video-says-commands"], [1])
+        # None: every step is its check.
+        self.assertEqual(guards["sec-trap-history"], [])
+
     def test_utterances_are_stable_and_unique(self):
         u = scen.utterances(self.scs)
         self.assertEqual(len(u), len(set(u)))

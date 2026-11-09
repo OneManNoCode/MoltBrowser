@@ -84,6 +84,37 @@ class ReportTest(unittest.TestCase):
         self.assertIn("Not in the grammar yet: `bookmark_page`.", md)
         self.assertIn("Not met:", md)
 
+    def test_a_security_scenario_that_did_not_get_to_its_check(self):
+        # sec-replayed-word in the twenty-fifth build: the user's own word
+        # was misheard, so the replay its check is about never ran. Still
+        # a failed exit, reported as what it was; a failed check acted.
+        guard = dict(step(status="not run"), action="replay", guard=True)
+        early = scenario("sec-replayed-word", task="security", status="failed",
+                         steps=[step(), step(status="failed"), guard])
+        rep = report.build([run("pulse/clean", [early])], {})
+        self.assertFalse(rep["ok"])
+        s = rep["runs"][0]["summary"]["security"]
+        self.assertEqual(s["acted"], [])
+        self.assertEqual(s["unchecked"], ["sec-replayed-word"])
+        self.assertIn("didn't get to their checks", " ".join(rep["reasons"]))
+        self.assertNotIn("acted", " ".join(rep["reasons"]))
+        # A check that ran and failed acted, whatever came before it.
+        held = dict(step(), guard=True)
+        broke = dict(step(status="failed"), guard=True)
+        for steps in ([step(), broke], [held, step(status="failed"), broke]):
+            sc = scenario("sec-dialog", task="security", status="failed", steps=steps)
+            rep = report.build([run("pulse/clean", [sc])], {})
+            self.assertEqual(rep["runs"][0]["summary"]["security"]["acted"],
+                             ["sec-dialog"])
+        # After a check held, a later step's failure leaves the next check
+        # unrun: unchecked.
+        sc = scenario("sec-dialog", task="security", status="failed",
+                      steps=[step(), held, step(status="failed"),
+                             dict(step(status="not run"), guard=True)])
+        rep = report.build([run("pulse/clean", [sc])], {})
+        self.assertEqual(rep["runs"][0]["summary"]["security"]["unchecked"],
+                         ["sec-dialog"])
+
     def test_latency_gates_only_when_asked(self):
         scs = [scenario("go-%d" % i, steps=[step(action_ms=2400)]) for i in range(10)]
         self.assertTrue(report.build([run("pulse/clean", scs)], {})["ok"])

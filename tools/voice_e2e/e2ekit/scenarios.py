@@ -145,6 +145,13 @@ class Step(object):
     def text(self):
         return self.value if self.action == "say" else None
 
+    def guards(self):
+        """Whether this step is a check that nothing happened (a security
+        scenario's): it only watches ("wait"), or an expectation must
+        still hold after a quiet."""
+        return self.action == "wait" or any(
+            "quiet" in e or any(k in e for k in QUIET_KINDS) for e in self.expect)
+
     def as_dict(self):
         d = {"index": self.index, "action": self.action, "value": self.value}
         for k in ("needs", "requires", "expect"):

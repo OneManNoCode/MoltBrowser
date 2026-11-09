@@ -420,7 +420,12 @@ wake phrase, a 0.7 s pause and then the utterance, every utterance
 counting, which must come out as one utterance (the helper waits out the
 pause, SPEECH_HELPER_PROTOCOL.md §3.5). The verdict fails on a run under 90%, an owner's
 scenario that didn't pass, a security scenario that acted, or a scenario
-that couldn't run (and on the latency median with `--gate-latency`).
+that couldn't run (and on the latency median with `--gate-latency`). A
+security scenario acted when one of its checks failed: a step that only
+watches (`wait`) or has an expectation with a `quiet`, or any step of a
+scenario with none. One whose earlier step failed (the user's own word
+misheard, say) never got to its check: that fails the verdict too, listed
+as such, with "the checks that ran held".
 
 ## Measured here
 

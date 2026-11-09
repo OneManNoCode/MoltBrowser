@@ -41,6 +41,12 @@ For longer narrative posts behind each entry see
   vowel and then the name's sounds now counts. Words that only share its
   consonants ("omelet", "Amulet") still don't, and no word of a
   104,000-word dictionary counts that didn't before.
+- **The spoken suite's report no longer says a security scenario
+  "acted" when it never got to its check.** The replayed confirmation word
+  failed because the user's own word was misheard, so the replay it is
+  about never ran, and the report called that "acted". Now only a failed
+  check (a step that watches for nothing happening) is "acted"; the rest
+  still fail the verdict, as "didn't get to their checks".
 - **Three spoken-suite tests that couldn't pass.**
   - File mode: a step's events now count from when its speech plays, not
     from when the kit gets to it. A page's own dialog holds up the kit's
