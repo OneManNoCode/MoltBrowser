@@ -466,6 +466,28 @@ std::optional<RepairedCommand> RepairMisheardCommand(
       break;
     }
   }
+  // Or without the name's last sound heard as a word of its own, after a
+  // wake phrase the grammar took ("him all to scroll to the top" for "Hey
+  // Molt, scroll to the top": the "t" of "Molt", clipped, as "to"): a
+  // first word of one consonant, the stop the name ends on. Only when
+  // what follows is a command as said.
+  if (rest.empty() && !understood_as_said && n.words.size() >= 2 &&
+      n.words[0].ascii && !n.words[0].numeric && !name_key.empty() &&
+      BeginsWithWakePhrase(utterance, context)) {
+    const char last = name_key.back();
+    std::string first;
+    for (char c : PhoneticKey(n.Word(0))) {
+      if (c != 'a') {
+        first.push_back(c);
+      }
+    }
+    if ((last == 'P' || last == 'T' || last == 'K') && first.size() == 1 &&
+        first[0] == last) {
+      understood_as_said =
+          repairer.Try(heard.substr(n.words[1].source_begin), 1,
+                       /*swapped=*/false) != K::kUnknown;
+    }
+  }
 
   // 2. One word swapped for the grammar's: in what follows the scrap, or,
   // without one, in all of it. A command after the scrap as it was heard

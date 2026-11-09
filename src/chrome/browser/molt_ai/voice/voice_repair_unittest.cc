@@ -65,6 +65,44 @@ TEST(VoiceRepairTest, AScrapOfTheWakePhraseBeforeACommand) {
   EXPECT_FALSE(RepairMisheardCommand("Broccoli. Play", context));
 }
 
+// The twenty-eighth build's file run: "Hey Molt" heard as "him all", its
+// clipped "t" as the word "to", then the command as said.
+TEST(VoiceRepairTest, TheWakePhrasesLastSoundAsAWordOfItsOwn) {
+  const ParseContext context;
+  struct Case {
+    const char* heard;
+    K kind;
+    const char* repaired;
+  } kCases[] = {
+      {"him all to scroll to the top", K::kScrollToTop, "scroll to the top"},
+      {"Him all, to scroll down", K::kScrollDown, "scroll down"},
+      {"Hey molt it pause", K::kPause, "pause"},
+      {"him all to click add kettle to cart", K::kChoose,
+       "click add kettle to cart"},
+  };
+  for (const Case& c : kCases) {
+    SCOPED_TRACE(c.heard);
+    ASSERT_EQ(ParseVoiceCommand(c.heard, context).kind, K::kUnknown);
+    const std::optional<RepairedCommand> r =
+        RepairMisheardCommand(c.heard, context);
+    ASSERT_TRUE(r);
+    EXPECT_EQ(r->command.kind, c.kind);
+    EXPECT_EQ(r->text, c.repaired);
+    EXPECT_TRUE(r->as_said);
+  }
+  // Only the sound the name ends on, as a word of its own: "pa" isn't
+  // Molt's "t", and "two" is more than a "t"; nor without a wake phrase in
+  // front.
+  EXPECT_FALSE(RepairMisheardCommand("him all pa scroll to the top", context));
+  EXPECT_FALSE(
+      RepairMisheardCommand("him all two scroll to the top", context));
+  EXPECT_FALSE(RepairMisheardCommand("to scroll to the top", context));
+  // Nor a command that may not run on a guess.
+  EXPECT_FALSE(RepairMisheardCommand("him all to voice mode off", context));
+  // A command as said after the "t" isn't swapped into another.
+  EXPECT_FALSE(RepairMisheardCommand("him all to close this window", context));
+}
+
 // The twelfth build's live run: "Hey Molt" heard as a scrap, then a press
 // as it was said. With only the scrap dropped, the press runs (and asks
 // first, as in full, when it buys or deletes).
