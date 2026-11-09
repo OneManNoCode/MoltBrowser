@@ -1,6 +1,6 @@
-{"resume_run": "42535000305",
+{"resume_run": "42560601903",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, twenty-second build (incremental on the nineteenth): MoltBrowser creates WebRTC-Aec3TransparentModeHmm/Disabled before Chromium's field trial testing config, so the echo canceller uses its own default transparent mode (--force-fieldtrials still wins); and the grammar takes more command words as the recognizer hears them in the test voices (\"open the book, Mark\", \"windjo\", \"fine\", \"scroll to the borrow\", \"take\"/\"tech\" for type into a field...: the right command for 92% of the suite's phrases through the helper, from 88%). The twenty-first run, with the trial forced, gave 75% file, 84% noloop, 73% with the speakers."}
+ "request": "Round 46, twenty-third build (incremental on the twenty-second): a name said alone presses the one item named just that (\"Hey Molt, the cart\"); \"free\"/\"tree\" choose the third item after a list unless an item is so named; \"delete the list word\", \"captions wolf/both\"; dictated \"CU\" typed as \"see you\"; the kit's dialog test checks the page once its alert is closed, and file mode's gap is 14 s so \"Hey Molt\" no longer lands on the tone that closes the follow-up window. The twenty-second run gave 78% file, 81% noloop, 67% with the speakers."}

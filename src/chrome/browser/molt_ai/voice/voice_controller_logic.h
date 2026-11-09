@@ -118,6 +118,10 @@ inline constexpr int kDefaultSkipSeconds = 10;
 inline constexpr int kVolumeSteps = 2;
 // A select chosen says at most this many of its options.
 inline constexpr size_t kMaxSaidOptions = 8;
+// A name said alone ("Hey Molt, the cart") presses the one item named just
+// that when it has at most this many words, "the" and the like aside;
+// longer, it is a request for the planner.
+inline constexpr size_t kMaxNameAloneWords = 3;
 // "Much louder", "a lot quieter": this many times kVolumeSteps.
 inline constexpr int kMuchVolumeFactor = 3;
 // How well "open X" must name something on the page to open it rather

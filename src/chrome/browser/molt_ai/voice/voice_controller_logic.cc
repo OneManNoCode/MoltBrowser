@@ -3099,12 +3099,58 @@ class Planner : public TurnPlanner {
         return;
       }
     }
+    // The name of one thing on the page and nothing more ("Hey Molt, the
+    // cart", the verb lost or never said): pressed, as "click" would.
+    if (depth == 0 && !confirming && PressNameSaidAlone(command)) {
+      return;
+    }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
     planner.preface = Tr(
         "I can't do that yet: {0}. Say what can I say to hear what I can do.",
         {Quoted(echo)});
     Add(std::move(planner));
+  }
+
+  // A name said alone presses the one item on the page named just that
+  // (MatchOptions::whole_name_only): a short name (kMaxNameAloneWords
+  // words once "the" and the like are gone), with no role, position or
+  // "by" in it, and not while the browser waits for an answer to a list it
+  // read (Choose() takes those). Anything else goes on to the planner.
+  bool PressNameSaidAlone(const VoiceCommand& command) {
+    const ConversationState& s = state();
+    if (s.list != ListContext::kNone || s.expecting_choice) {
+      return false;
+    }
+    const std::string words =
+        CommandWords(command.heard, ContextFor(state(), map_, env_));
+    if (words.empty()) {
+      return false;
+    }
+    const std::optional<ChoiceRef> ref =
+        ParseChoiceRef(words, env_.language, /*bare_numbers=*/false);
+    if (!ref || ref->kind != ChoiceRef::Kind::kDescription || ref->roles ||
+        ref->ordinal != 0 || ref->words.empty() ||
+        ref->words.size() > kMaxNameAloneWords || !ref->by_words.empty() ||
+        !ref->from_words.empty()) {
+      return false;
+    }
+    Attempt items;
+    items.set = CandidatesFromItems(map_);
+    items.context = ListContext::kItems;
+    if (items.set.empty()) {
+      return false;
+    }
+    MatchOptions options;
+    options.language = env_.language;
+    options.whole_name_only = true;
+    const ChoiceMatch match =
+        MatchSpokenChoice(*ref, items.set.candidates, options);
+    if (match.outcome != ChoiceOutcome::kUnique) {
+      return false;
+    }
+    Chosen(items, match.index, ChoiceVerb::kDefault);
+    return true;
   }
 
   void SetVerbosity(Verbosity requested) {

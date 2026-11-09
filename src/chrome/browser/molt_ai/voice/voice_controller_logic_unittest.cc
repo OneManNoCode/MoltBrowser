@@ -1375,6 +1375,30 @@ TEST(VoiceControllerLogicTest, StopCancelUndoAndCorrections) {
   EXPECT_EQ(turn.steps[0].url, "https://www.youtube.com/");
 }
 
+// A name said alone, its verb lost or never said ("He mold, the comments"),
+// presses the one item named just that, as "click" would (asking first
+// where "click" asks); anything else still goes to the planner.
+TEST(VoiceControllerLogicTest, ANameSaidAlonePressesTheItemItNames) {
+  Conversation clicked(BuildPageMap(ShopPage(false)), Env());
+  const VoiceTurn click = clicked.Say("click comments");
+  ASSERT_FALSE(Actions(click).empty());
+
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  VoiceTurn turn = c.Say("He mold, the comments.");
+  EXPECT_EQ(Actions(turn), Actions(click));
+  EXPECT_EQ(Said(turn), Said(click));
+  EXPECT_EQ(Find(turn, K::kToPlanner), nullptr);
+  // Part of a name ("Add to cart"), a name with more said, or a long
+  // request: the planner's, as before.
+  for (const char* said :
+       {"cart", "comments about the toaster", "message from my mother",
+        "find me a train from Paris to Lyon"}) {
+    turn = c.Say(said);
+    EXPECT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kToPlanner}))
+        << said;
+  }
+}
+
 TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
   Conversation c(BuildPageMap(HomePage()), Env());
   VoiceTurn turn = c.Say("find me a train from Paris to Lyon tomorrow");

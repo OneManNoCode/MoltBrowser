@@ -219,10 +219,11 @@ there.
 capture device (`--use-fake-device-for-media-stream
 --use-file-for-fake-audio-capture=<wav>%noloop`, 44.1 kHz stereo), the
 utterances at fixed times (the first 11 s in, past voice mode's greeting,
-each next 12 s after the end of the one before, past the longest answer:
-without echo cancellation an utterance over voice mode's own speech stops
-it and is dropped), timed from the moment the test log shows the
-microphone on. No
+each next 14 s after the end of the one before: past the usual answer, as
+an utterance over voice mode's own speech can be dropped, and clear of the
+tone that closes the follow-up window 8 s after an answer, which over the
+fake output device takes the start of a "Hey Molt" said on it), timed from
+the moment the test log shows the microphone on. No
 loopback and no recording: the scenarios that need the confirmation word
 or a page's sound are skipped there.
 

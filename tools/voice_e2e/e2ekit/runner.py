@@ -43,12 +43,17 @@ POLL_S = 0.2
 # File mode's fixed times (the recording can't wait on the browser): past
 # voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
 # want.", which ends about 7 s after the microphone opens, once the speech
-# helper is ready), and past the longest answer before the next utterance.
-# Without echo cancellation (the fake device has none) what is said over
-# voice mode's own speech stops it and is dropped ("I've stopped. Now say
-# that again."), so an utterance mustn't land on it.
+# helper is ready), and past the usual answer before the next utterance:
+# what is said over voice mode's own speech can be dropped ("I've stopped.
+# Now say that again."). Nor may "Hey Molt" land on the tone voice mode
+# plays as its follow-up window closes, 8 s after an answer
+# (kFollowUpWindowMs): over the fake output device the echo canceller takes
+# the phrase's start with it, which a pulse run avoids by waiting for the
+# tone. A 12 s gap put that tone under the next "Hey Molt" for every answer
+# of about 3 s ("Your name field. Say type, then your text."); at 14 s an
+# answer of up to 4 s, most of them, ends its window well before it.
 FILE_LEAD_S = 11.0
-FILE_GAP_S = 12.0
+FILE_GAP_S = 14.0
 DEFAULT_QUIET_S = 8.0
 WORD_TRIES = 3
 
