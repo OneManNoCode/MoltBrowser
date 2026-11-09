@@ -24,6 +24,8 @@
 #   VOICE_E2E_RUNS          the runs (default
 #                           pulse:clean,pulse:music10,file:clean,typed)
 #   VOICE_E2E_SCENARIOS     scenario ids to run (default all)
+#   VOICE_E2E_FIELD_TRIALS  Trial/Group/ pairs for the browser
+#                           (--force-fieldtrials; default none)
 #   VOICE_E2E_VOICES        the voices to rotate through (default all three)
 #   VOICE_E2E_DATA          the voices' download directory (default
 #                           ~/.cache/moltbrowser-voice-e2e)
@@ -145,6 +147,12 @@ fi
 args=(run --browser "$BROWSER" --bundle "$BUNDLE_DIR" --speech "$SPEECH_DIR"
       --report "$REPORT_DIR" --runs "$RUNS")
 [[ -n "${VOICE_E2E_SCENARIOS:-}" ]] && args+=(--scenarios "$VOICE_E2E_SCENARIOS")
+if [[ -n "${VOICE_E2E_FIELD_TRIALS:-}" ]]; then
+  if ! [[ "$VOICE_E2E_FIELD_TRIALS" =~ ^([A-Za-z0-9_-]+/[A-Za-z0-9_-]+/)+$ ]]; then
+    log "VOICE_E2E_FIELD_TRIALS must be Trial/Group/ pairs"; exit 2
+  fi
+  args+=(--browser-flag "--force-fieldtrials=$VOICE_E2E_FIELD_TRIALS")
+fi
 [[ -n "${VOICE_E2E_VOICES:-}" ]] && args+=(--voices "$VOICE_E2E_VOICES")
 [[ "${VOICE_E2E_MODEL:-0}" == 1 ]] && args+=(--model)
 args+=("${SANDBOX_FLAGS[@]}")
