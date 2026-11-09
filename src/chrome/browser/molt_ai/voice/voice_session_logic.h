@@ -116,7 +116,8 @@
 // Earcons: ready (waiting, or listening when always listening), wake
 // (listening), a command taken (thinking), the browser starting to speak
 // (speaking), back to waiting (the follow-up window closed or the wake
-// phrase timed out), and off.
+// phrase timed out; at a pause in what the microphone hears, as the
+// listening tone), and off.
 //
 // Std-only, unit-tested; all times are a monotonic clock in milliseconds.
 
@@ -157,7 +158,9 @@ inline constexpr int64_t kWakeEarconDelayMs = 700;
 // kWakeEarconDelayMs after the phrase; a tone over the command's last
 // words takes them with it as well (the spoken suite's run with the
 // speakers' sound in the microphone heard "open Wikipedia" as "open
-// wikip"). It never waits past kWakeEarconLatestMs after the phrase.
+// wikip"). It never waits past kWakeEarconLatestMs after the phrase. The
+// tone back to waiting does the same: "Hey Molt" said as the follow-up
+// window closed lost its "Molt" under it in the file run.
 inline constexpr int64_t kQuietBeforeToneMs = 300;
 inline constexpr int64_t kWakeEarconLatestMs = 2500;
 // After the browser stops speaking, how long its voice may still reach the
@@ -401,6 +404,9 @@ class VoiceSessionLogic {
 
   bool Listening() const { return running_ && ready_; }
   bool FollowUpOpen(int64_t now_ms) const;
+  // The microphone heard something within kQuietBeforeToneMs: a tone now
+  // would go over it.
+  bool MicrophoneLoud(int64_t now_ms) const;
   // Whether the browser spoke at |at_ms| or within kEchoTailMs before
   // (looked at now: it counts if the browser speaks now).
   bool SpeakingOrTail(int64_t at_ms) const;
@@ -479,6 +485,11 @@ class VoiceSessionLogic {
   // first (0: none due), and the latest it may (kWakeEarconLatestMs).
   int64_t wake_earcon_at_ms_ = 0;
   int64_t wake_earcon_latest_ms_ = 0;
+  // When the tone back to waiting plays, if the microphone wasn't quiet
+  // when it was due (0: none due), and the latest it may
+  // (kWakeEarconLatestMs).
+  int64_t waiting_earcon_at_ms_ = 0;
+  int64_t waiting_earcon_latest_ms_ = 0;
   int64_t microphone_loud_ms_ = -1;
   // What the browser said: when, and its words folded.
   std::deque<std::pair<int64_t, std::string>> said_;

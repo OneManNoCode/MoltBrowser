@@ -307,6 +307,52 @@ TEST_F(VoiceSessionLogicTest, TheListeningToneWaitsForAPause) {
   EXPECT_EQ(At(noisy + kWakeEarconLatestMs).earcon, EarconKind::kListening);
 }
 
+// The spoken suite's file run: "Hey Molt, normal speed" said just as the
+// follow-up window closed. The tone back to waiting went into the echo
+// canceller's reference, which took "Molt" with it, and nothing woke.
+TEST_F(VoiceSessionLogicTest, TheToneBackToWaitingWaitsForAPause) {
+  Begin();
+  logic_->OnWake(now_);
+  logic_->OnFinal("play faster", 0.9, now_ + 800);
+  BrowserAnswers();
+  const int64_t closes = now_ + kFollowUpWindowMs;
+  // Speech began just before the window closed.
+  logic_->NoteMicrophoneLoud(closes - 10);
+  SessionActions closed = At(closes);
+  EXPECT_EQ(closed.state, SessionState::kWaiting);
+  EXPECT_EQ(closed.wake_required, true);
+  EXPECT_FALSE(closed.earcon.has_value());
+  EXPECT_EQ(logic_->NextDeadline(), closes - 10 + kQuietBeforeToneMs);
+  // Still speaking: it waits on.
+  logic_->NoteMicrophoneLoud(closes + 250);
+  EXPECT_FALSE(At(closes - 10 + kQuietBeforeToneMs).earcon.has_value());
+  // The pause: the tone.
+  EXPECT_EQ(At(closes + 250 + kQuietBeforeToneMs).earcon, EarconKind::kWaiting);
+  EXPECT_FALSE(At(closes + 2000).earcon.has_value());
+
+  // Said as it closed, and it woke voice mode: no tone back to waiting.
+  logic_->OnWake(now_);
+  logic_->OnFinal("pause", 0.9, now_ + 500);
+  BrowserAnswers();
+  const int64_t again = now_ + kFollowUpWindowMs;
+  logic_->NoteMicrophoneLoud(again - 50);
+  EXPECT_FALSE(At(again).earcon.has_value());
+  EXPECT_EQ(logic_->OnWake(again + 200).state, SessionState::kListening);
+  EXPECT_NE(At(again + 400).earcon, EarconKind::kWaiting);
+  EXPECT_NE(At(again + 600).earcon, EarconKind::kWaiting);
+
+  // A microphone that never goes quiet: at the latest.
+  logic_->OnFinal("pause", 0.9, now_ + 700);
+  BrowserAnswers();
+  const int64_t noisy = now_ + kFollowUpWindowMs;
+  for (int64_t t = noisy; t < noisy + kWakeEarconLatestMs; t += 100) {
+    logic_->NoteMicrophoneLoud(t);
+    EXPECT_FALSE(At(t).earcon.has_value()) << t - noisy;
+  }
+  logic_->NoteMicrophoneLoud(noisy + kWakeEarconLatestMs);
+  EXPECT_EQ(At(noisy + kWakeEarconLatestMs).earcon, EarconKind::kWaiting);
+}
+
 // The spoken suite's file run: "Himalt." and a pause, then "Scroll down",
 // in the follow-up window: the wake phrase alone went to the loop ("I
 // didn't catch that") and the command came over its answer.

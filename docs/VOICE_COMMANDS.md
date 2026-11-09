@@ -586,7 +586,7 @@ said.
 
 **Back to the normal size.** For example: "reset zoom".
 
-- `((reset | rosetta | normal | default) zoom | zoom (reset | normal | to normal | back to normal) | (actual | normal | original | default) size | reset [the] zoom level)`
+- `((reset | rosetta | bosetta | for setta | normal | default) zoom | zoom (reset | normal | to normal | back to normal) | (actual | normal | original | default) size | reset [the] zoom level)`
 - `(resetzum | rosetzum | resetzoom)`
 
 ## Media
@@ -851,6 +851,7 @@ said.
 - `(delete | remove | erase | scratch | undo) [the] (last | previous) word` (while you are typing in a field)
 - `delete that word` (while you are typing in a field)
 - `(delete | remove | erase) the list word` (while you are typing in a field)
+- `to leap the (last | list) word` (while you are typing in a field)
 
 **Clear the field.** For example: "clear the field".
 

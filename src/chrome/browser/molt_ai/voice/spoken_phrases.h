@@ -73,6 +73,12 @@ struct ValueWord {
   int value = 0;
 };
 
+// A verb as a recognizer writes it glued to the next word, and the verb.
+struct GluedVerb {
+  std::string_view heard;
+  std::string_view verb;
+};
+
 struct AddressWord {
   std::string_view word;
   char mark = 0;  // what it stands for in an address: '.', '/', '-', '_'
@@ -156,9 +162,10 @@ struct LanguagePhrases {
   std::vector<std::string_view> wake_greetings;
   // The wake phrase when ParseContext gives none.
   std::string_view default_wake_phrase;
-  // Verbs a recognizer may glue to the next word ("clickname a color"): an
-  // utterance nothing else understood is read once more with them apart.
-  std::vector<std::string_view> glued_verbs;
+  // Verbs a recognizer may glue to the next word ("clickname a color"), as
+  // it writes them ("lickname color"): an utterance nothing else
+  // understood is read once more with the verb apart.
+  std::vector<GluedVerb> glued_verbs;
 
   // --- Values in commands -------------------------------------------------
   // Volume words: "half" -> 50, "max" -> 100.

@@ -202,6 +202,16 @@ TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
   EXPECT_EQ(glued.heard, "Clickname a color");
   EXPECT_EQ(Fields(ParseVoiceCommand("presssubmit", context)),
             Fields(ParseVoiceCommand("press submit", context)));
+  // Its first sound lost as well ("Lickname color", the file run).
+  const VoiceCommand lost =
+      ParseVoiceCommand("Himalt. Lickname color.", context);
+  EXPECT_EQ(Fields(lost),
+            Fields(ParseVoiceCommand("click name color", context)));
+  EXPECT_EQ(lost.kind, VoiceCommandKind::kChoose);
+  for (const char *said : {"licked the bowl", "licking", "lickety split"}) {
+    EXPECT_NE(ParseVoiceCommand(said, context).kind, VoiceCommandKind::kChoose)
+        << said;
+  }
   EXPECT_NE(ParseVoiceCommand("clicking", context).kind,
             VoiceCommandKind::kChoose);
   // A short word after the verb, with more after it: apart too
@@ -322,6 +332,9 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"Hey, Malt, caption's wolf", "captions_off", ""},
       {"Hey, Malt, caption's both.", "captions_off", ""},
       {"Hey, Malt, delete the list word.", "delete_last_word", "", kField},
+      {"Hey, Molt, to leap the list word.", "delete_last_word", "", kField},
+      {"Hey, Molt, for setta Zoom.", "zoom_reset", ""},
+      {"Hey, Molt, Bosetta zoom.", "zoom_reset", ""},
       {"Hey, Malt, what's on a screen?", "describe_screen", ""},
       {"Start of", "start_over", ""},
       {"Hey, Malt, fine timetable on this page", "find_in_page",

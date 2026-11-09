@@ -17,6 +17,18 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **"Hey Molt" said just as the follow-up window closes is heard.** The
+  tone that says voice mode is back to waiting for "Hey Molt" played the
+  moment the window closed. Over a command just begun, it went into the
+  echo canceller's reference, and the canceller took the words under it:
+  "Hey Molt, normal speed" lost its "Molt", and nothing woke. Like the
+  listening tone, it now waits for a pause in what the microphone hears
+  (at most 2.5 s).
+- **More command words as the recognizer hears them.** "Lickname color"
+  ("click name a colour" with its first sound lost) clicks, "to leap the
+  last word" deletes the last word, and "for setta zoom" and "Bosetta
+  zoom" reset the zoom. "Lick" counts only glued to a word of four letters
+  or more ("lickety split" stays as it is).
 - **Interrupting voice mode works when you speak up.** While voice mode
   reads a list or a question, a command said over it without "Hey Molt"
   ("three", "start over") was dropped about half the time as "not heard

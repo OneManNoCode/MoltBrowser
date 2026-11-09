@@ -513,9 +513,11 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, TheAppMenuByVoice) {
   EXPECT_NE(said.find("Settings"), std::string::npos) << said;
   // "Click Settings": the menu's own command.
   Say("click settings");
+  // What voice mode said, should the page not open (a flake on CI).
   ASSERT_TRUE(base::test::RunUntil([&]() {
     return web_contents()->GetLastCommittedURL().host() == "settings";
-  }));
+  })) << "said: " << tts_.TakeSpoken() << "; at "
+      << web_contents()->GetLastCommittedURL().spec();
   // The toolbar's buttons, read and pressed by number or name; never the
   // Voice button.
   Say("show the browser's buttons");
