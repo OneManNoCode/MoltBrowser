@@ -2001,6 +2001,14 @@ void VoiceController::CancelPlanner() {
 }
 
 void VoiceController::PlannerSays(const std::string& text) {
+  SayForPlanner(text, /*page_text=*/true);
+}
+
+void VoiceController::PlannerSaysOwnWords(const std::string& text) {
+  SayForPlanner(text, /*page_text=*/false);
+}
+
+void VoiceController::SayForPlanner(const std::string& text, bool page_text) {
   if (!planner_running_ || !speech_) {
     return;
   }
@@ -2012,7 +2020,9 @@ void VoiceController::PlannerSays(const std::string& text) {
   if (said.empty()) {
     return;
   }
-  NotePageTextSaid();
+  if (page_text) {
+    NotePageTextSaid();
+  }
   for (Observer& observer : observers_) {
     observer.OnVoiceSpeech(said);
   }

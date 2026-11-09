@@ -459,6 +459,9 @@ class VoiceController : public VoicePlanner::Delegate,
   // Page-derived speech (a reading's chunk, an answer about the page, the
   // planner's words) starts being said (PendingPrompt::after_page_text).
   void NotePageTextSaid();
+  // The planner's |text|, said in turn; |page_text|: it may hold page text
+  // or model output (NotePageTextSaid()).
+  void SayForPlanner(const std::string& text, bool page_text);
   void SayAboutBrowserPrompt(const std::string& text) override;
   void SayWordAboutBrowserPrompt(const WordText& text) override;
   WordChannelInputs WordChannelInputsNow() override;
@@ -470,6 +473,7 @@ class VoiceController : public VoicePlanner::Delegate,
 
   // VoicePlanner::Delegate:
   void PlannerSays(const std::string& text) override;
+  void PlannerSaysOwnWords(const std::string& text) override;
   void PlannerAsks(int question, const std::string& what) override;
   void PlannerFinished() override;
   // Routines (planner-routines): the steps the planner carried out go to

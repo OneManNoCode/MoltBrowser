@@ -134,9 +134,7 @@ class VoiceTestLog::Writer {
     Write(lines_.Earcon(ms, kind));
   }
 
-  void Duck(int64_t ms, bool on, int tabs) {
-    Write(lines_.Duck(ms, on, tabs));
-  }
+  void Duck(int64_t ms, bool on, int tabs) { Write(lines_.Duck(ms, on, tabs)); }
 
   void Changed(int64_t ms,
                const std::string& activity,

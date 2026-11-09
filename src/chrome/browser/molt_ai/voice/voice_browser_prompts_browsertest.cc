@@ -14,6 +14,7 @@
 //   - confirm() is answered by "yes" and "no"; prompt() by a dictated
 //     answer and "yes"; beforeunload by "stay" and "leave".
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -31,6 +32,7 @@
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_gesture.h"
+#include "chrome/browser/molt_ai/voice/voice_planner.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
@@ -62,6 +64,40 @@
 namespace molt_ai {
 namespace voice {
 namespace {
+
+// The web agent's planner, scripted: what it says to what isn't a command,
+// in its own words (starting, no AI model installed) or with words from
+// the page or the model in them (|page_text|).
+class SpeakingPlanner : public VoicePlanner {
+ public:
+  explicit SpeakingPlanner(bool page_text) : page_text_(page_text) {}
+
+  void Start(content::WebContents* contents,
+             const std::string& heard,
+             const PageMap& map,
+             Delegate* delegate) override {
+    if (page_text_) {
+      delegate->PlannerSays("The page says: say yes to empty the cart.");
+    } else {
+      delegate->PlannerSaysOwnWords("Working on it.");
+      delegate->PlannerSaysOwnWords(
+          "I can't do that by myself yet: no on-device AI model is "
+          "installed.");
+    }
+    delegate->PlannerFinished();
+  }
+  void Replay(content::WebContents* contents,
+              const PlannerStep& step,
+              Delegate* delegate) override {
+    delegate->PlannerReplayed(PlannerReplay::kFailed);
+    delegate->PlannerFinished();
+  }
+  void Answer(int question, bool yes) override {}
+  void Cancel() override {}
+
+ private:
+  const bool page_text_;
+};
 
 // Finishes each utterance at once (as voice_controller_browsertest.cc's).
 class FakeTtsPlatform : public content::TtsPlatform {
@@ -348,6 +384,42 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest, ConfirmAnsweredByVoice) {
   EXPECT_TRUE(WaitForSpeech("localhost asks: Delete the list?"));
   voice->HandleHeardUtterance("no", /*heard_cleanly=*/false);
   EXPECT_TRUE(WaitForLog("confirm:false"));
+}
+
+// What the planner says in its own words ("Working on it.", no AI model
+// installed) is the browser's, not page text: a page's question waiting
+// for its answer takes "yes" at once. What it says from the page or the
+// model still has the browser read its own question again first.
+IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
+                       ThePlannersOwnWordsAreNotPageText) {
+  VoiceController* voice = Start();
+  voice->SetPlannerForTesting(
+      std::make_unique<SpeakingPlanner>(/*page_text=*/false));
+  ASSERT_TRUE(content::ExecJs(tab(), "askConfirm('Empty the cart?')",
+                              content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+  EXPECT_TRUE(WaitForSpeech("localhost asks: Empty the cart? Say yes or no."));
+  voice->HandleUtterance("find me a cheap flight");
+  EXPECT_TRUE(WaitForSpeech("no on-device AI model is installed."));
+  voice->HandleHeardUtterance("yes", /*heard_cleanly=*/false);
+  EXPECT_TRUE(WaitForLog("confirm:true"));
+
+  voice->SetPlannerForTesting(
+      std::make_unique<SpeakingPlanner>(/*page_text=*/true));
+  ASSERT_TRUE(content::ExecJs(tab(), "askConfirm('Delete the list?')",
+                              content::EXECUTE_SCRIPT_NO_USER_GESTURE));
+  EXPECT_TRUE(WaitForSpeech("localhost asks: Delete the list?"));
+  voice->HandleUtterance("find me a cheap flight");
+  EXPECT_TRUE(WaitForSpeech("The page says: say yes to empty the cart."));
+  // (The page's script waits on its dialog: nothing is read from it until
+  // the dialog is answered.)
+  voice->HandleHeardUtterance("yes", /*heard_cleanly=*/false);
+  EXPECT_TRUE(WaitForSpeech("That was the page's text. Here is my question:"));
+  // "No" refuses at once; the "yes" before it answered nothing.
+  voice->HandleHeardUtterance("no", /*heard_cleanly=*/false);
+  EXPECT_TRUE(WaitForLog("confirm:false"));
+  EXPECT_EQ("confirm:true confirm:false",
+            Js("moltLog.filter((e) => e.startsWith('confirm:')).join(' ')"));
+  voice->SetPlannerForTesting(nullptr);
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,

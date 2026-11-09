@@ -17,6 +17,12 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **"OK" closes a page's dialog after voice mode's own "I can't do that
+  yet".** Everything the on-device agent's planner said counted as page
+  text, including the browser's own "Working on it." and "no on-device AI
+  model is installed". So after any command voice mode didn't know, a page's
+  waiting dialog refused the next "OK" or "yes" once and read itself again.
+  Only text from the page or the model counts now.
 - **A playing video is lowered further while you give a command.** After
   "Hey Molt", other tabs' sound now drops to about 5% of its volume
   (Chromium's own ducking leaves 20%) until the command ends. With laptop
