@@ -1,7 +1,7 @@
-{"resume_run": "42598877637",
+{"resume_run": "42614238624",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 48, twenty-sixth build (incremental on the twenty-fifth): the speech helper takes \"Hey Molt\" with its greeting's h lost, as one word (\"Immalt, said the volume to half\", the file run) or as a vowel and the name set off by a comma or a stop (\"A mold, do the volume to half\", the headphones run), which the spotter missed and nothing woke voice mode; \"Roledge\" and \"Rolete\" reload; the kit's report says a security scenario acted only when one of its checks failed (sec-replayed-word failed on the user's own word misheard, before its check). The twenty-fifth gave 89.5% file, 85% noloop, 75.6% with the speakers."}
+ "request": "Round 48, twenty-seventh build (incremental on the twenty-sixth): the tone back to waiting waits for a pause in what the microphone hears, as the listening tone does (\"Hey Molt, normal speed\" said as the follow-up window closed lost its \"Molt\" under the tone in the file run, and nothing woke); \"Lickname color\" clicks, \"to leap the last word\" deletes it, \"for setta zoom\" and \"Bosetta zoom\" reset the zoom; TheAppMenuByVoice says what voice mode said if the settings page doesn't open. The twenty-sixth gave 85% file, 89% noloop, 79% with the speakers, typed 80 of 80."}
