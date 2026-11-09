@@ -732,6 +732,54 @@ voice is 64–79 MB (23 MB in int8), Kokoro 142 MB (int8) or 354 MB. Peak
 memory of the whole process is in §3.4, §3.5 and §3.9. The runtime
 libraries are in §5.3.
 
+### 3.12 The spoken suite's phrases: a second recognizer, command hotwords
+
+Measured in round 46 to judge two ways past the bundled recognizer's
+mishearings. The data is the spoken end-to-end suite's 139 step phrases
+(`tools/voice_e2e/scenarios`), said by its three test voices at speeds 1.0
+and 1.25: 834 utterances, with "Hey Molt, " before each step that needs it,
+through the kit's renderer and dither, clean. Each was scored with the
+browser's own grammar (`ParseVoiceCommand()`, then `RepairMisheardCommand()`):
+"right" means the same command with the same free text and site as what was
+said.
+
+**A second pass with Whisper small.en (int8)** on what the bundled
+recognizer got wrong, with the round-45 grammar:
+
+| recognizer | right | same command | time per utterance |
+|---|---|---|---|
+| Kroko, the bundled helper | 681 (82%) | 737 (88%) | 1.28 s, streaming (faster than real time) |
+| Whisper small.en int8 | 692 (83%) | 736 (88%) | 1.01 s on 4 threads, after speech ends |
+| either right (an oracle) | 728 (87%) | | |
+| Whisper when Kroko's text isn't understood | 704 (84%) | | |
+| ... and Whisper's text for the same free-text command | 714 (86%) | | |
+
+- **What Whisper fixes:** names and dictation ("Ada Lovelace", "Alan Turing",
+  "see you at noon").
+- **What it breaks:** short commands ("click cart" becomes "the cart",
+  "choose France" becomes "Juice France").
+- **By voice:** ljspeech gets 71% right with Kroko and 73–76% with Whisper;
+  the two LibriTTS voices get 79–91%.
+- **Verdict: not shipped.** At best 4 points for 357 MB more (against the
+  75 MB of speech models bundled today) and about a second more per
+  utterance.
+
+**The grammar's command phrases as hotwords**, through the real helper
+(modified beam search, hotwords score 1.5), with the round-46 grammar:
+
+| hotwords | right | same command |
+|---|---|---|
+| none (as shipped) | 705 (84.5%) | 766 (91.8%) |
+| 61 command phrases ("go back", "scroll down", "captions off", "click", ...) | 705 (84.5%) | 768 (92.1%) |
+
+- **Result:** 4 utterances fixed ("Exitful screen" becomes "exit full
+  screen") and 4 broken (a "Hey Molt" read as "him all to").
+- **Verdict:** no gain, so the hotword slots stay with the page's names
+  (§3.7).
+
+The grammar's heard forms of command words (`voice_command_phrases_en.cc`)
+raised "same command" here from 88% to 92%.
+
 ## 4. Licences
 
 Every artifact's licence, and where it was read, is in
