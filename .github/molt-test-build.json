@@ -1,7 +1,7 @@
-{"resume_run": "42631099158",
+{"resume_run": "42676170011",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 48, twenty-eighth build (incremental on the twenty-seventh): the echo canceller takes an unknown echo path as 0.1 of what plays (WebRTC-Aec3UseLowEarlyReflectionsDefaultGain and LowLateReflectionsDefaultGain, now MoltBrowser's defaults; the e2e trial gave headphones 82 of 91 with no media failures, the speakers' security scenarios held); \"bouquet\" closes a page's alert; \"read it, Beck\" reads a field back; the kit says the confirmation word again when asked. The twenty-seventh gave file 77/78 of 87, headphones 80/76 of 91, speakers 71/72 of 91 over two runs."}
+ "request": "Round 48, twenty-ninth build (incremental on the twenty-eighth): \"find\" takes words split the way they sound (\"time to bull\" finds \"Timetable\"); \"Hey Molt\" with its \"t\" heard as \"to\" before a command is dropped; a wake phrase the detector heard counts however the recognizer wrote it (\"cabled, set the volume to half\"). The twenty-eighth gave file 77/87, headphones 78/91, speakers 73/91; typed passed."}

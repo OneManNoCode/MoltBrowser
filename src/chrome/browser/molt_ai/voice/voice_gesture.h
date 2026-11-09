@@ -209,6 +209,9 @@ struct HeardEvidence {
   // echo canceller; with a tab playing sound, it was heard with the
   // confidence an utterance without the wake phrase needs then.
   bool clean = false;
+  // The helper's wake detector heard the wake phrase begin it (or say it
+  // alone just before it): SessionActions::woke.
+  bool woke = false;
 };
 
 // The capability: minted by GestureBook::Hear(), used by Consume().

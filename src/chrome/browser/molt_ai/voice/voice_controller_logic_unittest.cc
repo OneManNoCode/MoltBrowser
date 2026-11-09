@@ -299,6 +299,23 @@ TEST(VoiceControllerLogicTest, AMisheardCommandIsRepaired) {
                           ConversationState())
                 .kind,
             VoiceCommandKind::kUnknown);
+
+  // The wake detector heard "Hey Molt" begin it, written as "cabled": the
+  // words before the comma are the wake phrase (ParseContext::wake_heard).
+  VoiceEnvironment woken = Env();
+  woken.wake_heard = true;
+  Conversation heard(BuildPageMap(ShopPage(false)), woken);
+  EXPECT_TRUE(
+      ContextFor(heard.state(), heard.map(), heard.env()).wake_heard);
+  turn = heard.Say("cabled, close this tip.");
+  EXPECT_EQ(turn.kind, VoiceCommandKind::kCloseTab);
+  EXPECT_NE(Find(turn, K::kCloseTab), nullptr);
+  // Typed, or heard without the detector: not a scrap of "Hey Molt".
+  Conversation typed(BuildPageMap(ShopPage(false)), Env());
+  EXPECT_FALSE(
+      ContextFor(typed.state(), typed.map(), typed.env()).wake_heard);
+  EXPECT_NE(typed.Say("cabled, close this tip.").kind,
+            VoiceCommandKind::kCloseTab);
 }
 
 TEST(VoiceControllerLogicTest, ASiteWithNoSearchPageIsSearchedOnTheWeb) {
@@ -672,6 +689,35 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
     for (const char* not_found :
          {"find time tab on this page", "find imetable on this page",
           "find ebook on this page", "find a t on this page"}) {
+      VoiceTurn turn = c.Say(not_found);
+      EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
+          << not_found << ": " << Said(turn);
+    }
+  }
+  // Find: a compound split into words that sound like it, as the spoken
+  // suite's recognizer heard "timetable" ("time to bull"): the same
+  // consonants in order, in another number of words.
+  {
+    TreeBuilder b("Story");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Story", 0);
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    b.Heading(main, 2, "Timetable");
+    b.Heading(main, 2, "Planet news");
+    Conversation c(BuildPageMap(b.Take()), Env());
+    for (const char* found :
+         {"find time to bull on this page", "find tie metable on this page",
+          "find plan it on this page"}) {
+      VoiceTurn turn = c.Say(found);
+      EXPECT_EQ(Said(turn).find("Found it"), 0u) << found << ": " << Said(turn);
+    }
+    EXPECT_EQ(Said(c.Say("find time to bull on this page")),
+              "Found it in the heading Timetable.");
+    // Not a word heard with other vowels in it, word for word ("plant" for
+    // "Planet"), other consonants, or fewer than four of them.
+    for (const char* not_found :
+         {"find plant news on this page", "find time to dull on this page",
+          "find tie mabble on this page", "find at om on this page"}) {
       VoiceTurn turn = c.Say(not_found);
       EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
           << not_found << ": " << Said(turn);

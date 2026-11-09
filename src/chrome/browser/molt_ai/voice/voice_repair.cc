@@ -456,14 +456,44 @@ std::optional<RepairedCommand> RepairMisheardCommand(
       continue;
     }
     // "Hey, more, ...": a greeting may come first, with its own comma.
+    // When the wake detector heard the wake phrase begin the utterance,
+    // the words before the break are it, however the recognizer wrote them
+    // ("cabled, set the volume to half").
     const bool scrap =
+        context.wake_heard ||
         Distance(head_key, name_key, kWakeScrapMargin) <= kWakeScrapMargin ||
         Distance(head_key, whole_key, kWakeScrapMargin) <= kWakeScrapMargin;
     if (scrap && w.source_end + 1 <= heard.size()) {
       rest = heard.substr(w.source_end + 1);
       understood_as_said =
           repairer.Try(rest, 1, /*swapped=*/false) != K::kUnknown;
-      break;
+      // Heard by the detector, a greeting with its own comma may come
+      // first ("Hey, Lord, skip the head"): the second word is tried too.
+      if (understood_as_said || !context.wake_heard) {
+        break;
+      }
+    }
+  }
+  // Or without the name's last sound heard as a word of its own, after a
+  // wake phrase the grammar took ("him all to scroll to the top" for "Hey
+  // Molt, scroll to the top": the "t" of "Molt", clipped, as "to"): a
+  // first word of one consonant, the stop the name ends on. Only when
+  // what follows is a command as said.
+  if (rest.empty() && !understood_as_said && n.words.size() >= 2 &&
+      n.words[0].ascii && !n.words[0].numeric && !name_key.empty() &&
+      BeginsWithWakePhrase(utterance, context)) {
+    const char last = name_key.back();
+    std::string first;
+    for (char c : PhoneticKey(n.Word(0))) {
+      if (c != 'a') {
+        first.push_back(c);
+      }
+    }
+    if ((last == 'P' || last == 'T' || last == 'K') && first.size() == 1 &&
+        first[0] == last) {
+      understood_as_said =
+          repairer.Try(heard.substr(n.words[1].source_begin), 1,
+                       /*swapped=*/false) != K::kUnknown;
     }
   }
 

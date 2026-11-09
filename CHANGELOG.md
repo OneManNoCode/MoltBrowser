@@ -25,6 +25,25 @@ For longer narrative posts behind each entry see
   Tried on the spoken suite first: on headphones, no media task failed,
   against three in the two runs before. With the speakers' sound in the
   microphone, a video's or a page's speech still commands nothing.
+- **"Find" takes words split the way they sound.** The recognizer heard
+  "find timetable" as "find time to bull", and voice mode couldn't find
+  it. Words in a row now also find a heading, link or button with the
+  same consonants in the same order, at least four of them, split into
+  another number of words ("time to bull" is "Timetable"). A word heard
+  with other vowels in the same number of words still doesn't count
+  ("plant" isn't "Planet").
+- **"Hey Molt" with its "t" heard as "to" before a command.** "Him all to
+  scroll to the top" scrolls to the top: after a wake phrase, a first word
+  that is only the sound the name ends on is dropped, when what follows is
+  a command as said.
+- **"Hey Molt" the wake detector heard counts however it was written.**
+  Over a playing video, the detector heard "Hey Molt" but the recognizer
+  wrote it as "cabled" or "Hey, Lord", and the command after it ("set the
+  volume to half", "skip the ad") went unanswered. When the detector heard
+  the wake phrase begin what you said, the first word or two before a
+  comma or full stop are taken for it, if what follows is a command voice
+  mode may run that way. Typed text, and what is heard without the wake
+  phrase, are read as before.
 - **"Okay" heard as "bouquet" closes a page's alert.** One of the spoken
   suite's voices is heard that way every time. It counts for an alert only,
   which never asks for a confirmation word. Where a word allows something,

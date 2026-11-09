@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/browser/molt_ai/voice/phonetic_key.h"
 #include "chrome/browser/molt_ai/voice/phonetic_key_es.h"
 #include "chrome/browser/molt_ai/voice/spoken_answers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
@@ -82,6 +83,33 @@ std::vector<std::string> SplitWords(const std::string& folded) {
     start = space + 1;
   }
   return words;
+}
+
+// |key| (phonetic_key.h) without its vowels: "TaMaTaPL" is "TMTPL".
+std::string WithoutVowelSounds(std::string_view key) {
+  std::string sounds;
+  for (char c : key) {
+    if (c != 'a') {
+      sounds.push_back(c);
+    }
+  }
+  return sounds;
+}
+
+// The sounds of |words| joined (JoinPhoneticKeys()), without their vowels:
+// "time to bull" and "timetable" are both "TMTPL". "" when a word has no
+// key.
+std::string ConsonantSounds(Language language,
+                            const std::vector<std::string>& words) {
+  std::string joined;
+  for (const std::string& word : words) {
+    const std::string key = PhoneticKeyFor(language, word);
+    if (key.empty()) {
+      return std::string();
+    }
+    joined = joined.empty() ? key : JoinPhoneticKeys(joined, key);
+  }
+  return WithoutVowelSounds(joined);
 }
 
 // |a| and |b| are the same word, or one is the other's plural ("s",
@@ -2515,6 +2543,42 @@ class Planner : public TurnPlanner {
         search(sounds);
       }
     }
+    if (!found) {
+      // Nor word for word as it sounds: the same consonants, in order,
+      // split into another number of words ("time to bull" for the page's
+      // "Timetable": the recognizer heard a compound as three words), from
+      // a word's start to another's end and four sounds or more. The
+      // vowels between the words fall where the recognizer put them; the
+      // number of words differs, so a word heard with another vowel
+      // ("plant", "planet") is never one.
+      const std::string said = ConsonantSounds(env_.language, wanted);
+      constexpr size_t kMinConsonantSounds = 4;
+      const auto split = [&](const std::string& text) {
+        const std::vector<std::string> words =
+            SplitWords(FoldForComparison(text));
+        for (size_t i = 0; i < words.size(); ++i) {
+          std::string run;
+          for (size_t k = i; k < words.size(); ++k) {
+            const std::string key = PhoneticKeyFor(env_.language, words[k]);
+            if (key.empty()) {
+              break;
+            }
+            run = run.empty() ? key : JoinPhoneticKeys(run, key);
+            const std::string sounds = WithoutVowelSounds(run);
+            if (sounds.size() > said.size()) {
+              break;
+            }
+            if (k - i + 1 != wanted.size() && sounds == said) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+      if (said.size() >= kMinConsonantSounds) {
+        search(split);
+      }
+    }
     NoteFindMatches(state(), query, std::move(matches), env_.page_id);
     if (!found) {
       Say(Tr("I can't find {0} in this page's headings, links or buttons.",
@@ -3315,6 +3379,7 @@ ParseContext ContextFor(const ConversationState& state,
   context.text_field_focused = FieldInFocus(state, map, env) != nullptr;
   context.expecting_site = SiteQuestionWaits(state, env.now_ms) &&
                            state.site_question_page_id == env.page_id;
+  context.wake_heard = env.wake_heard;
   return context;
 }
 

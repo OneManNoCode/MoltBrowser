@@ -329,6 +329,12 @@ struct ParseContext {
   // of an utterance, with sound-alikes of its name, when the recognizer
   // wrote it.
   std::string_view wake_phrase;
+  // The helper's wake detector heard the wake phrase begin this utterance
+  // (or say it alone just before): the first word or two, up to a full
+  // stop or comma, may be the wake phrase however the recognizer wrote it
+  // ("cabled, set the volume to half"). Only RepairMisheardCommand() reads
+  // it (voice_repair.h).
+  bool wake_heard = false;
 };
 
 struct VoiceCommand {

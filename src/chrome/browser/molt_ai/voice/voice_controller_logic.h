@@ -351,6 +351,9 @@ struct VoiceEnvironment {
   // The browser listens to the microphone (voice_session.h); false while
   // commands are only typed.
   bool listening = false;
+  // The wake detector heard the wake phrase begin what is planned now
+  // (HeardEvidence::woke): ParseContext::wake_heard.
+  bool wake_heard = false;
   // Reading aloud (voice_reader.h): it was reading when this was said (the
   // new command stopped it, keeping its place), or it stopped earlier on
   // this page and can go on.

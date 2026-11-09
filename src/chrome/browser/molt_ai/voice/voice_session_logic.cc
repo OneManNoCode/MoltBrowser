@@ -628,6 +628,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   if (take) {
     actions.utterance = std::string(text);
     actions.heard_cleanly = HeardCleanly(utterance, confidence);
+    actions.woke = utterance.woke;
     actions.earcon = EarconKind::kThinking;
     follow_up_until_ms_ = 0;
     follow_up_closed_ms_ = -1;
