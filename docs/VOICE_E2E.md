@@ -332,7 +332,12 @@ browser's output since the prompt opened, and take the word after "say"
 (when one word of the list is clearly the nearest). When it isn't clear,
 the kit says "repeat", as a user would, and listens to the browser's new
 take, three times in all. A wrong word would refuse the prompt, so the
-kit says none rather than guess.
+kit says none rather than guess. The one exception is a word heard the
+same way twice in a row ("say keptus", then "say keptus" again): the kit
+takes the one word of the list whose consonants are within one sound of
+it ("cactus"), as a listener would. Its recognizer mangles a lone noun in
+the browser's voice the same way each time, and in the twenty-seventh
+build three prompts failed on that alone.
 
 ### The runner
 

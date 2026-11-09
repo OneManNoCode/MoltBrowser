@@ -358,6 +358,7 @@ SessionActions VoiceSessionLogic::Start(int64_t now_ms) {
   follow_up_closed_ms_ = -1;
   wake_until_ms_ = 0;
   wake_earcon_at_ms_ = 0;
+  waiting_earcon_at_ms_ = 0;
   return Finish(std::move(actions), now_ms);
 }
 
@@ -373,6 +374,7 @@ SessionActions VoiceSessionLogic::Stop(int64_t now_ms) {
   follow_up_closed_ms_ = -1;
   wake_until_ms_ = 0;
   wake_earcon_at_ms_ = 0;
+  waiting_earcon_at_ms_ = 0;
   actions.earcon = EarconKind::kOff;
   return Finish(std::move(actions), now_ms);
 }
@@ -399,6 +401,7 @@ SessionActions VoiceSessionLogic::OnHelperLost(int64_t now_ms) {
   ready_ = false;
   wake_until_ms_ = 0;
   wake_earcon_at_ms_ = 0;
+  waiting_earcon_at_ms_ = 0;
   return Finish(std::move(actions), now_ms);
 }
 
@@ -754,18 +757,29 @@ SessionActions VoiceSessionLogic::OnTick(int64_t now_ms) {
     return Finish(std::move(actions), now_ms);
   }
   if (wake_earcon_at_ms_ > 0 && now_ms >= wake_earcon_at_ms_) {
-    const int64_t quiet_at = microphone_loud_ms_ + kQuietBeforeToneMs;
-    if (microphone_loud_ms_ >= 0 && quiet_at > now_ms &&
-        now_ms < wake_earcon_latest_ms_) {
+    if (MicrophoneLoud(now_ms) && now_ms < wake_earcon_latest_ms_) {
       // Still speaking, ahead of the recognizer: the tone waits for the
       // pause.
-      wake_earcon_at_ms_ = std::min(quiet_at, wake_earcon_latest_ms_);
+      wake_earcon_at_ms_ = std::min(microphone_loud_ms_ + kQuietBeforeToneMs,
+                                    wake_earcon_latest_ms_);
     } else {
       // The wake phrase, and the user paused: the tone says go ahead.
       wake_earcon_at_ms_ = 0;
       if (utterance_ && utterance_->woke && !utterance_->started &&
           !actions.earcon) {
         actions.earcon = EarconKind::kListening;
+      }
+    }
+  }
+  if (waiting_earcon_at_ms_ > 0 && now_ms >= waiting_earcon_at_ms_) {
+    if (MicrophoneLoud(now_ms) && now_ms < waiting_earcon_latest_ms_) {
+      // Still speaking: the tone waits for the pause.
+      waiting_earcon_at_ms_ = std::min(microphone_loud_ms_ + kQuietBeforeToneMs,
+                                       waiting_earcon_latest_ms_);
+    } else {
+      waiting_earcon_at_ms_ = 0;
+      if (state_ == SessionState::kWaiting && !actions.earcon) {
+        actions.earcon = EarconKind::kWaiting;
       }
     }
   }
@@ -811,6 +825,9 @@ std::optional<int64_t> VoiceSessionLogic::NextDeadline() const {
   if (wake_earcon_at_ms_ > 0) {
     consider(wake_earcon_at_ms_);
   }
+  if (waiting_earcon_at_ms_ > 0) {
+    consider(waiting_earcon_at_ms_);
+  }
   if (utterance_) {
     if (utterance_->ended_ms >= 0) {
       consider(utterance_->ended_ms + kFinalGraceMs);
@@ -826,6 +843,11 @@ std::optional<int64_t> VoiceSessionLogic::NextDeadline() const {
 }
 
 // ---- Helpers ---------------------------------------------------------------
+
+bool VoiceSessionLogic::MicrophoneLoud(int64_t now_ms) const {
+  return microphone_loud_ms_ >= 0 &&
+         microphone_loud_ms_ + kQuietBeforeToneMs > now_ms;
+}
 
 bool VoiceSessionLogic::FollowUpOpen(int64_t now_ms) const {
   if (follow_up_until_ms_ == 0) {
@@ -1023,11 +1045,19 @@ SessionActions VoiceSessionLogic::Finish(SessionActions actions,
                                          int64_t now_ms) {
   const SessionState state = ComputeState(now_ms);
   if (state != state_) {
+    waiting_earcon_at_ms_ = 0;
     if (state == SessionState::kWaiting && !actions.earcon &&
         (state_ == SessionState::kListening ||
          state_ == SessionState::kThinking ||
          state_ == SessionState::kSpeaking)) {
-      actions.earcon = EarconKind::kWaiting;
+      if (MicrophoneLoud(now_ms)) {
+        // Said as the window closed: the tone in the echo canceller's
+        // reference takes the words under it (kQuietBeforeToneMs).
+        waiting_earcon_at_ms_ = microphone_loud_ms_ + kQuietBeforeToneMs;
+        waiting_earcon_latest_ms_ = now_ms + kWakeEarconLatestMs;
+      } else {
+        actions.earcon = EarconKind::kWaiting;
+      }
     }
     state_ = state;
     actions.state = state;

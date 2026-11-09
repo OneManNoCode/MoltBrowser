@@ -324,15 +324,18 @@ constexpr CommandPattern kPatterns[] = {
      "(delete|remove|erase|scratch|undo) [the] (last|previous) word",
      C::kTextField},
     {K::kDeleteLastWord, "delete that word", C::kTextField},
-    // "Last" heard as "list" (the spoken suite's live runs).
+    // "Last" heard as "list" (the spoken suite's live runs), and "delete"
+    // as "to leap" (its headphones runs).
     {K::kDeleteLastWord, "(delete|remove|erase) the list word", C::kTextField},
+    {K::kDeleteLastWord, "to leap the (last|list) word", C::kTextField},
     {K::kClearField,
      "(clear|erase|empty|delete|remove) [the|this] (field|box|text box|"
      "text|input|search box|entry)",
      C::kTextField},
     {K::kClearField, "(clear|erase|delete) [it|that|everything|all]",
      C::kTextField},
-    {K::kReadBack, "read (it|that|this|what i (typed|wrote|said)) back",
+    // "Back" heard as "Beck" (the spoken suite's file run).
+    {K::kReadBack, "read (it|that|this|what i (typed|wrote|said)) (back|beck)",
      C::kTextField},
     {K::kReadBack, "read back [what i (typed|wrote)]", C::kTextField},
     {K::kReadBack, "(what did i (type|write)|read what i (typed|wrote))",
@@ -436,8 +439,9 @@ constexpr CommandPattern kPatterns[] = {
 
     // --- Viewing ------------------------------------------------------------
     {K::kZoomReset,
-     "((reset|rosetta|normal|default) zoom|zoom (reset|normal|to normal|back to "
-     "normal)|(actual|normal|original|default) size|reset [the] zoom level)"},
+     "((reset|rosetta|bosetta|for setta|normal|default) zoom|zoom (reset|"
+     "normal|to normal|back to normal)|(actual|normal|original|default) "
+     "size|reset [the] zoom level)"},
     // "Reset zoom" run together ("Resetzum", "Rosetzum").
     {K::kZoomReset, "(resetzum|rosetzum|resetzoom)"},
     {K::kZoomIn,
