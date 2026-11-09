@@ -677,7 +677,7 @@ said.
 
 - `(turn off | hide | disable | switch off | stop | remove | take off) [the] (captions | subtitles | closed captions | cc | subtitle)`
 - `((captions | subtitles | closed captions | cc) off | no (captions | subtitles))`
-- `(captions | subtitles) of`
+- `(captions | subtitles) (of | wolf | both)`
 
 **Play faster.** For example: "speed up".
 
@@ -850,6 +850,7 @@ said.
 
 - `(delete | remove | erase | scratch | undo) [the] (last | previous) word` (while you are typing in a field)
 - `delete that word` (while you are typing in a field)
+- `(delete | remove | erase) the list word` (while you are typing in a field)
 
 **Clear the field.** For example: "clear the field".
 

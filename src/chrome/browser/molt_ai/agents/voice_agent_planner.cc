@@ -112,8 +112,8 @@ void VoiceAgentPlanner::Start(content::WebContents* contents,
   // line, without control or invisible characters.
   std::string goal = voice::SpeechSafeText(heard, kMaxGoalChars);
   if (!contents || goal.empty()) {
-    Say(voice_agent::NoPlannerSpeech(voice_agent::NoPlanner::kNoPage,
-                                     std::string()));
+    SayOwnWords(voice_agent::NoPlannerSpeech(voice_agent::NoPlanner::kNoPage,
+                                             std::string()));
     Finish();
     return;
   }
@@ -122,7 +122,7 @@ void VoiceAgentPlanner::Start(content::WebContents* contents,
   // while to load, and the page can change meanwhile).
   DVLOG(1) << "[VoiceAgentPlanner] Start on a page of " << map.items.size()
            << " item(s)";
-  Say(voice_agent::StartSpeech());
+  SayOwnWords(voice_agent::StartSpeech());
 
   if (WebAgent::HasModelForTesting()) {
     ModelCheck ready;
@@ -153,13 +153,20 @@ void VoiceAgentPlanner::OnModelChecked(
     return;
   }
   if (!check.ready) {
-    Say(voice_agent::NoPlannerSpeech(check.reason, check.detail));
+    // Without a model it is the browser's own sentence; a reason the
+    // runtime gave goes through Say() as any other text.
+    if (check.reason == voice_agent::NoPlanner::kNoModel ||
+        check.detail.empty()) {
+      SayOwnWords(voice_agent::NoPlannerSpeech(check.reason, check.detail));
+    } else {
+      Say(voice_agent::NoPlannerSpeech(check.reason, check.detail));
+    }
     Finish();
     return;
   }
   if (!contents) {
-    Say(voice_agent::NoPlannerSpeech(voice_agent::NoPlanner::kNoPage,
-                                     std::string()));
+    SayOwnWords(voice_agent::NoPlannerSpeech(voice_agent::NoPlanner::kNoPage,
+                                             std::string()));
     Finish();
     return;
   }
@@ -411,6 +418,12 @@ void VoiceAgentPlanner::Cancel() {
 void VoiceAgentPlanner::Say(const std::string& text) {
   if (delegate_ && !text.empty()) {
     delegate_->PlannerSays(text);
+  }
+}
+
+void VoiceAgentPlanner::SayOwnWords(const std::string& text) {
+  if (delegate_ && !text.empty()) {
+    delegate_->PlannerSaysOwnWords(text);
   }
 }
 

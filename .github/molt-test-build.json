@@ -1,6 +1,7 @@
-{"resume_run": "42535000305",
+{"resume_run": "42571514496",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "request": "Round 45, twenty-second build (incremental on the nineteenth): MoltBrowser creates WebRTC-Aec3TransparentModeHmm/Disabled before Chromium's field trial testing config, so the echo canceller uses its own default transparent mode (--force-fieldtrials still wins); and the grammar takes more command words as the recognizer hears them in the test voices (\"open the book, Mark\", \"windjo\", \"fine\", \"scroll to the borrow\", \"take\"/\"tech\" for type into a field...: the right command for 92% of the suite's phrases through the helper, from 88%). The twenty-first run, with the trial forced, gave 75% file, 84% noloop, 73% with the speakers."}
+ "e2e_field_trials": "WebRTC-Aec3VerySensitiveDominantNearendActivation/Enabled/WebRTC-Aec3EnforceMoreTransparentNearendSuppressorTuning/Enabled/WebRTC-Aec3EnforceMoreTransparentNearendSuppressorHfTuning/Enabled/WebRTC-Aec3SuppressorDominantNearendHoldDurationOverride/250/",
+ "request": "Round 46, twenty-fourth build (incremental on the twenty-third): voice mode ducks other tabs' media to 0.05 (about -26 dB) while a command is said after the wake phrase, and the test log says how many tabs it lowered; the planner's own words (Working on it, no model installed) no longer count as page text, so a page's dialog takes OK after them; the spoken suite runs with the echo canceller's suppressor kinder to near-end speech (very sensitive dominant-near-end activation, more transparent near-end tuning, a 1 s near-end hold) to test whether the speakers run keeps a command's words over a playing video. The twenty-third gave 83% file, 84% noloop, 75% with the speakers (11 of its 19 failures media)."}

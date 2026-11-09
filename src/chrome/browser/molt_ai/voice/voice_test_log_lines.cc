@@ -323,6 +323,15 @@ std::string TestLogLines::Helper(int64_t ms,
   return out;
 }
 
+std::string TestLogLines::Duck(int64_t ms, bool on, int tabs) const {
+  std::string out = Head(ms, "duck");
+  AppendBool(out, "on", on);
+  out.append(",\"tabs\":");
+  out.append(std::to_string(std::clamp(tabs, 0, 100'000)));
+  out.append("}\n");
+  return out;
+}
+
 std::string TestLogLines::Earcon(int64_t ms, std::string_view kind) const {
   std::string out = Head(ms, "earcon");
   AppendString(out, "kind", CleanSpokenText(kind, 32));

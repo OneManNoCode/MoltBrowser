@@ -54,9 +54,9 @@
     {"say": "click show the message", "needs": ["choose"],
      "expect": [{"prompt": "open", "kind": "alert"}, {"said_re": "prompts\\.test"}]},
     {"say": "harbor", "answer": true, "pause": 1.0,
-     "expect": [{"js": "kit.state.geo", "is": "prompt", "quiet": 6},
-                {"no_action": true, "quiet": 6}]},
-    {"say": "okay", "answer": true, "expect": [{"prompt": "close"}]}
+     "expect": [{"no_action": true, "quiet": 6}]},
+    {"say": "okay", "answer": true, "expect": [{"prompt": "close"}]},
+    {"wait": 1, "expect": [{"js": "kit.state.geo", "is": "prompt"}]}
    ]
   },
   {

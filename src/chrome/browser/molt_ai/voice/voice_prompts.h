@@ -58,13 +58,15 @@
 // its window ends.
 //
 // Page text read aloud (a reading, an answer about the page, the web
-// agent's planner's words) can imitate the browser's prompts ("Chrome wants
-// to know your location. To allow it, say the word on your screen."). Once
-// some was said after a prompt was read (PendingPrompt::after_page_text),
-// or while it is being read, an answer that allows or accepts
-// (AllowsOrAccepts()) doesn't answer the prompt: the browser reads its own
-// question again, after "That was the page's text." (PageTextPreface()),
-// and the answer said to that is taken. "No" always refuses at once.
+// agent's planner's words, but not the browser's own sentences it says:
+// "Working on it.", no AI model installed) can imitate the browser's
+// prompts ("Chrome wants to know your location. To allow it, say the word
+// on your screen."). Once some was said after a prompt was read
+// (PendingPrompt::after_page_text), or while it is being read, an answer
+// that allows or accepts (AllowsOrAccepts()) doesn't answer the prompt: the
+// browser reads its own question again, after "That was the page's text."
+// (PageTextPreface()), and the answer said to that is taken. "No" always
+// refuses at once.
 //
 // Each prompt is said, and its answers heard, in its language
 // (BrowserPrompt::language, PendingPrompt::language; voice_language.h):

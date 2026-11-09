@@ -87,6 +87,10 @@ constexpr NumberWord kNumbers[] = {
     {"for", K::kUnit, 4, false, true},
     {"fore", K::kUnit, 4, false, true},
     {"ate", K::kUnit, 8, false, true},
+    // "Three" with its "th" heard as "f" or "t". An item named just that
+    // word is still the one meant (spoken_choice.h's number_homophone).
+    {"free", K::kUnit, 3, false, true},
+    {"tree", K::kUnit, 3, false, true},
     {"forth", K::kUnit, 4, true, true},
 };
 

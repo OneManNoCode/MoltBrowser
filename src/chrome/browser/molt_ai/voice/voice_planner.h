@@ -96,8 +96,17 @@ class VoicePlanner {
  public:
   class Delegate {
    public:
-    // Says |text| (cleaned and capped by the loop).
+    // Says |text| (cleaned and capped by the loop): page text or model
+    // output may be in it, so a browser prompt waiting for its answer
+    // takes an allow or an OK only once it is read again
+    // (PendingPrompt::after_page_text).
     virtual void PlannerSays(const std::string& text) = 0;
+    // Says |text|, the browser's own words alone with nothing of the page's
+    // or the model's in them ("Working on it.", "no on-device AI model is
+    // installed"): a prompt waiting for its answer still takes one.
+    virtual void PlannerSaysOwnWords(const std::string& text) {
+      PlannerSays(text);
+    }
     // Asks the user to confirm |what| ("open evil.example"); the answer
     // comes back as VoicePlanner::Answer(|question|, yes).
     virtual void PlannerAsks(int question, const std::string& what) = 0;

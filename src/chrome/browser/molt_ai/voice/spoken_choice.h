@@ -224,6 +224,10 @@ struct ChoiceRef {
   std::vector<std::string> words;
   std::vector<std::string> by_words;
   std::vector<std::string> from_words;
+  // kNumber read from a word that only sounds like a number ("free" for
+  // three, "to" for two): that word, folded. An item named just that word
+  // is the one meant ("Free" in a list of plans), not the number.
+  std::string number_homophone;
 };
 
 // Reads |spoken| (one reference, without a verb: "the fourth one", "number
@@ -281,6 +285,11 @@ struct MatchOptions {
   double min_score = kMinChoiceScore;
   double margin = kChoiceMargin;
   size_t max_ranked = kMaxRankedChoices;
+  // A description matches only an item whose title is just its words,
+  // stopwords and bare numbers aside ("Cart (1)" for "the cart"), and only
+  // when exactly one item is so named: for a name said with no verb ("Hey
+  // Molt, the cart"), which presses nothing it doesn't name.
+  bool whole_name_only = false;
 };
 
 // Items that score within this of the best are tied: when exactly one of

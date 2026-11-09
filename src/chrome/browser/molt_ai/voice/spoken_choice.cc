@@ -453,6 +453,12 @@ std::optional<ChoiceRef> ParseChoiceRefWords(const WordList& all_words,
         ref.kind = ChoiceRef::Kind::kNumber;
         ref.number = static_cast<int>(number->value);
         ref.roles = roles;
+        if (number->words == 1) {
+          const NumberWord* word = FindNumberWord(phrases, words[at]);
+          if (word && word->homophone) {
+            ref.number_homophone = std::string(words[at]);
+          }
+        }
         return ref;
       }
     }
@@ -709,6 +715,18 @@ void FillRanked(const std::vector<Scored>& scored,
   }
 }
 
+// Whether |title| is |word| and nothing else, folded as spoken text is.
+bool TitleIsTheWord(std::string_view title, std::string_view word) {
+  // A word's title is short; a long one is more than the word.
+  if (title.size() > 64) {
+    return false;
+  }
+  NormalizeOptions options;
+  options.max_words = 2;
+  const NormalizedText normalized = NormalizeSpokenText(title, options);
+  return normalized.words.size() == 1 && normalized.Word(0) == word;
+}
+
 ChoiceMatch Unique(size_t index) {
   ChoiceMatch result;
   result.outcome = ChoiceOutcome::kUnique;
@@ -946,6 +964,26 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
 
   ChoiceMatch result;
   FillRanked(scored, options, result);
+  if (options.whole_name_only) {
+    size_t named = 0;
+    size_t named_index = 0;
+    if (by_words.empty() && from_words.empty() && !words.empty() &&
+        ref.ordinal == 0) {
+      for (size_t e = 0; e < n; ++e) {
+        if (TitleIsJust(prepared[e], sounds, words, phrases)) {
+          ++named;
+          named_index = eligible[e];
+        }
+      }
+    }
+    if (named == 1) {
+      result.outcome = ChoiceOutcome::kUnique;
+      result.index = named_index;
+    } else {
+      result.reason = NoMatchReason::kNothingMatched;
+    }
+    return result;
+  }
   const double top = scored.empty() ? 0 : scored[0].score;
   if (top < options.min_score) {
     result.reason = NoMatchReason::kNothingMatched;
@@ -1056,6 +1094,14 @@ ChoiceMatch MatchSpokenChoice(const ChoiceRef& ref,
     case ChoiceRef::Kind::kNone:
       break;
     case ChoiceRef::Kind::kNumber: {
+      // "Free" said to a list with an item called "Free" names that item.
+      if (!ref.number_homophone.empty()) {
+        for (size_t index : eligible) {
+          if (TitleIsTheWord(candidates[index].title, ref.number_homophone)) {
+            return Unique(index);
+          }
+        }
+      }
       bool numbered = false;
       for (size_t i = 0; i < count; ++i) {
         numbered = numbered || candidates[i].screen_number > 0;

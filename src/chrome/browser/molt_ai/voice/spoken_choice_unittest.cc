@@ -240,6 +240,7 @@ TEST(SpokenChoiceRefTest, Numbers) {
       {"4", true, 4},           {"four", true, 4},
       {"twenty", true, 20},     {"two hundred and five", true, 205},
       {"too", true, 2},         {"7 link", true, 7},
+      {"free", true, 3},        {"number tree", false, 3},
   };
   for (const Case& c : cases) {
     const ChoiceRef ref = Ref(c.spoken, c.bare);
@@ -428,6 +429,27 @@ TEST(SpokenChoiceMatchTest, ByNumber) {
   EXPECT_EQ(m.reason, NoMatchReason::kOutOfRange);
   m = MatchSpokenChoice(Ref("one hundred and twelve", true), list, {});
   EXPECT_EQ(list[m.index].position, 12);
+}
+
+TEST(SpokenChoiceMatchTest, ANumbersSoundAlike) {
+  // "Free" for "three" right after a list: the third.
+  auto list = SongResults();
+  ChoiceMatch m = MatchSpokenChoice(Ref("free", true), list, {});
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(list[m.index].position, 3);
+  // Unless an item is called just that: "Free" in a list of plans.
+  auto plans =
+      MakeList({{"Pro", ""}, {"Free", ""}, {"Team", ""}, {"Free trial", ""}},
+               ChoiceRole::kButton);
+  m = MatchSpokenChoice(Ref("free", true), plans, {});
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(plans[m.index].title, "Free");
+  // A real number is a number whatever the items are called.
+  m = MatchSpokenChoice(Ref("three", true), plans, {});
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(plans[m.index].title, "Team");
+  EXPECT_TRUE(Ref("three", true).number_homophone.empty());
+  EXPECT_EQ(Ref("free", true).number_homophone, "free");
 }
 
 TEST(SpokenChoiceMatchTest, Relative) {

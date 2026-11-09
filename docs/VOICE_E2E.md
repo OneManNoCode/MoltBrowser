@@ -219,10 +219,11 @@ there.
 capture device (`--use-fake-device-for-media-stream
 --use-file-for-fake-audio-capture=<wav>%noloop`, 44.1 kHz stereo), the
 utterances at fixed times (the first 11 s in, past voice mode's greeting,
-each next 12 s after the end of the one before, past the longest answer:
-without echo cancellation an utterance over voice mode's own speech stops
-it and is dropped), timed from the moment the test log shows the
-microphone on. No
+each next 14 s after the end of the one before: past the usual answer, as
+an utterance over voice mode's own speech can be dropped, and clear of the
+tone that closes the follow-up window 8 s after an answer, which over the
+fake output device takes the start of a "Hey Molt" said on it), timed from
+the moment the test log shows the microphone on. No
 loopback and no recording: the scenarios that need the confirmation word
 or a page's sound are skipped there.
 
@@ -244,6 +245,7 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"dropped","text":"open YouTube","reason":"no wake phrase"}
 {"t":...,"w":1,"e":"helper","event":"wake","lag_ms":140,"note":"taken"}
 {"t":...,"w":1,"e":"earcon","kind":"listening"}
+{"t":...,"w":1,"e":"duck","on":true,"tabs":1}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -278,6 +280,9 @@ in `VoiceController`):
 - `earcon`: each tone voice mode played (`listening`, `waiting`,
   `thinking`, `speaking`, `off`): with the speakers' sound in the
   microphone, a tone over the user's words takes some with it.
+- `duck`: other tabs' media lowered while a command is said after the
+  wake phrase (`on`), and restored, with how many tabs had a media session
+  to lower (`tabs`; 0 means a page's sound went on at full volume).
 - `said`: what voice mode says, as it starts saying it.
 - `activity`: voice mode's state, the microphone, and whether only the wake
   phrase counts.

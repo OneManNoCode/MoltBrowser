@@ -168,6 +168,10 @@ TEST(VoiceTestLogLinesTest, HelperAndEarconLines) {
             "start\",\"lag_ms\":-1}\n");
   EXPECT_EQ(lines.Earcon(7, "listening"),
             "{\"t\":7,\"w\":1,\"e\":\"earcon\",\"kind\":\"listening\"}\n");
+  EXPECT_EQ(lines.Duck(8, true, 2),
+            "{\"t\":8,\"w\":1,\"e\":\"duck\",\"on\":true,\"tabs\":2}\n");
+  EXPECT_EQ(lines.Duck(9, false, -3),
+            "{\"t\":9,\"w\":1,\"e\":\"duck\",\"on\":false,\"tabs\":0}\n");
 }
 
 TEST(VoiceTestLogLinesTest, WritesWhatChanged) {

@@ -20,7 +20,8 @@
 // to the word after; after ". ? !" and a new line the next word starts with
 // a capital letter (ASCII letters only: the rest are left as the
 // recognizer wrote them). Recognizers that write punctuation themselves
-// pass through unchanged.
+// pass through unchanged. In English, "CU" (how the recognizer writes "see
+// you") is typed as the words.
 //
 // Pure, std-only and linear; unit-tested in the voice harness and
 // molt_ai_unittests.

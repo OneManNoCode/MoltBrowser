@@ -102,6 +102,9 @@ class VoiceAgentPlanner : public voice::VoicePlanner {
   void OnConfirm(const WebAgent::ConfirmRequest& request);
   void OnDone(int run, bool success, std::string result);
   void Say(const std::string& text);
+  // The browser's own words alone (PlannerSaysOwnWords()): starting, or why
+  // it can't, with no page or model text in them.
+  void SayOwnWords(const std::string& text);
   // The run is over: the agent goes (after its callback returns) and the
   // delegate hears it.
   void Finish();

@@ -488,6 +488,12 @@ TEST(VoiceDictationTest, SpokenPunctuationInEnglish) {
   // Punctuation the recognizer wrote passes through.
   EXPECT_EQ(ApplySpokenPunctuation("Hello, world.", Language::kEnglish),
             "Hello, world.");
+  // "See you" written as "CU" is typed as said; "cu" and "CUP" stay.
+  EXPECT_EQ(ApplySpokenPunctuation("CU at noon", Language::kEnglish),
+            "see you at noon");
+  EXPECT_EQ(ApplySpokenPunctuation("thanks period CU", Language::kEnglish),
+            "thanks. See you");
+  EXPECT_EQ(ApplySpokenPunctuation("cu CUP", Language::kEnglish), "cu CUP");
 }
 
 TEST(VoiceDictationTest, SpokenPunctuationInSpanish) {

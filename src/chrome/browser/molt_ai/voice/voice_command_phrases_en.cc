@@ -324,6 +324,8 @@ constexpr CommandPattern kPatterns[] = {
      "(delete|remove|erase|scratch|undo) [the] (last|previous) word",
      C::kTextField},
     {K::kDeleteLastWord, "delete that word", C::kTextField},
+    // "Last" heard as "list" (the spoken suite's live runs).
+    {K::kDeleteLastWord, "(delete|remove|erase) the list word", C::kTextField},
     {K::kClearField,
      "(clear|erase|empty|delete|remove) [the|this] (field|box|text box|"
      "text|input|search box|entry)",
@@ -488,8 +490,9 @@ constexpr CommandPattern kPatterns[] = {
     {K::kCaptionsOff,
      "((captions|subtitles|closed captions|cc) off|no "
      "(captions|subtitles))"},
-    // "Captions of": "off" heard short.
-    {K::kCaptionsOff, "(captions|subtitles) of"},
+    // "Captions of": "off" heard short, or run into the "s" before it
+    // ("caption's wolf", "caption's both").
+    {K::kCaptionsOff, "(captions|subtitles) (of|wolf|both)"},
     {K::kNormalSpeed,
      "((normal|regular|default|usual) [playback] speed|reset [the] "
      "[playback] speed|speed (normal|to normal|back to normal)|play at "

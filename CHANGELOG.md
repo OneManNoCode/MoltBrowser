@@ -17,6 +17,36 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **"OK" closes a page's dialog after voice mode's own "I can't do that
+  yet".** Everything the on-device agent's planner said counted as page
+  text, including the browser's own "Working on it." and "no on-device AI
+  model is installed". So after any command voice mode didn't know, a page's
+  waiting dialog refused the next "OK" or "yes" once and read itself again.
+  Only text from the page or the model counts now.
+- **A playing video is lowered further while you give a command.** After
+  "Hey Molt", other tabs' sound now drops to about 5% of its volume
+  (Chromium's own ducking leaves 20%) until the command ends. With laptop
+  speakers, the echo canceller was cutting words of a command said over a
+  video ("louder" heard as "lou").
+- **A name said alone presses what it names.** "Hey Molt, the cart", with
+  the verb lost or never said, now presses the one item on the page named
+  just that (asking first where "click" would), where voice mode said "I
+  can't do that by myself yet" without an AI model. A name of up to three
+  words, matched whole and only when one item has it; anything else still
+  goes to the AI.
+- **Number sound-alikes and more misheard words.**
+  - After a list, "free" or "tree" chooses the third item, unless an item is
+    called just that ("Free").
+  - "Delete the list word" deletes the last word.
+  - "Captions wolf" and "captions both" turn captions off.
+  - Dictated "see you", which the recognizer writes as "CU", is typed as the
+    words.
+- **Two spoken-suite tests that couldn't pass.** The dialog test read the
+  page while the page's own alert was still open, so it always timed out;
+  it now checks once the alert is closed. And file mode's fixed times put
+  the next "Hey Molt" right on the tone that closes the follow-up window
+  after any answer of about three seconds, where the fake output device
+  lets the echo canceller take the phrase's start; the gap is now 14 s.
 - **More command words are understood as the recognizer hears them.**
   Run through the speech helper, the spoken suite's 139 phrases in its
   three test voices showed the recurring ones: "open the book, Mark ..."

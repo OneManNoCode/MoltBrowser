@@ -160,6 +160,10 @@ class TestLogLines {
   // An earcon voice mode played ("listening", "waiting", ...).
   std::string Earcon(int64_t ms, std::string_view kind) const;
 
+  // Other tabs' media lowered (|on|) or restored while a command is said,
+  // in |tabs| tabs (0: none had a media session to lower).
+  std::string Duck(int64_t ms, bool on, int tabs) const;
+
   // The lines for what changed since the last call (the first call compares
   // with a TestLogState{}).
   std::string Changed(int64_t ms, const TestLogState& now);
