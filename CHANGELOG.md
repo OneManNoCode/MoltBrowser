@@ -29,6 +29,12 @@ For longer narrative posts behind each entry see
   last word" deletes the last word, and "for setta zoom" and "Bosetta
   zoom" reset the zoom. "Lick" counts only glued to a word of four letters
   or more ("lickety split" stays as it is).
+- **The spoken suite's ears take a confirmation word mangled the same way
+  twice.** The kit's recognizer heard the browser's "cactus" as "keptus"
+  on every "repeat", too many letters off to take, and three prompt
+  scenarios failed on that alone. Heard the same way twice in a row, the
+  word is now the one of the list whose consonants are within one sound of
+  it. A single unclear hearing still gives no word.
 - **Interrupting voice mode works when you speak up.** While voice mode
   reads a list or a question, a command said over it without "Hey Molt"
   ("three", "start over") was dropped about half the time as "not heard

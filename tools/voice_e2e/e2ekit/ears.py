@@ -32,6 +32,24 @@ def letter_distance(a, b):
     return prev[-1]
 
 
+# Sounds a recognizer swaps writing the browser's voice: one letter each.
+_SOUND = {"c": "k", "q": "k", "g": "k", "b": "p", "d": "t", "z": "s", "v": "f"}
+
+
+def sound_key(word):
+    """|word|'s consonants as they sound: vowels, "h", "w" and "y" left out,
+    close sounds made one, repeats run together ("cactus" and "keptus" are
+    "kts" and "kpts", "lemon" and "limit" "lmn" and "lmt")."""
+    out = []
+    for ch in word.lower():
+        if not ch.isalpha() or ch in "aeiouyhw":
+            continue
+        ch = _SOUND.get(ch, ch)
+        if not out or out[-1] != ch:
+            out.append(ch)
+    return "".join(out)
+
+
 class _Args(object):
     def __init__(self, helper, models):
         self.helper = helper
@@ -94,13 +112,9 @@ class Ears(object):
                 found = w[:-1]
         if found:
             return found
-        says = [i for i, w in enumerate(heard) if w == "say"]
-        if not says and len(heard) > 2:
+        tries = self._after_say(heard, ("say",))
+        if tries is None:
             return None
-        tries = []
-        for start in ([i + 1 for i in says] or [0]):
-            tries += heard[start:start + 1] + (
-                ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
         best = None
         for t in tries:
             scored = sorted((letter_distance(t, c), c) for c in self.words)
@@ -109,6 +123,40 @@ class Ears(object):
                 if best is None or d < best[0]:
                     best = (d, c)
         return best[1] if best else None
+
+    def nearest_by_sound(self, text):
+        """The one word of the list whose consonants (sound_key()) are
+        within one sound of what follows a "say" in |text| ("say keptus":
+        "cactus"), if exactly one is; else None. A guess: the kit takes it
+        only when two hearings of the prompt give the same one
+        (runner.word_wav())."""
+        heard = vbl.normalize(text).split()
+        tries = self._after_say(heard, ("say", "said", "saying"))
+        best = None
+        for t in tries or []:
+            key = sound_key(t)
+            if len(key) < 2:
+                continue
+            scored = sorted((letter_distance(key, sound_key(c)), c) for c in self.words)
+            d, c = scored[0]
+            if d <= 1 and (len(scored) < 2 or scored[1][0] > d):
+                if best is None or d < best[0]:
+                    best = (d, c)
+        return best[1] if best else None
+
+    @staticmethod
+    def _after_say(heard, says_words):
+        """What may be the word: the word after each "say" and it run
+        together with the next; the start when there is no "say" in a
+        heard of two words at most; None otherwise."""
+        says = [i for i, w in enumerate(heard) if w in says_words]
+        if not says and len(heard) > 2:
+            return None
+        tries = []
+        for start in ([i + 1 for i in says] or [0]):
+            tries += heard[start:start + 1] + (
+                ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
+        return tries
 
     def stop(self):
         if self.h:

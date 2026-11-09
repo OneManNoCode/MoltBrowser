@@ -666,6 +666,7 @@ class Runner(object):
             raise RuntimeError("no recognizer to hear the confirmation word with")
         voice, speed = plan.get("voice_speed", (self.config.voices[0], 1.0))
         heard_all = []
+        guess = None
         for attempt in range(WORD_TRIES):
             if attempt:
                 since = time.time()
@@ -680,6 +681,12 @@ class Runner(object):
             heard = self.ears.transcribe(pcm)
             heard_all.append(heard)
             word = self.ears.find_word(heard)
+            # The same word mangled the same way twice ("say keptus", then
+            # "say keptus" again): the one word it sounds nearest.
+            near = self.ears.nearest_by_sound(heard)
+            if not word and near and near == guess:
+                word = near
+            guess = near
             if word:
                 plan.setdefault("heard_browser", []).extend(heard_all)
                 return render.clip_path(self.speech, voice, speed, word)

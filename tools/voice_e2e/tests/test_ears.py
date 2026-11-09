@@ -44,6 +44,35 @@ class FindWordTest(unittest.TestCase):
         self.assertIsNone(self.e.find_word("example.com wants to use your camera"))
         self.assertIsNone(self.e.find_word(""))
 
+    def test_a_word_nearest_by_sound(self):
+        # The spoken suite's twenty-seventh build: each heard the same way
+        # on every "repeat", and three letters from the list's nearest word.
+        self.assertIsNone(self.e.find_word(
+            "to know your location. To allow it, say keptus, to block it, say no"))
+        self.assertEqual(self.e.nearest_by_sound(
+            "to know your location. To allow it, say keptus, to block it, say no"),
+            "cactus")
+        self.assertEqual(self.e.nearest_by_sound(
+            "to know your location to allow it, say Bingja, to blark it, say now"),
+            "banjo")
+        # "Limit": "helmet" with its "h" lost after "say", nearer than
+        # "lemon" (whose "n" is one sound off).
+        self.assertEqual(self.e.nearest_by_sound(
+            "to show notifications, to allow it, saying limit, to blark it, say no"),
+            "helmet")
+        self.assertEqual(self.e.nearest_by_sound("to allow it, said Benjo"), "banjo")
+        # Nothing near, or more than one as near: none.
+        self.assertIsNone(self.e.nearest_by_sound("To allow it, say the word on your screen."))
+        self.assertIsNone(self.e.nearest_by_sound("example.com wants to use your camera"))
+        self.assertIsNone(self.e.nearest_by_sound("To allow it, say no."))
+        self.assertIsNone(self.e.nearest_by_sound(""))
+
+    def test_sound_key(self):
+        self.assertEqual(ears.sound_key("cactus"), "kts")
+        self.assertEqual(ears.sound_key("keptus"), "kpts")
+        self.assertEqual(ears.sound_key("Lemon"), "lmn")
+        self.assertEqual(ears.sound_key("harbor"), "rpr")
+
     def test_distance(self):
         self.assertEqual(ears.letter_distance("harbor", "harbour"), 1)
         self.assertEqual(ears.letter_distance("", "abc"), 3)
