@@ -1,6 +1,6 @@
-{"resume_run": "42507397909",
+{"resume_run": "42535000305",
  "run_tests": true,
- "e2e_only": false,
- "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
+ "e2e_only": true,
+ "e2e_runs": "file:clean,pulse:clean:noloop",
  "e2e_speech_check": false,
- "request": "Round 45, nineteenth build: \"Hey Molt\" said over a playing video, heard as \"him all\" or \"Hamol\" (the echo canceller swallows its last sound), wakes the speech helper and is stripped by the grammar; a command said over voice mode's own voice that begins with the wake phrase is taken as after a wake (\"Himalt. Play the fourth one.\" was dropped as unsure); find on the page falls back to words that sound the same (\"trim\" finds \"Trams\"). Against the eighteenth build: 77% file, 79% noloop, 71% with the speakers."}
+ "request": "Round 45, twentieth build (spoken suite only, on the nineteenth build's browser): a failed step's microphone notes now name the step that failed (not a later one never run), and in file mode set the recording's own levels, every 100 ms, against what the speech helper got, to show which part of \"Hey Molt\" said over a playing video the browser's processing removes. Against the nineteenth build: 77% file, 80% noloop."}

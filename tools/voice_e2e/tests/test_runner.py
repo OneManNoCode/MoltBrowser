@@ -128,6 +128,45 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(runner.onset_levels(struct.pack("<16000h", *([0] * 16000)), 8000),
                          (None, []))
 
+    def test_notes_the_failed_step_against_the_recording(self):
+        import struct
+        import wave
+        d = tempfile.mkdtemp()
+        # The microphone gave step 2's "Hey Molt" with its second half
+        # taken (-12 dBFS for 0.3 s, then -60); the recording had all of it.
+        rate = 16000
+        quiet = [0] * (2 * rate)
+        heard = [8192] * (rate * 3 // 10) + [33] * (rate * 3 // 10)
+        with open(os.path.join(d, runner.MIC_DUMP), "wb") as f:
+            f.write(struct.pack("<%dh" % (len(quiet) * 2 + len(heard)),
+                                *(quiet + heard + quiet)))
+        with open(os.path.join(d, "voice.jsonl"), "w") as f:
+            f.write(json.dumps({"e": "activity", "mic": True, "t": 100000}) + "\n")
+        wav = os.path.join(d, "scenario.wav")
+        played = [0] * (2 * rate) + [8192] * (rate * 6 // 10) + [0] * (2 * rate)
+        with wave.open(wav, "wb") as w:
+            w.setnchannels(2)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            w.writeframes(struct.pack("<%dh" % (2 * len(played)),
+                                      *[x for v in played for x in (v, v)]))
+        res = {"steps": [{"index": 0, "status": "passed", "said_at": [100.2, 101.0]},
+                         {"index": 1, "status": "failed", "said_at": [102.0, 102.6]},
+                         {"index": 2, "status": "not run"}]}
+        plan = {"file_wav": wav, "times": {0: (0.2, 1.0), 1: (2.0, 2.6)}}
+        r = runner.Runner.__new__(runner.Runner)
+        r.ears = None
+        r.note_microphone(res, d, plan)
+        onset = res["mic_onset"]
+        # The step that failed, not the one after it that wasn't run.
+        self.assertEqual(onset["step"], 2)
+        self.assertEqual(onset["levels"][5:11], [-12, -12, -12, -60, -60, -60])
+        self.assertEqual(onset["played_levels"][5:11], [-12] * 6)
+        # Without the recording (a pulse run), the microphone alone.
+        res = {"steps": res["steps"]}
+        r.note_microphone(res, d, {"times": {}})
+        self.assertNotIn("played_levels", res["mic_onset"])
+
     def test_waits_for_voice_mode_to_answer(self):
         class Log(object):
             def __init__(self, evs):
