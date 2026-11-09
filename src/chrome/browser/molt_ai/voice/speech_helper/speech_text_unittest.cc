@@ -253,6 +253,17 @@ TEST(SpeechTextTest, FindsTheWakePhraseInATranscript) {
   for (const char* text : {"Hamol, pause", "Himal next video"}) {
     EXPECT_EQ(WakePhraseWordsAtStart(text, en), 1u) << text;
   }
+  // Run together with the greeting's "h" lost: one word, a vowel and then
+  // the name's sounds as they are ("Immalt" in the spoken suite's file
+  // run), not words that only share its consonants.
+  for (const char* text : {"Immalt, said the volume to half.", "Emolt. Play",
+                           "Amalt"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 1u) << text;
+  }
+  for (const char* text : {"omelet recipe", "Imelda", "I melt", "emulate",
+                           "Immaltese", "Amulet", "almond", "Oyemolt"}) {
+    EXPECT_EQ(WakePhraseWordsAtStart(text, en), 0u) << text;
+  }
   // But not with the greeting heard as it is ("hey mall" is a mall, "he
   // mall" too), nor longer than the phrase or going on past the sound.
   // (Speech that begins "him all" is taken: few sentences start so.)

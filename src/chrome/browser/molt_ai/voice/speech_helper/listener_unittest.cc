@@ -460,6 +460,21 @@ TEST_F(SpeechListenerTest, HearsTheWakePhraseRunTogether) {
                                                "final:Himalt. Pause."}));
 }
 
+TEST_F(SpeechListenerTest, HearsTheWakePhraseWithItsGreetingsHLost) {
+  // The spoken suite's "Hey Molt, set the volume to half", as the
+  // recognizer wrote it in the file run, and the spotter missed it.
+  scene_->words = {{"Immalt,", Ms(1000)}, {"said", Ms(1450)},
+                   {"the", Ms(1650)},     {"volume", Ms(1800)},
+                   {"to", Ms(2150)},      {"half.", Ms(2300)}};
+  scene_->speech = {{Ms(1000), Ms(2700)}};
+  FeedUntil(Ms(4000));
+  const std::vector<std::string> types = Types();
+  ASSERT_GE(types.size(), 3u);
+  EXPECT_EQ(types[0], "wake");
+  EXPECT_EQ(types[1], "speech_start");
+  EXPECT_EQ(types.back(), "final:Immalt, said the volume to half.");
+}
+
 TEST_F(SpeechListenerTest, WaitsForTheCommandAfterAPhraseTheSpotterMissed) {
   scene_->words = {{"Hey", Ms(1000)}, {"mold.", Ms(1250)},
                    {"open", Ms(3050)}, {"YouTube", Ms(3350)}};

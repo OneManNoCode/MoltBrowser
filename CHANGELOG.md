@@ -34,6 +34,13 @@ For longer narrative posts behind each entry see
   window or app in front (which someone who can't click can't fix),
   voice mode read the toolbar's buttons instead. It also asks for the menu
   once more if it hasn't opened after 8 seconds.
+- **"Hey Molt" heard without its "h" wakes voice mode.** When the
+  recognizer ran "Hey Molt" into one word and lost the "h" ("Immalt, set
+  the volume to half") and the wake detector missed it too, voice mode,
+  waiting for the wake phrase, heard nothing. A word made of that one
+  vowel and then the name's sounds now counts. Words that only share its
+  consonants ("omelet", "Amulet") still don't, and no word of a
+  104,000-word dictionary counts that didn't before.
 - **Three spoken-suite tests that couldn't pass.**
   - File mode: a step's events now count from when its speech plays, not
     from when the kit gets to it. A page's own dialog holds up the kit's
