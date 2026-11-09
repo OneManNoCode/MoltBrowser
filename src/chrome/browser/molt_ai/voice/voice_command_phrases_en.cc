@@ -110,6 +110,8 @@ constexpr CommandPattern kPatterns[] = {
      "(start over|start again|begin again|lets start over|lets start again|"
      "start from scratch|start afresh|reset|reset everything|clear "
      "the conversation|new conversation)"},
+    // "Start of": "over" heard short.
+    {K::kStartOver, "start of"},
     {K::kNextMatch,
      "[go to|jump to|show|show me] [the] (next|following) (match|occurrence|"
      "hit|one i found)"},
@@ -142,6 +144,10 @@ constexpr CommandPattern kPatterns[] = {
     {K::kListBookmarks, "my bookmarks"},
     {K::kOpenBookmark,
      "(open|go to|load) [the|my] bookmark [called|named|for] {name}"},
+    // "Open the book, Mark Trams return to Lyon": "bookmark" heard as two
+    // words (the spoken suite's runs, every voice).
+    {K::kOpenBookmark,
+     "(open|go to|load) [the|my] book mark [called|named|for] {name}"},
     {K::kOpenBookmark, "(open|go to|load) {name} (from|in) [my|the] bookmarks"},
     // History.
     // "Closed tip", "close tab", "Reuben": how the bundled English
@@ -158,6 +164,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kListHistory,
      "(what|which) (pages|sites) did i (visit|open|look at) [recently]"},
     {K::kListHistory, "my history"},
+    // "Show" lost into the wake phrase ("He mold to my history").
+    {K::kListHistory, "to my history"},
     {K::kOpenFromHistory,
      "(open|go to|load|find) {query} (from|in) [my|the] history"},
     // Downloads.
@@ -173,7 +181,7 @@ constexpr CommandPattern kPatterns[] = {
     {K::kListDownloads, "what (did i|have i) download [recently]"},
     {K::kListDownloads, "my downloads"},
     // "Show" heard as "to" and "draw" (the spoken suite's file run).
-    {K::kListDownloads, "(to|draw) my downloads"},
+    {K::kListDownloads, "(to|draw|sure) my downloads"},
     // Settings. Those that weaken a protection are only changed by a click.
     {K::kProtectedSetting,
      "[turn on|switch on|enable|always] say [the] [confirmation] word (aloud|"
@@ -237,6 +245,14 @@ constexpr CommandPattern kPatterns[] = {
      C::kAlways, V::kWindowMoltNet},
     {K::kNewWindow, "(open|start|create) [a] new window"},
     {K::kNewWindow, "(new window|open [a] window|open another window)"},
+    // "Windjo", "winjo", "windel": "window" as some voices' is heard (the
+    // spoken suite's recognizer check), and "molten at" for "MoltNet".
+    {K::kNewWindow, "[open] [a] new (windjo|winjo|windel)"},
+    {K::kNewWindow, "[open] [a] new (private|incognito) (windjo|winjo|windel)",
+     C::kAlways, V::kWindowPrivate},
+    {K::kNewWindow,
+     "[open] [a] new (molten at|molten|moldnet|moltnet) (window|windjo|winjo)",
+     C::kAlways, V::kWindowMoltNet},
     {K::kCloseWindow, "close [this|the|current] window"},
     {K::kSwitchWindow,
      "(switch|go|move|change|jump) to [the] (other|next|previous|last) window"},
@@ -334,11 +350,15 @@ constexpr CommandPattern kPatterns[] = {
     {K::kScrollToTop,
      "(scroll|roll|go|jump|move|go back) [up] to the (top|beginning|start) "
      "[of the page]"},
+    // "Top" and "bottom" heard as "tar" and "borrow" (the spoken suite's
+    // recognizer check).
+    {K::kScrollToTop, "(scroll|roll) [up] to the tar"},
     {K::kScrollToTop, "(top of [the] page|page top|scroll top|back to top)"},
     {K::kScrollToBottom,
      "(scroll|roll|girl|go|jump|move) [down] to the (bottom|end) [of the "
      "page]"},
     {K::kScrollToBottom, "(bottom of [the] page|page bottom|scroll bottom)"},
+    {K::kScrollToBottom, "(scroll|roll) [down] to the borrow"},
     {K::kScrollDown, "page down", C::kAlways, V::kPageStep},
     {K::kScrollUp, "page up", C::kAlways, V::kPageStep},
     {K::kScrollDown, "(scroll|go|move) down {pages?}"},
@@ -382,6 +402,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kBack, "feel back"},
     {K::kForward, "(go|navigate) forward [a page|one page]"},
     {K::kForward, "forward"},
+    // "Go forward" heard as "feel forward", as "go back" is "feel back".
+    {K::kForward, "feel forward"},
     {K::kNextPage, "[go to] [the] next page [of results]"},
     {K::kNextPage, "(more results|show more results|load more results)"},
     {K::kReload, "(reload|refresh) [the|this] [page|tab|site|website|it]"},
@@ -389,6 +411,8 @@ constexpr CommandPattern kPatterns[] = {
     // "Reload" heard as "roulette" (the spoken suite's file run).
     {K::kReload, "roulette"},
     {K::kNewTab, "(open|new|start|create) [a] new tab"},
+    // "Open a new tip": "tab" heard as "tip", before a site of that name.
+    {K::kNewTab, "(open|start|create) [a] new tip"},
     {K::kNewTab, "(new tab|open [a] tab|open another tab)"},
     {K::kCloseTab, "close [this|the|current] tab"},
     // "Tab" heard as "ted" (the spoken suite's file run).
@@ -411,6 +435,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kZoomReset,
      "((reset|rosetta|normal|default) zoom|zoom (reset|normal|to normal|back to "
      "normal)|(actual|normal|original|default) size|reset [the] zoom level)"},
+    // "Reset zoom" run together ("Resetzum", "Rosetzum").
+    {K::kZoomReset, "(resetzum|rosetzum|resetzoom)"},
     {K::kZoomIn,
      "(zoom in|zoom in more|magnify|enlarge|increase [the] zoom|(bigger|"
      "larger) [text]|make (it|the text|text|everything|the page) (bigger|"
@@ -462,6 +488,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kCaptionsOff,
      "((captions|subtitles|closed captions|cc) off|no "
      "(captions|subtitles))"},
+    // "Captions of": "off" heard short.
+    {K::kCaptionsOff, "(captions|subtitles) of"},
     {K::kNormalSpeed,
      "((normal|regular|default|usual) [playback] speed|reset [the] "
      "[playback] speed|speed (normal|to normal|back to normal)|play at "
@@ -534,7 +562,7 @@ constexpr CommandPattern kPatterns[] = {
      "(read|start reading|begin reading) [it|this|everything|all|"
      "everything on the page] [aloud|out loud|to me]"},
     {K::kDescribeScreen,
-     "((whats|what is) on [the|my|this] (screen|page)|what do you see|what "
+     "((whats|what is) on [the|my|this|a] (screen|page)|what do you see|what "
      "can you see|describe [the|this] (screen|page|view)|(whats|what is) "
      "here)"},
     {K::kNextHeading,
@@ -698,6 +726,8 @@ constexpr CommandPattern kPatterns[] = {
     {K::kChoose, "(open|go to|follow|visit|show me|show|bring up) {choice}",
      C::kAlways, V::kVerbOpen},
     {K::kFindInPage, "find [the word] {query} (on|in) (this|the) page"},
+    // "Fine timetable on this page": "find" heard as "fine".
+    {K::kFindInPage, "fine [the word] {query} (on|in) (this|the) page"},
     {K::kFindInPage, "(find on page|find in page|find on this page) {query}"},
     {K::kFindInPage, "search (this|the) page for {query}"},
     {K::kSearch, "search (the web|the internet|online|the net) for {query}",
@@ -714,6 +744,11 @@ constexpr CommandPattern kPatterns[] = {
     {K::kSearch, "(search for|search|look up|look for) {query}"},
     // An address said on its own: "example dot com".
     {K::kOpenSite, "{address}"},
+    // "Take", "tech": more of how "type" is heard (the spoken suite's runs,
+    // "take hello there"), only into a focused text field, and after the
+    // sites and searches, so that "take me to ...", "take me home" and
+    // "take me back" mean themselves there too.
+    {K::kType, "(take|tech) {text}", C::kTextField},
 
     // --- A choice on its own ------------------------------------------------
     {K::kChoose, "{number}", C::kChoice},

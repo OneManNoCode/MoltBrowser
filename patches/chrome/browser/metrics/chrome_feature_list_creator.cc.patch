@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/metrics/chrome_feature_list_creator.cc b/chrome/browser/metrics/chrome_feature_list_creator.cc
-index 90e572fe4efe1baa00ca8218dbcb3a5d0ad36ddb..ce2fb3c303c97ddf8b9ea867d8ee2491d06d73cc 100644
+index 90e572fe4efe1baa00ca8218dbcb3a5d0ad36ddb..65acef027c394e74ee94982ba38f37a6a7b539f6 100644
 --- a/chrome/browser/metrics/chrome_feature_list_creator.cc
 +++ b/chrome/browser/metrics/chrome_feature_list_creator.cc
 @@ -20,6 +20,7 @@
@@ -16,7 +16,7 @@ index 90e572fe4efe1baa00ca8218dbcb3a5d0ad36ddb..ce2fb3c303c97ddf8b9ea867d8ee2491
  #include "chrome/browser/prefs/browser_prefs.h"
  #include "chrome/browser/prefs/chrome_pref_service_factory.h"
  #include "chrome/common/chrome_paths.h"
-@@ -238,11 +239,19 @@ void ChromeFeatureListCreator::SetUpFieldTrials() {
+@@ -238,11 +239,24 @@ void ChromeFeatureListCreator::SetUpFieldTrials() {
  
    variations::VariationsService* variations_service =
        metrics_services_manager_->GetVariationsService();
@@ -34,6 +34,11 @@ index 90e572fe4efe1baa00ca8218dbcb3a5d0ad36ddb..ce2fb3c303c97ddf8b9ea867d8ee2491
 +  // studies that touch them are skipped. See
 +  // chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
 +  molt_ai::privacy::AppendDefaultFeatureOverrides(extra_overrides);
++  // MoltBrowser: the field trials it chooses itself (the echo canceller's
++  // transparent mode), before the testing config's and --force-fieldtrials,
++  // which still wins. See molt_feature_overrides.h.
++  molt_ai::privacy::CreateDefaultFieldTrials(
++      *base::CommandLine::ForCurrentProcess());
 +  variations_service->SetUpFieldTrials(variation_ids, extra_overrides,
 +                                       std::move(feature_list),
 +                                       browser_field_trials_.get());

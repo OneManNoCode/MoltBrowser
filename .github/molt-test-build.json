@@ -1,7 +1,6 @@
 {"resume_run": "42535000305",
  "run_tests": true,
- "e2e_only": true,
- "e2e_runs": "file:clean,pulse:clean:noloop,pulse:clean",
+ "e2e_only": false,
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "e2e_field_trials": "WebRTC-Aec3TransparentModeHmm/Disabled/",
- "request": "Round 45, twenty-first run (spoken suite only, on the nineteenth build's browser) with the echo canceller's legacy transparent mode instead of the HMM one: Chromium's field trial testing config, which MoltBrowser builds apply, already enables WebRTC-Aec3TransparentModeHmm, and the twentieth run showed the echo canceller removing up to 60 dB of \"Hey Molt\" and commands said over a playing video in file mode, where there is no echo. The legacy mode turns transparent after 6 s of sound played with no echo found. Does the speech survive in file and noloop runs, and is the speakers' sound still removed in the loop run? Against the nineteenth/twentieth: 75-77% file, 80% noloop, 70% with the speakers."}
+ "request": "Round 45, twenty-second build (incremental on the nineteenth): MoltBrowser creates WebRTC-Aec3TransparentModeHmm/Disabled before Chromium's field trial testing config, so the echo canceller uses its own default transparent mode (--force-fieldtrials still wins); and the grammar takes more command words as the recognizer hears them in the test voices (\"open the book, Mark\", \"windjo\", \"fine\", \"scroll to the borrow\", \"take\"/\"tech\" for type into a field...: the right command for 92% of the suite's phrases through the helper, from 88%). The twenty-first run, with the trial forced, gave 75% file, 84% noloop, 73% with the speakers."}

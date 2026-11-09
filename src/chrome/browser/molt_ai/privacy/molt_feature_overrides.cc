@@ -4,8 +4,11 @@
 #include "chrome/browser/molt_ai/privacy/molt_feature_overrides.h"
 
 #include <functional>
+#include <string>
 
+#include "base/base_switches.h"
 #include "base/containers/span.h"
+#include "base/metrics/field_trial.h"
 #include "chrome/browser/dictation/features.h"
 #include "chrome/common/chrome_features.h"
 #include "components/autofill/core/common/autofill_debug_features.h"
@@ -179,6 +182,46 @@ void AppendDefaultFeatureOverrides(
   };
   AppendOverrides(kEnabledByDefault, base::FeatureList::OVERRIDE_ENABLE_FEATURE,
                   overrides);
+}
+
+bool ForcedFieldTrialsName(std::string_view force_fieldtrials,
+                           std::string_view trial) {
+  // Names are the fields before each pair's "/".
+  bool name = true;
+  while (!force_fieldtrials.empty()) {
+    const size_t slash = force_fieldtrials.find('/');
+    std::string_view field = force_fieldtrials.substr(0, slash);
+    if (name) {
+      if (!field.empty() && field.front() == '*') {
+        field.remove_prefix(1);
+      }
+      if (field == trial) {
+        return true;
+      }
+    }
+    name = !name;
+    if (slash == std::string_view::npos) {
+      break;
+    }
+    force_fieldtrials.remove_prefix(slash + 1);
+  }
+  return false;
+}
+
+void CreateDefaultFieldTrials(const base::CommandLine& command_line) {
+  static constexpr struct {
+    const char* trial;
+    const char* group;
+  } kTrials[] = {
+      {"WebRTC-Aec3TransparentModeHmm", "Disabled"},
+  };
+  const std::string forced =
+      command_line.GetSwitchValueASCII(switches::kForceFieldTrials);
+  for (const auto& entry : kTrials) {
+    if (!ForcedFieldTrialsName(forced, entry.trial)) {
+      base::FieldTrialList::CreateFieldTrial(entry.trial, entry.group);
+    }
+  }
 }
 
 }  // namespace privacy

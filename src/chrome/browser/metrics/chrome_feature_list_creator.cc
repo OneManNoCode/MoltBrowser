@@ -249,6 +249,11 @@ void ChromeFeatureListCreator::SetUpFieldTrials() {
   // studies that touch them are skipped. See
   // chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
   molt_ai::privacy::AppendDefaultFeatureOverrides(extra_overrides);
+  // MoltBrowser: the field trials it chooses itself (the echo canceller's
+  // transparent mode), before the testing config's and --force-fieldtrials,
+  // which still wins. See molt_feature_overrides.h.
+  molt_ai::privacy::CreateDefaultFieldTrials(
+      *base::CommandLine::ForCurrentProcess());
   variations_service->SetUpFieldTrials(variation_ids, extra_overrides,
                                        std::move(feature_list),
                                        browser_field_trials_.get());
