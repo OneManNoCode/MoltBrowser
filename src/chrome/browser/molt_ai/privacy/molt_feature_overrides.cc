@@ -214,6 +214,8 @@ void CreateDefaultFieldTrials(const base::CommandLine& command_line) {
     const char* group;
   } kTrials[] = {
       {"WebRTC-Aec3TransparentModeHmm", "Disabled"},
+      {"WebRTC-Aec3UseLowEarlyReflectionsDefaultGain", "Enabled"},
+      {"WebRTC-Aec3UseLowLateReflectionsDefaultGain", "Enabled"},
   };
   const std::string forced =
       command_line.GetSwitchValueASCII(switches::kForceFieldTrials);

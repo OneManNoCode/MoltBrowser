@@ -105,6 +105,14 @@ TEST(VoicePromptsTest, AlertIsReadAndClosedOnOk) {
   EXPECT_EQ(Answer(alert, "okay"), PromptAnswer::kAccept);
   EXPECT_EQ(Answer(alert, "close it"), PromptAnswer::kAccept);
   EXPECT_EQ(Answer(alert, "go back"), PromptAnswer::kNone);
+  // "Okay" as the recognizer heard it in the spoken suite: an alert only,
+  // which never takes a confirmation word.
+  EXPECT_EQ(Answer(alert, "Bouquet."), PromptAnswer::kAccept);
+  // Where a word allows, it sounds like one of the list: asked again.
+  EXPECT_EQ(Answer(Waiting(PromptKind::kPermission, "harbor"), "bouquet"),
+            PromptAnswer::kSayAgain);
+  EXPECT_EQ(Answer(Waiting(PromptKind::kConfirm), "bouquet"),
+            PromptAnswer::kNone);
 }
 
 TEST(VoicePromptsTest, ConfirmTakesYesOrNo) {

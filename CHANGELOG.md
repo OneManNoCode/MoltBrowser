@@ -17,6 +17,18 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **Speech over a playing video is cut less.** Until the echo canceller has
+  learned how much of the speakers' sound reaches the microphone, it took
+  the echo to be as loud as what plays, and suppressed what you said over
+  a video even with headphones on ("play faster" lost 46 dB in its middle).
+  It now takes it as a tenth of that, through two of WebRTC's own settings.
+  Tried on the spoken suite first: on headphones, no media task failed,
+  against three in the two runs before. With the speakers' sound in the
+  microphone, a video's or a page's speech still commands nothing.
+- **"Okay" heard as "bouquet" closes a page's alert.** One of the spoken
+  suite's voices is heard that way every time. It counts for an alert only,
+  which never asks for a confirmation word. Where a word allows something,
+  "bouquet" still sounds like one of the list and is asked again.
 - **"Hey Molt" said just as the follow-up window closes is heard.** The
   tone that says voice mode is back to waiting for "Hey Molt" played the
   moment the window closed. Over a command just begun, it went into the
@@ -35,7 +47,8 @@ For longer narrative posts behind each entry see
   on every "repeat", too many letters off to take, and three prompt
   scenarios failed on that alone. Heard the same way twice in a row, the
   word is now the one of the list whose consonants are within one sound of
-  it. A single unclear hearing still gives no word.
+  it. A single unclear hearing still gives no word. When voice mode asks
+  for the word again ("I didn't catch that"), the kit says it once more.
 - **Interrupting voice mode works when you speak up.** While voice mode
   reads a list or a question, a command said over it without "Hey Molt"
   ("three", "start over") was dropped about half the time as "not heard
