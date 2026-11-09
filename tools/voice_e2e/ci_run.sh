@@ -151,7 +151,9 @@ if [[ -n "${VOICE_E2E_FIELD_TRIALS:-}" ]]; then
   if ! [[ "$VOICE_E2E_FIELD_TRIALS" =~ ^([A-Za-z0-9_-]+/[A-Za-z0-9_-]+/)+$ ]]; then
     log "VOICE_E2E_FIELD_TRIALS must be Trial/Group/ pairs"; exit 2
   fi
-  args+=(--browser-flag "--force-fieldtrials=$VOICE_E2E_FIELD_TRIALS")
+  # One argument: argparse takes a separate value that starts with "--"
+  # for an option of its own.
+  args+=("--browser-flag=--force-fieldtrials=$VOICE_E2E_FIELD_TRIALS")
 fi
 [[ -n "${VOICE_E2E_VOICES:-}" ]] && args+=(--voices "$VOICE_E2E_VOICES")
 [[ "${VOICE_E2E_MODEL:-0}" == 1 ]] && args+=(--model)
