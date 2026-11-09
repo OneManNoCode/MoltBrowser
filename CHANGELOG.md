@@ -35,7 +35,8 @@ For longer narrative posts behind each entry see
   on every "repeat", too many letters off to take, and three prompt
   scenarios failed on that alone. Heard the same way twice in a row, the
   word is now the one of the list whose consonants are within one sound of
-  it. A single unclear hearing still gives no word.
+  it. A single unclear hearing still gives no word. When voice mode asks
+  for the word again ("I didn't catch that"), the kit says it once more.
 - **Interrupting voice mode works when you speak up.** While voice mode
   reads a list or a question, a command said over it without "Hey Molt"
   ("three", "start over") was dropped about half the time as "not heard

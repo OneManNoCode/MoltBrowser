@@ -415,6 +415,18 @@ class Runner(object):
             time.sleep(POLL_S)
         return False
 
+    def asked_again(self, log, since, timeout=REPLY_TIMEOUT_S):
+        """Whether voice mode's first answer after |since| asks for the
+        confirmation word again ("I didn't catch that. Say the word
+        again.")."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            said = [e for e in log.events(since) if e["e"] == "said"]
+            if said:
+                return "say the word again" in (said[0].get("text") or "").lower()
+            time.sleep(POLL_S)
+        return False
+
     # ---- one scenario -------------------------------------------------------
 
     def voice_for(self, index):
@@ -651,6 +663,12 @@ class Runner(object):
             wav = self.word_wav(step, i, plan, tlog, world)
         (self.player or self.pulse).play(wav)
         t_end = time.time()
+        if step.action == "say_word" and self.asked_again(tlog, t_end):
+            # "I didn't catch that. Say the word again.": once more, as a
+            # user would.
+            self.wait_idle(tlog)
+            (self.player or self.pulse).play(wav)
+            t_end = time.time()
         if step.name:
             plan.setdefault("named", {})[step.name] = wav
         return t_end, step.value if step.action == "say" else step.action

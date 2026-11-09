@@ -337,7 +337,9 @@ same way twice in a row ("say keptus", then "say keptus" again): the kit
 takes the one word of the list whose consonants are within one sound of
 it ("cactus"), as a listener would. Its recognizer mangles a lone noun in
 the browser's voice the same way each time, and in the twenty-seventh
-build three prompts failed on that alone.
+build three prompts failed on that alone. And when voice mode answers
+the word with "I didn't catch that. Say the word again.", the kit says it
+once more, as a user would.
 
 ### The runner
 

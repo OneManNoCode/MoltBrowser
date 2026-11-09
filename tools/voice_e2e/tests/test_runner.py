@@ -184,6 +184,24 @@ class RunnerTest(unittest.TestCase):
         self.assertFalse(r.wait_reply(Log([{"e": "activity", "activity": "listening",
                                              "ts": t - 30}]), t, timeout=0.3))
 
+    def test_asked_for_the_word_again(self):
+        class Log(object):
+            def __init__(self, evs):
+                self.evs = evs
+
+            def events(self, since=0.0):
+                return [e for e in self.evs if e["ts"] >= since]
+
+        r = runner.Runner.__new__(runner.Runner)
+        t = time.time()
+        again = {"e": "said", "ts": t + 0.1,
+                 "text": "I didn't catch that. Say the word again."}
+        allowed = {"e": "said", "ts": t + 0.1, "text": "Allowed."}
+        old = {"e": "said", "ts": t - 5, "text": "I didn't catch that. Say the word again."}
+        self.assertTrue(r.asked_again(Log([old, again]), t, timeout=1))
+        self.assertFalse(r.asked_again(Log([old, allowed]), t, timeout=1))
+        self.assertFalse(r.asked_again(Log([old]), t, timeout=0.3))
+
     def test_a_page_dialog_open_in_the_log(self):
         class Log(object):
             def __init__(self, events):
