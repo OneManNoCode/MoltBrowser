@@ -32,10 +32,27 @@ For longer narrative posts behind each entry see
   another number of words ("time to bull" is "Timetable"). A word heard
   with other vowels in the same number of words still doesn't count
   ("plant" isn't "Planet").
+- **"Find" with its "on" heard as the end of a word.** "Find timetable on
+  this page" was heard as "find time to belong this page", which no
+  command matched. Said without the "on" before "this page", it is a find:
+  for the words as heard first, then without an "on", "ong" or "in" at the
+  end of the last word ("time to bel" is "Timetable").
 - **"Hey Molt" with its "t" heard as "to" before a command.** "Him all to
-  scroll to the top" scrolls to the top: after a wake phrase, a first word
-  that is only the sound the name ends on is dropped, when what follows is
-  a command as said.
+  scroll to the top" scrolls to the top, and "Hey, Malt to play the live
+  one by Queen" plays it: after a wake phrase, a first word that is only
+  the sound the name ends on is dropped, when what follows is a command as
+  said.
+- **"Pause" heard without its "p" over a playing video.** Right after
+  "Hey Molt", the recognizer wrote "pause" as "Aus", "Oz" or "Ors" while a
+  video played. Said alone, those pause it, as "pores" and "paws" already
+  did.
+- **A number said while voice mode reads the list is taken.** "Three",
+  said over "1: ..., 2: ..., 3: ..." as the results were read, was dropped
+  as voice mode's own voice heard back, because the reading has the word
+  in it. A word that stands out as loud as speech, after a moment in which
+  the microphone was quiet while voice mode was speaking (so the echo
+  canceller was taking its voice out), is you, once voice mode has spoken
+  for a few seconds. Its own words heard back are still dropped otherwise.
 - **"Hey Molt" the wake detector heard counts however it was written.**
   Over a playing video, the detector heard "Hey Molt" but the recognizer
   wrote it as "cabled" or "Hey, Lord", and the command after it ("set the

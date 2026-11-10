@@ -107,6 +107,9 @@ enum class PatternVariant : uint8_t {
   kWorkflowTrust,
   // kOpenDownload: the newest one ("the last download").
   kNewest,
+  // kFindInPage said without the "on" before "this page" (VoiceCommand::
+  // on_glued).
+  kOnGlued,
 };
 
 struct CommandPattern {

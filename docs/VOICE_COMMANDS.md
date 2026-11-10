@@ -248,6 +248,9 @@ and the bar only.
   Opening hours."). A word finds its plural, and a word the recognizer
   split or joined finds it as the page writes it ("time table" finds
   "Timetable"), or split into words that sound like it ("time to bull").
+  Said without the "on" before "this page", the last word may hold it
+  ("find time to belong this page" finds "Timetable" when nothing on the
+  page says "time to belong").
 - **A site's name on its own:** "YouTube" (or "Wikipedia", "Google",
   "DuckDuckGo", "Bing", "Brave Search") opens it, saying "Opening YouTube."
   then "YouTube is open."; so does the name of a site you opened by voice
@@ -476,6 +479,7 @@ said.
 - `fine [the word] {query} (on | in) (this | the) page`
 - `(find on page | find in page | find on this page) {query}`
 - `search (this | the) page for {query}`
+- `find [the word] {query} (this | the) page`
 
 **The next place the words were found.** For example: "next match".
 
@@ -600,6 +604,7 @@ said.
 - `stop (the video | the music | the song | playback | playing | the movie | the audio)`
 - `(pause | hold on) [it | this | that | the video | the music | the song | playback | the movie | the audio | reading | the reading]`
 - `(pores | paws) [it | this | that | the video | the music | the song]`
+- `(aus | oz | ors)`
 
 **Carry on playing.** For example: "resume".
 

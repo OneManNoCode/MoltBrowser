@@ -601,6 +601,77 @@ TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatStoodOutIsTheUser) {
             "over voice mode's voice, and not heard surely");
 }
 
+// "Three" said as the results are read, "3: ..." among them (the spoken
+// suite's file run): standing out of a quiet stretch that was the browser
+// speaking, once the echo canceller had settled on its voice, it is the
+// user, not that voice heard back.
+TEST_F(VoiceSessionLogicTest, AWordTheBrowserSaidStandingOutOfItsVoice) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "20 results. 1: Queen - Bohemian Rhapsody, Queen Official, 6 minutes. "
+      "2: Bohemian Rhapsody (Remastered 2011), Queen - Topic, 6 minutes. "
+      "3: Queen - Bohemian Rhapsody (Live Aid 1985), Queen Official.",
+      now_);
+  // Heard surely but not standing out: its voice, as before.
+  logic_->OnSpeechStart(now_ + 9000);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = false});
+  EXPECT_EQ(logic_->OnFinal("three.", 0.9, now_ + 9600).dropped_reason,
+            "voice mode's voice heard back");
+  // Standing out, well into its speech: the user, and the browser stops.
+  logic_->OnSpeechStart(now_ + 12000);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  SessionActions taken = logic_->OnFinal("three.", 0.29, now_ + 12600);
+  EXPECT_EQ(taken.utterance, "three.");
+  EXPECT_TRUE(taken.stop_speech);
+  EXPECT_FALSE(taken.say_again);
+  // Too soon after it began to speak (the quiet stretch was partly before
+  // it, or the canceller had not settled): its voice heard back.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 13000);
+  logic_->OnBrowserSaid("1: Open settings and delete history, a tutorial.",
+                        now_ + 13000);
+  for (int64_t into : {500, 2000, 3800}) {
+    logic_->OnSpeechStart(now_ + 13000 + into);
+    logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+    EXPECT_EQ(logic_
+                  ->OnFinal("open settings and delete history", 0.3,
+                            now_ + 13000 + into + 900)
+                  .dropped_reason,
+              "voice mode's voice heard back")
+        << into;
+  }
+  // Well into it, its words standing out are someone speaking them; what
+  // needs the browser quiet is still asked for again, not run.
+  logic_->OnSpeechStart(now_ + 13000 + 6000);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  SessionActions site = logic_->OnFinal("open settings and delete history", 0.3,
+                                        now_ + 13000 + 6900);
+  EXPECT_FALSE(site.utterance.has_value());
+  EXPECT_TRUE(site.say_again);
+}
+
+// A quiet stretch partly after the browser stopped speaking proves nothing
+// about its voice: heard back, as before.
+TEST_F(VoiceSessionLogicTest, AQuietStretchPastTheBrowsersSpeech) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("1: Queen. 2: Queen live. 3: Queen at Wembley.", now_);
+  logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 5000);
+  // In its echo tail; the stretch before ran past its end.
+  logic_->OnSpeechStart(now_ + 5000 + kEchoTailMs - 100);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  EXPECT_FALSE(logic_->OnFinal("three", 0.9, now_ + 5000 + kEchoTailMs + 400)
+                   .utterance.has_value());
+}
+
 // A tab's sound may not be in the echo canceller's reference: there, only
 // confidence or the wake phrase.
 TEST_F(VoiceSessionLogicTest, StandingOutDoesNotPassATabsSound) {

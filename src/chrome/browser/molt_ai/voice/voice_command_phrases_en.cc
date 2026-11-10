@@ -460,6 +460,10 @@ constexpr CommandPattern kPatterns[] = {
     // English recognizer hears it from a British voice (the spoken suite's
     // runs, file and live microphone).
     {K::kPause, "(pores|paws) [it|this|that|the video|the music|the song]"},
+    // "Aus", "oz", "ors": "pause" with its "p" lost over a playing video,
+    // right after the "t" of "Hey Molt" (the spoken suite's live runs).
+    // Said alone only.
+    {K::kPause, "(aus|oz|ors)"},
     {K::kSkipAd,
      "skip [the|this|these] (ad|ads|advert|adverts|advertisement|"
      "advertisements|commercial)"},
@@ -738,6 +742,10 @@ constexpr CommandPattern kPatterns[] = {
     {K::kFindInPage, "fine [the word] {query} (on|in) (this|the) page"},
     {K::kFindInPage, "(find on page|find in page|find on this page) {query}"},
     {K::kFindInPage, "search (this|the) page for {query}"},
+    // "Find time to belong this page": the "on" heard as the end of the
+    // last word ("time to bull on", for "timetable on").
+    {K::kFindInPage, "find [the word] {query} (this|the) page", C::kAlways,
+     V::kOnGlued},
     {K::kSearch, "search (the web|the internet|online|the net) for {query}",
      C::kAlways, V::kScopeDefaultEngine},
     {K::kSearch, "(web search|internet search|search online for) {query}",

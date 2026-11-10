@@ -335,6 +335,10 @@ struct ParseContext {
   // ("cabled, set the volume to half"). Only RepairMisheardCommand() reads
   // it (voice_repair.h).
   bool wake_heard = false;
+  // The grammar took a wake phrase in front of the utterance given
+  // (VoiceCommand::wake_said): it is a command's |heard|, without it. Only
+  // RepairMisheardCommand() reads it.
+  bool wake_said = false;
 };
 
 struct VoiceCommand {
@@ -379,6 +383,13 @@ struct VoiceCommand {
   // kSearch "search for X on Y": the whole "X on Y", to search for when Y
   // is not a site the browser knows ("search for things to do on Sunday").
   std::string whole_query;
+  // kFindInPage said without the "on" or "in" before "this page": it may
+  // be the end of the query's last word ("find time to belong this page",
+  // as a recognizer heard "find timetable on this page").
+  bool on_glued = false;
+  // A wake phrase began the utterance, and the grammar took it: |heard| is
+  // without it.
+  bool wake_said = false;
   // kChoose (and kCloseTab, kSwitchTab, kOpenDownload).
   ChoiceVerb verb = ChoiceVerb::kDefault;
   ChoiceRef choice;
