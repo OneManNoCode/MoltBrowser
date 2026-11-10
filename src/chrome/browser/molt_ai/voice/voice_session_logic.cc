@@ -375,6 +375,7 @@ SessionActions VoiceSessionLogic::Stop(int64_t now_ms) {
   wake_until_ms_ = 0;
   wake_earcon_at_ms_ = 0;
   waiting_earcon_at_ms_ = 0;
+  onset_duck_until_ms_ = 0;
   actions.earcon = EarconKind::kOff;
   return Finish(std::move(actions), now_ms);
 }
@@ -717,6 +718,14 @@ SessionActions VoiceSessionLogic::OnPageAudible(bool audible, int64_t now_ms) {
   return Finish(SessionActions(), now_ms);
 }
 
+SessionActions VoiceSessionLogic::OnMicrophoneOnset(int64_t now_ms) {
+  if (settings_.duck_at_speech_onset && Listening() &&
+      state_ == SessionState::kWaiting && page_audible_) {
+    onset_duck_until_ms_ = now_ms + kOnsetDuckMs;
+  }
+  return Finish(SessionActions(), now_ms);
+}
+
 SessionActions VoiceSessionLogic::OnOtherSpeech(bool speaking, int64_t now_ms) {
   // When it stops, the last time it was seen speaking is now.
   if (speaking || other_speaking_) {
@@ -843,6 +852,9 @@ std::optional<int64_t> VoiceSessionLogic::NextDeadline() const {
   }
   if (follow_up_until_ms_ > 0) {
     consider(follow_up_until_ms_);
+  }
+  if (onset_duck_until_ms_ > 0) {
+    consider(onset_duck_until_ms_);
   }
   return next;
 }
@@ -1091,9 +1103,13 @@ SessionActions VoiceSessionLogic::Finish(SessionActions actions,
     wake_required_ = wake_required;
     actions.wake_required = wake_required;
   }
-  const bool duck = Listening() &&
-                    (wake_until_ms_ > 0 || (utterance_ && Counts(*utterance_) &&
-                                            utterance_->ended_ms < 0));
+  if (onset_duck_until_ms_ > 0 && now_ms >= onset_duck_until_ms_) {
+    onset_duck_until_ms_ = 0;
+  }
+  const bool duck =
+      Listening() &&
+      (wake_until_ms_ > 0 || onset_duck_until_ms_ > 0 ||
+       (utterance_ && Counts(*utterance_) && utterance_->ended_ms < 0));
   if (duck != ducked_) {
     ducked_ = duck;
     actions.duck = duck;

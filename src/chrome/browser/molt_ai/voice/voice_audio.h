@@ -77,6 +77,9 @@ class VoiceTestAudio;
 // the spoken suite's commands peak at -8 to -13 dBFS there, and the room
 // and what the canceller leaves of the browser's own sound at -50 or less.
 inline constexpr float kVoiceLoudPeak = 0.0316f;
+// How long the microphone was quieter than that before an onset
+// (VoiceAudio::Delegate::OnMicrophoneOnset()).
+inline constexpr int64_t kOnsetQuietMs = 500;
 
 // Which echo canceller the microphone gets.
 enum class EchoCancellation {
@@ -106,6 +109,10 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
    public:
     virtual void OnMicrophoneStarted(EchoCancellation echo) = 0;
     virtual void OnMicrophoneProblem(Problem problem) = 0;
+    // The microphone gave something as loud as speech (kVoiceLoudPeak),
+    // after the browser's processing, after a quiet stretch
+    // (kOnsetQuietMs): someone near it may have started speaking.
+    virtual void OnMicrophoneOnset() = 0;
 
    protected:
     virtual ~Delegate() = default;
@@ -163,6 +170,8 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   void Open(EchoCancellation echo);
   // OnCaptureStarted() and OnCaptureError(), back on this sequence.
   void CaptureStarted();
+  // A speech onset Capture() saw, back on this sequence.
+  void MicrophoneOnset();
   void CaptureError(media::AudioCapturerSource::ErrorCode code,
                     const std::string& message);
 

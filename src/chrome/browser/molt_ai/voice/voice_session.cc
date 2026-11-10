@@ -14,6 +14,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/metrics/field_trial.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
@@ -74,6 +75,10 @@ std::string SayAgainNotice(Language language) {
   return Said(language, "I've stopped. Now say that again.", {});
 }
 
+// Ducks media at the microphone's speech onset while waiting for the wake
+// phrase (ListeningSettings::duck_at_speech_onset): "<this>/Enabled/".
+constexpr char kDuckAtSpeechOnsetTrial[] = "MoltVoiceDuckAtSpeechOnset";
+
 ListeningSettings ToListening(const VoiceModeSettings& settings,
                               Language language) {
   ListeningSettings listening;
@@ -81,6 +86,10 @@ ListeningSettings ToListening(const VoiceModeSettings& settings,
   listening.wake_phrases = WakePhrasesFor(language);
   listening.vad_silence_ms = kDefaultVadSilenceMs;
   listening.language = language;
+  // A trial, only where a field trial is forced (the spoken suite's
+  // e2e_field_trials): MoltBrowser has no field trial server.
+  listening.duck_at_speech_onset =
+      base::FieldTrialList::FindFullName(kDuckAtSpeechOnsetTrial) == "Enabled";
   return listening;
 }
 
@@ -621,6 +630,13 @@ void VoiceSession::OnMicrophoneStarted(EchoCancellation echo) {
 
 void VoiceSession::OnMicrophoneProblem(VoiceAudio::Problem problem) {
   Fail(ProblemText(problem, SpeechLanguage()));
+}
+
+void VoiceSession::OnMicrophoneOnset() {
+  if (!logic_.running()) {
+    return;
+  }
+  Apply(logic_.OnMicrophoneOnset(NowMs()));
 }
 
 // ---- The voice loop ---------------------------------------------------------

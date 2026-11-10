@@ -1627,6 +1627,18 @@ void VoiceController::BrowserActionDone(int run) {
                                 run_weak_factory_.GetWeakPtr()));
 }
 
+void VoiceController::BrowserActionFailed(int run, StepFailure failure) {
+  if (run != run_) {
+    return;
+  }
+  // The steps after it are dropped, as when it fails at once; voice mode
+  // goes idle from a task.
+  Fail(failure);
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&VoiceController::RunSteps,
+                                run_weak_factory_.GetWeakPtr()));
+}
+
 void VoiceController::BrowserItemsReady(int run,
                                         const VoiceStep& asked,
                                         std::vector<BrowserItem> items) {

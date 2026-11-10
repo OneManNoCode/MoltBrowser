@@ -163,6 +163,7 @@ class VoiceSession : public VoiceController::Observer,
   // VoiceAudio::Delegate:
   void OnMicrophoneStarted(EchoCancellation echo) override;
   void OnMicrophoneProblem(VoiceAudio::Problem problem) override;
+  void OnMicrophoneOnset() override;
 
   // Tests: the listener (null until the helper was found).
   VoiceListener* listener_for_testing() { return listener_.get(); }

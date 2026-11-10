@@ -83,6 +83,49 @@ TEST_F(VoiceSessionLogicTest, WakePhraseThenCommand) {
   EXPECT_EQ(final_text.wake_required, false);
 }
 
+// The trial (duck_at_speech_onset): a speech onset while voice mode waits
+// for the wake phrase, with a tab playing sound, ducks media for
+// kOnsetDuckMs; the wake phrase after it keeps media ducked for the
+// command.
+TEST_F(VoiceSessionLogicTest, TheTrialDucksAtTheSpeechOnset) {
+  ListeningSettings settings = Settings(false);
+  settings.duck_at_speech_onset = true;
+  logic_ = std::make_unique<VoiceSessionLogic>(settings);
+  logic_->Start(now_);
+  logic_->OnHelperReady(now_);
+  ASSERT_EQ(logic_->state(), SessionState::kWaiting);
+  // Nothing plays: nothing to duck.
+  EXPECT_FALSE(logic_->OnMicrophoneOnset(now_).duck.has_value());
+  logic_->OnPageAudible(true, now_);
+
+  // Someone speaks, and no wake phrase follows: restored after it.
+  const int64_t t = now_ + 3000;
+  EXPECT_EQ(logic_->OnMicrophoneOnset(t).duck, true);
+  EXPECT_EQ(logic_->NextDeadline(), t + kOnsetDuckMs);
+  EXPECT_FALSE(At(t + kOnsetDuckMs - 1).duck.has_value());
+  EXPECT_EQ(At(t + kOnsetDuckMs).duck, false);
+  EXPECT_FALSE(logic_->NextDeadline().has_value());
+
+  // "Hey Molt, pause" over the video: ducked from its onset to its end.
+  const int64_t u = t + 10000;
+  EXPECT_EQ(logic_->OnMicrophoneOnset(u).duck, true);
+  EXPECT_FALSE(logic_->OnWake(u + 600).duck.has_value());
+  EXPECT_FALSE(logic_->OnSpeechStart(u + 900).duck.has_value());
+  EXPECT_FALSE(At(u + kOnsetDuckMs + 100).duck.has_value());
+  EXPECT_EQ(logic_->OnFinal("pause", 0.9, u + kOnsetDuckMs + 200).duck, false);
+
+  // Only while waiting for the wake phrase: not while the browser speaks.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, u + 4000);
+  EXPECT_FALSE(logic_->OnMicrophoneOnset(u + 4100).duck.has_value());
+}
+
+TEST_F(VoiceSessionLogicTest, NoDuckAtTheSpeechOnsetWithoutTheTrial) {
+  Begin();
+  logic_->OnPageAudible(true, now_);
+  EXPECT_FALSE(logic_->OnMicrophoneOnset(now_ + 100).duck.has_value());
+  EXPECT_FALSE(logic_->NextDeadline().has_value());
+}
+
 TEST_F(VoiceSessionLogicTest, NothingCountsWithoutTheWakePhrase) {
   Begin();
   SessionActions start = logic_->OnSpeechStart(now_);

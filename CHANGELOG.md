@@ -42,6 +42,12 @@ For longer narrative posts behind each entry see
   one by Queen" plays it: after a wake phrase, a first word that is only
   the sound the name ends on is dropped, when what follows is a command as
   said.
+- **A menu item is pressed even if the menu closed.** After "open the
+  menu" read its items, the menu could close by itself before you named
+  one (another window took the focus), and "click Settings" answered "I
+  can't find that button any more". Voice mode now opens the menu again
+  and presses the same item: the only one there with the same name, kind
+  and submenu. Items of a submenu aren't retried.
 - **A second try at the confirmation word gets time.** Asked to say the
   word again near the end of a permission prompt's 30 seconds, you could be
   cut off mid-word ("No answer, so I dismissed the permission request.").

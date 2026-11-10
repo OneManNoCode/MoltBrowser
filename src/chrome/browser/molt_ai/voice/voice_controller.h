@@ -505,6 +505,7 @@ class VoiceController : public VoicePlanner::Delegate,
   void BrowserActionSays(const std::string& text) override;
   void BrowserActionReads(const std::string& text) override;
   void BrowserActionDone(int run) override;
+  void BrowserActionFailed(int run, StepFailure failure) override;
   void BrowserItemsReady(int run,
                          const VoiceStep& asked,
                          std::vector<BrowserItem> items) override;

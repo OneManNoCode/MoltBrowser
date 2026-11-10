@@ -391,6 +391,13 @@ void VoiceAudio::CaptureStarted() {
   delegate_->OnMicrophoneStarted(echo_);
 }
 
+void VoiceAudio::MicrophoneOnset() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (delegate_) {
+    delegate_->OnMicrophoneOnset();
+  }
+}
+
 void VoiceAudio::Capture(const media::AudioBus* audio_source,
                          base::TimeTicks audio_capture_time,
                          const media::AudioGlitchInfo& glitch_info,
@@ -417,7 +424,12 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
     const int64_t at_us =
         (audio_capture_time - base::TimeTicks()).InMicroseconds();
     if (peak >= kVoiceLoudPeak) {
-      loud_at_us_.store(at_us, std::memory_order_relaxed);
+      const int64_t before =
+          loud_at_us_.exchange(at_us, std::memory_order_relaxed);
+      if (at_us - before >= kOnsetQuietMs * 1000) {
+        owner_->PostTask(FROM_HERE, base::BindOnce(&VoiceAudio::MicrophoneOnset,
+                                                   started_self_));
+      }
     }
     level_history_.Note(
         at_us, int64_t{audio_source->frames()} * 1000000 / kHelperSampleRate,
