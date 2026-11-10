@@ -115,6 +115,9 @@
 //
 // Ducking (§5.1): media is ducked while a command is being spoken (from
 // the wake phrase or the start of an utterance that counts, to its end).
+// A trial (ListeningSettings::duck_at_speech_onset) also ducks it from the
+// microphone's speech onset while waiting for the wake phrase
+// (OnMicrophoneOnset()).
 //
 // Earcons: ready (waiting, or listening when always listening), wake
 // (listening), a command taken (thinking), the browser starting to speak
@@ -210,6 +213,14 @@ inline constexpr int64_t kGestureQuietMs = 1200;
 // milliseconds; one further behind may have heard the browser's last words
 // as if they came after them.
 inline constexpr int64_t kMaxHeardLagMs = 1000;
+// The trial's duck from the microphone's speech onset, while voice mode
+// waits for the wake phrase with a tab playing sound, lasts this long
+// unless the wake phrase comes (then it is the command's duck, as
+// before). With the speakers heard in the microphone, the echo canceller
+// working over a playing video takes the start of "Hey Molt" ("He
+// looked", "you mold" in the spoken suite), and the duck from the wake
+// phrase comes too late for it.
+inline constexpr int64_t kOnsetDuckMs = 2500;
 
 enum class SessionState : uint8_t {
   kOff,
@@ -255,6 +266,11 @@ struct ListeningSettings {
   // The language the user speaks to voice mode in: what is said over its
   // own voice is parsed in it (TakenOverOwnVoice()).
   Language language = Language::kEnglish;
+  // A trial, off by default: duck media at the microphone's speech onset
+  // while waiting for the wake phrase (kOnsetDuckMs). A page playing sound
+  // could notice that duck, so it would tell the page when someone near
+  // the microphone starts speaking, not only when the wake phrase is said.
+  bool duck_at_speech_onset = false;
 };
 
 // What to do after an event. Only what changed is set.
@@ -346,6 +362,11 @@ class VoiceSessionLogic {
   SessionActions OnBrowserSaid(std::string_view text, int64_t now_ms);
   SessionActions OnAwaitingAnswer(bool awaiting, int64_t now_ms);
   SessionActions OnPageAudible(bool audible, int64_t now_ms);
+  // The microphone gave something as loud as speech after a quiet stretch,
+  // after the browser's processing (VoiceAudio): with the trial
+  // (duck_at_speech_onset), media is ducked for kOnsetDuckMs when voice
+  // mode waits for the wake phrase and a tab plays sound.
+  SessionActions OnMicrophoneOnset(int64_t now_ms);
   // When the microphone last gave something as loud as speech, after the
   // browser's processing (VoiceAudio::LastLoud()); -1 never. Noted before
   // each OnTick(), for the listening tone.
@@ -488,6 +509,8 @@ class VoiceSessionLogic {
   int64_t follow_up_closed_ms_ = -1;
   bool awaiting_answer_ = false;
   bool page_audible_ = false;
+  // Until when the trial's duck from a speech onset lasts; 0 none.
+  int64_t onset_duck_until_ms_ = 0;
   // When a tab was last seen playing sound; -1 never.
   int64_t page_audible_ms_ = -1;
   bool echo_cancelled_ = true;
