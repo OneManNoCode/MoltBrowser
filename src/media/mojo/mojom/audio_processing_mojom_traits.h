@@ -61,6 +61,9 @@ struct StructTraits<media::mojom::AudioProcessingSettingsDataView,
   static bool cpu_independent(const media::AudioProcessingSettings& s) {
     return s.cpu_independent;
   }
+  static bool speech_recognizer(const media::AudioProcessingSettings& s) {
+    return s.speech_recognizer;
+  }
   static bool Read(media::mojom::AudioProcessingSettingsDataView input,
                    media::AudioProcessingSettings* out_settings);
 };

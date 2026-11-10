@@ -105,6 +105,10 @@ class ProcessedInputIPC : public media::AudioInputIPC,
       settings.automatic_gain_control = false;
       settings.multi_channel_capture_processing = false;
       settings.use_loopback_aec_reference = false;
+      // The echo canceller tuned for the speech helper: speech over a
+      // playing song isn't taken for its echo (media/webrtc/
+      // molt_speech_recognizer_processing.h).
+      settings.speech_recognizer = true;
       config = media::mojom::AudioProcessingConfig::New(
           controls_.BindNewPipeAndPassReceiver(), settings);
     }

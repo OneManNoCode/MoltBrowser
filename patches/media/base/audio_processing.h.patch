@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/base/audio_processing.h b/media/base/audio_processing.h
-index f5933ffaa98231951c782237bc85577435e920dc..a8f5f360aa8e58107a433888c5552301133c591a 100644
+index f5933ffaa98231951c782237bc85577435e920dc..a14fa517113c74289b05798bb5ca83b174b4ac99 100644
 --- a/media/base/audio_processing.h
 +++ b/media/base/audio_processing.h
-@@ -31,6 +31,15 @@ struct MEDIA_EXPORT AudioProcessingSettings {
+@@ -31,6 +31,22 @@ struct MEDIA_EXPORT AudioProcessingSettings {
    // If true, voice isolation will be applied.
    bool voice_isolation = false;
  #endif
@@ -21,20 +21,28 @@ index f5933ffaa98231951c782237bc85577435e920dc..a8f5f360aa8e58107a433888c5552301
 +  // media_stream_audio_processing_layout.cc), for the processing in the audio
 +  // service and in the renderer alike.
 +  bool cpu_independent = false;
++  // MoltBrowser: the stream feeds a speech recognizer (voice mode's
++  // microphone): the echo canceller is tuned so that speech over a playing
++  // song isn't taken for its echo (media/webrtc/
++  // molt_speech_recognizer_processing.h). Set by voice mode only; the
++  // browser clears it on the streams renderers create
++  // (molt_audio_capture_processing.h).
++  bool speech_recognizer = false;
  
    bool operator==(const AudioProcessingSettings& b) const {
      bool equal = echo_cancellation == b.echo_cancellation &&
-@@ -38,7 +47,8 @@ struct MEDIA_EXPORT AudioProcessingSettings {
+@@ -38,7 +54,9 @@ struct MEDIA_EXPORT AudioProcessingSettings {
                   automatic_gain_control == b.automatic_gain_control &&
                   multi_channel_capture_processing ==
                       b.multi_channel_capture_processing &&
 -                 use_loopback_aec_reference == b.use_loopback_aec_reference;
 +                 use_loopback_aec_reference == b.use_loopback_aec_reference &&
-+                 cpu_independent == b.cpu_independent;
++                 cpu_independent == b.cpu_independent &&
++                 speech_recognizer == b.speech_recognizer;
  #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
      equal = equal && voice_isolation == b.voice_isolation;
  #endif
-@@ -46,6 +56,14 @@ struct MEDIA_EXPORT AudioProcessingSettings {
+@@ -46,6 +64,14 @@ struct MEDIA_EXPORT AudioProcessingSettings {
    }
  
    bool NeedWebrtcAudioProcessing() const {

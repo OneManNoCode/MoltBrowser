@@ -42,6 +42,14 @@ For longer narrative posts behind each entry see
   one by Queen" plays it: after a wake phrase, a first word that is only
   the sound the name ends on is dropped, when what follows is a command as
   said.
+- **"Hey Molt" over music, on speakers.** With a song playing through the
+  speakers, the echo canceller could lose track of the song's echo and then
+  take your voice for it: "Hey Molt, pause" said over the song came out
+  too faint to hear. Voice mode's microphone now gets an echo canceller
+  setting that keeps track of songs of steady tones, so the start of what
+  you say comes through. Only voice mode's microphone gets it; pages and
+  calls are unchanged, and voice mode's own voice and a video's speech are
+  still removed as before.
 - **A menu item is pressed even if the menu closed.** After "open the
   menu" read its items, the menu could close by itself before you named
   one (another window took the focus), and "click Settings" answered "I

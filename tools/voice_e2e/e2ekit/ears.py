@@ -38,10 +38,11 @@ _SOUND = {"c": "k", "q": "k", "g": "k", "b": "p", "d": "t", "z": "s", "v": "f"}
 
 def sound_key(word):
     """|word|'s consonants as they sound: vowels, "h", "w" and "y" left out,
-    close sounds made one, repeats run together ("cactus" and "keptus" are
-    "kts" and "kpts", "lemon" and "limit" "lmn" and "lmt")."""
+    "ph" an "f", close sounds made one, repeats run together ("cactus" and
+    "keptus" are "kts" and "kpts", "lemon" and "limit" "lmn" and "lmt",
+    "farsal" and "pharsal" both "frsl")."""
     out = []
-    for ch in word.lower():
+    for ch in word.lower().replace("ph", "f"):
         if not ch.isalpha() or ch in "aeiouyhw":
             continue
         ch = _SOUND.get(ch, ch)

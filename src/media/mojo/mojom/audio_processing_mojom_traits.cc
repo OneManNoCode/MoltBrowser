@@ -34,6 +34,7 @@ bool StructTraits<media::mojom::AudioProcessingSettingsDataView,
 #endif
   // MoltBrowser.
   out_settings->cpu_independent = input.cpu_independent();
+  out_settings->speech_recognizer = input.speech_recognizer();
   return true;
 }
 

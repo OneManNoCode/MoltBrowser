@@ -40,6 +40,13 @@ struct MEDIA_EXPORT AudioProcessingSettings {
   // media_stream_audio_processing_layout.cc), for the processing in the audio
   // service and in the renderer alike.
   bool cpu_independent = false;
+  // MoltBrowser: the stream feeds a speech recognizer (voice mode's
+  // microphone): the echo canceller is tuned so that speech over a playing
+  // song isn't taken for its echo (media/webrtc/
+  // molt_speech_recognizer_processing.h). Set by voice mode only; the
+  // browser clears it on the streams renderers create
+  // (molt_audio_capture_processing.h).
+  bool speech_recognizer = false;
 
   bool operator==(const AudioProcessingSettings& b) const {
     bool equal = echo_cancellation == b.echo_cancellation &&
@@ -48,7 +55,8 @@ struct MEDIA_EXPORT AudioProcessingSettings {
                  multi_channel_capture_processing ==
                      b.multi_channel_capture_processing &&
                  use_loopback_aec_reference == b.use_loopback_aec_reference &&
-                 cpu_independent == b.cpu_independent;
+                 cpu_independent == b.cpu_independent &&
+                 speech_recognizer == b.speech_recognizer;
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
     equal = equal && voice_isolation == b.voice_isolation;
 #endif

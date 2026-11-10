@@ -33,12 +33,15 @@ namespace content {
 
 // Sets the cpu_independent of `config`, a renderer's processing config for a
 // stream (null: the audio service doesn't process the stream), to the
-// browser's decision for the renderer's profile.
+// browser's decision for the renderer's profile. A renderer's stream never
+// gets voice mode's echo canceller tuning (speech_recognizer): it is the
+// browser's own, for its own microphone stream, and pages keep Chromium's.
 inline void MoltApplyCpuIndependentProcessing(
     bool cpu_independent,
     media::mojom::AudioProcessingConfig* config) {
   if (config) {
     config->settings.cpu_independent = cpu_independent;
+    config->settings.speech_recognizer = false;
   }
 }
 

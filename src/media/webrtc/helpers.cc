@@ -14,6 +14,7 @@
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
 #include "media/base/media_switches.h"
+#include "media/webrtc/molt_speech_recognizer_processing.h"
 #include "media/webrtc/webrtc_features.h"
 #include "third_party/webrtc/api/audio/audio_processing.h"
 #include "third_party/webrtc/api/audio/builtin_audio_processing_builder.h"
@@ -208,9 +209,31 @@ CreateWebRtcAudioProcessingModule(
     multichannel_aec3_config.delay.fixed_capture_delay_samples =
         aec3_config.delay.fixed_capture_delay_samples;
     multichannel_aec3_config.delay.num_filters = aec3_config.delay.num_filters;
+    // MoltBrowser: tuned for a speech recognizer too (below).
+    if (settings.speech_recognizer) {
+      aec3_config = SpeechRecognizerEchoCancellerConfig(aec3_config);
+      multichannel_aec3_config =
+          SpeechRecognizerEchoCancellerConfig(multichannel_aec3_config);
+    }
     apm_builder.SetEchoCancellerConfig(aec3_config, multichannel_aec3_config);
   }
 #endif  // BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
+
+  // MoltBrowser: voice mode's microphone (AudioProcessingSettings::
+  // speech_recognizer): WebRTC's default echo canceller configs, tuned for a
+  // speech recognizer (molt_speech_recognizer_processing.h). A stream with a
+  // system loopback reference got them above.
+#if BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
+  const bool molt_loopback_reference = settings.use_loopback_aec_reference;
+#else
+  const bool molt_loopback_reference = false;
+#endif
+  if (settings.speech_recognizer && !molt_loopback_reference) {
+    apm_builder.SetEchoCancellerConfig(
+        SpeechRecognizerEchoCancellerConfig(webrtc::EchoCanceller3Config()),
+        SpeechRecognizerEchoCancellerConfig(
+            webrtc::EchoCanceller3Config::CreateDefaultMultichannelConfig()));
+  }
 
   apm_builder.SetNeuralResidualEchoEstimator(std::move(echo_estimator));
   return {apm_builder.Build(env), added_delay};

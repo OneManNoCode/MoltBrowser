@@ -61,6 +61,11 @@ class FindWordTest(unittest.TestCase):
             "to show notifications, to allow it, saying limit, to blark it, say no"),
             "helmet")
         self.assertEqual(self.e.nearest_by_sound("to allow it, said Benjo"), "banjo")
+        # The thirty-second build (headphones): "fossil" heard as "farsal",
+        # then as "pharsal" on the "repeat": the same sounds both times.
+        for heard in ("to allow it, say farsal, to block it, say no.",
+                      "to allow it, say pharsal, to blark it, say no"):
+            self.assertEqual(self.e.nearest_by_sound(heard), "fossil")
         # Nothing near, or more than one as near: none.
         self.assertIsNone(self.e.nearest_by_sound("To allow it, say the word on your screen."))
         self.assertIsNone(self.e.nearest_by_sound("example.com wants to use your camera"))
@@ -72,6 +77,8 @@ class FindWordTest(unittest.TestCase):
         self.assertEqual(ears.sound_key("keptus"), "kpts")
         self.assertEqual(ears.sound_key("Lemon"), "lmn")
         self.assertEqual(ears.sound_key("harbor"), "rpr")
+        self.assertEqual(ears.sound_key("pharsal"), "frsl")
+        self.assertEqual(ears.sound_key("Philip"), "flp")
 
     def test_distance(self):
         self.assertEqual(ears.letter_distance("harbor", "harbour"), 1)
