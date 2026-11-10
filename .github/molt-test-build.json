@@ -5,5 +5,5 @@
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Spoken suite only, on the thirty-sixth build: the owner's song test accepts the recognizer's \"Bohemian rapsody\" for the search (the owner's decision; a query expectation may list values). The thirty-sixth gave file 79/87, headphones 83/91, speakers 81/91."
+ "request": "Spoken suite only, on the thirty-sixth build: the owner's song test accepts the recognizer's \"Bohemian rapsody\" and, in the always-listening variant, \"Bohemium repsidy\" for the search (the owner's decisions; a query expectation may list values, and the video fixture shows the song for either). The thirty-sixth gave file 79/87, headphones 83/91, speakers 81/91."
 }

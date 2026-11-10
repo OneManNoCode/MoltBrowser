@@ -12,7 +12,7 @@
     {"say": "open YouTube", "needs": ["open_site"],
      "expect": [{"host": "www.youtube.com"}, {"path": "/"}, {"said": "YouTube is open."}]},
     {"say": "search for Bohemian Rhapsody", "needs": ["search"],
-     "expect": [{"path": "/results"}, {"query": {"search_query": ["Bohemian Rhapsody", "Bohemian rapsody"]}},
+     "expect": [{"path": "/results"}, {"query": {"search_query": ["Bohemian Rhapsody", "Bohemian rapsody", "Bohemium repsidy"]}},
                 {"said_re": "^20 results\\."}]},
     {"say": "play the live one by Queen", "needs": ["choose"],
      "expect": [{"path": "/results"}, {"said_has": "Did you mean"}]},
