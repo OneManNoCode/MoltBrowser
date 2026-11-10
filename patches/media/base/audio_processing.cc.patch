@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/base/audio_processing.cc b/media/base/audio_processing.cc
-index 780f05d0c0bd113ae965d87237e5427e5578f827..9e9f5fa1ca3b5c49732de7f2240f9e94b82482b9 100644
+index 780f05d0c0bd113ae965d87237e5427e5578f827..a2d8f4777668c9c4bd4b24dcaac55d14f28f77a5 100644
 --- a/media/base/audio_processing.cc
 +++ b/media/base/audio_processing.cc
-@@ -17,12 +17,12 @@ std::string AudioProcessingSettings::ToString() const {
+@@ -17,12 +17,13 @@ std::string AudioProcessingSettings::ToString() const {
         ", gain control: ", bool_to_yes_no(automatic_gain_control),
         ", multichannel capture processing: ",
         bool_to_yes_no(multi_channel_capture_processing),
@@ -21,7 +21,8 @@ index 780f05d0c0bd113ae965d87237e5427e5578f827..9e9f5fa1ca3b5c49732de7f2240f9e94
  #endif
 -      });
 +       // MoltBrowser.
-+       ", cpu independent: ", bool_to_yes_no(cpu_independent)});
++       ", cpu independent: ", bool_to_yes_no(cpu_independent),
++       ", speech recognizer: ", bool_to_yes_no(speech_recognizer)});
  }
  
  }  // namespace media

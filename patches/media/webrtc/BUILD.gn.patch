@@ -5,23 +5,35 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/webrtc/BUILD.gn b/media/webrtc/BUILD.gn
-index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..d0958c1cb36ba2b8d391a0be8861e12d934c96e6 100644
+index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..0c88c85e4eced9038c461552e0894b751668724d 100644
 --- a/media/webrtc/BUILD.gn
 +++ b/media/webrtc/BUILD.gn
-@@ -45,6 +45,27 @@ component("webrtc") {
+@@ -21,6 +21,10 @@ component("webrtc") {
+     "helpers.cc",
+     "helpers.h",
+     "ml_model_handle.h",
++
++    # MoltBrowser: voice mode's echo canceller tuning.
++    "molt_speech_recognizer_processing.cc",
++    "molt_speech_recognizer_processing.h",
+     "webrtc_features.cc",
+     "webrtc_features.h",
+   ]
+@@ -45,6 +49,28 @@ component("webrtc") {
    }
  }
  
 +# MoltBrowser: microphone processing that computes the same samples on
 +# every CPU (MoltNet's streams), the echo reference mixed for it, and the
 +# subnormal floats both meet: golden digests every CPU and OS must
-+# reproduce, in molt_ai_unittests.
++# reproduce; and voice mode's echo canceller tuning. In molt_ai_unittests.
 +source_set("molt_unittests") {
 +  testonly = true
 +  sources = [
 +    "molt_cpu_independent_processing_unittest.cc",
 +    "molt_echo_reference_unittest.cc",
 +    "molt_portable_subnormals_unittest.cc",
++    "molt_speech_recognizer_processing_unittest.cc",
 +  ]
 +  deps = [
 +    ":webrtc",

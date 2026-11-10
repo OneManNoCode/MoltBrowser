@@ -22,7 +22,8 @@ std::string AudioProcessingSettings::ToString() const {
        ", voice isolation: ", bool_to_yes_no(voice_isolation),
 #endif
        // MoltBrowser.
-       ", cpu independent: ", bool_to_yes_no(cpu_independent)});
+       ", cpu independent: ", bool_to_yes_no(cpu_independent),
+       ", speech recognizer: ", bool_to_yes_no(speech_recognizer)});
 }
 
 }  // namespace media

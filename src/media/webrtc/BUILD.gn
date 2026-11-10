@@ -21,6 +21,10 @@ component("webrtc") {
     "helpers.cc",
     "helpers.h",
     "ml_model_handle.h",
+
+    # MoltBrowser: voice mode's echo canceller tuning.
+    "molt_speech_recognizer_processing.cc",
+    "molt_speech_recognizer_processing.h",
     "webrtc_features.cc",
     "webrtc_features.h",
   ]
@@ -48,13 +52,14 @@ component("webrtc") {
 # MoltBrowser: microphone processing that computes the same samples on
 # every CPU (MoltNet's streams), the echo reference mixed for it, and the
 # subnormal floats both meet: golden digests every CPU and OS must
-# reproduce, in molt_ai_unittests.
+# reproduce; and voice mode's echo canceller tuning. In molt_ai_unittests.
 source_set("molt_unittests") {
   testonly = true
   sources = [
     "molt_cpu_independent_processing_unittest.cc",
     "molt_echo_reference_unittest.cc",
     "molt_portable_subnormals_unittest.cc",
+    "molt_speech_recognizer_processing_unittest.cc",
   ]
   deps = [
     ":webrtc",

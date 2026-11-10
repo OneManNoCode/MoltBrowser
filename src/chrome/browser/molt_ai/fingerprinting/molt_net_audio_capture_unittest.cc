@@ -54,6 +54,16 @@ TEST(MoltNetAudioCaptureTest, TheBrowserDecidesNotTheRenderer) {
   }
 }
 
+// A renderer can't ask for voice mode's echo canceller tuning for its
+// stream; the other settings stay the renderer's.
+TEST(MoltNetAudioCaptureTest, ARendererDoesNotGetTheSpeechRecognizerTuning) {
+  media::mojom::AudioProcessingConfigPtr config = RendererConfig(false);
+  config->settings.speech_recognizer = true;
+  content::MoltApplyCpuIndependentProcessing(false, config.get());
+  EXPECT_FALSE(config->settings.speech_recognizer);
+  EXPECT_TRUE(config->settings == RendererConfig(false)->settings);
+}
+
 // A stream the audio service doesn't process has no config to set.
 TEST(MoltNetAudioCaptureTest, NoConfigStaysNone) {
   media::mojom::AudioProcessingConfigPtr config;

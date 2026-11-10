@@ -30,6 +30,10 @@ struct AudioProcessingSettings {
   // CPU (media::AudioProcessingSettings::cpu_independent). MoltNet's renderers
   // set it.
   bool cpu_independent;
+
+  // MoltBrowser: the stream feeds a speech recognizer (media::
+  // AudioProcessingSettings::speech_recognizer). Only voice mode sets it.
+  bool speech_recognizer;
 };
 
 // This interface is hosted in the audio service and called from the renderer.
