@@ -339,6 +339,10 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"Start of", "start_over", ""},
       {"Hey, Malt, fine timetable on this page", "find_in_page",
        "text=timetable"},
+      // "Pause" with its "p" lost over a playing video.
+      {"Hey mold, Aus.", "pause", ""},
+      {"Hey mold. Oz", "pause", ""},
+      {"Hey, Malt. Ors", "pause", ""},
       // "On" heard glued to the word before "this page".
       {"Hey mold, find time to belong this page.", "find_in_page",
        "text=time to belong"},
@@ -352,6 +356,11 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"take me home", "home", "", kField},
       {"take me back", "back", "", kField},
   });
+  // Only said alone: "the wizard of oz" is no pause.
+  EXPECT_NE(ParseVoiceCommand("open the wizard of oz", MakeContext(kNone)).kind,
+            VoiceCommandKind::kPause);
+  EXPECT_NE(ParseVoiceCommand("aus und vorbei", MakeContext(kNone)).kind,
+            VoiceCommandKind::kPause);
   // Said so, the "on" may be the last word's end; with it, it isn't.
   EXPECT_TRUE(
       ParseVoiceCommand("find time to belong this page", MakeContext(kNone))

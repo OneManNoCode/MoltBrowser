@@ -42,6 +42,10 @@ For longer narrative posts behind each entry see
   one by Queen" plays it: after a wake phrase, a first word that is only
   the sound the name ends on is dropped, when what follows is a command as
   said.
+- **"Pause" heard without its "p" over a playing video.** Right after
+  "Hey Molt", the recognizer wrote "pause" as "Aus", "Oz" or "Ors" while a
+  video played. Said alone, those pause it, as "pores" and "paws" already
+  did.
 - **A number said while voice mode reads the list is taken.** "Three",
   said over "1: ..., 2: ..., 3: ..." as the results were read, was dropped
   as voice mode's own voice heard back, because the reading has the word

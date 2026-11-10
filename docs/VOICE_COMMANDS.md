@@ -604,6 +604,7 @@ said.
 - `stop (the video | the music | the song | playback | playing | the movie | the audio)`
 - `(pause | hold on) [it | this | that | the video | the music | the song | playback | the movie | the audio | reading | the reading]`
 - `(pores | paws) [it | this | that | the video | the music | the song]`
+- `(aus | oz | ors)`
 
 **Carry on playing.** For example: "resume".
 

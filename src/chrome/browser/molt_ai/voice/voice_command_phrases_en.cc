@@ -460,6 +460,10 @@ constexpr CommandPattern kPatterns[] = {
     // English recognizer hears it from a British voice (the spoken suite's
     // runs, file and live microphone).
     {K::kPause, "(pores|paws) [it|this|that|the video|the music|the song]"},
+    // "Aus", "oz", "ors": "pause" with its "p" lost over a playing video,
+    // right after the "t" of "Hey Molt" (the spoken suite's live runs).
+    // Said alone only.
+    {K::kPause, "(aus|oz|ors)"},
     {K::kSkipAd,
      "skip [the|this|these] (ad|ads|advert|adverts|advertisement|"
      "advertisements|commercial)"},
