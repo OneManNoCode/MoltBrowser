@@ -333,6 +333,7 @@ media/mojo/mojom/audio_processing_mojom_traits.h.patch
 media/renderers/default_decoder_factory.cc.patch
 media/webrtc/BUILD.gn.patch
 media/webrtc/audio_processor.cc.patch
+media/webrtc/audio_processor.h.patch
 media/webrtc/helpers.cc.patch
 net/BUILD.gn.patch
 net/base/features.cc.patch

@@ -96,7 +96,8 @@ TEST_F(VoiceSessionLogicTest, TheTrialDucksAtTheSpeechOnset) {
   ASSERT_EQ(logic_->state(), SessionState::kWaiting);
   // Nothing plays: nothing to duck.
   EXPECT_FALSE(logic_->OnMicrophoneOnset(now_).duck.has_value());
-  logic_->OnPageAudible(true, now_);
+  const int64_t audible = now_;
+  logic_->OnPageAudible(true, audible);
 
   // Someone speaks, and no wake phrase follows: restored after it.
   const int64_t t = now_ + 3000;
@@ -104,7 +105,8 @@ TEST_F(VoiceSessionLogicTest, TheTrialDucksAtTheSpeechOnset) {
   EXPECT_EQ(logic_->NextDeadline(), t + kOnsetDuckMs);
   EXPECT_FALSE(At(t + kOnsetDuckMs - 1).duck.has_value());
   EXPECT_EQ(At(t + kOnsetDuckMs).duck, false);
-  EXPECT_FALSE(logic_->NextDeadline().has_value());
+  // Only the helper's switch to the linear output is due (kLinearAudibleForMs).
+  EXPECT_EQ(logic_->NextDeadline(), audible + kLinearAudibleForMs);
 
   // "Hey Molt, pause" over the video: ducked from its onset to its end.
   const int64_t u = t + 10000;
@@ -123,7 +125,143 @@ TEST_F(VoiceSessionLogicTest, NoDuckAtTheSpeechOnsetWithoutTheTrial) {
   Begin();
   logic_->OnPageAudible(true, now_);
   EXPECT_FALSE(logic_->OnMicrophoneOnset(now_ + 100).duck.has_value());
+  // Only the helper's switch to the linear output is due.
+  EXPECT_EQ(logic_->NextDeadline(), now_ + kLinearAudibleForMs);
+}
+
+// While voice mode waits for the wake phrase over a tab's sound, the helper
+// hears what the echo canceller's linear filter alone left, once the tab has
+// played kLinearAudibleForMs; otherwise the processed microphone.
+TEST_F(VoiceSessionLogicTest, TheHelperHearsTheLinearOutputOverTabSound) {
+  Begin();
+  EXPECT_FALSE(logic_->helper_hears_linear());
+  const int64_t t = now_;
+  EXPECT_FALSE(logic_->OnPageAudible(true, t).helper_hears_linear.has_value());
+  EXPECT_EQ(logic_->NextDeadline(), t + kLinearAudibleForMs);
+  EXPECT_FALSE(At(t + kLinearAudibleForMs - 1).helper_hears_linear.has_value());
+  EXPECT_EQ(At(t + kLinearAudibleForMs).helper_hears_linear, true);
+  EXPECT_TRUE(logic_->helper_hears_linear());
   EXPECT_FALSE(logic_->NextDeadline().has_value());
+  // A pause in the tab's sound starts the wait again.
+  const int64_t u = now_ + 100;
+  EXPECT_EQ(logic_->OnPageAudible(false, u).helper_hears_linear, false);
+  EXPECT_FALSE(
+      logic_->OnPageAudible(true, u + 100).helper_hears_linear.has_value());
+  EXPECT_EQ(At(u + 100 + kLinearAudibleForMs).helper_hears_linear, true);
+  // Something else speaking, and kOtherSpeechTailMs after.
+  const int64_t v = now_ + 100;
+  EXPECT_EQ(logic_->OnOtherSpeech(true, v).helper_hears_linear, false);
+  EXPECT_FALSE(
+      logic_->OnOtherSpeech(false, v + 100).helper_hears_linear.has_value());
+  EXPECT_EQ(logic_->NextDeadline(), v + 100 + kOtherSpeechTailMs);
+  EXPECT_FALSE(At(v + 99 + kOtherSpeechTailMs).helper_hears_linear.has_value());
+  EXPECT_EQ(At(v + 100 + kOtherSpeechTailMs).helper_hears_linear, true);
+  EXPECT_FALSE(logic_->NextDeadline().has_value());
+  // The helper restarting, and voice mode turned off.
+  EXPECT_EQ(logic_->OnHelperLost(now_).helper_hears_linear, false);
+  EXPECT_EQ(logic_->OnHelperReady(now_).helper_hears_linear, true);
+  EXPECT_EQ(logic_->Stop(now_).helper_hears_linear, false);
+}
+
+TEST_F(VoiceSessionLogicTest, NoLinearOutputWithoutWhatItNeeds) {
+  // No echo canceller.
+  Begin();
+  logic_->OnEchoCancellation(false, now_);
+  logic_->OnPageAudible(true, now_);
+  EXPECT_FALSE(At(now_ + kLinearAudibleForMs).helper_hears_linear.has_value());
+  EXPECT_EQ(logic_->OnEchoCancellation(true, now_).helper_hears_linear, true);
+  // Always listening: no wake phrase to wait for.
+  Begin(/*always_listening=*/true);
+  logic_->OnPageAudible(true, now_);
+  EXPECT_FALSE(At(now_ + kLinearAudibleForMs).helper_hears_linear.has_value());
+  // The trial off.
+  ListeningSettings settings = Settings(false);
+  settings.linear_while_waiting = false;
+  logic_ = std::make_unique<VoiceSessionLogic>(settings);
+  logic_->Start(now_);
+  logic_->OnHelperReady(now_);
+  logic_->OnPageAudible(true, now_);
+  EXPECT_FALSE(At(now_ + kLinearAudibleForMs).helper_hears_linear.has_value());
+}
+
+// A wake heard over the linear output counts only if the processed
+// microphone had the phrase too; then the helper hears the processed
+// microphone for the command, which the voice gesture never takes.
+TEST_F(VoiceSessionLogicTest, AWakeOverTheLinearOutputNeedsTheProcessedToo) {
+  Begin();
+  logic_->OnPageAudible(true, now_);
+  At(now_ + kLinearAudibleForMs);
+  ASSERT_TRUE(logic_->helper_hears_linear());
+  using WakeLevels = VoiceSessionLogic::WakeLevels;
+  // A video's own "Hey Molt": in the linear output only.
+  SessionActions video =
+      logic_->OnWake(now_ + 1000, 200, WakeLevels{0.004f, 0.05f});
+  EXPECT_EQ(video.wake_ignored, "only in the echo canceller's linear output");
+  EXPECT_TRUE(video.reset_helper);
+  EXPECT_FALSE(video.state.has_value());
+  EXPECT_FALSE(video.helper_hears_linear.has_value());
+  // As loud as speech but far below the linear output; level with it but
+  // quieter than speech; levels the history no longer had.
+  EXPECT_FALSE(logic_->OnWake(now_ + 2000, 200, WakeLevels{0.04f, 0.3f})
+                   .wake_ignored.empty());
+  EXPECT_FALSE(logic_->OnWake(now_ + 3000, 200, WakeLevels{0.02f, 0.021f})
+                   .wake_ignored.empty());
+  EXPECT_FALSE(
+      logic_->OnWake(now_ + 4000, 200, WakeLevels{}).wake_ignored.empty());
+  EXPECT_FALSE(logic_->OnWake(now_ + 4500, 200, WakeLevels{std::nullopt, 0.2f})
+                   .wake_ignored.empty());
+  EXPECT_EQ(logic_->state(), SessionState::kWaiting);
+
+  // The user's: in both, the processed a little lower.
+  SessionActions wake =
+      logic_->OnWake(now_ + 5000, 200, WakeLevels{0.15f, 0.2f});
+  EXPECT_TRUE(wake.wake_ignored.empty());
+  EXPECT_EQ(wake.state, SessionState::kListening);
+  EXPECT_EQ(wake.helper_hears_linear, false);
+  logic_->OnSpeechStart(now_ + 5300);
+  SessionActions command = logic_->OnFinal("pause", 0.9, now_ + 6000);
+  EXPECT_EQ(command.utterance, "pause");
+  EXPECT_TRUE(command.woke);
+  EXPECT_FALSE(command.heard_cleanly);
+}
+
+// The same wake heard over the processed microphone is heard cleanly.
+TEST_F(VoiceSessionLogicTest, AWakeOverTheProcessedMicrophoneIsHeardCleanly) {
+  Begin();
+  logic_->OnPageAudible(true, now_);
+  logic_->OnWake(now_ + 5000, 200);
+  logic_->OnSpeechStart(now_ + 5300);
+  SessionActions command = logic_->OnFinal("pause", 0.9, now_ + 6000);
+  EXPECT_EQ(command.utterance, "pause");
+  EXPECT_TRUE(command.heard_cleanly);
+}
+
+// After the browser answered, the helper hears the linear output again once
+// the follow-up window has closed; not while an answer is awaited.
+TEST_F(VoiceSessionLogicTest, TheLinearOutputWaitsForTheBrowser) {
+  Begin();
+  logic_->OnPageAudible(true, now_);
+  At(now_ + kLinearAudibleForMs);
+  ASSERT_TRUE(logic_->helper_hears_linear());
+  logic_->OnWake(now_ + 100, 0, VoiceSessionLogic::WakeLevels{0.2f, 0.2f});
+  EXPECT_FALSE(logic_->helper_hears_linear());
+  logic_->OnSpeechStart(now_ + 300);
+  logic_->OnFinal("louder", 0.9, now_ + 800);
+  now_ += 800;
+  BrowserAnswers();
+  EXPECT_FALSE(logic_->helper_hears_linear());
+  const int64_t closes = now_ + kFollowUpWindowMs;
+  EXPECT_FALSE(At(closes - 1).helper_hears_linear.has_value());
+  EXPECT_EQ(At(closes).helper_hears_linear, true);
+  EXPECT_EQ(logic_->OnAwaitingAnswer(true, closes + 100).helper_hears_linear,
+            false);
+  EXPECT_EQ(logic_->OnAwaitingAnswer(false, closes + 200).helper_hears_linear,
+            true);
+  // The browser speaking: the processed microphone at once, and the linear
+  // output kLinearQuietMs after it went quiet, outside a follow-up window.
+  EXPECT_EQ(logic_->OnBrowserActivity(BrowserActivity::kSpeaking, closes + 300)
+                .helper_hears_linear,
+            false);
 }
 
 TEST_F(VoiceSessionLogicTest, NothingCountsWithoutTheWakePhrase) {

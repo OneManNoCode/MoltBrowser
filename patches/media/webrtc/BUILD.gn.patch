@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/webrtc/BUILD.gn b/media/webrtc/BUILD.gn
-index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..0c88c85e4eced9038c461552e0894b751668724d 100644
+index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..e38c647f36503c938f1caa7c948b8a6169be1423 100644
 --- a/media/webrtc/BUILD.gn
 +++ b/media/webrtc/BUILD.gn
 @@ -21,6 +21,10 @@ component("webrtc") {
@@ -19,7 +19,7 @@ index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..0c88c85e4eced9038c461552e0894b75
      "webrtc_features.cc",
      "webrtc_features.h",
    ]
-@@ -45,6 +49,28 @@ component("webrtc") {
+@@ -45,6 +49,29 @@ component("webrtc") {
    }
  }
  
@@ -38,6 +38,7 @@ index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..0c88c85e4eced9038c461552e0894b75
 +  deps = [
 +    ":webrtc",
 +    "//base",
++    "//base/test:test_support",
 +    "//media",
 +    "//testing/gtest",
 +    "//third_party/webrtc_overrides:webrtc_component",

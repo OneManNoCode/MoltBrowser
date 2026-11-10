@@ -37,6 +37,7 @@
 #include "media/webrtc/constants.h"
 #include "media/webrtc/helpers.h"
 #include "media/webrtc/ml_model_handle.h"
+#include "media/webrtc/molt_speech_recognizer_processing.h"  // MoltBrowser
 #include "media/webrtc/webrtc_features.h"
 #include "third_party/tflite/src/tensorflow/lite/model_builder.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
@@ -360,6 +361,14 @@ AudioProcessor::AudioProcessor(
     output_bus_ = std::make_unique<AudioProcessorCaptureBus>(
         output_format_.channels(), output_format.frames_per_buffer());
   }
+  // MoltBrowser: voice mode's stream, stereo at the linear filter's rate:
+  // the second channel carries its output (molt_linear_output_channel_).
+  molt_linear_output_channel_ =
+      webrtc_audio_processing_ &&
+      ExportsLinearEchoCancellerOutput(*webrtc_audio_processing_) &&
+      output_format_.channels() == 2 &&
+      output_format_.sample_rate() == kLinearEchoCancellerOutputRate &&
+      output_format_.frames_per_buffer() == kLinearEchoCancellerOutputFrames;
 }
 
 AudioProcessor::~AudioProcessor() {
@@ -597,6 +606,11 @@ std::optional<double> AudioProcessor::ProcessData(
   num_apm_output_channels =
       std::min(num_apm_output_channels,
                static_cast<int>(apm_input_config.num_channels()));
+  // MoltBrowser: voice mode's stream is processed in one channel; the second
+  // is the linear filter's output (below).
+  if (molt_linear_output_channel_) {
+    num_apm_output_channels = 1;
+  }
 
   CHECK_GE(num_apm_output_channels, 1);
   const webrtc::StreamConfig apm_output_config = webrtc::StreamConfig(
@@ -614,8 +628,17 @@ std::optional<double> AudioProcessor::ProcessData(
       // The right channel is a copy of the left channel. Remaining channels
       // have already been set to zero at initialization.
       CHECK_GE(output_bus->bus()->channels(), 2);
-      output_bus->bus()->channel(1).copy_from_nonoverlapping(
-          output_bus->bus()->channel(0));
+      // MoltBrowser: in voice mode's stream, what the echo canceller's
+      // linear filter alone left (molt_linear_output_channel_).
+      std::array<float, kLinearEchoCancellerOutputFrames> linear;
+      if (molt_linear_output_channel_ &&
+          CopyLinearEchoCancellerOutput(*ap, &linear)) {
+        output_bus->bus()->channel(1).copy_from_nonoverlapping(
+            base::span(linear));
+      } else {
+        output_bus->bus()->channel(1).copy_from_nonoverlapping(
+            output_bus->bus()->channel(0));
+      }
     }
   }
 

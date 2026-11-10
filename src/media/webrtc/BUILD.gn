@@ -64,6 +64,7 @@ source_set("molt_unittests") {
   deps = [
     ":webrtc",
     "//base",
+    "//base/test:test_support",
     "//media",
     "//testing/gtest",
     "//third_party/webrtc_overrides:webrtc_component",

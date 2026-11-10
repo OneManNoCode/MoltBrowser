@@ -203,6 +203,13 @@ class VoiceSession : public VoiceController::Observer,
   // Before a final: whether the utterance being heard stood out of what the
   // microphone gave before it (VoiceSessionLogic::NoteUtteranceLoudness()).
   void NoteUtteranceLoudness(int64_t now_ms);
+  // For a wake that came at |now_ms| with |lag_ms|: whether the helper heard
+  // the echo canceller's linear output for some of the kLinearWakeSpanMs
+  // before it, and both outputs' loudest samples then
+  // (VoiceSessionLogic::OnWake()).
+  std::optional<VoiceSessionLogic::WakeLevels> WakeOverLinear(
+      int64_t now_ms,
+      std::optional<int64_t> lag_ms) const;
   BrowserActivity ControllerActivity() const;
   // Whether the speech engine speaks for someone else (voice_speech.h).
   bool OthersSpeaking() const;

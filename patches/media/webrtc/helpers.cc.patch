@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/webrtc/helpers.cc b/media/webrtc/helpers.cc
-index 2be0defec93b90474e274d3246a6194a1b696424..e5aea555ce9c9592f0ca191819cc441162542174 100644
+index 2be0defec93b90474e274d3246a6194a1b696424..22c499b8e32efab57224e62668d8f1d21bc95f68 100644
 --- a/media/webrtc/helpers.cc
 +++ b/media/webrtc/helpers.cc
 @@ -14,6 +14,7 @@
@@ -16,17 +16,23 @@ index 2be0defec93b90474e274d3246a6194a1b696424..e5aea555ce9c9592f0ca191819cc4411
  #include "media/webrtc/webrtc_features.h"
  #include "third_party/webrtc/api/audio/audio_processing.h"
  #include "third_party/webrtc/api/audio/builtin_audio_processing_builder.h"
-@@ -159,6 +160,9 @@ CreateWebRtcAudioProcessingModule(
+@@ -159,6 +160,15 @@ CreateWebRtcAudioProcessingModule(
        webrtc::AudioProcessing::Config::NoiseSuppression::Level::kHigh;
    apm_config.echo_canceller.enabled = settings.echo_cancellation;
    ConfigAutomaticGainControl(settings, apm_config);
 +  // MoltBrowser: the same samples for the same input on every CPU (MoltNet's
 +  // streams; AudioProcessingSettings::cpu_independent).
 +  apm_config.moltbrowser_cpu_independent = settings.cpu_independent;
++  // MoltBrowser: voice mode's stream also gets what the echo canceller's
++  // linear filter alone left (AudioProcessor puts it in the stream's second
++  // channel); its echo canceller configs, below, export it
++  // (molt_speech_recognizer_processing.h).
++  apm_config.echo_canceller.export_linear_aec_output =
++      settings.speech_recognizer && settings.echo_cancellation;
  
    webrtc::BuiltinAudioProcessingBuilder apm_builder(apm_config);
    base::TimeDelta added_delay;
-@@ -168,7 +172,9 @@ CreateWebRtcAudioProcessingModule(
+@@ -168,7 +178,9 @@ CreateWebRtcAudioProcessingModule(
    // Avoid linking the op resolver to keep Fuchsia binary size down.
    // TODO(crbug.com/450466837): Investigate if this build guard can be avoided.
  #if !BUILDFLAG(IS_FUCHSIA)
@@ -37,7 +43,7 @@ index 2be0defec93b90474e274d3246a6194a1b696424..e5aea555ce9c9592f0ca191819cc4411
      if (base::FeatureList::IsEnabled(
              features::kWebRtcNeuralResidualEchoEstimationAsyncInit)) {
        echo_estimator = webrtc::CreateNeuralResidualEchoEstimatorAsync(
-@@ -203,10 +209,32 @@ CreateWebRtcAudioProcessingModule(
+@@ -203,10 +215,32 @@ CreateWebRtcAudioProcessingModule(
      multichannel_aec3_config.delay.fixed_capture_delay_samples =
          aec3_config.delay.fixed_capture_delay_samples;
      multichannel_aec3_config.delay.num_filters = aec3_config.delay.num_filters;

@@ -163,6 +163,12 @@ CreateWebRtcAudioProcessingModule(
   // MoltBrowser: the same samples for the same input on every CPU (MoltNet's
   // streams; AudioProcessingSettings::cpu_independent).
   apm_config.moltbrowser_cpu_independent = settings.cpu_independent;
+  // MoltBrowser: voice mode's stream also gets what the echo canceller's
+  // linear filter alone left (AudioProcessor puts it in the stream's second
+  // channel); its echo canceller configs, below, export it
+  // (molt_speech_recognizer_processing.h).
+  apm_config.echo_canceller.export_linear_aec_output =
+      settings.speech_recognizer && settings.echo_cancellation;
 
   webrtc::BuiltinAudioProcessingBuilder apm_builder(apm_config);
   base::TimeDelta added_delay;

@@ -31,20 +31,53 @@
 // Chromium's tuning (the browser clears the flag on the streams renderers
 // create, content/browser/renderer_host/media/
 // molt_audio_capture_processing.h).
+//
+// Voice mode's stream also gets, in its second channel, what the linear
+// filter alone left of the microphone, before the suppressor
+// (AudioProcessor; the stream is stereo at 16 kHz). Over a playing video the
+// speech helper hears that while it waits for the wake phrase: on the
+// spoken suite's song it woke for 48 of the 48 commands above. It still
+// holds a video's own speech, which the suppressor removes, so voice mode
+// takes a wake heard there only if the processed channel had the phrase too
+// (chrome/browser/molt_ai/voice/voice_session_logic.h, kLinearWakeRatio).
 
 #ifndef MEDIA_WEBRTC_MOLT_SPEECH_RECOGNIZER_PROCESSING_H_
 #define MEDIA_WEBRTC_MOLT_SPEECH_RECOGNIZER_PROCESSING_H_
 
+#include <array>
+
 #include "base/component_export.h"
+#include "third_party/webrtc/api/audio/audio_processing.h"
 #include "third_party/webrtc/api/audio/echo_canceller3_config.h"
 
 namespace media {
 
+// The linear filter's output: 10 ms buffers at 16 kHz, whatever the
+// processing's rate.
+inline constexpr int kLinearEchoCancellerOutputRate = 16000;
+inline constexpr int kLinearEchoCancellerOutputFrames = 160;
+
 // `config` (WebRTC's single- or multichannel default, or one the stream
-// already chose) tuned for a speech recognizer.
+// already chose) tuned for a speech recognizer, and exporting the linear
+// filter's output (EchoCanceller3Config::Filter::export_linear_aec_output;
+// harmless unless the audio processing's config asks for it too).
 COMPONENT_EXPORT(MEDIA_WEBRTC)
 webrtc::EchoCanceller3Config SpeechRecognizerEchoCancellerConfig(
     webrtc::EchoCanceller3Config config);
+
+// Whether `apm`'s config asks its echo canceller for the linear filter's
+// output: a speech recognizer's stream with echo cancellation
+// (CreateWebRtcAudioProcessingModule()).
+COMPONENT_EXPORT(MEDIA_WEBRTC)
+bool ExportsLinearEchoCancellerOutput(const webrtc::AudioProcessing& apm);
+
+// After `apm` processed a buffer into one channel: the linear filter's
+// output for it, in [-1, 1]. False, leaving `out` as it was, when there is
+// none.
+COMPONENT_EXPORT(MEDIA_WEBRTC)
+bool CopyLinearEchoCancellerOutput(
+    const webrtc::AudioProcessing& apm,
+    std::array<float, kLinearEchoCancellerOutputFrames>* out);
 
 }  // namespace media
 

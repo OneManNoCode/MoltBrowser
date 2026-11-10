@@ -1,7 +1,7 @@
-{"resume_run": "42742700183",
+{"resume_run": "42760588021",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 48, thirty-third build (incremental on the thirty-second): voice mode's microphone gets an echo canceller tuned for the speech helper (media::AudioProcessingSettings::speech_recognizer, media/webrtc/molt_speech_recognizer_processing.h): AEC3's delay estimator without its pre-echo check, which a song of steady tones misleads, and the suppressor turning sooner to a more transparent near-end tuning. Offline, with the pinned Chromium's AEC3 and the spoken suite's song 6 dB down, the speech helper woke for 32 of 48 commands said over the song (2 before), and neither a video's speech nor voice mode's own voice got through. No field trial: the onset-duck trial (build 32: speakers media 3/11) is off. The thirty-second gave file 78/86, headphones 81/91, speakers 75/91 (media 3/11); typed passed."}
+ "request": "Round 49, thirty-fourth build (incremental on the thirty-third): voice mode's microphone stream is stereo with Chrome-wide echo cancellation: the processed microphone, then what the echo canceller's linear filter alone left (media::AudioProcessor, media/webrtc/molt_speech_recognizer_processing.h). The speech helper hears the second while voice mode waits for the wake phrase with a tab playing sound (for 8 s), and the processed one from the wake on; a wake heard over the linear output counts only if the processed microphone had the phrase too (-30 dBFS, within 9 dB; voice_session_logic.h). Offline on the spoken suite's song: woke 48 of 48 and wrote 38 commands right (32 and 21 with the processed microphone alone). The test log notes each switch (helper event linear on/off) and wakes taken over the linear output. The thirty-third gave file 81/87, headphones 82/91, speakers 79/91; security 5/5; typed passed."}

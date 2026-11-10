@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/webrtc/audio_processor.cc b/media/webrtc/audio_processor.cc
-index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b2b54ea0a 100644
+index bb04d93f6570c467a3d1a749104a4b61df5c89dd..8d47bd66c3fbc2aaaad93d683486ff9e5fce63c2 100644
 --- a/media/webrtc/audio_processor.cc
 +++ b/media/webrtc/audio_processor.cc
-@@ -33,6 +33,7 @@
+@@ -33,9 +33,11 @@
  #include "media/base/channel_layout.h"
  #include "media/base/limits.h"
  #include "media/base/media_switches.h"
@@ -16,7 +16,11 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
  #include "media/webrtc/constants.h"
  #include "media/webrtc/helpers.h"
  #include "media/webrtc/ml_model_handle.h"
-@@ -128,27 +129,33 @@ class AudioProcessorCaptureBus {
++#include "media/webrtc/molt_speech_recognizer_processing.h"  // MoltBrowser
+ #include "media/webrtc/webrtc_features.h"
+ #include "third_party/tflite/src/tensorflow/lite/model_builder.h"
+ #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
+@@ -128,27 +130,33 @@ class AudioProcessorCaptureBus {
  // It avoids the FIFO when the source and destination frames match. If
  // |source_channels| is larger than |destination_channels|, only the first
  // |destination_channels| are kept from the source.
@@ -56,7 +60,7 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
        audio_source_intermediate_ =
            media::AudioBus::CreateWrapper(destination_channels);
      }
-@@ -163,6 +170,9 @@ class AudioProcessorCaptureFifo {
+@@ -163,6 +171,9 @@ class AudioProcessorCaptureFifo {
      }
    }
  
@@ -66,7 +70,7 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
    void Push(const media::AudioBus& source, base::TimeDelta audio_delay) {
  #if DCHECK_IS_ON()
      DCHECK_EQ(source.channels(), source_channels_);
-@@ -170,7 +180,10 @@ class AudioProcessorCaptureFifo {
+@@ -170,7 +181,10 @@ class AudioProcessorCaptureFifo {
  #endif
      const media::AudioBus* source_to_push = &source;
  
@@ -78,7 +82,7 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
        audio_source_intermediate_->set_frames(source.frames());
        audio_source_intermediate_->SetAllChannels(source.AllChannels());
        source_to_push = audio_source_intermediate_.get();
-@@ -223,6 +236,9 @@ class AudioProcessorCaptureFifo {
+@@ -223,6 +237,9 @@ class AudioProcessorCaptureFifo {
    const int source_frames_;
  #endif
    const int sample_rate_;
@@ -88,7 +92,7 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
    std::unique_ptr<media::AudioBus> audio_source_intermediate_;
    std::unique_ptr<AudioProcessorCaptureBus> destination_;
    std::unique_ptr<media::AudioFifo> fifo_;
-@@ -323,10 +339,22 @@ AudioProcessor::AudioProcessor(
+@@ -323,15 +340,35 @@ AudioProcessor::AudioProcessor(
    SendLogMessage(base::StringPrintf(
        "%s => (capture FIFO: fifo_output_frames_per_buffer=%d)", __func__,
        fifo_output_frames_per_buffer));
@@ -113,7 +117,20 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
  
    if (webrtc_audio_processing_) {
      output_bus_ = std::make_unique<AudioProcessorCaptureBus>(
-@@ -555,13 +583,27 @@ std::optional<double> AudioProcessor::ProcessData(
+         output_format_.channels(), output_format.frames_per_buffer());
+   }
++  // MoltBrowser: voice mode's stream, stereo at the linear filter's rate:
++  // the second channel carries its output (molt_linear_output_channel_).
++  molt_linear_output_channel_ =
++      webrtc_audio_processing_ &&
++      ExportsLinearEchoCancellerOutput(*webrtc_audio_processing_) &&
++      output_format_.channels() == 2 &&
++      output_format_.sample_rate() == kLinearEchoCancellerOutputRate &&
++      output_format_.frames_per_buffer() == kLinearEchoCancellerOutputFrames;
+ }
+ 
+ AudioProcessor::~AudioProcessor() {
+@@ -555,13 +592,32 @@ std::optional<double> AudioProcessor::ProcessData(
    // Limit number of apm output channels to 2 to avoid potential problems with
    // discrete channel mapping.
    num_apm_output_channels = std::min(num_apm_output_channels, 2);
@@ -131,6 +148,11 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
 +  num_apm_output_channels =
 +      std::min(num_apm_output_channels,
 +               static_cast<int>(apm_input_config.num_channels()));
++  // MoltBrowser: voice mode's stream is processed in one channel; the second
++  // is the linear filter's output (below).
++  if (molt_linear_output_channel_) {
++    num_apm_output_channels = 1;
++  }
  
    CHECK_GE(num_apm_output_channels, 1);
    const webrtc::StreamConfig apm_output_config = webrtc::StreamConfig(
@@ -142,7 +164,27 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
                          apm_output_config, output_bus->channel_ptrs().data());
    DCHECK_EQ(err, 0) << "ProcessStream() error: " << err;
  
-@@ -600,9 +642,14 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
+@@ -572,8 +628,17 @@ std::optional<double> AudioProcessor::ProcessData(
+       // The right channel is a copy of the left channel. Remaining channels
+       // have already been set to zero at initialization.
+       CHECK_GE(output_bus->bus()->channels(), 2);
+-      output_bus->bus()->channel(1).copy_from_nonoverlapping(
+-          output_bus->bus()->channel(0));
++      // MoltBrowser: in voice mode's stream, what the echo canceller's
++      // linear filter alone left (molt_linear_output_channel_).
++      std::array<float, kLinearEchoCancellerOutputFrames> linear;
++      if (molt_linear_output_channel_ &&
++          CopyLinearEchoCancellerOutput(*ap, &linear)) {
++        output_bus->bus()->channel(1).copy_from_nonoverlapping(
++            base::span(linear));
++      } else {
++        output_bus->bus()->channel(1).copy_from_nonoverlapping(
++            output_bus->bus()->channel(0));
++      }
+     }
+   }
+ 
+@@ -600,9 +665,14 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
    const ChannelLayout channel_layout = device_format.channel_layout();
  
    // The audio processor can only handle up to two channels.
@@ -158,7 +200,7 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
      return std::nullopt;
    }
  
-@@ -613,6 +660,13 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
+@@ -613,6 +683,13 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
            audio_processing_settings.NeedWebrtcAudioProcessing(),
            device_format));
    params.set_effects(device_format.effects());
@@ -172,7 +214,7 @@ index bb04d93f6570c467a3d1a749104a4b61df5c89dd..1dc753412f1cb750609abc5fc103929b
    if (channel_layout == CHANNEL_LAYOUT_DISCRETE) {
      DCHECK_LE(device_format.channels(), 2);
    }
-@@ -628,6 +682,13 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
+@@ -628,6 +705,13 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
  AudioParameters AudioProcessor::GetDefaultOutputFormat(
      const AudioParameters& input_format,
      const AudioProcessingSettings& settings) {

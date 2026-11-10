@@ -449,8 +449,10 @@ VoiceSessionLogic::Utterance VoiceSessionLogic::NewUtterance(
   return utterance;
 }
 
-SessionActions VoiceSessionLogic::OnWake(int64_t now_ms,
-                                         std::optional<int64_t> lag_ms) {
+SessionActions VoiceSessionLogic::OnWake(
+    int64_t now_ms,
+    std::optional<int64_t> lag_ms,
+    std::optional<WakeLevels> over_linear) {
   SessionActions actions;
   if (!Listening()) {
     actions.wake_ignored = "not listening";
@@ -470,8 +472,20 @@ SessionActions VoiceSessionLogic::OnWake(int64_t now_ms,
                                : "another source was speaking";
     return Finish(std::move(actions), now_ms);
   }
+  // Heard over the linear filter's output: the phrase must be in the
+  // processed microphone too, as loud as speech and not far below. A
+  // video's own "Hey Molt" is in the linear output only.
+  if (over_linear &&
+      !(over_linear->processed && over_linear->linear &&
+        *over_linear->processed >= kLinearWakeMinPeak &&
+        *over_linear->processed >= kLinearWakeRatio * *over_linear->linear)) {
+    actions.reset_helper = true;
+    actions.wake_ignored = "only in the echo canceller's linear output";
+    return Finish(std::move(actions), now_ms);
+  }
   EndUtterance(&actions);
   utterance_ = NewUtterance(/*woke=*/true, now_ms, lag_ms);
+  utterance_->over_linear = over_linear.has_value();
   wake_until_ms_ = now_ms + kWakeTimeoutMs;
   if (activity_ == BrowserActivity::kSpeaking) {
     actions.stop_speech = true;
@@ -714,6 +728,11 @@ SessionActions VoiceSessionLogic::OnPageAudible(bool audible, int64_t now_ms) {
   if (audible || page_audible_) {
     page_audible_ms_ = now_ms;
   }
+  if (audible && !page_audible_) {
+    page_audible_since_ms_ = now_ms;
+  } else if (!audible) {
+    page_audible_since_ms_ = -1;
+  }
   page_audible_ = audible;
   return Finish(SessionActions(), now_ms);
 }
@@ -850,6 +869,12 @@ std::optional<int64_t> VoiceSessionLogic::NextDeadline() const {
       consider(utterance_->started_ms + kMaxUtteranceMs);
     }
   }
+  // When the helper may hear the linear filter's output, if only time
+  // stands in the way.
+  if (!helper_hears_linear_ && LinearAllowed(state_) &&
+      LinearFromMs() > finished_ms_) {
+    consider(LinearFromMs());
+  }
   if (follow_up_until_ms_ > 0) {
     consider(follow_up_until_ms_);
   }
@@ -918,6 +943,11 @@ bool VoiceSessionLogic::Counts(const Utterance& utterance) const {
 bool VoiceSessionLogic::HeardCleanly(const Utterance& utterance,
                                      double confidence) const {
   if (utterance.during_speech || activity_ == BrowserActivity::kSpeaking) {
+    return false;
+  }
+  // Woken over the linear filter's output, which holds more of the tab's
+  // sound and of the browser's voice.
+  if (utterance.over_linear) {
     return false;
   }
   // A helper far behind the microphone may have heard the browser's last
@@ -1068,6 +1098,31 @@ SessionState VoiceSessionLogic::ComputeState(int64_t now_ms) const {
   return SessionState::kWaiting;
 }
 
+bool VoiceSessionLogic::LinearAllowed(SessionState state) const {
+  return settings_.linear_while_waiting && Listening() && echo_cancelled_ &&
+         page_audible_ && state == SessionState::kWaiting && wake_required_ &&
+         !utterance_ && !awaiting_answer_ &&
+         activity_ == BrowserActivity::kIdle && !other_speaking_ &&
+         !own_voice_unfiltered_;
+}
+
+int64_t VoiceSessionLogic::LinearFromMs() const {
+  int64_t from = 0;
+  if (speaking_ended_ms_ >= 0) {
+    from = std::max(from, speaking_ended_ms_ + kLinearQuietMs);
+  }
+  if (other_speech_ms_ >= 0) {
+    from = std::max(from, other_speech_ms_ + kOtherSpeechTailMs);
+  }
+  if (own_voice_unfiltered_ms_ >= 0) {
+    from = std::max(from, own_voice_unfiltered_ms_ + kOtherSpeechTailMs);
+  }
+  if (page_audible_since_ms_ >= 0) {
+    from = std::max(from, page_audible_since_ms_ + kLinearAudibleForMs);
+  }
+  return from;
+}
+
 void VoiceSessionLogic::EndUtterance(SessionActions* actions) {
   if (utterance_ && utterance_->partial_shown) {
     actions->partial = std::string();
@@ -1114,6 +1169,12 @@ SessionActions VoiceSessionLogic::Finish(SessionActions actions,
     ducked_ = duck;
     actions.duck = duck;
   }
+  const bool linear = LinearAllowed(state) && now_ms >= LinearFromMs();
+  if (linear != helper_hears_linear_) {
+    helper_hears_linear_ = linear;
+    actions.helper_hears_linear = linear;
+  }
+  finished_ms_ = now_ms;
   return actions;
 }
 

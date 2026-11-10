@@ -78,6 +78,13 @@ std::string SayAgainNotice(Language language) {
 // Ducks media at the microphone's speech onset while waiting for the wake
 // phrase (ListeningSettings::duck_at_speech_onset): "<this>/Enabled/".
 constexpr char kDuckAtSpeechOnsetTrial[] = "MoltVoiceDuckAtSpeechOnset";
+// Turns off the helper hearing the echo canceller's linear output while
+// waiting for the wake phrase over a tab's sound (ListeningSettings::
+// linear_while_waiting): "<this>/Disabled/".
+constexpr char kLinearWhileWaitingTrial[] = "MoltVoiceLinearWhileWaiting";
+// The wake's level check over the linear output uses the microphone's
+// speech level.
+static_assert(kLinearWakeMinPeak == kVoiceLoudPeak);
 
 ListeningSettings ToListening(const VoiceModeSettings& settings,
                               Language language) {
@@ -90,6 +97,8 @@ ListeningSettings ToListening(const VoiceModeSettings& settings,
   // e2e_field_trials): MoltBrowser has no field trial server.
   listening.duck_at_speech_onset =
       base::FieldTrialList::FindFullName(kDuckAtSpeechOnsetTrial) == "Enabled";
+  listening.linear_while_waiting = base::FieldTrialList::FindFullName(
+                                       kLinearWhileWaitingTrial) != "Disabled";
   return listening;
 }
 
@@ -560,11 +569,15 @@ void VoiceSession::OnListenerEvent(const HelperEvent& event) {
   const std::optional<int64_t> lag = event.lag_ms;
   switch (event.type) {
     case HelperEventType::kWake: {
-      SessionActions actions = logic_.OnWake(now, lag);
+      const std::optional<VoiceSessionLogic::WakeLevels> over_linear =
+          WakeOverLinear(now, lag);
+      SessionActions actions = logic_.OnWake(now, lag, over_linear);
       if (controller_) {
         controller_->NoteHelperEvent(
             "wake", lag,
-            actions.wake_ignored.empty() ? "taken" : actions.wake_ignored);
+            !actions.wake_ignored.empty() ? std::string(actions.wake_ignored)
+            : over_linear                 ? "taken over the linear output"
+                                          : "taken");
       }
       Apply(std::move(actions));
       return;
@@ -617,6 +630,9 @@ void VoiceSession::OnListenerGaveUp(const std::string& why) {
 void VoiceSession::OnMicrophoneStarted(EchoCancellation echo) {
   microphone_on_ = true;
   echo_ = echo;
+  if (audio_) {
+    audio_->SetHelperHearsLinear(logic_.helper_hears_linear());
+  }
   Apply(logic_.OnOwnSpeechInReference(OwnSpeechInReference(), NowMs()));
   LOG(INFO) << "[MoltVoice] microphone on, echo cancellation: "
             << (echo == EchoCancellation::kChromeWide ? "Chrome-wide"
@@ -719,6 +735,14 @@ void VoiceSession::OnVoiceLanguageChanged(Language language) {
 // ---- Carrying out -----------------------------------------------------------
 
 void VoiceSession::Apply(SessionActions actions) {
+  if (actions.helper_hears_linear && audio_) {
+    // Before the browser speaks: the processed microphone again.
+    audio_->SetHelperHearsLinear(*actions.helper_hears_linear);
+    if (controller_) {
+      controller_->NoteHelperEvent("linear", std::nullopt,
+                                   *actions.helper_hears_linear ? "on" : "off");
+    }
+  }
   if (actions.earcon && earcons_) {
     earcons_->Play(*actions.earcon);
     if (controller_) {
@@ -894,6 +918,27 @@ void VoiceSession::NoteUtteranceLoudness(int64_t now_ms) {
   loudness.loud = during && *during >= kVoiceLoudPeak;
   loudness.quiet_before = before && *before < kVoiceLoudPeak;
   logic_.NoteUtteranceLoudness(loudness);
+}
+
+std::optional<VoiceSessionLogic::WakeLevels> VoiceSession::WakeOverLinear(
+    int64_t now_ms,
+    std::optional<int64_t> lag_ms) const {
+  if (!audio_ || !audio_->HasLinearChannel()) {
+    return std::nullopt;
+  }
+  // Session times are base::TimeTicks in milliseconds (NowMs()), as the
+  // capture times of the microphone's levels are.
+  const base::TimeTicks to =
+      base::TimeTicks() +
+      base::Milliseconds(VoiceSessionLogic::HeardAt(now_ms, lag_ms));
+  const base::TimeTicks from = to - base::Milliseconds(kLinearWakeSpanMs);
+  if (!audio_->HelperHeardLinearBetween(from, to)) {
+    return std::nullopt;
+  }
+  VoiceSessionLogic::WakeLevels levels;
+  levels.processed = audio_->LoudestBetween(from, to);
+  levels.linear = audio_->LinearLoudestBetween(from, to);
+  return levels;
 }
 
 bool VoiceSession::OthersSpeaking() const {
