@@ -214,6 +214,9 @@ struct HeardEvidence {
   // The helper's wake detector heard the wake phrase begin it (or say it
   // alone just before it): SessionActions::woke.
   bool woke = false;
+  // Said over voice mode's own voice, it runs only as a choice from the
+  // list the browser read or offered: SessionActions::list_choice_only.
+  bool list_choice_only = false;
 };
 
 // The capability: minted by GestureBook::Hear(), used by Consume().

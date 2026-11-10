@@ -795,8 +795,8 @@ void VoiceSession::Apply(SessionActions actions) {
   if (actions.utterance && controller_) {
     // As if typed. The controller's caption calls report what it does.
     base::WeakPtr<VoiceSession> self = weak_factory_.GetWeakPtr();
-    controller_->HandleHeardUtterance(*actions.utterance,
-                                      actions.heard_cleanly, actions.woke);
+    controller_->HandleHeardUtterance(*actions.utterance, actions.heard_cleanly,
+                                      actions.woke, actions.list_choice_only);
     if (!self) {
       return;
     }

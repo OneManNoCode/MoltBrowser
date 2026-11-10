@@ -326,6 +326,13 @@ bool TakenOverOwnVoice(std::string_view text, Language language) {
   return StaysWithWhatIsRead(plain);
 }
 
+bool ChoosesOverOwnVoice(std::string_view text, Language language) {
+  ParseContext list;
+  list.expecting_choice = true;
+  list.language = language;
+  return ParseVoiceCommand(text, list).kind == VoiceCommandKind::kChoose;
+}
+
 ListeningSettings::ListeningSettings() = default;
 ListeningSettings::~ListeningSettings() = default;
 ListeningSettings::ListeningSettings(const ListeningSettings&) = default;
@@ -611,12 +618,20 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       } else if (echo) {
         reason = "voice mode's voice heard back";
       }
-      // What needs the browser quiet stops it and is asked for again.
+      // What needs the browser quiet stops it and is asked for again; a
+      // choice runs only from the list the browser read or offered.
       if (take && !addressed &&
           !TakenOverOwnVoice(text, settings_.language)) {
-        take = false;
-        actions.say_again = true;
-        actions.stop_speech = activity_ == BrowserActivity::kSpeaking;
+        if (ChoosesOverOwnVoice(text, settings_.language)) {
+          actions.list_choice_only = true;
+        } else {
+          take = false;
+          actions.say_again = true;
+          actions.stop_speech = activity_ == BrowserActivity::kSpeaking;
+          // For the spoken test kit's log (VoiceController::
+          // NoteDroppedUtterance()): what was set aside.
+          reason = "over voice mode's voice, and needs it quiet";
+        }
       }
       if (take && activity_ == BrowserActivity::kSpeaking) {
         actions.stop_speech = true;
@@ -637,7 +652,7 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
     follow_up_until_ms_ = std::max(follow_up_until_ms_, wake_until_ms_);
     return Finish(std::move(actions), now_ms);
   }
-  if (!take && !actions.say_again && !reason.empty()) {
+  if (!take && !reason.empty()) {
     actions.dropped = std::string(text);
     actions.dropped_reason = reason;
   }
