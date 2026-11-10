@@ -1028,8 +1028,17 @@ class Planner : public TurnPlanner {
         prompt.answer_text = reply.text;
         Say(ReplySpeech(prompt, reply));
         return true;
-      case PromptAnswer::kNeedWord:
       case PromptAnswer::kSayAgain:
+        // The browser gives the prompt and its word a little more time,
+        // for what the microphone heard cleanly
+        // (VoiceBrowserPrompts::GiveMoreTime()).
+        if (NeedsGesture(prompt.kind)) {
+          Add(std::move(step));
+        }
+        SayWithWord(ReplySpeech(prompt, reply),
+                    ReplySpeechWithoutWord(prompt, reply));
+        return true;
+      case PromptAnswer::kNeedWord:
       case PromptAnswer::kCantAllow:
         SayWithWord(ReplySpeech(prompt, reply),
                     ReplySpeechWithoutWord(prompt, reply));

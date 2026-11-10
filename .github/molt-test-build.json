@@ -1,7 +1,7 @@
-{"resume_run": "42694816419",
+{"resume_run": "42712138228",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 48, thirtieth build (incremental on the twenty-ninth): a word that stood out over voice mode's reading is the user's (\"three\" while the results are read); \"find\" with its \"on\" glued to the last word (\"find time to belong this page\"); the wake's clipped \"t\" heard as \"to\" is repaired in the browser too (\"Hey, Malt to play the live one by Queen\"). The twenty-ninth gave file 77/87, headphones 78/91, speakers 74/91; typed passed."}
+ "request": "Round 48, thirty-first build (incremental on the thirtieth): \"pause\" heard without its \"p\" over a playing video (\"Aus\", \"Oz\", \"Ors\"); a second try at the confirmation word gets time (each clean \"say the word again\" gives the prompt and its word 15 s more, three times at most). The thirtieth gave file 82/87, headphones 81/91, speakers 73/91; typed passed."}

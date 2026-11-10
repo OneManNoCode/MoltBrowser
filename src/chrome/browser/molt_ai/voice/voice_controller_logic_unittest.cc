@@ -1828,6 +1828,27 @@ TEST(VoiceControllerLogicTest, APermissionPromptIsReadAndWaitsForItsWord) {
   EXPECT_EQ(Find(c.Say("harbor"), K::kPromptAnswer), nullptr);
 }
 
+// "Say the word again" for a word not heard for sure: the browser is told,
+// so that the prompt and its word wait a little longer for the next try
+// (VoiceBrowserPrompts::GiveMoreTime()); a dialog, with no word, isn't.
+TEST(VoiceControllerLogicTest, AWordHeardUnsurelyIsAskedForAgainWithMoreTime) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  VoiceTurn turn =
+      PlanBrowserPrompt(11, Permission(), "harbor", c.env(), c.state());
+  c.state() = turn.state;
+  turn = c.Say("pardon");
+  EXPECT_EQ(Said(turn), "I didn't catch that. Say the word again.");
+  const VoiceStep* again = Find(turn, K::kPromptAnswer);
+  ASSERT_NE(again, nullptr);
+  EXPECT_EQ(again->index, 11);
+  EXPECT_EQ(again->prompt_answer, PromptAnswer::kSayAgain);
+  EXPECT_EQ(BrowserPromptHeld(c.state(), c.env().now_ms), 11);
+  // The word still answers it.
+  turn = c.Say("harbor");
+  ASSERT_NE(Find(turn, K::kPromptAnswer), nullptr);
+  EXPECT_EQ(Find(turn, K::kPromptAnswer)->prompt_answer, PromptAnswer::kAllow);
+}
+
 // What isn't a command while the prompt waits for its word goes to no
 // planner: a sentence holding the word would hand it to the model.
 TEST(VoiceControllerLogicTest, NoPlannerWhileAPromptWaitsForItsWord) {

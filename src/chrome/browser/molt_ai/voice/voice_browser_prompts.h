@@ -123,6 +123,9 @@ class VoiceBrowserPrompts
     // The word shown, or whether it may be said, may have changed: the
     // caption bar is drawn again (ShownWord()).
     virtual void WordChannelChanged() = 0;
+    // Prompt |id| waits at least |at_least_ms| more (the user was asked to
+    // say its word again: GiveMoreTime()).
+    virtual void BrowserPromptWaitsLonger(int id, int64_t at_least_ms) = 0;
   };
 
   explicit VoiceBrowserPrompts(Delegate* delegate);
@@ -226,6 +229,10 @@ class VoiceBrowserPrompts
     // kSites.
     base::OnceCallback<void(bool)> done;
     base::OneShotTimer timer;
+    // When |timer| ends it (NowMs()).
+    int64_t deadline_ms = 0;
+    // Times it was given more time (GiveMoreTime()).
+    int retries = 0;
   };
 
   int64_t NowMs() const;
@@ -240,6 +247,13 @@ class VoiceBrowserPrompts
   // nothing is said.
   void Drop();
   void OnTimeout(int id);
+  // The current prompt waits |window_ms| from now.
+  void StartWindow(int64_t window_ms);
+  // Asked to say the word again for what the microphone heard cleanly
+  // (|evidence|): the prompt, its word and the loop's copy wait at least
+  // kPromptRetryWindowMs more, kMaxPromptRetries times at most
+  // (voice_prompts.h).
+  void GiveMoreTime(const HeardEvidence& evidence);
 
   // Carry out |answer| to |prompt|; what to say, if anything.
   std::string AnswerPermission(const Current& prompt,

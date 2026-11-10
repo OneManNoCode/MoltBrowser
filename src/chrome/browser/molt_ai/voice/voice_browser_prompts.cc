@@ -312,10 +312,7 @@ int VoiceBrowserPrompts::Begin(Source source,
   if (!current_ || current_->id != id) {
     return 0;
   }
-  current_->timer.Start(FROM_HERE,
-                        base::Milliseconds(PromptWindowMs(prompt.kind)),
-                        base::BindOnce(&VoiceBrowserPrompts::OnTimeout,
-                                       weak_factory_.GetWeakPtr(), id));
+  StartWindow(PromptWindowMs(prompt.kind));
   return id;
 }
 
@@ -410,10 +407,7 @@ void VoiceBrowserPrompts::Reissue(WordRetired why) {
     return;
   }
   // The prompt waits its window again, from its new reading.
-  current_->timer.Start(FROM_HERE,
-                        base::Milliseconds(PromptWindowMs(current_->kind)),
-                        base::BindOnce(&VoiceBrowserPrompts::OnTimeout,
-                                       weak_factory_.GetWeakPtr(), id));
+  StartWindow(PromptWindowMs(current_->kind));
 }
 
 void VoiceBrowserPrompts::OnWordChannelInputsChanged() {
@@ -457,6 +451,32 @@ void VoiceBrowserPrompts::Drop() {
   Finish(std::move(current_), std::string());
 }
 
+void VoiceBrowserPrompts::StartWindow(int64_t window_ms) {
+  current_->deadline_ms = NowMs() + window_ms;
+  current_->timer.Start(FROM_HERE, base::Milliseconds(window_ms),
+                        base::BindOnce(&VoiceBrowserPrompts::OnTimeout,
+                                       weak_factory_.GetWeakPtr(),
+                                       current_->id));
+}
+
+void VoiceBrowserPrompts::GiveMoreTime(const HeardEvidence& evidence) {
+  // Typed text, or what may have been another source, keeps no prompt
+  // waiting.
+  if (!current_ || !evidence.from_microphone || !evidence.clean ||
+      current_->retries >= kMaxPromptRetries) {
+    return;
+  }
+  ++current_->retries;
+  const int64_t now = NowMs();
+  if (current_->deadline_ms - now < kPromptRetryWindowMs) {
+    StartWindow(kPromptRetryWindowMs);
+  }
+  if (current_->gesture_id) {
+    gestures_.GiveMoreTime(current_->gesture_id, now, kPromptRetryWindowMs);
+  }
+  delegate_->BrowserPromptWaitsLonger(current_->id, kPromptRetryWindowMs);
+}
+
 void VoiceBrowserPrompts::OnTimeout(int id) {
   if (!current_ || current_->id != id) {
     return;
@@ -490,10 +510,13 @@ void VoiceBrowserPrompts::Answer(const VoiceStep& step,
     case PromptAnswer::kAccept:
     case PromptAnswer::kDecline:
       break;
+    case PromptAnswer::kSayAgain:
+      // The loop asked for the word again (voice_controller_logic.h).
+      GiveMoreTime(evidence);
+      return;
     case PromptAnswer::kNone:
     case PromptAnswer::kDictate:
     case PromptAnswer::kNeedWord:
-    case PromptAnswer::kSayAgain:
     case PromptAnswer::kCantAllow:
       return;
   }
@@ -575,10 +598,7 @@ void VoiceBrowserPrompts::ReadAgainAfterPageText(
   if (!current_ || current_->id != id) {
     return;
   }
-  current_->timer.Start(FROM_HERE,
-                        base::Milliseconds(PromptWindowMs(current_->kind)),
-                        base::BindOnce(&VoiceBrowserPrompts::OnTimeout,
-                                       weak_factory_.GetWeakPtr(), id));
+  StartWindow(PromptWindowMs(current_->kind));
 }
 
 void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
@@ -618,7 +638,8 @@ void VoiceBrowserPrompts::AnswerWithWord(const VoiceStep& step,
     return;
   }
   if (heard == HearResult::kUnsure) {
-    // Neither the word nor a miss: it keeps waiting.
+    // Neither the word nor a miss: it keeps waiting, a little longer.
+    GiveMoreTime(evidence);
     PromptReply again;
     again.answer = PromptAnswer::kSayAgain;
     PendingPrompt pending;

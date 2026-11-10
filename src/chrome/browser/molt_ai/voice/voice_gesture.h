@@ -37,7 +37,9 @@
 //     then answered with the mouse or keyboard, or refused by voice). What
 //     sounds like a word of the list but not for sure (HearConfirmationWord()
 //     says kUnsure) neither answers nor refuses: the user is asked to say
-//     the word again, within the prompt's window. Whether a hearing is sure
+//     the word again, within the prompt's window (one heard cleanly gives
+//     the prompt a little more time, a few times at most:
+//     voice_prompts.h's kPromptRetryWindowMs). Whether a hearing is sure
 //     never depends on the prompt's word, so it tells a guesser nothing.
 //   - The word isn't given to the speech helper as a hotword (see §7.3 for
 //     the measurements): a helper that someone took over would otherwise
@@ -275,6 +277,11 @@ class GestureBook {
 
   // Prompt |id| no longer waits (answered otherwise, timed out, gone).
   void Cancel(int id);
+
+  // Prompt |id|, if it still waits at |now_ms|, waits at least |at_least_ms|
+  // more (the user was asked to say the word again: voice_prompts.h's
+  // kPromptRetryWindowMs). False if it doesn't wait.
+  bool GiveMoreTime(int id, int64_t now_ms, int64_t at_least_ms);
 
   // The prompt |id|, if it still waits at |now_ms|.
   const GesturePrompt* Find(int id, int64_t now_ms) const;

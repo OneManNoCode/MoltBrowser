@@ -371,6 +371,37 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
   EXPECT_EQ(false, Js("moltLog.includes('notify:granted')"));
 }
 
+// Asked for the word again near the end of the prompt's window, for a word
+// the microphone heard cleanly but not for sure: the prompt and its word
+// wait a little longer for the next try (the spoken suite's live run,
+// where the second try was cut off by the window's end).
+IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest,
+                       AskedForTheWordAgainItWaitsLonger) {
+  VoiceController* voice = Start();
+  auto* prompts = permissions::PermissionRequestManager::FromWebContents(tab());
+  ASSERT_TRUE(prompts);
+  permissions::MockPermissionPromptFactory factory(prompts);
+
+  const std::string word = AskNotifications();
+  VoiceBrowserPrompts* browser_prompts = voice->browser_prompts_for_testing();
+  ASSERT_TRUE(browser_prompts);
+  const base::TimeTicks start = base::TimeTicks::Now();
+  browser_prompts->SetClockForTesting(base::BindRepeating(
+      [](base::TimeTicks at) { return at; },
+      start + base::Milliseconds(kGesturePromptWindowMs - 1000)));
+  voice->HandleHeardUtterance("pardon", /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForSpeech("I didn't catch that. Say the word again."));
+  EXPECT_TRUE(prompts->IsRequestInProgress());
+  // Past where its window ended, the word still allows it.
+  browser_prompts->SetClockForTesting(base::BindRepeating(
+      [](base::TimeTicks at) { return at; },
+      start + base::Milliseconds(kGesturePromptWindowMs + 5000)));
+  voice->HandleHeardUtterance(word, /*heard_cleanly=*/true);
+  EXPECT_TRUE(WaitForLog("notify:granted"));
+  browser_prompts->SetClockForTesting(
+      base::RepeatingCallback<base::TimeTicks()>());
+}
+
 IN_PROC_BROWSER_TEST_F(VoiceBrowserPromptsBrowserTest, ConfirmAnsweredByVoice) {
   VoiceController* voice = Start();
   ASSERT_TRUE(content::ExecJs(tab(), "askConfirm('Empty the cart?')",

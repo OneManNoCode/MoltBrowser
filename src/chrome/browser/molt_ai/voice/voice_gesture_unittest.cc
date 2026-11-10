@@ -307,6 +307,34 @@ TEST(GestureBookTest, AnUnsureWordIsAskedAgain) {
             HearResult::kMinted);
 }
 
+// Asked to say the word again, the prompt waits a little more
+// (voice_prompts.h's kPromptRetryWindowMs): never less than it had, and a
+// prompt that no longer waits stays gone.
+TEST(GestureBookTest, MoreTimeForThePromptAskedAgain) {
+  GestureBook book{Counter(12)};
+  const std::optional<GesturePrompt> prompt = book.Begin(Camera(), 0);
+  ASSERT_TRUE(prompt);
+  const int64_t near_end = kGesturePromptWindowMs - 1000;
+  EXPECT_TRUE(book.GiveMoreTime(prompt->id, near_end, 15000));
+  ASSERT_NE(book.Find(prompt->id, near_end + 14000), nullptr);
+  EXPECT_EQ(book.Find(prompt->id, near_end + 15000), nullptr);
+  // Early on, the window it had stands.
+  const std::optional<GesturePrompt> other =
+      book.Begin(Camera("https://other.example camera"), 0);
+  ASSERT_TRUE(other);
+  EXPECT_TRUE(book.GiveMoreTime(other->id, 100, 15000));
+  ASSERT_NE(book.Find(other->id, kGesturePromptWindowMs - 1), nullptr);
+  EXPECT_EQ(book.Find(other->id, kGesturePromptWindowMs), nullptr);
+  // Gone is gone.
+  EXPECT_FALSE(book.GiveMoreTime(other->id, kGesturePromptWindowMs, 15000));
+  EXPECT_FALSE(book.GiveMoreTime(999, 0, 15000));
+  // The word still mints it in the time it was given.
+  VoiceGesture gesture;
+  EXPECT_EQ(book.Hear(prompt->id, prompt->word, kClean, near_end + 10000,
+                      &gesture),
+            HearResult::kMinted);
+}
+
 // The guesser's odds: whatever the prompt's word, every other word of the
 // list refuses the prompt at the first try and counts toward the lockout;
 // an unsure hearing is the same for every prompt word, so it tells nothing

@@ -93,6 +93,12 @@ namespace voice {
 
 // How long a prompt waits for its answer (the voice gesture's window).
 inline constexpr int64_t kPromptWindowMs = 30000;
+// After "Say the word again" for what the microphone heard cleanly, the
+// prompt (and its word) waits at least this long more, at most
+// kMaxPromptRetries times: a second try begun 29 s into the window was cut
+// off by its end (the spoken suite's live run).
+inline constexpr int64_t kPromptRetryWindowMs = 15000;
+inline constexpr int kMaxPromptRetries = 3;
 // A dialog's text, read at most this many characters.
 inline constexpr size_t kMaxDialogSpokenChars = 300;
 // A file's name, said at most this many characters.
