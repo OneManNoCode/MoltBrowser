@@ -129,17 +129,15 @@
 // microphone has Chrome-wide echo cancellation (the only one with that
 // output), wake phrase required, nothing being heard, no answer awaited,
 // nothing else speaking, the browser quiet for kLinearQuietMs, and the tab's
-// sound playing for kLinearAudibleForMs. From the
-// wake phrase on (media is ducked then) the helper hears the processed
-// microphone again, and a video's own command after its own "Hey Molt"
-// would have to get through the suppressor. A wake heard over the linear
-// output counts only if the processed microphone had the phrase too
-// (OnWake()'s |over_linear|): from kLinearWakeSpanMs before the wake, its
-// loudest sample at least kLinearWakeMinPeak (as loud as speech) and no
-// more than kLinearWakeRatio below the linear output's. A video's own "Hey
-// Molt" is in the linear output only. The voice gesture never counts an
-// utterance woken that way. A trial can turn it off
-// (ListeningSettings::linear_while_waiting).
+// sound playing for kLinearAudibleForMs; and through the command a wake
+// heard that way began, to its end (media is ducked from the wake on). A
+// wake heard over the linear output counts only if the processed
+// microphone had the phrase too (OnWake()'s |over_linear|): from
+// kLinearWakeSpanMs before the wake, its loudest sample at least
+// kLinearWakeMinPeak (as loud as speech) and no more than kLinearWakeRatio
+// below the linear output's. A video's own "Hey Molt" is in the linear
+// output only. The voice gesture never counts an utterance woken that way.
+// A trial can turn it off (ListeningSettings::linear_while_waiting).
 //
 // Earcons: ready (waiting, or listening when always listening), wake
 // (listening), a command taken (thinking), the browser starting to speak

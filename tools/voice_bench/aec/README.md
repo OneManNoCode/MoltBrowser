@@ -23,7 +23,8 @@ standalone.
   suite's voices over the suite's song, with its echo 6 dB down, and counts how
   often molt-speech woke and wrote the command. `--tuning hybrid` feeds the
   helper as voice mode does over a tab's sound (voice_session_logic.h): the
-  linear filter's output until its wake, then the processed microphone.
+  linear filter's output until the end of the command its wake began, then
+  the processed microphone.
 - **`scenes.py security`** has nobody speak:
   - a video says "Hey Molt, ..." commands: does the helper wake?
   - voice mode's own voice says the 40 confirmation-word prompts: does the
@@ -48,7 +49,8 @@ point of the song):
 | chromium | 2 | 1 |
 | voice | 32 | 21 |
 | linear (the linear filter alone, throughout; not something the browser does) | 42 | 31 |
-| hybrid (the linear filter until the wake, then voice: what the browser does, round 49) | 48 | 38 |
+| hybrid (the linear filter until the end of the command the wake began, then voice: what the browser does, round 49) | 48 | 38 |
+| the same, switched back at the wake (`--hybrid-switch-ms 0`: round 49's first try) | 48 | 36 |
 
 ## Reading the numbers
 

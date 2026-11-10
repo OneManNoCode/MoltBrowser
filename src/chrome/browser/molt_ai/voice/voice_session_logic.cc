@@ -1099,11 +1099,20 @@ SessionState VoiceSessionLogic::ComputeState(int64_t now_ms) const {
 }
 
 bool VoiceSessionLogic::LinearAllowed(SessionState state) const {
-  return settings_.linear_while_waiting && Listening() && echo_cancelled_ &&
-         page_audible_ && state == SessionState::kWaiting && wake_required_ &&
-         !utterance_ && !awaiting_answer_ &&
-         activity_ == BrowserActivity::kIdle && !other_speaking_ &&
-         !own_voice_unfiltered_;
+  if (!settings_.linear_while_waiting || !Listening() || !echo_cancelled_ ||
+      !page_audible_ || !wake_required_ || awaiting_answer_ ||
+      activity_ != BrowserActivity::kIdle || other_speaking_ ||
+      own_voice_unfiltered_) {
+    return false;
+  }
+  // The command a wake over it began, to the command's end: back on the
+  // processed microphone at the wake, the suppressor took the command's
+  // first word (the spoken suite's speakers run: "pause" lost, "mute" as
+  // "butte", "play faster" as "pit faster").
+  if (utterance_) {
+    return utterance_->over_linear && utterance_->ended_ms < 0;
+  }
+  return state == SessionState::kWaiting;
 }
 
 int64_t VoiceSessionLogic::LinearFromMs() const {

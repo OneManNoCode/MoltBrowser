@@ -48,9 +48,10 @@ For longer narrative posts behind each entry see
   what you say; the second stage, which removes the rest of the video's
   sound, could take "Hey" with it. A wake heard there counts only if the
   fully cleaned microphone heard you too, so a video saying "Hey Molt"
-  still wakes nothing. From "Hey Molt" on, voice mode listens to the
-  cleaned microphone again. Tried offline on the spoken suite's song: it
-  woke for 48 of 48 commands and got 38 right, against 32 and 21 before.
+  still wakes nothing. It keeps listening that way to the command you say
+  after "Hey Molt", with the video turned down, then to the cleaned
+  microphone again. Tried offline on the spoken suite's song: it woke for
+  48 of 48 commands and got 38 right, against 32 and 21 before.
 - **"Hey Molt" over music, on speakers.** With a song playing through the
   speakers, the echo canceller could lose track of the song's echo and then
   take your voice for it: "Hey Molt, pause" said over the song came out

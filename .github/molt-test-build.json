@@ -1,7 +1,9 @@
-{"resume_run": "42760588021",
+{
+ "resume_run": "42788974251",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 49, thirty-fourth build (incremental on the thirty-third): voice mode's microphone stream is stereo with Chrome-wide echo cancellation: the processed microphone, then what the echo canceller's linear filter alone left (media::AudioProcessor, media/webrtc/molt_speech_recognizer_processing.h). The speech helper hears the second while voice mode waits for the wake phrase with a tab playing sound (for 8 s), and the processed one from the wake on; a wake heard over the linear output counts only if the processed microphone had the phrase too (-30 dBFS, within 9 dB; voice_session_logic.h). Offline on the spoken suite's song: woke 48 of 48 and wrote 38 commands right (32 and 21 with the processed microphone alone). The test log notes each switch (helper event linear on/off) and wakes taken over the linear output. The thirty-third gave file 81/87, headphones 82/91, speakers 79/91; security 5/5; typed passed."}
+ "request": "Round 49, thirty-fifth build (incremental on the thirty-fourth): the speech helper keeps hearing the echo canceller's linear output through the command a wake over it began, to the command's end (voice_session_logic.h LinearAllowed()). The thirty-fourth switched back to the processed microphone at the wake, about 10 ms after the helper's event and before media was ducked, and the suppressor took the command's first word on speakers: every wake was heard (3 taken over the linear output) but \"pause\" was lost, \"mute\" heard as \"butte\", \"play faster\" as \"pit faster\". Offline: 38 of 48 commands right kept to the end, 36 switched at the wake. The thirty-fourth gave file 80/87, headphones 83/91, speakers 76/91 (media 8/11, from 7); unit tests 3019/3019, browser tests 118/119 with TheAppMenuByVoice flaky; typed passed."
+}

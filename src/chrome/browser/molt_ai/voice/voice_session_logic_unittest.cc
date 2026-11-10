@@ -217,12 +217,41 @@ TEST_F(VoiceSessionLogicTest, AWakeOverTheLinearOutputNeedsTheProcessedToo) {
       logic_->OnWake(now_ + 5000, 200, WakeLevels{0.15f, 0.2f});
   EXPECT_TRUE(wake.wake_ignored.empty());
   EXPECT_EQ(wake.state, SessionState::kListening);
-  EXPECT_EQ(wake.helper_hears_linear, false);
-  logic_->OnSpeechStart(now_ + 5300);
+  // The command it began is heard over the linear output too, to its end.
+  EXPECT_FALSE(wake.helper_hears_linear.has_value());
+  EXPECT_FALSE(
+      logic_->OnSpeechStart(now_ + 5300).helper_hears_linear.has_value());
   SessionActions command = logic_->OnFinal("pause", 0.9, now_ + 6000);
   EXPECT_EQ(command.utterance, "pause");
   EXPECT_TRUE(command.woke);
   EXPECT_FALSE(command.heard_cleanly);
+  EXPECT_EQ(command.helper_hears_linear, false);
+}
+
+// A command woken over the processed microphone isn't switched to the
+// linear output, and one woken over the linear output goes back when the
+// browser speaks.
+TEST_F(VoiceSessionLogicTest, OnlyACommandWokenOverTheLinearOutputKeepsIt) {
+  // Woken over the processed microphone (the tab's sound not yet
+  // kLinearAudibleForMs old): it stays there for the command.
+  Begin();
+  const int64_t audible = now_;
+  logic_->OnPageAudible(true, audible);
+  logic_->OnWake(audible + kLinearAudibleForMs - 500, 0);
+  logic_->OnSpeechStart(audible + kLinearAudibleForMs - 200);
+  EXPECT_FALSE(
+      At(audible + kLinearAudibleForMs).helper_hears_linear.has_value());
+  EXPECT_FALSE(logic_->OnFinal("pause", 0.9, audible + kLinearAudibleForMs + 300)
+                   .helper_hears_linear.has_value());
+
+  Begin();
+  logic_->OnPageAudible(true, now_);
+  At(now_ + kLinearAudibleForMs);
+  logic_->OnWake(now_ + 100, 0, VoiceSessionLogic::WakeLevels{0.2f, 0.2f});
+  EXPECT_TRUE(logic_->helper_hears_linear());
+  EXPECT_EQ(logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 200)
+                .helper_hears_linear,
+            false);
 }
 
 // The same wake heard over the processed microphone is heard cleanly.
@@ -244,9 +273,10 @@ TEST_F(VoiceSessionLogicTest, TheLinearOutputWaitsForTheBrowser) {
   At(now_ + kLinearAudibleForMs);
   ASSERT_TRUE(logic_->helper_hears_linear());
   logic_->OnWake(now_ + 100, 0, VoiceSessionLogic::WakeLevels{0.2f, 0.2f});
-  EXPECT_FALSE(logic_->helper_hears_linear());
+  EXPECT_TRUE(logic_->helper_hears_linear());
   logic_->OnSpeechStart(now_ + 300);
-  logic_->OnFinal("louder", 0.9, now_ + 800);
+  EXPECT_EQ(logic_->OnFinal("louder", 0.9, now_ + 800).helper_hears_linear,
+            false);
   now_ += 800;
   BrowserAnswers();
   EXPECT_FALSE(logic_->helper_hears_linear());
