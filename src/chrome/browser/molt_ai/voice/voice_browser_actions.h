@@ -103,6 +103,9 @@ class VoiceBrowserActions {
     // A step of run |run| that went on asynchronously is done: the steps
     // after it go on.
     virtual void BrowserActionDone(int run) = 0;
+    // A step of run |run| that went on asynchronously failed (it said why,
+    // or |failure| does): the steps after it are dropped.
+    virtual void BrowserActionFailed(int run, StepFailure failure) = 0;
     // The list a step of run |run| asked for: planned with
     // PlanBrowserItems().
     virtual void BrowserItemsReady(int run,
@@ -195,7 +198,13 @@ class VoiceBrowserActions {
   Result CloseWindow();
   Result SwitchWindow();
   Result AskAI(const VoiceStep& step, int run);
-  Result PressBrowserUi(const VoiceStep& step);
+  Result PressBrowserUi(const VoiceStep& step, int run);
+  // Presses |item|, an item of the app menu as the list read it, in the
+  // menu shown again for it (it closed by itself after the list was read):
+  // once the menu shows, before |until|.
+  void PressInMenuShownAgain(int run, BrowserItem item, base::TimeTicks until);
+  // "I can't find that button any more."
+  void SayButtonGone();
 
   // The profile's other windows voice mode can move to: normal tabbed
   // windows of the same person's profile, not MoltNet's, not closing.
@@ -210,6 +219,9 @@ class VoiceBrowserActions {
   // "Open the menu" asked for the app menu: until then, the list waits for
   // it to show (a slow machine draws it later than kMenuSettle).
   base::TimeTicks menu_requested_until_;
+  // The app menu's own items, when the last list read was of the menu
+  // "open the menu" showed (not a submenu's, nor the toolbar's).
+  std::vector<BrowserItem> listed_app_menu_;
   // The tab voice mode closed last, in the recently closed tabs.
   std::optional<SessionID> closed_by_voice_;
   // Always listening, as settings last said.

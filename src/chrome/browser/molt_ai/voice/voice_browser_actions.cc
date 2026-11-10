@@ -243,7 +243,7 @@ VoiceBrowserActions::Result VoiceBrowserActions::Run(const VoiceStep& step,
     case BrowserAction::kOpenDownload:
       return OpenDownload(step);
     case BrowserAction::kPressBrowserUi:
-      return PressBrowserUi(step);
+      return PressBrowserUi(step, run);
     case BrowserAction::kReopenTab:
       return ReopenTab(step);
     case BrowserAction::kOpenSettings:
@@ -707,22 +707,95 @@ void VoiceBrowserActions::CollectBrowserUi(int run,
       items.push_back(std::move(item));
     }
   }
+  // The app menu's own items, when this list is of the menu "open the
+  // menu" showed: a press of one finds it again should the menu close.
+  listed_app_menu_.clear();
+  if (!menu_until.is_null()) {
+    for (const BrowserItem& item : items) {
+      if (item.region == BrowserUiRegion::kMenu) {
+        listed_app_menu_.push_back(item);
+      }
+    }
+  }
   Deliver(run, std::move(step), std::move(items));
 }
 
+void VoiceBrowserActions::SayButtonGone() {
+  delegate_->BrowserActionSays(
+      Said(delegate_->BrowserActionLanguage(),
+           "I can't find that button any more. Say show the browser's buttons.",
+           {}));
+}
+
 VoiceBrowserActions::Result VoiceBrowserActions::PressBrowserUi(
-    const VoiceStep& step) {
+    const VoiceStep& step,
+    int run) {
   Result result;
   VoiceBrowserUi* ui = VoiceBrowserUi::Get();
-  if (!ui || !ui->Press(browser_, static_cast<int32_t>(step.index))) {
-    delegate_->BrowserActionSays(Said(
-        delegate_->BrowserActionLanguage(),
-        "I can't find that button any more. Say show the browser's buttons.",
-        {}));
-    result.outcome = Outcome::kFailed;
-    result.failure = StepFailure::kCancelled;
+  if (ui && ui->Press(browser_, static_cast<int32_t>(step.index))) {
+    return result;
   }
+  // An item of the app menu that closed by itself after it was read
+  // (another window took the focus): the menu is shown again, as a person
+  // would open it again, and the same item pressed there.
+  if (ui && !ui->MenuOpen(browser_)) {
+    for (const BrowserItem& item : listed_app_menu_) {
+      if (item.id == step.index && ShowAppMenu()) {
+        pending_run_ = run;
+        base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce(&VoiceBrowserActions::PressInMenuShownAgain,
+                           run_weak_factory_.GetWeakPtr(), run, item,
+                           base::TimeTicks::Now() + kMenuOpenTimeout),
+            kMenuSettle);
+        result.outcome = Outcome::kPending;
+        return result;
+      }
+    }
+  }
+  SayButtonGone();
+  result.outcome = Outcome::kFailed;
+  result.failure = StepFailure::kCancelled;
   return result;
+}
+
+void VoiceBrowserActions::PressInMenuShownAgain(int run,
+                                                BrowserItem item,
+                                                base::TimeTicks until) {
+  if (run != pending_run_) {
+    return;
+  }
+  VoiceBrowserUi* ui = VoiceBrowserUi::Get();
+  if (ui && !ui->MenuOpen(browser_) && base::TimeTicks::Now() < until) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&VoiceBrowserActions::PressInMenuShownAgain,
+                       run_weak_factory_.GetWeakPtr(), run, std::move(item),
+                       until),
+        kMenuSettle);
+    return;
+  }
+  // The same item: the only one of the menu with its name, role and
+  // submenu. Press() checks again that it shows and can be pressed.
+  int32_t found = 0;
+  int matches = 0;
+  if (ui && ui->MenuOpen(browser_)) {
+    const BrowserUiMap map = BuildBrowserUiMap(ui->Collect(browser_));
+    for (const BrowserUiItem& now : map.items) {
+      if (now.region == BrowserUiRegion::kMenu && now.name == item.title &&
+          now.role == item.role && now.has_submenu == item.has_submenu) {
+        found = now.id;
+        ++matches;
+      }
+    }
+  }
+  if (matches == 1 && ui->Press(browser_, found)) {
+    Finish(run);
+    return;
+  }
+  pending_run_ = 0;
+  SayButtonGone();
+  delegate_->BrowserActionFailed(run, StepFailure::kCancelled);
 }
 
 // ---- Tabs, pages and settings ---------------------------------------------

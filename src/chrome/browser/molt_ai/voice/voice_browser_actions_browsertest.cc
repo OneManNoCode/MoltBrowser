@@ -41,6 +41,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/voice/voice_ai_answers.h"
+#include "chrome/browser/molt_ai/voice/voice_browser_ui.h"
 #include "chrome/browser/molt_ai/voice/voice_controller.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_page_controller.h"
@@ -529,6 +530,26 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, TheAppMenuByVoice) {
   Say("open the menu");
   Say("close the menu");
   EXPECT_NE(tts_.TakeSpoken().find("Closed the menu."), std::string::npos);
+}
+
+// The menu read closes by itself before its item is said (another window
+// took the focus): it is shown again, and the same item pressed there.
+IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
+                       AMenuThatClosedByItselfIsShownAgainForThePress) {
+  Open(Url("/molt_voice/article.html"));
+  Say("open the menu");
+  const std::string said = tts_.TakeSpoken();
+  ASSERT_NE(said.find("Settings"), std::string::npos) << said;
+  VoiceBrowserUi* ui = VoiceBrowserUi::Get();
+  ASSERT_TRUE(ui);
+  ui->CloseMenu(browser());
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !ui->MenuOpen(browser()); }));
+  Say("click settings");
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return web_contents()->GetLastCommittedURL().host() == "settings";
+  })) << "said: " << tts_.TakeSpoken();
+  EXPECT_EQ(tts_.TakeSpoken().find("can't find that button"),
+            std::string::npos);
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest,
