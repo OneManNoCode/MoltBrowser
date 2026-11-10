@@ -1,9 +1,9 @@
 {
  "resume_run": "42825964477",
  "run_tests": true,
- "e2e_only": true,
+ "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Spoken suite only, on the thirty-sixth build: the owner's song test accepts the recognizer's \"Bohemian rapsody\" and, in the always-listening variant, \"Bohemium repsidy\" for the search (the owner's decisions; a query expectation may list values, and the video fixture shows the song for either). The thirty-sixth gave file 79/87, headphones 83/91, speakers 81/91."
+ "request": "Round 50, thirty-seventh build (incremental on the thirty-sixth), PR #114: a choice from a list said over voice mode's own voice runs, but only from the list read or offered (\"the Live Aid one\" over \"Did you mean 1: ..., 2: ..., 3: ...?\", \"play the live one by Queen\" over the results: both were asked for again; voice_session_logic.cc's ChoosesOverOwnVoice(), VoiceEnvironment::list_choice_only), with the owner's song test accepting the recognizer's spellings. The spoken-suite-only run on the thirty-sixth (42913117925) gave file 79/87, headphones 79/91, speakers 84/91; typed passed."
 }
