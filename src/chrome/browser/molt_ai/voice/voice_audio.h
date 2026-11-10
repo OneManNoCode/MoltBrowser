@@ -92,9 +92,11 @@ enum class EchoCancellation {
 EchoCancellation ChooseEchoCancellation(bool chrome_wide_enabled,
                                         int device_effects);
 
-// The parameters voice mode asks for: 16 kHz mono in 10 ms buffers, with
+// The parameters voice mode asks for: 16 kHz in 10 ms buffers. Mono, with
 // the platform's echo canceller and noise suppression when |echo| is
-// kPlatform.
+// kPlatform; with kChromeWide stereo: the processed microphone, then what
+// the echo canceller's linear filter alone left of it, before its
+// suppressor (media/webrtc/molt_speech_recognizer_processing.h).
 media::AudioParameters VoiceCaptureParameters(EchoCancellation echo);
 
 class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
@@ -153,6 +155,22 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   std::optional<float> LoudestBetween(base::TimeTicks from,
                                       base::TimeTicks to) const;
 
+  // What the echo canceller's linear filter alone left (the stream's second
+  // channel, with Chrome-wide echo cancellation; HasLinearChannel()): the
+  // speech helper hears it instead of the processed microphone while
+  // |linear| is set (voice_session_logic.h), from the next buffer captured.
+  // Over a playing video the suppressor takes the start of "Hey Molt" with
+  // the video's echo; the linear filter leaves it, with more of the video.
+  void SetHelperHearsLinear(bool linear);
+  bool HasLinearChannel() const;
+  // Its loudest sample from |from| to |to|, as LoudestBetween(); nullopt
+  // also without it.
+  std::optional<float> LinearLoudestBetween(base::TimeTicks from,
+                                            base::TimeTicks to) const;
+  // Whether the helper heard it for any of the audio captured from |from| to
+  // |to| (as far as the history reaches).
+  bool HelperHeardLinearBetween(base::TimeTicks from, base::TimeTicks to) const;
+
   // media::AudioCapturerSource::CaptureCallback (OnCaptureStarted() and
   // Capture() on the audio thread, OnCaptureError() on either):
   void OnCaptureStarted() override;
@@ -199,6 +217,16 @@ class VoiceAudio : public media::AudioCapturerSource::CaptureCallback {
   std::atomic<int64_t> loud_at_us_{0};
   // Noted by the capture thread, read here (LoudestBetween()).
   MicrophoneLevelHistory level_history_;
+  // The stream's second channel is the linear filter's output: set in
+  // Open() before the stream starts.
+  std::atomic<bool> linear_channel_{false};
+  // SetHelperHearsLinear(), read by the capture thread.
+  std::atomic<bool> helper_hears_linear_{false};
+  // Noted by the capture thread: the second channel's levels
+  // (LinearLoudestBetween()), and 1 for each buffer the helper heard it, 0
+  // for the others (HelperHeardLinearBetween()).
+  MicrophoneLevelHistory linear_level_history_;
+  MicrophoneLevelHistory linear_heard_history_;
   base::WeakPtrFactory<VoiceAudio> weak_factory_{this};
 };
 

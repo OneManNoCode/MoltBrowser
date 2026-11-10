@@ -119,6 +119,26 @@
 // microphone's speech onset while waiting for the wake phrase
 // (OnMicrophoneOnset()).
 //
+// What the helper hears (TOUCHLESS_BROWSING.md §6.1): the microphone after
+// the echo canceller, or, while voice mode waits for the wake phrase over a
+// tab's sound, what the canceller's linear filter alone left of it
+// (SessionActions::helper_hears_linear; VoiceAudio::SetHelperHearsLinear()).
+// Over a playing video the canceller's suppressor takes the start of "Hey
+// Molt" with the video's echo; the linear filter leaves it, with more of the
+// video and of the browser's own voice. So only then: a tab plays sound, the
+// microphone has Chrome-wide echo cancellation (the only one with that
+// output), wake phrase required, nothing being heard, no answer awaited,
+// nothing else speaking, the browser quiet for kLinearQuietMs, and the tab's
+// sound playing for kLinearAudibleForMs; and through the command a wake
+// heard that way began, to its end (media is ducked from the wake on). A
+// wake heard over the linear output counts only if the processed
+// microphone had the phrase too (OnWake()'s |over_linear|): from
+// kLinearWakeSpanMs before the wake, its loudest sample at least
+// kLinearWakeMinPeak (as loud as speech) and no more than kLinearWakeRatio
+// below the linear output's. A video's own "Hey Molt" is in the linear
+// output only. The voice gesture never counts an utterance woken that way.
+// A trial can turn it off (ListeningSettings::linear_while_waiting).
+//
 // Earcons: ready (waiting, or listening when always listening), wake
 // (listening), a command taken (thinking), the browser starting to speak
 // (speaking), back to waiting (the follow-up window closed or the wake
@@ -221,6 +241,27 @@ inline constexpr int64_t kMaxHeardLagMs = 1000;
 // looked", "you mold" in the spoken suite), and the duck from the wake
 // phrase comes too late for it.
 inline constexpr int64_t kOnsetDuckMs = 2500;
+// The helper hears the linear filter's output (above) once the browser has
+// been quiet this long, other speech kOtherSpeechTailMs, and a tab has
+// played sound for kLinearAudibleForMs: until the canceller has settled on
+// a new sound, drum hits came through its suppressor almost as loud as
+// speech (-30 dBFS in the 8 s after a video began, -37 or less after; tools/
+// voice_bench/aec), which the wake's check below could take for the user.
+inline constexpr int64_t kLinearQuietMs = 1200;
+inline constexpr int64_t kLinearAudibleForMs = 8000;
+// A wake heard over it: the processed microphone's loudest sample from this
+// long before the wake (when the audio at its audio_ms was captured) to the
+// wake reaches kLinearWakeMinPeak (-30 dBFS, VoiceAudio's kVoiceLoudPeak)
+// and kLinearWakeRatio (-9 dB) of the linear output's. Measured with
+// Chromium 156.0.8078.80's echo canceller standalone over the spoken
+// suite's song, its echo 6 dB down (tools/voice_bench/aec): over the
+// user's "Hey Molt" (48 said, 48 woken) the processed peak was 3.1 dB below
+// the linear one at worst, 0.4 dB typically, and -17 dBFS or louder; over a
+// video's own once the canceller had settled, 33 dB or more below; at the
+// video's start drum hits came through at -30 dBFS (kLinearAudibleForMs).
+inline constexpr int64_t kLinearWakeSpanMs = 1500;
+inline constexpr float kLinearWakeMinPeak = 0.0316f;
+inline constexpr float kLinearWakeRatio = 0.355f;
 
 enum class SessionState : uint8_t {
   kOff,
@@ -271,6 +312,10 @@ struct ListeningSettings {
   // could notice that duck, so it would tell the page when someone near
   // the microphone starts speaking, not only when the wake phrase is said.
   bool duck_at_speech_onset = false;
+  // The helper hears the echo canceller's linear output while waiting for
+  // the wake phrase over a tab's sound (above). On by default; a trial can
+  // turn it off.
+  bool linear_while_waiting = true;
 };
 
 // What to do after an event. Only what changed is set.
@@ -319,6 +364,9 @@ struct SessionActions {
   std::optional<EarconKind> earcon;
   // Duck (true) or restore (false) media.
   std::optional<bool> duck;
+  // The helper hears the echo canceller's linear output (true) or the
+  // processed microphone (false) from now on (above).
+  std::optional<bool> helper_hears_linear;
   // The state shown changed.
   std::optional<SessionState> state;
 };
@@ -343,7 +391,17 @@ class VoiceSessionLogic {
   // audio at its audio_ms was captured (HelperAudioClock::LagMs()), or
   // nullopt when its audio_ms doesn't fit the audio the helper was sent.
   // The helper says it, so it only makes decisions stricter (above).
-  SessionActions OnWake(int64_t now_ms, std::optional<int64_t> lag_ms = 0);
+  // |over_linear|: the helper heard the linear filter's output for some of
+  // the kLinearWakeSpanMs before the wake (VoiceAudio::
+  // HelperHeardLinearBetween()), and the loudest samples of both outputs
+  // then (nullopt where the level history doesn't reach).
+  struct WakeLevels {
+    std::optional<float> processed;
+    std::optional<float> linear;
+  };
+  SessionActions OnWake(int64_t now_ms,
+                        std::optional<int64_t> lag_ms = 0,
+                        std::optional<WakeLevels> over_linear = std::nullopt);
   SessionActions OnSpeechStart(int64_t now_ms,
                                std::optional<int64_t> lag_ms = 0);
   SessionActions OnPartial(std::string_view text,
@@ -409,6 +467,12 @@ class VoiceSessionLogic {
   SessionState state() const { return state_; }
   // What CONFIG says now.
   bool wake_required() const { return wake_required_; }
+  // What the helper hears now (SessionActions::helper_hears_linear).
+  bool helper_hears_linear() const { return helper_hears_linear_; }
+  // When the audio of an event that came at |now_ms| with |lag_ms| was
+  // captured: |now_ms| less the lag (clamped to 0..kMaxUtteranceMs, and
+  // kMaxHeardLagMs when it doesn't fit).
+  static int64_t HeardAt(int64_t now_ms, std::optional<int64_t> lag_ms);
   const ListeningSettings& settings() const { return settings_; }
   bool running() const { return running_; }
 
@@ -436,6 +500,8 @@ class VoiceSessionLogic {
     bool stood_out = false;
     int64_t ended_ms = -1;
     bool partial_shown = false;
+    // Its wake phrase was heard over the linear filter's output (above).
+    bool over_linear = false;
   };
 
   bool Listening() const { return running_ && ready_; }
@@ -478,10 +544,6 @@ class VoiceSessionLogic {
   // Whether |utterance|, taken with |confidence|, was heard cleanly (the
   // voice gesture).
   bool HeardCleanly(const Utterance& utterance, double confidence) const;
-  // When the audio of an event that came at |now_ms| with |lag_ms| was
-  // captured: |now_ms| less the lag (clamped to 0..kMaxUtteranceMs, and
-  // kMaxHeardLagMs when it doesn't fit).
-  static int64_t HeardAt(int64_t now_ms, std::optional<int64_t> lag_ms);
   static bool Lagged(std::optional<int64_t> lag_ms);
   // |at_start|: the event marks where its speech began (speech_start, a
   // first partial), not where it ended (a final with nothing before it).
@@ -490,6 +552,11 @@ class VoiceSessionLogic {
                          std::optional<int64_t> lag_ms,
                          bool at_start = true) const;
   SessionState ComputeState(int64_t now_ms) const;
+  // Whether the helper may hear the linear filter's output in |state|
+  // (above), from LinearFromMs() on: the earliest it may, as far as the
+  // browser's speech and other sources' go.
+  bool LinearAllowed(SessionState state) const;
+  int64_t LinearFromMs() const;
   // Fills in what changed (state, wake_required, ducking) and the earcon
   // of a return to waiting.
   SessionActions Finish(SessionActions actions, int64_t now_ms);
@@ -513,6 +580,9 @@ class VoiceSessionLogic {
   int64_t onset_duck_until_ms_ = 0;
   // When a tab was last seen playing sound; -1 never.
   int64_t page_audible_ms_ = -1;
+  // Since when tabs have been playing sound without a pause; -1 while none
+  // does.
+  int64_t page_audible_since_ms_ = -1;
   bool echo_cancelled_ = true;
   bool other_speaking_ = false;
   bool own_speech_in_reference_ = false;
@@ -541,6 +611,9 @@ class VoiceSessionLogic {
   SessionState state_ = SessionState::kOff;
   bool wake_required_ = true;
   bool ducked_ = false;
+  bool helper_hears_linear_ = false;
+  // The time Finish() last saw (NextDeadline()).
+  int64_t finished_ms_ = 0;
 };
 
 // Whether |text| is one of the commands that always count: stop, stop

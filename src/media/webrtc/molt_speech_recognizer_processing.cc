@@ -30,7 +30,31 @@ webrtc::EchoCanceller3Config SpeechRecognizerEchoCancellerConfig(
     mask->enr_transparent = 3.f;
     mask->enr_suppress = 6.f;
   }
+  // What the linear filter alone left: the stream's second channel.
+  config.filter.export_linear_aec_output = true;
   return config;
+}
+
+bool ExportsLinearEchoCancellerOutput(const webrtc::AudioProcessing& apm) {
+  const webrtc::AudioProcessing::Config config = apm.GetConfig();
+  return config.echo_canceller.enabled &&
+         config.echo_canceller.export_linear_aec_output;
+}
+
+bool CopyLinearEchoCancellerOutput(
+    const webrtc::AudioProcessing& apm,
+    std::array<float, kLinearEchoCancellerOutputFrames>* out) {
+  // One channel: the stream's processing is mono (GetLinearAecOutput()
+  // fills one array per processed channel).
+  if (apm.num_proc_channels() != 1) {
+    return false;
+  }
+  std::array<std::array<float, kLinearEchoCancellerOutputFrames>, 1> linear;
+  if (!apm.GetLinearAecOutput(linear)) {
+    return false;
+  }
+  *out = linear[0];
+  return true;
 }
 
 }  // namespace media

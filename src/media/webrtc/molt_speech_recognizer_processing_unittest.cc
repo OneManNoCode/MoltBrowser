@@ -15,14 +15,32 @@
 // takes the talker's start for echo (about 60 dB down); with the speech
 // recognizer's it comes through. Voice mode's own voice (a voiced talker as
 // the far end) is removed as well with either.
+//
+// Voice mode's stream also carries, in its second channel, what the linear
+// filter alone left (AudioProcessor; the speech helper hears it while voice
+// mode waits for the wake phrase over a tab's sound): the talker as said,
+// and more of the song than the processed channel.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "base/containers/span.h"
+#include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
+#include "base/test/task_environment.h"
+#include "base/time/time.h"
+#include "media/base/audio_bus.h"
+#include "media/base/audio_parameters.h"
 #include "media/base/audio_processing.h"
+#include "media/base/channel_layout.h"
+#include "media/webrtc/audio_processor.h"
 #include "media/webrtc/helpers.h"
 #include "media/webrtc/molt_speech_recognizer_processing.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -175,7 +193,20 @@ struct Processed {
   std::vector<float> microphone;
   std::vector<float> near_end;
   std::vector<float> out;
+  // What the linear filter alone left (a speech recognizer's stream).
+  std::vector<float> linear;
 };
+
+std::vector<float> Microphone(const std::vector<float>& far,
+                              const std::vector<float>& near_end) {
+  const int n = static_cast<int>(far.size());
+  std::vector<float> microphone(n);
+  for (int i = 0; i < n; ++i) {
+    microphone[i] =
+        (i >= kEchoDelay ? 0.5f * far[i - kEchoDelay] : 0.f) + near_end[i];
+  }
+  return microphone;
+}
 
 // `far` played, its echo and `near_end` in the microphone, through the
 // processing voice mode's stream gets.
@@ -185,12 +216,9 @@ Processed Process(bool speech_recognizer,
   Processed p;
   const int n = static_cast<int>(far.size());
   p.near_end = near_end;
-  p.microphone.resize(n);
+  p.microphone = Microphone(far, near_end);
   p.out.resize(n);
-  for (int i = 0; i < n; ++i) {
-    p.microphone[i] =
-        (i >= kEchoDelay ? 0.5f * far[i - kEchoDelay] : 0.f) + near_end[i];
-  }
+  p.linear.assign(n, 0.f);
   auto apm = CreateWebRtcAudioProcessingModule(
                  VoiceModeSettings(speech_recognizer), nullptr)
                  .first;
@@ -198,6 +226,8 @@ Processed Process(bool speech_recognizer,
   if (!apm) {
     return p;
   }
+  const bool linear = ExportsLinearEchoCancellerOutput(*apm);
+  EXPECT_EQ(linear, speech_recognizer);
   const webrtc::StreamConfig mono(kRate, 1);
   std::vector<float> render_out(kFrame);
   for (int i = 0; i + kFrame <= n; i += kFrame) {
@@ -208,8 +238,63 @@ Processed Process(bool speech_recognizer,
     const float* capture = &p.microphone[i];
     float* dest = &p.out[i];
     EXPECT_EQ(apm->ProcessStream(&capture, mono, mono, &dest), 0);
+    std::array<float, kLinearEchoCancellerOutputFrames> frame;
+    if (linear) {
+      EXPECT_TRUE(CopyLinearEchoCancellerOutput(*apm, &frame));
+      std::copy(frame.begin(), frame.end(), p.linear.begin() + i);
+    }
   }
   return p;
+}
+
+struct Channels {
+  std::vector<float> first;
+  std::vector<float> second;
+};
+
+void Collect(Channels* channels,
+             const AudioBus& bus,
+             base::TimeTicks,
+             std::optional<double>) {
+  for (int i = 0; i < bus.frames(); ++i) {
+    channels->first.push_back(bus.channel(0)[i]);
+    channels->second.push_back(bus.channels() > 1 ? bus.channel(1)[i]
+                                                  : bus.channel(0)[i]);
+  }
+}
+
+// `far` played and the microphone as Process() makes it, through
+// AudioProcessor as the audio service runs it for a stream of `channels`
+// at 16 kHz: what the stream's two channels carry.
+Channels RunStream(bool speech_recognizer,
+                   const std::vector<float>& far,
+                   const std::vector<float>& near_end,
+                   int channels) {
+  Channels out;
+  const AudioParameters input(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                              ChannelLayoutConfig::Mono(), kRate, kFrame);
+  const AudioParameters output(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                               channels == 2 ? ChannelLayoutConfig::Stereo()
+                                             : ChannelLayoutConfig::Mono(),
+                               kRate, kFrame);
+  std::unique_ptr<AudioProcessor> processor = AudioProcessor::Create(
+      base::BindRepeating(&Collect, base::Unretained(&out)),
+      base::BindRepeating([](std::string_view) {}),
+      VoiceModeSettings(speech_recognizer), input, output, nullptr);
+  const std::vector<float> microphone = Microphone(far, near_end);
+  std::unique_ptr<AudioBus> render = AudioBus::Create(1, kFrame);
+  std::unique_ptr<AudioBus> capture = AudioBus::Create(1, kFrame);
+  for (size_t i = 0; i + kFrame <= far.size(); i += kFrame) {
+    render->channel(0).copy_from(
+        base::span(far).subspan(i, static_cast<size_t>(kFrame)));
+    processor->OnPlayoutData(*render, kRate, base::Milliseconds(30));
+    capture->channel(0).copy_from(
+        base::span(microphone).subspan(i, static_cast<size_t>(kFrame)));
+    processor->ProcessCapturedAudio(*capture, base::TimeTicks::Now(),
+                                    /*num_preferred_channels=*/1,
+                                    /*volume=*/1.0);
+  }
+  return out;
 }
 
 TEST(MoltSpeechRecognizerProcessingTest, SettingsCarryTheFlag) {
@@ -223,7 +308,7 @@ TEST(MoltSpeechRecognizerProcessingTest, SettingsCarryTheFlag) {
 
 // The delay estimator without its search for an earlier lag; the
 // suppressor quicker to its near-end tuning, and that tuning more
-// transparent. Nothing else changes.
+// transparent; the linear filter's output exported. Nothing else changes.
 TEST(MoltSpeechRecognizerProcessingTest, TheTuning) {
   for (const webrtc::EchoCanceller3Config& base :
        {webrtc::EchoCanceller3Config(),
@@ -232,6 +317,8 @@ TEST(MoltSpeechRecognizerProcessingTest, TheTuning) {
     const webrtc::EchoCanceller3Config tuned =
         SpeechRecognizerEchoCancellerConfig(base);
     EXPECT_FALSE(tuned.delay.detect_pre_echo);
+    EXPECT_FALSE(base.filter.export_linear_aec_output);
+    EXPECT_TRUE(tuned.filter.export_linear_aec_output);
     const auto& nearend = tuned.suppressor.dominant_nearend_detection;
     EXPECT_EQ(nearend.enr_threshold, 4.f);
     EXPECT_EQ(nearend.snr_threshold, 5.f);
@@ -303,6 +390,79 @@ TEST(MoltSpeechRecognizerProcessingTest, ATalkerOverASongComesThrough) {
     EXPECT_LT(Db(tuned.out, song_from, kTalkFrom),
               Db(tuned.microphone, song_from, kTalkFrom) - 20.0);
   }
+}
+
+// What the linear filter alone left: the talker as said, start and all, and
+// the song's echo less removed than in the processed output (measured
+// Chromium 156.0.8078.80's AEC3 standalone over these songs: the talker
+// within 0.5 dB, the song 9 to 22 dB down, and 10 to 20 dB above the
+// processed output).
+TEST(MoltSpeechRecognizerProcessingTest, TheLinearFiltersOutput) {
+  struct Variant {
+    int bpm;
+    float key;
+  };
+  for (const Variant& v : {Variant{110, 220.f}, Variant{96, 196.f},
+                           Variant{124, 246.94f}, Variant{132, 174.61f}}) {
+    SCOPED_TRACE(testing::Message() << v.bpm << " bpm, " << v.key << " Hz");
+    const std::vector<float> far = Song(v.bpm, v.key);
+    std::vector<float> near_end(far.size(), 0.f);
+    const std::vector<float> talker = Talker(kTalkTo - kTalkFrom);
+    std::copy(talker.begin(), talker.end(), near_end.begin() + kTalkFrom);
+    const Processed tuned = Process(true, far, near_end);
+    const int start_to = kTalkFrom + kRate * 3 / 10;
+    EXPECT_GT(Db(tuned.linear, kTalkFrom, start_to) -
+                  Db(near_end, kTalkFrom, start_to),
+              -3.0);
+    EXPECT_GT(
+        Db(tuned.linear, kTalkFrom, kTalkTo) - Db(near_end, kTalkFrom, kTalkTo),
+        -3.0);
+    const int song_from = 15 * kRate;
+    EXPECT_LT(Db(tuned.linear, song_from, kTalkFrom),
+              Db(tuned.microphone, song_from, kTalkFrom) - 6.0);
+    EXPECT_GT(Db(tuned.linear, song_from, kTalkFrom),
+              Db(tuned.out, song_from, kTalkFrom) + 6.0);
+  }
+  // Pages' streams don't export it.
+  const std::vector<float> far = Song(110, 220.f);
+  const Processed chromium =
+      Process(false, far, std::vector<float>(far.size(), 0.f));
+  EXPECT_LT(Db(chromium.linear, 0, static_cast<int>(far.size())), -190.0);
+}
+
+// Voice mode's stream through AudioProcessor, stereo at 16 kHz: the first
+// channel is the processed microphone, the second what the linear filter
+// alone left. A stereo stream without the flag gets the processed channel
+// twice, as in Chromium; a mono one with it just the processed channel.
+TEST(MoltSpeechRecognizerProcessingTest, VoiceModesStreamCarriesItSecond) {
+  base::test::TaskEnvironment task_environment;
+  const std::vector<float> far = Song(110, 220.f);
+  std::vector<float> near_end(far.size(), 0.f);
+  const std::vector<float> talker = Talker(kTalkTo - kTalkFrom);
+  std::copy(talker.begin(), talker.end(), near_end.begin() + kTalkFrom);
+  const std::vector<float> microphone = Microphone(far, near_end);
+  const int song_from = 15 * kRate;
+
+  const Channels voice = RunStream(true, far, near_end, 2);
+  ASSERT_GE(voice.first.size(), static_cast<size_t>(kTalkTo));
+  EXPECT_GT(
+      Db(voice.second, kTalkFrom, kTalkTo) - Db(near_end, kTalkFrom, kTalkTo),
+      -3.0);
+  EXPECT_LT(Db(voice.first, song_from, kTalkFrom),
+            Db(microphone, song_from, kTalkFrom) - 20.0);
+  EXPECT_LT(Db(voice.second, song_from, kTalkFrom),
+            Db(microphone, song_from, kTalkFrom) - 6.0);
+  EXPECT_GT(Db(voice.second, song_from, kTalkFrom),
+            Db(voice.first, song_from, kTalkFrom) + 6.0);
+
+  const Channels page = RunStream(false, far, near_end, 2);
+  ASSERT_EQ(page.first.size(), page.second.size());
+  EXPECT_EQ(page.first, page.second);
+
+  const Channels mono = RunStream(true, far, near_end, 1);
+  ASSERT_GE(mono.first.size(), static_cast<size_t>(kTalkTo));
+  EXPECT_LT(Db(mono.first, song_from, kTalkFrom),
+            Db(microphone, song_from, kTalkFrom) - 20.0);
 }
 
 // Voice mode's own voice as the far end, nobody speaking: removed as well as

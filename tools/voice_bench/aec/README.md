@@ -18,10 +18,13 @@ standalone.
   - `--tuning=chromium` (pages' streams) or `--tuning=voice` (voice mode's,
     `AudioProcessingSettings::speech_recognizer`);
   - `--linear=OUT.wav` also writes what the echo canceller's linear filter
-    alone left.
+    alone left (voice mode's stream's second channel).
 - **`scenes.py media`** says "Hey Molt, louder" and "Hey Molt, mute" in the
   suite's voices over the suite's song, with its echo 6 dB down, and counts how
-  often molt-speech woke and wrote the command.
+  often molt-speech woke and wrote the command. `--tuning hybrid` feeds the
+  helper as voice mode does over a tab's sound (voice_session_logic.h): the
+  linear filter's output until the end of the command its wake began, then
+  the processed microphone.
 - **`scenes.py security`** has nobody speak:
   - a video says "Hey Molt, ..." commands: does the helper wake?
   - voice mode's own voice says the 40 confirmation-word prompts: does the
@@ -32,7 +35,7 @@ tools/voice_bench/aec/build.sh
 tools/voice_bench/aec/scenes.py media --apm-sim ~/.cache/molt-aec/apm_sim \
     --helper .../molt-speech --models .../speech/models \
     --tts-driver .../sherpa_bench --tts-dir <voice bench work dir> \
-    --tuning chromium,voice,linear --at 8,12,16,20
+    --tuning chromium,voice,linear,hybrid --at 8,12,16,20
 ```
 
 The helper, models and TTS driver are the speech bundle's and the voice
@@ -45,7 +48,9 @@ point of the song):
 |---|---|---|
 | chromium | 2 | 1 |
 | voice | 32 | 21 |
-| linear (the linear filter alone; not something the browser does) | 42 | 31 |
+| linear (the linear filter alone, throughout; not something the browser does) | 42 | 31 |
+| hybrid (the linear filter until the end of the command the wake began, then voice: what the browser does, round 49) | 48 | 38 |
+| the same, switched back at the wake (`--hybrid-switch-ms 0`: round 49's first try) | 48 | 36 |
 
 ## Reading the numbers
 

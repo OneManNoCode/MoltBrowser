@@ -1,7 +1,9 @@
-{"resume_run": "42742700183",
+{
+ "resume_run": "42788974251",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 48, thirty-third build (incremental on the thirty-second): voice mode's microphone gets an echo canceller tuned for the speech helper (media::AudioProcessingSettings::speech_recognizer, media/webrtc/molt_speech_recognizer_processing.h): AEC3's delay estimator without its pre-echo check, which a song of steady tones misleads, and the suppressor turning sooner to a more transparent near-end tuning. Offline, with the pinned Chromium's AEC3 and the spoken suite's song 6 dB down, the speech helper woke for 32 of 48 commands said over the song (2 before), and neither a video's speech nor voice mode's own voice got through. No field trial: the onset-duck trial (build 32: speakers media 3/11) is off. The thirty-second gave file 78/86, headphones 81/91, speakers 75/91 (media 3/11); typed passed."}
+ "request": "Round 49, thirty-fifth build (incremental on the thirty-fourth): the speech helper keeps hearing the echo canceller's linear output through the command a wake over it began, to the command's end (voice_session_logic.h LinearAllowed()). The thirty-fourth switched back to the processed microphone at the wake, about 10 ms after the helper's event and before media was ducked, and the suppressor took the command's first word on speakers: every wake was heard (3 taken over the linear output) but \"pause\" was lost, \"mute\" heard as \"butte\", \"play faster\" as \"pit faster\". Offline: 38 of 48 commands right kept to the end, 36 switched at the wake. The thirty-fourth gave file 80/87, headphones 83/91, speakers 76/91 (media 8/11, from 7); unit tests 3019/3019, browser tests 118/119 with TheAppMenuByVoice flaky; typed passed."
+}

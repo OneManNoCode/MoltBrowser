@@ -1,0 +1,24 @@
+MoltBrowser patch for media/webrtc/audio_processor.h
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
+Generated from src/media/webrtc/audio_processor.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/webrtc/audio_processor.h b/media/webrtc/audio_processor.h
+index 3b84532af8a311fa8db882e5fe819c8d67c81c79..106d17ed8ffd1a13ed33d0de36a4ea3ed67c10dc 100644
+--- a/media/webrtc/audio_processor.h
++++ b/media/webrtc/audio_processor.h
+@@ -271,6 +271,13 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
+   // long as it does not exceed the number of channels of the output format.
+   int max_num_preferred_output_channels_ = 1;
+ 
++  // MoltBrowser: voice mode's stream (AudioProcessingSettings::
++  // speech_recognizer, stereo at 16 kHz): APM processes one channel, and the
++  // second carries what the echo canceller's linear filter alone left of the
++  // microphone (media/webrtc/molt_speech_recognizer_processing.h). Set in the
++  // constructor.
++  bool molt_linear_output_channel_ = false;
++
+   // For reporting audio delay stats.
+   media::AudioDelayStatsReporter audio_delay_stats_reporter_;
+ 

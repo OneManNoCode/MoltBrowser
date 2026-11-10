@@ -25,7 +25,12 @@ counting, write a word, as is and with what the canceller left amplified
 back to the echo's level?
 
 "linear" is what the echo canceller's linear filter alone leaves (apm_sim
---linear), not anything the browser sends the helper.
+--linear) for the whole scene. "hybrid" is what the browser sends the
+helper (voice_session_logic.h): that until the end of the command the
+helper's wake began (its first final), then the processed microphone
+("voice"). --hybrid-switch-ms N switches at the wake plus N ms instead
+(round 49's first try, which the spoken suite's speakers run showed cut
+the command's first word).
 """
 
 import argparse
@@ -34,6 +39,7 @@ import re
 import subprocess
 import sys
 import time
+import wave
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -93,8 +99,39 @@ class Scenes(object):
             lp = os.path.join(self.work, "l_%s.wav" % tag)
             subprocess.run(cmd + ["--linear=" + lp, rp, cp, op], check=True)
             return lp
+        if tuning == "hybrid":
+            lp = os.path.join(self.work, "lv_%s.wav" % tag)
+            subprocess.run(cmd + ["--tuning=voice", "--linear=" + lp, rp, cp, op],
+                           check=True)
+            return self.hybrid(lp, op, tag)
         subprocess.run(cmd + ["--tuning=" + tuning, rp, cp, op], check=True)
         return op
+
+    def hybrid(self, lp, op, tag):
+        """The linear output until the end of the command the helper's wake
+        began (or --hybrid-switch-ms after the wake), then the processed
+        one: what the helper hears."""
+        linear = np.frombuffer(shc.read_pcm(lp), "<i2")
+        processed = np.frombuffer(shc.read_pcm(op), "<i2")
+        events = self.hear(lp, True)
+        wakes = [e for e in events if e.get("type") == "wake"]
+        cut = len(linear)
+        if wakes and self.a.hybrid_switch_ms is not None:
+            cut = min(cut, int((wakes[0]["audio_ms"] + self.a.hybrid_switch_ms) / 1000.0 * SR))
+        elif wakes:
+            finals = [e for e in events if e.get("type") == "final" and
+                      e.get("audio_ms", 0) >= wakes[0]["audio_ms"]]
+            if finals:
+                cut = min(cut, int(finals[0]["audio_ms"] / 1000.0 * SR))
+        mixed = np.concatenate([linear[:cut], processed[cut:len(linear)]])
+        hp = os.path.join(self.work, "h_%s.wav" % tag)
+        # As is: write_wav()'s scaling would move samples by one LSB.
+        with wave.open(hp, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(SR)
+            w.writeframes(mixed.astype("<i2").tobytes())
+        return hp
 
     def hear(self, wav, wake_required, gain_db=0.0):
         if gain_db:
@@ -224,10 +261,13 @@ def main():
     ap.add_argument("--tuning", default="chromium,voice",
                     type=lambda s: s.split(","))
     ap.add_argument("--at", default="8,12,16,20", type=lambda s: [int(x) for x in s.split(",")])
+    ap.add_argument("--hybrid-switch-ms", type=int, default=None,
+                    help="hybrid: switch to the processed microphone this long "
+                         "after the wake, not at the command's end")
     args = ap.parse_args()
     for t in args.tuning:
-        if t not in ("chromium", "voice", "linear"):
-            ap.error("--tuning: chromium, voice or linear")
+        if t not in ("chromium", "voice", "linear", "hybrid"):
+            ap.error("--tuning: chromium, voice, linear or hybrid")
     s = Scenes(args)
     s.media() if args.what == "media" else s.security()
 

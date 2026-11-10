@@ -231,11 +231,16 @@ media::AudioParameters VoiceCaptureParameters(EchoCancellation echo) {
   // machine may not have.
   const bool fake = base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kUseFakeDeviceForMediaStream);
+  // With Chrome-wide echo cancellation, the linear filter's output second
+  // (media::AudioProcessor, for a speech_recognizer stream that is stereo at
+  // 16 kHz).
   media::AudioParameters params(
       fake ? media::AudioParameters::AUDIO_FAKE
            : media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-      media::ChannelLayoutConfig::Mono(), kHelperSampleRate,
-      kCaptureFramesPerBuffer);
+      echo == EchoCancellation::kChromeWide
+          ? media::ChannelLayoutConfig::Stereo()
+          : media::ChannelLayoutConfig::Mono(),
+      kHelperSampleRate, kCaptureFramesPerBuffer);
   if (echo == EchoCancellation::kPlatform) {
     params.set_effects(media::AudioParameters::ECHO_CANCELLER |
                        media::AudioParameters::NOISE_SUPPRESSION);
@@ -329,6 +334,8 @@ void VoiceAudio::Open(EchoCancellation echo) {
     LOG(WARNING) << "[MoltVoice] no echo cancellation for the microphone: "
                     "page audio and the browser's voice reach the recognizer";
   }
+  linear_channel_.store(echo == EchoCancellation::kChromeWide,
+                        std::memory_order_relaxed);
   source_ = base::MakeRefCounted<media::AudioInputDevice>(
       std::make_unique<ProcessedInputIPC>(
           StreamFactory(), echo == EchoCancellation::kChromeWide),
@@ -372,6 +379,33 @@ std::optional<float> VoiceAudio::LoudestBetween(base::TimeTicks from,
       (to - base::TimeTicks()).InMicroseconds());
 }
 
+void VoiceAudio::SetHelperHearsLinear(bool linear) {
+  helper_hears_linear_.store(linear, std::memory_order_relaxed);
+}
+
+bool VoiceAudio::HasLinearChannel() const {
+  return linear_channel_.load(std::memory_order_relaxed);
+}
+
+std::optional<float> VoiceAudio::LinearLoudestBetween(
+    base::TimeTicks from,
+    base::TimeTicks to) const {
+  if (!HasLinearChannel()) {
+    return std::nullopt;
+  }
+  return linear_level_history_.LoudestBetween(
+      (from - base::TimeTicks()).InMicroseconds(),
+      (to - base::TimeTicks()).InMicroseconds());
+}
+
+bool VoiceAudio::HelperHeardLinearBetween(base::TimeTicks from,
+                                          base::TimeTicks to) const {
+  const std::optional<float> heard = linear_heard_history_.LoudestBetween(
+      (from - base::TimeTicks()).InMicroseconds(),
+      (to - base::TimeTicks()).InMicroseconds());
+  return heard && *heard > 0.5f;
+}
+
 VoiceAudio::Levels VoiceAudio::TakeLevels() {
   Levels levels;
   levels.peak = peak_millionths_.exchange(0, std::memory_order_relaxed) / 1e6f;
@@ -406,11 +440,17 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
                          base::TimeTicks audio_capture_time,
                          const media::AudioGlitchInfo& glitch_info,
                          double volume) {
-  // The capture thread. Mono was asked for; a device that gives more
-  // channels still has the voice in the first.
+  // The capture thread. The processed microphone is the first channel (a
+  // device that gives more channels than asked for still has the voice
+  // there); with Chrome-wide echo cancellation the second is the linear
+  // filter's output (VoiceCaptureParameters()).
   if (!audio_source || audio_source->channels() < 1) {
     return;
   }
+  const bool has_linear = audio_source->channels() >= 2 &&
+                          linear_channel_.load(std::memory_order_relaxed);
+  const bool hear_linear =
+      has_linear && helper_hears_linear_.load(std::memory_order_relaxed);
   // The levels the test log notes (TakeLevels()).
   float peak = 0;
   for (const float sample : audio_source->channel(0)) {
@@ -435,13 +475,21 @@ void VoiceAudio::Capture(const media::AudioBus* audio_source,
                                                    started_self_));
       }
     }
-    level_history_.Note(
-        at_us, int64_t{audio_source->frames()} * 1000000 / kHelperSampleRate,
-        peak);
+    const int64_t duration_us =
+        int64_t{audio_source->frames()} * 1000000 / kHelperSampleRate;
+    level_history_.Note(at_us, duration_us, peak);
+    if (has_linear) {
+      float linear_peak = 0;
+      for (const float sample : audio_source->channel(1)) {
+        linear_peak = std::max(linear_peak, std::fabs(sample));
+      }
+      linear_level_history_.Note(at_us, duration_us, linear_peak);
+    }
+    linear_heard_history_.Note(at_us, duration_us, hear_linear ? 1.f : 0.f);
   }
 
   std::vector<std::vector<int16_t>> frames;
-  chunker_.Add(audio_source->channel(0), &frames);
+  chunker_.Add(audio_source->channel(hear_linear ? 1 : 0), &frames);
   // |audio_capture_time| is the first sample's: a frame completed here ends
   // at the latest with this buffer (the helper's clock, voice_listener.h).
   const base::TimeTicks end_captured =
