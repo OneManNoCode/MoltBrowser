@@ -695,9 +695,12 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
       VoiceTurn turn = c.Say(found);
       EXPECT_EQ(Said(turn).find("Found it"), 0u) << found << ": " << Said(turn);
     }
-    // From a word's start to another's end only, and not too short.
+    // From a word's start, to another's end or its last consonant ("time
+    // tab", as "time to be" heard for it), and not too short.
+    EXPECT_EQ(Said(c.Say("find time tab on this page")),
+              "Found it in the heading Timetable.");
     for (const char* not_found :
-         {"find time tab on this page", "find imetable on this page",
+         {"find time ta on this page", "find imetable on this page",
           "find ebook on this page", "find a t on this page"}) {
       VoiceTurn turn = c.Say(not_found);
       EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
@@ -717,7 +720,9 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
     Conversation c(BuildPageMap(b.Take()), Env());
     for (const char* found :
          {"find time to bull on this page", "find tie metable on this page",
-          "find plan it on this page"}) {
+          "find plan it on this page",
+          // The last consonant lost ("-ble" heard as "be").
+          "find time to be on this page"}) {
       VoiceTurn turn = c.Say(found);
       EXPECT_EQ(Said(turn).find("Found it"), 0u) << found << ": " << Said(turn);
     }
@@ -727,7 +732,10 @@ TEST(VoiceControllerLogicTest, TheSpokenSuitesTypedRun) {
     // "Planet"), other consonants, or fewer than four of them.
     for (const char* not_found :
          {"find plant news on this page", "find time to dull on this page",
-          "find tie mabble on this page", "find at om on this page"}) {
+          "find tie mabble on this page", "find at om on this page",
+          // Another last consonant, two lost, or a missing one not last.
+          "find time to go on this page", "find time to on this page",
+          "find time able on this page"}) {
       VoiceTurn turn = c.Say(not_found);
       EXPECT_EQ(Said(turn).find("Found it"), std::string::npos)
           << not_found << ": " << Said(turn);

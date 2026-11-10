@@ -2559,7 +2559,9 @@ class Planner : public TurnPlanner {
         // a word's start to another's end and four sounds or more. The
         // vowels between the words fall where the recognizer put them; the
         // number of words differs, so a word heard with another vowel
-        // ("plant", "planet") is never one.
+        // ("plant", "planet") is never one. The text's last consonant may
+        // be missing from what was heard ("time to be": the recognizer
+        // lost the end of "-table" in the spoken suite's speakers run).
         const std::string said = ConsonantSounds(env_.language, wanted);
         constexpr size_t kMinConsonantSounds = 4;
         const auto split = [&](const std::string& text) {
@@ -2574,10 +2576,12 @@ class Planner : public TurnPlanner {
               }
               run = run.empty() ? key : JoinPhoneticKeys(run, key);
               const std::string sounds = WithoutVowelSounds(run);
-              if (sounds.size() > said.size()) {
+              if (sounds.size() > said.size() + 1) {
                 break;
               }
-              if (k - i + 1 != wanted.size() && sounds == said) {
+              if (k - i + 1 != wanted.size() &&
+                  sounds.compare(0, said.size(), said) == 0 &&
+                  sounds.size() <= said.size() + 1) {
                 return true;
               }
             }
