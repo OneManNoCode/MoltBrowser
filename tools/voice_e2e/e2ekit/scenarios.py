@@ -41,6 +41,8 @@ only with PulseAudio.
 Expectations (expect.py checks them):
   {"url": "https://..."}  {"url_has": "..."}  {"host": "..."}
   {"path": "/watch"}      {"query": {"v": "video4"}}
+  {"query": {"search_query": ["Bohemian Rhapsody", "Bohemian rapsody"]}}
+                          a list: any of its values
   {"js": "expression", "is": true}           on the active tab
   {"media": {"paused": false, "volume": [0.4, 0.6], "muted": false,
              "rate": 1.5, "time_min": 55, "time_max": 70,
@@ -254,8 +256,11 @@ def parse_expectation(where, e):
         _number(where, e["quiet"], "quiet", 1, 120)
     if kind == "query":
         for k, v in value.items():
-            if not isinstance(k, str) or not isinstance(v, str):
-                _fail(where, "query takes names and values (strings)")
+            values = v if isinstance(v, list) else [v]
+            if (not isinstance(k, str) or not values or
+                    not all(isinstance(x, str) for x in values)):
+                _fail(where, "query takes names and values (strings, or lists "
+                             "of them)")
     if kind == "media":
         extra = set(value) - MEDIA_KEYS
         if extra or not value:

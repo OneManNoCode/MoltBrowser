@@ -108,6 +108,11 @@ class RefusedTest(unittest.TestCase):
             one(start={"url": "https://news.test/", "shields": False}), "x.json")
         self.assertIs(sc.start["shields"], False)
 
+    def test_query_alternatives(self):
+        sc = scen.parse_scenario(
+            one(steps=[{"say": "x", "expect": [{"query": {"q": ["a", "b"]}}]}]), "x.json")
+        self.assertEqual(sc.steps[0].expect[0]["query"]["q"], ["a", "b"])
+
     def test_good_one(self):
         sc = scen.parse_scenario(one(), "x.json")
         self.assertEqual(sc.steps[0].text, "open YouTube")
@@ -138,6 +143,10 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(steps=[{"say": "x", "expect": [{"media": {"volume": [0.9, 0.1]}}]}]),
                  "low above high")
         self.bad(one(steps=[{"say": "x", "expect": [{"prompt": "maybe"}]}]), "prompt takes")
+        self.bad(one(steps=[{"say": "x", "expect": [{"query": {"q": 3}}]}]), "query takes")
+        self.bad(one(steps=[{"say": "x", "expect": [{"query": {"q": []}}]}]), "query takes")
+        self.bad(one(steps=[{"say": "x", "expect": [{"query": {"q": ["a", 1]}}]}]),
+                 "query takes")
         self.bad(one(steps=[{"say": "x", "expect": [{"tabs": -1}]}]), "count")
         self.bad(one(steps=[{"say": "x", "timeout": 999}]), "timeout")
         self.bad(one(requires=["telepathy"]), "requires takes")

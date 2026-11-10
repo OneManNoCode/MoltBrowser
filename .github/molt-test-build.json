@@ -1,9 +1,9 @@
 {
- "resume_run": "42806325318",
+ "resume_run": "42825964477",
  "run_tests": true,
- "e2e_only": false,
+ "e2e_only": true,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 50, thirty-sixth build (incremental on the thirty-fifth): two matching fixes for misses that repeat in the live runs. The choice matcher joins words said apart against an item's words joined, each split its own way (\"click Ed kel to cart\" for \"Add kettle to cart\" asked which of the three add buttons; spoken_choice.cc). A find takes text whose consonants are the ones heard and one more at its end (\"find time to be\" for \"Timetable\" found nothing; voice_controller_logic.cc). The thirty-fifth gave file 82/87, headphones 80/91, speakers 80/91 (media 11/11, security 5/5); unit tests 3020/3020, browser tests 119/119; typed passed."
+ "request": "Spoken suite only, on the thirty-sixth build: the owner's song test accepts the recognizer's \"Bohemian rapsody\" for the search (the owner's decision; a query expectation may list values). The thirty-sixth gave file 79/87, headphones 83/91, speakers 81/91."
 }

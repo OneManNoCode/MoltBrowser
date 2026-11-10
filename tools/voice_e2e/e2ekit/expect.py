@@ -120,7 +120,10 @@ def check(e, world, since, before=None):
             ok = parts.path == value
         else:
             q = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
-            ok = all(q.get(k) == v for k, v in value.items())
+            # A list: any of its values (a spelling the recognizer writes
+            # that the owner accepts: "Bohemian rapsody").
+            ok = all(q.get(k) in (v if isinstance(v, list) else [v])
+                     for k, v in value.items())
         return ok, "the tab is at %s" % url
     if kind == "js":
         want = e.get("is", True)
