@@ -42,6 +42,15 @@ For longer narrative posts behind each entry see
   one by Queen" plays it: after a wake phrase, a first word that is only
   the sound the name ends on is dropped, when what follows is a command as
   said.
+- **A button named in words split differently.** "Click add kettle to
+  cart" heard as "click Ed kel to cart" asked which of the three "Add …
+  to cart" buttons was meant, though "Edkel" alone found it. Words said
+  apart now also match the item's words joined, each split its own way.
+- **"Find" with a word's last sound lost.** "Find timetable on this page"
+  heard as "find time to be" found nothing. A find now also takes text
+  whose consonants are the ones heard and one more at its end, still four
+  or more of them and in another number of words ("time to be" is
+  "Timetable"; "time to" is still nothing).
 - **"Hey Molt" over a video, on speakers, heard more often.** While voice
   mode waits for "Hey Molt" with a tab playing sound, it now listens to
   what the echo canceller's first stage leaves. That keeps the start of

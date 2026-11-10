@@ -802,12 +802,16 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     if (group_words.empty())
       return best;
     const std::vector<RefUnit> units = MakeUnits(group_words, group, phrases);
-    // Single words long enough to be two words merged ("signin").
+    // Single words long enough to be two words merged ("signin"), and
+    // words said apart that may be two others split elsewhere ("ed kel").
     std::vector<size_t> single_units;
+    std::vector<size_t> joined_units;
     for (size_t u = 0; u < units.size(); ++u) {
       if (units[u].count == 1 &&
           units[u].sound.text.size() >= kMinMergedLetters) {
         single_units.push_back(u);
+      } else if (units[u].count > 1 && units[u].sound.sound_alike) {
+        joined_units.push_back(u);
       }
     }
     // Each unit against each distinct word, once; |hits| says which units
@@ -876,6 +880,25 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
             if (s > 0) {
               best[unit.first][e] =
                   std::max(best[unit.first][e], s * kJoinedWords * factor);
+            }
+          }
+          // Reference words joined against the two item words joined, each
+          // side split its own way ("ed kel" / "Add kettle"), when one of
+          // them hasn't matched well yet.
+          for (size_t u : joined_units) {
+            const RefUnit& unit = units[u];
+            const size_t end = unit.first + unit.count;
+            bool weak = false;
+            for (size_t w = unit.first; w < end; ++w) {
+              weak = weak || best[w][e] < kGoodMatch;
+            }
+            if (!weak)
+              continue;
+            const double s = JoinedSimilarity(unit.sound, left, right);
+            if (s <= 0)
+              continue;
+            for (size_t w = unit.first; w < end; ++w) {
+              best[w][e] = std::max(best[w][e], s * kJoinedWords * factor);
             }
           }
         }

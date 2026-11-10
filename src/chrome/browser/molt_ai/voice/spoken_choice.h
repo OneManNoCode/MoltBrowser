@@ -26,9 +26,10 @@
 //   - Each description word is compared with every word of each item's
 //     title and fields: exactly (1.0), as a plural (0.95), or by sound
 //     (phonetic_key.h: at most 0.9, less with each edit). Words are also
-//     compared joined across two or three words on either side, so a
-//     recognizer that split or merged words still matches ("Bohemian rap
-//     city" -> "Bohemian Rhapsody", "signin" -> "Sign in").
+//     compared joined across two or three words on either side, or on
+//     both, so a recognizer that split or merged words still matches
+//     ("Bohemian rap city" -> "Bohemian Rhapsody", "signin" -> "Sign in",
+//     "Ed kel" -> "Add kettle").
 //   - When some item has a word exactly as spelled, other items' sound-
 //     alikes of it count less: the recognizer is biased toward the words
 //     on screen, so "AirPods" means the AirPods, not the earbuds.

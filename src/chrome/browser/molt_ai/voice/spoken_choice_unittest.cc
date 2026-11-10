@@ -722,6 +722,28 @@ TEST(SpokenChoiceMatchTest, ANameSaidWholeBreaksATie) {
             ChoiceOutcome::kAmbiguous);
 }
 
+// Words the recognizer split elsewhere than the item's ("click Ed kel to
+// cart" for "Add kettle to cart", the spoken suite's speakers run): the
+// words said joined against the item's joined.
+TEST(SpokenChoiceMatchTest, WordsSplitOnBothSides) {
+  const auto items = MakeList({{"Cart (0)", ""},
+                               {"Add kettle to cart", ""},
+                               {"Add toaster to cart", ""},
+                               {"Add mug to cart", ""}},
+                              ChoiceRole::kButton);
+  for (const char* said : {"Ed kel to cart", "Edkel to cart", "ed kel"}) {
+    const ChoiceMatch m = Match(said, items);
+    ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique)
+        << said << ": " << Describe(m, items);
+    EXPECT_EQ(m.index, 1u) << said;
+  }
+  // Words matched well alone aren't joined: "toaster cart" stays the
+  // toaster's.
+  const ChoiceMatch m = Match("add toaster to cart", items);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
+  EXPECT_EQ(m.index, 2u);
+}
+
 TEST(SpokenChoiceMatchTest, Diacritics) {
   const auto list = MakeList({{"Beyonc\xC3\xA9 - Halo", ""},
                               {"Sigur R\xC3\xB3s - Hopp\xC3\xADpolla", ""},
