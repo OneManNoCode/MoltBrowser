@@ -1,7 +1,7 @@
-{"resume_run": "42712138228",
+{"resume_run": "42728672861",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
- "e2e_field_trials": "",
- "request": "Round 48, thirty-first build (incremental on the thirtieth): \"pause\" heard without its \"p\" over a playing video (\"Aus\", \"Oz\", \"Ors\"); a second try at the confirmation word gets time (each clean \"say the word again\" gives the prompt and its word 15 s more, three times at most). The thirtieth gave file 82/87, headphones 81/91, speakers 73/91; typed passed."}
+ "e2e_field_trials": "MoltVoiceDuckAtSpeechOnset/Enabled/",
+ "request": "Round 48, thirty-second build (incremental on the thirty-first): a menu item is pressed even if the menu closed by itself (the TheAppMenuByVoice flake; new AMenuThatClosedByItselfIsShownAgainForThePress); and a trial, MoltVoiceDuckAtSpeechOnset, forced for the spoken suite: while voice mode waits for the wake phrase with a tab playing sound, the microphone's speech onset ducks media for 2.5 s, to find out whether the speakers run keeps \"Hey Molt\" said over a playing video. The thirty-first gave file 79/87, headphones 80/91, speakers 71/91 (media 2/11); typed passed."}
