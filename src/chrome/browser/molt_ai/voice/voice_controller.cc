@@ -1910,6 +1910,18 @@ void VoiceController::SayAboutBrowserPrompt(const std::string& text) {
   TellAboutPageRequest(text);
 }
 
+void VoiceController::BrowserPromptWaitsLonger(int id, int64_t at_least_ms) {
+  // The loop's copy of the prompt waits as long as the browser's
+  // (Environment()'s clock).
+  if (state_.prompt.id != id || id == 0) {
+    return;
+  }
+  const int64_t now =
+      (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
+  state_.prompt.expires_ms = std::max(
+      state_.prompt.expires_ms, now + std::max<int64_t>(0, at_least_ms));
+}
+
 void VoiceController::NotePageTextSaid() {
   // The waiting prompt takes what allows or accepts only once it is read
   // again (voice_prompts.h).

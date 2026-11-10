@@ -508,6 +508,18 @@ void GestureBook::Cancel(int id) {
                 [&](const GesturePrompt& prompt) { return prompt.id == id; });
 }
 
+bool GestureBook::GiveMoreTime(int id, int64_t now_ms, int64_t at_least_ms) {
+  Expire(now_ms);
+  for (GesturePrompt& prompt : prompts_) {
+    if (prompt.id == id) {
+      prompt.expires_ms = std::max(
+          prompt.expires_ms, now_ms + std::max<int64_t>(0, at_least_ms));
+      return true;
+    }
+  }
+  return false;
+}
+
 HearResult GestureBook::Hear(int id,
                              std::string_view heard,
                              const HeardEvidence& evidence,

@@ -42,6 +42,12 @@ For longer narrative posts behind each entry see
   one by Queen" plays it: after a wake phrase, a first word that is only
   the sound the name ends on is dropped, when what follows is a command as
   said.
+- **A second try at the confirmation word gets time.** Asked to say the
+  word again near the end of a permission prompt's 30 seconds, you could be
+  cut off mid-word ("No answer, so I dismissed the permission request.").
+  Now each "Say the word again" for what the microphone heard cleanly
+  gives the prompt and its word at least 15 seconds more, three times at
+  most. Typed text, or what may have been another sound, gives none.
 - **"Pause" heard without its "p" over a playing video.** Right after
   "Hey Molt", the recognizer wrote "pause" as "Aus", "Oz" or "Ors" while a
   video played. Said alone, those pause it, as "pores" and "paws" already

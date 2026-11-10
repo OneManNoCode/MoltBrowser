@@ -471,6 +471,7 @@ class VoiceController : public VoicePlanner::Delegate,
   void SayWordAboutBrowserPrompt(const WordText& text) override;
   WordChannelInputs WordChannelInputsNow() override;
   void WordChannelChanged() override;
+  void BrowserPromptWaitsLonger(int id, int64_t at_least_ms) override;
 
   // Says what holds the waiting prompt's word: |text|.said where the word
   // may be said now, else its twin; observers get the twin.
