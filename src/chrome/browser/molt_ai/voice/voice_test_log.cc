@@ -81,9 +81,11 @@ class VoiceTestLog::Writer {
              const std::string& text,
              bool from_microphone,
              bool clean,
+             bool list_choice_only,
              const std::string& intent,
              const std::string& pending_word) {
-    Write(lines_.Heard(ms, text, from_microphone, clean, intent, pending_word));
+    Write(lines_.Heard(ms, text, from_microphone, clean, list_choice_only,
+                       intent, pending_word));
   }
 
   void Said(int64_t ms, const std::string& text) {
@@ -230,6 +232,7 @@ void VoiceTestLog::OnHeard(const std::string& text,
                            const ConversationState& state) {
   writer_.AsyncCall(&Writer::Heard)
       .WithArgs(NowMs(), text, evidence.from_microphone, evidence.clean,
+                evidence.list_choice_only,
                 std::string(VoiceCommandKindName(kind)),
                 state.prompt.id != 0 ? state.prompt.word : std::string());
 }

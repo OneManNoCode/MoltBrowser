@@ -4,7 +4,7 @@
 voice_test_log.cc): one JSON object per line, appended as it happens.
 
   {"t": ms since the epoch, "w": window, "e": "start", "kinds": [...]}
-  {"e": "heard", "text", "source": "mic"|"typed", "clean", "intent"}
+  {"e": "heard", "text", "source": "mic"|"typed", "clean", "over_voice"?, "intent"}
   {"e": "said", "text"}
   {"e": "activity", "activity", "mic", "waiting"}
   {"e": "prompt", "op": "open"|"close", "id", "kind"}

@@ -96,13 +96,19 @@ TEST(VoiceTestLogLinesTest, Lines) {
   EXPECT_EQ(lines.Start(7, kinds),
             "{\"t\":7,\"w\":2,\"e\":\"start\",\"kinds\":[\"unknown\","
             "\"open_site\"]}\n");
-  EXPECT_EQ(lines.Heard(8, "open \"YouTube\"", true, true, "open_site", ""),
+  EXPECT_EQ(lines.Heard(8, "open \"YouTube\"", true, true, false, "open_site",
+                        ""),
             "{\"t\":8,\"w\":2,\"e\":\"heard\",\"text\":\"open "
             "\\\"YouTube\\\"\",\"source\":\"mic\",\"clean\":true,"
             "\"intent\":\"open_site\"}\n");
-  EXPECT_EQ(lines.Heard(9, "harbor", false, false, "unknown", "harbor"),
+  EXPECT_EQ(lines.Heard(9, "harbor", false, false, false, "unknown", "harbor"),
             "{\"t\":9,\"w\":2,\"e\":\"heard\",\"text\":\"[word]\","
             "\"source\":\"typed\",\"clean\":false,\"intent\":\"unknown\"}\n");
+  // Said over voice mode's own voice: a choice from the list read only.
+  EXPECT_EQ(lines.Heard(10, "Repeat.", true, true, true, "repeat", ""),
+            "{\"t\":10,\"w\":2,\"e\":\"heard\",\"text\":\"Repeat.\","
+            "\"source\":\"mic\",\"clean\":true,\"over_voice\":true,"
+            "\"intent\":\"repeat\"}\n");
   EXPECT_EQ(lines.Said(10, "To allow it, say the word on your screen."),
             "{\"t\":10,\"w\":2,\"e\":\"said\",\"text\":\"To allow it, say the "
             "word on your screen.\"}\n");
