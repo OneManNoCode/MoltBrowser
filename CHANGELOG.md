@@ -17,6 +17,12 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **A short command right after "Hey Molt" is no longer lost when the
+  wake phrase is recognized late.** Over speakers, "Hey Molt" can be
+  recognized only after the whole sentence has ended. Voice mode then
+  waited six seconds for more speech and did nothing with "go back" or
+  "skip the ad". It now takes the command from the sentence it already
+  heard.
 - **"Repeat" says what voice mode said before "I've stopped. Now say
   that again."** When something said over voice mode's voice was set
   aside, "repeat" said "I've stopped. Now say that again." instead of
