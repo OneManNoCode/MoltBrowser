@@ -136,8 +136,12 @@ class Ears(object):
         list is nearest to it, within a third of its letters (at least two),
         the nearest of all the "say"s ("to allow it, say Mcaroni, to block
         it, say no": the last one is the "no"). The browser's voice and the
-        recognizer both mangle a lone noun ("harbot", "tarbon"); the list's
-        words are far apart."""
+        recognizer both mangle a lone noun ("harbot", "netkin"); the list's
+        words are far apart. Two letters off counts only when it also
+        sounds like that word and no other (sure_by_sound()): "binger" is
+        two letters from "tiger", but as near by sound to "banjo" and four
+        more, and the browser, hearing it, is as unsure; a wrong word
+        refuses the prompt, so the kit says "repeat" instead."""
         found = None
         heard = vbl.normalize(text).split()
         for w in heard:
@@ -155,9 +159,21 @@ class Ears(object):
             scored = sorted((letter_distance(t, c), c) for c in self.words)
             d, c = scored[0]
             if d <= max(2, len(c) // 3) and (len(scored) < 2 or scored[1][0] > d):
+                if d > 1 and not self.sure_by_sound(t, c):
+                    continue
                 if best is None or d < best[0]:
                     best = (d, c)
         return best[1] if best else None
+
+    def sure_by_sound(self, heard, word):
+        """Whether |heard|'s consonants (sound_key()) are within one sound
+        of |word|'s and nearer to it than to any other word of the list
+        ("netkin" and "napkin"; not "binger", two sounds from "tiger" and
+        from "banjo", nor "tarbon", nearer "dragon" than "harbor")."""
+        key = sound_key(heard)
+        d = letter_distance(key, sound_key(word))
+        return d <= 1 and all(letter_distance(key, sound_key(c)) > d
+                              for c in self.words if c != word)
 
     def nearest_by_sound(self, text):
         """The one word of the list whose consonants (sound_key()) are

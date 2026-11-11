@@ -25,7 +25,6 @@ class FindWordTest(unittest.TestCase):
 
     def test_a_mangled_word_after_say(self):
         self.assertEqual(self.e.find_word("To allow it, say Harbot."), "harbor")
-        self.assertEqual(self.e.find_word("To allow it, say tarbon."), "harbor")
         self.assertEqual(self.e.find_word("To allow it, say Rick it."), "rocket")
         self.assertEqual(self.e.find_word("to allow it say tamboo"), "bamboo")
         # Not only after the last "say": the whole prompt heard (the
@@ -40,6 +39,14 @@ class FindWordTest(unittest.TestCase):
     def test_nothing_rather_than_a_guess(self):
         # A wrong word refuses the prompt: when unsure, none.
         self.assertIsNone(self.e.find_word("To allow it, say point shoe."))
+        # Two letters off, but not the one word it sounds like: the spoken
+        # suite's forty-first build (headphones) said "tiger" for "binger",
+        # which is as near "banjo" by sound, and the browser turned it
+        # down; "tarbon" is nearer "dragon" by sound than "harbor".
+        self.assertIsNone(self.e.find_word(
+            "Press share my location. Prompts dark test warns to know your "
+            "location, to allow it, say binger, to block it, say no"))
+        self.assertIsNone(self.e.find_word("To allow it, say tarbon."))
         self.assertIsNone(self.e.find_word("To allow it, say the word on your screen."))
         self.assertIsNone(self.e.find_word("example.com wants to use your camera"))
         self.assertIsNone(self.e.find_word(""))
