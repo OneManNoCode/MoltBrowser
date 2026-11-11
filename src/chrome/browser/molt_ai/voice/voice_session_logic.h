@@ -26,7 +26,11 @@
 //     (OnlyTheWakePhrase()): the command after it counts. While a page
 //     plays sound, such an utterance also needs kMinConfidenceWithoutWake
 //     (§7.2), unless it begins with the wake phrase
-//     (AddressedToVoiceMode()).
+//     (AddressedToVoiceMode()), or stood out of silence (the page's sound
+//     didn't reach the microphone: headphones) and stays with the page as
+//     a command over the browser's own voice does (TakenOverOwnVoice()):
+//     "louder" over a video. Standing out of a quieter moment isn't
+//     enough: a tab's sound may not be in the echo canceller's reference.
 //   - "Stop", "cancel", "stop talking" and "turn off voice mode" always
 //     count: the helper hears everything (wake_required false) while the
 //     browser thinks or speaks, so they work without the wake phrase.
@@ -448,11 +452,12 @@ class VoiceSessionLogic {
   std::optional<int64_t> UtteranceBegunMs() const;
   // How the microphone sounded for that utterance, after the browser's
   // processing (VoiceAudio's level history): as loud as speech while it
-  // was said, and quiet just before (kQuietBeforeUtteranceMs). Unknown is
-  // neither.
+  // was said, and quiet just before (kQuietBeforeUtteranceMs), or silent
+  // (VoiceAudio's kSilentPeak). Unknown is none.
   struct Loudness {
     bool loud = false;
     bool quiet_before = false;
+    bool silent_before = false;
   };
   void NoteUtteranceLoudness(Loudness loudness);
   // Whether the speech engine is speaking for someone else (a page's
@@ -511,6 +516,9 @@ class VoiceSessionLogic {
     // It stood out of what the microphone gave before it
     // (NoteUtteranceLoudness()).
     bool stood_out = false;
+    // It stood out of silence: whatever played, nothing reached the
+    // microphone before it.
+    bool after_silence = false;
     int64_t ended_ms = -1;
     bool partial_shown = false;
     // Its wake phrase was heard over the linear filter's output (above).

@@ -744,6 +744,30 @@ TEST(SpokenChoiceMatchTest, WordsSplitOnBothSides) {
   EXPECT_EQ(m.index, 2u);
 }
 
+// "One" run onto the last word ("the Live Aid one" heard as "The Live
+// AWAN", the owner's scenario in the spoken suite's always-listening runs
+// on build 37): the word and "one" against an item word and "one".
+TEST(SpokenChoiceMatchTest, OneRunOntoTheLastWord) {
+  const auto offered =
+      MakeList({{"Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)",
+                 "Queen Official"},
+                {"Queen - Bohemian Rhapsody (Live Aid 1985)", "Queen Official"},
+                {"Queen - Bohemian Rhapsody (Live at Wembley Stadium 1986)",
+                 "Queen Official"}},
+               ChoiceRole::kVideo);
+  for (const char* said :
+       {"the live awan", "The Live AWAN.", "the live aid one"}) {
+    const ChoiceMatch m = Match(said, offered);
+    ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique)
+        << said << ": " << Describe(m, offered);
+    EXPECT_EQ(m.index, 1u) << said;
+  }
+  // A last word that is a word of an item as it is stays that item's.
+  EXPECT_EQ(Match("the wembley one", offered).index, 2u);
+  // Not the sound of "one" at its end: nothing changes.
+  EXPECT_EQ(Match("the live", offered).outcome, ChoiceOutcome::kAmbiguous);
+}
+
 TEST(SpokenChoiceMatchTest, Diacritics) {
   const auto list = MakeList({{"Beyonc\xC3\xA9 - Halo", ""},
                               {"Sigur R\xC3\xB3s - Hopp\xC3\xADpolla", ""},

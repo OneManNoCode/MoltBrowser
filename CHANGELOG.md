@@ -25,6 +25,16 @@ For longer narrative posts behind each entry see
   from what voice mode is reading or offering, and nothing else. A name
   that isn't there, or anything else that needs the browser quiet, is
   still asked for again.
+- **"The Live Aid one" heard as "the Live AWAN" chooses Live Aid.** The
+  recognizer can run "one" onto the word before it. The last word of a
+  choice that ends in the sound of "one" is now also matched as a word
+  of the list followed by "one".
+- **"Louder" over a video, with headphones, in always-listening mode.**
+  Without the wake phrase, while a tab plays sound, voice mode only took
+  what the recognizer was sure of, and set "Louder." aside. When the
+  microphone was silent just before (the video's sound isn't reaching it),
+  a command that stays with the page (media, scrolling, a number from the
+  list) now counts too.
 - **Voice mode's own reading, heard back, no longer chooses a result.**
   On speakers, the start of "10 results. 1: Daily News: ..." came back
   through the microphone as "tell results. one." before the echo canceller

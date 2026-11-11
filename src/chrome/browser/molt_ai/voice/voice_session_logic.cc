@@ -585,6 +585,7 @@ std::optional<int64_t> VoiceSessionLogic::UtteranceBegunMs() const {
 void VoiceSessionLogic::NoteUtteranceLoudness(Loudness loudness) {
   if (utterance_) {
     utterance_->stood_out = loudness.loud && loudness.quiet_before;
+    utterance_->after_silence = loudness.loud && loudness.silent_before;
   }
 }
 
@@ -621,7 +622,9 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       take = true;
     } else if (utterance.open && !utterance.during_speech) {
       take = !page_audible_ || confidence >= kMinConfidenceWithoutWake ||
-             AddressedToVoiceMode(text, utterance.begun_ms);
+             AddressedToVoiceMode(text, utterance.begun_ms) ||
+             (utterance.after_silence &&
+              TakenOverOwnVoice(text, settings_.language));
       if (!take) {
         reason = "a tab's sound, and not heard surely";
       }

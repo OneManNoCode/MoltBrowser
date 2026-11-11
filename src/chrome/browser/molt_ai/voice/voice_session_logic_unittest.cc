@@ -912,6 +912,39 @@ TEST_F(VoiceSessionLogicTest, StandingOutDoesNotPassATabsSound) {
       "a tab's sound, and not heard surely");
 }
 
+// Out of silence, though, the page's sound didn't reach the microphone
+// (headphones): a command that stays with the page counts. The owner's
+// scenario on the spoken suite's headphones run: "Louder." over the video,
+// at 0.3, in always-listening mode.
+TEST_F(VoiceSessionLogicTest, OutOfSilenceOverATabsSound) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("play", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers();
+  logic_->OnPageAudible(true, now_);
+  const int64_t at = now_ + kEchoTailMs + 500;
+  logic_->OnSpeechStart(at);
+  logic_->NoteUtteranceLoudness(
+      {.loud = true, .quiet_before = true, .silent_before = true});
+  EXPECT_EQ(logic_->OnFinal("Louder.", 0.3, at + 700).utterance, "Louder.");
+  // What would leave the page waits for the wake phrase or confidence.
+  BrowserAnswers();
+  logic_->OnSpeechStart(at + 2000);
+  logic_->NoteUtteranceLoudness(
+      {.loud = true, .quiet_before = true, .silent_before = true});
+  EXPECT_EQ(logic_->OnFinal("open evil dot com", 0.3, at + 2800).dropped_reason,
+            "a tab's sound, and not heard surely");
+  // Silent before, but not as loud as speech: not someone speaking.
+  BrowserAnswers();
+  logic_->OnSpeechStart(at + 4000);
+  logic_->NoteUtteranceLoudness(
+      {.loud = false, .quiet_before = true, .silent_before = true});
+  EXPECT_EQ(logic_->OnFinal("pause", 0.3, at + 4600).dropped_reason,
+            "a tab's sound, and not heard surely");
+}
+
 TEST_F(VoiceSessionLogicTest, TheWakePhraseOverTheOwnVoiceIsTheUser) {
   Begin();
   logic_->OnOwnSpeechInReference(true, now_);

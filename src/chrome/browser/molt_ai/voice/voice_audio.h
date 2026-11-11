@@ -77,6 +77,11 @@ class VoiceTestAudio;
 // the spoken suite's commands peak at -8 to -13 dBFS there, and the room
 // and what the canceller leaves of the browser's own sound at -50 or less.
 inline constexpr float kVoiceLoudPeak = 0.0316f;
+// A stretch whose loudest sample stays below this (-60 dBFS), after the
+// echo canceller and noise suppression, had nothing in it: a quiet room
+// with headphones on (the spoken suite's headphones run gives -84 to -90
+// while a video plays), not a page's sound reaching the microphone.
+inline constexpr float kSilentPeak = 0.001f;
 // How long the microphone was quieter than that before an onset
 // (VoiceAudio::Delegate::OnMicrophoneOnset()).
 inline constexpr int64_t kOnsetQuietMs = 500;
