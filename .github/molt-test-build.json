@@ -1,9 +1,9 @@
 {
- "resume_run": "42970984672",
+ "resume_run": "42984480975",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 52, fortieth build (incremental on the thirty-ninth): over voice mode's own voice, an answer to an offer chooses among the offered only, and by a name scoring 0.8 (the reading heard back as \"living\" played the lo-fi cover on speakers); \"one\" run onto the last word matched in titles and channel names only (\"ago\" in \"3 years ago\" tied \"the Live AWAN\"); CI: the two menu browser tests run one at a time, the history test waits for the page. The thirty-ninth gave unit tests 3027/3027, browser tests 119/119 (2 flaky), file 81/87, headphones 85/91, speakers 82/91; the owner's song passed by wake everywhere and failed always-listening everywhere (file \"Alive Ae one\" over the reading, headphones \"The Live AWAN\", speakers \"pause\" heard as \"Aus\")."
+ "request": "Round 53, forty-first build (incremental on the fortieth): over voice mode's own voice, the 0.8 bar for a name only in a list read out, not among the few offered (\"The Live AWAN\" names Live Aid at 0.68 there); \"repeat\" says what came before \"I've stopped. Now say that again.\" (the speakers run asked for a prompt's word twice and heard that line twice); the kit's digest keeps what was heard and said in a long log, and names the word a failed say_word step said. The fortieth gave unit tests 3028/3028, browser tests 119/119 (the menu tests one at a time), file 81/87, headphones 84/91, speakers 78/91; the owner's song passed by wake everywhere, always-listening on headphones, and failed it on file (\"The Live A\", cut short) and speakers (\"louder\" heard as \"Clouder\" over the video)."
 }
