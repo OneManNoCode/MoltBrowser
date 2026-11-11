@@ -1,9 +1,9 @@
 {
- "resume_run": "42958352879",
+ "resume_run": "42970984672",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 51, thirty-ninth build (incremental on the thirty-eighth): the one-word-off echo rule narrowed to a word beginning as the word said (\"tell\" for \"ten\"), so \"play live aid\" over \"2: Live Aid\" stays the user's; kit: no guess at the confirmation word from \"say the word on your screen\". The thirty-eighth gave unit tests 3026/3026, browser tests 119/119 (2 flaky), file 82/87, headphones 86/91, speakers 84/91; the owner's song passed in every mode on headphones and speakers, and failed always-listening by file (\"A live Ae one\")."
+ "request": "Round 52, fortieth build (incremental on the thirty-ninth): over voice mode's own voice, an answer to an offer chooses among the offered only, and by a name scoring 0.8 (the reading heard back as \"living\" played the lo-fi cover on speakers); \"one\" run onto the last word matched in titles and channel names only (\"ago\" in \"3 years ago\" tied \"the Live AWAN\"); CI: the two menu browser tests run one at a time, the history test waits for the page. The thirty-ninth gave unit tests 3027/3027, browser tests 119/119 (2 flaky), file 81/87, headphones 85/91, speakers 82/91; the owner's song passed by wake everywhere and failed always-listening everywhere (file \"Alive Ae one\" over the reading, headphones \"The Live AWAN\", speakers \"pause\" heard as \"Aus\")."
 }
