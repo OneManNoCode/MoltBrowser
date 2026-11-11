@@ -100,6 +100,42 @@ bool SaysInOrder(const std::vector<std::string_view>& said,
   return false;
 }
 
+// Whether |heard| may be |said| misheard: it begins as that word does ("tell"
+// for "ten"). Not a command's own word ("play" for "two" in "play live aid"
+// over "2: Live Aid", "forget" for "running" in "forget my videos" over
+// "Running my videos").
+bool MisheardAs(std::string_view said, std::string_view heard) {
+  return said.size() >= 2 && heard.size() >= 2 && said[0] == heard[0] &&
+         said[1] == heard[1];
+}
+
+// Whether |said| has |wanted| word for word from one of its words but for
+// one the recognizer heard as another (MisheardAs()): the start of "10
+// results. 1: ..." heard back as "tell results one". Three words or more
+// (two would take "the first" for "2: The first..."). Not across kFormSeam.
+bool SaysWithOneWordOff(const std::vector<std::string_view>& said,
+                        const std::vector<std::string_view>& wanted) {
+  if (wanted.size() < 3 || said.size() < wanted.size()) {
+    return false;
+  }
+  for (size_t start = 0; start + wanted.size() <= said.size(); ++start) {
+    size_t off = 0;
+    bool fits = true;
+    for (size_t i = 0; i < wanted.size() && fits; ++i) {
+      const std::string_view word = said[start + i];
+      if (word == kFormSeam) {
+        fits = false;
+      } else if (word != wanted[i]) {
+        fits = ++off <= 1 && MisheardAs(word, wanted[i]);
+      }
+    }
+    if (fits) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Whether |word| sounds like the folded name |name| (the wake phrase's
 // last word): it is the name, about as long with its phonetic key ("mold"
 // and "moult" for "molt"), or begins with it ("moltbrowser", "molts").
@@ -557,6 +593,7 @@ std::optional<int64_t> VoiceSessionLogic::UtteranceBegunMs() const {
 void VoiceSessionLogic::NoteUtteranceLoudness(Loudness loudness) {
   if (utterance_) {
     utterance_->stood_out = loudness.loud && loudness.quiet_before;
+    utterance_->after_silence = loudness.loud && loudness.silent_before;
   }
 }
 
@@ -593,7 +630,9 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       take = true;
     } else if (utterance.open && !utterance.during_speech) {
       take = !page_audible_ || confidence >= kMinConfidenceWithoutWake ||
-             AddressedToVoiceMode(text, utterance.begun_ms);
+             AddressedToVoiceMode(text, utterance.begun_ms) ||
+             (utterance.after_silence &&
+              TakenOverOwnVoice(text, settings_.language));
       if (!take) {
         reason = "a tab's sound, and not heard surely";
       }
@@ -622,7 +661,15 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       // choice runs only from the list the browser read or offered.
       if (take && !addressed &&
           !TakenOverOwnVoice(text, settings_.language)) {
-        if (ChoosesOverOwnVoice(text, settings_.language)) {
+        if (ChoosesOverOwnVoice(text, settings_.language) &&
+            OneWordItSaid(text, utterance.begun_ms)) {
+          // A name of one word it just read ("Live", out of "Live at Rock
+          // Montreal, ... Live Aid, ... Live at Wembley"): its voice heard
+          // back, loud or not; the reading goes on. A number, or a place
+          // in the list, is taken above; a name of more words below.
+          take = false;
+          reason = "voice mode's voice heard back";
+        } else if (ChoosesOverOwnVoice(text, settings_.language)) {
           actions.list_choice_only = true;
         } else {
           take = false;
@@ -1012,7 +1059,13 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
   if (wanted.size() == 1) {
     return std::find(said.begin(), said.end(), wanted[0]) != said.end();
   }
-  return SaysInOrder(said, wanted);
+  return SaysInOrder(said, wanted) || SaysWithOneWordOff(said, wanted);
+}
+
+bool VoiceSessionLogic::OneWordItSaid(std::string_view text,
+                                      int64_t now_ms) const {
+  const std::string folded = FoldForComparison(text.substr(0, kMaxSaidBytes));
+  return SplitWords(folded).size() == 1 && EchoOfBrowser(text, now_ms);
 }
 
 bool VoiceSessionLogic::StoodOutOfCancelledVoice(

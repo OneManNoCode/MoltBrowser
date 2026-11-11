@@ -104,11 +104,15 @@ class TestLogLines {
   std::string Start(int64_t ms, std::span<const std::string_view> kinds) const;
 
   // An utterance reached the loop: as typed or heard ("typed" or "mic"),
-  // whether it was heard cleanly, and the command it was understood as.
+  // whether it was heard cleanly, whether it was said over voice mode's
+  // own voice and runs only as a choice from the list read or offered
+  // ("over_voice":true, only then: HeardEvidence::list_choice_only), and
+  // the command it was understood as.
   std::string Heard(int64_t ms,
                     std::string_view text,
                     bool from_microphone,
                     bool clean,
+                    bool list_choice_only,
                     std::string_view intent,
                     std::string_view pending_word) const;
 

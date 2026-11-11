@@ -71,6 +71,12 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(ok({"query": {"search_query": ["Bohemian rapsody",
                                                        "Bohemian Rhapsody"]}}, w))
         self.assertFalse(ok({"query": {"search_query": ["Queen", "Freddie"]}}, w))
+        # Without case: the recognizer's capitals vary by voice.
+        self.assertTrue(ok({"query": {"search_query": "bohemian rhapsody"}}, w))
+        self.assertTrue(ok({"query": {"search_query": ["Bohemian rapsody",
+                                                       "BOHEMIAN RHAPSODY"]}}, w))
+        self.assertFalse(ok({"query": {"search_query": "Bohemian"}}, w))
+        self.assertFalse(ok({"query": {"missing": ""}}, w))
         self.assertTrue(ok({"url_has": "search_query="}, w))
         self.assertFalse(ok({"url": "https://www.youtube.com/"}, w))
         okay, detail = expect.check({"path": "/watch"}, w, 0)

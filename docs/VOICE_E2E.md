@@ -51,7 +51,12 @@ and `VOICE_E2E_VOICES` narrow it. It also leaves `digest.txt`
 and the stack after the first, one crash printed once with the names of
 the others it ended) and voice mode's test log, which the CI job prints
 after `report.md`, as the report's artifact isn't always reachable from
-where the results are read.
+where the results are read. A long test log keeps its first and last 30
+lines and, between them, what was heard, said, set aside and prompted
+(the activity, earcon, microphone and ducking lines are counted in a
+`...` line). For a failed `say_word` step, the report names the word the
+kit heard in the browser's speech and said back (the browser's own log
+masks it as `[word]`).
 
 In the test build workflow (`molt-test-build.yml`), the request file's
 `e2e_runs` and `e2e_scenarios` narrow the same way, one job per run, and
@@ -267,7 +272,9 @@ in `VoiceController`):
   (`VoiceCommandKindName()`), so the kit tells a command the build doesn't
   have from one that failed.
 - `heard`: every utterance that reached the loop, typed or from the
-  microphone (and whether heard cleanly), with the command it was
+  microphone (and whether heard cleanly; `"over_voice":true` when it was
+  said over voice mode's own voice and runs only as a choice from the list
+  read or offered), with the command it was
   understood as.
 - `map`: the page map it was planned on, just before the `heard` line:
   how many items, lists and media, the first 40 items' labels (masked as
@@ -337,7 +344,11 @@ when another program could hear it". The kit's ears (the bundle's
 `molt-speech`, run by the kit, with the 40 words as its hotwords, which
 the browser's helper never gets) transcribe the recording of the
 browser's output since the prompt opened, and take the word after "say"
-(when one word of the list is clearly the nearest). When it isn't clear,
+(when one word of the list is clearly the nearest; two letters off only
+when it also sounds like that word and no other: build 41 took "say
+binger" for "tiger", as near "banjo" by sound, and the browser turned it
+down). A "say" run into the word ("same ingo", "Samingo" for "say
+mango") is still a "say". When it isn't clear,
 the kit says "repeat", as a user would, and listens to the browser's new
 take, three times in all. A wrong word would refuse the prompt, so the
 kit says none rather than guess. The one exception is a word heard the

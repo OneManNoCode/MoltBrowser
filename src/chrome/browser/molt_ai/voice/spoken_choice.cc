@@ -66,6 +66,9 @@ constexpr size_t kMinSoundAlikeLetters = 3;
 // A reference word shorter than this is not compared with two item words
 // joined: a merge of two words is at least two short words long ("signin").
 constexpr size_t kMinMergedLetters = 5;
+// "One" as it is said ("the Live Aid one"), for a last word the recognizer
+// ran it onto ("the live awan").
+constexpr char kOneSaid[] = "wun";
 // With an ordinal ("the second live one"), the items the description
 // matches are those within this much of the best.
 constexpr double kOrdinalBand = 0.25;
@@ -790,6 +793,7 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   const std::vector<Sound>& sounds = vocabulary.sounds();
   const size_t n = eligible.size();
   const LanguagePhrases& phrases = PhrasesFor(options.language);
+  const Sound one_said = Sound::Of(kOneSaid);
 
   // How well each reference word matches each item, for |group| words
   // matched in segments of |kinds| (the title at |title_factor| when it
@@ -806,12 +810,23 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     // words said apart that may be two others split elsewhere ("ed kel").
     std::vector<size_t> single_units;
     std::vector<size_t> joined_units;
+    // The description's last word, if it ends in the sound of "one" and
+    // has more before it: perhaps an item word with "one" run onto it
+    // ("the Live Aid one" heard as "the live awan").
+    std::optional<size_t> one_run_on;
     for (size_t u = 0; u < units.size(); ++u) {
       if (units[u].count == 1 &&
           units[u].sound.text.size() >= kMinMergedLetters) {
         single_units.push_back(u);
       } else if (units[u].count > 1 && units[u].sound.sound_alike) {
         joined_units.push_back(u);
+      }
+      const Sound& sound = units[u].sound;
+      if (group == kDescription && options.language == Language::kEnglish &&
+          units[u].count == 1 && units[u].first + 1 == group_words.size() &&
+          sound.sound_alike && sound.key.size() > one_said.key.size() &&
+          std::string_view(sound.key).ends_with(one_said.key)) {
+        one_run_on = u;
       }
     }
     // Each unit against each distinct word, once; |hits| says which units
@@ -861,6 +876,22 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
             for (size_t w = units[u].first; w < units[u].first + units[u].count;
                  ++w) {
               best[w][e] = std::max(best[w][e], s);
+            }
+          }
+          // The last word with "one" run onto it, against this word and
+          // "one", when it hasn't matched well yet: a word of the title or
+          // the channel, what an item is named by. Not the dates, lengths
+          // and counts every item has ("3 years ago": "ago" with "one" is
+          // as near "awan" as "Aid" with "one").
+          if (one_run_on && segment.kind != kOtherSegment) {
+            const RefUnit& unit = units[*one_run_on];
+            if (best[unit.first][e] < kGoodMatch) {
+              const double s =
+                  JoinedSimilarity(unit.sound, sounds[id], one_said);
+              if (s > 0) {
+                best[unit.first][e] =
+                    std::max(best[unit.first][e], s * kJoinedWords * factor);
+              }
             }
           }
           // A reference word against two adjacent item words joined

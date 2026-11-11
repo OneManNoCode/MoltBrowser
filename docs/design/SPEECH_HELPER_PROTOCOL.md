@@ -356,6 +356,14 @@ wake  [speech_start  partial*  speech_end]  final
   `final` at once. Otherwise it was the wake phrase alone ("Hey Molt."
   pause "Open YouTube."), and the helper waits for the command: its speech
   starts a new utterance, with `speech_start` when the detector hears it.
+- If the spotter fires after the detector ended the speech that held the
+  phrase (at most 1.5 s after, as over speakers, where "Hey Molt, go
+  back" was spotted 0.8 s after the detector ended it), the recognizer
+  hears that speech from its start, even when it was already heard for a
+  phrase the spotter might miss and set aside without one, and the
+  helper finishes it at once by the rule above: the command in it, or
+  the phrase alone and a wait for the command. Speech a written `final`
+  used is never heard again.
 - If no command starts within 6 s of the `wake`: `final` with empty text and
   confidence 0, without `speech_start` or `speech_end`, and back to waiting.
 - After the `final`, the helper waits for the wake phrase again. A wake
@@ -386,7 +394,7 @@ wake phrase said here is just part of the utterance.
 - `final` and `partial` text is at most 1,000 bytes, cut at a word near the
   end, else at a character. A transducer emits at most one token per
   frame and loops never; 20 s give at most a few hundred tokens.
-- The helper keeps 2.5 s of audio of its own (for the pre-rolls), and
+- The helper keeps 4 s of audio of its own (for the pre-rolls), and
   sherpa-onnx's buffers for the utterance in progress. Peak memory is in
   §8.
 

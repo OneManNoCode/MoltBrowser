@@ -362,6 +362,55 @@ TEST_F(SpeechListenerTest, CountsWordsWhenTheSpotterIsLate) {
                                                "final:Hello there stop"}));
 }
 
+TEST_F(SpeechListenerTest, HearsTheCommandWhenTheSpotterFiresAfterTheSpeech) {
+  // On the spoken suite's speakers run (build 40, "go back"), the spotter
+  // fired after the detector had ended the speech (0.5 s of silence): the
+  // helper waited for an end of speech that had come, and after six
+  // seconds wrote that nothing followed the wake phrase. The recognizer
+  // didn't write the phrase, so only the spotter woke.
+  SpottedOnly(scene_.get());
+  // The spotter heard the phrase from its start (a reset one wouldn't).
+  scene_->wakes = {Ms(3300)};
+  scene_->wake_starts = {Ms(1000)};
+  scene_->speech = {{Ms(1000), Ms(2600)}};
+  scene_->words.push_back({"go", Ms(2100)});
+  scene_->words.push_back({"back", Ms(2350)});
+  FeedUntil(Ms(5000));
+  EXPECT_EQ(Types(),
+            (std::vector<std::string>{"wake", "speech_start", "speech_end",
+                                      "final:Hello there go back"}));
+  // The recognizer heard that speech from its start.
+  ASSERT_FALSE(log_->utterance_starts.empty());
+  EXPECT_LE(log_->utterance_starts.back(), Ms(1000));
+}
+
+TEST_F(SpeechListenerTest, ALateWakeDoesntHearAWrittenCommandAgain) {
+  // A command written, then the spotter fires (late) on what followed:
+  // the command isn't heard, and written, a second time.
+  WakePhrase(scene_.get());
+  scene_->speech = {{Ms(1000), Ms(2000)}};
+  scene_->words.push_back({"stop", Ms(1700)});
+  scene_->wakes = {Ms(1930), Ms(3000)};
+  FeedUntil(Ms(9500));
+  const std::vector<std::string> types = Types();
+  EXPECT_EQ(std::count(types.begin(), types.end(), "final:Hey Molt stop"), 1)
+      << testing::PrintToString(types);
+}
+
+TEST_F(SpeechListenerTest, AWakeAfterTheSpeechWithNothingElseWaits) {
+  // The same late spotter, the phrase alone: the command may follow.
+  SpottedOnly(scene_.get());
+  scene_->wakes = {Ms(2300)};
+  scene_->speech = {{Ms(1000), Ms(1650)}, {Ms(3500), Ms(4200)}};
+  scene_->words.push_back({"open", Ms(3550)});
+  scene_->words.push_back({"YouTube", Ms(3850)});
+  FeedUntil(Ms(6000));
+  EXPECT_EQ(Types(),
+            (std::vector<std::string>{"wake", "speech_start", "partial:open",
+                                      "partial:open YouTube", "speech_end",
+                                      "final:open YouTube"}));
+}
+
 TEST_F(SpeechListenerTest, CountsAPhraseRunTogetherAsOneWord) {
   // The spotter fires after "stop" began (before the cut), and before the
   // recognizer wrote it; the recognizer runs the phrase together.

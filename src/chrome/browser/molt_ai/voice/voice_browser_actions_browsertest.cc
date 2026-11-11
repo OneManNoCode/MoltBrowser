@@ -319,7 +319,11 @@ IN_PROC_BROWSER_TEST_F(VoiceBrowserActionsBrowserTest, HistoryAndReopen) {
   Say("show my history");
   const std::string said = tts_.TakeSpoken();
   EXPECT_NE(said.find("Player - Fixture"), std::string::npos) << said;
-  EXPECT_EQ(web_contents()->GetLastCommittedURL().host(), "history");
+  // The entries are read from the history service; the page opens in its
+  // own time (on a busy runner, after they were said).
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return web_contents()->GetLastCommittedURL().host() == "history";
+  })) << web_contents()->GetLastCommittedURL().spec();
   Say("open the pixel phone review from my history");
   EXPECT_EQ(web_contents()->GetLastCommittedURL().path(),
             "/molt_voice/article.html");

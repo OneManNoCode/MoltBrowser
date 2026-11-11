@@ -42,7 +42,7 @@ Expectations (expect.py checks them):
   {"url": "https://..."}  {"url_has": "..."}  {"host": "..."}
   {"path": "/watch"}      {"query": {"v": "video4"}}
   {"query": {"search_query": ["Bohemian Rhapsody", "Bohemian rapsody"]}}
-                          a list: any of its values
+                          a list: any of its values; without case
   {"js": "expression", "is": true}           on the active tab
   {"media": {"paused": false, "volume": [0.4, 0.6], "muted": false,
              "rate": 1.5, "time_min": 55, "time_max": 70,

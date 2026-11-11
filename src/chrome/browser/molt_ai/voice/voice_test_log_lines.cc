@@ -232,12 +232,16 @@ std::string TestLogLines::Heard(int64_t ms,
                                 std::string_view text,
                                 bool from_microphone,
                                 bool clean,
+                                bool list_choice_only,
                                 std::string_view intent,
                                 std::string_view pending_word) const {
   std::string out = Head(ms, "heard");
   AppendString(out, "text", MaskConfirmationWords(text, pending_word));
   AppendString(out, "source", from_microphone ? "mic" : "typed");
   AppendBool(out, "clean", clean);
+  if (list_choice_only) {
+    AppendBool(out, "over_voice", true);
+  }
   AppendString(out, "intent", CleanSpokenText(intent, 64));
   out.append("}\n");
   return out;

@@ -98,6 +98,19 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(s["unchecked"], ["sec-replayed-word"])
         self.assertIn("didn't get to their checks", " ".join(rep["reasons"]))
         self.assertNotIn("acted", " ".join(rep["reasons"]))
+
+    def test_a_failed_word_step_says_which_word_the_kit_said(self):
+        # The browser's log masks the word ("[word]."): the report says
+        # which one the kit heard in the browser's speech and said back.
+        said = dict(step(status="failed", heard=["[word]."]), action="say_word",
+                    word={"said": "tiger", "heard_browser": ["To allow it, say tiger."]})
+        del said["say"]
+        sc = scenario("sec-replayed-word", task="security", status="failed",
+                      steps=[step(), said])
+        md = report.markdown(report.build([run("pulse/clean", [sc])], {}))
+        self.assertIn("said 'say_word', heard '[word].'", md)
+        self.assertIn("the kit said 'tiger', the word it heard in "
+                      "'To allow it, say tiger.'", md)
         # A check that ran and failed acted, whatever came before it.
         held = dict(step(), guard=True)
         broke = dict(step(status="failed"), guard=True)

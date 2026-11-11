@@ -876,6 +876,57 @@ TEST_F(VoiceSessionLogicTest, AWordTheBrowserSaidStandingOutOfItsVoice) {
   EXPECT_TRUE(site.say_again);
 }
 
+// The spoken suite's forty-first build (speakers): reading the results,
+// voice mode heard its own "Live" back, standing out of what the echo
+// canceller left of its voice, took it for a choice by name and offered the
+// four live versions; the user's "three" then chose the third of those, not
+// of the results. A name of one word it just read is its voice heard back,
+// and the reading goes on.
+TEST_F(VoiceSessionLogicTest, ANameOfOneWordItReadIsItsVoice) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "20 results. 1: Queen - Bohemian Rhapsody, Queen Official, 6 minutes. "
+      "2: Bohemian Rhapsody (Remastered 2011), Queen - Topic, 6 minutes. "
+      "3: Queen - Bohemian Rhapsody (Live at Rock Montreal 1981), Queen "
+      "Official. 4: Queen - Bohemian Rhapsody (Live Aid 1985), Queen "
+      "Official.",
+      now_);
+  const auto stood_out = [&](const char* text, int64_t at) {
+    logic_->OnSpeechStart(now_ + at);
+    logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+    return logic_->OnFinal(text, 0.3, now_ + at + 900);
+  };
+  for (const char* text : {"Live", "Live.", "Montreal"}) {
+    SessionActions echo = stood_out(text, 6000);
+    EXPECT_FALSE(echo.utterance.has_value()) << text;
+    EXPECT_FALSE(echo.list_choice_only) << text;
+    EXPECT_FALSE(echo.stop_speech) << text;
+    EXPECT_FALSE(echo.say_again) << text;
+    EXPECT_EQ(echo.dropped_reason, "voice mode's voice heard back") << text;
+    now_ += 2000;
+  }
+  // Two words of it, or one it didn't say, still choose from the list read.
+  for (const char* text : {"Live Aid", "the Montreal one", "Wembley"}) {
+    SessionActions choice = stood_out(text, 6000);
+    EXPECT_EQ(choice.utterance, text);
+    EXPECT_TRUE(choice.list_choice_only) << text;
+    EXPECT_TRUE(choice.stop_speech) << text;
+    // It speaks again: the next is well into that speech.
+    now_ += 7000;
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  }
+  // A number it read is the user's, as before.
+  SessionActions number = stood_out("three.", 6000);
+  EXPECT_EQ(number.utterance, "three.");
+  EXPECT_FALSE(number.list_choice_only);
+  EXPECT_TRUE(number.stop_speech);
+}
+
 // A quiet stretch partly after the browser stopped speaking proves nothing
 // about its voice: heard back, as before.
 TEST_F(VoiceSessionLogicTest, AQuietStretchPastTheBrowsersSpeech) {
@@ -910,6 +961,39 @@ TEST_F(VoiceSessionLogicTest, StandingOutDoesNotPassATabsSound) {
   EXPECT_EQ(
       logic_->OnFinal("pause", 0.3, now_ + kEchoTailMs + 1200).dropped_reason,
       "a tab's sound, and not heard surely");
+}
+
+// Out of silence, though, the page's sound didn't reach the microphone
+// (headphones): a command that stays with the page counts. The owner's
+// scenario on the spoken suite's headphones run: "Louder." over the video,
+// at 0.3, in always-listening mode.
+TEST_F(VoiceSessionLogicTest, OutOfSilenceOverATabsSound) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("play", 0.9, now_ + 500);
+  now_ += 1000;
+  BrowserAnswers();
+  logic_->OnPageAudible(true, now_);
+  const int64_t at = now_ + kEchoTailMs + 500;
+  logic_->OnSpeechStart(at);
+  logic_->NoteUtteranceLoudness(
+      {.loud = true, .quiet_before = true, .silent_before = true});
+  EXPECT_EQ(logic_->OnFinal("Louder.", 0.3, at + 700).utterance, "Louder.");
+  // What would leave the page waits for the wake phrase or confidence.
+  BrowserAnswers();
+  logic_->OnSpeechStart(at + 2000);
+  logic_->NoteUtteranceLoudness(
+      {.loud = true, .quiet_before = true, .silent_before = true});
+  EXPECT_EQ(logic_->OnFinal("open evil dot com", 0.3, at + 2800).dropped_reason,
+            "a tab's sound, and not heard surely");
+  // Silent before, but not as loud as speech: not someone speaking.
+  BrowserAnswers();
+  logic_->OnSpeechStart(at + 4000);
+  logic_->NoteUtteranceLoudness(
+      {.loud = false, .quiet_before = true, .silent_before = true});
+  EXPECT_EQ(logic_->OnFinal("pause", 0.3, at + 4600).dropped_reason,
+            "a tab's sound, and not heard surely");
 }
 
 TEST_F(VoiceSessionLogicTest, TheWakePhraseOverTheOwnVoiceIsTheUser) {
@@ -1302,6 +1386,82 @@ TEST_F(VoiceSessionLogicTest, AnAnswerFromItsQuestionsWordsIsNotItsEcho) {
   SessionActions answer = logic_->OnFinal("Number two.", 0.9, now_ + 3000);
   EXPECT_EQ(answer.utterance, "Number two.");
   EXPECT_TRUE(answer.stop_speech);
+}
+
+// Heard back with one word mangled, three words or more are its own too.
+// The spoken suite's speakers run on build 37: the start of the results
+// read out ("10 results. 1: Daily News: ...") heard back as "tell results.
+// one." before the echo canceller settled, and taken for "choose one".
+TEST_F(VoiceSessionLogicTest, ItsOwnWordsHeardBackWithOneMangled) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("search the web for trams in lyon", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "10 results. 1: Daily News: trams return to Lyon. 2: Weather in Lyon "
+      "this week. Say a number or a name.",
+      now_);
+  for (const char* echo : {"tell results. one.", "daily news trims return",
+                           "weather in lyle this"}) {
+    logic_->OnSpeechStart(now_ + 600);
+    EXPECT_EQ(logic_->OnFinal(echo, 0.9, now_ + 1400).dropped_reason,
+              "voice mode's voice heard back")
+        << echo;
+  }
+  // The word off is the user's own, not one of its words misheard: a
+  // command naming what it read.
+  for (const char* command :
+       {"play daily news", "open daily news", "weather in paris this"}) {
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+    logic_->OnSpeechStart(now_ + 1450);
+    EXPECT_EQ(logic_->OnFinal(command, 0.9, now_ + 1480).utterance, command)
+        << command;
+  }
+  // Two words, or two of three off, are the user's.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnSpeechStart(now_ + 1500);
+  SessionActions two = logic_->OnFinal("number one", 0.9, now_ + 2000);
+  EXPECT_EQ(two.utterance, "number one");
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 2100);
+  logic_->OnBrowserSaid(
+      "10 results. 1: Daily News: trams return to Lyon. Say a number or a "
+      "name.",
+      now_ + 2100);
+  logic_->OnSpeechStart(now_ + 2600);
+  SessionActions off_two =
+      logic_->OnFinal("play the daily news", 0.9, now_ + 3200);
+  EXPECT_EQ(off_two.utterance, "play the daily news");
+}
+
+// Naming what it reads, over its voice: "play live aid" over "2: Live
+// Aid" and "forget my videos" over "Running my videos" are the user's, not
+// its words with one misheard.
+TEST_F(VoiceSessionLogicTest, ACommandNamingWhatItReadsIsNotItsEcho) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("play the live one by queen", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "Did you mean 1: Live at Rock Montreal, 2: Live Aid, or 3: Live at "
+      "Wembley? Say a number or a name.",
+      now_);
+  logic_->OnSpeechStart(now_ + 500);
+  EXPECT_EQ(logic_->OnFinal("play live aid", 0.9, now_ + 1100).utterance,
+            "play live aid");
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 1200);
+  logic_->OnBrowserSaid("Running my videos. Step 1: open VideoSite.",
+                        now_ + 1200);
+  // Asked for again, as anything that changes what it learned is over its
+  // voice, but not taken for its echo.
+  logic_->OnSpeechStart(now_ + 1700);
+  SessionActions forget = logic_->OnFinal("forget my videos", 0.9, now_ + 2300);
+  EXPECT_TRUE(forget.say_again);
+  EXPECT_EQ(forget.dropped_reason,
+            "over voice mode's voice, and needs it quiet");
 }
 
 // Its own reading of a page's sound-alike of the wake phrase ("Hey Mold",

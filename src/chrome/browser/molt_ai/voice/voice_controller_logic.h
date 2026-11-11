@@ -127,6 +127,12 @@ inline constexpr int kMuchVolumeFactor = 3;
 // How well "open X" must name something on the page to open it rather
 // than search the web for X (spoken_choice.h's scores).
 inline constexpr double kOpenOnThePageMinScore = 0.8;
+// How well a choice by name said over voice mode's own voice
+// (VoiceEnvironment::list_choice_only) must name its item in a list read
+// out: that voice heard back comes out as words near the ones it read
+// ("living", over "Did you mean ... Live ...", was near enough "lofi", at
+// 0.54). Not among the few it offered, where the usual bar holds.
+inline constexpr double kOverOwnVoiceMinScore = 0.8;
 
 // ---------------------------------------------------------------------------
 // Steps

@@ -149,6 +149,7 @@ void Listener::Reset() {
   vad_in_speech_ = false;
   speech_onset_ = -1;
   consumed_ = received_;
+  written_ = received_;
   ++epoch_;
   ToBaseState();
 }
@@ -173,8 +174,13 @@ void Listener::Step(const std::vector<float>& samples) {
   const VadUpdate vad = engines_->Detect(samples);
   if (vad.in_speech && !vad_in_speech_) {
     speech_onset_ = step_start;
+    last_onset_ = step_start;
+    last_end_ = 0;
   } else if (!vad.in_speech) {
     speech_onset_ = -1;
+  }
+  if (vad.segment_ended && last_onset_ >= 0) {
+    last_end_ = received_;
   }
   vad_in_speech_ = vad.in_speech;
 
@@ -345,12 +351,30 @@ void Listener::OnWake(int64_t at) {
   wake_at_ = at;
   Emit(WakeEvent(At(at)));
   int64_t from = wake_at_ - kWakePrerollSamples;
+  // The spotter fired after the detector ended the speech that held the
+  // phrase (on speakers, "Hey Molt, go back" was spotted 0.8 s after
+  // that): there will be no end of that speech to wait for, and the
+  // command in it began before the pre-roll.
+  const bool after_speech = !vad_in_speech_ && last_onset_ >= 0 &&
+                            last_end_ > last_onset_ &&
+                            at - last_end_ <= kLateWakeSamples;
   if (vad_in_speech_ && speech_onset_ >= 0) {
     // Not the speech before this stretch of it.
     from = std::max(from, speech_onset_ - kPrerollSamples);
+  } else if (after_speech) {
+    // That speech from its start. Heard already for a phrase the spotter
+    // might miss, it may have been set aside without one (the recognizer
+    // didn't write it), never as a command written.
+    from = std::max(last_onset_ - kPrerollSamples, written_);
+    consumed_ = std::min(consumed_, std::max(from, int64_t{0}));
   }
   BeginFrom(from);
   state_ = State::kAfterWake;
+  if (after_speech) {
+    // Finished at once, as if its speech had just ended: the command in
+    // it, or the phrase alone and a wait for the command.
+    StartHangover();
+  }
 }
 
 void Listener::OnHeard(const RecognizerResult& result, bool whole) {
@@ -539,6 +563,7 @@ void Listener::EndUtterance(const RecognizerResult& result) {
   const bool empty = CleanEventText(result.text, kMaxEventTextBytes).empty();
   Emit(FinalEvent(Now(), result.text, empty ? 0.0 : result.confidence));
   consumed_ = received_;
+  written_ = received_;
   ToBaseState();
 }
 
@@ -548,6 +573,7 @@ void Listener::EndWithoutCommand() {
   }
   Emit(FinalEvent(Now(), std::string(), 0.0));
   consumed_ = received_;
+  written_ = received_;
   ToBaseState();
 }
 

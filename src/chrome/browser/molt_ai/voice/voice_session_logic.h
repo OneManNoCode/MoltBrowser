@@ -26,7 +26,11 @@
 //     (OnlyTheWakePhrase()): the command after it counts. While a page
 //     plays sound, such an utterance also needs kMinConfidenceWithoutWake
 //     (§7.2), unless it begins with the wake phrase
-//     (AddressedToVoiceMode()).
+//     (AddressedToVoiceMode()), or stood out of silence (the page's sound
+//     didn't reach the microphone: headphones) and stays with the page as
+//     a command over the browser's own voice does (TakenOverOwnVoice()):
+//     "louder" over a video. Standing out of a quieter moment isn't
+//     enough: a tab's sound may not be in the echo canceller's reference.
 //   - "Stop", "cancel", "stop talking" and "turn off voice mode" always
 //     count: the helper hears everything (wake_required false) while the
 //     browser thinks or speaks, so they work without the wake phrase.
@@ -47,12 +51,17 @@
 //     browser's own words heard back (its words in the order
 //     the browser said them in the last kSpokenMemoryMs, at most one
 //     skipped between two, as written or as its voice says them,
-//     voice_said_aloud.h: "example dot com" for "example.com"; that is
+//     voice_said_aloud.h: "example dot com" for "example.com"; or, of
+//     three words or more, word for word but one the recognizer heard as
+//     another beginning as it does: "tell results one" for "10 results.
+//     1: ..." (not "play live aid" over "2: Live Aid"); that is
 //     what an echo the canceller missed would be. One word: anywhere in
 //     it. "Number two" over "1: ..., 2: ... Say a number" is the user's;
 //     so is one that stood out of a quiet stretch that was the browser
 //     speaking, kEchoCancellerSettledMs into its speech: "three" over
-//     "3: ...").
+//     "3: ..."; not a name of one word it read, though: "Live" over "3:
+//     ... (Live at Rock Montreal 1981), 4: ... (Live Aid 1985)" is its
+//     voice heard back however it stood out, and the reading goes on).
 //     It stops the browser's speech. Only commands that stay with what the
 //     browser is reading or doing are taken that way (TakenOverOwnVoice()):
 //     one that reaches another site, types or sends text, closes a tab,
@@ -446,11 +455,12 @@ class VoiceSessionLogic {
   std::optional<int64_t> UtteranceBegunMs() const;
   // How the microphone sounded for that utterance, after the browser's
   // processing (VoiceAudio's level history): as loud as speech while it
-  // was said, and quiet just before (kQuietBeforeUtteranceMs). Unknown is
-  // neither.
+  // was said, and quiet just before (kQuietBeforeUtteranceMs), or silent
+  // (VoiceAudio's kSilentPeak). Unknown is none.
   struct Loudness {
     bool loud = false;
     bool quiet_before = false;
+    bool silent_before = false;
   };
   void NoteUtteranceLoudness(Loudness loudness);
   // Whether the speech engine is speaking for someone else (a page's
@@ -509,6 +519,9 @@ class VoiceSessionLogic {
     // It stood out of what the microphone gave before it
     // (NoteUtteranceLoudness()).
     bool stood_out = false;
+    // It stood out of silence: whatever played, nothing reached the
+    // microphone before it.
+    bool after_silence = false;
     int64_t ended_ms = -1;
     bool partial_shown = false;
     // Its wake phrase was heard over the linear filter's output (above).
@@ -541,6 +554,8 @@ class VoiceSessionLogic {
   // Whether every word of |text| is among what the browser said lately:
   // its own voice heard back.
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
+  // Whether |text| is one word, and one the browser said lately.
+  bool OneWordItSaid(std::string_view text, int64_t now_ms) const;
   // Whether |utterance| stood out of a quiet stretch that was the browser
   // speaking, kEchoCancellerSettledMs and more into its speech: someone
   // speaking, not its voice heard back.

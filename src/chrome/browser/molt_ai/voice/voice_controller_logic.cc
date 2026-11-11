@@ -324,7 +324,7 @@ class Planner : public TurnPlanner {
   VoiceTurn Finish() {
     // What "undo" goes back from (voice_browser_logic.h).
     NoteNavigationForUndo(turn_.kind, turn_.steps, env_, turn_.state);
-    if (!spoken_.empty()) {
+    if (!spoken_.empty() && !said_again_) {
       std::vector<std::string>& last = turn_.state.last_spoken;
       last.clear();
       size_t bytes = 0;
@@ -385,6 +385,14 @@ class Planner : public TurnPlanner {
     return Said(env_.language, english, args);
   }
 
+  // What was said over voice mode's own voice, set aside: to be said again
+  // once it is quiet. "Repeat" still says what came before (the prompt and
+  // its word, the choices offered), not this.
+  void SayAgainOnceQuiet() {
+    Say(Tr("I've stopped. Now say that again."));
+    said_again_ = true;
+  }
+
   // ---- Commands ----------------------------------------------------------
 
   void Plan(const VoiceCommand& command, int depth) {
@@ -398,7 +406,7 @@ class Planner : public TurnPlanner {
     // Said over voice mode's own voice: only a choice from the page's list
     // read or offered runs now (VoiceEnvironment::list_choice_only).
     if (depth == 0 && env_.list_choice_only && !ChoosesFromListRead(command)) {
-      Say(Tr("I've stopped. Now say that again."));
+      SayAgainOnceQuiet();
       return;
     }
     // "Which site?" stays asked until something the grammar understands
@@ -1287,14 +1295,19 @@ class Planner : public TurnPlanner {
         subset.base = s.offered;
         attempts.push_back(std::move(subset));
       }
-      Attempt full;
-      full.set = std::move(base);
-      full.context = s.list;
-      full.uses_current = true;
-      if (s.list == ListContext::kPageList) {
-        full.list = FindList(map_, s.list_container, s.list_label);
+      // Said over voice mode's own voice, an answer to what it offered is
+      // one of those: the rest of the list wasn't read out (the reading
+      // heard back as "living" chose a video it never named).
+      if (!list_only || s.offered.empty()) {
+        Attempt full;
+        full.set = std::move(base);
+        full.context = s.list;
+        full.uses_current = true;
+        if (s.list == ListContext::kPageList) {
+          full.list = FindList(map_, s.list_container, s.list_label);
+        }
+        attempts.push_back(std::move(full));
       }
-      attempts.push_back(std::move(full));
     } else if (ref.kind != ChoiceRef::Kind::kNumber) {
       if (const PageList* list =
               Locate(SitePart::kResultList, /*record=*/false).list) {
@@ -1332,6 +1345,13 @@ class Planner : public TurnPlanner {
       }
       MatchOptions options;
       options.current_position = attempt.uses_current ? s.current_position : 0;
+      // Over voice mode's own voice, a name must name its item well in a
+      // list read out; among the few just offered, the usual bar does: a
+      // weak name ("living") names none of them, and "The Live AWAN" (the
+      // recognizer's "the Live Aid one") names one at 0.68.
+      if (list_only && attempt.base.empty()) {
+        options.min_score = kOverOwnVoiceMinScore;
+      }
       const ChoiceMatch match =
           MatchSpokenChoice(ref, attempt.set.candidates, options);
       if (match.outcome == ChoiceOutcome::kUnique) {
@@ -1354,7 +1374,7 @@ class Planner : public TurnPlanner {
     // Not in the list read: asked for again once the browser is quiet,
     // when everything else can have it.
     if (list_only) {
-      Say(Tr("I've stopped. Now say that again."));
+      SayAgainOnceQuiet();
       return;
     }
     // Nothing on the page is called that: an option of one of its lists.
@@ -3349,6 +3369,9 @@ class Planner : public TurnPlanner {
   MOLT_RAW_PTR_EXCLUSION const VoiceEnvironment& env_;
   VoiceTurn turn_;
   std::vector<std::string> spoken_;
+  // The turn only asked for what was said over voice mode's voice again
+  // (SayAgainOnceQuiet()).
+  bool said_again_ = false;
 };
 
 }  // namespace

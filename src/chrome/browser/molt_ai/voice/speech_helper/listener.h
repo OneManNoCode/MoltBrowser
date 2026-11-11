@@ -117,8 +117,14 @@ class Listener {
   // after the phrase ends (docs/VOICE_BENCH.md §3.8), and the phrase's
   // last word started earlier than that.
   static constexpr int64_t kCommandCutSamples = kSampleRate * 3 / 10;
-  // Audio held for the pre-rolls.
-  static constexpr int64_t kRingSamples = kSampleRate * 5 / 2;
+  // When the spotter fires after the detector ended the speech that held
+  // the wake phrase (late, as over speakers), at most this much after that
+  // end: the recognizer hears that speech from its start, and the helper
+  // finishes it at once (OnWake()).
+  static constexpr int64_t kLateWakeSamples = kSampleRate * 3 / 2;
+  // Audio held for the pre-rolls: a short command and its wake phrase,
+  // with the pre-roll, when the spotter fired kLateWakeSamples after them.
+  static constexpr int64_t kRingSamples = 4 * kSampleRate;
   // Audio is processed in steps of at most this much.
   static constexpr size_t kStepSamples = 1600;
   // When the browser asks for the wake phrase again, the spotter starts on
@@ -258,8 +264,16 @@ class Listener {
   bool vad_in_speech_ = false;
   // Where the detector last started to hear speech (minus its lag), or -1.
   int64_t speech_onset_ = -1;
+  // The last stretch of speech the detector heard, kept after it ended:
+  // where it started (-1 if none), and where the detector ended it (0 if
+  // it hasn't).
+  int64_t last_onset_ = -1;
+  int64_t last_end_ = 0;
   // The sample after the last one an utterance used.
   int64_t consumed_ = 0;
+  // The sample after the last one a written final (or a reset) used: a
+  // late wake hears nothing before it again (OnWake()).
+  int64_t written_ = 0;
   int64_t wake_at_ = 0;
   // kWaitWake: speech the detector notices up to this sample began before
   // the browser asked for the wake phrase again (kLateOpenSamples); -1 if

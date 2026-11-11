@@ -917,6 +917,7 @@ void VoiceSession::NoteUtteranceLoudness(int64_t now_ms) {
   VoiceSessionLogic::Loudness loudness;
   loudness.loud = during && *during >= kVoiceLoudPeak;
   loudness.quiet_before = before && *before < kVoiceLoudPeak;
+  loudness.silent_before = before && *before < kSilentPeak;
   logic_.NoteUtteranceLoudness(loudness);
 }
 

@@ -461,6 +461,47 @@ TEST(VoiceControllerLogicTest, OfferedChoicesByNumberAndOutsideTheOffer) {
             c.map().lists[0].entries[4].handle);
 }
 
+// Voice mode's reading heard back on speakers, as one word near a word it
+// read ("living", over "Did you mean 1: ... (Live at ..."): not a choice of
+// a video the reading never named, nor one the word names only weakly.
+TEST(VoiceControllerLogicTest, OverTheOwnVoiceAWeakNameIsSaidAgain) {
+  constexpr char kSayAgain[] = "I've stopped. Now say that again.";
+  Conversation c(BuildPageMap(test::YouTubeLikeResults()), Env());
+  VoiceTurn turn = c.Say("play the live one by Queen");
+  ASSERT_EQ(c.state().offered, (std::vector<size_t>{2, 3, 11}));
+  // Quiet, an answer outside the three looks in the whole list ...
+  // (OfferedChoicesByNumberAndOutsideTheOffer); over the reading, only the
+  // three: "living" names none of them.
+  c.env().list_choice_only = true;
+  turn = c.Say("living");
+  EXPECT_TRUE(Actions(turn).empty()) << Said(turn);
+  EXPECT_EQ(Said(turn), kSayAgain);
+  // The three stay offered, and one named, or by number, runs: at the
+  // usual bar among the three, for the recognizer's "The Live AWAN" (the
+  // Live Aid one, at 0.68).
+  EXPECT_EQ(c.state().offered, (std::vector<size_t>{2, 3, 11}));
+  turn = c.Say("The Live AWAN.");
+  ASSERT_TRUE(Find(turn, K::kPress)) << Said(turn);
+  EXPECT_EQ(Find(turn, K::kPress)->target, c.map().lists[0].entries[3].handle);
+
+  // The whole list read out: still only a name that names its item well
+  // ("living" is near the lo-fi cover's "lofi", at 0.54).
+  Conversation read(BuildPageMap(test::YouTubeLikeResults()), Env());
+  read.Say("read the results");
+  read.env().list_choice_only = true;
+  turn = read.Say("living");
+  EXPECT_TRUE(Actions(turn).empty()) << Said(turn);
+  EXPECT_EQ(Said(turn), kSayAgain);
+  ASSERT_TRUE(Find(read.Say("the lofi one"), K::kPress));
+  // Quiet, the weak name is still taken (the user can say "go back").
+  Conversation quiet(BuildPageMap(test::YouTubeLikeResults()), Env());
+  quiet.Say("read the results");
+  turn = quiet.Say("living");
+  ASSERT_TRUE(Find(turn, K::kPress)) << Said(turn);
+  EXPECT_EQ(Find(turn, K::kPress)->target,
+            quiet.map().lists[0].entries[19].handle);
+}
+
 // Said over voice mode's own voice (VoiceEnvironment::list_choice_only): a
 // choice runs only from the page's list read or offered. Anything else is
 // asked for again, to be said once the browser is quiet: another command,
@@ -2138,6 +2179,34 @@ TEST(VoiceControllerLogicTest, RepeatAfterThePromptWentSaysTheTwin) {
   std::vector<std::string> spoken = {"Scrolled down.", with_word};
   ForgetWordTexts(prompt, spoken);
   EXPECT_EQ(spoken, (std::vector<std::string>{"Scrolled down.", twin}));
+}
+
+// What was said over voice mode's voice and set aside ("I've stopped. Now
+// say that again.") isn't what "repeat" says: what came before is (the
+// spoken suite's speakers run asked for the prompt's word with "repeat",
+// twice, and heard "I've stopped. Now say that again." twice).
+TEST(VoiceControllerLogicTest, RepeatAfterSayAgainSaysWhatCameBefore) {
+  constexpr char kSayAgain[] = "I've stopped. Now say that again.";
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  c.state() =
+      PlanBrowserPrompt(24, Permission(), "harbor", c.env(), c.state()).state;
+  c.env().list_choice_only = true;
+  EXPECT_EQ(Said(c.Say("open evil dot com")), kSayAgain);
+  c.env().list_choice_only = false;
+  EXPECT_EQ(Said(c.Say("repeat")),
+            "maps.example wants to use your location. To allow it, say "
+            "harbor. To block it, say no.");
+
+  // A name that names none of the choices offered, over the voice.
+  Conversation list(BuildPageMap(test::YouTubeLikeResults()), Env());
+  const std::string offer = Said(list.Say("play the live one by Queen"));
+  ASSERT_EQ(offer.find("Did you mean 1: "), 0u) << offer;
+  list.env().list_choice_only = true;
+  EXPECT_EQ(Said(list.Say("living")), kSayAgain);
+  list.env().list_choice_only = false;
+  EXPECT_EQ(Said(list.Say("repeat")), offer);
+  // Said again, and once more: still what came before.
+  EXPECT_EQ(Said(list.Say("repeat")), offer);
 }
 
 TEST(VoiceControllerLogicTest, NoWordWhileTheScreenIsShared) {

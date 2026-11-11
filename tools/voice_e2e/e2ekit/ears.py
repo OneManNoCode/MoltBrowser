@@ -8,6 +8,7 @@ browser say it (and so checks that it was said aloud at all).
 """
 
 import os
+import re
 import sys
 import time
 
@@ -49,6 +50,18 @@ def sound_key(word):
         if not out or out[-1] != ch:
             out.append(ch)
     return "".join(out)
+
+
+# A "say" with the next word's first consonant run onto it: "same", "sane",
+# "sale", "safe", "sake" ("say mango" heard as "same ingo").
+_SAY_GLUED = re.compile(r"^sa[bcdfgklmnptvz]e$")
+# ... or run into the whole word: "sameingo", "samingo" ("say mango").
+_SAY_JOINED = re.compile(r"^sa([bcdfgklmnptvz])e?([a-z]{3,})$")
+
+# What follows a "say" that isn't the confirmation word: the prompt said
+# without it ("say the word on your screen"), and the answers it offers.
+_NOT_THE_WORD = frozenset(("the", "a", "an", "word", "it", "no", "now", "yes",
+                           "that", "this"))
 
 
 class _Args(object):
@@ -95,6 +108,34 @@ class Ears(object):
         return " ".join(e.get("text", "") for _, e in self.h.lines[n:]
                         if e.get("type") == "final").strip()
 
+    def replay(self, pcm, frame_ms=50, quiet_s=1.5, wait=60.0):
+        """What a helper of the kit's own, set as voice mode's is while it
+        waits for the wake phrase (and without the page's hotwords), makes
+        of |pcm| (16 kHz mono 16-bit) fed in voice mode's frames: each event
+        as (audio_ms, type, text), partials too. The listener goes by the
+        samples alone, so the same audio gives the events voice mode's
+        helper had, unless what voice mode sent it (a follow-up window, a
+        reset, the hotwords) made the difference."""
+        h = shc.Helper(self.args)
+        try:
+            shc.ready(h)
+            h.send(shc.config({"wake_required": True}))
+            h.send(b"".join(shc.audio_frames(pcm + shc.silence(shc.TAIL_SILENCE_S),
+                                             ms=frame_ms)))
+            end = time.monotonic() + wait
+            seen = -1
+            last = time.monotonic()
+            while time.monotonic() < end:
+                if len(h.lines) != seen:
+                    seen, last = len(h.lines), time.monotonic()
+                elif time.monotonic() - last >= quiet_s:
+                    break
+                time.sleep(0.05)
+            return [(e.get("audio_ms"), e.get("type"), e.get("text", ""))
+                    for _, e in h.lines if e.get("type") != "ready"]
+        finally:
+            h.close()
+
     def find_word(self, text):
         """The confirmation word |text| gives ("... say harbor"), if any:
         the last word of the list in it, else what follows a "say" (one
@@ -102,8 +143,12 @@ class Ears(object):
         list is nearest to it, within a third of its letters (at least two),
         the nearest of all the "say"s ("to allow it, say Mcaroni, to block
         it, say no": the last one is the "no"). The browser's voice and the
-        recognizer both mangle a lone noun ("harbot", "tarbon"); the list's
-        words are far apart."""
+        recognizer both mangle a lone noun ("harbot", "netkin"); the list's
+        words are far apart. Two letters off counts only when it also
+        sounds like that word and no other (sure_by_sound()): "binger" is
+        two letters from "tiger", but as near by sound to "banjo" and four
+        more, and the browser, hearing it, is as unsure; a wrong word
+        refuses the prompt, so the kit says "repeat" instead."""
         found = None
         heard = vbl.normalize(text).split()
         for w in heard:
@@ -121,16 +166,27 @@ class Ears(object):
             scored = sorted((letter_distance(t, c), c) for c in self.words)
             d, c = scored[0]
             if d <= max(2, len(c) // 3) and (len(scored) < 2 or scored[1][0] > d):
+                if d > 1 and not self.sure_by_sound(t, c):
+                    continue
                 if best is None or d < best[0]:
                     best = (d, c)
         return best[1] if best else None
 
+    def sure_by_sound(self, heard, word):
+        """Whether |heard|'s consonants (sound_key()) are within one sound
+        of |word|'s and nearer to it than to any other word of the list
+        ("netkin" and "napkin"; not "binger", two sounds from "tiger" and
+        from "banjo", nor "tarbon", nearer "dragon" than "harbor")."""
+        key = sound_key(heard)
+        d = letter_distance(key, sound_key(word))
+        return d <= 1 and all(letter_distance(key, sound_key(c)) > d
+                              for c in self.words if c != word)
+
     def nearest_by_sound(self, text):
         """The one word of the list whose consonants (sound_key()) are
         within one sound of what follows a "say" in |text| ("say keptus":
-        "cactus"), if exactly one is; else None. A guess: the kit takes it
-        only when two hearings of the prompt give the same one
-        (runner.word_wav())."""
+        "cactus"), if exactly one is; else None. A guess: the kit goes by
+        sounds_near() of two hearings instead (runner.word_wav())."""
         heard = vbl.normalize(text).split()
         tries = self._after_say(heard, ("say", "said", "saying"))
         best = None
@@ -145,18 +201,54 @@ class Ears(object):
                     best = (d, c)
         return best[1] if best else None
 
+    def sounds_near(self, text):
+        """Every word of the list within one sound (sound_key()) of what
+        follows a "say" in |text|: what a hearing of the prompt leaves
+        possible. The kit takes the one word two hearings both leave
+        (runner.word_wav()): "say kept this" leaves "cactus" (and, for
+        "kept" alone, "cobalt" and "yogurt"), "say active" "cactus" and
+        "guitar"."""
+        heard = vbl.normalize(text).split()
+        near = set()
+        for t in self._after_say(heard, ("say", "said", "saying"),
+                                 skip=_NOT_THE_WORD) or []:
+            key = sound_key(t)
+            if len(key) < 2:
+                continue
+            near.update(c for c in self.words
+                        if letter_distance(key, sound_key(c)) <= 1)
+        return near
+
     @staticmethod
-    def _after_say(heard, says_words):
+    def _after_say(heard, says_words, skip=()):
         """What may be the word: the word after each "say" and it run
         together with the next; the start when there is no "say" in a
-        heard of two words at most; None otherwise."""
+        heard of two words at most; None otherwise. A "say" followed by a
+        word of |skip| gives nothing ("say the word on your screen", "say
+        no"). A "say" run into the word's first sound ("say mango" heard
+        as "same ingo", or "same mingo") is a "say" too, its last letter
+        put back on the word; run into the whole word ("sameingo",
+        "Samingo"), what follows the "sa" is the word."""
         says = [i for i, w in enumerate(heard) if w in says_words]
-        if not says and len(heard) > 2:
+        glued = {}
+        joined = []
+        if "say" in says_words:
+            glued = {i: w[2] for i, w in enumerate(heard)
+                     if _SAY_GLUED.match(w) and i + 1 < len(heard)}
+            joined = [m.group(1) + m.group(2) for m in map(_SAY_JOINED.match, heard) if m]
+        if not says and not glued and not joined and len(heard) > 2:
             return None
-        tries = []
-        for start in ([i + 1 for i in says] or [0]):
+        tries = list(joined)
+        for start in ([i + 1 for i in says] or ([] if glued or joined else [0])):
+            if start < len(heard) and heard[start] in skip:
+                continue
             tries += heard[start:start + 1] + (
                 ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
+        for i, sound in sorted(glued.items()):
+            if heard[i + 1] in skip:
+                continue
+            tries += [heard[i + 1], sound + heard[i + 1]] + (
+                [sound + "".join(heard[i + 1:i + 3])] if len(heard) > i + 2 else [])
         return tries
 
     def stop(self):

@@ -249,6 +249,10 @@ def markdown(report):
                         ", ".join(st.get("intents") or []) or "-")
                     if st.get("why"):
                         line += " (%s)" % st["why"]
+                    if st.get("word"):
+                        line += "; the kit said %r, the word it heard in %s" % (
+                            st["word"]["said"],
+                            "; ".join(repr(h) for h in st["word"]["heard_browser"]))
                     out.append(line)
                     for x in st.get("expectations", []):
                         if not x["ok"]:

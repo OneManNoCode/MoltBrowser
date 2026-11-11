@@ -17,6 +17,26 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **Voice mode's own reading, heard back as one word, no longer chooses
+  from it.** On speakers, while voice mode read the search results, its
+  own voice came back through the microphone as "Live". Voice mode took
+  it for you and asked "Did you mean" among the four live versions, so
+  the "three" you said next picked the third of those instead of the
+  third result. A single word voice mode has just read out is now
+  ignored as its own voice, and the reading goes on. A number, or a
+  name of two words or more ("Live Aid"), still works while it reads.
+- **A short command right after "Hey Molt" is no longer lost when the
+  wake phrase is recognized late.** Over speakers, "Hey Molt" can be
+  recognized only after the whole sentence has ended. Voice mode then
+  waited six seconds for more speech and did nothing with "go back" or
+  "skip the ad". It now takes the command from the sentence it already
+  heard.
+- **"Repeat" says what voice mode said before "I've stopped. Now say
+  that again."** When something said over voice mode's voice was set
+  aside, "repeat" said "I've stopped. Now say that again." instead of
+  the question it had asked: at a permission prompt, the word to say
+  could not be heard again by asking for it. It now says the question
+  again, with its word where the word may be said.
 - **A name from the list, said while voice mode reads it.** Voice mode
   asked "Did you mean 1: ..., 2: ... or 3: ...? Say a number or a name.",
   but a name said before it finished ("the Live Aid one") was set aside
@@ -25,6 +45,33 @@ For longer narrative posts behind each entry see
   from what voice mode is reading or offering, and nothing else. A name
   that isn't there, or anything else that needs the browser quiet, is
   still asked for again.
+- **"The Live Aid one" heard as "the Live AWAN" chooses Live Aid.** The
+  recognizer can run "one" onto the word before it. The last word of a
+  choice that ends in the sound of "one" is now also matched as a word
+  of the list followed by "one": a word of an item's title or channel,
+  not of the age every result shows ("3 years ago", where "ago" and "one"
+  sound as near).
+- **Voice mode's reading, heard back as one word, no longer plays a
+  video.** On speakers, while voice mode read "Did you mean 1: ..., 2:
+  ... or 3: ...?", the microphone heard its reading and the recognizer
+  wrote "living", which voice mode took for the lo-fi cover further down
+  the results. Said over voice mode's voice, an answer now chooses only
+  among the ones it offered, and a name from a list read out must name
+  its item well; anything else is "I've stopped. Now say that again."
+- **"Louder" over a video, with headphones, in always-listening mode.**
+  Without the wake phrase, while a tab plays sound, voice mode only took
+  what the recognizer was sure of, and set "Louder." aside. When the
+  microphone was silent just before (the video's sound isn't reaching it),
+  a command that stays with the page (media, scrolling, a number from the
+  list) now counts too.
+- **Voice mode's own reading, heard back, no longer chooses a result.**
+  On speakers, the start of "10 results. 1: Daily News: ..." came back
+  through the microphone as "tell results. one." before the echo canceller
+  had settled, and voice mode opened the first result on its own. Three
+  words or more that match what it just said, all but one word misheard
+  as another that begins the same way ("tell" for "ten"), are now taken
+  for its own voice. A command naming what it read ("play live aid" over
+  "2: Live Aid") is still yours.
 - **Speech over a playing video is cut less.** Until the echo canceller has
   learned how much of the speakers' sound reaches the microphone, it took
   the echo to be as loud as what plays, and suppressed what you said over
