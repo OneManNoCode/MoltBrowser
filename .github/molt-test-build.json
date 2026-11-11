@@ -1,9 +1,9 @@
 {
- "resume_run": "42984480975",
+ "resume_run": "43002379367",
  "run_tests": true,
- "e2e_only": false,
+ "e2e_only": true,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 53, forty-first build (incremental on the fortieth; restarted to take the speech helper's fix): a wake spotted after the detector ended its speech keeps the command in it (\"Hey Molt, go back\" on speakers waited six seconds and wrote nothing); over voice mode's own voice, the 0.8 bar for a name only in a list read out, not among the few offered (\"The Live AWAN\" names Live Aid at 0.68 there); \"repeat\" says what came before \"I've stopped. Now say that again.\" (the speakers run asked for a prompt's word twice and heard that line twice); the kit's digest keeps what was heard and said in a long log, and names the word a failed say_word step said. The fortieth gave unit tests 3028/3028, browser tests 119/119 (the menu tests one at a time), file 81/87, headphones 84/91, speakers 78/91; the owner's song passed by wake everywhere, always-listening on headphones, and failed it on file (\"The Live A\", cut short) and speakers (\"louder\" heard as \"Clouder\" over the video)."
+ "request": "Spoken suite only, on the forty-first build, with the kit's word fixes: a word heard two letters off counts only when it also sounds like that word and no other (build 41's headphones run said \"tiger\" for \"say binger\", as near \"banjo\" by sound, and the browser turned it down), and a \"say\" run into the word is still a \"say\" (\"same ingo\" for \"say mango\" on speakers). The forty-first gave unit and browser tests all passing, file 84/87, headphones 83/91, speakers 83/91 (security 3/3, 4/5, 5/5); the owner's song passed by wake everywhere and always-listening by file, and failed always-listening on headphones (\"The live Ae one\" at 1.25x) and speakers (\"louder\" heard as \"Clouder\" over the video)."
 }
