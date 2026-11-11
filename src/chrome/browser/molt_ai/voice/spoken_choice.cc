@@ -879,8 +879,11 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
             }
           }
           // The last word with "one" run onto it, against this word and
-          // "one", when it hasn't matched well yet.
-          if (one_run_on) {
+          // "one", when it hasn't matched well yet: a word of the title or
+          // the channel, what an item is named by. Not the dates, lengths
+          // and counts every item has ("3 years ago": "ago" with "one" is
+          // as near "awan" as "Aid" with "one").
+          if (one_run_on && segment.kind != kOtherSegment) {
             const RefUnit& unit = units[*one_run_on];
             if (best[unit.first][e] < kGoodMatch) {
               const double s =

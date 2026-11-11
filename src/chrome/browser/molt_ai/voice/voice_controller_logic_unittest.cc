@@ -461,6 +461,45 @@ TEST(VoiceControllerLogicTest, OfferedChoicesByNumberAndOutsideTheOffer) {
             c.map().lists[0].entries[4].handle);
 }
 
+// Voice mode's reading heard back on speakers, as one word near a word it
+// read ("living", over "Did you mean 1: ... (Live at ..."): not a choice of
+// a video the reading never named, nor one the word names only weakly.
+TEST(VoiceControllerLogicTest, OverTheOwnVoiceAWeakNameIsSaidAgain) {
+  constexpr char kSayAgain[] = "I've stopped. Now say that again.";
+  Conversation c(BuildPageMap(test::YouTubeLikeResults()), Env());
+  VoiceTurn turn = c.Say("play the live one by Queen");
+  ASSERT_EQ(c.state().offered, (std::vector<size_t>{2, 3, 11}));
+  // Quiet, an answer outside the three looks in the whole list ...
+  // (OfferedChoicesByNumberAndOutsideTheOffer); over the reading, only the
+  // three: "living" names none of them.
+  c.env().list_choice_only = true;
+  turn = c.Say("living");
+  EXPECT_TRUE(Actions(turn).empty()) << Said(turn);
+  EXPECT_EQ(Said(turn), kSayAgain);
+  // The three stay offered, and one named well, or by number, runs.
+  EXPECT_EQ(c.state().offered, (std::vector<size_t>{2, 3, 11}));
+  turn = c.Say("the Live Aid one");
+  ASSERT_TRUE(Find(turn, K::kPress)) << Said(turn);
+  EXPECT_EQ(Find(turn, K::kPress)->target, c.map().lists[0].entries[3].handle);
+
+  // The whole list read out: still only a name that names its item well
+  // ("living" is near the lo-fi cover's "lofi", at 0.54).
+  Conversation read(BuildPageMap(test::YouTubeLikeResults()), Env());
+  read.Say("read the results");
+  read.env().list_choice_only = true;
+  turn = read.Say("living");
+  EXPECT_TRUE(Actions(turn).empty()) << Said(turn);
+  EXPECT_EQ(Said(turn), kSayAgain);
+  ASSERT_TRUE(Find(read.Say("the lofi one"), K::kPress));
+  // Quiet, the weak name is still taken (the user can say "go back").
+  Conversation quiet(BuildPageMap(test::YouTubeLikeResults()), Env());
+  quiet.Say("read the results");
+  turn = quiet.Say("living");
+  ASSERT_TRUE(Find(turn, K::kPress)) << Said(turn);
+  EXPECT_EQ(Find(turn, K::kPress)->target,
+            quiet.map().lists[0].entries[19].handle);
+}
+
 // Said over voice mode's own voice (VoiceEnvironment::list_choice_only): a
 // choice runs only from the page's list read or offered. Anything else is
 // asked for again, to be said once the browser is quiet: another command,

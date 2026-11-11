@@ -1287,14 +1287,19 @@ class Planner : public TurnPlanner {
         subset.base = s.offered;
         attempts.push_back(std::move(subset));
       }
-      Attempt full;
-      full.set = std::move(base);
-      full.context = s.list;
-      full.uses_current = true;
-      if (s.list == ListContext::kPageList) {
-        full.list = FindList(map_, s.list_container, s.list_label);
+      // Said over voice mode's own voice, an answer to what it offered is
+      // one of those: the rest of the list wasn't read out (the reading
+      // heard back as "living" chose a video it never named).
+      if (!list_only || s.offered.empty()) {
+        Attempt full;
+        full.set = std::move(base);
+        full.context = s.list;
+        full.uses_current = true;
+        if (s.list == ListContext::kPageList) {
+          full.list = FindList(map_, s.list_container, s.list_label);
+        }
+        attempts.push_back(std::move(full));
       }
-      attempts.push_back(std::move(full));
     } else if (ref.kind != ChoiceRef::Kind::kNumber) {
       if (const PageList* list =
               Locate(SitePart::kResultList, /*record=*/false).list) {
@@ -1332,6 +1337,9 @@ class Planner : public TurnPlanner {
       }
       MatchOptions options;
       options.current_position = attempt.uses_current ? s.current_position : 0;
+      if (list_only) {
+        options.min_score = kOverOwnVoiceMinScore;
+      }
       const ChoiceMatch match =
           MatchSpokenChoice(ref, attempt.set.candidates, options);
       if (match.outcome == ChoiceOutcome::kUnique) {

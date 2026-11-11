@@ -97,6 +97,13 @@ TEST(VoiceCandidatesTest, TheOwnersChoicesOnTheResults) {
   m = Match(offered, "the live aid one");
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
   EXPECT_EQ(offered.targets[m.index].index, 3);
+  // "One" run onto "Aid" (the recognizer's "The Live AWAN"): "Aid" in the
+  // title, not "ago" in the age every result has ("3 years ago").
+  for (const char* said : {"the live awan", "The Live AWAN."}) {
+    m = Match(offered, said);
+    ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique) << said;
+    EXPECT_EQ(offered.targets[m.index].index, 3) << said;
+  }
   m = Match(offered, "two");
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
   EXPECT_EQ(offered.targets[m.index].index, 3);

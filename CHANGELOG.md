@@ -28,7 +28,16 @@ For longer narrative posts behind each entry see
 - **"The Live Aid one" heard as "the Live AWAN" chooses Live Aid.** The
   recognizer can run "one" onto the word before it. The last word of a
   choice that ends in the sound of "one" is now also matched as a word
-  of the list followed by "one".
+  of the list followed by "one": a word of an item's title or channel,
+  not of the age every result shows ("3 years ago", where "ago" and "one"
+  sound as near).
+- **Voice mode's reading, heard back as one word, no longer plays a
+  video.** On speakers, while voice mode read "Did you mean 1: ..., 2:
+  ... or 3: ...?", the microphone heard its reading and the recognizer
+  wrote "living", which voice mode took for the lo-fi cover further down
+  the results. Said over voice mode's voice, an answer now chooses only
+  among the ones it offered, and a name must name its item well; anything
+  else is "I've stopped. Now say that again."
 - **"Louder" over a video, with headphones, in always-listening mode.**
   Without the wake phrase, while a tab plays sound, voice mode only took
   what the recognizer was sure of, and set "Louder." aside. When the
