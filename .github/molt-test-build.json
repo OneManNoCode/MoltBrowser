@@ -5,5 +5,5 @@
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Spoken suite only, on the forty-second build, with the owner's song scenario at normal speed in both modes (the owner's decision; its variant by number still turns through the speeds). The forty-second gave unit tests 3033/3033, browser tests 119/119, file 82/87, headphones 84/91, speakers 84/91 (security 3/3, 5/5, 5/5); the owner's song passed by wake everywhere and always-listening by file, and failed always-listening at 1.25x on headphones (\"The Live AOEN\") and speakers (\"louder\" heard as \"Clouder\" over the video)."
+ "request": "Spoken suite only, on the forty-second build, again (run 43094924679's four voice-e2e jobs died downloading the speech bundle: HTTP 502 from GitHub's artifact service, before any scenario), with the owner's song saying \"Hey Molt\" over the playing video (\"louder\", \"pause\") in always-listening mode too: the owner keeps the rule that a command over a tab's sound needs the wake phrase unless heard surely. The run before (43079601768, the song at normal speed): file 81/87, headphones 83/91, speakers 83/91, typed 80/80; the song passed in both modes by file and on headphones, and on speakers always-listening dropped \"Louder.\" over the video (heard exactly, not surely)."
 }

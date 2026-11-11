@@ -1,6 +1,6 @@
 {
  "group": "owner",
- "about": "The owner's song scenario (docs/design/TOUCHLESS_BROWSING.md §2), with \"Hey Molt\" and in always-listening mode, and its variant that plays the fourth result by number. Spoken by libritts-m, the test voice the recognizer hears right on every step, and the song scenario at normal speed in both modes (the owner's decisions): they measure voice mode, and the other scenarios take the voices and speeds in turn.",
+ "about": "The owner's song scenario (docs/design/TOUCHLESS_BROWSING.md §2), with \"Hey Molt\" and in always-listening mode, and its variant that plays the fourth result by number. Spoken by libritts-m, the test voice the recognizer hears right on every step, and the song scenario at normal speed in both modes (the owner's decisions): they measure voice mode, and the other scenarios take the voices and speeds in turn. Over the playing video, \"louder\" and \"pause\" are said with \"Hey Molt\" in always-listening mode too: there voice mode takes a command without it only when heard surely, so that a video's own sound can't give commands, and the owner keeps that rule.",
  "scenarios": [
   {
    "id": "owner-song",
@@ -21,8 +21,9 @@
     {"say": "the Live Aid one", "answer": true,
      "expect": [{"query": {"v": "video4"}}, {"media": {"paused": false, "muted": false}},
                 {"said": "Playing Queen - Bohemian Rhapsody (Live Aid 1985)."}]},
-    {"say": "louder", "needs": ["volume_up"], "expect": [{"media": {"volume": [0.72, 1.0]}}]},
-    {"say": "pause", "needs": ["pause"], "expect": [{"media": {"paused": true}}]},
+    {"say": "louder", "needs": ["volume_up"], "wake": true,
+     "expect": [{"media": {"volume": [0.72, 1.0]}}]},
+    {"say": "pause", "needs": ["pause"], "wake": true, "expect": [{"media": {"paused": true}}]},
     {"say": "skip ahead one minute", "needs": ["skip_forward"],
      "expect": [{"media": {"time_min": 55}}]},
     {"say": "full screen", "needs": ["full_screen"], "expect": [{"media": {"fullscreen": true}}]},

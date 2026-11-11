@@ -173,6 +173,16 @@ and the voice gesture's 40 confirmation words, 16 kHz mono 16-bit WAV:
   ljspeech's "louder", "pause" and "go back" ("launch", "pores", "feel
   back"). So the owner's scenarios measure voice mode, and the other 90
   measure recognition across the voices.
+- **"Hey Molt" over a playing video.** A step with `"wake": true` is
+  said with the wake phrase in always-listening mode too. Over a tab
+  playing sound, always-listening mode takes a command without the
+  phrase only when it heard it surely (`kMinConfidenceWithoutWake`), or
+  when it stood out of silence (headphones). That way a video's own
+  sound can't give commands. On speakers at normal speed, build 42
+  heard the owner's "louder" over the video exactly, but not surely, so
+  it dropped it. The owner keeps that rule (November 2026). So the
+  song's "louder" and "pause", the steps said while the video plays,
+  say "Hey Molt" in both modes.
 - **The engine**: the voice bench's driver (sherpa-onnx 2.0.1's C API,
   the release library `fetch.py` pins), one thread, with a vanishing
   sampling noise (`--noise-scale 1e-30 --noise-scale-w 1e-30`, new in the
@@ -408,7 +418,7 @@ with "Hey Molt" and in always-listening mode):
 
 | Group | What |
 |---|---|
-| `owner.json` | The owner's song scenario: open YouTube, search, "play the live one by Queen", "the Live Aid one", louder, pause, skip ahead one minute, full screen, back; and by number. Spoken by libritts speaker 300, the song at normal speed (above). |
+| `owner.json` | The owner's song scenario: open YouTube, search, "play the live one by Queen", "the Live Aid one", louder, pause, skip ahead one minute, full screen, back; and by number. Spoken by libritts speaker 300, the song at normal speed, with "Hey Molt" over the playing video in both modes (above). |
 | `go.json` | Open by name and by address, a name it doesn't know, search the web and the site, back and forward, reload, new tab, a site in a new tab, switch and close tabs, a site's name alone. |
 | `read.json` | The title, headings, page, a section, links, what's on the screen, find, next heading, the selection, stopping a reading. |
 | `choose.json` | By number, by name, by position, a readback answered by number, a bare number after a list, the numbers. |

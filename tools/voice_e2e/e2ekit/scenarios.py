@@ -34,7 +34,10 @@ a direct command, left out of the latency figures), "barge_in" (said while
 the browser is still speaking: the kit doesn't wait for it to finish),
 "file_gap" (file mode only: seconds from the end of the step before to
 this one's speech, instead of the fixed gap; for an answer said while
-voice mode still listens after a short reply).
+voice mode still listens after a short reply), "wake" (said with the wake
+phrase in every listening mode: a command over a playing video, where
+always-listening mode needs it unless it heard the command surely, the
+owner's decision; not with "answer").
 say_word and replay need live audio ("pulse"): a scenario with one runs
 only with PulseAudio.
 
@@ -101,7 +104,7 @@ REQUIREMENTS = ("microphone", "pulse", "model", "listening")
 STEP_ACTIONS = ("say", "say_word", "replay", "wait")
 STEP_KEYS = set(STEP_ACTIONS) | {
     "needs", "answer", "timeout", "requires", "name", "pause", "expect",
-    "direct", "barge_in", "file_gap", "note"}
+    "direct", "barge_in", "file_gap", "wake", "note"}
 SCENARIO_KEYS = {"id", "title", "task", "counts", "modes", "start",
                  "requires", "steps", "voice", "speed", "note"}
 START_KEYS = {"url", "tabs", "settings", "js", "shields"}
@@ -151,6 +154,7 @@ class Step(object):
         self.direct = direct
         self.barge_in = False
         self.file_gap = None
+        self.wake = False
 
     @property
     def text(self):
@@ -334,7 +338,7 @@ def parse_step(where, i, s, names):
     if not isinstance(needs, list) or any(
             not isinstance(n, str) or not INTENT_RE.match(n) for n in needs):
         _fail(where, "needs takes a list of command names")
-    for k in ("answer", "direct", "barge_in"):
+    for k in ("answer", "direct", "barge_in", "wake"):
         if k in s and not isinstance(s[k], bool):
             _fail(where, "%s takes true or false" % k)
     timeout = _number(where, s.get("timeout", DEFAULT_TIMEOUT), "timeout", 1,
@@ -362,6 +366,9 @@ def parse_step(where, i, s, names):
         if action != "say" or i == 0:
             _fail(where, "file_gap is for a say step after another step")
         step.file_gap = _number(where, s["file_gap"], "file_gap", 2, 30)
+    step.wake = s.get("wake", False)
+    if step.wake and (action != "say" or step.answer):
+        _fail(where, "wake is for a say step that isn't an answer")
     return step
 
 
