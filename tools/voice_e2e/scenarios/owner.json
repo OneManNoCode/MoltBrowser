@@ -1,6 +1,6 @@
 {
  "group": "owner",
- "about": "The owner's song scenario (docs/design/TOUCHLESS_BROWSING.md §2), with \"Hey Molt\" and in always-listening mode, and its variant that plays the fourth result by number. Spoken by libritts-m, the test voice the recognizer hears right on every step (the owner's decision): they measure voice mode, and the other scenarios take the voices in turn.",
+ "about": "The owner's song scenario (docs/design/TOUCHLESS_BROWSING.md §2), with \"Hey Molt\" and in always-listening mode, and its variant that plays the fourth result by number. Spoken by libritts-m, the test voice the recognizer hears right on every step, and the song scenario at normal speed in both modes (the owner's decisions): they measure voice mode, and the other scenarios take the voices and speeds in turn.",
  "scenarios": [
   {
    "id": "owner-song",
@@ -8,6 +8,7 @@
    "task": "owner",
    "modes": ["wake", "always"],
    "voice": "libritts-m",
+   "speed": 1.0,
    "start": {"url": "about:blank"},
    "steps": [
     {"say": "open YouTube", "needs": ["open_site"],

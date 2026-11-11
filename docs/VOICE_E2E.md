@@ -161,9 +161,13 @@ and the voice gesture's 40 confirmation words, 16 kHz mono 16-bit WAV:
   user never speaks with.
 - **Speeds** 1.0 and 1.25. A run rotates its scenarios through the six
   voices and speeds (`--voices`, `--speeds` to choose). A scenario may
-  name its voice (`"voice"`), used when the run has it; its speed still
-  rotates. The owner's scenarios do (libritts speaker 300, the owner's
-  decision, November 2026). On clean audio the recognizer hears that voice
+  name its voice (`"voice"`) and its speed (`"speed"`), each used when
+  the run has it; otherwise they rotate. The owner's scenarios name
+  libritts speaker 300, and the song scenario normal speed in both modes
+  (the owner's decisions, November 2026). At 1.25x the recognizer cut
+  "the Live Aid one" to "The Live A" or "The Live AOEN" in
+  always-listening runs on builds 40 to 42; the variant by number still
+  rotates its speed. On clean audio the recognizer hears that voice
   right on every one of their steps, at both speeds. It mishears
   libritts speaker 30's "the Live Aid one" ("the lie thee one") and
   ljspeech's "louder", "pause" and "go back" ("launch", "pores", "feel
@@ -404,7 +408,7 @@ with "Hey Molt" and in always-listening mode):
 
 | Group | What |
 |---|---|
-| `owner.json` | The owner's song scenario: open YouTube, search, "play the live one by Queen", "the Live Aid one", louder, pause, skip ahead one minute, full screen, back; and by number. Spoken by libritts speaker 300 (above). |
+| `owner.json` | The owner's song scenario: open YouTube, search, "play the live one by Queen", "the Live Aid one", louder, pause, skip ahead one minute, full screen, back; and by number. Spoken by libritts speaker 300, the song at normal speed (above). |
 | `go.json` | Open by name and by address, a name it doesn't know, search the web and the site, back and forward, reload, new tab, a site in a new tab, switch and close tabs, a site's name alone. |
 | `read.json` | The title, headings, page, a section, links, what's on the screen, find, next heading, the selection, stopping a reading. |
 | `choose.json` | By number, by name, by position, a readback answered by number, a bare number after a list, the numbers. |

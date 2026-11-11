@@ -52,6 +52,18 @@ class ShippedTest(unittest.TestCase):
         self.assertEqual({s.voice for s in owner}, {"libritts-m"})
         self.assertEqual({s.voice for s in self.scs if s.task != "owner"}, {None})
 
+    def test_the_owners_song_runs_at_normal_speed(self):
+        # The owner's decision: at 1.25x the recognizer cut "the Live Aid
+        # one" ("The Live A", "The Live AOEN") in always-listening runs.
+        # The variant by number keeps turning through the speeds.
+        speeds = {s.id: s.speed for s in self.scs if s.task == "owner"}
+        self.assertEqual(speeds, {"owner-song": 1.0, "owner-song-fourth": None})
+        self.assertEqual({s.speed for s in self.scs if s.task != "owner"}, {None})
+
+    def test_speeds_are_the_renderers(self):
+        from e2ekit import render
+        self.assertEqual(scen.SPEEDS, render.SPEEDS)
+
     def test_voice_names_are_the_renderers(self):
         from e2ekit import render
         self.assertEqual(set(scen.VOICE_NAMES), {v[0] for v in render.VOICES})
@@ -167,6 +179,8 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(requires=["telepathy"]), "requires takes")
         self.bad(one(voice="alexa"), "voice must be one of")
         self.bad(one(voice=["libritts-m"]), "voice must be one of")
+        for speed in (1.5, "1.0", True, [1.0]):
+            self.bad(one(speed=speed), "speed must be one of")
         self.bad(one(start={"url": "https://news.test/", "shields": "off"}),
                  "start.shields takes")
         self.bad(one(steps=[{"say": "x", "file_gap": 6}]), "file_gap is for")
