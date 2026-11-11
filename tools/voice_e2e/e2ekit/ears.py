@@ -8,6 +8,7 @@ browser say it (and so checks that it was said aloud at all).
 """
 
 import os
+import re
 import sys
 import time
 
@@ -50,6 +51,12 @@ def sound_key(word):
             out.append(ch)
     return "".join(out)
 
+
+# A "say" with the next word's first consonant run onto it: "same", "sane",
+# "sale", "safe", "sake" ("say mango" heard as "same ingo").
+_SAY_GLUED = re.compile(r"^sa[bcdfgklmnptvz]e$")
+# ... or run into the whole word: "sameingo", "samingo" ("say mango").
+_SAY_JOINED = re.compile(r"^sa([bcdfgklmnptvz])e?([a-z]{3,})$")
 
 # What follows a "say" that isn't the confirmation word: the prompt said
 # without it ("say the word on your screen"), and the answers it offers.
@@ -218,16 +225,30 @@ class Ears(object):
         together with the next; the start when there is no "say" in a
         heard of two words at most; None otherwise. A "say" followed by a
         word of |skip| gives nothing ("say the word on your screen", "say
-        no")."""
+        no"). A "say" run into the word's first sound ("say mango" heard
+        as "same ingo", or "same mingo") is a "say" too, its last letter
+        put back on the word; run into the whole word ("sameingo",
+        "Samingo"), what follows the "sa" is the word."""
         says = [i for i, w in enumerate(heard) if w in says_words]
-        if not says and len(heard) > 2:
+        glued = {}
+        joined = []
+        if "say" in says_words:
+            glued = {i: w[2] for i, w in enumerate(heard)
+                     if _SAY_GLUED.match(w) and i + 1 < len(heard)}
+            joined = [m.group(1) + m.group(2) for m in map(_SAY_JOINED.match, heard) if m]
+        if not says and not glued and not joined and len(heard) > 2:
             return None
-        tries = []
-        for start in ([i + 1 for i in says] or [0]):
+        tries = list(joined)
+        for start in ([i + 1 for i in says] or ([] if glued or joined else [0])):
             if start < len(heard) and heard[start] in skip:
                 continue
             tries += heard[start:start + 1] + (
                 ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
+        for i, sound in sorted(glued.items()):
+            if heard[i + 1] in skip:
+                continue
+            tries += [heard[i + 1], sound + heard[i + 1]] + (
+                [sound + "".join(heard[i + 1:i + 3])] if len(heard) > i + 2 else [])
         return tries
 
     def stop(self):

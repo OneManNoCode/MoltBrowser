@@ -36,6 +36,25 @@ class FindWordTest(unittest.TestCase):
             "to show nowifications, to allow it, say Netkin, to blark it, say no."),
             "napkin")
 
+    def test_a_say_run_into_the_word(self):
+        # The spoken suite's forty-first build (speakers): "say mango"
+        # heard as "same ingo", then as "same mingo", on each "repeat".
+        self.assertEqual(self.e.find_word(
+            "Press share my location. Prompts Dark test once to know your "
+            "location to allow it same ingo, to bark it, say no"), "mango")
+        self.assertEqual(self.e.find_word(
+            "Prompts Dark test once to know your location, to allow it same "
+            "mingo to blark it, say no"), "mango")
+        # Run into the whole word (the speakers runs of the thirteenth and
+        # thirty-fifth builds).
+        self.assertEqual(self.e.find_word(
+            "know your location to allow it, sameingo to bark it, say no"), "mango")
+        self.assertEqual(self.e.find_word(
+            "now your location to allow it to Samingo to block it, say no"), "mango")
+        self.assertEqual(self.e.find_word("To allow it, say sandwich."), "sandwich")
+        self.assertIsNone(self.e.find_word(
+            "To allow it, same the word on your screen. To block it, say no."))
+
     def test_nothing_rather_than_a_guess(self):
         # A wrong word refuses the prompt: when unsure, none.
         self.assertIsNone(self.e.find_word("To allow it, say point shoe."))
