@@ -17,6 +17,14 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **Voice mode's own reading, heard back as one word, no longer chooses
+  from it.** On speakers, while voice mode read the search results, its
+  own voice came back through the microphone as "Live". Voice mode took
+  it for you and asked "Did you mean" among the four live versions, so
+  the "three" you said next picked the third of those instead of the
+  third result. A single word voice mode has just read out is now
+  ignored as its own voice, and the reading goes on. A number, or a
+  name of two words or more ("Live Aid"), still works while it reads.
 - **A short command right after "Hey Molt" is no longer lost when the
   wake phrase is recognized late.** Over speakers, "Hey Molt" can be
   recognized only after the whole sentence has ended. Voice mode then

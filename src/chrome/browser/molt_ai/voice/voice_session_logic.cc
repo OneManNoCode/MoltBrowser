@@ -661,7 +661,15 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       // choice runs only from the list the browser read or offered.
       if (take && !addressed &&
           !TakenOverOwnVoice(text, settings_.language)) {
-        if (ChoosesOverOwnVoice(text, settings_.language)) {
+        if (ChoosesOverOwnVoice(text, settings_.language) &&
+            OneWordItSaid(text, utterance.begun_ms)) {
+          // A name of one word it just read ("Live", out of "Live at Rock
+          // Montreal, ... Live Aid, ... Live at Wembley"): its voice heard
+          // back, loud or not; the reading goes on. A number, or a place
+          // in the list, is taken above; a name of more words below.
+          take = false;
+          reason = "voice mode's voice heard back";
+        } else if (ChoosesOverOwnVoice(text, settings_.language)) {
           actions.list_choice_only = true;
         } else {
           take = false;
@@ -1052,6 +1060,12 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
     return std::find(said.begin(), said.end(), wanted[0]) != said.end();
   }
   return SaysInOrder(said, wanted) || SaysWithOneWordOff(said, wanted);
+}
+
+bool VoiceSessionLogic::OneWordItSaid(std::string_view text,
+                                      int64_t now_ms) const {
+  const std::string folded = FoldForComparison(text.substr(0, kMaxSaidBytes));
+  return SplitWords(folded).size() == 1 && EchoOfBrowser(text, now_ms);
 }
 
 bool VoiceSessionLogic::StoodOutOfCancelledVoice(

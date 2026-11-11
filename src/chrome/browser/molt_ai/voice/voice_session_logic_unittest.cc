@@ -876,6 +876,57 @@ TEST_F(VoiceSessionLogicTest, AWordTheBrowserSaidStandingOutOfItsVoice) {
   EXPECT_TRUE(site.say_again);
 }
 
+// The spoken suite's forty-first build (speakers): reading the results,
+// voice mode heard its own "Live" back, standing out of what the echo
+// canceller left of its voice, took it for a choice by name and offered the
+// four live versions; the user's "three" then chose the third of those, not
+// of the results. A name of one word it just read is its voice heard back,
+// and the reading goes on.
+TEST_F(VoiceSessionLogicTest, ANameOfOneWordItReadIsItsVoice) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("read the results", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "20 results. 1: Queen - Bohemian Rhapsody, Queen Official, 6 minutes. "
+      "2: Bohemian Rhapsody (Remastered 2011), Queen - Topic, 6 minutes. "
+      "3: Queen - Bohemian Rhapsody (Live at Rock Montreal 1981), Queen "
+      "Official. 4: Queen - Bohemian Rhapsody (Live Aid 1985), Queen "
+      "Official.",
+      now_);
+  const auto stood_out = [&](const char* text, int64_t at) {
+    logic_->OnSpeechStart(now_ + at);
+    logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+    return logic_->OnFinal(text, 0.3, now_ + at + 900);
+  };
+  for (const char* text : {"Live", "Live.", "Montreal"}) {
+    SessionActions echo = stood_out(text, 6000);
+    EXPECT_FALSE(echo.utterance.has_value()) << text;
+    EXPECT_FALSE(echo.list_choice_only) << text;
+    EXPECT_FALSE(echo.stop_speech) << text;
+    EXPECT_FALSE(echo.say_again) << text;
+    EXPECT_EQ(echo.dropped_reason, "voice mode's voice heard back") << text;
+    now_ += 2000;
+  }
+  // Two words of it, or one it didn't say, still choose from the list read.
+  for (const char* text : {"Live Aid", "the Montreal one", "Wembley"}) {
+    SessionActions choice = stood_out(text, 6000);
+    EXPECT_EQ(choice.utterance, text);
+    EXPECT_TRUE(choice.list_choice_only) << text;
+    EXPECT_TRUE(choice.stop_speech) << text;
+    // It speaks again: the next is well into that speech.
+    now_ += 7000;
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  }
+  // A number it read is the user's, as before.
+  SessionActions number = stood_out("three.", 6000);
+  EXPECT_EQ(number.utterance, "three.");
+  EXPECT_FALSE(number.list_choice_only);
+  EXPECT_TRUE(number.stop_speech);
+}
+
 // A quiet stretch partly after the browser stopped speaking proves nothing
 // about its voice: heard back, as before.
 TEST_F(VoiceSessionLogicTest, AQuietStretchPastTheBrowsersSpeech) {
