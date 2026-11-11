@@ -5,5 +5,5 @@
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Spoken suite only, on the thirty-seventh build (PR #114 merged): the owner's two scenarios are now spoken by libritts-m, the voice the recognizer hears right on every step (the owner's decision; the other 90 keep taking the voices in turn). The thirty-seventh gave file 81/87, headphones 79/91, speakers 84/91 (security 5/5); unit tests 3023/3023, browser tests 119/119; typed passed."
+ "request": "Spoken suite only, on the thirty-seventh build, with the kit reading a search's words without case: on the last run (42940077728) every run passed the bar (file 82/87, headphones 83/91, speakers 84/91, security 3/3, 4/5, 5/5) and the owner's song failed only because the recognizer wrote \"Bohemian Rapsody\" with a capital R, which the kit compared with case."
 }
