@@ -100,6 +100,34 @@ bool SaysInOrder(const std::vector<std::string_view>& said,
   return false;
 }
 
+// Whether |said| has |wanted| word for word from one of its words but for
+// one the recognizer heard as another: the start of "10 results. 1: ..."
+// heard back as "tell results one". Three words or more (two would take
+// "the first" for "2: The first..."). Not across kFormSeam.
+bool SaysWithOneWordOff(const std::vector<std::string_view>& said,
+                        const std::vector<std::string_view>& wanted) {
+  if (wanted.size() < 3 || said.size() < wanted.size()) {
+    return false;
+  }
+  for (size_t start = 0; start + wanted.size() <= said.size(); ++start) {
+    size_t off = 0;
+    bool seam = false;
+    for (size_t i = 0; i < wanted.size() && off <= 1; ++i) {
+      if (said[start + i] == kFormSeam) {
+        seam = true;
+        break;
+      }
+      if (said[start + i] != wanted[i]) {
+        ++off;
+      }
+    }
+    if (!seam && off <= 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Whether |word| sounds like the folded name |name| (the wake phrase's
 // last word): it is the name, about as long with its phonetic key ("mold"
 // and "moult" for "molt"), or begins with it ("moltbrowser", "molts").
@@ -1012,7 +1040,7 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
   if (wanted.size() == 1) {
     return std::find(said.begin(), said.end(), wanted[0]) != said.end();
   }
-  return SaysInOrder(said, wanted);
+  return SaysInOrder(said, wanted) || SaysWithOneWordOff(said, wanted);
 }
 
 bool VoiceSessionLogic::StoodOutOfCancelledVoice(

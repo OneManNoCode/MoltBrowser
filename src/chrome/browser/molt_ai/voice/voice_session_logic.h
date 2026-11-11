@@ -47,7 +47,9 @@
 //     browser's own words heard back (its words in the order
 //     the browser said them in the last kSpokenMemoryMs, at most one
 //     skipped between two, as written or as its voice says them,
-//     voice_said_aloud.h: "example dot com" for "example.com"; that is
+//     voice_said_aloud.h: "example dot com" for "example.com"; or, of
+//     three words or more, word for word but one the recognizer heard as
+//     another: "tell results one" for "10 results. 1: ..."; that is
 //     what an echo the canceller missed would be. One word: anywhere in
 //     it. "Number two" over "1: ..., 2: ... Say a number" is the user's;
 //     so is one that stood out of a quiet stretch that was the browser

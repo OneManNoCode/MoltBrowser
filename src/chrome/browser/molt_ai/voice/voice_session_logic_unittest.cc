@@ -1304,6 +1304,43 @@ TEST_F(VoiceSessionLogicTest, AnAnswerFromItsQuestionsWordsIsNotItsEcho) {
   EXPECT_TRUE(answer.stop_speech);
 }
 
+// Heard back with one word mangled, three words or more are its own too.
+// The spoken suite's speakers run on build 37: the start of the results
+// read out ("10 results. 1: Daily News: ...") heard back as "tell results.
+// one." before the echo canceller settled, and taken for "choose one".
+TEST_F(VoiceSessionLogicTest, ItsOwnWordsHeardBackWithOneMangled) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("search the web for trams in lyon", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "10 results. 1: Daily News: trams return to Lyon. 2: Weather in Lyon "
+      "this week. Say a number or a name.",
+      now_);
+  for (const char* echo : {"tell results. one.", "daily news trims return",
+                           "weather in lion this"}) {
+    logic_->OnSpeechStart(now_ + 600);
+    EXPECT_EQ(logic_->OnFinal(echo, 0.9, now_ + 1400).dropped_reason,
+              "voice mode's voice heard back")
+        << echo;
+  }
+  // Two words, or two of three off, are the user's.
+  logic_->OnSpeechStart(now_ + 1500);
+  SessionActions two = logic_->OnFinal("number one", 0.9, now_ + 2000);
+  EXPECT_EQ(two.utterance, "number one");
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 2100);
+  logic_->OnBrowserSaid(
+      "10 results. 1: Daily News: trams return to Lyon. Say a number or a "
+      "name.",
+      now_ + 2100);
+  logic_->OnSpeechStart(now_ + 2600);
+  SessionActions off_two =
+      logic_->OnFinal("play the daily news", 0.9, now_ + 3200);
+  EXPECT_EQ(off_two.utterance, "play the daily news");
+}
+
 // Its own reading of a page's sound-alike of the wake phrase ("Hey Mold",
 // "HeyMolt", which its voice says as two words, "Hey Moltbrowser") is not
 // the user's wake phrase.
