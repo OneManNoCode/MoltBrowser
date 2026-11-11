@@ -344,7 +344,11 @@ when another program could hear it". The kit's ears (the bundle's
 `molt-speech`, run by the kit, with the 40 words as its hotwords, which
 the browser's helper never gets) transcribe the recording of the
 browser's output since the prompt opened, and take the word after "say"
-(when one word of the list is clearly the nearest). When it isn't clear,
+(when one word of the list is clearly the nearest; two letters off only
+when it also sounds like that word and no other: build 41 took "say
+binger" for "tiger", as near "banjo" by sound, and the browser turned it
+down). A "say" run into the word ("same ingo", "Samingo" for "say
+mango") is still a "say". When it isn't clear,
 the kit says "repeat", as a user would, and listens to the browser's new
 take, three times in all. A wrong word would refuse the prompt, so the
 kit says none rather than guess. The one exception is a word heard the
