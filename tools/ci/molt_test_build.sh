@@ -270,6 +270,14 @@ browser_test_filter() {
     | sed -E 's/.*\(\s*//' | sort -u | sed 's/.*/*&.*/' | paste -sd: -
 }
 
+# Browser tests that need their window to keep the focus: a menu closes as
+# another window takes it, and four tests at once on one display take it
+# from each other ("open the menu" read the toolbar in 4 of 11 builds, the
+# menu shown again or not). They run after the others, one at a time, as
+# Chromium's interactive_ui_tests do.
+FOCUS_TESTS="VoiceBrowserActionsBrowserTest.TheAppMenuByVoice"
+FOCUS_TESTS+=":VoiceBrowserActionsBrowserTest.AMenuThatClosedByItselfIsShownAgainForThePress"
+
 # A crashed test that printed nothing, run again on its own, in-process, so
 # its output reaches the summary (molt_test_summary.py), at most 3.
 rerun_silent_crashes() {
@@ -331,14 +339,24 @@ cmd_test() {
     # action timeout at the test's, the launcher killed a stuck test before
     # its wait could say what it was waiting for.
     xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/browser_tests" \
-      --gtest_filter="$filter" --test-launcher-jobs=4 \
+      --gtest_filter="$filter-$FOCUS_TESTS" --test-launcher-jobs=4 \
       --test-launcher-retry-limit=1 --ui-test-action-max-timeout=30000 \
       --test-launcher-timeout=150000 \
       --test-launcher-summary-output="$dir/browser_tests.json" \
       > "$dir/browser_tests.log" 2>&1
     rc=$((rc | $?))
-    set -e
     tail -5 "$dir/browser_tests.log"
+    # The tests that need the window's focus, one at a time on a display
+    # of their own (molt_test_summary.py reads both result files).
+    xvfb-run -a -s "-screen 0 1600x1200x24" "$OUT/browser_tests" \
+      --gtest_filter="$FOCUS_TESTS" --test-launcher-jobs=1 \
+      --test-launcher-retry-limit=1 --ui-test-action-max-timeout=30000 \
+      --test-launcher-timeout=150000 \
+      --test-launcher-summary-output="$dir/browser_tests.serial.json" \
+      > "$dir/browser_tests.serial.log" 2>&1
+    rc=$((rc | $?))
+    set -e
+    tail -3 "$dir/browser_tests.serial.log"
   else
     echo "browser_tests was not built" | tee "$dir/browser_tests.log"
     rc=1

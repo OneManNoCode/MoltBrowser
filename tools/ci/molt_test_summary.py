@@ -3,7 +3,8 @@
 # Copyright 2026 GenEye AI Labs Inc.
 #
 # Reads the --test-launcher-summary-output JSON files that
-# tools/ci/molt_test_build.sh's "test" command writes (one per test binary)
+# tools/ci/molt_test_build.sh's "test" command writes (one per test binary,
+# and <binary>.serial.json for the tests it runs one at a time)
 # and prints a Markdown summary: per binary, how many tests passed, failed,
 # crashed, timed out or didn't run, and each failure with its first error.
 # It also writes <dir>/failures.md, and failures-<binary>.md per binary,
@@ -47,13 +48,21 @@ def summarize(dir_path, binary, lines, details):
         lines.append('- **%s:** no results (not built, or it did not start; '
                      'see %s.log)' % (binary, binary))
         return 1
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = json.load(f)
-    except (OSError, ValueError) as e:
-        lines.append('- **%s:** unreadable results (%s)' % (binary, e))
-        return 1
-    last = last_runs(data)
+    last = {}
+    # <binary>.serial.json: the tests run after the others, one at a time
+    # (molt_test_build.sh's FOCUS_TESTS); missing when there were none.
+    serial = os.path.join(dir_path, binary + '.serial.json')
+    for p in (path, serial):
+        if p == serial and not os.path.exists(p):
+            continue
+        try:
+            with open(p, encoding='utf-8') as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            lines.append('- **%s:** unreadable results in %s (%s)' %
+                         (binary, os.path.basename(p), e))
+            return 1
+        last.update(last_runs(data))
     counts = {}
     failed = []
     for name, run in sorted(last.items()):
