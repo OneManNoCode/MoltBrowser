@@ -267,7 +267,9 @@ in `VoiceController`):
   (`VoiceCommandKindName()`), so the kit tells a command the build doesn't
   have from one that failed.
 - `heard`: every utterance that reached the loop, typed or from the
-  microphone (and whether heard cleanly), with the command it was
+  microphone (and whether heard cleanly; `"over_voice":true` when it was
+  said over voice mode's own voice and runs only as a choice from the list
+  read or offered), with the command it was
   understood as.
 - `map`: the page map it was planned on, just before the `heard` line:
   how many items, lists and media, the first 40 items' labels (masked as
