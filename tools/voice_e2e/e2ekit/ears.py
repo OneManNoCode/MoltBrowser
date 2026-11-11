@@ -51,6 +51,12 @@ def sound_key(word):
     return "".join(out)
 
 
+# What follows a "say" that isn't the confirmation word: the prompt said
+# without it ("say the word on your screen"), and the answers it offers.
+_NOT_THE_WORD = frozenset(("the", "a", "an", "word", "it", "no", "now", "yes",
+                           "that", "this"))
+
+
 class _Args(object):
     def __init__(self, helper, models):
         self.helper = helper
@@ -181,7 +187,8 @@ class Ears(object):
         "guitar"."""
         heard = vbl.normalize(text).split()
         near = set()
-        for t in self._after_say(heard, ("say", "said", "saying")) or []:
+        for t in self._after_say(heard, ("say", "said", "saying"),
+                                 skip=_NOT_THE_WORD) or []:
             key = sound_key(t)
             if len(key) < 2:
                 continue
@@ -190,15 +197,19 @@ class Ears(object):
         return near
 
     @staticmethod
-    def _after_say(heard, says_words):
+    def _after_say(heard, says_words, skip=()):
         """What may be the word: the word after each "say" and it run
         together with the next; the start when there is no "say" in a
-        heard of two words at most; None otherwise."""
+        heard of two words at most; None otherwise. A "say" followed by a
+        word of |skip| gives nothing ("say the word on your screen", "say
+        no")."""
         says = [i for i, w in enumerate(heard) if w in says_words]
         if not says and len(heard) > 2:
             return None
         tries = []
         for start in ([i + 1 for i in says] or [0]):
+            if start < len(heard) and heard[start] in skip:
+                continue
             tries += heard[start:start + 1] + (
                 ["".join(heard[start:start + 2])] if len(heard) > start + 1 else [])
         return tries

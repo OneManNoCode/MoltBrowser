@@ -87,6 +87,11 @@ class FindWordTest(unittest.TestCase):
         # The same mangling twice: that word.
         self.assertEqual(self.e.sounds_near("To allow it, say farsal.") &
                          self.e.sounds_near("To allow it, say pharsal."), {"fossil"})
+        # The prompt without the word, which build 38's speakers run read
+        # as "tornado", "turtle" or "yogurt", and said "yogurt": nothing.
+        self.assertEqual(self.e.sounds_near(
+            "prompts.test wants to know your location. To allow it, say the "
+            "word on your screen. To block it, say no."), set())
         # Nothing after a "say", or too short to tell: nothing.
         self.assertEqual(self.e.sounds_near("example.com wants to use your camera"), set())
         self.assertEqual(self.e.sounds_near("To allow it, say no."), set())
