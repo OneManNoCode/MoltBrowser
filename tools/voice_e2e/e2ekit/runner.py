@@ -526,10 +526,12 @@ class Runner(object):
                     res["steps"].append(skipped)
                     continue
                 if self.config.audio == "pulse" and step.action == "say" and \
-                        self.wake_for(step, mode) and not step.barge_in:
+                        mode == "wake" and self.wake_for(step, mode) and \
+                        not step.barge_in:
                     # Then the settle time, as a user waits for the tone
                     # voice mode plays as it starts waiting: said over the
                     # tone, the phrase's start is lost to the echo canceller.
+                    # (Always-listening mode never waits for the phrase.)
                     if self.wait_waiting(tlog):
                         self.wait_idle(tlog)
                 sres = self.run_step(sc, step, i, world, tlog, plan, stream_start, mode,
@@ -637,7 +639,10 @@ class Runner(object):
                 res["mic_replay"] = replay_lines(events, at_s)
 
     def wake_for(self, step, mode):
-        return mode == "wake" and not step.answer
+        """Whether the kit says the wake phrase before |step|: every command
+        in wake mode, and in always-listening mode a step with "wake" (a
+        command over a playing video, Step.wake)."""
+        return (mode == "wake" and not step.answer) or step.wake
 
     def prepare_audio(self, sc, mode, voice, speed, run_dir):
         """The WAVs this scenario plays (pulse, file), and in file mode the

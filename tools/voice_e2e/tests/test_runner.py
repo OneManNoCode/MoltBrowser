@@ -98,6 +98,28 @@ class VoiceForTest(unittest.TestCase):
         self.assertEqual(self.voice_for(0, speed=1.0, speeds=[1.25]), ("ljspeech", 1.25))
 
 
+class WakeForTest(unittest.TestCase):
+    """Whether the kit says the wake phrase before a step."""
+
+    def step(self, **kw):
+        sc = scen.parse_scenario({"id": "t-w", "title": "A test", "task": "media",
+                                  "steps": [dict({"say": "louder"}, **kw)]}, "x.json")
+        return sc.steps[0]
+
+    def wake_for(self, step, mode):
+        return runner.Runner.wake_for(None, step, mode)
+
+    def test_every_command_in_wake_mode(self):
+        self.assertTrue(self.wake_for(self.step(), "wake"))
+        self.assertFalse(self.wake_for(self.step(answer=True), "wake"))
+        self.assertTrue(self.wake_for(self.step(wake=True), "wake"))
+
+    def test_only_a_step_with_wake_in_always_listening_mode(self):
+        self.assertFalse(self.wake_for(self.step(), "always"))
+        self.assertFalse(self.wake_for(self.step(answer=True), "always"))
+        self.assertTrue(self.wake_for(self.step(wake=True), "always"))
+
+
 class RunnerTest(unittest.TestCase):
     def setUp(self):
         self.scs = scen.load_dir(TESTDATA)

@@ -60,6 +60,17 @@ class ShippedTest(unittest.TestCase):
         self.assertEqual(speeds, {"owner-song": 1.0, "owner-song-fourth": None})
         self.assertEqual({s.speed for s in self.scs if s.task != "owner"}, {None})
 
+    def test_the_owners_song_says_hey_molt_over_the_playing_video(self):
+        # The owner's decision: over a playing video, always-listening mode
+        # takes a command without "Hey Molt" only when it heard it surely,
+        # so that a video's own sound can't give commands.
+        owner = [s for s in self.scs if s.id == "owner-song"][0]
+        self.assertEqual([st.value for st in owner.steps if st.wake], ["louder", "pause"])
+        # Only there: the steps before the video plays, and after it is
+        # paused, are said without it in always-listening mode.
+        self.assertEqual({s.id for s in self.scs if any(st.wake for st in s.steps)},
+                         {"owner-song"})
+
     def test_speeds_are_the_renderers(self):
         from e2ekit import render
         self.assertEqual(scen.SPEEDS, render.SPEEDS)
@@ -184,7 +195,16 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(start={"url": "https://news.test/", "shields": "off"}),
                  "start.shields takes")
         self.bad(one(steps=[{"say": "x", "file_gap": 6}]), "file_gap is for")
+        self.bad(one(steps=[{"say": "x", "wake": "yes"}]), "wake takes true or false")
+        self.bad(one(steps=[{"say": "x", "answer": True, "wake": True}]), "wake is for")
+        self.bad(one(steps=[{"wait": 2, "wake": True, "expect": [{"no_action": True}]}]),
+                 "wake is for")
         self.bad(one(steps=[{"say": "x"}, {"say": "y", "file_gap": 99}]), "file_gap")
+
+    def test_wake(self):
+        sc = scen.parse_scenario(one(steps=[{"say": "x"}, {"say": "y", "wake": True}]),
+                                 "x.json")
+        self.assertEqual([s.wake for s in sc.steps], [False, True])
 
     def test_file_gap(self):
         sc = scen.parse_scenario(one(steps=[{"say": "x"}, {"say": "y", "file_gap": 6}]),
