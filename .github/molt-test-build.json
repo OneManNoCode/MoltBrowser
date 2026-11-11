@@ -1,9 +1,9 @@
 {
- "resume_run": "42925958709",
+ "resume_run": "42958352879",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 51, thirty-eighth build (incremental on the thirty-seventh): voice mode's own words heard back with one word mangled are not a command (speakers: \"10 results. 1: ...\" heard back as \"tell results. one.\" opened the first result); \"the Live AWAN\" chooses Live Aid (\"one\" run onto the last word); a page-staying command that stood out of silence counts over a tab's sound (headphones: \"Louder.\" over the video was set aside). Kit: search words compared without case, the confirmation word two hearings both leave, and a replay of a failed step's microphone through a wake-required helper. The spoken-suite run on the thirty-seventh (42948822061) gave file 80/87, headphones 83/91, speakers 80/91; the owner's song passed with Hey Molt everywhere and failed always-listening everywhere."
+ "request": "Round 51, thirty-ninth build (incremental on the thirty-eighth): the one-word-off echo rule narrowed to a word beginning as the word said (\"tell\" for \"ten\"), so \"play live aid\" over \"2: Live Aid\" stays the user's; kit: no guess at the confirmation word from \"say the word on your screen\". The thirty-eighth gave unit tests 3026/3026, browser tests 119/119 (2 flaky), file 82/87, headphones 86/91, speakers 84/91; the owner's song passed in every mode on headphones and speakers, and failed always-listening by file (\"A live Ae one\")."
 }
