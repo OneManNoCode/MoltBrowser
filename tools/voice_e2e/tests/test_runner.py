@@ -65,6 +65,30 @@ def by_id(run):
     return {s["id"]: s for s in run["scenarios"]}
 
 
+class VoiceForTest(unittest.TestCase):
+    """The voices in turn, or a scenario's own voice when the run has it."""
+
+    def voice_for(self, index, pinned=None, voices=("ljspeech", "libritts-m", "libritts-f")):
+        class R(object):
+            pass
+        r = R()
+        r.config = runner.RunConfig(voices=list(voices), speeds=[1.0, 1.25])
+        return runner.Runner.voice_for(r, index, pinned)
+
+    def test_in_turn(self):
+        self.assertEqual([self.voice_for(i) for i in range(4)],
+                         [("ljspeech", 1.0), ("libritts-m", 1.0), ("libritts-f", 1.0),
+                          ("ljspeech", 1.25)])
+
+    def test_pinned(self):
+        # The speed still turns.
+        self.assertEqual(self.voice_for(2, "libritts-m"), ("libritts-m", 1.0))
+        self.assertEqual(self.voice_for(3, "libritts-m"), ("libritts-m", 1.25))
+        # A run without that voice takes its turn.
+        self.assertEqual(self.voice_for(0, "libritts-m", voices=["ljspeech"]),
+                         ("ljspeech", 1.0))
+
+
 class RunnerTest(unittest.TestCase):
     def setUp(self):
         self.scs = scen.load_dir(TESTDATA)

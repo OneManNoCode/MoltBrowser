@@ -1,12 +1,13 @@
 {
  "group": "owner",
- "about": "The owner's song scenario (docs/design/TOUCHLESS_BROWSING.md §2), with \"Hey Molt\" and in always-listening mode, and its variant that plays the fourth result by number.",
+ "about": "The owner's song scenario (docs/design/TOUCHLESS_BROWSING.md §2), with \"Hey Molt\" and in always-listening mode, and its variant that plays the fourth result by number. Spoken by libritts-m, the test voice the recognizer hears right on every step (the owner's decision): they measure voice mode, and the other scenarios take the voices in turn.",
  "scenarios": [
   {
    "id": "owner-song",
    "title": "Open YouTube, search, play the live one by Queen, then louder, pause, skip, full screen, back",
    "task": "owner",
    "modes": ["wake", "always"],
+   "voice": "libritts-m",
    "start": {"url": "about:blank"},
    "steps": [
     {"say": "open YouTube", "needs": ["open_site"],
@@ -33,6 +34,7 @@
    "id": "owner-song-fourth",
    "title": "Open YouTube, search, play the fourth one by number",
    "task": "owner",
+   "voice": "libritts-m",
    "start": {"url": "about:blank"},
    "steps": [
     {"say": "open YouTube", "needs": ["open_site"], "expect": [{"host": "www.youtube.com"}]},
