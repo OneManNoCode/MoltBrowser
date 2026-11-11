@@ -39,8 +39,10 @@ For longer narrative posts behind each entry see
   On speakers, the start of "10 results. 1: Daily News: ..." came back
   through the microphone as "tell results. one." before the echo canceller
   had settled, and voice mode opened the first result on its own. Three
-  words or more that match what it just said, all but one, are now taken
-  for its own voice.
+  words or more that match what it just said, all but one word misheard
+  as another that begins the same way ("tell" for "ten"), are now taken
+  for its own voice. A command naming what it read ("play live aid" over
+  "2: Live Aid") is still yours.
 - **Speech over a playing video is cut less.** Until the echo canceller has
   learned how much of the speakers' sound reaches the microphone, it took
   the echo to be as loud as what plays, and suppressed what you said over

@@ -1353,13 +1353,23 @@ TEST_F(VoiceSessionLogicTest, ItsOwnWordsHeardBackWithOneMangled) {
       "this week. Say a number or a name.",
       now_);
   for (const char* echo : {"tell results. one.", "daily news trims return",
-                           "weather in lion this"}) {
+                           "weather in lyle this"}) {
     logic_->OnSpeechStart(now_ + 600);
     EXPECT_EQ(logic_->OnFinal(echo, 0.9, now_ + 1400).dropped_reason,
               "voice mode's voice heard back")
         << echo;
   }
+  // The word off is the user's own, not one of its words misheard: a
+  // command naming what it read.
+  for (const char* command :
+       {"play daily news", "open daily news", "weather in paris this"}) {
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+    logic_->OnSpeechStart(now_ + 1450);
+    EXPECT_EQ(logic_->OnFinal(command, 0.9, now_ + 1480).utterance, command)
+        << command;
+  }
   // Two words, or two of three off, are the user's.
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
   logic_->OnSpeechStart(now_ + 1500);
   SessionActions two = logic_->OnFinal("number one", 0.9, now_ + 2000);
   EXPECT_EQ(two.utterance, "number one");
@@ -1372,6 +1382,35 @@ TEST_F(VoiceSessionLogicTest, ItsOwnWordsHeardBackWithOneMangled) {
   SessionActions off_two =
       logic_->OnFinal("play the daily news", 0.9, now_ + 3200);
   EXPECT_EQ(off_two.utterance, "play the daily news");
+}
+
+// Naming what it reads, over its voice: "play live aid" over "2: Live
+// Aid" and "forget my videos" over "Running my videos" are the user's, not
+// its words with one misheard.
+TEST_F(VoiceSessionLogicTest, ACommandNamingWhatItReadsIsNotItsEcho) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("play the live one by queen", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "Did you mean 1: Live at Rock Montreal, 2: Live Aid, or 3: Live at "
+      "Wembley? Say a number or a name.",
+      now_);
+  logic_->OnSpeechStart(now_ + 500);
+  EXPECT_EQ(logic_->OnFinal("play live aid", 0.9, now_ + 1100).utterance,
+            "play live aid");
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 1200);
+  logic_->OnBrowserSaid("Running my videos. Step 1: open VideoSite.",
+                        now_ + 1200);
+  // Asked for again, as anything that changes what it learned is over its
+  // voice, but not taken for its echo.
+  logic_->OnSpeechStart(now_ + 1700);
+  SessionActions forget = logic_->OnFinal("forget my videos", 0.9, now_ + 2300);
+  EXPECT_TRUE(forget.say_again);
+  EXPECT_EQ(forget.dropped_reason,
+            "over voice mode's voice, and needs it quiet");
 }
 
 // Its own reading of a page's sound-alike of the wake phrase ("Hey Mold",

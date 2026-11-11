@@ -100,10 +100,19 @@ bool SaysInOrder(const std::vector<std::string_view>& said,
   return false;
 }
 
+// Whether |heard| may be |said| misheard: it begins as that word does ("tell"
+// for "ten"). Not a command's own word ("play" for "two" in "play live aid"
+// over "2: Live Aid", "forget" for "running" in "forget my videos" over
+// "Running my videos").
+bool MisheardAs(std::string_view said, std::string_view heard) {
+  return said.size() >= 2 && heard.size() >= 2 && said[0] == heard[0] &&
+         said[1] == heard[1];
+}
+
 // Whether |said| has |wanted| word for word from one of its words but for
-// one the recognizer heard as another: the start of "10 results. 1: ..."
-// heard back as "tell results one". Three words or more (two would take
-// "the first" for "2: The first..."). Not across kFormSeam.
+// one the recognizer heard as another (MisheardAs()): the start of "10
+// results. 1: ..." heard back as "tell results one". Three words or more
+// (two would take "the first" for "2: The first..."). Not across kFormSeam.
 bool SaysWithOneWordOff(const std::vector<std::string_view>& said,
                         const std::vector<std::string_view>& wanted) {
   if (wanted.size() < 3 || said.size() < wanted.size()) {
@@ -111,17 +120,16 @@ bool SaysWithOneWordOff(const std::vector<std::string_view>& said,
   }
   for (size_t start = 0; start + wanted.size() <= said.size(); ++start) {
     size_t off = 0;
-    bool seam = false;
-    for (size_t i = 0; i < wanted.size() && off <= 1; ++i) {
-      if (said[start + i] == kFormSeam) {
-        seam = true;
-        break;
-      }
-      if (said[start + i] != wanted[i]) {
-        ++off;
+    bool fits = true;
+    for (size_t i = 0; i < wanted.size() && fits; ++i) {
+      const std::string_view word = said[start + i];
+      if (word == kFormSeam) {
+        fits = false;
+      } else if (word != wanted[i]) {
+        fits = ++off <= 1 && MisheardAs(word, wanted[i]);
       }
     }
-    if (!seam && off <= 1) {
+    if (fits) {
       return true;
     }
   }
