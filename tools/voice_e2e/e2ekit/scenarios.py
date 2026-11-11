@@ -80,7 +80,9 @@ default true), "modes" (listening modes: "wake", "always"; default
 "requires", "steps", "voice" (the test voice that speaks it, one of
 VOICE_NAMES, when the run has that voice: the owner's scenario, which
 measures voice mode, not how the recognizer hears one voice; the others
-take the voices in turn, which tests recognition across them).
+take the voices in turn, which tests recognition across them), "speed"
+(its speed, one of SPEEDS, when the run has it; the others take the
+speeds in turn).
 """
 
 import json
@@ -92,6 +94,8 @@ TASKS = ("go", "read", "choose", "act", "media", "browser", "recover",
 MODES = ("wake", "always")
 # The test voices' names (render.VOICES; test_scenarios.py checks).
 VOICE_NAMES = ("ljspeech", "libritts-m", "libritts-f")
+# Their speeds (render.SPEEDS; test_scenarios.py checks).
+SPEEDS = (1.0, 1.25)
 REQUIREMENTS = ("microphone", "pulse", "model", "listening")
 
 STEP_ACTIONS = ("say", "say_word", "replay", "wait")
@@ -99,7 +103,7 @@ STEP_KEYS = set(STEP_ACTIONS) | {
     "needs", "answer", "timeout", "requires", "name", "pause", "expect",
     "direct", "barge_in", "file_gap", "note"}
 SCENARIO_KEYS = {"id", "title", "task", "counts", "modes", "start",
-                 "requires", "steps", "voice", "note"}
+                 "requires", "steps", "voice", "speed", "note"}
 START_KEYS = {"url", "tabs", "settings", "js", "shields"}
 SETTINGS_KEYS = {"voice_say_word_aloud", "voice_speech_rate",
                  "voice_language"}
@@ -173,7 +177,7 @@ class Step(object):
 
 class Scenario(object):
     def __init__(self, sid, title, task, steps, counts=True, modes=("wake",),
-                 start=None, requires=(), source="", voice=None):
+                 start=None, requires=(), source="", voice=None, speed=None):
         self.id = sid
         self.title = title
         self.task = task
@@ -184,6 +188,7 @@ class Scenario(object):
         self.requires = list(requires)
         self.source = source
         self.voice = voice
+        self.speed = speed
 
     def needs(self):
         out = []
@@ -406,6 +411,9 @@ def parse_scenario(obj, source=""):
     voice = obj.get("voice")
     if voice is not None and voice not in VOICE_NAMES:
         _fail(where, "voice must be one of %s" % ", ".join(VOICE_NAMES))
+    speed = obj.get("speed")
+    if speed is not None and (isinstance(speed, bool) or speed not in SPEEDS):
+        _fail(where, "speed must be one of %s" % ", ".join(map(str, SPEEDS)))
     steps_raw = obj.get("steps")
     if not isinstance(steps_raw, list) or not steps_raw:
         _fail(where, "steps must be a non-empty list")
@@ -416,7 +424,8 @@ def parse_scenario(obj, source=""):
             names.add(st.name)
         steps.append(st)
     return Scenario(sid, title, task, steps, counts=counts, modes=modes,
-                    start=start, requires=requires, source=source, voice=voice)
+                    start=start, requires=requires, source=source, voice=voice,
+                    speed=speed)
 
 
 def load_file(path):

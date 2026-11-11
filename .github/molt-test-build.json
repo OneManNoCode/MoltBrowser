@@ -1,9 +1,9 @@
 {
- "resume_run": "43002379367",
+ "resume_run": "43018536923",
  "run_tests": true,
- "e2e_only": false,
+ "e2e_only": true,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 53, forty-second build (incremental on the forty-first): over voice mode's own voice, a name of one word it just read is its voice heard back (the speakers run heard its reading of the results as \"Live\", offered the four live versions, and the user's \"three\" chose Wembley); the kit counts a word two letters off only when it also sounds like that word and no other (\"binger\" was taken for \"tiger\"), and reads a \"say\" run into the word (\"same ingo\" for \"say mango\"). The forty-first gave unit and browser tests all passing, file 84/87, headphones 83/91, speakers 83/91 (security 3/3, 4/5, 5/5); the owner's song passed by wake everywhere and always-listening by file, and failed always-listening on headphones (\"The live Ae one\" at 1.25x) and speakers (\"louder\" heard as \"Clouder\" over the video)."
+ "request": "Spoken suite only, on the forty-second build, with the owner's song scenario at normal speed in both modes (the owner's decision; its variant by number still turns through the speeds). The forty-second gave unit tests 3033/3033, browser tests 119/119, file 82/87, headphones 84/91, speakers 84/91 (security 3/3, 5/5, 5/5); the owner's song passed by wake everywhere and always-listening by file, and failed always-listening at 1.25x on headphones (\"The Live AOEN\") and speakers (\"louder\" heard as \"Clouder\" over the video)."
 }

@@ -68,12 +68,13 @@ def by_id(run):
 class VoiceForTest(unittest.TestCase):
     """The voices in turn, or a scenario's own voice when the run has it."""
 
-    def voice_for(self, index, pinned=None, voices=("ljspeech", "libritts-m", "libritts-f")):
+    def voice_for(self, index, pinned=None, voices=("ljspeech", "libritts-m", "libritts-f"),
+                  speed=None, speeds=(1.0, 1.25)):
         class R(object):
             pass
         r = R()
-        r.config = runner.RunConfig(voices=list(voices), speeds=[1.0, 1.25])
-        return runner.Runner.voice_for(r, index, pinned)
+        r.config = runner.RunConfig(voices=list(voices), speeds=list(speeds))
+        return runner.Runner.voice_for(r, index, pinned, speed)
 
     def test_in_turn(self):
         self.assertEqual([self.voice_for(i) for i in range(4)],
@@ -87,6 +88,14 @@ class VoiceForTest(unittest.TestCase):
         # A run without that voice takes its turn.
         self.assertEqual(self.voice_for(0, "libritts-m", voices=["ljspeech"]),
                          ("ljspeech", 1.0))
+
+    def test_pinned_speed(self):
+        # The owner's song: its voice at normal speed, whatever its turn.
+        for i in range(6):
+            self.assertEqual(self.voice_for(i, "libritts-m", speed=1.0),
+                             ("libritts-m", 1.0))
+        # A run without that speed takes its turn.
+        self.assertEqual(self.voice_for(0, speed=1.0, speeds=[1.25]), ("ljspeech", 1.25))
 
 
 class RunnerTest(unittest.TestCase):
