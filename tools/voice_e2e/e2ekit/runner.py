@@ -429,12 +429,16 @@ class Runner(object):
 
     # ---- one scenario -------------------------------------------------------
 
-    def voice_for(self, index):
+    def voice_for(self, index, pinned=None):
+        """The voice and speed of the |index|th scenario run: the voices in
+        turn, or the scenario's own voice (Scenario.voice) when the run has
+        it. The speed turns either way."""
         voices, speeds = self.config.voices, self.config.speeds
-        return voices[index % len(voices)], speeds[(index // len(voices)) % len(speeds)]
+        voice = pinned if pinned in voices else voices[index % len(voices)]
+        return voice, speeds[(index // len(voices)) % len(speeds)]
 
     def run_scenario(self, sc, mode, index):
-        voice, speed = self.voice_for(index)
+        voice, speed = self.voice_for(index, sc.voice)
         res = {"id": sc.id, "title": sc.title, "task": sc.task, "mode": mode,
                "counts": sc.counts, "steps": [],
                "voice": None if self.config.typed else voice,

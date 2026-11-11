@@ -41,6 +41,8 @@ only with PulseAudio.
 Expectations (expect.py checks them):
   {"url": "https://..."}  {"url_has": "..."}  {"host": "..."}
   {"path": "/watch"}      {"query": {"v": "video4"}}
+  {"query": {"search_query": ["Bohemian Rhapsody", "Bohemian rapsody"]}}
+                          a list: any of its values
   {"js": "expression", "is": true}           on the active tab
   {"media": {"paused": false, "volume": [0.4, 0.6], "muted": false,
              "rate": 1.5, "time_min": 55, "time_max": 70,
@@ -75,7 +77,10 @@ default true), "modes" (listening modes: "wake", "always"; default
 ["wake"]), "start" ({"url", "tabs": [urls], "settings": {...},
 "js": "...", "shields": false for a browser run with MoltShield off
 (--disable-molt-shield), as for a site the user turned it off on}),
-"requires", "steps".
+"requires", "steps", "voice" (the test voice that speaks it, one of
+VOICE_NAMES, when the run has that voice: the owner's scenario, which
+measures voice mode, not how the recognizer hears one voice; the others
+take the voices in turn, which tests recognition across them).
 """
 
 import json
@@ -85,6 +90,8 @@ import re
 TASKS = ("go", "read", "choose", "act", "media", "browser", "recover",
          "prompts", "security", "owner")
 MODES = ("wake", "always")
+# The test voices' names (render.VOICES; test_scenarios.py checks).
+VOICE_NAMES = ("ljspeech", "libritts-m", "libritts-f")
 REQUIREMENTS = ("microphone", "pulse", "model", "listening")
 
 STEP_ACTIONS = ("say", "say_word", "replay", "wait")
@@ -92,7 +99,7 @@ STEP_KEYS = set(STEP_ACTIONS) | {
     "needs", "answer", "timeout", "requires", "name", "pause", "expect",
     "direct", "barge_in", "file_gap", "note"}
 SCENARIO_KEYS = {"id", "title", "task", "counts", "modes", "start",
-                 "requires", "steps", "note"}
+                 "requires", "steps", "voice", "note"}
 START_KEYS = {"url", "tabs", "settings", "js", "shields"}
 SETTINGS_KEYS = {"voice_say_word_aloud", "voice_speech_rate",
                  "voice_language"}
@@ -166,7 +173,7 @@ class Step(object):
 
 class Scenario(object):
     def __init__(self, sid, title, task, steps, counts=True, modes=("wake",),
-                 start=None, requires=(), source=""):
+                 start=None, requires=(), source="", voice=None):
         self.id = sid
         self.title = title
         self.task = task
@@ -176,6 +183,7 @@ class Scenario(object):
         self.start = dict(start or {})
         self.requires = list(requires)
         self.source = source
+        self.voice = voice
 
     def needs(self):
         out = []
@@ -254,8 +262,11 @@ def parse_expectation(where, e):
         _number(where, e["quiet"], "quiet", 1, 120)
     if kind == "query":
         for k, v in value.items():
-            if not isinstance(k, str) or not isinstance(v, str):
-                _fail(where, "query takes names and values (strings)")
+            values = v if isinstance(v, list) else [v]
+            if (not isinstance(k, str) or not values or
+                    not all(isinstance(x, str) for x in values)):
+                _fail(where, "query takes names and values (strings, or lists "
+                             "of them)")
     if kind == "media":
         extra = set(value) - MEDIA_KEYS
         if extra or not value:
@@ -392,6 +403,9 @@ def parse_scenario(obj, source=""):
             _fail(where, "start.settings takes some of %s"
                   % ", ".join(sorted(SETTINGS_KEYS)))
     requires = _requirements(where, obj.get("requires", []))
+    voice = obj.get("voice")
+    if voice is not None and voice not in VOICE_NAMES:
+        _fail(where, "voice must be one of %s" % ", ".join(VOICE_NAMES))
     steps_raw = obj.get("steps")
     if not isinstance(steps_raw, list) or not steps_raw:
         _fail(where, "steps must be a non-empty list")
@@ -402,7 +416,7 @@ def parse_scenario(obj, source=""):
             names.add(st.name)
         steps.append(st)
     return Scenario(sid, title, task, steps, counts=counts, modes=modes,
-                    start=start, requires=requires, source=source)
+                    start=start, requires=requires, source=source, voice=voice)
 
 
 def load_file(path):

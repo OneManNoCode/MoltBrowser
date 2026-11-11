@@ -17,6 +17,14 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **A name from the list, said while voice mode reads it.** Voice mode
+  asked "Did you mean 1: ..., 2: ... or 3: ...? Say a number or a name.",
+  but a name said before it finished ("the Live Aid one") was set aside
+  with "I've stopped. Now say that again." So was "play the live one by
+  Queen" said over the results. Only a number ran. A name now chooses
+  from what voice mode is reading or offering, and nothing else. A name
+  that isn't there, or anything else that needs the browser quiet, is
+  still asked for again.
 - **Speech over a playing video is cut less.** Until the echo canceller has
   learned how much of the speakers' sound reaches the microphone, it took
   the echo to be as loud as what plays, and suppressed what you said over

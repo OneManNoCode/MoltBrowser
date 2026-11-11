@@ -65,7 +65,10 @@
     document.title = query + ' - YouTube';
   }
   const words = query || 'videos';
-  const videos = /bohemian/i.test(query) ? QUEEN :
+  // The song for its name, and for the spelling the recognizer writes for
+  // it in the owner's always-listening test ("Bohemium repsidy"), which the
+  // owner accepts.
+  const videos = /bohemi(an|um)/i.test(query) ? QUEEN :
       Array.from({length: 20}, (_, i) =>
           [words + ' part ' + (i + 1), 'Channel ' + String.fromCharCode(65 + i),
            (3 + i % 5) + ':0' + (i % 10), (i + 1) + 'K views', (i + 1) + ' days ago']);

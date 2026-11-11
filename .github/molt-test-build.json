@@ -1,9 +1,9 @@
 {
- "resume_run": "42806325318",
+ "resume_run": "42825964477",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Round 50, thirty-sixth build (incremental on the thirty-fifth): two matching fixes for misses that repeat in the live runs. The choice matcher joins words said apart against an item's words joined, each split its own way (\"click Ed kel to cart\" for \"Add kettle to cart\" asked which of the three add buttons; spoken_choice.cc). A find takes text whose consonants are the ones heard and one more at its end (\"find time to be\" for \"Timetable\" found nothing; voice_controller_logic.cc). The thirty-fifth gave file 82/87, headphones 80/91, speakers 80/91 (media 11/11, security 5/5); unit tests 3020/3020, browser tests 119/119; typed passed."
+ "request": "Round 50, thirty-seventh build (incremental on the thirty-sixth), PR #114: a choice from a list said over voice mode's own voice runs, but only from the list read or offered (\"the Live Aid one\" over \"Did you mean 1: ..., 2: ..., 3: ...?\", \"play the live one by Queen\" over the results: both were asked for again; voice_session_logic.cc's ChoosesOverOwnVoice(), VoiceEnvironment::list_choice_only), with the owner's song test accepting the recognizer's spellings. The spoken-suite-only run on the thirty-sixth (42913117925) gave file 79/87, headphones 79/91, speakers 84/91; typed passed."
 }

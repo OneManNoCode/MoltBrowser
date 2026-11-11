@@ -354,6 +354,13 @@ struct VoiceEnvironment {
   // The wake detector heard the wake phrase begin what is planned now
   // (HeardEvidence::woke): ParseContext::wake_heard.
   bool wake_heard = false;
+  // What is planned now was said over voice mode's own voice and chooses
+  // from a list (HeardEvidence::list_choice_only): it runs only as a choice
+  // from the page's list the browser read or offered, and is asked for
+  // again otherwise ("I've stopped. Now say that again."): not another
+  // command, an item elsewhere on the page, a list of the browser's own, a
+  // prompt's or a question's answer, or the planner.
+  bool list_choice_only = false;
   // Reading aloud (voice_reader.h): it was reading when this was said (the
   // new command stopped it, keeping its place), or it stopped earlier on
   // this page and can go on.

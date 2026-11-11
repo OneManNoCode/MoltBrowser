@@ -58,9 +58,14 @@
 //     one that reaches another site, types or sends text, closes a tab,
 //     changes what voice mode learned or goes to the planner stops the
 //     speech and is not run (SessionActions::say_again): the user says it
-//     again once the browser is quiet. Audio the voice's helper chose
-//     would have to survive the echo canceller to be heard at all; this
-//     keeps what it could do then to the page being read.
+//     again once the browser is quiet. A choice from a list, by name or
+//     with a verb ("the Live Aid one" over "Did you mean 1: ..., 2: ...",
+//     "open three"), runs only as a choice from the list the browser read
+//     or offered (ChoosesOverOwnVoice(), SessionActions::
+//     list_choice_only); anything else it would be is asked for again.
+//     Audio the voice's helper chose would have to survive the echo
+//     canceller to be heard at all; this keeps what it could do then to
+//     the page being read.
 //     An utterance begun with the wake phrase ("Himalt. Play the fourth
 //     one": the helper's spotter missed it, and the recognizer is unsure
 //     of the phrase's odd spelling) is the user speaking to voice mode, as
@@ -353,6 +358,12 @@ struct SessionActions {
   // quiet (TakenOverOwnVoice()) was set aside: the speech stops, and the
   // browser asks for it again.
   bool say_again = false;
+  // |utterance| was said over voice mode's own voice and chooses from a
+  // list as the browser reads one, by name or with a verb ("the Live Aid
+  // one", "open three": ChoosesOverOwnVoice()): the loop runs it only as a
+  // choice from the list the browser read or offered, and asks for it
+  // again otherwise (VoiceEnvironment::list_choice_only).
+  bool list_choice_only = false;
   // What is being said, live, for the caption; empty clears it.
   std::optional<std::string> partial;
   // Stop the browser's speech now (barge-in).
@@ -637,6 +648,13 @@ bool TakenOverOwnVoice(std::string_view text);
 // window, it is a wake, and the command follows.
 bool OnlyTheWakePhrase(std::string_view text, Language language);
 bool TakenOverOwnVoice(std::string_view text, Language language);
+// Whether |text|, said over voice mode's own voice and not
+// TakenOverOwnVoice(), chooses from a list as the browser reads one: by name
+// ("the Live Aid one", "play the live one by Queen") or with a verb that
+// opens a site without a list ("open three"). It is taken for the loop to
+// run only as a choice from that list (SessionActions::list_choice_only):
+// what it may do then is what a number may.
+bool ChoosesOverOwnVoice(std::string_view text, Language language);
 
 }  // namespace voice
 }  // namespace molt_ai

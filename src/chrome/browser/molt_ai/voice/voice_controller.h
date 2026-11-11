@@ -241,7 +241,13 @@ class VoiceController : public VoicePlanner::Delegate,
   // (SessionActions::heard_cleanly). Only this can answer a prompt with its
   // confirmation word; typed text (HandleUtterance()) never does. |woke|:
   // the wake detector heard the wake phrase begin it
-  // (SessionActions::woke).
+  // (SessionActions::woke). |list_choice_only|: said over voice mode's own
+  // voice, it runs only as a choice from the list the browser read or
+  // offered (SessionActions::list_choice_only).
+  void HandleHeardUtterance(const std::string& text,
+                            bool heard_cleanly,
+                            bool woke,
+                            bool list_choice_only);
   void HandleHeardUtterance(const std::string& text,
                             bool heard_cleanly,
                             bool woke);

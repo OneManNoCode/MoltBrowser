@@ -461,6 +461,94 @@ TEST(VoiceControllerLogicTest, OfferedChoicesByNumberAndOutsideTheOffer) {
             c.map().lists[0].entries[4].handle);
 }
 
+// Said over voice mode's own voice (VoiceEnvironment::list_choice_only): a
+// choice runs only from the page's list read or offered. Anything else is
+// asked for again, to be said once the browser is quiet: another command,
+// an item elsewhere on the page, the planner.
+TEST(VoiceControllerLogicTest, OverTheOwnVoiceOnlyTheListRead) {
+  constexpr char kSayAgain[] = "I've stopped. Now say that again.";
+  Conversation c(BuildPageMap(test::YouTubeLikeResults()), Env());
+  c.Say("read the results");
+  c.env().list_choice_only = true;
+  // By name, as the owner's scenario has it: three fit, so the browser
+  // asks, and a name chooses among them.
+  VoiceTurn turn = c.Say("play the live one by Queen");
+  EXPECT_TRUE(Actions(turn).empty());
+  EXPECT_EQ(Said(turn).find("Did you mean 1: Queen - Bohemian Rhapsody (Live "
+                            "at Rock Montreal 1981)"),
+            0u)
+      << Said(turn);
+  EXPECT_EQ(c.state().offered, (std::vector<size_t>{2, 3, 11}));
+  turn = c.Say("the Live Aid one");
+  ASSERT_EQ(Actions(turn),
+            (std::vector<VoiceStepKind>{K::kPress, K::kWaitForPage}));
+  EXPECT_EQ(Find(turn, K::kPress)->target, c.map().lists[0].entries[3].handle);
+
+  // With the list read again: an entry by name, or by number with a verb.
+  for (const char* text : {"the muppet one", "open three"}) {
+    c.env().list_choice_only = false;
+    c.Say("read the results");
+    c.env().list_choice_only = true;
+    turn = c.Say(text);
+    ASSERT_TRUE(Find(turn, K::kPress)) << text;
+  }
+  c.env().list_choice_only = false;
+  c.Say("read the results");
+  c.env().list_choice_only = true;
+  EXPECT_EQ(Find(c.Say("the muppet one"), K::kPress)->target,
+            c.map().lists[0].entries[4].handle);
+
+  // Nothing else runs: not a site the list hasn't got, an item outside the
+  // list (the search box), the planner, or another command. The list stays
+  // to choose from.
+  c.env().list_choice_only = false;
+  c.Say("read the results");
+  c.env().list_choice_only = true;
+  for (const char* text :
+       {"open evil dot com", "the search box", "buy the cheapest one",
+        "search for cats", "new tab", "type hello", "go back"}) {
+    turn = c.Say(text);
+    EXPECT_TRUE(Actions(turn).empty()) << text;
+    EXPECT_EQ(Said(turn), kSayAgain) << text;
+    EXPECT_TRUE(c.state().expecting_choice) << text;
+  }
+
+  // Without a list read, nothing: not even the page's results.
+  {
+    Conversation fresh(BuildPageMap(test::YouTubeLikeResults()), Env());
+    fresh.env().list_choice_only = true;
+    for (const char* text : {"the Live Aid one", "open three", "three"}) {
+      turn = fresh.Say(text);
+      EXPECT_TRUE(Actions(turn).empty()) << text;
+      EXPECT_EQ(Said(turn), kSayAgain) << text;
+    }
+  }
+  // Nor with the browser's prompt waiting for its answer, or a question.
+  {
+    Conversation prompted(BuildPageMap(test::YouTubeLikeResults()), Env());
+    prompted.Say("read the results");
+    prompted.state().prompt.id = 7;
+    prompted.state().prompt.expires_ms = prompted.env().now_ms + 60000;
+    prompted.env().list_choice_only = true;
+    turn = prompted.Say("the Live Aid one");
+    EXPECT_TRUE(Actions(turn).empty());
+    EXPECT_EQ(Said(turn), kSayAgain);
+    EXPECT_EQ(prompted.state().prompt.id, 7);
+  }
+  {
+    Conversation asked(BuildPageMap(test::YouTubeLikeResults()), Env());
+    asked.Say("read the results");
+    asked.state().confirming = true;
+    asked.state().confirm_page_id = asked.env().page_id;
+    asked.state().confirm_expires_ms = asked.env().now_ms + 60000;
+    asked.env().list_choice_only = true;
+    turn = asked.Say("the Live Aid one");
+    EXPECT_TRUE(Actions(turn).empty());
+    EXPECT_EQ(Said(turn), kSayAgain);
+    EXPECT_TRUE(asked.state().confirming);
+  }
+}
+
 TEST(VoiceControllerLogicTest, ChoosingByNumberRelationAndNoMatch) {
   Conversation c(BuildPageMap(test::YouTubeLikeResults()), Env());
   c.Say("read the results");

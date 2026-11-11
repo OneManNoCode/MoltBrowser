@@ -1170,9 +1170,12 @@ said.
   microphone has echo cancellation (its own voice is then removed from
   what the microphone hears), for what stays with what it is reading or
   doing: a number, "next", "louder", "pause", "go back", "read the
-  headings". A command that goes to another site, searches, types, sends,
-  closes a tab or runs a routine stops the browser instead, and it says
-  "I've stopped. Now say that again." With "Hey Molt" first, any command
+  headings", and the name of one of the things it reads or offers ("the
+  Live Aid one" over "Did you mean 1: ..., 2: ...?"). A command that goes
+  to another site, searches, types, sends, closes a tab or runs a routine
+  stops the browser instead, and it says "I've stopped. Now say that
+  again."; so does a name that isn't in what it reads. With "Hey Molt"
+  first, any command
   interrupts it. With the system's voices, which the browser uses when its
   own isn't installed, start with "Hey Molt" (or say "stop"). With its own
   voice and no echo cancellation, say "stop" first.

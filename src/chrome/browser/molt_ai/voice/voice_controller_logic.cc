@@ -395,6 +395,12 @@ class Planner : public TurnPlanner {
       Say("Voice mode is off in MoltNet windows.");
       return;
     }
+    // Said over voice mode's own voice: only a choice from the page's list
+    // read or offered runs now (VoiceEnvironment::list_choice_only).
+    if (depth == 0 && env_.list_choice_only && !ChoosesFromListRead(command)) {
+      Say(Tr("I've stopped. Now say that again."));
+      return;
+    }
     // "Which site?" stays asked until something the grammar understands
     // (a misheard answer can be said again).
     if (depth == 0 && command.kind != K::kUnknown &&
@@ -1229,8 +1235,24 @@ class Planner : public TurnPlanner {
     bool uses_current = false;
   };
 
+  // Whether |command|, said over voice mode's own voice, may run now: a
+  // choice from the page's list the browser read or offered (an item of it,
+  // or of the close ones offered from every item), with no prompt,
+  // confirmation, question or list of the browser's own waiting for an
+  // answer (VoiceEnvironment::list_choice_only).
+  bool ChoosesFromListRead(const VoiceCommand& command) {
+    const ConversationState& s = state();
+    return command.kind == K::kChoose && ListValid(s, env_) &&
+           s.list != ListContext::kTabs &&
+           !PromptWaits(s.prompt, env_.now_ms) && !ConfirmationValid(s, env_) &&
+           !SiteQuestionWaits(s, env_.now_ms) && !env_.browser.menu_open &&
+           !BrowserListValid(s, env_);
+  }
+
   void Choose(const ChoiceRef& spoken_ref, ChoiceVerb verb) {
     ConversationState& s = state();
+    // Said over voice mode's own voice: the list read or offered only.
+    const bool list_only = env_.list_choice_only;
     // "Play number seven" with no numbers on screen: the user can't see
     // the items' numbers, so the seventh of the page's results (as "the
     // seventh one"), when the page has them.
@@ -1290,7 +1312,7 @@ class Planner : public TurnPlanner {
         s.list == ListContext::kNone ||
         ref.kind == ChoiceRef::Kind::kDescription ||
         (ref.kind == ChoiceRef::Kind::kNumber && s.numbers_shown);
-    if (items_too && s.list != ListContext::kItems &&
+    if (items_too && !list_only && s.list != ListContext::kItems &&
         s.list != ListContext::kTabs) {
       Attempt items;
       items.set = CandidatesFromItems(map_);
@@ -1299,7 +1321,7 @@ class Planner : public TurnPlanner {
     }
 
     // "Choose France" after "click country": that list's options first.
-    if (ChooseOption(ref, /*any_select=*/false)) {
+    if (!list_only && ChooseOption(ref, /*any_select=*/false)) {
       return;
     }
     NoMatchReason reason = NoMatchReason::kNoCandidates;
@@ -1328,6 +1350,12 @@ class Planner : public TurnPlanner {
           match.reason == NoMatchReason::kEmptyReference) {
         break;
       }
+    }
+    // Not in the list read: asked for again once the browser is quiet,
+    // when everything else can have it.
+    if (list_only) {
+      Say(Tr("I've stopped. Now say that again."));
+      return;
     }
     // Nothing on the page is called that: an option of one of its lists.
     if (ChooseOption(ref, /*any_select=*/true)) {

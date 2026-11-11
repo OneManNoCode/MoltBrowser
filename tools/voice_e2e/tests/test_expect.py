@@ -67,6 +67,10 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(ok({"path": "/results"}, w))
         self.assertTrue(ok({"query": {"search_query": "Bohemian Rhapsody"}}, w))
         self.assertFalse(ok({"query": {"search_query": "Queen"}}, w))
+        # Any of a list.
+        self.assertTrue(ok({"query": {"search_query": ["Bohemian rapsody",
+                                                       "Bohemian Rhapsody"]}}, w))
+        self.assertFalse(ok({"query": {"search_query": ["Queen", "Freddie"]}}, w))
         self.assertTrue(ok({"url_has": "search_query="}, w))
         self.assertFalse(ok({"url": "https://www.youtube.com/"}, w))
         okay, detail = expect.check({"path": "/watch"}, w, 0)

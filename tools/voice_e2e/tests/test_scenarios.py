@@ -44,6 +44,18 @@ class ShippedTest(unittest.TestCase):
         self.assertEqual(said[:4], ["open YouTube", "search for Bohemian Rhapsody",
                                     "play the live one by Queen", "the Live Aid one"])
 
+    def test_the_owners_scenarios_are_spoken_by_one_voice(self):
+        # The owner's decision: the voice the recognizer hears right on
+        # every step, so that they measure voice mode.
+        owner = [s for s in self.scs if s.task == "owner"]
+        self.assertEqual({s.id for s in owner}, {"owner-song", "owner-song-fourth"})
+        self.assertEqual({s.voice for s in owner}, {"libritts-m"})
+        self.assertEqual({s.voice for s in self.scs if s.task != "owner"}, {None})
+
+    def test_voice_names_are_the_renderers(self):
+        from e2ekit import render
+        self.assertEqual(set(scen.VOICE_NAMES), {v[0] for v in render.VOICES})
+
     def test_this_rounds_commands_are_named(self):
         needs = {n for s in self.scs for n in s.needs()}
         for n in ("set_volume", "speed_up", "normal_speed", "captions_on", "undo",
@@ -108,11 +120,19 @@ class RefusedTest(unittest.TestCase):
             one(start={"url": "https://news.test/", "shields": False}), "x.json")
         self.assertIs(sc.start["shields"], False)
 
+    def test_query_alternatives(self):
+        sc = scen.parse_scenario(
+            one(steps=[{"say": "x", "expect": [{"query": {"q": ["a", "b"]}}]}]), "x.json")
+        self.assertEqual(sc.steps[0].expect[0]["query"]["q"], ["a", "b"])
+
     def test_good_one(self):
         sc = scen.parse_scenario(one(), "x.json")
         self.assertEqual(sc.steps[0].text, "open YouTube")
         self.assertEqual(sc.modes, ["wake"])
         self.assertTrue(sc.counts)
+        self.assertIsNone(sc.voice)
+        self.assertEqual(scen.parse_scenario(one(voice="libritts-f"), "x.json").voice,
+                         "libritts-f")
 
     def test_bad_ones(self):
         self.bad(one(id="Bad Id"), "id must be")
@@ -138,9 +158,15 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(steps=[{"say": "x", "expect": [{"media": {"volume": [0.9, 0.1]}}]}]),
                  "low above high")
         self.bad(one(steps=[{"say": "x", "expect": [{"prompt": "maybe"}]}]), "prompt takes")
+        self.bad(one(steps=[{"say": "x", "expect": [{"query": {"q": 3}}]}]), "query takes")
+        self.bad(one(steps=[{"say": "x", "expect": [{"query": {"q": []}}]}]), "query takes")
+        self.bad(one(steps=[{"say": "x", "expect": [{"query": {"q": ["a", 1]}}]}]),
+                 "query takes")
         self.bad(one(steps=[{"say": "x", "expect": [{"tabs": -1}]}]), "count")
         self.bad(one(steps=[{"say": "x", "timeout": 999}]), "timeout")
         self.bad(one(requires=["telepathy"]), "requires takes")
+        self.bad(one(voice="alexa"), "voice must be one of")
+        self.bad(one(voice=["libritts-m"]), "voice must be one of")
         self.bad(one(start={"url": "https://news.test/", "shields": "off"}),
                  "start.shields takes")
         self.bad(one(steps=[{"say": "x", "file_gap": 6}]), "file_gap is for")

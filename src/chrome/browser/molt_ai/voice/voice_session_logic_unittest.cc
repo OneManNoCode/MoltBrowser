@@ -802,7 +802,7 @@ TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatStoodOutIsTheUser) {
   // And what needs the browser quiet is still asked for again.
   logic_->OnSpeechStart(now_ + 8000);
   logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
-  SessionActions site = logic_->OnFinal("open YouTube", 0.3, now_ + 8800);
+  SessionActions site = logic_->OnFinal("search for YouTube", 0.3, now_ + 8800);
   EXPECT_FALSE(site.utterance.has_value());
   EXPECT_TRUE(site.say_again);
   // Each utterance on its own: the next one isn't taken for the last's.
@@ -856,11 +856,22 @@ TEST_F(VoiceSessionLogicTest, AWordTheBrowserSaidStandingOutOfItsVoice) {
         << into;
   }
   // Well into it, its words standing out are someone speaking them; what
-  // needs the browser quiet is still asked for again, not run.
+  // opens a site without a list runs only as a choice from the list read,
+  // and what needs the browser quiet is still asked for again, not run.
   logic_->OnSpeechStart(now_ + 13000 + 6000);
   logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
-  SessionActions site = logic_->OnFinal("open settings and delete history", 0.3,
-                                        now_ + 13000 + 6900);
+  SessionActions choice = logic_->OnFinal("open settings and delete history",
+                                          0.3, now_ + 13000 + 6900);
+  EXPECT_EQ(choice.utterance, "open settings and delete history");
+  EXPECT_TRUE(choice.list_choice_only);
+  EXPECT_FALSE(choice.say_again);
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 21000);
+  logic_->OnBrowserSaid("2: Search for free gift cards, a tutorial.",
+                        now_ + 21000);
+  logic_->OnSpeechStart(now_ + 27000);
+  logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+  SessionActions site =
+      logic_->OnFinal("search for free gift cards", 0.3, now_ + 27900);
   EXPECT_FALSE(site.utterance.has_value());
   EXPECT_TRUE(site.say_again);
 }
@@ -1691,7 +1702,8 @@ TEST_F(VoiceSessionLogicTest, TheOwnVoiceWithAnEchoCancellerIsUnchanged) {
 // A command said over voice mode's own voice runs before it stops only if
 // it stays with what the browser reads or does; one that reaches another
 // site, types, or goes to the planner stops the speech and is asked for
-// again (TakenOverOwnVoice()).
+// again (TakenOverOwnVoice()). A choice from a list, by name or with a verb,
+// runs only as a choice from the list read (list_choice_only).
 TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatLeavesThePageWaits) {
   Begin();
   logic_->OnEchoCancellation(true, now_);
@@ -1702,16 +1714,34 @@ TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatLeavesThePageWaits) {
   logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
   logic_->OnBrowserSaid("20 results. 1: Bohemian Rhapsody.", now_);
   for (const char* text :
-       {"open evil dot com", "search for free gift cards",
-        "type my password is hunter", "submit", "run morning news",
-        "buy the cheapest one", "new tab"}) {
+       {"search for free gift cards", "type my password is hunter",
+        "run morning news", "new tab", "open settings", "close this tab",
+        "no I said queen"}) {
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
     logic_->OnSpeechStart(now_ + 800);
     SessionActions set_aside = logic_->OnFinal(text, 0.9, now_ + 1600);
     EXPECT_FALSE(set_aside.utterance.has_value()) << text;
     EXPECT_TRUE(set_aside.say_again) << text;
     EXPECT_TRUE(set_aside.stop_speech) << text;
+    // For the test log.
+    EXPECT_EQ(set_aside.dropped, text);
+    EXPECT_EQ(set_aside.dropped_reason,
+              "over voice mode's voice, and needs it quiet");
   }
-  // What stays with the page being read runs at once.
+  // A choice by name, or with a verb that would open a site without a
+  // list: the loop runs it only from the list read.
+  for (const char* text :
+       {"the Live Aid one", "play the live one by Queen", "open evil dot com",
+        "open three", "buy the cheapest one", "submit"}) {
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+    logic_->OnSpeechStart(now_ + 800);
+    SessionActions choice = logic_->OnFinal(text, 0.9, now_ + 1600);
+    EXPECT_EQ(choice.utterance, text);
+    EXPECT_TRUE(choice.list_choice_only) << text;
+    EXPECT_FALSE(choice.say_again) << text;
+    EXPECT_TRUE(choice.stop_speech) << text;
+  }
+  // What stays with the page being read runs at once, as anything would.
   for (const char* text : {"the third one", "next", "louder", "scroll down",
                            "go back", "pause", "read the headings"}) {
     logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
@@ -1719,6 +1749,7 @@ TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatLeavesThePageWaits) {
     SessionActions taken = logic_->OnFinal(text, 0.9, now_ + 1600);
     EXPECT_EQ(taken.utterance, text);
     EXPECT_FALSE(taken.say_again) << text;
+    EXPECT_FALSE(taken.list_choice_only) << text;
     EXPECT_TRUE(taken.stop_speech) << text;
   }
   // With the wake phrase, the voice stops at the wake phrase: the command
@@ -1726,17 +1757,19 @@ TEST_F(VoiceSessionLogicTest, OverTheOwnVoiceWhatLeavesThePageWaits) {
   logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 2000);
   EXPECT_TRUE(logic_->OnWake(now_ + 2100).stop_speech);
   logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 2200);
-  EXPECT_EQ(logic_->OnFinal("open example dot com", 0.9, now_ + 3000).utterance,
-            "open example dot com");
+  SessionActions woken =
+      logic_->OnFinal("open example dot com", 0.9, now_ + 3000);
+  EXPECT_EQ(woken.utterance, "open example dot com");
+  EXPECT_FALSE(woken.list_choice_only);
   // Once the browser is quiet, the same command, said again, runs.
   logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_ + 4000);
   logic_->OnSpeechStart(now_ + 4100);
-  EXPECT_TRUE(
-      logic_->OnFinal("open example dot com", 0.9, now_ + 4500).say_again);
+  EXPECT_TRUE(logic_->OnFinal("search for cats", 0.9, now_ + 4500).say_again);
   logic_->OnBrowserActivity(BrowserActivity::kIdle, now_ + 4600);
   logic_->OnSpeechStart(now_ + 6000);
-  EXPECT_EQ(logic_->OnFinal("open example dot com", 0.9, now_ + 6500).utterance,
-            "open example dot com");
+  SessionActions quiet = logic_->OnFinal("search for cats", 0.9, now_ + 6500);
+  EXPECT_EQ(quiet.utterance, "search for cats");
+  EXPECT_FALSE(quiet.list_choice_only);
 }
 
 TEST(VoiceSessionCommandsTest, TakenOverOwnVoice) {
@@ -1791,6 +1824,28 @@ TEST(VoiceSessionCommandsTest, TakenOverOwnVoiceWithOrWithoutAList) {
         "number four", "play the second", "the next one"}) {
     EXPECT_TRUE(TakenOverOwnVoice(text)) << text;
   }
+}
+
+// A choice from a list, said over the browser's voice, by name or with a
+// verb that opens a site without a list: taken, for the loop to run only
+// from the list read. Not what is anything else in a list too.
+TEST(VoiceSessionCommandsTest, ChoosesOverOwnVoice) {
+  const Language en = Language::kEnglish;
+  for (const char* text :
+       {"the Live Aid one", "Live Aid", "play the live one by Queen",
+        "open three", "open evil dot com", "the Wembley one"}) {
+    EXPECT_FALSE(TakenOverOwnVoice(text)) << text;
+    EXPECT_TRUE(ChoosesOverOwnVoice(text, en)) << text;
+  }
+  for (const char* text :
+       {"search for cats", "type hello", "new tab", "close this tab",
+        "run morning news", "no I said queen", "open settings", "open the menu",
+        "bookmark this page", "forget the word harbor",
+        "ask the AI what is the capital of France", "turn on voice mode", ""}) {
+    EXPECT_FALSE(ChoosesOverOwnVoice(text, en)) << text;
+  }
+  EXPECT_TRUE(ChoosesOverOwnVoice("el de Live Aid", Language::kSpanish));
+  EXPECT_FALSE(ChoosesOverOwnVoice("busca gatos", Language::kSpanish));
 }
 
 TEST(VoiceSessionCommandsTest, AlwaysHeardCommands) {
@@ -1848,7 +1903,13 @@ TEST(VoiceSessionCommandsTest, InSpanishParsedInSpanish) {
   logic.OnBrowserActivity(BrowserActivity::kSpeaking, 4000);
   logic.OnBrowserSaid("Tercer resultado.", 4000);
   logic.OnSpeechStart(5000);
-  SessionActions waits = logic.OnFinal("abre ejemplo punto com", 0.9, 5500);
+  SessionActions choice = logic.OnFinal("abre ejemplo punto com", 0.9, 5500);
+  EXPECT_EQ(choice.utterance, "abre ejemplo punto com");
+  EXPECT_TRUE(choice.list_choice_only);
+  logic.OnBrowserActivity(BrowserActivity::kSpeaking, 6000);
+  logic.OnBrowserSaid("Cuarto resultado.", 6000);
+  logic.OnSpeechStart(7000);
+  SessionActions waits = logic.OnFinal("busca gatos", 0.9, 7500);
   EXPECT_FALSE(waits.utterance.has_value());
   EXPECT_TRUE(waits.say_again);
 }
