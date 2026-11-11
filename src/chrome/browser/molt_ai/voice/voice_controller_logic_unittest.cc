@@ -2181,6 +2181,34 @@ TEST(VoiceControllerLogicTest, RepeatAfterThePromptWentSaysTheTwin) {
   EXPECT_EQ(spoken, (std::vector<std::string>{"Scrolled down.", twin}));
 }
 
+// What was said over voice mode's voice and set aside ("I've stopped. Now
+// say that again.") isn't what "repeat" says: what came before is (the
+// spoken suite's speakers run asked for the prompt's word with "repeat",
+// twice, and heard "I've stopped. Now say that again." twice).
+TEST(VoiceControllerLogicTest, RepeatAfterSayAgainSaysWhatCameBefore) {
+  constexpr char kSayAgain[] = "I've stopped. Now say that again.";
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  c.state() =
+      PlanBrowserPrompt(24, Permission(), "harbor", c.env(), c.state()).state;
+  c.env().list_choice_only = true;
+  EXPECT_EQ(Said(c.Say("open evil dot com")), kSayAgain);
+  c.env().list_choice_only = false;
+  EXPECT_EQ(Said(c.Say("repeat")),
+            "maps.example wants to use your location. To allow it, say "
+            "harbor. To block it, say no.");
+
+  // A name that names none of the choices offered, over the voice.
+  Conversation list(BuildPageMap(test::YouTubeLikeResults()), Env());
+  const std::string offer = Said(list.Say("play the live one by Queen"));
+  ASSERT_EQ(offer.find("Did you mean 1: "), 0u) << offer;
+  list.env().list_choice_only = true;
+  EXPECT_EQ(Said(list.Say("living")), kSayAgain);
+  list.env().list_choice_only = false;
+  EXPECT_EQ(Said(list.Say("repeat")), offer);
+  // Said again, and once more: still what came before.
+  EXPECT_EQ(Said(list.Say("repeat")), offer);
+}
+
 TEST(VoiceControllerLogicTest, NoWordWhileTheScreenIsShared) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   BrowserPrompt prompt = Permission();

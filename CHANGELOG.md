@@ -17,6 +17,12 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **"Repeat" says what voice mode said before "I've stopped. Now say
+  that again."** When something said over voice mode's voice was set
+  aside, "repeat" said "I've stopped. Now say that again." instead of
+  the question it had asked: at a permission prompt, the word to say
+  could not be heard again by asking for it. It now says the question
+  again, with its word where the word may be said.
 - **A name from the list, said while voice mode reads it.** Voice mode
   asked "Did you mean 1: ..., 2: ... or 3: ...? Say a number or a name.",
   but a name said before it finished ("the Live Aid one") was set aside
