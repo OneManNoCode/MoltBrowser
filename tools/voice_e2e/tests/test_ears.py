@@ -72,6 +72,26 @@ class FindWordTest(unittest.TestCase):
         self.assertIsNone(self.e.nearest_by_sound("To allow it, say no."))
         self.assertIsNone(self.e.nearest_by_sound(""))
 
+    def test_the_words_two_hearings_leave(self):
+        # The spoken suite on build 37 (headphones): "cactus" heard as
+        # "kept this", then as "active", which is as near "guitar".
+        first = self.e.sounds_near(
+            "Press share of my location. Prompt start test once to know your "
+            "location, to allow it. Say kept this, to block it, say n")
+        second = self.e.sounds_near(
+            "Prompt Dark test ones to know your location. To allow it, say "
+            "active, to blark it, say no")
+        self.assertIn("cactus", first)
+        self.assertIn("guitar", second)
+        self.assertEqual(first & second, {"cactus"})
+        # The same mangling twice: that word.
+        self.assertEqual(self.e.sounds_near("To allow it, say farsal.") &
+                         self.e.sounds_near("To allow it, say pharsal."), {"fossil"})
+        # Nothing after a "say", or too short to tell: nothing.
+        self.assertEqual(self.e.sounds_near("example.com wants to use your camera"), set())
+        self.assertEqual(self.e.sounds_near("To allow it, say no."), set())
+        self.assertEqual(self.e.sounds_near(""), set())
+
     def test_sound_key(self):
         self.assertEqual(ears.sound_key("cactus"), "kts")
         self.assertEqual(ears.sound_key("keptus"), "kpts")

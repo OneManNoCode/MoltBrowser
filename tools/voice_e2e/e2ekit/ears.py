@@ -95,6 +95,34 @@ class Ears(object):
         return " ".join(e.get("text", "") for _, e in self.h.lines[n:]
                         if e.get("type") == "final").strip()
 
+    def replay(self, pcm, frame_ms=50, quiet_s=1.5, wait=60.0):
+        """What a helper of the kit's own, set as voice mode's is while it
+        waits for the wake phrase (and without the page's hotwords), makes
+        of |pcm| (16 kHz mono 16-bit) fed in voice mode's frames: each event
+        as (audio_ms, type, text), partials too. The listener goes by the
+        samples alone, so the same audio gives the events voice mode's
+        helper had, unless what voice mode sent it (a follow-up window, a
+        reset, the hotwords) made the difference."""
+        h = shc.Helper(self.args)
+        try:
+            shc.ready(h)
+            h.send(shc.config({"wake_required": True}))
+            h.send(b"".join(shc.audio_frames(pcm + shc.silence(shc.TAIL_SILENCE_S),
+                                             ms=frame_ms)))
+            end = time.monotonic() + wait
+            seen = -1
+            last = time.monotonic()
+            while time.monotonic() < end:
+                if len(h.lines) != seen:
+                    seen, last = len(h.lines), time.monotonic()
+                elif time.monotonic() - last >= quiet_s:
+                    break
+                time.sleep(0.05)
+            return [(e.get("audio_ms"), e.get("type"), e.get("text", ""))
+                    for _, e in h.lines if e.get("type") != "ready"]
+        finally:
+            h.close()
+
     def find_word(self, text):
         """The confirmation word |text| gives ("... say harbor"), if any:
         the last word of the list in it, else what follows a "say" (one
@@ -128,9 +156,8 @@ class Ears(object):
     def nearest_by_sound(self, text):
         """The one word of the list whose consonants (sound_key()) are
         within one sound of what follows a "say" in |text| ("say keptus":
-        "cactus"), if exactly one is; else None. A guess: the kit takes it
-        only when two hearings of the prompt give the same one
-        (runner.word_wav())."""
+        "cactus"), if exactly one is; else None. A guess: the kit goes by
+        sounds_near() of two hearings instead (runner.word_wav())."""
         heard = vbl.normalize(text).split()
         tries = self._after_say(heard, ("say", "said", "saying"))
         best = None
@@ -144,6 +171,23 @@ class Ears(object):
                 if best is None or d < best[0]:
                     best = (d, c)
         return best[1] if best else None
+
+    def sounds_near(self, text):
+        """Every word of the list within one sound (sound_key()) of what
+        follows a "say" in |text|: what a hearing of the prompt leaves
+        possible. The kit takes the one word two hearings both leave
+        (runner.word_wav()): "say kept this" leaves "cactus" (and, for
+        "kept" alone, "cobalt" and "yogurt"), "say active" "cactus" and
+        "guitar"."""
+        heard = vbl.normalize(text).split()
+        near = set()
+        for t in self._after_say(heard, ("say", "said", "saying")) or []:
+            key = sound_key(t)
+            if len(key) < 2:
+                continue
+            near.update(c for c in self.words
+                        if letter_distance(key, sound_key(c)) <= 1)
+        return near
 
     @staticmethod
     def _after_say(heard, says_words):

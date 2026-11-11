@@ -122,6 +122,10 @@ class DigestTest(unittest.TestCase):
         self.assertEqual(digest.microphone_digest({"mic_heard": ""})[0],
                          "microphone, as the kit's recognizer hears it: (nothing)")
         self.assertEqual(digest.microphone_digest({}), [])
+        out = digest.microphone_digest({"mic_replay": ["27.15 wake", "27.60 partial 'He mold'"]})
+        self.assertEqual(len(out), 1)
+        self.assertIn("27.15 wake; 27.60 partial 'He mold'", out[0])
+        self.assertIn("(nothing)", digest.microphone_digest({"mic_replay": []})[0])
         out = digest.microphone_digest({"mic_onset": {"step": 2, "at_s": 31.5,
                                                       "levels": [-70, -40, -12]}})
         self.assertEqual(out[0], "microphone at step 2's speech (31.50 s into the dump), "

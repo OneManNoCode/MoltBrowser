@@ -349,6 +349,16 @@ class RunnerTest(unittest.TestCase):
         y, _ = audio.read_wav(render.clip_path(speech, "ljspeech", 1.0, "open YouTube"))
         self.assertGreater(len(x), len(y))
 
+class ReplayLinesTest(unittest.TestCase):
+    def test_around_the_failed_step(self):
+        events = [(1000, "wake", ""), (27150, "wake", ""), (27600, "partial", "He mold"),
+                  (33150, "final", ""), (40000, "speech_start", ""), (None, "final", "x")]
+        self.assertEqual(runner.replay_lines(events, 27.0),
+                         ["27.15 wake", "27.60 partial 'He mold'", "33.15 final"])
+        self.assertEqual(runner.replay_lines(events, 27.0, limit=1), ["27.15 wake"])
+        self.assertEqual(runner.replay_lines([], 27.0), [])
+
+
 
 if __name__ == "__main__":
     unittest.main()

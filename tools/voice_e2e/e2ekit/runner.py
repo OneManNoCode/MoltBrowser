@@ -95,6 +95,22 @@ def recording_levels(plan, index):
     return onset_levels(first.tobytes(), a * rate, rate=rate, search_s=1.0)[1]
 
 
+def replay_lines(events, at_s, before_s=1.0, after_s=9.0, limit=40):
+    """The replayed helper's events (Ears.replay()) from |before_s| before
+    the failed step's speech (|at_s| into the dump) to |after_s| after:
+    "27.15 wake", "27.60 partial 'He mold'", the time in the dump."""
+    out = []
+    for ms, kind, text in events:
+        if not isinstance(ms, (int, float)) or not isinstance(kind, str):
+            continue
+        if not (at_s - before_s) * 1000 <= ms <= (at_s + after_s) * 1000:
+            continue
+        out.append("%.2f %s%s" % (ms / 1000.0, kind, " %r" % text[:80] if text else ""))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def onset_levels(pcm, around, rate=16000, search_s=3.0, before_s=0.5, after_s=2.0,
                  step_s=0.1, onset_db=-30):
     """Around sample |around| of |pcm| (16-bit little-endian): where speech
@@ -606,6 +622,17 @@ class Runner(object):
                 res["mic_heard"] = (self.ears.transcribe(pcm) or "")[:600]
             except Exception as err:  # the ears are the kit's: a note only
                 res["mic_heard"] = "(the kit's recognizer failed: %s)" % err
+        at_s = (res.get("mic_onset") or {}).get("at_s")
+        if self.ears and pcm and at_s is not None:
+            # The failed step's speech again, through a helper that needs
+            # the wake phrase: whether the helper loses a command said
+            # right after it from the audio alone.
+            try:
+                events = self.ears.replay(pcm)
+            except Exception as err:  # the ears are the kit's: a note only
+                res["mic_replay"] = ["(the kit's helper failed: %s)" % err]
+            else:
+                res["mic_replay"] = replay_lines(events, at_s)
 
     def wake_for(self, step, mode):
         return mode == "wake" and not step.answer
@@ -703,11 +730,12 @@ class Runner(object):
             heard = self.ears.transcribe(pcm)
             heard_all.append(heard)
             word = self.ears.find_word(heard)
-            # The same word mangled the same way twice ("say keptus", then
-            # "say keptus" again): the one word it sounds nearest.
-            near = self.ears.nearest_by_sound(heard)
-            if not word and near and near == guess:
-                word = near
+            # Mangled twice ("say keptus", then "say keptus" again; "say kept
+            # this", then "say active"): the one word both hearings sound
+            # near. A wrong one fails the step (the browser refuses it).
+            near = self.ears.sounds_near(heard)
+            if not word and guess is not None and len(near & guess) == 1:
+                word = next(iter(near & guess))
             guess = near
             if word:
                 plan.setdefault("heard_browser", []).extend(heard_all)

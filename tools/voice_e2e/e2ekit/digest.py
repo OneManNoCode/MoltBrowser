@@ -184,6 +184,12 @@ def microphone_digest(res, limit=90):
     if isinstance(heard, str):
         out.append("microphone, as the kit's recognizer hears it: %s" %
                    (json.dumps(heard[:600]) if heard else "(nothing)"))
+    replay = res.get("mic_replay")
+    if isinstance(replay, list):
+        lines = [str(x)[:120] for x in replay[:40]]
+        out.append("microphone through a helper of the kit's own that needs the wake "
+                   "phrase, around the failed step (s into the dump): %s" %
+                   ("; ".join(lines) if lines else "(nothing)"))
     return out
 
 
