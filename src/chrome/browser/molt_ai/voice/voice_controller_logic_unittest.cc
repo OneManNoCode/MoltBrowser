@@ -476,9 +476,11 @@ TEST(VoiceControllerLogicTest, OverTheOwnVoiceAWeakNameIsSaidAgain) {
   turn = c.Say("living");
   EXPECT_TRUE(Actions(turn).empty()) << Said(turn);
   EXPECT_EQ(Said(turn), kSayAgain);
-  // The three stay offered, and one named well, or by number, runs.
+  // The three stay offered, and one named, or by number, runs: at the
+  // usual bar among the three, for the recognizer's "The Live AWAN" (the
+  // Live Aid one, at 0.68).
   EXPECT_EQ(c.state().offered, (std::vector<size_t>{2, 3, 11}));
-  turn = c.Say("the Live Aid one");
+  turn = c.Say("The Live AWAN.");
   ASSERT_TRUE(Find(turn, K::kPress)) << Said(turn);
   EXPECT_EQ(Find(turn, K::kPress)->target, c.map().lists[0].entries[3].handle);
 

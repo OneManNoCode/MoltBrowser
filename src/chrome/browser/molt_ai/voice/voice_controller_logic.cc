@@ -1337,7 +1337,11 @@ class Planner : public TurnPlanner {
       }
       MatchOptions options;
       options.current_position = attempt.uses_current ? s.current_position : 0;
-      if (list_only) {
+      // Over voice mode's own voice, a name must name its item well in a
+      // list read out; among the few just offered, the usual bar does: a
+      // weak name ("living") names none of them, and "The Live AWAN" (the
+      // recognizer's "the Live Aid one") names one at 0.68.
+      if (list_only && attempt.base.empty()) {
         options.min_score = kOverOwnVoiceMinScore;
       }
       const ChoiceMatch match =

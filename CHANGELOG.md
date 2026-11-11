@@ -36,8 +36,8 @@ For longer narrative posts behind each entry see
   ... or 3: ...?", the microphone heard its reading and the recognizer
   wrote "living", which voice mode took for the lo-fi cover further down
   the results. Said over voice mode's voice, an answer now chooses only
-  among the ones it offered, and a name must name its item well; anything
-  else is "I've stopped. Now say that again."
+  among the ones it offered, and a name from a list read out must name
+  its item well; anything else is "I've stopped. Now say that again."
 - **"Louder" over a video, with headphones, in always-listening mode.**
   Without the wake phrase, while a tab plays sound, voice mode only took
   what the recognizer was sure of, and set "Louder." aside. When the
