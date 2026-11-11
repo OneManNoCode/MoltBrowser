@@ -121,8 +121,12 @@ def check(e, world, since, before=None):
         else:
             q = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
             # A list: any of its values (a spelling the recognizer writes
-            # that the owner accepts: "Bohemian rapsody").
-            ok = all(q.get(k) in (v if isinstance(v, list) else [v])
+            # that the owner accepts: "Bohemian rapsody"). Without case, as
+            # a search reads it: the recognizer's capitals vary by voice
+            # ("Bohemian Rapsody"), and the fixtures' ids are lower case.
+            ok = all((q.get(k) or "").casefold() in
+                     [w.casefold() for w in (v if isinstance(v, list) else [v])]
+                     and k in q
                      for k, v in value.items())
         return ok, "the tab is at %s" % url
     if kind == "js":
