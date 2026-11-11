@@ -170,6 +170,23 @@ class DigestTest(unittest.TestCase):
             self.assertIn('["off", "none"]', out[1])
             self.assertIn("said", out[2])
 
+    def test_a_long_log_keeps_what_was_heard_and_said(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "voice.jsonl")
+            lines = []
+            for i in range(60):
+                lines += [{"t": 1000 + i, "w": 1, "e": "activity", "activity": "listening"},
+                          {"t": 1000 + i, "w": 1, "e": "earcon", "kind": "speaking"}]
+            lines.insert(60, {"t": 1030, "w": 1, "e": "heard", "text": "Repeat."})
+            lines.insert(61, {"t": 1030, "w": 1, "e": "dropped", "text": "say lemon",
+                              "reason": "voice mode's voice heard back"})
+            write(log, "\n".join(json.dumps(l) for l in lines) + "\n")
+            out = digest.voice_log_digest(log, limit_events=20)
+            self.assertEqual(len(out), 23)
+            self.assertTrue(any('"Repeat."' in l for l in out))
+            self.assertTrue(any("say lemon" in l for l in out))
+            self.assertIn('"skipped": 100', out[10])
+
     def test_no_report(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(digest.build(d), "(no failed scenarios)")

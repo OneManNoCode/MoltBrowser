@@ -144,10 +144,7 @@ def voice_log_digest(path, limit_events=60):
         return ["(the voice test log is empty)"]
     t0 = events[0].get("t", 0)
     events = _fold_microphone(events)
-    shown = events if len(events) <= limit_events else \
-        events[:limit_events // 2] + [{"e": "...", "skipped": len(events) - limit_events}] + \
-        events[-limit_events // 2:]
-    for ev in shown:
+    for ev in _limit_events(events, limit_events):
         t = ev.get("t")
         rest = {k: v for k, v in ev.items() if k not in ("t", "e")}
         out.append("  %7s %-9s %s" % (
@@ -191,6 +188,25 @@ def microphone_digest(res, limit=90):
                    "phrase, around the failed step (s into the dump): %s" %
                    ("; ".join(lines) if lines else "(nothing)"))
     return out
+
+
+# Lines that only say how the loop got there, left out of a long log's
+# middle before what was heard, said, set aside or prompted is.
+QUIET_EVENTS = ("activity", "earcon", "mic", "duck")
+
+
+def _limit_events(events, limit):
+    """At most about |limit| events: the first and last halves, and in
+    between what was heard, said, set aside and prompted (a failed step's
+    utterance is often there), the rest counted in a "..." line."""
+    if len(events) <= limit:
+        return events
+    head, middle, tail = events[:limit // 2], events[limit // 2:-(limit // 2)], \
+        events[-(limit // 2):]
+    kept = [ev for ev in middle if ev.get("e") not in QUIET_EVENTS]
+    if len(kept) > limit:
+        kept = kept[:limit // 2] + kept[-(limit // 2):]
+    return head + [{"e": "...", "skipped": len(middle) - len(kept)}] + kept + tail
 
 
 def _fold_microphone(events):

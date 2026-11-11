@@ -739,6 +739,9 @@ class Runner(object):
             guess = near
             if word:
                 plan.setdefault("heard_browser", []).extend(heard_all)
+                # For the report: which word the kit took the browser to
+                # have said, and from what (the browser's log masks it).
+                plan["word"] = {"said": word, "heard_browser": [h[:200] for h in heard_all]}
                 return render.clip_path(self.speech, voice, speed, word)
         plan.setdefault("heard_browser", []).extend(heard_all)
         raise StepFailed("didn't hear a confirmation word in the browser's speech "
@@ -769,6 +772,8 @@ class Runner(object):
             self.screenshot(world, run_dir, i, sres)
             return sres
         sres["said_as"] = said
+        if step.action == "say_word" and "word" in plan:
+            sres["word"] = plan.pop("word")
         if step.action == "say" and not self.config.typed:
             # When its speech played (wall clock), for the microphone notes.
             if self.config.audio == "file":

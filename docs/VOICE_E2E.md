@@ -51,7 +51,12 @@ and `VOICE_E2E_VOICES` narrow it. It also leaves `digest.txt`
 and the stack after the first, one crash printed once with the names of
 the others it ended) and voice mode's test log, which the CI job prints
 after `report.md`, as the report's artifact isn't always reachable from
-where the results are read.
+where the results are read. A long test log keeps its first and last 30
+lines and, between them, what was heard, said, set aside and prompted
+(the activity, earcon, microphone and ducking lines are counted in a
+`...` line). For a failed `say_word` step, the report names the word the
+kit heard in the browser's speech and said back (the browser's own log
+masks it as `[word]`).
 
 In the test build workflow (`molt-test-build.yml`), the request file's
 `e2e_runs` and `e2e_scenarios` narrow the same way, one job per run, and
