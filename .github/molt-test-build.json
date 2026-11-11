@@ -1,9 +1,9 @@
 {
  "resume_run": "42925958709",
  "run_tests": true,
- "e2e_only": true,
+ "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Spoken suite only, on the thirty-seventh build, with the kit reading a search's words without case: on the last run (42940077728) every run passed the bar (file 82/87, headphones 83/91, speakers 84/91, security 3/3, 4/5, 5/5) and the owner's song failed only because the recognizer wrote \"Bohemian Rapsody\" with a capital R, which the kit compared with case."
+ "request": "Round 51, thirty-eighth build (incremental on the thirty-seventh): voice mode's own words heard back with one word mangled are not a command (speakers: \"10 results. 1: ...\" heard back as \"tell results. one.\" opened the first result); \"the Live AWAN\" chooses Live Aid (\"one\" run onto the last word); a page-staying command that stood out of silence counts over a tab's sound (headphones: \"Louder.\" over the video was set aside). Kit: search words compared without case, the confirmation word two hearings both leave, and a replay of a failed step's microphone through a wake-required helper. The spoken-suite run on the thirty-seventh (42948822061) gave file 80/87, headphones 83/91, speakers 80/91; the owner's song passed with Hey Molt everywhere and failed always-listening everywhere."
 }
