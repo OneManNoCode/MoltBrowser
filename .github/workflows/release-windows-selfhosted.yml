@@ -610,7 +610,7 @@ jobs:
       # installer, so functional Windows is live the moment staging completes
       # and is never blocked by installer compression time.
       - name: Upload portable zip to the DRAFT release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           tag_name: ${{ inputs.tag }}
           # A release this creates stays a draft until the offline-signed
@@ -734,7 +734,7 @@ jobs:
           Get-Item $outFile | Format-List Name,Length
 
       - name: Upload setup installer to the DRAFT release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           tag_name: ${{ inputs.tag }}
           draft: true
@@ -818,7 +818,7 @@ jobs:
             MoltBrowser-Windows-x64-zip.spdx.json
 
       - name: Upload SBOMs and checksums to the DRAFT release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           tag_name: ${{ inputs.tag }}
           draft: true
