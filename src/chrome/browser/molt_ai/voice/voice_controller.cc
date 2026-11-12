@@ -79,6 +79,13 @@ constexpr size_t kMaxPlannerSpeechChars = 400;
 constexpr size_t kMaxPlannerSpeechRemembered = 8;
 // Said when the planner's question went unanswered.
 constexpr char kPlannerNoAnswer[] = "I didn't hear yes, so I stopped.";
+// Said while the planner works, once this long goes by with nothing said
+// (a small on-device model can take minutes over one step), then after
+// twice as long each time, up to the longest: less of its own voice for
+// the microphone to hear back.
+constexpr char kPlannerStillWorking[] = "Still working on it.";
+constexpr base::TimeDelta kPlannerStillWorkingAfter = base::Seconds(15);
+constexpr base::TimeDelta kPlannerStillWorkingLongest = base::Seconds(60);
 
 // After a navigation hid the numbers: how often, and how many times, to
 // look for the new page's tree to number.
@@ -1579,6 +1586,7 @@ bool VoiceController::RunStep(const VoiceStep& step) {
       // What the user said is the run's goal; the planner works in the
       // active tab, on the page this map is of.
       planner_->Start(contents, step.text, CurrentMap(), this);
+      RestartPlannerStillWorking();
       return true;
     }
 
@@ -1614,6 +1622,7 @@ bool VoiceController::RunStep(const VoiceStep& step) {
         planner_question_ = 0;
         planner_question_timer_.Stop();
         planner_->Answer(step.index, step.flag);
+        RestartPlannerStillWorking();
       }
       return true;
 
@@ -2069,6 +2078,7 @@ bool VoiceController::AnswersPlannerQuestion(
 
 void VoiceController::CancelPlanner() {
   planner_question_timer_.Stop();
+  planner_still_working_timer_.Stop();
   planner_question_ = 0;
   if (!planner_running_) {
     return;
@@ -2113,6 +2123,7 @@ void VoiceController::SayForPlanner(const std::string& text, bool page_text) {
     last.erase(last.begin());
   }
   SetStatus(said);
+  RestartPlannerStillWorking();
 }
 
 void VoiceController::PlannerAsks(int question, const std::string& what) {
@@ -2130,6 +2141,8 @@ void VoiceController::PlannerAsks(int question, const std::string& what) {
     return;
   }
   planner_question_ = question;
+  // The question has its own wait (kConfirmationTimeoutMs).
+  planner_still_working_timer_.Stop();
   planner_question_timer_.Start(
       FROM_HERE, base::Milliseconds(kConfirmationTimeoutMs),
       base::BindOnce(&VoiceController::OnPlannerQuestionTimeout,
@@ -2155,6 +2168,43 @@ void VoiceController::OnPlannerQuestionTimeout() {
   Idle();
 }
 
+void VoiceController::RestartPlannerStillWorking() {
+  planner_still_working_said_ = 0;
+  StartPlannerStillWorking();
+}
+
+void VoiceController::StartPlannerStillWorking() {
+  if (!planner_running_ || planner_question_ != 0) {
+    planner_still_working_timer_.Stop();
+    return;
+  }
+  base::TimeDelta wait = kPlannerStillWorkingAfter;
+  for (int i = 0;
+       i < planner_still_working_said_ && wait < kPlannerStillWorkingLongest;
+       ++i) {
+    wait *= 2;
+  }
+  planner_still_working_timer_.Start(
+      FROM_HERE, std::min(wait, kPlannerStillWorkingLongest),
+      base::BindOnce(&VoiceController::OnPlannerStillWorking,
+                     base::Unretained(this)));
+}
+
+void VoiceController::OnPlannerStillWorking() {
+  if (!planner_running_ || planner_question_ != 0 || !speech_) {
+    return;
+  }
+  // The browser's own words: not kept for "repeat", which says the
+  // planner's steps again.
+  const std::string said = Localized(language_, kPlannerStillWorking);
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSpeech(said);
+  }
+  speech_->Speak(said, state_.speech_rate, /*interrupt=*/false);
+  ++planner_still_working_said_;
+  StartPlannerStillWorking();
+}
+
 void VoiceController::PlannerFinished() {
   if (!planner_running_) {
     return;
@@ -2162,6 +2212,7 @@ void VoiceController::PlannerFinished() {
   planner_running_ = false;
   planner_question_ = 0;
   planner_question_timer_.Stop();
+  planner_still_working_timer_.Stop();
   if (!busy()) {
     Idle();
   } else {

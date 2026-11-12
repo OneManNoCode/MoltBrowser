@@ -412,9 +412,19 @@ class Planner : public TurnPlanner {
   // What was said over voice mode's own voice, set aside: to be said again
   // once it is quiet. "Repeat" still says what came before (the prompt and
   // its word, the choices offered), not this.
-  void SayAgainOnceQuiet() {
+  void SayAgainOnceQuiet(bool understood = true) {
+    // Words the grammar has nothing for, heard over that very sentence
+    // (its echo: "Stay that they give you" for "Now say that again", the
+    // spoken suite on build 49): set aside, not asked about once more.
+    const int64_t since = env_.now_ms - state().said_again_ms;
+    if (!understood && state().said_again_ms >= 0 && since >= 0 &&
+        since < kSaidAgainEchoMs) {
+      said_again_ = true;
+      return;
+    }
     Say(Tr("I've stopped. Now say that again."));
     said_again_ = true;
+    state().said_again_ms = env_.now_ms;
   }
 
   // ---- Commands ----------------------------------------------------------
@@ -430,7 +440,7 @@ class Planner : public TurnPlanner {
     // Said over voice mode's own voice: only a choice from the page's list
     // read or offered runs now (VoiceEnvironment::list_choice_only).
     if (depth == 0 && env_.list_choice_only && !ChoosesFromListRead(command)) {
-      SayAgainOnceQuiet();
+      SayAgainOnceQuiet(/*understood=*/command.kind != K::kUnknown);
       return;
     }
     // "Which site?" stays asked until something the grammar understands
@@ -1380,6 +1390,7 @@ class Planner : public TurnPlanner {
         continue;
       }
       MatchOptions options;
+      options.language = env_.language;
       options.current_position = attempt.uses_current ? s.current_position : 0;
       // Over voice mode's own voice, a name must name its item well in a
       // list read out; among the few just offered, the usual bar does: a
@@ -2046,6 +2057,7 @@ class Planner : public TurnPlanner {
   std::optional<int> ChooseTab(const ChoiceRef& ref, bool closing) {
     const CandidateSet tabs = CandidatesFromTabs(env_.tabs);
     MatchOptions options;
+    options.language = env_.language;
     options.current_position = env_.active_tab + 1;
     const ChoiceMatch match = MatchSpokenChoice(ref, tabs.candidates, options);
     if (match.outcome == ChoiceOutcome::kUnique) {
@@ -3327,10 +3339,11 @@ class Planner : public TurnPlanner {
   // newsletter": "check", for a check box only ("fix" is a request of its
   // own too). Only after the wake phrase, and only in English; "good
   // morning" with nothing named just "Morning" is still the planner's.
+  // Also after a list was read (build 48: "Good checkout" on the cart it
+  // had read): the misheard "click" is no answer to the list, and a name
+  // of its items said so is pressed as "click" would press it.
   bool PressNameAfterMisheardClick(const VoiceCommand& command) {
-    const ConversationState& s = state();
-    if (s.list != ListContext::kNone || s.expecting_choice ||
-        env_.language != Language::kEnglish ||
+    if (env_.language != Language::kEnglish ||
         !(command.wake_said || env_.wake_heard)) {
       return false;
     }

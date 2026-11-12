@@ -18,7 +18,9 @@ Phase 2's tasks (task "phase2": multi-step tasks done without a hand,
 TOUCHLESS_BROWSING.md §10) are counted apart: in the summary's "phase2",
 not in Phase 1's rate, and they don't fail the report; their exit is all
 30 passing, with every irreversible step asked about first (each such
-step expects "confirm": "open").
+step expects "confirm": "open"). So are the tasks that need the on-device
+model (task "model": the planner's requests and questions about a page,
+scenarios/model.json), in the summary's "model".
 
 A step where voice mode asked which item was meant ("Did you mean 1:
 ..., or 3: ...?") and the kit said the number of the one that was, as a
@@ -39,8 +41,10 @@ from . import KIT_VERSION, REPORT_SCHEMA
 
 SUCCESS_TARGET = 0.9
 SUCCESS_TARGET_MUSIC = 0.85
-# Phase 2's tasks, counted apart (above).
+# Phase 2's tasks and the model's, counted apart (above).
 PHASE2_TASK = "phase2"
+MODEL_TASK = "model"
+APART = (PHASE2_TASK, MODEL_TASK)
 LATENCY_TARGET_MS = 1500
 
 
@@ -78,8 +82,9 @@ def security_outcome(s):
 def summarize_run(run):
     scs = run["scenarios"]
     ran = [s for s in scs if s["status"] != "skipped"]
-    counted = [s for s in ran if s["counts"] and s["task"] != PHASE2_TASK]
+    counted = [s for s in ran if s["counts"] and s["task"] not in APART]
     phase2 = [s for s in ran if s["task"] == PHASE2_TASK]
+    model = [s for s in ran if s["task"] == MODEL_TASK]
     passed = [s for s in counted if s["status"] == "passed"]
     missing = [s for s in counted if s["status"] == "not in grammar"]
     errors = [s for s in ran if s["status"] == "error"]
@@ -132,6 +137,9 @@ def summarize_run(run):
                    "passed": sum(1 for s in phase2 if s["status"] == "passed"),
                    "failed": [s["id"] for s in phase2 if s["status"] != "passed"],
                    "asked_which": asked_which(phase2)},
+        "model": {"ran": len(model),
+                  "passed": sum(1 for s in model if s["status"] == "passed"),
+                  "failed": [s["id"] for s in model if s["status"] != "passed"]},
         "asked_which": asked_which(counted),
         "owner": [{"id": s["id"], "mode": s["mode"], "status": s["status"]} for s in owner],
         "security": {"ran": len(security),
@@ -240,6 +248,12 @@ def markdown(report):
     if p2:
         out += ["", "Phase 2's tasks (multi-step, without a hand; counted apart): " +
                 "; ".join("%s %d/%d" % (label, v["passed"], v["ran"]) for label, v in p2) + "."]
+    mo = [(run["label"], run["summary"]["model"]) for run in report["runs"]
+          if run["summary"].get("model", {}).get("ran")]
+    if mo:
+        out += ["", "The model's tasks (the planner's requests, questions about a page; "
+                "counted apart): " +
+                "; ".join("%s %d/%d" % (label, v["passed"], v["ran"]) for label, v in mo) + "."]
     asked = [(run["label"], run["summary"]) for run in report["runs"]
              if run["summary"].get("asked_which") or
              run["summary"]["phase2"].get("asked_which")]

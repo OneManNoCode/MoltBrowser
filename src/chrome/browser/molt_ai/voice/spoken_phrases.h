@@ -77,6 +77,9 @@ struct ValueWord {
 struct GluedVerb {
   std::string_view heard;
   std::string_view verb;
+  // Read apart only before the pronoun run in ("Hekkai agreed to the
+  // rules"): a spelling too far from the verb to be a guess otherwise.
+  bool pronoun_only = false;
 };
 
 struct AddressWord {

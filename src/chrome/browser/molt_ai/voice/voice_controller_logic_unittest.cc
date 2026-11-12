@@ -562,6 +562,9 @@ TEST(VoiceControllerLogicTest, OverTheOwnVoiceOnlyTheListRead) {
       turn = fresh.Say(text);
       EXPECT_TRUE(Actions(turn).empty()) << text;
       EXPECT_EQ(Said(turn), kSayAgain) << text;
+      // Each said apart, not over the last "say that again" (see
+      // ItsSayAgainHeardBackIsNotAskedAgain).
+      fresh.env().now_ms += kSaidAgainEchoMs;
     }
   }
   // Nor with the browser's prompt waiting for its answer, or a question.
@@ -1714,6 +1717,82 @@ TEST(VoiceControllerLogicTest, AMisheardClickBeforeAWholeNamePressesIt) {
   EXPECT_EQ(Actions(form.Say("Hey Molt, fix send the form")),
             (std::vector<VoiceStepKind>{K::kToPlanner}));
   EXPECT_FALSE(form.state().confirming);
+}
+
+// Build 48's spoken suite: on the cart it had read ("2 items. Say a
+// number or a name."), one item removed, "He mold. Good checkout." went to
+// the planner: the misheard "click" was taken only with no list read. A
+// whole name after it that is no item of the list read presses it too
+// (asking first, as "click checkout" does); a name of the list's is still
+// the list's, and anything else the planner's.
+TEST(VoiceControllerLogicTest, AMisheardClickPressesANameAfterAListWasRead) {
+  const auto cart = [](const std::vector<std::string>& items) {
+    TreeBuilder b("Your cart - Corner Shop");
+    const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea,
+                                "Your cart - Corner Shop", 0);
+    const uint32_t banner = b.Add(root, PageRole::kBanner, "", 0);
+    b.Heading(banner, 1, "Your cart");
+    const uint32_t nav = b.Add(banner, PageRole::kNavigation, "", 0);
+    b.Link(nav, "Shop", "https://shop.test/");
+    b.Link(nav, "Cart (" + std::to_string(items.size()) + ")",
+           "https://shop.test/cart");
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    const uint32_t list = b.Add(main, PageRole::kList, "", 0);
+    for (const std::string& item : items) {
+      const uint32_t li = b.Add(list, PageRole::kListItem, "", 0);
+      b.Text(li, item + " ");
+      b.Button(li, "Remove " + item);
+    }
+    b.Button(main, "Checkout");
+    return BuildPageMap(b.Take());
+  };
+  Conversation c(cart({"Steel kettle", "Two-slice toaster"}), Env());
+  VoiceTurn turn = c.Say("reload");
+  const VoiceStep* wait = Find(turn, K::kWaitForPage);
+  ASSERT_NE(wait, nullptr);
+  turn = c.Loaded(*wait, cart({"Steel kettle", "Two-slice toaster"}), 2);
+  ASSERT_NE(c.state().list, ListContext::kNone) << Said(turn);
+  turn = c.Say("He mold. Click Remove Steel kettle.");
+  ASSERT_TRUE(c.state().confirming) << Said(turn);
+  turn = c.Say("Yes.");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}));
+  c.map() = cart({"Two-slice toaster"});
+
+  Conversation clicked(cart({"Two-slice toaster"}), Env());
+  const VoiceTurn click = clicked.Say("click checkout");
+  ASSERT_TRUE(clicked.state().confirming);
+  ConversationState before = c.state();
+  turn = c.Say("He mold. Good checkout.");
+  EXPECT_EQ(Find(turn, K::kToPlanner), nullptr);
+  EXPECT_EQ(Said(turn), Said(click));
+  EXPECT_TRUE(c.state().confirming);
+
+  // Without the wake phrase, or a name of nothing on the page: the
+  // planner's, as before.
+  for (const char* said : {"good checkout", "He mold. Good morning."}) {
+    c.state() = before;
+    EXPECT_NE(Find(c.Say(said), K::kToPlanner), nullptr) << said;
+  }
+}
+
+// Something said over voice mode's voice that it can't take then is asked
+// for again once ("I've stopped. Now say that again."); that sentence
+// heard back over itself ("Stay that they give you", the spoken suite on
+// build 49) is set aside, not asked about once more.
+TEST(VoiceControllerLogicTest, ItsSayAgainHeardBackIsNotAskedAgain) {
+  VoiceEnvironment env = Env();
+  env.list_choice_only = true;
+  Conversation c(BuildPageMap(ShopPage(false)), env);
+  VoiceTurn turn = c.Say("still working hard");
+  EXPECT_EQ(Said(turn), "I've stopped. Now say that again.");
+  c.env().now_ms += 3000;
+  turn = c.Say("Stay that they give you");
+  EXPECT_EQ(Said(turn), "");
+  EXPECT_TRUE(Actions(turn).empty());
+  // Later, said over its voice again: asked again.
+  c.env().now_ms += kSaidAgainEchoMs;
+  turn = c.Say("find me a train");
+  EXPECT_EQ(Said(turn), "I've stopped. Now say that again.");
 }
 
 TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {

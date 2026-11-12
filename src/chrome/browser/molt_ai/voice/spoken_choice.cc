@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "chrome/browser/molt_ai/voice/phonetic_key.h"
+#include "chrome/browser/molt_ai/voice/phonetic_key_es.h"
 #include "chrome/browser/molt_ai/voice/spoken_numbers.h"
 #include "chrome/browser/molt_ai/voice/spoken_phrases.h"
 
@@ -187,12 +188,14 @@ struct Sound {
   bool numeric = false;
   bool sound_alike = false;  // long enough, and has a key
 
-  static Sound Of(std::string text) {
+  // Its key in |language|'s sounds (PhoneticKeyFor()): what is said and
+  // the items' words alike, so both sides are read the same way.
+  static Sound Of(std::string text, Language language) {
     Sound s;
     s.numeric = !text.empty() &&
                 std::all_of(text.begin(), text.end(),
                             [](char c) { return c >= '0' && c <= '9'; });
-    s.key = s.numeric ? std::string() : PhoneticKey(text);
+    s.key = s.numeric ? std::string() : PhoneticKeyFor(language, text);
     s.counts = CountSounds(s.key);
     s.sound_alike = !s.key.empty() && text.size() >= kMinSoundAlikeLetters;
     s.text = std::move(text);
@@ -578,7 +581,9 @@ struct Prepared {
 
 class Vocabulary {
  public:
-  explicit Vocabulary(size_t reserve_bytes) { arena_.reserve(reserve_bytes); }
+  Vocabulary(size_t reserve_bytes, Language language) : language_(language) {
+    arena_.reserve(reserve_bytes);
+  }
 
   uint32_t Intern(std::string_view word) {
     const auto found = ids_.find(word);
@@ -596,13 +601,14 @@ class Vocabulary {
         std::string_view(arena_).substr(at, word.size());
     const uint32_t id = static_cast<uint32_t>(sounds_.size());
     ids_.emplace(stored, id);
-    sounds_.push_back(Sound::Of(std::string(word)));
+    sounds_.push_back(Sound::Of(std::string(word), language_));
     return id;
   }
 
   const std::vector<Sound>& sounds() const { return sounds_; }
 
  private:
+  const Language language_;
   std::string arena_;
   std::unordered_map<std::string_view, uint32_t> ids_;
   std::vector<Sound> sounds_;
@@ -710,7 +716,7 @@ std::vector<RefUnit> MakeUnits(const std::vector<std::string>& words,
          ++count) {
       joined.append(words[first + count - 1]);
       RefUnit unit;
-      unit.sound = Sound::Of(joined);
+      unit.sound = Sound::Of(joined, phrases.language);
       if (count == 1) {
         const NumberWord* number = FindNumberWord(phrases, joined);
         if (number && !number->ordinal && !number->homophone &&
@@ -911,7 +917,7 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
       bytes += std::min(field.text.size(), kMaxChoiceFieldBytes);
     }
   }
-  Vocabulary vocabulary(bytes + 16);
+  Vocabulary vocabulary(bytes + 16, options.language);
   std::vector<Prepared> prepared(eligible.size());
   for (size_t e = 0; e < eligible.size(); ++e) {
     const ChoiceCandidate& c = candidates[eligible[e]];
@@ -931,7 +937,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   const std::vector<Sound>& sounds = vocabulary.sounds();
   const size_t n = eligible.size();
   const LanguagePhrases& phrases = PhrasesFor(options.language);
-  const Sound one_said = Sound::Of(kOneSaid);
+  // English only (below).
+  const Sound one_said = Sound::Of(kOneSaid, Language::kEnglish);
 
   // How well each reference word matches each item, for |group| words
   // matched in segments of |kinds| (the title at |title_factor| when it
@@ -1275,7 +1282,7 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     std::vector<Sound> said_sounds;
     said_sounds.reserve(words.size());
     for (const std::string& word : words) {
-      said_sounds.push_back(Sound::Of(word));
+      said_sounds.push_back(Sound::Of(word, options.language));
     }
     size_t tied = 0;
     size_t named = 0;

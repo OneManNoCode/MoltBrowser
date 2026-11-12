@@ -155,7 +155,8 @@ WebAgent::PlanUpdate& WebAgent::PlanUpdate::operator=(const PlanUpdate&) =
 WebAgent::WebAgent(content::WebContents* web_contents,
                    BrowserAIRuntime* runtime)
     : content::WebContentsObserver(web_contents),
-      web_contents_(web_contents),
+      web_contents_(web_contents ? web_contents->GetWeakPtr()
+                                 : base::WeakPtr<content::WebContents>()),
       runtime_(runtime),
       dom_bridge_(std::make_unique<DOMContentBridge>(web_contents)),
       screenshotter_(std::make_unique<AgentScreenshotter>(web_contents)),
@@ -322,6 +323,24 @@ void WebAgent::ResolveFrameTools(int request_id, frame_tools::Grant grant) {
 
 void WebAgent::DidStopLoading() {
   MaybeNavDone();
+}
+
+void WebAgent::WebContentsDestroyed() {
+  // The tab is going: the run ends with it. Nothing of the tab is touched
+  // again (its accessibility mode and activation guard go with it), and the
+  // run's end is reported from a task, not inside the tab's teardown.
+  map_quiet_timer_.Stop();
+  map_deadline_timer_.Stop();
+  trees_subscription_ = base::CallbackListSubscription();
+  pending_map_.reset();
+  holds_page_ = false;
+  page_request_questions_.clear();
+  if (cancelled_) {
+    return;
+  }
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&WebAgent::Finish, weak_factory_.GetWeakPtr(),
+                                false, std::string(kTabClosedResult)));
 }
 
 // ----------------------------------------------------------------

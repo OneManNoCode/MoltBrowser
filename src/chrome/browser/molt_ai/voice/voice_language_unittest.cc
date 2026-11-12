@@ -253,6 +253,30 @@ TEST(VoiceLoopSpanishTest, CommandsAnswerInSpanish) {
             "decir para saber lo que puedo hacer.");
 }
 
+// What is said is matched to the page's items by Spanish sounds in
+// Spanish: "caye" is "Calle" ("ll" and "y" alike), so "pulsa caye de la
+// paz" presses Calle de la Paz, where English sounds name none of them.
+TEST(VoiceLoopSpanishTest, ChoicesBySpanishSounds) {
+  test::TreeBuilder b("Mapa");
+  const uint32_t root =
+      b.Add(test::TreeBuilder::kRoot, PageRole::kRootWebArea, "Mapa", 0);
+  const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+  b.Button(main, "Calle de la Paz");
+  b.Button(main, "Plaza de la Paz");
+  b.Button(main, "Paseo del Prado");
+  const PageMap map = BuildPageMap(b.Take());
+  const VoiceTurn turn = PlanUtterance("pulsa caye de la paz", map,
+                                       SpanishEnv(), ConversationState());
+  const VoiceStep* press = nullptr;
+  for (const VoiceStep& step : turn.steps) {
+    if (step.kind == VoiceStepKind::kPress) {
+      press = &step;
+    }
+  }
+  ASSERT_NE(press, nullptr) << SaidIn(turn);
+  EXPECT_EQ(press->target, map.items[0].handle);
+}
+
 TEST(VoiceLoopSpanishTest, ResultsReadAndChosenInSpanish) {
   const PageMap map = BuildPageMap(test::YouTubeLikeResults());
   VoiceEnvironment env = SpanishEnv();

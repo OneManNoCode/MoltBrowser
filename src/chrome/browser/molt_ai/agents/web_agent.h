@@ -287,6 +287,10 @@ class WebAgent : public content::WebContentsObserver,
              ConfirmCallback on_confirm,
              PlanCallback on_plan);
 
+  // The run's result when its tab closes under it (on_done, not a
+  // success).
+  static constexpr char kTabClosedResult[] = "The tab was closed.";
+
   // Cancel in-progress execution. Safe to call at any time.
   void Cancel();
 
@@ -334,6 +338,7 @@ class WebAgent : public content::WebContentsObserver,
 
   // content::WebContentsObserver:
   void DidStopLoading() override;
+  void WebContentsDestroyed() override;
 
   // activation::PageRequestAsker (the tab's ActivationGuard asks):
   bool AskAboutPageRequest(int id,
@@ -542,7 +547,9 @@ class WebAgent : public content::WebContentsObserver,
   Step DescribeAction(const agent_actions::AgentAction& action) const;
 
   // -- State -------------------------------------------------------
-  raw_ptr<content::WebContents> web_contents_;  // not owned
+  // The tab: null once it is gone (a run can outlive its tab; the run
+  // ends then, WebContentsDestroyed()).
+  base::WeakPtr<content::WebContents> web_contents_;
   raw_ptr<BrowserAIRuntime> runtime_;           // not owned
   std::unique_ptr<DOMContentBridge> dom_bridge_;
   std::unique_ptr<AgentScreenshotter> screenshotter_;

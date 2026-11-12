@@ -121,6 +121,20 @@ class ReportTest(unittest.TestCase):
         self.assertIn("Phase 2's tasks (multi-step, without a hand; counted apart): "
                       "pulse/clean 1/2.", report.markdown(rep))
 
+    def test_the_models_tasks_are_counted_apart(self):
+        scs = [scenario("owner-song", task="owner")] + \
+              [scenario("go-%d" % i) for i in range(9)] + \
+              [scenario("model-a", task="model"),
+               scenario("model-b", task="model", status="failed", steps=[step(status="failed")])]
+        rep = report.build([run("typed", scs)], {})
+        s = rep["runs"][0]["summary"]
+        self.assertEqual(s["counted"], 10)
+        self.assertEqual(s["model"], {"ran": 2, "passed": 1, "failed": ["model-b"]})
+        self.assertNotIn("model", s["by_task"])
+        self.assertTrue(rep["ok"], rep["reasons"])
+        self.assertIn("The model's tasks (the planner's requests, questions about a page; "
+                      "counted apart): typed 1/2.", report.markdown(rep))
+
     def test_a_pass_after_voice_mode_asked_which_is_named_apart(self):
         answered = dict(step(action_ms=9000), answered={
             "asked": "Did you mean 1: Add kettle to cart, or 2: Add mug to cart? "
