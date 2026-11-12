@@ -174,7 +174,7 @@ bool Same(const VoiceCommand& a, const VoiceCommand& b) {
          a.site == b.site && a.site_words == b.site_words &&
          a.whole_query == b.whole_query && a.seconds == b.seconds &&
          a.level == b.level && a.rate == b.rate && a.count == b.count &&
-         a.verb == b.verb && a.scope == b.scope &&
+         a.verb == b.verb && a.scope == b.scope && a.or_type == b.or_type &&
          a.choice.kind == b.choice.kind &&
          a.choice.ordinal == b.choice.ordinal &&
          a.choice.number == b.choice.number &&
@@ -216,7 +216,12 @@ void CheckUtterance(uint8_t flags,
   CheckClean(command.text, kMaxCommandTextBytes);
   CheckClean(command.site_words, kMaxUtteranceBytes);
   CheckClean(command.whole_query, kMaxUtteranceBytes);
-  CHECK_EQ(!command.text.empty(), CarriesText(command.kind));
+  // Text, too, for "pick ..." into a focused field (VoiceCommand::or_type).
+  CHECK_EQ(!command.text.empty(), CarriesText(command.kind) || command.or_type);
+  if (command.or_type) {
+    CHECK(command.kind == K::kChoose);
+    CHECK(context.text_field_focused);
+  }
   CheckSite(command.site);
   if (command.kind == K::kOpenSite)
     CHECK(!command.site.empty());
@@ -270,7 +275,7 @@ void CheckUtterance(uint8_t flags,
     CheckClean(repaired->text, kMaxUtteranceBytes);
     CheckClean(repaired->command.text, kMaxCommandTextBytes);
     CHECK_EQ(!repaired->command.text.empty(),
-             CarriesText(repaired->command.kind));
+             CarriesText(repaired->command.kind) || repaired->command.or_type);
     CheckSite(repaired->command.site);
     CheckChoice(repaired->command.choice);
   }

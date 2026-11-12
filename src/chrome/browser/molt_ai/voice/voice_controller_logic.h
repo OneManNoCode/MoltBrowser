@@ -693,6 +693,34 @@ enum class PageWaitDecision : uint8_t {
 // no longer than kMaxSettle (and the re-sent tree's arrival).
 PageWaitDecision DecidePageWait(const PageWaitFacts& facts);
 
+// An utterance that came before the page's tree (VoiceController::
+// HandleUtterance()), once its first wait (kMaxTreeWait) is over.
+struct DeferredWaitFacts {
+  // The top-level document's tree is here (its frames' may still not be).
+  bool has_page_tree = false;
+  // The renderers were asked for their trees again in this wait (once).
+  bool tree_asked = false;
+  // The longer wait for the page's own tree (kMaxPageTreeWait) has passed
+  // since the utterance came.
+  bool page_wait_passed = false;
+};
+
+enum class DeferredWaitDecision : uint8_t {
+  kPlan,         // plan the utterance with the trees there are
+  kAskForTrees,  // ask the renderers for their trees again, then wait
+  kKeepWaiting,  // wait on, until kMaxPageTreeWait
+};
+
+// The first wait is short, so a frame that never sends its tree (an
+// embedded player) can't hold a command long. Without the page's own tree,
+// though, the map is empty and every command is answered as if the page
+// were ("There's nothing here to choose from"): the first command typed
+// with voice mode off turns the trees on, and on a slow machine, or a
+// browser that has just started, the first tree can take longer than the
+// first wait. The trees are asked for again, whole, once, and the wait
+// goes on until the page's tree comes, kMaxPageTreeWait at most.
+DeferredWaitDecision DecideDeferredWait(const DeferredWaitFacts& facts);
+
 }  // namespace voice
 }  // namespace molt_ai
 

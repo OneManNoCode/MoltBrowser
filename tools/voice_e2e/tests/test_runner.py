@@ -7,6 +7,7 @@ stand-in what it plays. Then the report."""
 import json
 import os
 import re
+import shutil
 import stat
 import sys
 import tempfile
@@ -239,6 +240,26 @@ class RunnerTest(unittest.TestCase):
         self.assertFalse(r.wait_reply(Log([{"e": "activity", "activity": "listening",
                                              "ts": t - 30}]), t, timeout=0.3))
 
+    def test_a_model_file_linked_into_the_home(self):
+        from e2ekit import browser as browserlib
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        model = os.path.join(tmp, "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
+        with open(model, "wb") as f:
+            f.write(b"GGUF")
+        home = os.path.join(tmp, "home")
+        link = browserlib.link_model(home, model)
+        self.assertEqual(link, os.path.join(home, ".moltbrowser", "models",
+                                            os.path.basename(model)))
+        self.assertTrue(os.path.islink(link))
+        self.assertEqual(os.path.realpath(link), os.path.realpath(model))
+        # Again (a scenario run twice): the link is replaced.
+        self.assertEqual(browserlib.link_model(home, model), link)
+        # A model file makes the model scenarios run.
+        cfg = runner.RunConfig(audio="typed", model_file=model)
+        self.assertTrue(cfg.model_available)
+        self.assertFalse(runner.RunConfig(audio="typed").model_available)
+
     def test_asked_for_the_word_again(self):
         class Log(object):
             def __init__(self, evs):
@@ -256,6 +277,84 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(r.asked_again(Log([old, again]), t, timeout=1))
         self.assertFalse(r.asked_again(Log([old, allowed]), t, timeout=1))
         self.assertFalse(r.asked_again(Log([old]), t, timeout=0.3))
+        # A yes-or-no question asked again ("This." heard for "yes").
+        question = {"e": "said", "ts": t + 0.1,
+                    "text": "Say yes to delete Old news, or no to cancel."}
+        going = {"e": "said", "ts": t + 0.1, "text": "Going ahead: delete Old news"}
+        self.assertTrue(r.asked_again(Log([question]), t, timeout=1, yes_no=True))
+        self.assertFalse(r.asked_again(Log([going]), t, timeout=1, yes_no=True))
+        self.assertFalse(r.asked_again(Log([question]), t, timeout=1))
+        self.assertFalse(r.asked_again(Log([again]), t, timeout=1, yes_no=True))
+
+    OFFER = ("Did you mean 1: Add kettle to cart, 2: Add toaster to cart, or "
+             "3: Add mug to cart? Say a number or a name.")
+
+    def test_the_options_of_an_offer(self):
+        self.assertEqual(runner.offer_options(self.OFFER),
+                         [(1, "Add kettle to cart"), (2, "Add toaster to cart"),
+                          (3, "Add mug to cart")])
+        # Two, and a title with a comma and a dash in it.
+        self.assertEqual(
+            runner.offer_options("Did you mean 1: Queen - Live, at Wembley, or 2: "
+                                 "Pentatonix? Say a number or a name."),
+            [(1, "Queen - Live, at Wembley"), (2, "Pentatonix")])
+        for text in ("Pressed Add mug to cart.", "Did you mean the mug?",
+                     "Did you mean 1: Add kettle to cart, or 3: Add mug to cart?",
+                     "Did you mean kettle, or mug? Say a number or a name."):
+            self.assertEqual(runner.offer_options(text), [], text)
+
+    def test_the_option_a_user_meant(self):
+        options = runner.offer_options(self.OFFER)
+        # "mud" heard for "mug": the user said "add mug to cart".
+        self.assertEqual(runner.offer_answer(options, "click add mug to cart"), 3)
+        self.assertEqual(runner.offer_answer(options, "press Add kettle to cart"), 1)
+        # Nothing that is all of an option, or two that are as much: no guess.
+        self.assertIsNone(runner.offer_answer(options, "click add a mug"))
+        self.assertIsNone(runner.offer_answer(
+            [(1, "Mug"), (2, "Kettle")], "add the mug and the kettle"))
+        # The longer one that fits wins ("Add to cart" is in it too).
+        self.assertEqual(runner.offer_answer(
+            [(1, "Add to cart"), (2, "Add mug to cart")], "click add mug to cart"), 2)
+        # More options than the kit has clips for.
+        self.assertIsNone(runner.offer_answer([(12, "Add mug to cart")],
+                                              "click add mug to cart"))
+
+    def test_answers_an_offer_once_voice_mode_has_asked(self):
+        class Log(object):
+            def __init__(self, evs):
+                self.evs = evs
+
+            def events(self, since=0.0, window=None):
+                return [e for e in self.evs if e["ts"] >= since]
+
+            def activity(self):
+                return None
+
+        class Browser(object):
+            typed = []
+
+            def type_command(self, text):
+                self.typed.append(text)
+                return "ok"
+
+        r = runner.Runner.__new__(runner.Runner)
+        r.config = runner.RunConfig(audio="typed", settle=0)
+        world = runner.World(Browser(), None)
+        step = scen.Step(0, "say", "click add mug to cart")
+        t = time.time()
+        offer = {"e": "said", "ts": t + 0.1, "text": self.OFFER}
+        self.assertEqual(r.answer_offer(step, {}, world, Log([offer]), t),
+                         {"asked": self.OFFER, "answer": "three"})
+        self.assertEqual(Browser.typed, ["three"])
+        # Not yet all said, or not an offer: nothing said, at once.
+        part = {"e": "said", "ts": t + 0.1, "text": "Did you mean 1: Add kettle to cart,"}
+        pressed = {"e": "said", "ts": t + 0.1, "text": "Pressed Add mug to cart."}
+        for evs in ([part], [pressed], [offer, pressed][1:], []):
+            self.assertIsNone(r.answer_offer(step, {}, world, Log(evs), t))
+        # One said before the step: not this step's.
+        self.assertIsNone(r.answer_offer(step, {}, world,
+                                         Log([dict(offer, ts=t - 3)]), t))
+        self.assertEqual(Browser.typed, ["three"])
 
     def test_a_page_dialog_open_in_the_log(self):
         class Log(object):
@@ -345,7 +444,8 @@ class RunnerTest(unittest.TestCase):
         from stub_tts import StubTts
         import voice_bench_lib as vbl
         texts = scen.utterances(self.scs)
-        words = {w for t in texts + [render.WAKE_PHRASE, render.REPEAT] + render.gesture_words()
+        words = {w for t in texts + [render.WAKE_PHRASE, render.REPEAT] +
+                 render.gesture_words() + render.answer_words()
                  for w in vbl.tts_words(render.tts_text(t))}
         speech = os.path.join(self.d, "speech")
         render.render_all(StubTts(speech, words), speech, texts, voices=render.VOICES[:1],

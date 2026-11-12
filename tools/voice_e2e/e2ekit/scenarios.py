@@ -75,7 +75,8 @@ Any expectation may add "typed": false (not checked in --typed mode) or
 
 Scenario fields: "id", "title", "task" (a core task of
 TOUCHLESS_BROWSING.md §2: go, read, choose, act, media, browser, recover;
-or prompts, security, owner), "counts" (one of the scripted tasks,
+or prompts, security, owner; or phase2, Phase 2's multi-step tasks,
+counted apart), "counts" (one of the scripted tasks,
 default true), "modes" (listening modes: "wake", "always"; default
 ["wake"]), "start" ({"url", "tabs": [urls], "settings": {...},
 "js": "...", "shields": false for a browser run with MoltShield off
@@ -93,7 +94,7 @@ import os
 import re
 
 TASKS = ("go", "read", "choose", "act", "media", "browser", "recover",
-         "prompts", "security", "owner")
+         "prompts", "security", "owner", "phase2")
 MODES = ("wake", "always")
 # The test voices' names (render.VOICES; test_scenarios.py checks).
 VOICE_NAMES = ("ljspeech", "libritts-m", "libritts-f")

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- The shop's cart (shop.test/cart): what is in it, and "Checkout". -->
+<!-- The shop's cart (shop.test/cart): what is in it, each with "Remove",
+     and "Checkout". -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -19,12 +20,20 @@
 </main>
 <script>
   const list = document.getElementById('items');
-  for (const name of shop.items()) {
-    const li = document.createElement('li');
-    li.textContent = name;
-    list.append(li);
+  function render() {
+    list.replaceChildren();
+    for (const name of shop.items()) {
+      const li = document.createElement('li');
+      li.append(name + ' ');
+      const b = document.createElement('button');
+      b.textContent = 'Remove ' + name;
+      b.addEventListener('click', () => { shop.remove(name); render(); });
+      li.append(b);
+      list.append(li);
+    }
+    document.getElementById('empty').hidden = shop.items().length > 0;
   }
-  document.getElementById('empty').hidden = shop.items().length > 0;
+  render();
   shop.show();
 </script>
 </body>

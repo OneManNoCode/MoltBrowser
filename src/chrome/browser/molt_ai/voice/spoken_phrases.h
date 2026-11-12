@@ -166,6 +166,11 @@ struct LanguagePhrases {
   // it writes them ("lickname color"): an utterance nothing else
   // understood is read once more with the verb apart.
   std::vector<GluedVerb> glued_verbs;
+  // The pronoun "I" as a recognizer writes it run into the verb before it
+  // ("Chekai agreed to the rules" for "check I agree to the rules"): too
+  // short a remainder otherwise, it is read apart as this word.
+  std::vector<std::string_view> glued_pronoun_spellings;
+  std::string_view glued_pronoun;
   // Words a recognizer writes for a verb, said apart ("quick your name" for
   // "click your name"): an utterance nothing else understood is read once
   // more with the verb, and taken only as that verb's command.

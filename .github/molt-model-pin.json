@@ -1,0 +1,7 @@
+{
+ "request": "Third survey: every entry's files hashed here (the second run hashed six, all matching the API) and their GGUF headers read: architecture, context, tokenizer, chat template, tensor types against the Vulkan build's.",
+ "only": [],
+ "verify": ["tinyllama-1.1b", "qwen3.5-4b", "gemma4-e4b", "llama3.1-8b", "qwen3-8b", "gemma3-12b", "mistral-nemo-12b", "phi-4", "qwen3-vl-2b", "voxtral-mini-3b", "gpt-oss-20b", "qwen3-embedding-0.6b"],
+ "search": [],
+ "cards": []
+}

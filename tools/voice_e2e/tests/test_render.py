@@ -84,7 +84,7 @@ class DeterminismTest(unittest.TestCase):
     def render(self, out):
         from stub_tts import StubTts
         words = {w for t in TEXTS + ["Hey Molt, mute.", render.WAKE_PHRASE, render.REPEAT] +
-                 render.gesture_words()
+                 render.gesture_words() + render.answer_words()
                  for w in vbl.tts_words(render.tts_text(t))}
         tts = StubTts(out, words)
         voices = render.VOICES[:2]
@@ -106,7 +106,8 @@ class DeterminismTest(unittest.TestCase):
                 "mix:music10/libritts-m@1.25", "mix:music10/ljspeech@1",
                 "mix:music10/ljspeech@1.25", "page", "texts"])
             self.assertEqual(render.compare_hashes(mb, digests), (10, 0, 0, []))
-            n = len(TEXTS) + 2 + len(render.gesture_words())
+            n = len(set(TEXTS + [render.WAKE_PHRASE, render.REPEAT] +
+                        render.gesture_words() + render.answer_words()))
             self.assertEqual(len([k for k in ma["files"] if k.startswith("clips/")]), 4 * n)
             self.assertEqual(len([k for k in ma["files"] if k.startswith("page/")]), 1)
             self.assertEqual(len(ma["mix_pcm_sha256"]), 4 * n)

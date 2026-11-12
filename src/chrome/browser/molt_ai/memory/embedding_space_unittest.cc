@@ -78,8 +78,8 @@ TEST(PlanEmbedderSpaceTest, MigratesToTheModelInTheBackground) {
 
 TEST(EmbeddingModelRegistryTest, FailsClosedUntilPinned) {
   const EmbeddingModelSpec& spec = DefaultEmbeddingModel();
-  // This build carries no pin (see the TODO in the registry): the model
-  // must not be offered. When the owner pins it, this flips with it.
+  // Offered exactly when the registry's pin is whole (it is, since the
+  // November 2026 pin); a half-filled one is never offered (below).
   const bool pinned = std::string(spec.sha256).size() == 64;
   EXPECT_EQ(IsPinned(spec), pinned);
 

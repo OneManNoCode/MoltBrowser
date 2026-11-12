@@ -110,6 +110,10 @@ enum class PatternVariant : uint8_t {
   // kFindInPage said without the "on" before "this page" (VoiceCommand::
   // on_glued).
   kOnGlued,
+  // kChoose with kVerbSelect, said into a focused text field with a verb a
+  // recognizer writes for "type" ("pick John Brown"): its words are typed
+  // when nothing on the page is so named (VoiceCommand::or_type).
+  kVerbSelectOrType,
 };
 
 struct CommandPattern {

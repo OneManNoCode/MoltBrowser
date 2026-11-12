@@ -707,6 +707,20 @@ TEST(SpokenChoiceMatchTest, ANameSaidWholeBreaksATie) {
   m = Match("carts", items);
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
   EXPECT_EQ(m.index, 0u);
+  // So is a word that sounds like it ("click card", as the recognizer
+  // heard "click cart" in the spoken suite's Phase 2 runs)...
+  m = Match("card", items);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique) << Describe(m, items);
+  EXPECT_EQ(m.index, 0u);
+  // ... but an item called that is the one meant, and a word further off
+  // ("car") names nothing.
+  const auto with_card =
+      MakeList({{"Cart (1)", ""}, {"Card", ""}, {"Add mug to cart", ""}},
+               ChoiceRole::kButton);
+  m = Match("card", with_card);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique) << Describe(m, with_card);
+  EXPECT_EQ(m.index, 1u);
+  EXPECT_EQ(Match("car", items).outcome, ChoiceOutcome::kNoMatch);
   // Words more than the name don't break it: still the toaster's.
   m = Match("toaster cart", items);
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);

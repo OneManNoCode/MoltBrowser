@@ -31,6 +31,9 @@
 #                           ~/.cache/moltbrowser-voice-e2e)
 #   VOICE_E2E_SPEECH_CHECK  0 to skip the recognizer check (default 1)
 #   VOICE_E2E_MODEL         1 when an on-device AI model is installed
+#   VOICE_E2E_MODEL_FILE    a model file at its pin (tools/models/
+#                           fetch_model.py), linked into each scenario's
+#                           home: the model scenarios run with it
 #   VOICE_E2E_VENV          where numpy goes when python3 has none
 #                           (default <VOICE_E2E_DATA>/venv)
 #
@@ -56,7 +59,7 @@ if [[ $# -eq 1 && "$1" == --fetch-voices ]]; then
 fi
 
 if [[ $# -ne 3 ]]; then
-  sed -n '2,35p' "$0"
+  sed -n '2,38p' "$0"
   exit 2
 fi
 OUT_DIR="$(cd "$1" && pwd)"
@@ -157,6 +160,7 @@ if [[ -n "${VOICE_E2E_FIELD_TRIALS:-}" ]]; then
 fi
 [[ -n "${VOICE_E2E_VOICES:-}" ]] && args+=(--voices "$VOICE_E2E_VOICES")
 [[ "${VOICE_E2E_MODEL:-0}" == 1 ]] && args+=(--model)
+[[ -n "${VOICE_E2E_MODEL_FILE:-}" ]] && args+=(--model-file "$VOICE_E2E_MODEL_FILE")
 args+=("${SANDBOX_FLAGS[@]}")
 log "running: ${args[*]}"
 trap - ERR

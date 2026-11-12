@@ -67,8 +67,9 @@ token, or the load fails), 512 tokens per text (memory chunks are about 600
 characters), 256 of 1024 dimensions, architecture `qwen3`, query prefix
 `Instruct: Given a web search query, retrieve relevant passages that answer
 the query\nQuery:`, no document prefix. About 1.5 GiB of free RAM to load.
-The repository and file names are marked `TODO(pin)`: they could not be
-confirmed from here (huggingface.co was unreachable).
+Pinned in November 2026 (§6): `Qwen/Qwen3-Embedding-0.6B-GGUF` at
+`370f27d7550e0def9b39c1f16d3fbaa13aa67728`, `Qwen3-Embedding-0.6B-Q8_0.gguf`,
+639,150,592 bytes, hashed on a CI runner against the pin.
 
 ## 3. Architecture
 
@@ -215,9 +216,25 @@ and the model card's states.
 - *A model that hangs, crashes or grows*: deadlines, the footprint watchdog
   and the crash-loop guard end it; memory falls back to hashing.
 
-## 6. Pinning the model (owner, on a machine with internet access)
+## 6. Pinning the model
 
-Never type a hash in by hand. From the repository root:
+Never type a hash in by hand.
+
+**From CI (how the current pin was made).** A push of
+`.github/molt-model-pin.json` on a `claude/` branch runs the model-pin
+workflow (`.github/workflows/molt-model-pin.yml`) on a GitHub runner,
+which can reach Hugging Face. Its log has, for every registry entry, the
+repository's revision, the model card's license, whether the file is there
+(and the repository's GGUF files when it isn't); the registries as
+`pin_models.py` pins them, as a diff; and for the entries the request names
+(`"verify"`), each file downloaded and hashed on the runner against the pin,
+with its GGUF header read (architecture, context and embedding lengths,
+tokenizer, chat template, tensor types against the Vulkan build's:
+`tools/models/hf_survey.py verify`). Apply the diff, compare it with the
+survey's lines, and commit. That covers steps 1 to 4 below; step 5 is the
+`"cards"` request (a base model's license).
+
+**On a machine with internet access.** From the repository root:
 
 1. Dry run: `python3 tools/models/pin_models.py --only
    qwen3-embedding-0.6b`. It prints the commit, SHA-256 and size it would
@@ -234,8 +251,9 @@ Never type a hash in by hand. From the repository root:
    `sha256sum /tmp/qe.gguf` (macOS: `shasum -a 256`) and the byte size
    (`stat -c %s`, macOS `stat -f %z`) must equal what was written, and the
    SHA-256 must match the one Hugging Face shows on the file's page.
-4. Check the file is what the registry says: `pip install gguf`, then
-   `gguf-dump --no-tensors /tmp/qe.gguf` must show
+4. Check the file is what the registry says: its header
+   (`tools/models/hf_survey.py verify` prints it; or `gguf-dump
+   --no-tensors /tmp/qe.gguf` from the `gguf` package) must show
    `general.architecture = qwen3` and `qwen3.embedding_length = 1024`. If
    the file differs from about 640 MB, update `approx_size_bytes`.
 5. Re-read the license at that revision (Apache 2.0).

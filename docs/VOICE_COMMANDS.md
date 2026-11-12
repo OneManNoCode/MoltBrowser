@@ -823,6 +823,7 @@ said.
 - `(play | watch | listen to) {choice}`
 - `(open | go to | follow | visit | show me | show | bring up) {position}`
 - `(click | click on | press | tap | tap on | push | hit | activate | check | uncheck | tick | untick | toggle) {choice}`
+- `pick {choice}` (while you are typing in a field)
 - `(select | choose | pick | focus | focus on) {choice}`
 - `read {choice}`
 - `(describe | tell me about | tell me more about | what is | whats | what about | more about | more info on | details of | details on) {choice}`
@@ -845,7 +846,7 @@ said.
 **Type into the selected field.** For example: "type hello world".
 
 - `(type | write | dictate | tight) {text}`
-- `(take | tech) {text}` (while you are typing in a field)
+- `(take | tech | took | tuck | tucked | picked | pipe) {text}` (while you are typing in a field)
 
 **Start a new line.** For example: "new line".
 

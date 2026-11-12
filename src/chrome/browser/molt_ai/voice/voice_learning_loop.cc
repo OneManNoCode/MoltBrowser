@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/voice/voice_learning_loop.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -316,11 +317,23 @@ std::optional<VoiceCommand> VoiceLearningLoop::BeforePlanning(
 }
 
 std::optional<RoutineStep> VoiceLearningLoop::StepFromTurn(
-    const VoiceCommand& command,
+    const VoiceCommand& said,
     const VoiceTurn& turn,
     const ConversationState& before,
     const PageMap& map,
     const VoiceEnvironment& env) const {
+  // "Pick John Brown" that typed into the field (VoiceCommand::or_type):
+  // kept as the typing it was.
+  VoiceCommand typed;
+  if (said.or_type &&
+      std::any_of(turn.steps.begin(), turn.steps.end(), [](const VoiceStep& s) {
+        return s.kind == VoiceStepKind::kSetText;
+      })) {
+    typed = said;
+    typed.kind = K::kType;
+    typed.or_type = false;
+  }
+  const VoiceCommand& command = typed.kind == K::kType ? typed : said;
   int position = 0;
   std::string label;
   if (command.kind == K::kChoose) {

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!-- Deleted (mail.test/deleted?id=N): which message, in window.deleted. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deleted - Post</title>
+<link rel="stylesheet" href="/_kit/kit.css">
+</head>
+<body>
+<main>
+  <h1>The message was deleted</h1>
+  <p><a href="/">Back to the inbox</a></p>
+</main>
+<script>
+  window.deleted = new URLSearchParams(location.search).get('id');
+</script>
+</body>
+</html>

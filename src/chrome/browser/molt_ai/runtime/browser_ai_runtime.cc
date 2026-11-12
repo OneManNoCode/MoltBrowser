@@ -127,9 +127,11 @@ constexpr std::chrono::seconds kCancelConfirmWait{5};
 // streaming; an entry WITH a hash is enforced (mismatch => rejected), an
 // entry WITHOUT one is downloaded from "main" as "unverified" (UI badge + log
 // warning).
-// TODO(pin): run tools/models/pin_models.py --write from a machine that can
-// reach huggingface.co to fill revision/sha256/size; the sandbox that wrote
-// this could not.
+// Every entry is pinned (November 2026) by tools/models/pin_models.py from
+// the Hugging Face API replies the model-pin workflow fetched
+// (.github/workflows/molt-model-pin.yml), each file then downloaded and
+// hashed on the runner against the pin and its GGUF header read
+// (tools/models/hf_survey.py verify). Re-pin the same way, never by hand.
 struct ModelRegistryEntry {
   const char* model_id;
   const char* display_name;
@@ -153,14 +155,16 @@ struct ModelRegistryEntry {
 // ONE flagship per maker — the best free, open-weight, on-device model each
 // company ships (not the whole family), so the picker stays uncluttered.
 // Ordered small -> large. `company` drives the brand tile in the picker.
+// clang-format off: tools/models/pin_models.py reads and rewrites these
+// entries one value per line.
 const ModelRegistryEntry kModelRegistry[] = {
     // TinyLlama — runs on any machine. Apache 2.0.
     {"tinyllama-1.1b",
      "TinyLlama 1.1B Chat",
      "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
      "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-     /*revision=*/"",
-     /*sha256=*/"",
+     /*revision=*/"52e7645ba7c309695bec7ac98f4f005b139cf465",
+     /*sha256=*/"9fecc3b3cd76bba89d504f29b616eedf7da85b96540e490ca5824d3f7d2776a0",
      /*size=*/668788096ULL,  // ~0.6GB
      2147483648ULL,          // 2GB RAM
      1,
@@ -169,42 +173,41 @@ const ModelRegistryEntry kModelRegistry[] = {
      "apache-2.0",
      false},
 
-    // Qwen (Alibaba) — Qwen3.5 4B. TODO(pin): the exact GGUF repo/file for
-    // the 4B instruct model is unconfirmed; hidden until pinned. Needs the
-    // vendored llama.cpp's "qwen35" architecture (present at 00de615).
+    // Qwen (Alibaba) — Qwen3.5 4B, Apache 2.0 (Qwen/Qwen3.5-4B's card).
+    // Qwen publishes no GGUF of it: unsloth's conversion, the most used.
+    // Needs the vendored llama.cpp's "qwen35" architecture (present at
+    // 00de615).
     {"qwen3.5-4b",
      "Qwen3.5 4B",
-     "Qwen/Qwen3.5-4B-Instruct-GGUF",  // TODO(pin): confirm repo name
-     "Qwen3.5-4B-Instruct-Q4_K_M.gguf",  // TODO(pin): confirm file name
-     /*revision=*/"",
-     /*sha256=*/"",
-     /*size=*/0ULL,
+     "unsloth/Qwen3.5-4B-GGUF",
+     "Qwen3.5-4B-Q4_K_M.gguf",
+     /*revision=*/"e87f176479d0855a907a41277aca2f8ee7a09523",
+     /*sha256=*/"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+     /*size=*/2740937888ULL,
      6442450944ULL,          // 6GB RAM (conservative until measured)
      4,
      "Q4_K_M",
      "Qwen",
-     "",  // TODO(pin): confirm the terms; until then "see the model card"
+     "apache-2.0",
      true},
 
-    // Gemma — Gemma 4 E4B. Hidden until pinned. Runtime support is in place:
-    // the vendored llama.cpp (b11641) has the gemma4 architecture, and
+    // Gemma — Gemma 4 E4B, Apache 2.0 (google/gemma-4-E4B-it's card, unlike
+    // Gemma 3's own terms). Runtime support is in place: the vendored
+    // llama.cpp (b11641) has the gemma4 architecture, and
     // llama_chat_apply_template() formats Gemma 4 chats (local llama-chat.cpp
-    // patch, see third_party/llama_cpp/README.chromium); not yet run with
-    // real Gemma 4 weights. TODO(pin): only the pin is missing: confirm the
-    // GGUF repo and file name, then fill revision/sha256/size
-    // (tools/models/pin_models.py --write); license terms to be confirmed.
+    // patch, see third_party/llama_cpp/README.chromium).
     {"gemma4-e4b",
      "Gemma 4 E4B",
-     "unsloth/gemma-4-E4B-it-GGUF",  // TODO(pin): confirm repo name
-     "gemma-4-E4B-it-Q4_K_M.gguf",   // TODO(pin): confirm file name
-     /*revision=*/"",
-     /*sha256=*/"",
-     /*size=*/0ULL,
+     "unsloth/gemma-4-E4B-it-GGUF",
+     "gemma-4-E4B-it-Q4_K_M.gguf",
+     /*revision=*/"bfc15c382204943c3a8fff0c750b94ae2364d7a3",
+     /*sha256=*/"85a896a047553e842f25297ee5b031d64ff30147d9c4af17b1e4b394cd1fab87",
+     /*size=*/4977171584ULL,
      8589934592ULL,          // 8GB RAM (conservative until measured)
      4,
      "Q4_K_M",
      "Gemma",
-     "gemma",
+     "apache-2.0",
      true},
 
     // Meta — Llama 3.1 8B (open weights); proven all-rounder.
@@ -212,8 +215,8 @@ const ModelRegistryEntry kModelRegistry[] = {
      "Llama 3.1 8B Instruct",
      "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
      "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-     /*revision=*/"",
-     /*sha256=*/"",
+     /*revision=*/"bf5b95e96dac0462e2a09145ec66cae9a3f12067",
+     /*sha256=*/"7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
      /*size=*/4920739232ULL,  // ~4.6GB
      6442450944ULL,           // 6GB RAM
      8,
@@ -227,8 +230,8 @@ const ModelRegistryEntry kModelRegistry[] = {
      "Qwen3 8B",
      "Qwen/Qwen3-8B-GGUF",
      "Qwen3-8B-Q4_K_M.gguf",
-     /*revision=*/"",
-     /*sha256=*/"",
+     /*revision=*/"7c41481f57cb95916b40956ab2f0b139b296d974",
+     /*sha256=*/"d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
      /*size=*/5027783488ULL,  // ~4.7GB
      6442450944ULL,           // 6GB RAM
      8,
@@ -242,8 +245,8 @@ const ModelRegistryEntry kModelRegistry[] = {
      "Gemma 3 12B",
      "unsloth/gemma-3-12b-it-GGUF",
      "gemma-3-12b-it-Q4_K_M.gguf",
-     /*revision=*/"",
-     /*sha256=*/"",
+     /*revision=*/"d15e4c7dc21dc55d56bf8549db57a71ad8a2a35d",
+     /*sha256=*/"15b8fd9d8672cd4240c178c217ca781409291f34e353d2e913b29c7602ceb3ff",
      /*size=*/7300778336ULL,  // ~6.8GB
      10737418240ULL,          // 10GB RAM
      12,
@@ -257,8 +260,8 @@ const ModelRegistryEntry kModelRegistry[] = {
      "Mistral Nemo 12B",
      "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
      "Mistral-Nemo-Instruct-2407-Q4_K_M.gguf",
-     /*revision=*/"",
-     /*sha256=*/"",
+     /*revision=*/"a2dd64a0a76ea1bdb2bb6ab6fa5496b003c7c908",
+     /*sha256=*/"7c1a10d202d8788dbe5628dc962254d10654c853cae6aaeca0618f05490d4a46",
      /*size=*/7477208192ULL,  // ~7.0GB
      10737418240ULL,          // 10GB RAM
      12,
@@ -272,8 +275,8 @@ const ModelRegistryEntry kModelRegistry[] = {
      "Phi-4 14B",
      "bartowski/phi-4-GGUF",
      "phi-4-Q4_K_M.gguf",
-     /*revision=*/"",
-     /*sha256=*/"",
+     /*revision=*/"19cd65f97c2f1712a81c506611d3f9c94b16a1e1",
+     /*sha256=*/"009aba717c09d4a35890c7d35eb59d54e1dba884c7c526e7197d9c13ab5911d9",
      /*size=*/9053114816ULL,  // ~8.4GB
      12884901888ULL,          // 12GB RAM
      14,
@@ -293,11 +296,11 @@ const ModelRegistryEntry kModelRegistry[] = {
     // all.
     {"qwen3-vl-2b",
      "Qwen3-VL 2B (sees images)",
-     "Qwen/Qwen3-VL-2B-Instruct-GGUF",  // TODO(pin): confirm repo name
-     "Qwen3VL-2B-Instruct-Q4_K_M.gguf",  // TODO(pin): confirm file name
-     /*revision=*/"",
-     /*sha256=*/"",
-     /*size=*/0ULL,
+     "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+     "Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+     /*revision=*/"52d6c8ffea26cc873ac5ad116f8631268d7eb503",
+     /*sha256=*/"089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae",
+     /*size=*/1107409952ULL,
      4294967296ULL,           // 4GB RAM (conservative until measured)
      2,
      "Q4_K_M",
@@ -318,11 +321,11 @@ const ModelRegistryEntry kModelRegistry[] = {
     // 3B, the encoder adds about 0.6B more.
     {"voxtral-mini-3b",
      "Voxtral Mini 3B (hears audio)",
-     "ggml-org/Voxtral-Mini-3B-2507-GGUF",  // TODO(pin): confirm repo name
-     "Voxtral-Mini-3B-2507-Q4_K_M.gguf",  // TODO(pin): confirm file name
-     /*revision=*/"",
-     /*sha256=*/"",
-     /*size=*/0ULL,
+     "ggml-org/Voxtral-Mini-3B-2507-GGUF",
+     "Voxtral-Mini-3B-2507-Q4_K_M.gguf",
+     /*revision=*/"20616573013f28229fff61de74359d3eeff61f6a",
+     /*sha256=*/"4705be8ec22ca23d12632f4b4a3691faa95917d90a06d3cf3c3ec0e91958f1a8",
+     /*size=*/2473001920ULL,
      6442450944ULL,           // 6GB RAM (conservative until measured)
      3,
      "Q4_K_M",
@@ -335,8 +338,8 @@ const ModelRegistryEntry kModelRegistry[] = {
      "gpt-oss 20B",
      "ggml-org/gpt-oss-20b-GGUF",
      "gpt-oss-20b-MXFP4.gguf",
-     /*revision=*/"",
-     /*sha256=*/"",
+     /*revision=*/"15dcfc7e7c608c6161507211ed43c5b590801b4b",
+     /*sha256=*/"27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
      /*size=*/12109566624ULL,  // ~11.3GB
      17179869184ULL,           // 16GB RAM
      20,
@@ -345,6 +348,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      "apache-2.0",
      false},
 };
+// clang-format on
 
 constexpr size_t kModelRegistrySize =
     sizeof(kModelRegistry) / sizeof(kModelRegistry[0]);
@@ -367,24 +371,27 @@ struct ProjectorEntry {
   bool images;
   bool audio;
 };
+// clang-format off: tools/models/pin_models.py reads and rewrites these
+// entries one value per line.
 const ProjectorEntry kProjectors[] = {
     // Q8_0: about half the size of F16 for a negligible loss in a vision
     // encoder.
     {"qwen3-vl-2b",
-     "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",  // TODO(pin): confirm file name
-     /*mmproj_sha256=*/"",
-     /*mmproj_size=*/0ULL,
+     "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+     /*mmproj_sha256=*/"f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82",
+     /*mmproj_size=*/445053216ULL,
      /*images=*/true,
      /*audio=*/false},
     // Q8_0, like the vision projector: the audio encoder's weights at about
     // half the size of F16.
     {"voxtral-mini-3b",
-     "mmproj-Voxtral-Mini-3B-2507-Q8_0.gguf",  // TODO(pin): confirm file name
-     /*mmproj_sha256=*/"",
-     /*mmproj_size=*/0ULL,
+     "mmproj-Voxtral-Mini-3B-2507-Q8_0.gguf",
+     /*mmproj_sha256=*/"4f24c4ef3ce929d02ed9d1cfb050ae9a7365f057c0ddec0d489580982ebe0d02",
+     /*mmproj_size=*/715714080ULL,
      /*images=*/false,
      /*audio=*/true},
 };
+// clang-format on
 
 const ProjectorEntry* FindProjector(const char* model_id) {
   for (const ProjectorEntry& p : kProjectors) {

@@ -1157,6 +1157,40 @@ TEST(VoiceControllerLogicTest, AsksBeforePressingWhatCantBeUndone) {
   EXPECT_TRUE(c.state().confirming);
 }
 
+TEST(VoiceControllerLogicTest, AReplyThatMeansNothingIsAskedAgain) {
+  // "Yes" heard as "This." (the spoken suite's Phase 2 runs): the question
+  // again, still waiting; only a "yes" presses.
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  const PageItem* buy = ItemLabelled(c.map(), ItemKind::kButton, "Buy now");
+  ASSERT_TRUE(buy);
+  c.Say("click buy now");
+  ASSERT_TRUE(c.state().confirming);
+  for (const char* said : {"This.", "it", "hmm what", "Say a bit."}) {
+    SCOPED_TRACE(said);
+    VoiceTurn turn = c.Say(said);
+    EXPECT_TRUE(Actions(turn).empty());
+    EXPECT_EQ(Said(turn), "Say yes to press Buy now, or no to cancel.");
+    EXPECT_TRUE(c.state().confirming);
+  }
+  VoiceTurn turn = c.Say("yes");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}));
+  EXPECT_EQ(Find(turn, K::kPress)->target, buy->handle);
+
+  // A command still drops the question, and so does a long sentence the
+  // grammar doesn't know; and the question still expires.
+  c.Say("click buy now");
+  c.Say("scroll down");
+  EXPECT_FALSE(c.state().confirming);
+  c.Say("click buy now");
+  c.Say("what is the weather going to be like tomorrow");
+  EXPECT_FALSE(c.state().confirming);
+  c.Say("click buy now");
+  c.env().now_ms += kConfirmationTimeoutMs;
+  turn = c.Say("This.");
+  EXPECT_FALSE(Find(turn, K::kPress));
+  EXPECT_NE(Said(turn), "Say yes to press Buy now, or no to cancel.");
+}
+
 TEST(VoiceControllerLogicTest, AConfirmationExpiresAndStaysOnItsPage) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   c.Say("click buy now");
@@ -1245,6 +1279,37 @@ TEST(VoiceControllerLogicTest, TypesIntoTheChosenField) {
                                                        K::kWaitForPage}));
   EXPECT_EQ(Find(turn, K::kWaitForPage)->follow_up,
             FollowUpKind::kReadResults);
+}
+
+// "Pick John Brown" into a focused text field: "type John Brown" as the
+// recognizer heard it in the spoken suite's Phase 2 runs. Typed when
+// nothing on the page is so named; a choice still when something is, and
+// never typed without a field in focus.
+TEST(VoiceControllerLogicTest, PickIntoAFocusedFieldTypesWhatNothingIsNamed) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  c.Say("click the message field");
+  ASSERT_TRUE(ContextFor(c.state(), c.map(), c.env()).text_field_focused);
+  VoiceTurn turn = c.Say("pick John Brown");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSetText}));
+  EXPECT_EQ(turn.steps[0].text, "Hello John Brown");
+  // (The page here keeps its "Hello": what is typed adds to that.)
+  turn = c.Say("picked Grace Hopper");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSetText}));
+  EXPECT_EQ(turn.steps[0].text, "Hello Grace Hopper");
+  // "Undo" puts back what the field held.
+  turn = c.Say("undo");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSetText}));
+  EXPECT_EQ(turn.steps[0].text, "Hello");
+  // Something so named is chosen, not typed into.
+  turn = c.Say("pick your account");
+  EXPECT_EQ(Find(turn, K::kSetText), nullptr);
+  EXPECT_FALSE(Actions(turn).empty());
+
+  // No field in focus: nothing is typed.
+  Conversation unfocused(BuildPageMap(ShopPage(false)), Env());
+  turn = unfocused.Say("pick John Brown");
+  EXPECT_EQ(Find(turn, K::kSetText), nullptr);
+  EXPECT_TRUE(Actions(turn).empty());
 }
 
 TEST(VoiceControllerLogicTest, SendingAFormThatIsntASearchAsksFirst) {
@@ -2481,6 +2546,31 @@ TEST(VoiceControllerLogicTest, PageWaitAsksForTheTreesAgainOnce) {
   EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kKeepWaiting);
   facts.settle_passed = true;
   EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kAskForTrees);
+}
+
+// Build 45's act-press-button (typed): "click add kettle to cart" was the
+// first thing typed, so it turned the trees on; the browser had just
+// started, the page's tree took longer than the first wait, and the
+// command was planned on an empty map ("There's nothing here to choose
+// from"). Without the page's own tree, the trees are asked for again, once,
+// and the wait goes on, kMaxPageTreeWait at most.
+TEST(VoiceControllerLogicTest, ACommandWaitsLongerForThePagesOwnTree) {
+  DeferredWaitFacts facts;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kAskForTrees);
+  facts.tree_asked = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kKeepWaiting);
+  // It comes.
+  facts.has_page_tree = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kPlan);
+  // It never does: planned with what there is.
+  facts.has_page_tree = false;
+  facts.page_wait_passed = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kPlan);
+
+  // Only the frames' trees missing: the first wait was theirs.
+  facts = DeferredWaitFacts();
+  facts.has_page_tree = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kPlan);
 }
 
 }  // namespace

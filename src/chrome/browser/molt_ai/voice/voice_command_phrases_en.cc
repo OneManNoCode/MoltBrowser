@@ -712,6 +712,10 @@ constexpr CommandPattern kPatterns[] = {
      "(click|click on|press|tap|tap on|push|hit|activate|check|uncheck|"
      "tick|untick|toggle) {choice}",
      C::kAlways, V::kVerbClick},
+    // "Pick John Brown" into a focused text field: "type John Brown" as
+    // the recognizer hears it (the spoken suite's Phase 2 runs); a choice
+    // still when the page has one so named.
+    {K::kChoose, "pick {choice}", C::kTextField, V::kVerbSelectOrType},
     {K::kChoose, "(select|choose|pick|focus|focus on) {choice}", C::kAlways,
      V::kVerbSelect},
     {K::kChoose, "read {choice}", C::kAlways, V::kVerbRead},
@@ -762,10 +766,12 @@ constexpr CommandPattern kPatterns[] = {
     // An address said on its own: "example dot com".
     {K::kOpenSite, "{address}"},
     // "Take", "tech": more of how "type" is heard (the spoken suite's runs,
-    // "take hello there"), only into a focused text field, and after the
-    // sites and searches, so that "take me to ...", "take me home" and
-    // "take me back" mean themselves there too.
-    {K::kType, "(take|tech) {text}", C::kTextField},
+    // "take hello there"; "took", "tucked the river walk", "picked John
+    // Brown", "pipe Grace Hopper" in its Phase 2 runs), only into a focused
+    // text field, and after the sites and searches, so that "take me to
+    // ...", "take me home" and "take me back" mean themselves there too.
+    {K::kType, "(take|tech|took|tuck|tucked|picked|pipe) {text}",
+     C::kTextField},
 
     // --- A choice on its own ------------------------------------------------
     {K::kChoose, "{number}", C::kChoice},

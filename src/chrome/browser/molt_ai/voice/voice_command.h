@@ -387,6 +387,11 @@ struct VoiceCommand {
   // be the end of the query's last word ("find time to belong this page",
   // as a recognizer heard "find timetable on this page").
   bool on_glued = false;
+  // kChoose said into a focused text field as "pick ..." ("pick John
+  // Brown", as a recognizer heard "type John Brown"): when nothing on the
+  // page is named by its words, they are typed into the field. |text| holds
+  // them as heard.
+  bool or_type = false;
   // A wake phrase began the utterance, and the grammar took it: |heard| is
   // without it.
   bool wake_said = false;

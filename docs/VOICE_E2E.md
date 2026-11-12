@@ -91,7 +91,11 @@ python3 -I tools/voice_e2e/run_e2e.py serve     # the fixture sites, to look at
 `run` takes `--modes wake,always`, `--voices`, `--speeds`, `--no-loopback`
 (no echo of the browser into the microphone), `--no-sandbox` (as root),
 `--model` (an on-device AI model is installed: runs the scenarios that
-need one), `--gate-latency` (the 1.5 s target fails the run) and
+need one), `--model-file <file>.gguf` (that model, named as the browser's
+registry names it and checked against its pin already, is linked into each
+scenario's home, `~/.moltbrowser/models/`, where the browser loads it; the
+link is removed after the scenario, so the report never carries the model;
+it implies `--model`), `--gate-latency` (the 1.5 s target fails the run) and
 `--browser-flag` (one more flag for the browser), and `--display current`
 to watch it on a real screen.
 
@@ -134,8 +138,8 @@ trusts the kit's certificate by its key (`--ignore-certificate-errors-spki-list`
 | `www.google.com`, `duckduckgo.com`, `www.bing.com`, `search.brave.com` | A search engine (whichever is the default, it is this one). |
 | `en.wikipedia.org` | An encyclopedia: a home page and an article. |
 | `news.test` | News: sections, a story with headings, sport, weather, and a link to `trap.test`. |
-| `shop.test` | A shop: three products, a cart, a checkout (name, street, town, delivery) and "Place order" up to its confirmation. |
-| `mail.test` | Webmail: an inbox, messages, and a compose form with "Send". |
+| `shop.test` | A shop: three products, a cart (each item with "Remove"), a checkout (name, street, town, delivery) and "Place order" up to its confirmation. |
+| `mail.test` | Webmail: an inbox, messages with "Reply" (the compose form with To and Subject filled) and "Delete", and a compose form with "Send". |
 | `forms.test` | A form: a text field, checkboxes, a list, radio buttons, "Submit", a long part to scroll; it counts its loads. |
 | `prompts.test` | A page asking for a permission (location, notifications); a dialog that imitates the browser's own prompt; `/inject`, text that tries to make the AI's answer imitate one. |
 | `files.test` | A download. |
@@ -376,6 +380,21 @@ build three prompts failed on that alone. And when voice mode answers
 the word with "I didn't catch that. Say the word again.", the kit says it
 once more, as a user would.
 
+When what voice mode heard names several items and it asks which ("Did
+you mean 1: Add kettle to cart, 2: Add toaster to cart, or 3: Add mug to
+cart? Say a number or a name."), the kit, once voice mode has finished
+asking, says the number of the option that is what the step said, as a
+user would ("three" for "click add mug to cart"), once. Only when one
+option's words are all in the step's text and no other such option has
+as many: otherwise it says nothing and the step fails, as before. Not in
+file mode (its audio is one recording made before the run), and not on a
+step that expects "Did you mean" (the question is what it tests). The
+report counts such a scenario as passed and names it apart ("Passed once
+voice mode asked which item was meant ..."), and leaves its step out of
+the latency. In the forty-fifth build "add mug" was heard as "add mud" or
+"Admud" in every audio run, and voice mode rightly asked rather than
+guess a short word by its sound.
+
 ### The runner
 
 Each scenario gets a fresh profile and HOME (`~/.moltbrowser/settings.json`
@@ -414,8 +433,9 @@ the prompt scenarios are skipped there.
 
 ### The scenarios
 
-`scenarios/*.json`, data (the format is in `e2ekit/scenarios.py`): 92 of
-them, 93 runs of counted tasks in a spoken run (the owner's scenario runs
+`scenarios/*.json`, data (the format is in `e2ekit/scenarios.py`): 122 of
+them, 93 runs of Phase 1's counted tasks in a spoken run and 30 of Phase
+2's (the owner's scenario runs
 with "Hey Molt" and in always-listening mode):
 
 | Group | What |
@@ -430,6 +450,7 @@ with "Hey Molt" and in always-listening mode):
 | `recover.json` | Cancel, no, what can I say, where am I, repeat, a correction, undo (typing, a closed tab, a navigation), start over. |
 | `prompts.json` | A permission allowed by its word and refused by "no", notifications, a download after voice mode's click, `confirm()`, `alert()`, `prompt()`, leaving unsaved changes. |
 | `security.json` | A video whose sound says commands, a page whose text read aloud is commands, a replayed confirmation word, a dialog and an AI answer that imitate the browser's prompt, trap history entries. Each passes only if nothing acts. |
+| `phase2.json` | Touchless Phase 2's 30 multi-step tasks (TOUCHLESS_BROWSING.md §10), by direct commands one step at a time: webmail (reply, write, delete, a "no" that leaves it unsent or undeleted, a word corrected, a reply read back), the shop's cart up to the order's confirmation (two items, express delivery, an item removed, a "no" at checkout, at "Place order" and at "Remove"), the form (all of it, a box unchecked, a name cleared, a "no" at "Submit"), and three across tabs. Every click that sends, buys, removes, deletes, replies or submits expects voice mode to ask first and nothing to have happened yet (`test_scenarios.py` holds them to the browser's own words, `kConfirmWords`). Counted apart (`report.py`: the summary's `phase2`, not in Phase 1's rate). |
 
 Each step names the commands it needs (`needs`). Many are this round's new
 commands (volume to a level, speed, captions, undo, start over, bookmarks,
@@ -587,7 +608,14 @@ What this says before the build runs:
   voice mode stays where it is (Tor isn't reachable from the fixture
   network).
 - The scenarios that need an on-device AI model (asking the AI, an answer
-  that imitates a prompt) run only with `--model`.
+  that imitates a prompt) run only with `--model` or `--model-file`. In
+  CI, `"e2e_model": "<registry id>"` in `.github/molt-test-build.json`
+  downloads that model at its pin and checks its size and SHA-256
+  (`tools/models/fetch_model.py`; the browser hashes a model only while it
+  downloads it itself) before the suite runs with it. With a model, the
+  planner takes what the grammar doesn't understand, as it does for a user
+  who has one. Voice mode uses the downloaded model that needs the least
+  memory, so give the suite one; a hidden registry entry is never loaded.
 - A permission the page asks for is the real prompt; whether the browser
   then gets a location (no location service here) isn't checked, only the
   permission's state.

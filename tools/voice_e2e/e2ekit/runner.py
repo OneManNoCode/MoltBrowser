@@ -39,6 +39,9 @@ WINDOW_TIMEOUT_S = 30
 # The longest wait for voice mode to answer what the kit said (the end of
 # speech, a short command's wait, the answer).
 REPLY_TIMEOUT_S = 10
+# Answers to voice mode's yes-or-no questions: said once more when voice
+# mode asks its question again (a misheard answer), as a user would.
+YES_NO_ANSWERS = ("yes", "no")
 POLL_S = 0.2
 # File mode's fixed times (the recording can't wait on the browser): past
 # voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
@@ -171,7 +174,7 @@ class RunConfig(object):
     def __init__(self, audio="pulse", condition="clean", loopback=True,
                  echo_cancellation=True,
                  voices=None, speeds=None, settle=SETTLE_S, sandbox=True,
-                 extra_flags=(), model_available=False):
+                 extra_flags=(), model_available=False, model_file=None):
         if audio not in ("pulse", "file", "typed"):
             raise ValueError("audio is pulse, file or typed")
         if condition not in render.CONDITIONS:
@@ -187,7 +190,10 @@ class RunConfig(object):
         self.settle = settle
         self.sandbox = sandbox
         self.extra_flags = list(extra_flags)
-        self.model_available = model_available
+        # A model file linked into each scenario's home (browser.link_model):
+        # the model scenarios run with it.
+        self.model_file = model_file
+        self.model_available = model_available or bool(model_file)
 
     @property
     def label(self):
@@ -300,6 +306,50 @@ def strip_wake(text):
     while i < len(words) and i < 3 and words[i] in WAKE_WORDS:
         i += 1
     return " ".join(words[i:])
+
+
+# Voice mode's question when what was said names several items ("Did you
+# mean 1: Add kettle to cart, 2: Add toaster to cart, or 3: Add mug to
+# cart? Say a number or a name.", voice_speech_text.cc OfferSpeech()).
+OFFER_START = "did you mean "
+OFFER_HINT = "say a number or a name"
+OFFER_SPLIT = re.compile(r",\s+(?:or\s+)?(?=\d+: )|\s+or\s+(?=\d+: )")
+OFFER_OPTION = re.compile(r"(\d+): (.+)$")
+
+
+def offer_options(text):
+    """[(number, label)] of the offer in what voice mode said, or []."""
+    low = text.lower()
+    start = low.find(OFFER_START)
+    end = low.find("?", start) if start >= 0 else -1
+    if start < 0 or end < 0 or OFFER_HINT not in low[end:]:
+        return []
+    options = []
+    for part in OFFER_SPLIT.split(text[start + len(OFFER_START):end]):
+        m = OFFER_OPTION.match(part.strip())
+        if not m:
+            return []
+        options.append((int(m.group(1)), m.group(2).strip()))
+    return options
+
+
+def label_words(text):
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def offer_answer(options, said):
+    """The number of the option a user who said |said| meant: the one whose
+    label's words are all in it ("click add mug to cart" for "Add mug to
+    cart"), with more of them than any other such option. None when no
+    option is clearly it: the kit doesn't guess."""
+    said_words = label_words(said)
+    fits = sorted(((len(label_words(label)), n) for n, label in options
+                   if label_words(label) and label_words(label) <= said_words),
+                  reverse=True)
+    if not fits or (len(fits) > 1 and fits[0][0] == fits[1][0]):
+        return None
+    n = fits[0][1]
+    return n if 1 <= n <= render.ANSWER_NUMBERS else None
 
 
 class Runner(object):
@@ -431,17 +481,46 @@ class Runner(object):
             time.sleep(POLL_S)
         return False
 
-    def asked_again(self, log, since, timeout=REPLY_TIMEOUT_S):
+    def asked_again(self, log, since, timeout=REPLY_TIMEOUT_S, yes_no=False):
         """Whether voice mode's first answer after |since| asks for the
         confirmation word again ("I didn't catch that. Say the word
-        again.")."""
+        again."), or with |yes_no| its question again ("Say yes to send
+        the message, or no to cancel.": the answer wasn't heard as one)."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             said = [e for e in log.events(since) if e["e"] == "said"]
             if said:
-                return "say the word again" in (said[0].get("text") or "").lower()
+                text = (said[0].get("text") or "").lower()
+                if yes_no:
+                    return text.startswith("say yes to") and "or no to cancel" in text
+                return "say the word again" in text
             time.sleep(POLL_S)
         return False
+
+    def answer_offer(self, step, plan, world, log, since):
+        """When voice mode's answer since |since| is an offer ("Did you mean
+        1: ..., or 3: Add mug to cart? Say a number or a name.") with one
+        option that is what the step said (offer_answer()): once voice mode
+        has finished asking, says that option's number, as a user would, and
+        returns what was asked and answered for the step's result. Else
+        None, at once."""
+        said = " ".join(e.get("text") or "" for e in log.events(since)
+                        if e["e"] == "said")
+        if OFFER_HINT not in said.lower():
+            return None  # no offer, or not all of it said yet
+        number = offer_answer(offer_options(said), step.value)
+        if number is None:
+            return None
+        word = render.answer_words()[number - 1]
+        self.wait_idle(log)
+        if self.config.typed:
+            if world.browser.type_command(word) != "ok":
+                return None
+        else:
+            voice, speed = plan.get("voice_speed", (self.config.voices[0], 1.0))
+            (self.player or self.pulse).play(
+                render.clip_path(self.speech, voice, speed, word))
+        return {"asked": said[:300], "answer": word}
 
     # ---- one scenario -------------------------------------------------------
 
@@ -477,6 +556,7 @@ class Runner(object):
         t_start = time.time()
         browser = None
         plan = None
+        model_link = None
         try:
             plan = self.prepare_audio(sc, mode, voice, speed, run_dir)
             browserlib.seed_profile(os.path.join(run_dir, "profile"),
@@ -486,6 +566,9 @@ class Runner(object):
                         "voice_language": "en"}
             settings.update(sc.start.get("settings", {}))
             browserlib.write_settings(os.path.join(run_dir, "home"), settings)
+            if self.config.model_file:
+                model_link = browserlib.link_model(os.path.join(run_dir, "home"),
+                                                   self.config.model_file)
             flags = self.flags(log_path, plan.get("file_wav"),
                                shields=sc.start.get("shields", True))
             flags[0] = flags[0] % os.path.join(run_dir, "profile")
@@ -555,6 +638,13 @@ class Runner(object):
                 self.pulse.stop_recording()
             if browser:
                 browser.close()
+            if model_link:
+                # Not in the report: the report directory is uploaded, and an
+                # upload follows a link to the model it points at.
+                try:
+                    os.remove(model_link)
+                except OSError:
+                    pass
             if res.get("status") in ("failed", "error"):
                 self.note_microphone(res, run_dir, plan)
             elif self.config.audio == "file":
@@ -701,9 +791,15 @@ class Runner(object):
             wav = self.word_wav(step, i, plan, tlog, world)
         (self.player or self.pulse).play(wav)
         t_end = time.time()
-        if step.action == "say_word" and self.asked_again(tlog, t_end):
-            # "I didn't catch that. Say the word again.": once more, as a
-            # user would.
+        again = step.action == "say_word" and self.asked_again(tlog, t_end)
+        if (not again and step.action == "say" and
+                step.value.strip().lower() in YES_NO_ANSWERS):
+            # "Say yes to ..., or no to cancel." again: the answer was
+            # misheard ("This." for "yes") and the question still waits.
+            again = self.asked_again(tlog, t_end, yes_no=True)
+        if again:
+            # "I didn't catch that. Say the word again.", or the question
+            # asked again: once more, as a user would.
             self.wait_idle(tlog)
             (self.player or self.pulse).play(wav)
             t_end = time.time()
@@ -798,7 +894,19 @@ class Runner(object):
             if nxt:
                 deadline = min(deadline, stream_start + min(nxt))
         results = {}
+        # Voice mode may ask which item was meant (what it heard names
+        # several): the kit answers once, as a user would, unless the step
+        # is about the question (it expects "Did you mean"). Not in file
+        # mode, whose audio is one recording made before the run.
+        can_answer = (step.action == "say" and self.config.audio != "file" and
+                      not any("did you mean" in str(v).lower()
+                              for e in step.expect for v in e.values()))
         while True:
+            if can_answer and "answered" not in sres:
+                answer = self.answer_offer(step, plan, world, tlog, t_end)
+                if answer:
+                    sres["answered"] = answer
+                    deadline = max(deadline, time.time() + step.timeout)
             for j, e in enumerate(polled):
                 if results.get(j, (False,))[0]:
                     continue

@@ -74,6 +74,21 @@ class _Reader:
   def string(self):
     return self.read(self.count(MAX_STRING))
 
+  def value(self, vtype):
+    """A scalar or string value; an array as ('array', item type, count),
+    its items skipped."""
+    if vtype in _SCALARS:
+      return self.unpack(_SCALARS[vtype])
+    if vtype == _STRING:
+      return self.string().decode('utf-8', 'replace')
+    if vtype == _ARRAY:
+      item = self.unpack('<I')
+      n = self.count()
+      for _ in range(n):
+        self.skip_value(item, 1)
+      return ('array', item, n)
+    raise GGUFError('unknown metadata value type %d' % vtype)
+
   def skip_value(self, vtype, depth=0):
     if vtype in _SCALARS:
       self.read(struct.calcsize(_SCALARS[vtype]))
@@ -87,32 +102,40 @@ class _Reader:
       raise GGUFError('unknown metadata value type %d' % vtype)
 
 
+def read_header(f):
+  """(metadata, {type name: tensor count}) of the GGUF read from |f|, a
+  binary file object at its start. Metadata maps each key to its value (an
+  array to ('array', item type, count))."""
+  r = _Reader(f)
+  if r.read(4) != b'GGUF':
+    raise GGUFError('not a GGUF file')
+  version = r.unpack('<I')
+  if version not in (2, 3):
+    raise GGUFError('unsupported GGUF version %d' % version)
+  n_tensors = r.count()
+  n_kv = r.count()
+  metadata = {}
+  for _ in range(n_kv):
+    key = r.string().decode('utf-8', 'replace')
+    metadata[key] = r.value(r.unpack('<I'))
+  counts = {}
+  for _ in range(n_tensors):
+    r.string()
+    n_dims = r.unpack('<I')
+    if n_dims > MAX_DIMS:
+      raise GGUFError('implausible tensor rank %d' % n_dims)
+    r.read(8 * n_dims)
+    ggml_type = r.unpack('<I')
+    r.unpack('<Q')  # offset
+    name = GGML_TYPES.get(ggml_type, 'type%d' % ggml_type)
+    counts[name] = counts.get(name, 0) + 1
+  return metadata, counts
+
+
 def tensor_types(path):
   """{type name: tensor count} of the GGUF at |path|."""
   with open(path, 'rb') as f:
-    r = _Reader(f)
-    if r.read(4) != b'GGUF':
-      raise GGUFError('not a GGUF file')
-    version = r.unpack('<I')
-    if version not in (2, 3):
-      raise GGUFError('unsupported GGUF version %d' % version)
-    n_tensors = r.count()
-    n_kv = r.count()
-    for _ in range(n_kv):
-      r.string()
-      r.skip_value(r.unpack('<I'))
-    counts = {}
-    for _ in range(n_tensors):
-      r.string()
-      n_dims = r.unpack('<I')
-      if n_dims > MAX_DIMS:
-        raise GGUFError('implausible tensor rank %d' % n_dims)
-      r.read(8 * n_dims)
-      ggml_type = r.unpack('<I')
-      r.unpack('<Q')  # offset
-      name = GGML_TYPES.get(ggml_type, 'type%d' % ggml_type)
-      counts[name] = counts.get(name, 0) + 1
-    return counts
+    return read_header(f)[1]
 
 
 def dropped_types(build_gn=BUILD_GN):

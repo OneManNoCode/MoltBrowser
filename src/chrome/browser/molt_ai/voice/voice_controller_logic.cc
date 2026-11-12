@@ -145,6 +145,29 @@ bool ConfirmationValid(const ConversationState& state,
          env.now_ms < state.confirm_expires_ms;
 }
 
+// A short reply that means nothing while a confirmation waits: what the
+// grammar didn't understand, in at most three words, or "this" or "it"
+// alone ("yes" as the recognizer heard it, "This.", in the spoken suite's
+// Phase 2 runs). Any other command still drops the question.
+bool MisheardAnswer(const VoiceCommand& command) {
+  if (command.kind == VoiceCommandKind::kUnknown) {
+    size_t words = 0;
+    bool in_word = false;
+    for (const char c : command.heard) {
+      if (c == ' ') {
+        in_word = false;
+      } else if (!in_word) {
+        in_word = true;
+        ++words;
+      }
+    }
+    return words > 0 && words <= 3;
+  }
+  return command.kind == VoiceCommandKind::kChoose &&
+         command.choice.kind == ChoiceRef::Kind::kRelative &&
+         command.choice.relative == ChoiceRef::Relative::kCurrent;
+}
+
 // |command|'s answer to the browser's prompt |state| holds (kNone when it
 // isn't one). A question the loop asked since the prompt was read (the
 // prompt dropped any before it) is newer: a plain yes or no is its.
@@ -420,6 +443,13 @@ class Planner : public TurnPlanner {
       return;
     }
     const bool confirming = ConfirmationValid(state(), env_);
+    // A reply that means nothing here gets the question again, and the
+    // confirmation waits on (until it expires): only a "yes" acts.
+    if (depth == 0 && confirming && MisheardAnswer(command)) {
+      Status(Tr("Say yes to {0}", {state().confirm_what}));
+      Say(Tr("Say yes to {0}, or no to cancel.", {state().confirm_what}));
+      return;
+    }
     if (command.kind != K::kYes && command.kind != K::kNo) {
       ClearConfirmation();
     }
@@ -693,7 +723,8 @@ class Planner : public TurnPlanner {
 
       // Choosing.
       case K::kChoose:
-        Choose(command.choice, command.verb);
+        Choose(command.choice, command.verb,
+               command.or_type ? &command : nullptr);
         break;
       case K::kShowNumbers:
       case K::kHideNumbers: {
@@ -1257,7 +1288,11 @@ class Planner : public TurnPlanner {
            !BrowserListValid(s, env_);
   }
 
-  void Choose(const ChoiceRef& spoken_ref, ChoiceVerb verb) {
+  // |or_type|: "pick John Brown" said into a focused text field
+  // (VoiceCommand::or_type), typed there when nothing is so named.
+  void Choose(const ChoiceRef& spoken_ref,
+              ChoiceVerb verb,
+              const VoiceCommand* or_type = nullptr) {
     ConversationState& s = state();
     // Said over voice mode's own voice: the list read or offered only.
     const bool list_only = env_.list_choice_only;
@@ -1379,6 +1414,19 @@ class Planner : public TurnPlanner {
     }
     // Nothing on the page is called that: an option of one of its lists.
     if (ChooseOption(ref, /*any_select=*/true)) {
+      return;
+    }
+    // Nor that: "pick John Brown" in a focused text field was "type John
+    // Brown" (the recognizer's hearing of it in the spoken suite's Phase 2
+    // runs). Typing is undone with "undo"; a choice it might have been is
+    // never pressed on a guess.
+    if (or_type && ref.kind == ChoiceRef::Kind::kDescription &&
+        (reason == NoMatchReason::kNothingMatched ||
+         reason == NoMatchReason::kNoCandidates) &&
+        !s.expecting_choice && FieldInFocus(s, map_, env_)) {
+      VoiceCommand type = *or_type;
+      type.kind = K::kType;
+      Dictation(type);
       return;
     }
     // "Play the live aid version of Bohemian Rhapsody" where nothing is so
@@ -3663,6 +3711,14 @@ PageWaitDecision DecidePageWait(const PageWaitFacts& facts) {
     }
   }
   return PageWaitDecision::kFinish;
+}
+
+DeferredWaitDecision DecideDeferredWait(const DeferredWaitFacts& facts) {
+  if (facts.has_page_tree || facts.page_wait_passed) {
+    return DeferredWaitDecision::kPlan;
+  }
+  return facts.tree_asked ? DeferredWaitDecision::kKeepWaiting
+                          : DeferredWaitDecision::kAskForTrees;
 }
 
 // What a Spanish page's buttons say for the same actions (folded).

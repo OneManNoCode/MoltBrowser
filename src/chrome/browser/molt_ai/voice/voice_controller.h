@@ -233,8 +233,9 @@ class VoiceController : public VoicePlanner::Delegate,
   // off (except in MoltNet windows), stops whatever runs, then plans and
   // runs the new one: once the page's tree has come, when the tab is on a
   // web page whose tree hasn't yet (the first thing said turned voice mode
-  // on, or the page just loaded), kMaxTreeWait at most. Does nothing while
-  // #molt-voice-mode is off.
+  // on, or the page just loaded), kMaxTreeWait at most, or kMaxPageTreeWait
+  // while the page's own tree hasn't come (DecideDeferredWait()). Does
+  // nothing while #molt-voice-mode is off.
   void HandleUtterance(const std::string& text);
   // One utterance the listening session heard (voice_session.h), and
   // whether it heard it cleanly enough for the voice gesture
@@ -416,9 +417,13 @@ class VoiceController : public VoicePlanner::Delegate,
   // The utterance's planning: the map, the grammar, the turn.
   void PlanAndRunUtterance(const std::string& text);
   // Whether the active tab is a web page whose tree hasn't come yet: an
-  // utterance then waits for it (kMaxTreeWait at most).
+  // utterance then waits for it (kMaxTreeWait, or kMaxPageTreeWait while
+  // the page's own tree hasn't come).
   bool PageTreeIsComing();
   void OnDeferredTrees();
+  // The deferred utterance's wait is over: it is planned, or waits on for
+  // the page's own tree (DecideDeferredWait()).
+  void OnDeferredWaitOver();
   void RunDeferredUtterance();
   void DropDeferredUtterance();
 
@@ -603,6 +608,10 @@ class VoiceController : public VoicePlanner::Delegate,
   struct DeferredUtterance {
     std::string text;
     HeardEvidence evidence;
+    // When it came.
+    base::TimeTicks since;
+    // The renderers were asked for their trees again in its wait.
+    bool tree_asked = false;
   };
   std::optional<DeferredUtterance> deferred_;
   // NotifyCaption() is sending a round; another was asked for meanwhile.

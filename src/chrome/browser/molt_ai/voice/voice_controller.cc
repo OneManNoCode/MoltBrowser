@@ -91,8 +91,11 @@ constexpr int kMaxCaptionRounds = 4;
 
 // An utterance that comes before the page's tree (the first thing said
 // turned voice mode on, or the tab is on a page that just loaded) waits
-// for the tree this long at most, then is planned with what there is.
+// for the tree this long, then is planned with what there is; unless the
+// page's own tree still hasn't come (DecideDeferredWait()), and then until
+// it has, kMaxPageTreeWait at most.
 constexpr base::TimeDelta kMaxTreeWait = base::Milliseconds(2500);
+constexpr base::TimeDelta kMaxPageTreeWait = base::Seconds(8);
 
 std::optional<StepFailure> FailureFor(ActionResult result) {
   switch (result) {
@@ -1042,14 +1045,15 @@ void VoiceController::HandleUtterance(const std::string& text) {
   if (PageTreeIsComing()) {
     // Barge-in now; planning once the tree has come (OnDeferredTrees()).
     CancelRun(/*keep_planner=*/true);
-    deferred_ = DeferredUtterance{text, heard_evidence_};
+    deferred_ =
+        DeferredUtterance{text, heard_evidence_, base::TimeTicks::Now()};
     VoicePageController* page = ActivePage();
     // One wait a page (it takes in the frames' trees too).
     frames_waited_page_id_ = page_id_;
     deferred_trees_ = page->AddTreesUpdatedCallback(base::BindRepeating(
         &VoiceController::OnDeferredTrees, weak_factory_.GetWeakPtr()));
     deferred_timer_.Start(FROM_HERE, kMaxTreeWait,
-                          base::BindOnce(&VoiceController::RunDeferredUtterance,
+                          base::BindOnce(&VoiceController::OnDeferredWaitOver,
                                          weak_factory_.GetWeakPtr()));
     return;
   }
@@ -1080,12 +1084,47 @@ bool VoiceController::PageTreeIsComing() {
 
 void VoiceController::OnDeferredTrees() {
   VoicePageController* page = ActivePage();
-  if (deferred_ && page && page->HasPageTree() && !page->FrameTreesComing()) {
+  // Past the first wait (the trees asked for again), only the page's own
+  // tree is waited for: its frames have had theirs.
+  if (deferred_ && page && page->HasPageTree() &&
+      (deferred_->tree_asked || !page->FrameTreesComing())) {
     // After the observers that are still handling this update.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&VoiceController::RunDeferredUtterance,
                                   weak_factory_.GetWeakPtr()));
   }
+}
+
+void VoiceController::OnDeferredWaitOver() {
+  if (!deferred_) {
+    return;
+  }
+  VoicePageController* page = ActivePage();
+  content::WebContents* contents = ActiveContents();
+  if (!page || !page->active() || !contents || contents->IsCrashed()) {
+    RunDeferredUtterance();
+    return;
+  }
+  const base::TimeDelta waited = base::TimeTicks::Now() - deferred_->since;
+  DeferredWaitFacts facts;
+  facts.has_page_tree = page->HasPageTree();
+  facts.tree_asked = deferred_->tree_asked;
+  facts.page_wait_passed = waited >= kMaxPageTreeWait;
+  switch (DecideDeferredWait(facts)) {
+    case DeferredWaitDecision::kPlan:
+      RunDeferredUtterance();
+      return;
+    case DeferredWaitDecision::kAskForTrees:
+      deferred_->tree_asked = true;
+      contents->ResetAccessibility();
+      break;
+    case DeferredWaitDecision::kKeepWaiting:
+      break;
+  }
+  // OnDeferredTrees() plans it as soon as the page's tree comes.
+  deferred_timer_.Start(FROM_HERE, kMaxPageTreeWait - waited,
+                        base::BindOnce(&VoiceController::OnDeferredWaitOver,
+                                       weak_factory_.GetWeakPtr()));
 }
 
 void VoiceController::RunDeferredUtterance() {

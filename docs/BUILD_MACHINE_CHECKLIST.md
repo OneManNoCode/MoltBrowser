@@ -504,7 +504,18 @@ The memory search model and the vision model are never offered until
 pinned (fail closed); chat models without a pin download as "unverified".
 Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 
-- [ ] Embedding model (from #28):
+**Done from CI (November 2026), no build machine needed:** every entry of
+both registries is pinned from the model-pin workflow
+(`.github/workflows/molt-model-pin.yml`, run 43184591801): each file,
+projectors included, downloaded and hashed on the runner against the pin,
+and its GGUF header read. The memory search model is `qwen3` with 1024
+dimensions; every file's tensor types have Vulkan shaders; the licences
+were read from the base models' cards (Gemma 4 E4B is Apache 2.0, Gemma 3
+keeps its own terms). The items below are what to re-run when re-pinning;
+hidden entries (`qwen3.5-4b`, `gemma4-e4b`, `voxtral-mini-3b`) stay hidden
+until run with these files on the build machine.
+
+- [x] Embedding model (from #28; done from CI):
   ```bash
   python3 tools/models/pin_models.py --only qwen3-embedding-0.6b           # dry run
   python3 tools/models/pin_models.py --only qwen3-embedding-0.6b --write
@@ -513,15 +524,17 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
   `/resolve/<revision>/<file>` URL, check SHA-256 and size, and
   `gguf-dump --no-tensors` shows `general.architecture = qwen3` and
   `qwen3.embedding_length = 1024`; re-read the licence (Apache 2.0).
-- [ ] Vision model and its projector, pinned together (from #38, #40):
+- [x] Vision model and its projector, pinned together (from #38, #40;
+  done from CI):
   ```bash
   python3 tools/models/pin_models.py --only qwen3-vl-2b                    # dry run: model + mmproj
   python3 tools/models/pin_models.py --only qwen3-vl-2b --write
   ```
   Check both files independently the same way. The download flow fetches
   the pair as one unit since #40.
-- [ ] Audio model and its projector, pinned together (from ai-finish;
-  SANDBOXED_INFERENCE.md §13.4):
+- [x] Audio model and its projector, pinned together (from ai-finish;
+  SANDBOXED_INFERENCE.md §13.4; pinned from CI, the audio check still
+  open):
   ```bash
   python3 tools/models/pin_models.py --only voxtral-mini-3b                # dry run: model + mmproj
   python3 tools/models/pin_models.py --only voxtral-mini-3b --write
@@ -529,18 +542,19 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
   Check both files independently as above; the entry stays hidden
   (`true` as its last field) until the audio check of §7.3 passes with
   these files, then flip it to `false` by hand in the same PR as the pins.
-- [ ] Every pinned model's files have only weight types the Vulkan build
-  keeps (from ai-finish; SANDBOXED_INFERENCE.md §11.14):
+- [x] Every pinned model's files have only weight types the Vulkan build
+  keeps (from CI: they all do) (from ai-finish; SANDBOXED_INFERENCE.md §11.14):
   `python3 tools/models/gguf_types.py <model>.gguf [<mmproj>.gguf]` exits 0
   for each. A failure names the type: take it out of
   `_ggml_vk_dropped_types` in `src/third_party/llama_cpp/BUILD.gn`, or the
   model's operations on it run on the CPU with the GPU switch on.
-- [ ] Optional: the chat models, `python3 tools/models/pin_models.py` (dry
+- [x] Optional: the chat models, `python3 tools/models/pin_models.py` (dry
   run, then `--write`); hidden entries (`qwen3.5-4b`, `gemma4-e4b`) stay
   hidden. Set `HF_TOKEN` for gated repositories (from
-  `tools/models/pin_models.py`).
-- [ ] `python3 tools/models/pin_models_test.py` passes (fails on a
+  `tools/models/pin_models.py`). Done from CI, above.
+- [x] `python3 tools/models/pin_models_test.py` passes (fails on a
   half-filled pin) and the `TODO(pin)` comments are gone (from #28, #38).
+  Done with the pins.
   *Recorded in* `src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc`
   (`kModelRegistry`, `kProjectors`) and
   `src/chrome/browser/molt_ai/memory/embedding_model_registry.cc`.

@@ -21,22 +21,24 @@ constexpr uint64_t kMiB = 1024ULL * 1024;
 // Q8_0. Why this model: docs/design/SEMANTIC_SEARCH.md ("Choosing the
 // model").
 //
-// TODO(pin): not pinned yet (huggingface.co was unreachable where this was
-// written): revision, sha256 and size are EMPTY, so the model is not
-// offered at all (fail closed, IsPinned()). Fill them in with
-//   tools/models/pin_models.py --only qwen3-embedding-0.6b --write
-// on a machine that can reach huggingface.co, confirming the repo and file
-// names below at the same time; never type a hash in by hand. The entry
-// keeps pin_models.py's layout (id, name, repo, file, revision, sha256,
-// size on their own lines).
+// Pinned (November 2026) by tools/models/pin_models.py from the Hugging Face
+// API reply the model-pin workflow fetched (.github/workflows/
+// molt-model-pin.yml); the file was then downloaded and hashed on the
+// runner against the pin, and its GGUF header read (tools/models/
+// hf_survey.py verify). Without all three values the model is not offered
+// at all (fail closed, IsPinned()). Re-pin the same way, never by hand. The
+// entry keeps pin_models.py's layout (id, name, repo, file, revision,
+// sha256, size on their own lines).
+// clang-format off: tools/models/pin_models.py reads and rewrites these
+// entries one value per line.
 constexpr EmbeddingModelSpec kEmbeddingModels[] = {
     {"qwen3-embedding-0.6b",
      "Qwen3-Embedding 0.6B",
-     "Qwen/Qwen3-Embedding-0.6B-GGUF",  // TODO(pin): confirm repo name
-     "Qwen3-Embedding-0.6B-Q8_0.gguf",  // TODO(pin): confirm file name
-     /*revision=*/"",
-     /*sha256=*/"",
-     /*size=*/0ULL,
+     "Qwen/Qwen3-Embedding-0.6B-GGUF",
+     "Qwen3-Embedding-0.6B-Q8_0.gguf",
+     /*revision=*/"370f27d7550e0def9b39c1f16d3fbaa13aa67728",
+     /*sha256=*/"06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
+     /*size=*/639150592ULL,
      /*approx_size_bytes=*/640ULL * 1000 * 1000,
      /*ram_required_bytes=*/1536 * kMiB,
      "Apache License 2.0",
@@ -53,6 +55,7 @@ constexpr EmbeddingModelSpec kEmbeddingModels[] = {
      "answer the query\nQuery:",
      /*document_prefix=*/""},
 };
+// clang-format on
 
 bool IsLowerHex(const char* s, size_t length) {
   if (!s || std::strlen(s) != length) return false;

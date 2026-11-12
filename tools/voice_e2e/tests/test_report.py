@@ -106,6 +106,43 @@ class ReportTest(unittest.TestCase):
                                               steps=[step(status="failed")])] + scs[1:])
         self.assertFalse(report.build([sad], {})["ok"])
 
+    def test_phase2_is_counted_apart(self):
+        scs = [scenario("owner-song", task="owner")] + \
+              [scenario("go-%d" % i) for i in range(9)] + \
+              [scenario("p2-a", task="phase2"),
+               scenario("p2-b", task="phase2", status="failed", steps=[step(status="failed")])]
+        rep = report.build([run("pulse/clean", scs)], {})
+        s = rep["runs"][0]["summary"]
+        self.assertEqual(s["counted"], 10)
+        self.assertEqual(s["passed"], 10)
+        self.assertEqual(s["phase2"], {"ran": 2, "passed": 1, "failed": ["p2-b"],
+                                       "asked_which": []})
+        self.assertTrue(rep["ok"], rep["reasons"])
+        self.assertIn("Phase 2's tasks (multi-step, without a hand; counted apart): "
+                      "pulse/clean 1/2.", report.markdown(rep))
+
+    def test_a_pass_after_voice_mode_asked_which_is_named_apart(self):
+        answered = dict(step(action_ms=9000), answered={
+            "asked": "Did you mean 1: Add kettle to cart, or 2: Add mug to cart? "
+                     "Say a number or a name.", "answer": "two"})
+        scs = [scenario("owner-song", task="owner")] + \
+              [scenario("go-%d" % i) for i in range(8)] + \
+              [scenario("act-press-button", task="act", steps=[answered]),
+               scenario("p2-shop-order", task="phase2", steps=[step(), answered])]
+        rep = report.build([run("pulse/clean", scs)], {})
+        s = rep["runs"][0]["summary"]
+        # Counted as passed, and named.
+        self.assertEqual(s["passed"], 10)
+        self.assertEqual(s["asked_which"], ["act-press-button"])
+        self.assertEqual(s["phase2"]["asked_which"], ["p2-shop-order"])
+        # Its step's 9 s (the question and its answer) isn't a latency.
+        self.assertEqual(s["latency_ms"]["action_median"], 800)
+        md = report.markdown(rep)
+        self.assertIn("the kit said its number, as a user would (in the counts above): "
+                      "pulse/clean 1, Phase 2's 1.", md)
+        self.assertIn("| act-press-button | wake | ljspeech@1.0 | passed | asked which one; "
+                      "the kit said two |", md)
+
     def test_a_security_scenario_that_did_not_get_to_its_check(self):
         # sec-replayed-word in the twenty-fifth build: the user's own word
         # was misheard, so the replay its check is about never ran. Still
