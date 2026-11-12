@@ -1,9 +1,9 @@
 {
  "resume_run": "43018536923",
  "run_tests": true,
- "e2e_only": true,
- "e2e_runs": "pulse:music10:noloop,pulse:music10",
+ "e2e_only": false,
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean,pulse:music10:noloop,pulse:music10",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Spoken suite with music playing, on the forty-second build: Phase 1's exit asks for 90% in quiet and with music, and the music run hasn't been measured since the ninth build (48% then). Quiet on build 42 with PR #117's kit (run 43099525592): file 81/87 (93%), headphones 86/91 (95%), speakers 83/91 (91%), typed 80/80; the owner's song passed in both modes in every run; security 3/3, 5/5, 5/5."
+ "request": "Round 54, forty-third build (incremental on the forty-second), with the spoken suite in quiet and with music. With music on the forty-second (run 43111736508): headphones 73/91, speakers 70/91, security held. This build: voice mode takes \"quick\" and \"kick\" for \"click\", \"enter\" before a text prompt's answer, \"previous to\" for \"previous tab\" and \"you two\" for YouTube; and the speech helper finds where each word starts in the bundled model's results (it found none: its tokens begin with a space, not SentencePiece's mark), so \"Hey Molt, next video\" written \"Next video.\" is no longer taken for the wake phrase alone. Offline, the bundle's helper over the kit's music heard 102 of 120 commands against 95, in quiet 53 of 60 as before, a little sooner. In quiet the forty-second gave file 81/87, headphones 86/91, speakers 83/91, typed 80/80."
 }
