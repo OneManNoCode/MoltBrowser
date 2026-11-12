@@ -76,7 +76,8 @@ Any expectation may add "typed": false (not checked in --typed mode) or
 Scenario fields: "id", "title", "task" (a core task of
 TOUCHLESS_BROWSING.md §2: go, read, choose, act, media, browser, recover;
 or prompts, security, owner; or phase2, Phase 2's multi-step tasks,
-counted apart), "counts" (one of the scripted tasks,
+counted apart; or model, the tasks that need the on-device model (the
+planner's requests, questions about a page), counted apart too), "counts" (one of the scripted tasks,
 default true), "modes" (listening modes: "wake", "always"; default
 ["wake"]), "start" ({"url", "tabs": [urls], "settings": {...},
 "js": "...", "shields": false for a browser run with MoltShield off
@@ -94,7 +95,7 @@ import os
 import re
 
 TASKS = ("go", "read", "choose", "act", "media", "browser", "recover",
-         "prompts", "security", "owner", "phase2")
+         "prompts", "security", "owner", "phase2", "model")
 MODES = ("wake", "always")
 # The test voices' names (render.VOICES; test_scenarios.py checks).
 VOICE_NAMES = ("ljspeech", "libritts-m", "libritts-f")
@@ -128,7 +129,8 @@ MEDIA_KEYS = {"paused", "muted", "volume", "rate", "time_min", "time_max",
               "seeked", "captions", "fullscreen", "src_has"}
 
 DEFAULT_TIMEOUT = 20.0
-MAX_TIMEOUT = 180.0
+# A model's step on a CI runner's CPU (scenarios/model.json) can take minutes.
+MAX_TIMEOUT = 600.0
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 INTENT_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 MAX_TEXT = 300

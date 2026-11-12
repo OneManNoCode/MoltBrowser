@@ -51,13 +51,16 @@ def load(args):
 
 def cmd_list(args):
     scs = load(args)
-    counted = sum(len(s.modes) for s in scs if s.counts and s.task != "phase2")
+    counted = sum(len(s.modes) for s in scs
+                  if s.counts and s.task not in ("phase2", "model"))
     phase2 = sum(len(s.modes) for s in scs if s.task == "phase2")
+    model = sum(len(s.modes) for s in scs if s.task == "model")
     for s in scs:
         print("%-28s %-9s %-11s %s" % (s.id, s.task, ",".join(s.modes),
                                        ",".join(s.needs())))
-    print("%d scenarios, %d runs of counted tasks per spoken run (and %d of Phase 2's), "
-          "%d utterances" % (len(scs), counted, phase2, len(scen.utterances(scs))))
+    print("%d scenarios, %d runs of counted tasks per spoken run (and %d of Phase 2's, "
+          "%d of the model's), %d utterances" % (len(scs), counted, phase2, model,
+                                                 len(scen.utterances(scs))))
     return 0
 
 

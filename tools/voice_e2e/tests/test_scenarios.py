@@ -151,6 +151,28 @@ class ShippedTest(unittest.TestCase):
                     # Nothing has happened yet: the page is where it was.
                     self.assertTrue(any("path" in e for e in st.expect), s.id)
 
+    def test_the_models_tasks(self):
+        # Each needs the model; a planner request is no command the grammar
+        # knows, and one that orders or deletes is asked about, then a "no"
+        # leaves the page where it was.
+        model = [s for s in self.scs if s.task == "model"]
+        self.assertGreaterEqual(len(model), 4)
+        for s in model:
+            self.assertIn("model", s.all_requirements(), s.id)
+            self.assertTrue(s.id.startswith("model-"), s.id)
+            first = s.steps[0]
+            if s.id.startswith("model-plan-"):
+                self.assertIn({"heard_intent": "unknown"}, first.expect, s.id)
+                self.assertFalse(first.needs, s.id)
+            if any(e.get("confirm") == "open" for e in first.expect):
+                nxt = s.steps[1]
+                self.assertTrue(nxt.answer and nxt.value == "no", s.id)
+                self.assertTrue(any("path" in e and e.get("quiet") for e in nxt.expect),
+                                s.id)
+        asks = {s.id for s in model
+                if any(e.get("confirm") == "open" for e in s.steps[0].expect)}
+        self.assertEqual(asks, {"model-plan-order-asks", "model-plan-delete-asks"})
+
     def test_every_start_url_is_a_fixture_or_blank(self):
         from e2ekit import fixtures
         import urllib.parse
