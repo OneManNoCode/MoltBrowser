@@ -10,9 +10,11 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "chrome/browser/molt_ai/voice/speech_helper/speech_text.h"
 #include "sherpa-onnx/c-api/c-api.h"
 
 namespace molt_speech {
@@ -457,14 +459,19 @@ RecognizerResult SherpaEngines::Result(bool final_result) {
         SherpaOnnxGetOnlineStreamResult(asr_, asr_stream_);
     if (r) {
       result.text = r->text ? r->text : "";
-      // A word starts with a token that starts with U+2581.
-      if (r->timestamps && r->tokens_arr) {
+      // Where each word starts (WordStartSeconds()): the bundled models
+      // begin a word's first token with a space, not SentencePiece's mark,
+      // which alone found none.
+      if (r->timestamps && r->tokens_arr && r->count > 0) {
+        std::vector<std::string_view> tokens;
+        std::vector<float> seconds;
+        tokens.reserve(static_cast<size_t>(r->count));
+        seconds.reserve(static_cast<size_t>(r->count));
         for (int32_t i = 0; i < r->count; ++i) {
-          const char* token = r->tokens_arr[i];
-          if (token && strncmp(token, "\xE2\x96\x81", 3) == 0) {
-            result.word_seconds.push_back(r->timestamps[i]);
-          }
+          tokens.emplace_back(r->tokens_arr[i] ? r->tokens_arr[i] : "");
+          seconds.push_back(r->timestamps[i]);
         }
+        result.word_seconds = WordStartSeconds(tokens, seconds);
       }
       if (final_result) {
         result.confidence = ConfidenceFromJson(r->json);

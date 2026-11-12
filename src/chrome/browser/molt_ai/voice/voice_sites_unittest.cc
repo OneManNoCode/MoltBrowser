@@ -19,10 +19,10 @@ TEST(VoiceSitesTest, KnownSitesByTheGrammarsNames) {
     const char* name;
   } kCases[] = {
       {"youtube", "YouTube"},       {"YouTube", "YouTube"},
-      {"google", "Google"},         {"duckduckgo", "DuckDuckGo"},
-      {"wikipedia", "Wikipedia"},   {"wiki", "Wikipedia"},
-      {"bravesearch", "Brave Search"}, {"brave", "Brave Search"},
-      {"bing", "Bing"},
+      {"youtwo", "YouTube"},        {"google", "Google"},
+      {"duckduckgo", "DuckDuckGo"}, {"wikipedia", "Wikipedia"},
+      {"wiki", "Wikipedia"},        {"bravesearch", "Brave Search"},
+      {"brave", "Brave Search"},    {"bing", "Bing"},
   };
   for (const Case& c : kCases) {
     SCOPED_TRACE(c.site);
@@ -99,8 +99,10 @@ TEST(VoiceSitesTest, PopularSitesAtTheirOfficialAddresses) {
 
 TEST(VoiceSitesTest, TheGrammarsSiteForOpenYouTubeIsKnown) {
   ParseContext context;
-  for (const char* said : {"open YouTube", "go to you tube", "open Wikipedia",
-                           "take me to duck duck go", "open bing"}) {
+  // "You two": YouTube as the recognizer hears it over music.
+  for (const char* said :
+       {"open YouTube", "go to you tube", "open you two", "open Wikipedia",
+        "take me to duck duck go", "open bing"}) {
     SCOPED_TRACE(said);
     const VoiceCommand command = ParseVoiceCommand(said, context);
     ASSERT_EQ(command.kind, VoiceCommandKind::kOpenSite);

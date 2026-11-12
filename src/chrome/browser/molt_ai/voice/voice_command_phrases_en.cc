@@ -429,8 +429,9 @@ constexpr CommandPattern kPatterns[] = {
      V::kNextTab},
     {K::kSwitchTab, "[go to|switch to|move to] [the] previous tab", C::kAlways,
      V::kPreviousTab},
-    // "Tab" heard as "tomb" (the spoken suite's file run).
-    {K::kSwitchTab, "[go to|switch to|move to] [the] previous tomb",
+    // "Tab" heard as "tomb" (the spoken suite's file run), or as "to" over
+    // music (its music runs).
+    {K::kSwitchTab, "[go to|switch to|move to] [the] previous (tomb|to)",
      C::kAlways, V::kPreviousTab},
     {K::kSwitchTab, "(switch|go|change|move|jump) to (tab|tip) {tab}"},
     {K::kSwitchTab, "tab {tab}"},

@@ -166,6 +166,10 @@ struct LanguagePhrases {
   // it writes them ("lickname color"): an utterance nothing else
   // understood is read once more with the verb apart.
   std::vector<GluedVerb> glued_verbs;
+  // Words a recognizer writes for a verb, said apart ("quick your name" for
+  // "click your name"): an utterance nothing else understood is read once
+  // more with the verb, and taken only as that verb's command.
+  std::vector<GluedVerb> verb_sound_alikes;
 
   // --- Values in commands -------------------------------------------------
   // Volume words: "half" -> 50, "max" -> 100.

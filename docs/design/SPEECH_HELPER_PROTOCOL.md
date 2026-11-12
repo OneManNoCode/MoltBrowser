@@ -326,7 +326,14 @@ wake  [speech_start  partial*  speech_end]  final
   recognized: one that starts later than 0.3 s before the spotter fired (it
   fires 0.2–0.3 s after the phrase ends, [VOICE_BENCH.md](../VOICE_BENCH.md)
   §3.8). The command then ends like any utterance: `speech_end`, then
-  `final`.
+  `final`. Where each word starts comes from the recognizer's tokens and
+  their times (`WordStartSeconds()` in `speech_text.h`): a word begins at a
+  token that begins with a space, as the bundled models write them (" mo",
+  "ld"), or with SentencePiece's mark. Until November 2026 the helper
+  looked for the mark alone and found no word's start with the bundled
+  models, so only the word count below told a command from the phrase:
+  "Hey Molt, next video" over music, which the recognizer wrote as "Next
+  video." without the phrase, was taken for the phrase alone, and lost.
 - If the spotter hasn't fired but the recognizer's text starts with a wake
   phrase, as written or sounding like it ("Hey, Malt", "he mold", "Himalt",
   "him old": the same consonants, `WakePhraseWordsAtStart()` in

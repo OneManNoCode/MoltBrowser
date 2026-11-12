@@ -69,8 +69,11 @@ constexpr auto kNever = std::to_array<std::string_view>(
 constexpr auto kNotNow = std::to_array<std::string_view>(
     {"not now", "no", "no thanks", "no thank you", "cancel", "later",
      "not now thanks", "now"});
+// "Enter blue": also "answer blue" as the recognizer hears it over music
+// (the spoken suite's music runs).
 constexpr auto kDictationLeads = std::to_array<std::string_view>(
-    {"answer ", "type ", "my answer is ", "the answer is ", "reply "});
+    {"answer ", "type ", "enter ", "my answer is ", "the answer is ",
+     "reply "});
 constexpr auto kPoliteBefore =
     std::to_array<std::string_view>({"please ", "um ", "uh "});
 constexpr auto kPoliteAfter =

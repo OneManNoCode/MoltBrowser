@@ -540,7 +540,7 @@ said.
 
 - `[go to | switch to | move to] [the] next tab`
 - `[go to | switch to | move to] [the] previous tab`
-- `[go to | switch to | move to] [the] previous tomb`
+- `[go to | switch to | move to] [the] previous (tomb | to)`
 - `(switch | go | change | move | jump) to (tab | tip) {tab}`
 - `tab {tab}`
 - `(switch | go | change | move | jump) to [the] {tab} tab`

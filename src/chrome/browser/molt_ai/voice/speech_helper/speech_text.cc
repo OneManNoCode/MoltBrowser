@@ -810,4 +810,38 @@ bool OnlyAWakePhraseBegun(std::string_view text,
   return false;
 }
 
+std::vector<float> WordStartSeconds(const std::vector<std::string_view>& tokens,
+                                    const std::vector<float>& seconds) {
+  std::vector<float> starts;
+  const size_t count = std::min(tokens.size(), seconds.size());
+  bool open = false;  // a word begun with no letter or digit in it yet
+  for (size_t i = 0; i < count; ++i) {
+    std::string_view token = tokens[i];
+    if (token.substr(0, kWordStart.size()) == kWordStart) {
+      token.remove_prefix(kWordStart.size());
+      open = true;
+    } else if (!token.empty() && token.front() == ' ') {
+      open = true;
+    } else if (i == 0) {
+      open = true;
+    }
+    if (!open) {
+      continue;
+    }
+    for (const char c : token) {
+      if (c == ' ') {
+        continue;
+      }
+      const auto byte = static_cast<unsigned char>(c);
+      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') || byte >= 0x80) {
+        starts.push_back(seconds[i]);
+        open = false;
+        break;
+      }
+    }
+  }
+  return starts;
+}
+
 }  // namespace molt_speech

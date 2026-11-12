@@ -140,6 +140,10 @@ TEST(VoicePromptsTest, PromptTakesADictatedAnswerThenYes) {
   reply = ParsePromptReply(prompt, "my answer is 42");
   EXPECT_EQ(reply.answer, PromptAnswer::kDictate);
   EXPECT_EQ(reply.text, "42");
+  reply = ParsePromptReply(prompt, "Enter blue");
+  EXPECT_EQ(reply.answer, PromptAnswer::kDictate);
+  EXPECT_EQ(reply.text, "blue");
+  EXPECT_EQ(Answer(prompt, "enter"), PromptAnswer::kNone);
   // "answer" alone is no answer.
   EXPECT_EQ(Answer(prompt, "answer"), PromptAnswer::kNone);
   EXPECT_EQ(Answer(prompt, "yes"), PromptAnswer::kAccept);

@@ -547,6 +547,24 @@ What this says before the build runs:
   (ljspeech 28 of 40, libritts-f 39 of 40), none wrong; the browser says
   the word in a sentence ("To allow it, say harbor."), which helps, and the
   kit asks for "repeat" when it isn't sure.
+- **With music playing** (`pulse:music10`, the kit's music 10 dB under
+  the speech through the whole scenario; run 43111736508 on the
+  forty-second build, November 2026): headphones 73 of 91 (80%),
+  speakers 70 of 91 (77%), against 86 and 83 of 91 in quiet on the same
+  build; nothing a page said or played acted (4 of 5 and 5 of 5 security
+  scenarios reached their checks, all held). Recognition was only a
+  little worse (15% and 17% of words wrong, against 15% and 13%), but
+  more short commands lost a word: "click" heard as "quick" or "kick",
+  "answer blue" as "Enter blue", "previous tab" as "previous to", "open
+  YouTube" as "open you two" (the grammar takes all four since), names
+  dictated ("volunturing"), "reset zoom" as "Rosettazo", "choose France"
+  as "choose Frips". Seven commands weren't heard at all. One of them,
+  "Hey Molt, next video", lost the same way offline (the bundle's helper
+  over the kit's music): the spotter fired late, in the command, and the
+  recognizer wrote it without the phrase ("Next video."), no more words
+  than the phrase has, while the helper found no word's start in the
+  bundled model's results (SPEECH_HELPER_PROTOCOL.md §4.1, since fixed).
+  The music run hadn't been measured since the ninth build (48%).
 
 ## Limits
 

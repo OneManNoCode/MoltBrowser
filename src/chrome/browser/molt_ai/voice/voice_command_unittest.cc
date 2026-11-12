@@ -227,6 +227,40 @@ TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
   }
 }
 
+TEST(VoiceCommandTest, AVerbHeardAsAnotherWordIsTheVerb) {
+  // "Click" and "check" as the recognizer hears them over music (the
+  // spoken suite's music runs).
+  const ParseContext context = MakeContext(kNone);
+  const VoiceCommand quick =
+      ParseVoiceCommand("Himalt. Quick your name.", context);
+  EXPECT_EQ(Fields(quick),
+            Fields(ParseVoiceCommand("click your name", context)));
+  EXPECT_EQ(quick.kind, VoiceCommandKind::kChoose);
+  EXPECT_EQ(quick.heard, "Quick your name");
+  EXPECT_TRUE(quick.wake_said);
+  EXPECT_EQ(Fields(ParseVoiceCommand("Himaled, quick name a color.", context)),
+            Fields(ParseVoiceCommand("click name a color", context)));
+  EXPECT_EQ(Fields(ParseVoiceCommand("Himalt. Kick send me the newsletter.",
+                                     context)),
+            Fields(ParseVoiceCommand("click send me the newsletter", context)));
+  EXPECT_EQ(Fields(ParseVoiceCommand("lick place order", context)),
+            Fields(ParseVoiceCommand("click place order", context)));
+  // Alone, it is no click; and what else understands it keeps it.
+  for (const char* said : {"quick", "kick", "Hey Molt, quick."}) {
+    EXPECT_NE(ParseVoiceCommand(said, context).kind, VoiceCommandKind::kChoose)
+        << said;
+  }
+  // Only ever a click: never another command read from the rest.
+  for (const char* said : {"quick scroll down", "kick go back",
+                           "quick open YouTube", "kick search for cats"}) {
+    const VoiceCommand c = ParseVoiceCommand(said, context);
+    EXPECT_TRUE(
+        c.kind == VoiceCommandKind::kUnknown ||
+        (c.kind == VoiceCommandKind::kChoose && c.verb == ChoiceVerb::kClick))
+        << said;
+  }
+}
+
 TEST(VoiceCommandTest, OpenSites) {
   Check({
       {"open YouTube", "open_site", "site=youtube"},
@@ -240,6 +274,9 @@ TEST(VoiceCommandTest, OpenSites) {
       {"He mold, Joe numbers", "show_numbers", ""},
       {"Hey, Malt, switch to tip two", "switch_tab", "choice=num:2"},
       {"Hey, Malt, previous tomb.", "switch_tab", "choice=rel:previous"},
+      // And over music (the spoken suite's music runs).
+      {"Hey, Malt, previous to", "switch_tab", "choice=rel:previous"},
+      {"Hey mold. Open you two.", "open_site", "site=youtwo"},
       {"Hey, Malt, close this ted.", "close_tab", ""},
       {"Hey, Malt, skip the ed.", "skip_ad", ""},
       {"Hey, Molt, read the tile", "read_title", ""},
@@ -250,8 +287,7 @@ TEST(VoiceCommandTest, OpenSites) {
       {"Hey, Malt, Rolete", "reload", ""},
       {"Hey, Malt, feel back", "back", ""},
       {"Hey, Malt, turn on catchens.", "captions_on", ""},
-      {"Hey mold, said the volume to fifty percent.", "set_volume",
-       "level=50"},
+      {"Hey mold, said the volume to fifty percent.", "set_volume", "level=50"},
       // ... and with the greeting's "h" lost, run into the name.
       {"Immalt, said the volume to half.", "set_volume", "level=50"},
       {"Emolt. Go back", "back", ""},
