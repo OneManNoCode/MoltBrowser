@@ -927,6 +927,46 @@ TEST_F(VoiceSessionLogicTest, ANameOfOneWordItReadIsItsVoice) {
   EXPECT_TRUE(number.stop_speech);
 }
 
+// A number it said within a longer one ("one" of the "nineteen eighty one"
+// it says for "1981") is its voice heard back, however it stood out: the
+// speakers run on build 46 played the first result so, over the reading of
+// the results.
+TEST_F(VoiceSessionLogicTest, ANumberItSaidInALongerOneIsItsVoice) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("search for bohemian rhapsody", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "20 results. 1: Queen - Bohemian Rhapsody, Queen Official, 6 minutes. "
+      "2: Bohemian Rhapsody (Remastered 2011), Queen - Topic, 6 minutes. "
+      "3: Queen - Bohemian Rhapsody (Live at Rock Montreal 1981), Queen "
+      "Official. 4: Queen - Bohemian Rhapsody (Live Aid 1985), Queen "
+      "Official.",
+      now_);
+  const auto stood_out = [&](const char* text, int64_t at) {
+    logic_->OnSpeechStart(now_ + at);
+    logic_->NoteUtteranceLoudness({.loud = true, .quiet_before = true});
+    return logic_->OnFinal(text, 0.3, now_ + at + 900);
+  };
+  for (const char* text : {"one.", "Won.", "five", "eleven"}) {
+    SessionActions echo = stood_out(text, 6000);
+    EXPECT_FALSE(echo.utterance.has_value()) << text;
+    EXPECT_FALSE(echo.stop_speech) << text;
+    EXPECT_EQ(echo.dropped_reason, "voice mode's voice heard back") << text;
+    now_ += 2000;
+  }
+  // A number it said only alone ("2:", "6 minutes") is still the user's.
+  for (const char* text : {"two", "six"}) {
+    SessionActions choice = stood_out(text, 6000);
+    EXPECT_EQ(choice.utterance, text);
+    EXPECT_TRUE(choice.stop_speech) << text;
+    now_ += 7000;
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  }
+}
+
 // A quiet stretch partly after the browser stopped speaking proves nothing
 // about its voice: heard back, as before.
 TEST_F(VoiceSessionLogicTest, AQuietStretchPastTheBrowsersSpeech) {

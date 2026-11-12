@@ -287,6 +287,10 @@ struct EngineGenerationParams {
   float temperature = 0.7f;
   float top_p = 0.9f;
   uint32_t top_k = 40;
+  // The sampler's seed, from the service's CSPRNG (molt_model_impl.cc).
+  // llama.cpp's own default seed would have it build a std::random_device,
+  // which the sandbox doesn't allow (llama_engine.cc).
+  uint32_t seed = 0;
   std::string conversation_key;
   std::vector<std::string> stop_sequences;
   // Constrained decoding: GBNF (start rule "root") from

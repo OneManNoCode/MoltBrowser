@@ -13,11 +13,12 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
+#include "base/rand_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/services/molt_ai/inference/engine/audio_input.h"
+#include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
-#include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
@@ -227,6 +228,9 @@ EngineGenerationParams ToEngine(const mojom::GenerationParams& p) {
                         : 0.7f;
   out.top_p = std::isfinite(p.top_p) ? std::clamp(p.top_p, 0.0f, 1.0f) : 0.9f;
   out.top_k = p.top_k;
+  // The browser's CSPRNG (getrandom()), which the sandbox allows; llama.cpp
+  // would otherwise seed from std::random_device, which it doesn't.
+  out.seed = static_cast<uint32_t>(base::RandUint64());
   out.conversation_key = p.conversation_key;
   out.stop_sequences = p.stop_sequences;
   return out;

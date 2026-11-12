@@ -1,10 +1,11 @@
 {
- "resume_run": "43166671237",
+ "resume_run": "43256379934",
  "run_tests": true,
  "e2e_only": false,
- "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean,pulse:music10:noloop,pulse:music10",
+ "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Forty-fifth build (incremental on the forty-fourth): \"pick\"/\"picked\" typed into a focused field when nothing is so named, \"card\" naming a \"Cart\" button in a tie, \"Chekkai\" read as \"check I\", a routine keeping a typed \"pick\" as typing; every on-device model pinned (registries); the kit answers a yes-or-no question voice mode asks again. The whole spoken suite. Phase 2 on the forty-fourth (run 43166671237): typed 30/30, file 15/30, headphones 11/30, speakers 14/30, music 8/30 and 8/30; Phase 1 93/93/90 quiet, 80/84 with music.",
- "e2e_scenarios": ""
+ "e2e_model": "tinyllama-1.1b",
+ "request": "Forty-eighth build (incremental on the forty-seventh, run 43256379934): no std::random_device in the sandboxed inference service. InferenceSandboxBrowserTest found the first token killing the service on the forty-seventh (llama_sampler_init_dist(LLAMA_DEFAULT_SEED) -> get_rng_seed() -> libc++'s random_device, which can't open /dev/urandom there): the service now seeds the sampler from base::RandUint64(), and local patches keep random_device out of llama-sampler.cpp and clip.cpp. The browser test must pass; then the spoken suite with TinyLlama, typed and on speakers: Phase 2's 30 tasks with the planner behind the grammar and the two scenarios that need a model. On the forty-seventh: Phase 2 typed 30, file 17, speakers 22 of 30; both model scenarios failed on that crash.",
+ "e2e_scenarios": "p2-,browser-ask-ai,sec-answer-imitates-prompt"
 }

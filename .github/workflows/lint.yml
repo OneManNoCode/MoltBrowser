@@ -61,6 +61,10 @@ name: Lint
 #     llama tiers) built with clang + ASan/UBSan and run over their seed
 #     corpora with a fixed seed and run count (tools/fuzz/molt_fuzz.py;
 #     blocking; see docs/FUZZING.md)
+#   * the vendored llama.cpp maps a model file without a call the inference
+#     sandbox's seccomp kills (posix_fadvise, MAP_POPULATE), under a filter
+#     that traps those as Chrome's does (tools/llama_sandbox/check.sh;
+#     blocking)
 #   * the static GN checks against the pinned Chromium's own build files
 #     (tools/chromium/gn_static_check.py): gn check's include and
 #     dependency rules on six configs, checkdeps, Blink's audit, test
@@ -363,6 +367,16 @@ jobs:
         run: |
           python3 -I -c "import numpy; print('numpy', numpy.__version__)"
           python3 -I -m unittest discover -s tools/voice_e2e/tests -t tools/voice_e2e -v
+
+  llama-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: llama_mmap under the inference sandbox's seccomp rules
+        run: tools/llama_sandbox/check.sh "$RUNNER_TEMP/llama_sandbox"
 
   fuzz-smoke:
     runs-on: ubuntu-latest

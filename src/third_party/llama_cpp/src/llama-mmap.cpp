@@ -485,10 +485,19 @@ struct llama_mmap::impl {
         int flags = MAP_SHARED;
         if (numa) { prefetch = 0; }
 #ifdef __linux__
+#if !defined(LLAMA_MOLTBROWSER_SANDBOXED)
         if (posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL)) {
             LLAMA_LOG_WARN("warning: posix_fadvise(.., POSIX_FADV_SEQUENTIAL) failed: %s\n",
                     strerror(errno));
         }
+#else
+        // MoltBrowser: no posix_fadvise. Chrome's seccomp-bpf policy lists
+        // fadvise64 in no allowed set (syscall_sets.cc puts it after
+        // IsAllowedFileSystemAccessViaFd()'s "return true", so it falls to
+        // "return false"), and the baseline answers it with SIGSYS: the
+        // first load of a real model in the spoken suite crashed here. It
+        // is only a readahead hint; posix_madvise() below is allowed.
+#endif
         // MAP_POPULATE would fault in the lazy ranges too
 #if !defined(LLAMA_MOLTBROWSER_SANDBOXED)
         if (prefetch && lazy_ranges.empty()) { flags |= MAP_POPULATE; }

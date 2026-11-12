@@ -101,6 +101,37 @@ source_set("embedding_host") {
   ]
 }
 
+# A tiny random-weight llama GGUF, written by the test that loads it.
+source_set("tiny_gguf_for_testing") {
+  testonly = true
+  sources = [
+    "tiny_gguf_for_testing.cc",
+    "tiny_gguf_for_testing.h",
+  ]
+}
+
+# A real model loaded and run by the real sandboxed inference service.
+# Picked up by browser_tests through //chrome/browser/molt_ai/voice:browser_tests.
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "inference_sandbox_browsertest.cc" ]
+
+  deps = [
+    ":stream_validator",
+    ":tiny_gguf_for_testing",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/services/molt_ai/inference/public/mojom",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/test:test_support",
+    "//mojo/public/cpp/base",
+    "//testing/gtest",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true

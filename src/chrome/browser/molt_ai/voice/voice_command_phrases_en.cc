@@ -334,9 +334,11 @@ constexpr CommandPattern kPatterns[] = {
      C::kTextField},
     {K::kClearField, "(clear|erase|delete) [it|that|everything|all]",
      C::kTextField},
-    // "Back" heard as "Beck" (the spoken suite's file run).
+    // "Back" heard as "Beck" (the spoken suite's file run); "read it" run
+    // together as "readed" (build 46's file run).
     {K::kReadBack, "read (it|that|this|what i (typed|wrote|said)) (back|beck)",
      C::kTextField},
+    {K::kReadBack, "(readed|reddit) (back|beck)", C::kTextField},
     {K::kReadBack, "read back [what i (typed|wrote)]", C::kTextField},
     {K::kReadBack, "(what did i (type|write)|read what i (typed|wrote))",
      C::kTextField},

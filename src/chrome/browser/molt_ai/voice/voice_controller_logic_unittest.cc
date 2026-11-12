@@ -1672,6 +1672,50 @@ TEST(VoiceControllerLogicTest, ANameSaidAlonePressesTheItemItNames) {
   }
 }
 
+// "Good country", "thick reply", "clicked message": build 45's spoken
+// suite heard "click" so before the whole name of one thing on the page.
+// After the wake phrase, that presses it as "click" would; anything else
+// is the planner's, as before.
+TEST(VoiceControllerLogicTest, AMisheardClickBeforeAWholeNamePressesIt) {
+  Conversation clicked(BuildPageMap(ShopPage(false)), Env());
+  const VoiceTurn click = clicked.Say("click comments");
+  ASSERT_FALSE(Actions(click).empty());
+
+  for (const char* said :
+       {"He mold, good comments.", "Hey Molt, thick comments",
+        "Himalt. Clicked comments."}) {
+    Conversation c(BuildPageMap(ShopPage(false)), Env());
+    const VoiceTurn turn = c.Say(said);
+    EXPECT_EQ(Actions(turn), Actions(click)) << said;
+    EXPECT_EQ(Said(turn), Said(click)) << said;
+  }
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  // Without the wake phrase; with nothing named just that ("Morning", part
+  // of "Add to cart"); with more said: the planner's.
+  for (const char* said :
+       {"good comments", "Hey Molt, good morning", "Hey Molt, good cart",
+        "Hey Molt, good comments about the toaster"}) {
+    EXPECT_EQ(Actions(c.Say(said)), (std::vector<VoiceStepKind>{K::kToPlanner}))
+        << said;
+  }
+
+  // "Fix" for "check": a check box only.
+  TreeBuilder b("Sign up - Club");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Sign up", 0);
+  const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+  b.Add(main, PageRole::kCheckBox, "Send me the newsletter",
+        kStateFocusable | kStateHasDefaultAction);
+  b.Button(main, "Send the form");
+  Conversation form(BuildPageMap(b.Take()), Env());
+  VoiceTurn turn = form.Say("Himaled. Fix send me the newsletter.");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}));
+  EXPECT_EQ(Find(turn, K::kPress)->target, form.map().items[0].handle);
+  EXPECT_EQ(Actions(form.Say("Hey Molt, fix send the form")),
+            (std::vector<VoiceStepKind>{K::kToPlanner}));
+  EXPECT_FALSE(form.state().confirming);
+}
+
 TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
   Conversation c(BuildPageMap(HomePage()), Env());
   VoiceTurn turn = c.Say("find me a train from Paris to Lyon tomorrow");

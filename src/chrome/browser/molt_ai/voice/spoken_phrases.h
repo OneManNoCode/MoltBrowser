@@ -111,6 +111,11 @@ struct LanguagePhrases {
   // --- Positions from the end ----------------------------------------------
   // "last": the first from the end.
   std::vector<std::string_view> last_words;
+  // What a recognizer writes for a last word ("the list one" for "the
+  // last one"): read as one only before "one" or a role word, and only
+  // when no item is described by it (spoken_choice.h's
+  // ChoiceRef::could_be_last).
+  std::vector<std::string_view> last_homophones;
   // Between an ordinal and a last word: "second to last", "third from
   // last". ("second last" needs none.)
   std::vector<std::string_view> from_end_links;

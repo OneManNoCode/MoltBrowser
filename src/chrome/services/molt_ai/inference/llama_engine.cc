@@ -16,6 +16,10 @@
 //    returned.
 //  - The rest (decode, sampler chain, memory, metadata getters) don't throw
 //    on the inputs used here.
+//  - llama_sampler_init_dist is never given LLAMA_DEFAULT_SEED: its
+//    get_rng_seed() then builds a std::random_device, whose libc++ opens
+//    /dev/urandom, a path the sandbox's broker doesn't grant; the failed
+//    open ends the process. The service seeds it.
 //  - Embeddings (llama_embedding_engine.cc, which details each): decode
 //    with embeddings on (and through llama_context::encode() for models
 //    without a KV cache), llama_get_embeddings_seq, llama_pooling_type,
@@ -715,6 +719,8 @@ struct LlamaEngine::DecodeParams {
   float temperature = 0.7f;
   float top_p = 0.9f;
   int top_k = 40;
+  // EngineGenerationParams::seed.
+  uint32_t seed = 0;
   std::vector<std::string> stop_sequences;
   // GBNF; "" = unconstrained.
   std::string grammar;
@@ -1340,6 +1346,7 @@ EngineSummary LlamaEngine::Raw(const EngineRawRequest& request,
   dp.temperature = params.temperature;
   dp.top_p = params.top_p;
   dp.top_k = static_cast<int>(std::min<uint32_t>(params.top_k, INT32_MAX));
+  dp.seed = params.seed;
   dp.stop_sequences = params.stop_sequences;
   dp.grammar = params.grammar;
   // Raw prompts never share a conversation prefix.
@@ -1705,6 +1712,7 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
   dp.temperature = params.temperature;
   dp.top_p = params.top_p;
   dp.top_k = static_cast<int>(std::min<uint32_t>(params.top_k, INT32_MAX));
+  dp.seed = params.seed;
   dp.stop_sequences = params.stop_sequences;
 
   if (constrained) {
@@ -2049,8 +2057,12 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   llama_sampler_chain_add(sampler, llama_sampler_init_top_k(p.top_k));
   llama_sampler_chain_add(sampler, llama_sampler_init_top_p(p.top_p, 1));
   llama_sampler_chain_add(sampler, llama_sampler_init_temp(p.temperature));
-  llama_sampler_chain_add(sampler,
-                          llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+  // Never LLAMA_DEFAULT_SEED: with it, llama.cpp seeds from a
+  // std::random_device, whose libc++ opens /dev/urandom, which the
+  // sandbox's broker doesn't grant: the failed open ends the process.
+  const uint32_t seed =
+      p.seed == LLAMA_DEFAULT_SEED ? LLAMA_DEFAULT_SEED - 1 : p.seed;
+  llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
 
   HarmonyChannelFilter harmony;
   // Gemma 4's thought channel, for vocabularies that define its markers.
