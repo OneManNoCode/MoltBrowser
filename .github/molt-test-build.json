@@ -1,11 +1,11 @@
 {
- "resume_run": "43281174397",
+ "resume_run": "43302310139",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "tinyllama-1.1b",
- "request": "Forty-ninth build (incremental on the forty-eighth, run 43281174397): the web agent, its page reader and the workflow runner hold their tab weakly, and a web agent run ends when its tab closes (build 48 showed the pointer dangling at shutdown, released from VoiceAgentPlanner::Cancel). New browser test AgentPageMapBrowserTest.EndsWhenItsTabCloses must pass, with the rest. Then the spoken suite with TinyLlama, typed and on pulse:clean: Phase 2's 30 tasks plus the two model scenarios. Voice fixes from the forty-eighth's misses: a misheard click after a list was read (\"Good checkout\"), \"typed\" for type and \"C you\" for see you, \"Hekkai\" for check I, and \"Still working on it.\" every 15 s the planner says nothing. On the forty-eighth: Phase 2 typed 30, pulse:clean 23 of 30; browser-ask-ai passed typed, misheard spoken; the security scenario held.",
- "e2e_scenarios": "p2-,browser-ask-ai,sec-answer-imitates-prompt"
+ "request": "Fiftieth build (incremental on the forty-ninth, run 43302310139). The forty-ninth passed 3043/3043 unit tests and 121/121 browser tests (with EndsWhenItsTabCloses), Phase 2 typed 30 and pulse:clean 24 of 30, and the dangling tab pointer was gone. New since: choices matched by Spanish sounds in Spanish (spoken_choice, voice_controller_logic; check molt_ai_unittests' Spanish cases), \"Still working on it.\" heard back is voice mode's own voice and said at 15 s, 30 s, then each 60 s, and \"say that again\" isn't asked twice over its own echo. The spoken suite adds the model's tasks (scenarios/model.json): a question about a news story, and planner requests to send an order off (must ask before Place order; no leaves it), get rid of a message (must ask before Delete), and put a name into a form.",
+ "e2e_scenarios": "p2-,model-,browser-ask-ai,sec-answer-imitates-prompt"
 }
