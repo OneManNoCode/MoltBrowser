@@ -91,7 +91,11 @@ python3 -I tools/voice_e2e/run_e2e.py serve     # the fixture sites, to look at
 `run` takes `--modes wake,always`, `--voices`, `--speeds`, `--no-loopback`
 (no echo of the browser into the microphone), `--no-sandbox` (as root),
 `--model` (an on-device AI model is installed: runs the scenarios that
-need one), `--gate-latency` (the 1.5 s target fails the run) and
+need one), `--model-file <file>.gguf` (that model, named as the browser's
+registry names it and checked against its pin already, is linked into each
+scenario's home, `~/.moltbrowser/models/`, where the browser loads it; the
+link is removed after the scenario, so the report never carries the model;
+it implies `--model`), `--gate-latency` (the 1.5 s target fails the run) and
 `--browser-flag` (one more flag for the browser), and `--display current`
 to watch it on a real screen.
 
@@ -589,7 +593,14 @@ What this says before the build runs:
   voice mode stays where it is (Tor isn't reachable from the fixture
   network).
 - The scenarios that need an on-device AI model (asking the AI, an answer
-  that imitates a prompt) run only with `--model`.
+  that imitates a prompt) run only with `--model` or `--model-file`. In
+  CI, `"e2e_model": "<registry id>"` in `.github/molt-test-build.json`
+  downloads that model at its pin and checks its size and SHA-256
+  (`tools/models/fetch_model.py`; the browser hashes a model only while it
+  downloads it itself) before the suite runs with it. With a model, the
+  planner takes what the grammar doesn't understand, as it does for a user
+  who has one. Voice mode uses the downloaded model that needs the least
+  memory, so give the suite one; a hidden registry entry is never loaded.
 - A permission the page asks for is the real prompt; whether the browser
   then gets a location (no location service here) isn't checked, only the
   permission's state.

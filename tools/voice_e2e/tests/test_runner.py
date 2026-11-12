@@ -7,6 +7,7 @@ stand-in what it plays. Then the report."""
 import json
 import os
 import re
+import shutil
 import stat
 import sys
 import tempfile
@@ -238,6 +239,26 @@ class RunnerTest(unittest.TestCase):
                                            {"e": "said", "ts": t + 0.1}]), t, timeout=1))
         self.assertFalse(r.wait_reply(Log([{"e": "activity", "activity": "listening",
                                              "ts": t - 30}]), t, timeout=0.3))
+
+    def test_a_model_file_linked_into_the_home(self):
+        from e2ekit import browser as browserlib
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        model = os.path.join(tmp, "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
+        with open(model, "wb") as f:
+            f.write(b"GGUF")
+        home = os.path.join(tmp, "home")
+        link = browserlib.link_model(home, model)
+        self.assertEqual(link, os.path.join(home, ".moltbrowser", "models",
+                                            os.path.basename(model)))
+        self.assertTrue(os.path.islink(link))
+        self.assertEqual(os.path.realpath(link), os.path.realpath(model))
+        # Again (a scenario run twice): the link is replaced.
+        self.assertEqual(browserlib.link_model(home, model), link)
+        # A model file makes the model scenarios run.
+        cfg = runner.RunConfig(audio="typed", model_file=model)
+        self.assertTrue(cfg.model_available)
+        self.assertFalse(runner.RunConfig(audio="typed").model_available)
 
     def test_asked_for_the_word_again(self):
         class Log(object):

@@ -130,6 +130,11 @@ def cmd_run(args):
     if not os.path.exists(os.path.join(speech, "manifest.json")):
         print("no rendered speech in %s: run render first" % speech)
         return 2
+    if args.model_file:
+        args.model_file = os.path.abspath(args.model_file)
+        if not os.path.isfile(args.model_file) or not args.model_file.endswith(".gguf"):
+            print("no model file (a .gguf) at %s" % args.model_file)
+            return 2
     browser.install_bundle(bundle, exe, log=log)
     gen = os.path.join(report_dir, "media")
     page_clips = [os.path.join(speech, "page", n) for n in sorted(
@@ -162,6 +167,7 @@ def cmd_run(args):
                                    echo_cancellation=option != "noaec",
                                    sandbox=not args.no_sandbox,
                                    model_available=args.model,
+                                   model_file=args.model_file,
                                    extra_flags=args.browser_flag or [],
                                    voices=[v for v in args.voices.split(",") if v] or None,
                                    speeds=[float(x) for x in args.speeds.split(",") if x]
@@ -292,6 +298,10 @@ def main(argv=None):
     s.add_argument("--no-sandbox", action="store_true")
     s.add_argument("--model", action="store_true",
                    help="an on-device AI model is installed (runs the model scenarios)")
+    s.add_argument("--model-file",
+                   help="a model file, named as the browser's model registry names it "
+                        "and of its pinned size (its SHA-256 checked already), linked "
+                        "into each scenario's home: the model scenarios run with it")
     s.add_argument("--gate-latency", action="store_true")
     s.add_argument("--browser-flag", action="append", help="one more browser flag")
     s.add_argument("--voices", default="",

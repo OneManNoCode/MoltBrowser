@@ -174,7 +174,7 @@ class RunConfig(object):
     def __init__(self, audio="pulse", condition="clean", loopback=True,
                  echo_cancellation=True,
                  voices=None, speeds=None, settle=SETTLE_S, sandbox=True,
-                 extra_flags=(), model_available=False):
+                 extra_flags=(), model_available=False, model_file=None):
         if audio not in ("pulse", "file", "typed"):
             raise ValueError("audio is pulse, file or typed")
         if condition not in render.CONDITIONS:
@@ -190,7 +190,10 @@ class RunConfig(object):
         self.settle = settle
         self.sandbox = sandbox
         self.extra_flags = list(extra_flags)
-        self.model_available = model_available
+        # A model file linked into each scenario's home (browser.link_model):
+        # the model scenarios run with it.
+        self.model_file = model_file
+        self.model_available = model_available or bool(model_file)
 
     @property
     def label(self):
@@ -484,6 +487,7 @@ class Runner(object):
         t_start = time.time()
         browser = None
         plan = None
+        model_link = None
         try:
             plan = self.prepare_audio(sc, mode, voice, speed, run_dir)
             browserlib.seed_profile(os.path.join(run_dir, "profile"),
@@ -493,6 +497,9 @@ class Runner(object):
                         "voice_language": "en"}
             settings.update(sc.start.get("settings", {}))
             browserlib.write_settings(os.path.join(run_dir, "home"), settings)
+            if self.config.model_file:
+                model_link = browserlib.link_model(os.path.join(run_dir, "home"),
+                                                   self.config.model_file)
             flags = self.flags(log_path, plan.get("file_wav"),
                                shields=sc.start.get("shields", True))
             flags[0] = flags[0] % os.path.join(run_dir, "profile")
@@ -562,6 +569,13 @@ class Runner(object):
                 self.pulse.stop_recording()
             if browser:
                 browser.close()
+            if model_link:
+                # Not in the report: the report directory is uploaded, and an
+                # upload follows a link to the model it points at.
+                try:
+                    os.remove(model_link)
+                except OSError:
+                    pass
             if res.get("status") in ("failed", "error"):
                 self.note_microphone(res, run_dir, plan)
             elif self.config.audio == "file":

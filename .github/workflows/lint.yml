@@ -215,6 +215,8 @@ jobs:
         run: python3 tools/models/pin_models_test.py -v
       - name: tools/models/hf_survey_test.py (offline, stand-in replies)
         run: python3 tools/models/hf_survey_test.py -v
+      - name: tools/models/fetch_model_test.py (offline, a stand-in download)
+        run: python3 tools/models/fetch_model_test.py -v
       - name: tools/models/gguf_types_test.py (GGUF types vs the Vulkan build)
         run: python3 tools/models/gguf_types_test.py -v
 

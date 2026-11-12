@@ -111,6 +111,21 @@ def seed_profile(profile_dir, download_dir):
         json.dump(prefs, f)
 
 
+def link_model(home, model_file):
+    """|model_file| (a GGUF named as the browser's model registry names it)
+    where the browser looks for its on-device models, as a symbolic link:
+    $HOME/.moltbrowser/models/<file name>. The browser loads a model file of
+    exactly its pinned size there (it hashes only while downloading: the
+    caller checks the file's SHA-256 first). Returns the link."""
+    d = os.path.join(home, ".moltbrowser", "models")
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    link = os.path.join(d, os.path.basename(model_file))
+    if os.path.lexists(link):
+        os.remove(link)
+    os.symlink(os.path.abspath(model_file), link)
+    return link
+
+
 def write_settings(home, settings):
     d = os.path.join(home, ".moltbrowser")
     os.makedirs(d, mode=0o700, exist_ok=True)
