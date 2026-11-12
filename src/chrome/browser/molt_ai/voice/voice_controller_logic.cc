@@ -3323,9 +3323,10 @@ class Planner : public TurnPlanner {
   // "Good country", "thick reply", "clicked message" (the spoken suite's
   // Phase 2 runs, build 45): "click" as the recognizer heard it, then the
   // whole name of one thing on the page, pressed as "click" would (asking
-  // first where it asks), as a name said alone is. Only after the wake
-  // phrase, and only in English; "good morning" with nothing named just
-  // "Morning" is still the planner's.
+  // first where it asks), as a name said alone is; "fix send me the
+  // newsletter": "check", for a check box only ("fix" is a request of its
+  // own too). Only after the wake phrase, and only in English; "good
+  // morning" with nothing named just "Morning" is still the planner's.
   bool PressNameAfterMisheardClick(const VoiceCommand& command) {
     const ConversationState& s = state();
     if (s.list != ListContext::kNone || s.expecting_choice ||
@@ -3333,22 +3334,36 @@ class Planner : public TurnPlanner {
         !(command.wake_said || env_.wake_heard)) {
       return false;
     }
-    static constexpr std::string_view kMisheardClick[] = {"good", "thick",
-                                                          "clicked"};
+    struct MisheardClick {
+      std::string_view word;
+      std::optional<ChoiceRole> only;
+    };
+    static constexpr MisheardClick kMisheardClick[] = {
+        {"good", std::nullopt},
+        {"thick", std::nullopt},
+        {"clicked", std::nullopt},
+        {"fix", ChoiceRole::kCheckBox},
+    };
     const std::string words =
         CommandWords(command.heard, ContextFor(state(), map_, env_));
     const size_t space = words.find(' ');
-    if (space == std::string::npos ||
-        std::find(std::begin(kMisheardClick), std::end(kMisheardClick),
-                  std::string_view(words).substr(0, space)) ==
-            std::end(kMisheardClick)) {
+    if (space == std::string::npos) {
       return false;
     }
-    return PressNameAlone(words.substr(space + 1));
+    const std::string_view first = std::string_view(words).substr(0, space);
+    const auto it = std::find_if(
+        std::begin(kMisheardClick), std::end(kMisheardClick),
+        [first](const MisheardClick& m) { return m.word == first; });
+    if (it == std::end(kMisheardClick)) {
+      return false;
+    }
+    return PressNameAlone(words.substr(space + 1), it->only);
   }
 
-  // The one item on the page whose whole name is |words|, pressed.
-  bool PressNameAlone(const std::string& words) {
+  // The one item on the page whose whole name is |words| (of role |only|,
+  // when given), pressed.
+  bool PressNameAlone(const std::string& words,
+                      std::optional<ChoiceRole> only = std::nullopt) {
     if (words.empty()) {
       return false;
     }
@@ -3371,7 +3386,8 @@ class Planner : public TurnPlanner {
     options.whole_name_only = true;
     const ChoiceMatch match =
         MatchSpokenChoice(*ref, items.set.candidates, options);
-    if (match.outcome != ChoiceOutcome::kUnique) {
+    if (match.outcome != ChoiceOutcome::kUnique ||
+        (only && items.set.candidates[match.index].role != *only)) {
       return false;
     }
     Chosen(items, match.index, ChoiceVerb::kDefault);

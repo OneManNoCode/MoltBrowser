@@ -1698,6 +1698,22 @@ TEST(VoiceControllerLogicTest, AMisheardClickBeforeAWholeNamePressesIt) {
     EXPECT_EQ(Actions(c.Say(said)), (std::vector<VoiceStepKind>{K::kToPlanner}))
         << said;
   }
+
+  // "Fix" for "check": a check box only.
+  TreeBuilder b("Sign up - Club");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Sign up", 0);
+  const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+  b.Add(main, PageRole::kCheckBox, "Send me the newsletter",
+        kStateFocusable | kStateHasDefaultAction);
+  b.Button(main, "Send the form");
+  Conversation form(BuildPageMap(b.Take()), Env());
+  VoiceTurn turn = form.Say("Himaled. Fix send me the newsletter.");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}));
+  EXPECT_EQ(Find(turn, K::kPress)->target, form.map().items[0].handle);
+  EXPECT_EQ(Actions(form.Say("Hey Molt, fix send the form")),
+            (std::vector<VoiceStepKind>{K::kToPlanner}));
+  EXPECT_FALSE(form.state().confirming);
 }
 
 TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
