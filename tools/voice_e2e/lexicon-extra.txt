@@ -4,3 +4,4 @@
 # reads these first, then tools/voice_bench/testset/lexicon-extra.txt.
 browser's || b ɹˈ a ʊ z ɚ z
 moltnet || mˈ o ʊ l t n ɛ t
+uncheck || ʌ n t ʃˈ ɛ k

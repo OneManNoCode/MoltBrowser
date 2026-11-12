@@ -5,6 +5,6 @@
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Touchless Phase 2's 30 multi-step tasks (scenarios/phase2.json: webmail, the shop's cart up to the order's confirmation, the form, across tabs; every irreversible step asked about first), spoken suite only on the forty-third build's binaries, typed, by file, on headphones and speakers in quiet: the first measure of Phase 2 by direct commands, without a model.",
+ "request": "Touchless Phase 2's 30 multi-step tasks (scenarios/phase2.json), spoken suite only on the forty-third build's binaries, typed, by file, on headphones and speakers in quiet, again: run 43159370291 stopped rendering the speech, \"uncheck\" was missing from the voices' lexicon (now in lexicon-extra.txt).",
  "e2e_scenarios": "p2-"
 }
