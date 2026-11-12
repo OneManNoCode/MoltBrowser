@@ -767,10 +767,11 @@ constexpr CommandPattern kPatterns[] = {
     {K::kOpenSite, "{address}"},
     // "Take", "tech": more of how "type" is heard (the spoken suite's runs,
     // "take hello there"; "took", "tucked the river walk", "picked John
-    // Brown" in its Phase 2 runs), only into a focused text field, and
-    // after the sites and searches, so that "take me to ...", "take me
-    // home" and "take me back" mean themselves there too.
-    {K::kType, "(take|tech|took|tuck|tucked|picked) {text}", C::kTextField},
+    // Brown", "pipe Grace Hopper" in its Phase 2 runs), only into a focused
+    // text field, and after the sites and searches, so that "take me to
+    // ...", "take me home" and "take me back" mean themselves there too.
+    {K::kType, "(take|tech|took|tuck|tucked|picked|pipe) {text}",
+     C::kTextField},
 
     // --- A choice on its own ------------------------------------------------
     {K::kChoose, "{number}", C::kChoice},

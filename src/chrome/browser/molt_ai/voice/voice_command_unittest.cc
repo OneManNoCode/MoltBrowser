@@ -405,6 +405,7 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"He mold. Took the river walk.", "type", "text=the river walk", kField},
       {"Himalt, tucked the river walk", "type", "text=the river walk", kField},
       {"He mold. Picked John Brown.", "type", "text=John Brown", kField},
+      {"Himalt. Pipe Grace Hopper.", "type", "text=Grace Hopper", kField},
       // ... where "take me to", "take me home" and "take me back" still
       // mean themselves.
       {"take me to the new york times", "open_site", "site=newyorktimes",
@@ -439,8 +440,8 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
   // Without a focused text field, "take" types nothing.
   EXPECT_NE(ParseVoiceCommand("take hello there", MakeContext(kNone)).kind,
             VoiceCommandKind::kType);
-  for (const char* said :
-       {"took the river walk", "tucked in the kids", "picked John Brown"}) {
+  for (const char* said : {"took the river walk", "tucked in the kids",
+                           "picked John Brown", "pipe Grace Hopper"}) {
     EXPECT_NE(ParseVoiceCommand(said, MakeContext(kNone)).kind,
               VoiceCommandKind::kType)
         << said;

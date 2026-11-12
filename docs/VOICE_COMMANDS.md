@@ -846,7 +846,7 @@ said.
 **Type into the selected field.** For example: "type hello world".
 
 - `(type | write | dictate | tight) {text}`
-- `(take | tech | took | tuck | tucked | picked) {text}` (while you are typing in a field)
+- `(take | tech | took | tuck | tucked | picked | pipe) {text}` (while you are typing in a field)
 
 **Start a new line.** For example: "new line".
 
