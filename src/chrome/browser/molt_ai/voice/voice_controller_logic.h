@@ -112,6 +112,9 @@ inline constexpr double kMaxSpeechRate = 2.5;
 inline constexpr double kSpeechRateStep = 1.25;
 // How long the browser waits for the "yes" to a confirmation.
 inline constexpr int64_t kConfirmationTimeoutMs = 30000;
+// After "I've stopped. Now say that again.": how long what is heard over
+// its voice is that sentence heard back (ConversationState::said_again_ms).
+inline constexpr int64_t kSaidAgainEchoMs = 6000;
 // The player's default skip.
 inline constexpr int kDefaultSkipSeconds = 10;
 // Increments per "louder" or "quieter" on a page's volume slider.
@@ -453,6 +456,10 @@ struct ConversationState {
   double speech_rate = 1.0;
   // What the browser said last, for "repeat", as it was spoken.
   std::vector<std::string> last_spoken;
+  // When it last asked for what was said over its voice again ("I've
+  // stopped. Now say that again."), or -1: what is heard over its voice
+  // soon after is that sentence heard back, not asked about again.
+  int64_t said_again_ms = -1;
 
   // The browser's prompt or the page's dialog read out and waiting for its
   // answer (voice_prompts.h); id 0 for none. It belongs to the tab, not to

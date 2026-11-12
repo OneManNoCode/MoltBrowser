@@ -412,9 +412,19 @@ class Planner : public TurnPlanner {
   // What was said over voice mode's own voice, set aside: to be said again
   // once it is quiet. "Repeat" still says what came before (the prompt and
   // its word, the choices offered), not this.
-  void SayAgainOnceQuiet() {
+  void SayAgainOnceQuiet(bool understood = true) {
+    // Words the grammar has nothing for, heard over that very sentence
+    // (its echo: "Stay that they give you" for "Now say that again", the
+    // spoken suite on build 49): set aside, not asked about once more.
+    const int64_t since = env_.now_ms - state().said_again_ms;
+    if (!understood && state().said_again_ms >= 0 && since >= 0 &&
+        since < kSaidAgainEchoMs) {
+      said_again_ = true;
+      return;
+    }
     Say(Tr("I've stopped. Now say that again."));
     said_again_ = true;
+    state().said_again_ms = env_.now_ms;
   }
 
   // ---- Commands ----------------------------------------------------------
@@ -430,7 +440,7 @@ class Planner : public TurnPlanner {
     // Said over voice mode's own voice: only a choice from the page's list
     // read or offered runs now (VoiceEnvironment::list_choice_only).
     if (depth == 0 && env_.list_choice_only && !ChoosesFromListRead(command)) {
-      SayAgainOnceQuiet();
+      SayAgainOnceQuiet(/*understood=*/command.kind != K::kUnknown);
       return;
     }
     // "Which site?" stays asked until something the grammar understands

@@ -508,6 +508,7 @@ class VoiceController : public VoicePlanner::Delegate,
   // The planner's run goes on with nothing said for a while: "Still working
   // on it." (as an AI answer says), so a long run is never just silence.
   void RestartPlannerStillWorking();
+  void StartPlannerStillWorking();
   void OnPlannerStillWorking();
   // Whether |command| answers the planner's pending question (a yes or no
   // the loop takes as the answer).
@@ -596,6 +597,8 @@ class VoiceController : public VoicePlanner::Delegate,
   int planner_question_ = 0;
   base::OneShotTimer planner_question_timer_;
   base::OneShotTimer planner_still_working_timer_;
+  // How many times in a row it was said (each wait twice the one before).
+  int planner_still_working_said_ = 0;
   // The activation guard's question this controller asks (0 for none), and
   // the tab it is about.
   int page_request_question_ = 0;

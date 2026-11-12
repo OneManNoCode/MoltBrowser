@@ -1062,7 +1062,30 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
   if (wanted.size() == 1) {
     return std::find(said.begin(), said.end(), wanted[0]) != said.end();
   }
-  return SaysInOrder(said, wanted) || SaysWithOneWordOff(said, wanted);
+  if (SaysInOrder(said, wanted) || SaysWithOneWordOff(said, wanted)) {
+    return true;
+  }
+  // The opening words of something it said, and one word for the rest of
+  // it ("Still working on it." heard back as "still working hard", the
+  // spoken suite on build 49): its voice too.
+  if (wanted.size() >= 3) {
+    for (const auto& [when, words] : said_) {
+      if (!SaidLately(when, now_ms)) {
+        continue;
+      }
+      const std::vector<std::string_view> these = SplitWords(words);
+      size_t k = 0;
+      while (k + 1 < wanted.size() && k < these.size() &&
+             these[k] != kFormSeam && these[k] == wanted[k]) {
+        ++k;
+      }
+      if (k + 1 == wanted.size() && k < these.size() && these[k] != kFormSeam &&
+          these[k] != wanted[k]) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 bool VoiceSessionLogic::NumberItSaidInALongerOne(std::string_view text,

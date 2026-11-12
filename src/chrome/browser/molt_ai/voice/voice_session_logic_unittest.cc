@@ -967,6 +967,35 @@ TEST_F(VoiceSessionLogicTest, ANumberItSaidInALongerOneIsItsVoice) {
   }
 }
 
+// "Still working on it.", said while the planner works, heard back as
+// "still working hard" (its opening words and one word for the rest; the
+// spoken suite on build 49): its voice, not a request said over it.
+TEST_F(VoiceSessionLogicTest, ItsOpeningWordsAndOneWordMoreAreItsVoice) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("find me a train to lyon", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_);
+  now_ += 15000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("Still working on it.", now_);
+  logic_->OnSpeechStart(now_ + 1000);
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 2100);
+  SessionActions echo =
+      logic_->OnFinal("still working hard.", 0.9, now_ + 2700);
+  EXPECT_FALSE(echo.utterance.has_value());
+  EXPECT_EQ(echo.dropped_reason, "voice mode's voice heard back");
+  // Two words more, or only one of its words, is not that.
+  now_ += 15000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("Still working on it.", now_);
+  logic_->OnSpeechStart(now_ + 1000);
+  SessionActions more =
+      logic_->OnFinal("still working on the train", 0.9, now_ + 2700);
+  EXPECT_NE(more.dropped_reason, "voice mode's voice heard back");
+}
+
 // A quiet stretch partly after the browser stopped speaking proves nothing
 // about its voice: heard back, as before.
 TEST_F(VoiceSessionLogicTest, AQuietStretchPastTheBrowsersSpeech) {

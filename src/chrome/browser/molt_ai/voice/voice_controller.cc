@@ -79,10 +79,13 @@ constexpr size_t kMaxPlannerSpeechChars = 400;
 constexpr size_t kMaxPlannerSpeechRemembered = 8;
 // Said when the planner's question went unanswered.
 constexpr char kPlannerNoAnswer[] = "I didn't hear yes, so I stopped.";
-// Said while the planner works, each time this long goes by with nothing
-// said (a small on-device model can take minutes over one step).
+// Said while the planner works, once this long goes by with nothing said
+// (a small on-device model can take minutes over one step), then after
+// twice as long each time, up to the longest: less of its own voice for
+// the microphone to hear back.
 constexpr char kPlannerStillWorking[] = "Still working on it.";
 constexpr base::TimeDelta kPlannerStillWorkingAfter = base::Seconds(15);
+constexpr base::TimeDelta kPlannerStillWorkingLongest = base::Seconds(60);
 
 // After a navigation hid the numbers: how often, and how many times, to
 // look for the new page's tree to number.
@@ -2166,12 +2169,23 @@ void VoiceController::OnPlannerQuestionTimeout() {
 }
 
 void VoiceController::RestartPlannerStillWorking() {
+  planner_still_working_said_ = 0;
+  StartPlannerStillWorking();
+}
+
+void VoiceController::StartPlannerStillWorking() {
   if (!planner_running_ || planner_question_ != 0) {
     planner_still_working_timer_.Stop();
     return;
   }
+  base::TimeDelta wait = kPlannerStillWorkingAfter;
+  for (int i = 0;
+       i < planner_still_working_said_ && wait < kPlannerStillWorkingLongest;
+       ++i) {
+    wait *= 2;
+  }
   planner_still_working_timer_.Start(
-      FROM_HERE, kPlannerStillWorkingAfter,
+      FROM_HERE, std::min(wait, kPlannerStillWorkingLongest),
       base::BindOnce(&VoiceController::OnPlannerStillWorking,
                      base::Unretained(this)));
 }
@@ -2187,7 +2201,8 @@ void VoiceController::OnPlannerStillWorking() {
     observer.OnVoiceSpeech(said);
   }
   speech_->Speak(said, state_.speech_rate, /*interrupt=*/false);
-  RestartPlannerStillWorking();
+  ++planner_still_working_said_;
+  StartPlannerStillWorking();
 }
 
 void VoiceController::PlannerFinished() {

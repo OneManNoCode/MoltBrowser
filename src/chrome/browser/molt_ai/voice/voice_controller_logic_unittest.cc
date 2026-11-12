@@ -562,6 +562,9 @@ TEST(VoiceControllerLogicTest, OverTheOwnVoiceOnlyTheListRead) {
       turn = fresh.Say(text);
       EXPECT_TRUE(Actions(turn).empty()) << text;
       EXPECT_EQ(Said(turn), kSayAgain) << text;
+      // Each said apart, not over the last "say that again" (see
+      // ItsSayAgainHeardBackIsNotAskedAgain).
+      fresh.env().now_ms += kSaidAgainEchoMs;
     }
   }
   // Nor with the browser's prompt waiting for its answer, or a question.
@@ -1770,6 +1773,26 @@ TEST(VoiceControllerLogicTest, AMisheardClickPressesANameAfterAListWasRead) {
     c.state() = before;
     EXPECT_NE(Find(c.Say(said), K::kToPlanner), nullptr) << said;
   }
+}
+
+// Something said over voice mode's voice that it can't take then is asked
+// for again once ("I've stopped. Now say that again."); that sentence
+// heard back over itself ("Stay that they give you", the spoken suite on
+// build 49) is set aside, not asked about once more.
+TEST(VoiceControllerLogicTest, ItsSayAgainHeardBackIsNotAskedAgain) {
+  VoiceEnvironment env = Env();
+  env.list_choice_only = true;
+  Conversation c(BuildPageMap(ShopPage(false)), env);
+  VoiceTurn turn = c.Say("still working hard");
+  EXPECT_EQ(Said(turn), "I've stopped. Now say that again.");
+  c.env().now_ms += 3000;
+  turn = c.Say("Stay that they give you");
+  EXPECT_EQ(Said(turn), "");
+  EXPECT_TRUE(Actions(turn).empty());
+  // Later, said over its voice again: asked again.
+  c.env().now_ms += kSaidAgainEchoMs;
+  turn = c.Say("find me a train");
+  EXPECT_EQ(Said(turn), "I've stopped. Now say that again.");
 }
 
 TEST(VoiceControllerLogicTest, TheRestGoesToThePlannerHook) {
