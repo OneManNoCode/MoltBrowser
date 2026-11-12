@@ -380,6 +380,21 @@ build three prompts failed on that alone. And when voice mode answers
 the word with "I didn't catch that. Say the word again.", the kit says it
 once more, as a user would.
 
+When what voice mode heard names several items and it asks which ("Did
+you mean 1: Add kettle to cart, 2: Add toaster to cart, or 3: Add mug to
+cart? Say a number or a name."), the kit, once voice mode has finished
+asking, says the number of the option that is what the step said, as a
+user would ("three" for "click add mug to cart"), once. Only when one
+option's words are all in the step's text and no other such option has
+as many: otherwise it says nothing and the step fails, as before. Not in
+file mode (its audio is one recording made before the run), and not on a
+step that expects "Did you mean" (the question is what it tests). The
+report counts such a scenario as passed and names it apart ("Passed once
+voice mode asked which item was meant ..."), and leaves its step out of
+the latency. In the forty-fifth build "add mug" was heard as "add mud" or
+"Admud" in every audio run, and voice mode rightly asked rather than
+guess a short word by its sound.
+
 ### The runner
 
 Each scenario gets a fresh profile and HOME (`~/.moltbrowser/settings.json`

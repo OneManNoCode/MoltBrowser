@@ -63,6 +63,9 @@ PAGE_VOICE = ("libritts-p", "tts-piper-en_US-libritts_r-medium-int8",
 WAKE_PHRASE = "Hey Molt"
 # Said when the kit didn't hear a prompt's word: the browser says it again.
 REPEAT = "repeat"
+# The numbers the kit can answer "Did you mean 1: ..., 2: ...?" with
+# (runner.offer_answer()): an offer names a few items.
+ANSWER_NUMBERS = 9
 NOISE_SCALE = "1e-30"
 SPEECH_DB = -26.0
 # Conditions: name -> (kind, SNR dB).
@@ -103,7 +106,8 @@ def tts_text(text):
 def texts_for(utterances, page_texts=()):
     """{id: text} for everything a user says, and the page texts apart."""
     user = {}
-    for t in list(utterances) + [WAKE_PHRASE, REPEAT] + gesture_words():
+    for t in list(utterances) + [WAKE_PHRASE, REPEAT] + gesture_words() + \
+            answer_words():
         user.setdefault(clip_id(t), t)
     page = {clip_id(t): t for t in page_texts}
     return user, page
@@ -111,6 +115,11 @@ def texts_for(utterances, page_texts=()):
 
 def gesture_words():
     return vbl.gesture_words()
+
+
+def answer_words():
+    """"one" to "nine": what the kit says to an offer."""
+    return [vbl.number_words(n) for n in range(1, ANSWER_NUMBERS + 1)]
 
 
 def merged_lexicon(base_path, extra_paths):

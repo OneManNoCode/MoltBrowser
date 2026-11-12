@@ -20,6 +20,12 @@ not in Phase 1's rate, and they don't fail the report; their exit is all
 30 passing, with every irreversible step asked about first (each such
 step expects "confirm": "open").
 
+A step where voice mode asked which item was meant ("Did you mean 1:
+..., or 3: ...?") and the kit said the number of the one that was, as a
+user would (runner.offer_answer()), passes when the item then acts; those
+scenarios are counted with the others and named apart ("asked_which"), and
+their steps are left out of the latency.
+
 A scenario a build has no command for yet ("not in grammar": a step's
 "needs" names a command the build's grammar doesn't list) counts as not
 passed, and is listed apart. Skipped scenarios (typed text can't say a
@@ -90,7 +96,8 @@ def summarize_run(run):
     for s in ran:
         for st in s["steps"]:
             la = st.get("latency") or {}
-            if st.get("status") == "passed" and st.get("action") == "say":
+            if st.get("status") == "passed" and st.get("action") == "say" and \
+                    not st.get("answered"):
                 if "action_ms" in la and la["action_ms"] >= -300:
                     lat.append(la["action_ms"])
                 if "outcome_ms" in la:
@@ -110,6 +117,10 @@ def summarize_run(run):
                                      "heard": (st.get("heard") or [""])[0]})
     total = len(counted)
     known = total - len(missing)
+
+    def asked_which(scs):
+        return [s["id"] for s in scs if s["status"] == "passed" and
+                any(st.get("answered") for st in s["steps"])]
     return {
         "scenarios": len(scs), "ran": len(ran), "skipped": len(scs) - len(ran),
         "counted": total, "passed": len(passed), "not_in_grammar": len(missing),
@@ -119,7 +130,9 @@ def summarize_run(run):
         "by_task": by_task,
         "phase2": {"ran": len(phase2),
                    "passed": sum(1 for s in phase2 if s["status"] == "passed"),
-                   "failed": [s["id"] for s in phase2 if s["status"] != "passed"]},
+                   "failed": [s["id"] for s in phase2 if s["status"] != "passed"],
+                   "asked_which": asked_which(phase2)},
+        "asked_which": asked_which(counted),
         "owner": [{"id": s["id"], "mode": s["mode"], "status": s["status"]} for s in owner],
         "security": {"ran": len(security),
                      "passed": sum(1 for s in security if s["status"] == "passed"),
@@ -227,6 +240,15 @@ def markdown(report):
     if p2:
         out += ["", "Phase 2's tasks (multi-step, without a hand; counted apart): " +
                 "; ".join("%s %d/%d" % (label, v["passed"], v["ran"]) for label, v in p2) + "."]
+    asked = [(run["label"], run["summary"]) for run in report["runs"]
+             if run["summary"].get("asked_which") or
+             run["summary"]["phase2"].get("asked_which")]
+    if asked:
+        out += ["", "Passed once voice mode asked which item was meant and the kit said "
+                "its number, as a user would (in the counts above): " +
+                "; ".join("%s %d, Phase 2's %d" % (label, len(v.get("asked_which", [])),
+                                                    len(v["phase2"].get("asked_which", [])))
+                          for label, v in asked) + "."]
     out += ["", "Latency is from the end of the utterance to the first action on the page "
             "(a trusted event, or a new document's start), for passed direct commands; "
             "the target is %d ms on the minimum hardware, and this machine isn't it." %
@@ -259,10 +281,14 @@ def markdown(report):
         out.append("")
         out += ["| Scenario | Mode | Voice | Result | Why |", "|---|---|---|---|---|"]
         for sc in run["scenarios"]:
+            why = sc.get("reason", "")
+            answers = [st["answered"]["answer"] for st in sc.get("steps", []) if st.get("answered")]
+            if answers and not why:
+                why = "asked which one; the kit said %s" % ", ".join(answers)
             out.append("| %s | %s | %s | %s | %s |" % (
                 sc["id"], sc["mode"],
                 "%s@%s" % (sc["voice"], sc["speed"]) if sc.get("voice") else "typed",
-                sc["status"], _cell(sc.get("reason", ""))))
+                sc["status"], _cell(why)))
         failed = [sc for sc in run["scenarios"] if sc["status"] not in ("passed", "skipped")]
         if failed:
             out += ["", "### What went wrong", ""]
@@ -277,6 +303,9 @@ def markdown(report):
                         ", ".join(st.get("intents") or []) or "-")
                     if st.get("why"):
                         line += " (%s)" % st["why"]
+                    if st.get("answered"):
+                        line += "; asked %r, the kit said %r" % (
+                            st["answered"]["asked"][:160], st["answered"]["answer"])
                     if st.get("word"):
                         line += "; the kit said %r, the word it heard in %s" % (
                             st["word"]["said"],
