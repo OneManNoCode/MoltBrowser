@@ -236,6 +236,10 @@ struct ChoiceRef {
   // three, "to" for two): that word, folded. An item named just that word
   // is the one meant ("Free" in a list of plans), not the number.
   std::string number_homophone;
+  // kDescription of one word that a recognizer writes for a last word,
+  // before "one" or a role word ("the list one", "the list video"): when
+  // no item matches it, the last item is the one meant.
+  bool could_be_last = false;
 };
 
 // Reads |spoken| (one reference, without a verb: "the fourth one", "number

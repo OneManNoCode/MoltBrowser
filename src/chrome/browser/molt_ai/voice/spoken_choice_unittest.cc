@@ -758,6 +758,49 @@ TEST(SpokenChoiceMatchTest, WordsSplitOnBothSides) {
   EXPECT_EQ(m.index, 2u);
 }
 
+// "The list one" for "the last one" (the spoken suite's file and speakers
+// runs on build 47): the last item, when no item is described by "list".
+TEST(SpokenChoiceMatchTest, TheListOneIsTheLastWhenNothingIsList) {
+  const auto songs = SongResults();
+  for (const char* said : {"the list one", "list one", "the list video"}) {
+    const std::optional<ChoiceRef> ref =
+        ParseChoiceRef(said, Language::kEnglish, /*bare_numbers=*/true);
+    ASSERT_TRUE(ref) << said;
+    EXPECT_TRUE(ref->could_be_last) << said;
+    const ChoiceMatch m = MatchSpokenChoice(*ref, songs, MatchOptions());
+    ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique)
+        << said << ": " << Describe(m, songs);
+    EXPECT_EQ(songs[m.index].position, static_cast<int>(songs.size())) << said;
+  }
+  // An item described by "list" is the one meant...
+  const auto lists =
+      MakeList({{"Shopping list", ""}, {"Notes", ""}, {"Archive", ""}},
+               ChoiceRole::kLink);
+  ChoiceMatch m = Match("the list one", lists);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique) << Describe(m, lists);
+  EXPECT_EQ(m.index, 0u);
+  // ... and "list" alone, or with more words, is a description only.
+  for (const char* said : {"list", "the list", "the list of songs"}) {
+    const std::optional<ChoiceRef> ref =
+        ParseChoiceRef(said, Language::kEnglish, /*bare_numbers=*/true);
+    ASSERT_TRUE(ref) << said;
+    EXPECT_FALSE(ref->could_be_last) << said;
+  }
+  // So is "the list one" in Spanish ("list" is no word there).
+  const std::optional<ChoiceRef> es =
+      ParseChoiceRef("the list one", Language::kSpanish, true);
+  EXPECT_FALSE(es && es->could_be_last);
+  // Nor is a name said alone ("Hey Molt, the list one"): it presses only
+  // what it names.
+  MatchOptions whole;
+  whole.whole_name_only = true;
+  const std::optional<ChoiceRef> ref =
+      ParseChoiceRef("the list one", Language::kEnglish, true);
+  ASSERT_TRUE(ref);
+  EXPECT_EQ(MatchSpokenChoice(*ref, songs, whole).outcome,
+            ChoiceOutcome::kNoMatch);
+}
+
 // The one word that sets items apart, misheard past what a match allows
 // ("click add mug to cart" heard as "add mud to cart", "Admud to car" and
 // "it kel to cart" in the spoken suite's Phase 2 runs on build 46): it

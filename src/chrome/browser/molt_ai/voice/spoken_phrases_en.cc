@@ -170,6 +170,7 @@ LanguagePhrases MakeEnglishPhrases() {
   p.number_prefixes = {"number", "num", "nr", "numero"};
 
   p.last_words = {"last", "final", "bottom"};
+  p.last_homophones = {"list"};
   p.from_end_links = {"to", "from"};
   p.end_phrases = {"from the end", "from the bottom", "from the last"};
   p.second_to_last_phrases = {"next to last",        "penultimate",

@@ -487,6 +487,13 @@ std::optional<ChoiceRef> ParseChoiceRefWords(const WordList& all_words,
     }
   }
 
+  // "The list one": perhaps "the last one" as the recognizer heard it
+  // (the spoken suite, build 47), if no item is described by "list".
+  ChoiceRoleMask tail_roles = 0;
+  const bool could_be_last = ref.ordinal == 0 && i + 2 == words.size() &&
+                             HasPhrase(phrases.last_homophones, words[i]) &&
+                             RoleTail(words, i + 1, phrases, &tail_roles);
+
   // A description, with cues: the last "by" and the last "from" start
   // their parts ("Stand by Me by Ben E. King").
   size_t by_at = words.size();
@@ -534,6 +541,7 @@ std::optional<ChoiceRef> ParseChoiceRefWords(const WordList& all_words,
     return std::nullopt;
   }
   ref.kind = ChoiceRef::Kind::kDescription;
+  ref.could_be_last = could_be_last;
   return ref;
 }
 
@@ -1392,9 +1400,18 @@ ChoiceMatch MatchSpokenChoice(const ChoiceRef& ref,
         return NoMatch(NoMatchReason::kOutOfRange);
       return Unique(*found);
     }
-    case ChoiceRef::Kind::kDescription:
-      return MatchDescription(ref, candidates, eligible, unmatched_role_words,
-                              options);
+    case ChoiceRef::Kind::kDescription: {
+      ChoiceMatch match = MatchDescription(ref, candidates, eligible,
+                                           unmatched_role_words, options);
+      // "The list one" where nothing is described by "list": the last.
+      // Not for a name said alone, which presses only what it names.
+      if (ref.could_be_last && !options.whole_name_only &&
+          match.outcome == ChoiceOutcome::kNoMatch &&
+          match.reason == NoMatchReason::kNothingMatched) {
+        return Unique(eligible.back());
+      }
+      return match;
+    }
   }
   return NoMatch(NoMatchReason::kEmptyReference);
 }
