@@ -159,7 +159,7 @@ class VoiceLearningLoop {
   // Says |text| (cleaned), after what is being said unless |interrupt|.
   void Say(const std::string& text, bool interrupt);
 
-  std::optional<RoutineStep> StepFromTurn(const VoiceCommand& command,
+  std::optional<RoutineStep> StepFromTurn(const VoiceCommand& said,
                                           const VoiceTurn& turn,
                                           const ConversationState& before,
                                           const PageMap& map,

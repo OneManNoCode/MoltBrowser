@@ -403,6 +403,10 @@ struct Captures {
   ScrollAmount scroll = ScrollAmount::kDefault;
   int count = 1;
   std::optional<ChoiceRef> choice;
+  // The choice slot: [begin, end) in the cleaned words; whether it ends the
+  // pattern.
+  std::optional<std::pair<size_t, size_t>> choice_span;
+  bool choice_ends_pattern = false;
   // Free text and site slots: [begin, end) in the cleaned words.
   std::optional<std::pair<size_t, size_t>> text;
   std::optional<std::pair<size_t, size_t>> site;
@@ -911,6 +915,8 @@ bool MatchPattern(const CompiledPattern& pattern,
         if (!ref)
           return false;
         captures.choice = std::move(ref);
+        captures.choice_span = std::make_pair(pos, slot_end);
+        captures.choice_ends_pattern = i + 1 == pattern.nodes.size();
         break;
       }
       case SlotType::kSite:
@@ -1478,6 +1484,21 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
       case PatternVariant::kOnGlued:
         command.on_glued = true;
         break;
+      case PatternVariant::kVerbSelectOrType:
+        command.verb = ChoiceVerb::kSelect;
+        // The words to type, as heard (case kept); a choice still, when
+        // they're too long to type.
+        if (captures.choice_span) {
+          const size_t text_end = captures.choice_ends_pattern
+                                      ? soft_end
+                                      : captures.choice_span->second;
+          std::string text = SpanText(u, captures.choice_span->first, text_end);
+          if (!text.empty() && text.size() <= kMaxCommandTextBytes) {
+            command.text = std::move(text);
+            command.or_type = true;
+          }
+        }
+        break;
     }
     return command;
   }
@@ -1530,10 +1551,12 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     if (is_ending(rest) || is_ending(after_double)) {
       continue;
     }
-    // The pronoun "I" run in ("Chekai agreed to the rules"), with more
-    // words after it: read apart as "I".
+    // The pronoun "I" run in ("Chekai agreed to the rules", or after the
+    // verb's last letter doubled: "Chekkai"), with more words after it:
+    // read apart as "I".
     const bool pronoun = u.words.size() >= 2 &&
-                         HasPhrase(p.glued_pronoun_spellings, rest) &&
+                         (HasPhrase(p.glued_pronoun_spellings, rest) ||
+                          HasPhrase(p.glued_pronoun_spellings, after_double)) &&
                          !p.glued_pronoun.empty();
     // A sound-alike of the verb ("lick") is a guess: a word of its own
     // after it only.

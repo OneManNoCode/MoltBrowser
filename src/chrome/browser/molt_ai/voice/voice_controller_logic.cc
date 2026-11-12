@@ -723,7 +723,8 @@ class Planner : public TurnPlanner {
 
       // Choosing.
       case K::kChoose:
-        Choose(command.choice, command.verb);
+        Choose(command.choice, command.verb,
+               command.or_type ? &command : nullptr);
         break;
       case K::kShowNumbers:
       case K::kHideNumbers: {
@@ -1287,7 +1288,11 @@ class Planner : public TurnPlanner {
            !BrowserListValid(s, env_);
   }
 
-  void Choose(const ChoiceRef& spoken_ref, ChoiceVerb verb) {
+  // |or_type|: "pick John Brown" said into a focused text field
+  // (VoiceCommand::or_type), typed there when nothing is so named.
+  void Choose(const ChoiceRef& spoken_ref,
+              ChoiceVerb verb,
+              const VoiceCommand* or_type = nullptr) {
     ConversationState& s = state();
     // Said over voice mode's own voice: the list read or offered only.
     const bool list_only = env_.list_choice_only;
@@ -1409,6 +1414,19 @@ class Planner : public TurnPlanner {
     }
     // Nothing on the page is called that: an option of one of its lists.
     if (ChooseOption(ref, /*any_select=*/true)) {
+      return;
+    }
+    // Nor that: "pick John Brown" in a focused text field was "type John
+    // Brown" (the recognizer's hearing of it in the spoken suite's Phase 2
+    // runs). Typing is undone with "undo"; a choice it might have been is
+    // never pressed on a guess.
+    if (or_type && ref.kind == ChoiceRef::Kind::kDescription &&
+        (reason == NoMatchReason::kNothingMatched ||
+         reason == NoMatchReason::kNoCandidates) &&
+        !s.expecting_choice && FieldInFocus(s, map_, env_)) {
+      VoiceCommand type = *or_type;
+      type.kind = K::kType;
+      Dictation(type);
       return;
     }
     // "Play the live aid version of Bohemian Rhapsody" where nothing is so

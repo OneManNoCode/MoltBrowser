@@ -269,8 +269,9 @@ LanguagePhrases MakeEnglishPhrases() {
   p.default_wake_phrase = "hey molt";
   // "Lickname color": "click name a colour" with its first sound lost as
   // well (the spoken suite's file run).
-  // "Chekai agreed to the rules": "check I agree to the rules" (the spoken
-  // suite's Phase 2 runs), the pronoun run in.
+  // "Chekai agreed to the rules", "Chekkai agreed to the rules": "check I
+  // agree to the rules" (the spoken suite's Phase 2 runs), the pronoun run
+  // in.
   p.glued_verbs = {{"click", "click"},
                    {"press", "press"},
                    {"tap", "tap"},

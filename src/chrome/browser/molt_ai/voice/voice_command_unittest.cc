@@ -224,6 +224,12 @@ TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
   EXPECT_EQ(chekai.kind, VoiceCommandKind::kChoose);
   EXPECT_NE(ParseVoiceCommand("chekai", context).kind,
             VoiceCommandKind::kChoose);
+  // After the verb's last letter doubled ("Chekkai").
+  EXPECT_EQ(Fields(ParseVoiceCommand("He mold. Chekkai agreed to the rules.",
+                                     context)),
+            Fields(ParseVoiceCommand("check i agreed to the rules", context)));
+  EXPECT_NE(ParseVoiceCommand("chekkai", context).kind,
+            VoiceCommandKind::kChoose);
   // A short word after the verb, with more after it: apart too
   // ("clickad toaster to cart" for "click add toaster to cart").
   EXPECT_EQ(Fields(ParseVoiceCommand("clickad toaster to cart", context)),
@@ -398,6 +404,7 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       // "Took", "tucked" (the spoken suite's Phase 2 runs).
       {"He mold. Took the river walk.", "type", "text=the river walk", kField},
       {"Himalt, tucked the river walk", "type", "text=the river walk", kField},
+      {"He mold. Picked John Brown.", "type", "text=John Brown", kField},
       // ... where "take me to", "take me home" and "take me back" still
       // mean themselves.
       {"take me to the new york times", "open_site", "site=newyorktimes",
@@ -432,11 +439,26 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
   // Without a focused text field, "take" types nothing.
   EXPECT_NE(ParseVoiceCommand("take hello there", MakeContext(kNone)).kind,
             VoiceCommandKind::kType);
-  for (const char* said : {"took the river walk", "tucked in the kids"}) {
+  for (const char* said :
+       {"took the river walk", "tucked in the kids", "picked John Brown"}) {
     EXPECT_NE(ParseVoiceCommand(said, MakeContext(kNone)).kind,
               VoiceCommandKind::kType)
         << said;
   }
+  // "Pick John Brown" into a focused text field: a choice that types its
+  // words, as heard, when nothing is so named; without one, a choice only.
+  const VoiceCommand pick =
+      ParseVoiceCommand("Himalt. Pick John Brown.", MakeContext(kField));
+  EXPECT_EQ(pick.kind, VoiceCommandKind::kChoose);
+  EXPECT_EQ(pick.verb, ChoiceVerb::kSelect);
+  EXPECT_TRUE(pick.or_type);
+  EXPECT_EQ(pick.text, "John Brown");
+  const VoiceCommand unfocused =
+      ParseVoiceCommand("pick John Brown", MakeContext(kNone));
+  EXPECT_EQ(unfocused.kind, VoiceCommandKind::kChoose);
+  EXPECT_FALSE(unfocused.or_type);
+  EXPECT_FALSE(
+      ParseVoiceCommand("choose John Brown", MakeContext(kField)).or_type);
   // The windows' sound-alikes are the window kinds the words say.
   EXPECT_EQ(
       Fields(ParseVoiceCommand("new private windjo", MakeContext(kNone))),

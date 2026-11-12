@@ -69,6 +69,10 @@ constexpr size_t kMinMergedLetters = 5;
 // "One" as it is said ("the Live Aid one"), for a last word the recognizer
 // ran it onto ("the live awan").
 constexpr char kOneSaid[] = "wun";
+// In a tie, a word said names a title's word it sounds like at least this
+// well ("card" for the "Cart (1)" tied with "Add mug to cart": one sound
+// apart in a short word).
+constexpr double kNamedBySound = 0.8;
 // With an ordinal ("the second live one"), the items the description
 // matches are those within this much of the best.
 constexpr double kOrdinalBand = 0.25;
@@ -613,12 +617,21 @@ void AddSegment(std::string_view text,
 // Whether |item|'s title, stopwords and bare numbers aside ("Cart (1)"),
 // is |words| (the description's, folded), each word the same or its
 // plural, and has nothing else.
+// With |said_sounds| (the sounds of |words|), a word also names a title's
+// word it sounds like (kNamedBySound).
 bool TitleIsJust(const Prepared& item,
                  const std::vector<Sound>& sounds,
                  const std::vector<std::string>& words,
-                 const LanguagePhrases& phrases) {
-  const auto same = [](std::string_view a, std::string_view b) {
-    return a == b || PluralOf(a, b) || PluralOf(b, a);
+                 const LanguagePhrases& phrases,
+                 const std::vector<Sound>* said_sounds = nullptr) {
+  const auto same = [&](const Sound& word, size_t w) {
+    const std::string_view a = word.text;
+    const std::string_view b = words[w];
+    if (a == b || PluralOf(a, b) || PluralOf(b, a)) {
+      return true;
+    }
+    return said_sounds && w < said_sounds->size() &&
+           Similarity((*said_sounds)[w], word) >= kNamedBySound;
   };
   std::vector<bool> said(words.size(), false);
   size_t title_words = 0;
@@ -638,7 +651,7 @@ bool TitleIsJust(const Prepared& item,
       ++title_words;
       bool found = false;
       for (size_t w = 0; w < words.size(); ++w) {
-        if (same(word.text, words[w])) {
+        if (same(word, w)) {
           said[w] = true;
           found = true;
         }
@@ -1075,10 +1088,15 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   }
   // A tie broken by a name said whole: of the items that match as well as
   // the best, the one whose title is just the words said ("Cart (1)" for
-  // "click cart"), not one that only has them among others ("Add the
-  // toaster to the cart"). Only a tie: a lead within the margin stays the
-  // margin's question.
+  // "click cart", or "click card" as a recognizer heard it), not one that
+  // only has them among others ("Add the toaster to the cart"). Only a tie:
+  // a lead within the margin stays the margin's question.
   if (by_words.empty() && from_words.empty() && !words.empty()) {
+    std::vector<Sound> said_sounds;
+    said_sounds.reserve(words.size());
+    for (const std::string& word : words) {
+      said_sounds.push_back(Sound::Of(word));
+    }
     size_t tied = 0;
     size_t named = 0;
     size_t named_index = 0;
@@ -1091,7 +1109,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
       const size_t e = static_cast<size_t>(
           std::find(eligible.begin(), eligible.end(), s.index) -
           eligible.begin());
-      if (e < n && TitleIsJust(prepared[e], sounds, words, phrases)) {
+      if (e < n &&
+          TitleIsJust(prepared[e], sounds, words, phrases, &said_sounds)) {
         ++named;
         named_index = s.index;
       }

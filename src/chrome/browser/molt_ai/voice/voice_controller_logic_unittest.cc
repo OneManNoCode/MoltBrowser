@@ -1281,6 +1281,37 @@ TEST(VoiceControllerLogicTest, TypesIntoTheChosenField) {
             FollowUpKind::kReadResults);
 }
 
+// "Pick John Brown" into a focused text field: "type John Brown" as the
+// recognizer heard it in the spoken suite's Phase 2 runs. Typed when
+// nothing on the page is so named; a choice still when something is, and
+// never typed without a field in focus.
+TEST(VoiceControllerLogicTest, PickIntoAFocusedFieldTypesWhatNothingIsNamed) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  c.Say("click the message field");
+  ASSERT_TRUE(ContextFor(c.state(), c.map(), c.env()).text_field_focused);
+  VoiceTurn turn = c.Say("pick John Brown");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSetText}));
+  EXPECT_EQ(turn.steps[0].text, "Hello John Brown");
+  // (The page here keeps its "Hello": what is typed adds to that.)
+  turn = c.Say("picked Grace Hopper");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSetText}));
+  EXPECT_EQ(turn.steps[0].text, "Hello Grace Hopper");
+  // "Undo" puts back what the field held.
+  turn = c.Say("undo");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSetText}));
+  EXPECT_EQ(turn.steps[0].text, "Hello");
+  // Something so named is chosen, not typed into.
+  turn = c.Say("pick your account");
+  EXPECT_EQ(Find(turn, K::kSetText), nullptr);
+  EXPECT_FALSE(Actions(turn).empty());
+
+  // No field in focus: nothing is typed.
+  Conversation unfocused(BuildPageMap(ShopPage(false)), Env());
+  turn = unfocused.Say("pick John Brown");
+  EXPECT_EQ(Find(turn, K::kSetText), nullptr);
+  EXPECT_TRUE(Actions(turn).empty());
+}
+
 TEST(VoiceControllerLogicTest, SendingAFormThatIsntASearchAsksFirst) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   c.Say("click the message field");
