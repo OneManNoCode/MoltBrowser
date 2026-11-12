@@ -242,7 +242,10 @@ Local Modifications:
       "return true"), so the baseline policy answers it with SIGSYS. Found
       by the first real model load in the spoken suite (Chromium 156,
       kOnDeviceModelExecution's GPU policy). It is only a readahead hint;
-      madvise(WILLNEED/RANDOM) is allowed (baseline_policy.cc).
+      madvise(WILLNEED/RANDOM) is allowed (baseline_policy.cc). Lint's
+      llama-sandbox job (tools/llama_sandbox/check.sh) maps a file with
+      llama_mmap under a filter that traps both calls, built with and
+      without the define: re-run it after updating llama.cpp.
     src/llama-memory-hybrid-idx.cpp: struct kpool_layout defined before
       the constructor (as C++23, which Chromium uses, libc++ rejects the
       constexpr ~unique_ptr of an incomplete type there).
