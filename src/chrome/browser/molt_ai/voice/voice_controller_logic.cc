@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <initializer_list>
+#include <iterator>
 #include <optional>
 #include <utility>
 
@@ -3294,6 +3295,9 @@ class Planner : public TurnPlanner {
     if (depth == 0 && !confirming && PressNameSaidAlone(command)) {
       return;
     }
+    if (depth == 0 && !confirming && PressNameAfterMisheardClick(command)) {
+      return;
+    }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
     planner.preface = Tr(
@@ -3312,8 +3316,39 @@ class Planner : public TurnPlanner {
     if (s.list != ListContext::kNone || s.expecting_choice) {
       return false;
     }
+    return PressNameAlone(
+        CommandWords(command.heard, ContextFor(state(), map_, env_)));
+  }
+
+  // "Good country", "thick reply", "clicked message" (the spoken suite's
+  // Phase 2 runs, build 45): "click" as the recognizer heard it, then the
+  // whole name of one thing on the page, pressed as "click" would (asking
+  // first where it asks), as a name said alone is. Only after the wake
+  // phrase, and only in English; "good morning" with nothing named just
+  // "Morning" is still the planner's.
+  bool PressNameAfterMisheardClick(const VoiceCommand& command) {
+    const ConversationState& s = state();
+    if (s.list != ListContext::kNone || s.expecting_choice ||
+        env_.language != Language::kEnglish ||
+        !(command.wake_said || env_.wake_heard)) {
+      return false;
+    }
+    static constexpr std::string_view kMisheardClick[] = {"good", "thick",
+                                                          "clicked"};
     const std::string words =
         CommandWords(command.heard, ContextFor(state(), map_, env_));
+    const size_t space = words.find(' ');
+    if (space == std::string::npos ||
+        std::find(std::begin(kMisheardClick), std::end(kMisheardClick),
+                  std::string_view(words).substr(0, space)) ==
+            std::end(kMisheardClick)) {
+      return false;
+    }
+    return PressNameAlone(words.substr(space + 1));
+  }
+
+  // The one item on the page whose whole name is |words|, pressed.
+  bool PressNameAlone(const std::string& words) {
     if (words.empty()) {
       return false;
     }
