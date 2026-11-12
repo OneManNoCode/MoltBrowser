@@ -145,6 +145,29 @@ bool ConfirmationValid(const ConversationState& state,
          env.now_ms < state.confirm_expires_ms;
 }
 
+// A short reply that means nothing while a confirmation waits: what the
+// grammar didn't understand, in at most three words, or "this" or "it"
+// alone ("yes" as the recognizer heard it, "This.", in the spoken suite's
+// Phase 2 runs). Any other command still drops the question.
+bool MisheardAnswer(const VoiceCommand& command) {
+  if (command.kind == VoiceCommandKind::kUnknown) {
+    size_t words = 0;
+    bool in_word = false;
+    for (const char c : command.heard) {
+      if (c == ' ') {
+        in_word = false;
+      } else if (!in_word) {
+        in_word = true;
+        ++words;
+      }
+    }
+    return words > 0 && words <= 3;
+  }
+  return command.kind == VoiceCommandKind::kChoose &&
+         command.choice.kind == ChoiceRef::Kind::kRelative &&
+         command.choice.relative == ChoiceRef::Relative::kCurrent;
+}
+
 // |command|'s answer to the browser's prompt |state| holds (kNone when it
 // isn't one). A question the loop asked since the prompt was read (the
 // prompt dropped any before it) is newer: a plain yes or no is its.
@@ -420,6 +443,13 @@ class Planner : public TurnPlanner {
       return;
     }
     const bool confirming = ConfirmationValid(state(), env_);
+    // A reply that means nothing here gets the question again, and the
+    // confirmation waits on (until it expires): only a "yes" acts.
+    if (depth == 0 && confirming && MisheardAnswer(command)) {
+      Status(Tr("Say yes to {0}", {state().confirm_what}));
+      Say(Tr("Say yes to {0}, or no to cancel.", {state().confirm_what}));
+      return;
+    }
     if (command.kind != K::kYes && command.kind != K::kNo) {
       ClearConfirmation();
     }

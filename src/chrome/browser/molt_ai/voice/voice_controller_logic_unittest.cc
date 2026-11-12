@@ -1157,6 +1157,40 @@ TEST(VoiceControllerLogicTest, AsksBeforePressingWhatCantBeUndone) {
   EXPECT_TRUE(c.state().confirming);
 }
 
+TEST(VoiceControllerLogicTest, AReplyThatMeansNothingIsAskedAgain) {
+  // "Yes" heard as "This." (the spoken suite's Phase 2 runs): the question
+  // again, still waiting; only a "yes" presses.
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  const PageItem* buy = ItemLabelled(c.map(), ItemKind::kButton, "Buy now");
+  ASSERT_TRUE(buy);
+  c.Say("click buy now");
+  ASSERT_TRUE(c.state().confirming);
+  for (const char* said : {"This.", "it", "hmm what", "Say a bit."}) {
+    SCOPED_TRACE(said);
+    VoiceTurn turn = c.Say(said);
+    EXPECT_TRUE(Actions(turn).empty());
+    EXPECT_EQ(Said(turn), "Say yes to press Buy now, or no to cancel.");
+    EXPECT_TRUE(c.state().confirming);
+  }
+  VoiceTurn turn = c.Say("yes");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}));
+  EXPECT_EQ(Find(turn, K::kPress)->target, buy->handle);
+
+  // A command still drops the question, and so does a long sentence the
+  // grammar doesn't know; and the question still expires.
+  c.Say("click buy now");
+  c.Say("scroll down");
+  EXPECT_FALSE(c.state().confirming);
+  c.Say("click buy now");
+  c.Say("what is the weather going to be like tomorrow");
+  EXPECT_FALSE(c.state().confirming);
+  c.Say("click buy now");
+  c.env().now_ms += kConfirmationTimeoutMs;
+  turn = c.Say("This.");
+  EXPECT_FALSE(Find(turn, K::kPress));
+  EXPECT_NE(Said(turn), "Say yes to press Buy now, or no to cancel.");
+}
+
 TEST(VoiceControllerLogicTest, AConfirmationExpiresAndStaysOnItsPage) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   c.Say("click buy now");

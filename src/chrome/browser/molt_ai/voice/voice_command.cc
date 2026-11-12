@@ -1530,12 +1530,19 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     if (is_ending(rest) || is_ending(after_double)) {
       continue;
     }
+    // The pronoun "I" run in ("Chekai agreed to the rules"), with more
+    // words after it: read apart as "I".
+    const bool pronoun = u.words.size() >= 2 &&
+                         HasPhrase(p.glued_pronoun_spellings, rest) &&
+                         !p.glued_pronoun.empty();
     // A sound-alike of the verb ("lick") is a guess: a word of its own
     // after it only.
-    if (rest.size() < 4 && (u.words.size() < 2 || glued.heard != glued.verb)) {
+    if (!pronoun && rest.size() < 4 &&
+        (u.words.size() < 2 || glued.heard != glued.verb)) {
       continue;
     }
-    std::string apart = std::string(glued.verb) + " " + std::string(rest);
+    std::string apart = std::string(glued.verb) + " " +
+                        std::string(pronoun ? p.glued_pronoun : rest);
     for (size_t i = 1; i < u.words.size(); ++i) {
       apart += " ";
       apart += u.words[i];
