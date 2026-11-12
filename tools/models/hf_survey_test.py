@@ -12,6 +12,7 @@ import io
 import json
 import os
 import shutil
+import struct
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,25 @@ import hf_survey  # noqa: E402
 
 REVISION = '0123456789abcdef0123456789abcdef01234567'
 CONTENT = b'GGUF' + b'\0' * 60
+
+
+def gguf_string(text):
+  data = text.encode()
+  return struct.pack('<Q', len(data)) + data
+
+
+def tiny_gguf():
+  """A GGUF header: three metadata entries and one q4_K tensor."""
+  kv = (gguf_string('general.architecture') + struct.pack('<I', 8) +
+        gguf_string('qwen3') +
+        gguf_string('qwen3.context_length') + struct.pack('<II', 4, 40960) +
+        gguf_string('tokenizer.chat_template') + struct.pack('<I', 8) +
+        gguf_string('{{ messages }}'))
+  tensor = (gguf_string('blk.0.attn_q.weight') + struct.pack('<I', 1) +
+            struct.pack('<Q', 8) + struct.pack('<I', 12) +
+            struct.pack('<Q', 0))
+  return (b'GGUF' + struct.pack('<IQQ', 3, 1, 3) + kv + tensor +
+          b'\0' * 32)
 
 
 def reply(files, license_name='apache-2.0'):
@@ -108,12 +128,12 @@ class HfSurveyTest(unittest.TestCase):
     with open(hf_survey.json_path(self.tmp, self.entry['repo']), 'w') as f:
       json.dump(reply([(self.entry['file'], sha256, size)]), f)
 
-  def verify(self):
+  def verify(self, content=CONTENT):
     opened = []
 
     def urlopen(req, timeout):
       opened.append(req.full_url)
-      return Response(CONTENT)
+      return Response(content)
 
     with mock.patch.object(hf_survey.urllib.request, 'urlopen', urlopen):
       code, out = run(hf_survey.verify,
@@ -127,6 +147,22 @@ class HfSurveyTest(unittest.TestCase):
     self.assertIn('VERIFIED', out)
     self.assertEqual(len(opened), 1)
     self.assertIn('/resolve/%s/' % REVISION, opened[0])
+
+  def test_verify_reads_the_gguf_header(self):
+    content = tiny_gguf()
+    self.write_reply(hashlib.sha256(content).hexdigest(), len(content))
+    code, out, _ = self.verify(content)
+    self.assertEqual(code, 0, out)
+    self.assertIn('architecture qwen3', out)
+    self.assertIn('context 40960', out)
+    self.assertIn('chat template 14 characters', out)
+    self.assertIn('tensors: q4_K 1', out)
+    self.assertIn('Vulkan: every type has shaders', out)
+    # Not a GGUF: said so, and the hash still decides.
+    self.write_reply(hashlib.sha256(CONTENT).hexdigest(), len(CONTENT))
+    code, out, _ = self.verify()
+    self.assertEqual(code, 0, out)
+    self.assertIn('header: unreadable', out)
 
   def test_verify_catches_another_file(self):
     self.write_reply('ab' * 32, len(CONTENT))

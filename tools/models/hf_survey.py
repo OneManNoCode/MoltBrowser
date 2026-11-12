@@ -20,7 +20,10 @@ molt-model-pin.yml):
   verify  Downloads an entry's file at its pinned revision and hashes it
           here, against the sha256 and size the API gave (pin_models.py's
           docstring: check the API's hash independently before
-          committing). Streamed: nothing is kept on disk.
+          committing), and reads its GGUF header: the architecture, sizes,
+          tokenizer and chat template the registry assumes, and its tensor
+          types against the Vulkan build's (gguf_types.py). Streamed:
+          nothing is kept on disk.
 
 Everything a reply says is printed as data, cleaned of control characters;
 nothing is executed or unpickled.
@@ -34,9 +37,11 @@ Usage:
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
+import struct
 import sys
 import time
 import urllib.error
@@ -44,6 +49,7 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gguf_types  # noqa: E402
 import pin_models  # noqa: E402
 
 API = 'https://huggingface.co/api/models/'
@@ -52,6 +58,9 @@ SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 # Repo ids as Hugging Face names them: owner/name, letters, digits, . _ -.
 REPO_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$')
 MAX_GGUF_LISTED = 60
+# The start of a file kept for its GGUF header (metadata with the
+# tokenizer's vocabulary, then the tensor table).
+HEADER_BYTES = 96 << 20
 
 
 def clean(value, cap=200):
@@ -223,6 +232,47 @@ def card(args):
   return 0
 
 
+def describe_header(prefix):
+  """Lines about the GGUF header at the start of a file."""
+  try:
+    metadata, counts = gguf_types.read_header(io.BytesIO(bytes(prefix)))
+  except (gguf_types.GGUFError, struct.error) as err:
+    return ['header: unreadable in its first %d bytes: %s' %
+            (len(prefix), clean(err))]
+  arch = metadata.get('general.architecture', '')
+  arch = arch if isinstance(arch, str) else ''
+
+  def show(key):
+    value = metadata.get(key)
+    if isinstance(value, tuple):
+      return '%d items' % value[2]
+    return clean(value, 80) if value is not None else '-'
+
+  template = metadata.get('tokenizer.chat_template')
+  lines = [
+      'architecture %s; name %s; file type %s' %
+      (clean(arch or '-', 40), show('general.name'), show('general.file_type')),
+      'context %s; embedding %s; blocks %s' %
+      (show(arch + '.context_length'), show(arch + '.embedding_length'),
+       show(arch + '.block_count')),
+      'tokenizer %s, %s tokens; chat template %s' %
+      (show('tokenizer.ggml.model'), show('tokenizer.ggml.tokens'),
+       '%d characters' % len(template) if isinstance(template, str) else
+       'none'),
+      'tensors: %s' % ', '.join('%s %d' % (clean(k, 20), v)
+                                for k, v in sorted(counts.items())),
+  ]
+  try:
+    on_cpu = sorted(set(counts) & gguf_types.dropped_types())
+  except (OSError, gguf_types.GGUFError) as err:
+    lines.append('Vulkan: not checked: %s' % clean(err))
+  else:
+    lines.append('Vulkan: %s' % (
+        'every type has shaders' if not on_cpu else
+        'no shaders for %s (those run on the CPU)' % ', '.join(on_cpu)))
+  return lines
+
+
 def verify(args):
   failures = 0
   by_id = {e['id']: e for e in entries(args.ids)}
@@ -256,6 +306,7 @@ def verify(args):
           urllib.parse.quote(e['repo'], safe='/'), revision,
           urllib.parse.quote(name))
       digest = hashlib.sha256()
+      prefix = bytearray()
       size = 0
       start = time.time()
       try:
@@ -265,6 +316,8 @@ def verify(args):
             if not chunk:
               break
             digest.update(chunk)
+            if len(prefix) < HEADER_BYTES:
+              prefix += chunk[:HEADER_BYTES - len(prefix)]
             size += len(chunk)
             if size > want_size:
               break
@@ -279,6 +332,8 @@ def verify(args):
             (model_id, name, 'VERIFIED' if same else 'MISMATCH', size,
              time.time() - start, got))
       failures += 0 if same else 1
+      for line in describe_header(prefix):
+        print('   ' + line)
   return 1 if failures else 0
 
 

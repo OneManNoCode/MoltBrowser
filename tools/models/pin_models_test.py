@@ -204,7 +204,8 @@ class PinModelsTest(unittest.TestCase):
     registry = self.chat_registry()
     e = entries(registry)[VISION_ID]
     p = projectors(registry)[VISION_ID]
-    self.reply(e['repo'], e['file'], size=1107409952,
+    # Sizes other than the registry's own pins, so each value changes.
+    self.reply(e['repo'], e['file'], size=1107409000,
                more=[(p['file'], PROJECTOR_SHA256, 445053792),
                      ('README.md', SHA256, 10)])
     with open(registry) as f:
@@ -215,7 +216,7 @@ class PinModelsTest(unittest.TestCase):
     pinned = entries(registry)[VISION_ID]
     self.assertEqual(pinned['revision'], REVISION)
     self.assertEqual(pinned['sha256'], SHA256)
-    self.assertEqual(pinned['size'], '1107409952')
+    self.assertEqual(pinned['size'], '1107409000')
     pinned_projector = projectors(registry)[VISION_ID]
     self.assertEqual(pinned_projector['sha256'], PROJECTOR_SHA256)
     self.assertEqual(pinned_projector['size'], '445053792')

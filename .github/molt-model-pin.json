@@ -1,7 +1,7 @@
 {
- "request": "Second survey: Qwen3.5 4B from unsloth (Qwen publishes no GGUF of it); the pins as a diff; the planner's candidates, the vision model and the small ones hashed here; the base models' licenses.",
+ "request": "Third survey: every entry's files hashed here (the second run hashed six, all matching the API) and their GGUF headers read: architecture, context, tokenizer, chat template, tensor types against the Vulkan build's.",
  "only": [],
- "verify": ["tinyllama-1.1b", "qwen3.5-4b", "gemma4-e4b", "qwen3-vl-2b", "qwen3-embedding-0.6b"],
+ "verify": ["tinyllama-1.1b", "qwen3.5-4b", "gemma4-e4b", "llama3.1-8b", "qwen3-8b", "gemma3-12b", "mistral-nemo-12b", "phi-4", "qwen3-vl-2b", "voxtral-mini-3b", "gpt-oss-20b", "qwen3-embedding-0.6b"],
  "search": [],
- "cards": ["Qwen/Qwen3.5-4B", "google/gemma-4-E4B-it", "mistralai/Voxtral-Mini-3B-2507", "Qwen/Qwen3-VL-2B-Instruct", "google/gemma-3-12b-it", "meta-llama/Llama-3.1-8B-Instruct", "mistralai/Mistral-Nemo-Instruct-2407", "microsoft/phi-4", "openai/gpt-oss-20b", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"]
+ "cards": []
 }
