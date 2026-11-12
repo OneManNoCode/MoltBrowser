@@ -3713,6 +3713,14 @@ PageWaitDecision DecidePageWait(const PageWaitFacts& facts) {
   return PageWaitDecision::kFinish;
 }
 
+DeferredWaitDecision DecideDeferredWait(const DeferredWaitFacts& facts) {
+  if (facts.has_page_tree || facts.page_wait_passed) {
+    return DeferredWaitDecision::kPlan;
+  }
+  return facts.tree_asked ? DeferredWaitDecision::kKeepWaiting
+                          : DeferredWaitDecision::kAskForTrees;
+}
+
 // What a Spanish page's buttons say for the same actions (folded).
 constexpr std::string_view kSpanishConfirmWords[] = {
     "comprar",     "compra",    "pagar",       "pago",          "pedido",

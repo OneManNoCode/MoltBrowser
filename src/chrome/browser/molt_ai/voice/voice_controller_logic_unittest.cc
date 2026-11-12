@@ -2548,6 +2548,31 @@ TEST(VoiceControllerLogicTest, PageWaitAsksForTheTreesAgainOnce) {
   EXPECT_EQ(DecidePageWait(facts), PageWaitDecision::kAskForTrees);
 }
 
+// Build 45's act-press-button (typed): "click add kettle to cart" was the
+// first thing typed, so it turned the trees on; the browser had just
+// started, the page's tree took longer than the first wait, and the
+// command was planned on an empty map ("There's nothing here to choose
+// from"). Without the page's own tree, the trees are asked for again, once,
+// and the wait goes on, kMaxPageTreeWait at most.
+TEST(VoiceControllerLogicTest, ACommandWaitsLongerForThePagesOwnTree) {
+  DeferredWaitFacts facts;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kAskForTrees);
+  facts.tree_asked = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kKeepWaiting);
+  // It comes.
+  facts.has_page_tree = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kPlan);
+  // It never does: planned with what there is.
+  facts.has_page_tree = false;
+  facts.page_wait_passed = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kPlan);
+
+  // Only the frames' trees missing: the first wait was theirs.
+  facts = DeferredWaitFacts();
+  facts.has_page_tree = true;
+  EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kPlan);
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai
