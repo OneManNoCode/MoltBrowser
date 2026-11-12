@@ -174,8 +174,8 @@ const ModelRegistryEntry kModelRegistry[] = {
     // vendored llama.cpp's "qwen35" architecture (present at 00de615).
     {"qwen3.5-4b",
      "Qwen3.5 4B",
-     "Qwen/Qwen3.5-4B-Instruct-GGUF",  // TODO(pin): confirm repo name
-     "Qwen3.5-4B-Instruct-Q4_K_M.gguf",  // TODO(pin): confirm file name
+     "unsloth/Qwen3.5-4B-GGUF",  // TODO(pin): confirm repo name
+     "Qwen3.5-4B-Q4_K_M.gguf",   // TODO(pin): confirm file name
      /*revision=*/"",
      /*sha256=*/"",
      /*size=*/0ULL,

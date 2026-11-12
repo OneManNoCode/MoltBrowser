@@ -14,6 +14,9 @@ molt-model-pin.yml):
           pin_models.py --from-json reads.
   search  The GGUF repos a query finds ("Qwen3.5-4B"), most downloaded
           first: for an entry whose repo name is unconfirmed.
+  card    The license and gating of repos named (a GGUF repo's base
+          model, "google/gemma-4-E4B-it"): the terms the weights come
+          under, when a conversion's card doesn't say.
   verify  Downloads an entry's file at its pinned revision and hashes it
           here, against the sha256 and size the API gave (pin_models.py's
           docstring: check the API's hash independently before
@@ -25,6 +28,7 @@ nothing is executed or unpickled.
 Usage:
   hf_survey.py survey OUT [--only ID ...]
   hf_survey.py search QUERY ...
+  hf_survey.py card REPO ...
   hf_survey.py verify OUT ID ...
 """
 
@@ -201,6 +205,24 @@ def search(args):
   return 0
 
 
+def card(args):
+  for repo in args.repos:
+    print('== card %s' % clean(repo, 100))
+    if not REPO_RE.match(repo):
+      print('   NOT A REPO NAME')
+      continue
+    status, info = get_json(API + urllib.parse.quote(repo, safe='/'))
+    if not isinstance(info, dict):
+      print('   NO REPLY: %s' % status)
+      continue
+    card_data = info.get('cardData') or {}
+    base = card_data.get('base_model', '') if isinstance(card_data, dict) else ''
+    print('   license %s; gated %s; base model %s' %
+          (license_of(info), clean(info.get('gated', False), 20),
+           clean(base or '(none given)', 100)))
+  return 0
+
+
 def verify(args):
   failures = 0
   by_id = {e['id']: e for e in entries(args.ids)}
@@ -268,12 +290,14 @@ def main(argv):
   s.add_argument('--only', action='append', default=[])
   q = sub.add_parser('search')
   q.add_argument('queries', nargs='+')
+  c = sub.add_parser('card')
+  c.add_argument('repos', nargs='+')
   v = sub.add_parser('verify')
   v.add_argument('out')
   v.add_argument('ids', nargs='+')
   args = ap.parse_args(argv)
-  return {'survey': survey, 'search': search, 'verify': verify}[args.command](
-      args)
+  return {'survey': survey, 'search': search, 'card': card,
+          'verify': verify}[args.command](args)
 
 
 if __name__ == '__main__':

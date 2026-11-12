@@ -14,8 +14,9 @@
 #
 # Trigger: a push to a claude/ branch that changes
 # .github/molt-model-pin.json ({"only": ["<id>", ...] (empty: all),
-# "verify": ["<id>", ...], "search": ["<query>", ...], "request": "..."}),
-# or Actions > "MoltBrowser model pins" > Run workflow.
+# "verify": ["<id>", ...], "search": ["<query>", ...], "cards":
+# ["<owner>/<repo>", ...] (their licenses), "request": "..."}), or
+# Actions > "MoltBrowser model pins" > Run workflow.
 
 name: MoltBrowser model pins
 
@@ -56,11 +57,15 @@ jobs:
             echo "verify=$(ids verify)" >> "$GITHUB_OUTPUT"
             jq -r '(.search // []) | .[]' "$CONFIG" |
               grep -E '^[A-Za-z0-9 ._-]{1,80}$' > "$RUNNER_TEMP/search.txt" || true
+            jq -r '(.cards // []) | .[]' "$CONFIG" |
+              grep -E '^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$' \
+              > "$RUNNER_TEMP/cards.txt" || true
             echo "request: $(jq -r '.request // ""' "$CONFIG" | tr -d '\n' | head -c 600)"
           else
             echo "only=" >> "$GITHUB_OUTPUT"
             echo "verify=" >> "$GITHUB_OUTPUT"
             : > "$RUNNER_TEMP/search.txt"
+            : > "$RUNNER_TEMP/cards.txt"
           fi
 
       - name: Survey the registries' repos
@@ -72,7 +77,7 @@ jobs:
           for id in $ONLY; do args+=(--only "$id"); done
           python3 tools/models/hf_survey.py survey "$RUNNER_TEMP/hf" "${args[@]}"
 
-      - name: Search for repos
+      - name: Search for repos, read model cards
         run: |
           set -euo pipefail
           if [ -s "$RUNNER_TEMP/search.txt" ]; then
@@ -80,6 +85,10 @@ jobs:
             python3 tools/models/hf_survey.py search "${queries[@]}"
           else
             echo "no searches asked for"
+          fi
+          if [ -s "$RUNNER_TEMP/cards.txt" ]; then
+            mapfile -t repos < "$RUNNER_TEMP/cards.txt"
+            python3 tools/models/hf_survey.py card "${repos[@]}"
           fi
 
       - name: Pin the registries (the diff to review)
@@ -89,9 +98,10 @@ jobs:
           set -uo pipefail
           args=()
           for id in $ONLY; do args+=(--only "$id"); done
+          status=0
           python3 tools/models/pin_models.py --from-json "$RUNNER_TEMP/hf" \
-            --write "${args[@]}"
-          echo "pin_models.py exit $?"
+            --write "${args[@]}" || status=$?
+          echo "pin_models.py exit $status (1: some entries not pinned, above)"
           echo "::group::git diff (the pins)"
           git diff -- src/
           echo "::endgroup::"

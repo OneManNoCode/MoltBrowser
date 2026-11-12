@@ -94,6 +94,16 @@ class HfSurveyTest(unittest.TestCase):
     self.assertIn('NO REPLY: 404', out)
     self.assertFalse(os.listdir(self.tmp))
 
+  def test_card(self):
+    info = {'cardData': {'license': 'apache-2.0',
+                         'base_model': 'google/gemma-4-E4B-it'},
+            'gated': 'manual'}
+    with mock.patch.object(hf_survey, 'get_json', return_value=(200, info)):
+      _, out = run(hf_survey.card,
+                   mock.Mock(repos=['google/gemma-4-E4B-it', '../x']))
+    self.assertIn('license apache-2.0; gated manual', out)
+    self.assertIn('NOT A REPO NAME', out)
+
   def write_reply(self, sha256, size):
     with open(hf_survey.json_path(self.tmp, self.entry['repo']), 'w') as f:
       json.dump(reply([(self.entry['file'], sha256, size)]), f)
