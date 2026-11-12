@@ -339,6 +339,13 @@ static void llama_sampler_top_k_impl(llama_token_data_array * cur_p, int32_t k) 
 
 static uint32_t get_rng_seed(uint32_t seed) {
     if (seed == LLAMA_DEFAULT_SEED) {
+#if defined(LLAMA_MOLTBROWSER_SANDBOXED)
+        // MoltBrowser: no std::random_device in the sandbox (libc++ opens
+        // /dev/urandom for one, which the broker doesn't grant, and the
+        // failed open ends the process). The service passes a seed of its
+        // own: this is only a fallback, the clock as below.
+        return (uint32_t) std::chrono::system_clock::now().time_since_epoch().count();
+#else
         // use system clock if std::random_device is not a true RNG
         static bool is_rd_prng = std::random_device().entropy() == 0;
         if (is_rd_prng) {
@@ -346,6 +353,7 @@ static uint32_t get_rng_seed(uint32_t seed) {
         }
         std::random_device rd;
         return rd();
+#endif
     }
     return seed;
 }

@@ -8,7 +8,9 @@
 // loads, a raw prompt generates, and the process is never lost. Every other
 // test of the host uses a fake service; the spoken suite's first run with a
 // real model found the sandbox killing the load (llama.cpp's posix_fadvise:
-// seccomp's SIGSYS), which nothing before it ran into.
+// seccomp's SIGSYS), which nothing before it ran into, and this test's
+// first run found it killing the first token (llama.cpp seeding its
+// sampler from std::random_device, which can't open /dev/urandom there).
 
 #include <chrono>
 #include <optional>

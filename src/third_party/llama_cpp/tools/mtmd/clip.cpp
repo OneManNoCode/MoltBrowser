@@ -175,7 +175,13 @@ struct clip_ctx {
     bool support_batch = false;
 
     // for audio gen, reseeded only when the caller asks for another seed
+#if defined(LLAMA_MOLTBROWSER_SANDBOXED)
+    // MoltBrowser: mt19937's own default seed, not a std::random_device
+    // (libc++ opens /dev/urandom for one, which the sandbox doesn't allow).
+    std::mt19937 rng{std::mt19937::default_seed};
+#else
     std::mt19937 rng{std::random_device{}()};
+#endif
     uint32_t rng_seed = UINT32_MAX;
 
     clip_ctx(clip_context_params & ctx_params) {
@@ -4645,7 +4651,11 @@ bool clip_encode(struct clip_ctx * ctx, struct clip_encode_params * params) {
 
     if (params->seed != ctx->rng_seed) {
         ctx->rng_seed = params->seed;
+#if defined(LLAMA_MOLTBROWSER_SANDBOXED)
+        ctx->rng.seed(params->seed == UINT32_MAX ? std::mt19937::default_seed : params->seed);
+#else
         ctx->rng.seed(params->seed == UINT32_MAX ? std::random_device{}() : params->seed);
+#endif
     }
 
     // build the inference graph

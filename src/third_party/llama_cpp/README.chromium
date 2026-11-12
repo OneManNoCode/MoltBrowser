@@ -246,6 +246,19 @@ Local Modifications:
       llama-sandbox job (tools/llama_sandbox/check.sh) maps a file with
       llama_mmap under a filter that traps both calls, built with and
       without the define: re-run it after updating llama.cpp.
+    src/llama-sampler.cpp, tools/mtmd/clip.cpp: with
+      LLAMA_MOLTBROWSER_SANDBOXED, no std::random_device. libc++ opens
+      /dev/urandom for one, a path the inference sandbox's broker
+      doesn't grant (content/common/gpu_pre_sandbox_hook_linux.cc), and
+      the failed open ends the process. get_rng_seed()
+      (llama_sampler_init_dist and the other samplers with
+      LLAMA_DEFAULT_SEED) falls back to the clock, as upstream does when
+      random_device is no true RNG; the service always passes a seed of
+      its own from Chrome's CSPRNG. clip_ctx's audio generator (unused by
+      MoltBrowser) starts from mt19937's default seed. Found by
+      InferenceSandboxBrowserTest, the first generation by the real
+      sandboxed service. Re-check for random_device after updating
+      llama.cpp.
     src/llama-memory-hybrid-idx.cpp: struct kpool_layout defined before
       the constructor (as C++23, which Chromium uses, libc++ rejects the
       constexpr ~unique_ptr of an incomplete type there).
