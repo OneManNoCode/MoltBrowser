@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/phonetic_key.h"
+#include "chrome/browser/molt_ai/voice/spoken_phrases.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_said_aloud.h"
@@ -649,8 +650,10 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       addressed = AddressedToVoiceMode(text, utterance.begun_ms);
       const bool sure = addressed || utterance.stood_out ||
                         confidence >= kMinConfidenceWithoutWake;
-      const bool echo = sure && !StoodOutOfCancelledVoice(utterance) &&
-                        EchoOfBrowser(text, utterance.begun_ms);
+      const bool echo =
+          sure && ((!StoodOutOfCancelledVoice(utterance) &&
+                    EchoOfBrowser(text, utterance.begun_ms)) ||
+                   NumberItSaidInALongerOne(text, utterance.begun_ms));
       take = sure && !echo;
       if (!sure) {
         reason = "over voice mode's voice, and not heard surely";
@@ -1060,6 +1063,41 @@ bool VoiceSessionLogic::EchoOfBrowser(std::string_view text,
     return std::find(said.begin(), said.end(), wanted[0]) != said.end();
   }
   return SaysInOrder(said, wanted) || SaysWithOneWordOff(said, wanted);
+}
+
+bool VoiceSessionLogic::NumberItSaidInALongerOne(std::string_view text,
+                                                 int64_t now_ms) const {
+  const std::string folded = FoldForComparison(text.substr(0, kMaxSaidBytes));
+  const std::vector<std::string_view> heard = SplitWords(folded);
+  if (heard.size() != 1) {
+    return false;
+  }
+  const LanguagePhrases& phrases = PhrasesFor(settings_.language);
+  // A homophone heard ("won") is the number it sounds like; what the
+  // browser said is read as it said it.
+  const NumberWord* number = FindNumberWord(phrases, heard[0]);
+  if (!number || number->ordinal) {
+    return false;
+  }
+  const auto a_number = [&](std::string_view word) {
+    const NumberWord* n = FindNumberWord(phrases, word);
+    return n && !n->homophone && !n->ordinal ? n : nullptr;
+  };
+  for (const auto& [when, words] : said_) {
+    if (!SaidLately(when, now_ms)) {
+      continue;
+    }
+    const std::vector<std::string_view> said = SplitWords(words);
+    for (size_t i = 0; i < said.size(); ++i) {
+      const NumberWord* n = a_number(said[i]);
+      if (n && n->value == number->value &&
+          ((i > 0 && a_number(said[i - 1])) ||
+           (i + 1 < said.size() && a_number(said[i + 1])))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 bool VoiceSessionLogic::OneWordItSaid(std::string_view text,

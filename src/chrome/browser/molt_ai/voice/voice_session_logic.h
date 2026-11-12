@@ -61,7 +61,10 @@
 //     speaking, kEchoCancellerSettledMs into its speech: "three" over
 //     "3: ..."; not a name of one word it read, though: "Live" over "3:
 //     ... (Live at Rock Montreal 1981), 4: ... (Live Aid 1985)" is its
-//     voice heard back however it stood out, and the reading goes on).
+//     voice heard back however it stood out, and the reading goes on; nor
+//     a number it said within a longer one: "one" over the same, its
+//     "nineteen eighty one" (the speakers run on build 46 played the
+//     first result so), NumberItSaidInALongerOne()).
 //     It stops the browser's speech. Only commands that stay with what the
 //     browser is reading or doing are taken that way (TakenOverOwnVoice()):
 //     one that reaches another site, types or sends text, closes a tab,
@@ -556,6 +559,10 @@ class VoiceSessionLogic {
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
   // Whether |text| is one word, and one the browser said lately.
   bool OneWordItSaid(std::string_view text, int64_t now_ms) const;
+  // Whether |text| is one number word, one the browser said lately within
+  // a longer number ("one" of the "nineteen eighty one" it says for
+  // "1981"): its voice heard back, however it stood out.
+  bool NumberItSaidInALongerOne(std::string_view text, int64_t now_ms) const;
   // Whether |utterance| stood out of a quiet stretch that was the browser
   // speaking, kEchoCancellerSettledMs and more into its speech: someone
   // speaking, not its voice heard back.
