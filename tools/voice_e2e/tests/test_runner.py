@@ -256,6 +256,14 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(r.asked_again(Log([old, again]), t, timeout=1))
         self.assertFalse(r.asked_again(Log([old, allowed]), t, timeout=1))
         self.assertFalse(r.asked_again(Log([old]), t, timeout=0.3))
+        # A yes-or-no question asked again ("This." heard for "yes").
+        question = {"e": "said", "ts": t + 0.1,
+                    "text": "Say yes to delete Old news, or no to cancel."}
+        going = {"e": "said", "ts": t + 0.1, "text": "Going ahead: delete Old news"}
+        self.assertTrue(r.asked_again(Log([question]), t, timeout=1, yes_no=True))
+        self.assertFalse(r.asked_again(Log([going]), t, timeout=1, yes_no=True))
+        self.assertFalse(r.asked_again(Log([question]), t, timeout=1))
+        self.assertFalse(r.asked_again(Log([again]), t, timeout=1, yes_no=True))
 
     def test_a_page_dialog_open_in_the_log(self):
         class Log(object):

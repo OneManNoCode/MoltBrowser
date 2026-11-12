@@ -39,6 +39,9 @@ WINDOW_TIMEOUT_S = 30
 # The longest wait for voice mode to answer what the kit said (the end of
 # speech, a short command's wait, the answer).
 REPLY_TIMEOUT_S = 10
+# Answers to voice mode's yes-or-no questions: said once more when voice
+# mode asks its question again (a misheard answer), as a user would.
+YES_NO_ANSWERS = ("yes", "no")
 POLL_S = 0.2
 # File mode's fixed times (the recording can't wait on the browser): past
 # voice mode's greeting ("Voice mode is on. Say Hey Molt, then what you
@@ -431,15 +434,19 @@ class Runner(object):
             time.sleep(POLL_S)
         return False
 
-    def asked_again(self, log, since, timeout=REPLY_TIMEOUT_S):
+    def asked_again(self, log, since, timeout=REPLY_TIMEOUT_S, yes_no=False):
         """Whether voice mode's first answer after |since| asks for the
         confirmation word again ("I didn't catch that. Say the word
-        again.")."""
+        again."), or with |yes_no| its question again ("Say yes to send
+        the message, or no to cancel.": the answer wasn't heard as one)."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             said = [e for e in log.events(since) if e["e"] == "said"]
             if said:
-                return "say the word again" in (said[0].get("text") or "").lower()
+                text = (said[0].get("text") or "").lower()
+                if yes_no:
+                    return text.startswith("say yes to") and "or no to cancel" in text
+                return "say the word again" in text
             time.sleep(POLL_S)
         return False
 
@@ -701,9 +708,15 @@ class Runner(object):
             wav = self.word_wav(step, i, plan, tlog, world)
         (self.player or self.pulse).play(wav)
         t_end = time.time()
-        if step.action == "say_word" and self.asked_again(tlog, t_end):
-            # "I didn't catch that. Say the word again.": once more, as a
-            # user would.
+        again = step.action == "say_word" and self.asked_again(tlog, t_end)
+        if (not again and step.action == "say" and
+                step.value.strip().lower() in YES_NO_ANSWERS):
+            # "Say yes to ..., or no to cancel." again: the answer was
+            # misheard ("This." for "yes") and the question still waits.
+            again = self.asked_again(tlog, t_end, yes_no=True)
+        if again:
+            # "I didn't catch that. Say the word again.", or the question
+            # asked again: once more, as a user would.
             self.wait_idle(tlog)
             (self.player or self.pulse).play(wav)
             t_end = time.time()
