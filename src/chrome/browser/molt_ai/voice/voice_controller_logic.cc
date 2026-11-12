@@ -1380,6 +1380,7 @@ class Planner : public TurnPlanner {
         continue;
       }
       MatchOptions options;
+      options.language = env_.language;
       options.current_position = attempt.uses_current ? s.current_position : 0;
       // Over voice mode's own voice, a name must name its item well in a
       // list read out; among the few just offered, the usual bar does: a
@@ -2046,6 +2047,7 @@ class Planner : public TurnPlanner {
   std::optional<int> ChooseTab(const ChoiceRef& ref, bool closing) {
     const CandidateSet tabs = CandidatesFromTabs(env_.tabs);
     MatchOptions options;
+    options.language = env_.language;
     options.current_position = env_.active_tab + 1;
     const ChoiceMatch match = MatchSpokenChoice(ref, tabs.candidates, options);
     if (match.outcome == ChoiceOutcome::kUnique) {

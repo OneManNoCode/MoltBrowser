@@ -862,6 +862,27 @@ TEST(SpokenChoiceMatchTest, OneRunOntoTheLastWord) {
   EXPECT_EQ(Match("the live", offered).outcome, ChoiceOutcome::kAmbiguous);
 }
 
+// In Spanish, what is said and the items' words are compared by Spanish
+// sounds ("ll" and "y" alike, "h" silent): "caye de la paz" is "Calle de
+// la Paz". By English sounds "caye" is no word of theirs, and the rest is
+// in two of them.
+TEST(SpokenChoiceMatchTest, SpanishBySpanishSounds) {
+  const auto items = MakeList({{"Calle de la Paz", ""},
+                               {"Plaza de la Paz", ""},
+                               {"Paseo del Prado", ""}},
+                              ChoiceRole::kLink);
+  const std::optional<ChoiceRef> ref =
+      ParseChoiceRef("caye de la paz", Language::kSpanish, false);
+  ASSERT_TRUE(ref);
+  MatchOptions spanish;
+  spanish.language = Language::kSpanish;
+  ChoiceMatch m = MatchSpokenChoice(*ref, items, spanish);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique) << Describe(m, items);
+  EXPECT_EQ(m.index, 0u);
+  m = MatchSpokenChoice(*ref, items, MatchOptions());
+  EXPECT_NE(m.outcome, ChoiceOutcome::kUnique) << Describe(m, items);
+}
+
 TEST(SpokenChoiceMatchTest, Diacritics) {
   const auto list = MakeList({{"Beyonc\xC3\xA9 - Halo", ""},
                               {"Sigur R\xC3\xB3s - Hopp\xC3\xADpolla", ""},
