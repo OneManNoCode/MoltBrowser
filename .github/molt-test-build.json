@@ -1,10 +1,10 @@
 {
  "resume_run": "43127305088",
  "run_tests": true,
- "e2e_only": true,
- "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean",
+ "e2e_only": false,
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean,pulse:music10:noloop,pulse:music10",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Touchless Phase 2's 30 multi-step tasks (scenarios/phase2.json), spoken suite only on the forty-third build's binaries, typed, by file, on headphones and speakers in quiet, again: run 43159370291 stopped rendering the speech, \"uncheck\" was missing from the voices' lexicon (now in lexicon-extra.txt).",
- "e2e_scenarios": "p2-"
+ "request": "Forty-fourth build (incremental on the forty-third): a confirmation's misheard answer (\"This.\" for \"yes\") is asked again instead of dropped, \"check I\" heard as \"Chekai\", \"took\"/\"tucked\" for \"type\" in a text field. The whole spoken suite (Phase 1 and Phase 2's 30 tasks), quiet and with music. Phase 2 on the forty-third (run 43159944685): typed 27/30 (three were the kit's cart JSON, fixed), file 16/30, headphones 14/30, speakers 12/30.",
+ "e2e_scenarios": ""
 }
