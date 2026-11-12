@@ -1,10 +1,10 @@
 {
- "resume_run": "43127305088",
+ "resume_run": "43166671237",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean,pulse:music10:noloop,pulse:music10",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "request": "Forty-fourth build (incremental on the forty-third): a confirmation's misheard answer (\"This.\" for \"yes\") is asked again instead of dropped, \"check I\" heard as \"Chekai\", \"took\"/\"tucked\" for \"type\" in a text field. The whole spoken suite (Phase 1 and Phase 2's 30 tasks), quiet and with music. Phase 2 on the forty-third (run 43159944685): typed 27/30 (three were the kit's cart JSON, fixed), file 16/30, headphones 14/30, speakers 12/30.",
+ "request": "Forty-fifth build (incremental on the forty-fourth): \"pick\"/\"picked\" typed into a focused field when nothing is so named, \"card\" naming a \"Cart\" button in a tie, \"Chekkai\" read as \"check I\", a routine keeping a typed \"pick\" as typing; every on-device model pinned (registries); the kit answers a yes-or-no question voice mode asks again. The whole spoken suite. Phase 2 on the forty-fourth (run 43166671237): typed 30/30, file 15/30, headphones 11/30, speakers 14/30, music 8/30 and 8/30; Phase 1 93/93/90 quiet, 80/84 with music.",
  "e2e_scenarios": ""
 }
