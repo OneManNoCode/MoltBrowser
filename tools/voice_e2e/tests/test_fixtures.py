@@ -37,6 +37,10 @@ class ResolveTest(unittest.TestCase):
                          "wiki/article.html")
         self.assertEqual(self.name("news.test", "/story")[0], "news/story.html")
         self.assertEqual(self.name("shop.test", "/_kit/kit.js")[0], "_kit/kit.js")
+        # Phase 2's pages: a reply, a deleted message.
+        self.assertEqual(self.name("mail.test", "/compose?to=a&subject=b")[0],
+                         "mail/compose.html")
+        self.assertEqual(self.name("mail.test", "/deleted?id=5")[0], "mail/deleted.html")
         path, extra = self.name("files.test", "/report.txt")
         self.assertEqual(path, "files/report.txt")
         self.assertIn("attachment", extra["Content-Disposition"])

@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<!-- A message (mail.test/message?id=N): who from, the subject, the text. -->
+<!-- A message (mail.test/message?id=N): who from, the subject, the text,
+     "Reply" (the compose page with To and Subject filled) and "Delete"
+     (voice mode asks before it presses either). Deleting goes to
+     /deleted?id=N. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -13,6 +16,11 @@
   <h1 id="subject"></h1>
   <p>From <span id="from"></span></p>
   <p id="body"></p>
+  <p><a id="reply" href="/compose" role="button">Reply</a></p>
+  <form id="delete" action="/deleted" method="get">
+    <input type="hidden" id="delete-id" name="id">
+    <button id="delete-button" type="submit">Delete</button>
+  </form>
 </main>
 <script>
   const MESSAGES = {
@@ -27,6 +35,10 @@
   document.getElementById('subject').textContent = m[1];
   document.getElementById('body').textContent = m[2];
   document.title = m[1] + ' - Post';
+  const id = MESSAGES[kit.param('id')] ? kit.param('id') : '1';
+  document.getElementById('delete-id').value = id;
+  document.getElementById('reply').href = '/compose?' + new URLSearchParams(
+      {to: m[0], subject: 'Re: ' + m[1]}).toString();
 </script>
 </body>
 </html>

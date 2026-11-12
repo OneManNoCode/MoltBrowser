@@ -14,6 +14,12 @@
     the median is reported against it, and gates only with --gate-latency
     (the runner isn't the minimum hardware).
 
+Phase 2's tasks (task "phase2": multi-step tasks done without a hand,
+TOUCHLESS_BROWSING.md §10) are counted apart: in the summary's "phase2",
+not in Phase 1's rate, and they don't fail the report; their exit is all
+30 passing, with every irreversible step asked about first (each such
+step expects "confirm": "open").
+
 A scenario a build has no command for yet ("not in grammar": a step's
 "needs" names a command the build's grammar doesn't list) counts as not
 passed, and is listed apart. Skipped scenarios (typed text can't say a
@@ -27,6 +33,8 @@ from . import KIT_VERSION, REPORT_SCHEMA
 
 SUCCESS_TARGET = 0.9
 SUCCESS_TARGET_MUSIC = 0.85
+# Phase 2's tasks, counted apart (above).
+PHASE2_TASK = "phase2"
 LATENCY_TARGET_MS = 1500
 
 
@@ -64,7 +72,8 @@ def security_outcome(s):
 def summarize_run(run):
     scs = run["scenarios"]
     ran = [s for s in scs if s["status"] != "skipped"]
-    counted = [s for s in ran if s["counts"]]
+    counted = [s for s in ran if s["counts"] and s["task"] != PHASE2_TASK]
+    phase2 = [s for s in ran if s["task"] == PHASE2_TASK]
     passed = [s for s in counted if s["status"] == "passed"]
     missing = [s for s in counted if s["status"] == "not in grammar"]
     errors = [s for s in ran if s["status"] == "error"]
@@ -108,6 +117,9 @@ def summarize_run(run):
         "success_rate": round(len(passed) / total, 4) if total else None,
         "success_rate_known_commands": round(len(passed) / known, 4) if known else None,
         "by_task": by_task,
+        "phase2": {"ran": len(phase2),
+                   "passed": sum(1 for s in phase2 if s["status"] == "passed"),
+                   "failed": [s["id"] for s in phase2 if s["status"] != "passed"]},
         "owner": [{"id": s["id"], "mode": s["mode"], "status": s["status"]} for s in owner],
         "security": {"ran": len(security),
                      "passed": sum(1 for s in security if s["status"] == "passed"),
@@ -210,6 +222,11 @@ def markdown(report):
             _ms(lat["action_median"]), _ms(lat["action_p90"]),
             "-" if rec["wer"] is None else "WER %s, %s exact" % (_rate(rec["wer"]),
                                                                 _rate(rec["exact"]))))
+    p2 = [(run["label"], run["summary"]["phase2"]) for run in report["runs"]
+          if run["summary"]["phase2"]["ran"]]
+    if p2:
+        out += ["", "Phase 2's tasks (multi-step, without a hand; counted apart): " +
+                "; ".join("%s %d/%d" % (label, v["passed"], v["ran"]) for label, v in p2) + "."]
     out += ["", "Latency is from the end of the utterance to the first action on the page "
             "(a trusted event, or a new document's start), for passed direct commands; "
             "the target is %d ms on the minimum hardware, and this machine isn't it." %

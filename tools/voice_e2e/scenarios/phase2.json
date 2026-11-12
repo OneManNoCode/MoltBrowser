@@ -1,0 +1,3567 @@
+{
+ "group": "phase2",
+ "about": "Touchless Phase 2's tasks (TOUCHLESS_BROWSING.md §10): 30 multi-step tasks done without a hand, by direct commands one step at a time: webmail (reply, write, delete), a shop's cart up to the order's confirmation, a form, and tasks across tabs. Every step that sends, buys, deletes, removes, replies or submits is asked about first (\"confirm\": \"open\", and nothing has happened yet), and a \"no\" leaves it undone. Counted apart from Phase 1's tasks (report.py, \"phase2\").",
+ "scenarios": [
+  {
+   "id": "p2-mail-reply",
+   "title": "Reply to a message and send it, after a spoken yes",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open lunch on Friday",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Lunch on Friday"
+      }
+     ]
+    },
+    {
+     "say": "click reply",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type see you at noon",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "see you at noon"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.to",
+       "is": "Grace Hopper"
+      },
+      {
+       "js": "window.sent.subject",
+       "is": "Re: Lunch on Friday"
+      },
+      {
+       "js": "window.sent.body.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "see you at noon"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-reply-second",
+   "title": "Reply to another message",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open the chess problem",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "The chess problem"
+      }
+     ]
+    },
+    {
+     "say": "click reply",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type I will try the rook",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "i will try the rook"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.to",
+       "is": "Alan Turing"
+      },
+      {
+       "js": "window.sent.subject",
+       "is": "Re: The chess problem"
+      },
+      {
+       "js": "window.sent.body.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "i will try the rook"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-compose",
+   "title": "Write a new message and send it",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "click compose",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "click to",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "to"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('to').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click subject",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "subject"
+      }
+     ]
+    },
+    {
+     "say": "type the river walk",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('subject').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "the river walk"
+      }
+     ]
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type meet me at ten",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "meet me at ten"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.to.toLowerCase()",
+       "is": "grace hopper"
+      },
+      {
+       "js": "window.sent.subject.toLowerCase()",
+       "is": "the river walk"
+      },
+      {
+       "js": "window.sent.body.toLowerCase()",
+       "is": "meet me at ten"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-send-declined",
+   "title": "Say no when asked to send: nothing is sent",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "click compose",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "click subject",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "subject"
+      }
+     ]
+    },
+    {
+     "say": "type a short note",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('subject').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "a short note"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "no",
+     "needs": [
+      "no"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      },
+      {
+       "js": "document.getElementById('subject').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "a short note"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-delete",
+   "title": "Delete a message, after a spoken yes",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open bread of the week",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Bread of the week"
+      }
+     ]
+    },
+    {
+     "say": "click delete",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/deleted"
+      },
+      {
+       "js": "window.deleted",
+       "is": "5"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-delete-declined",
+   "title": "Say no when asked to delete: the message stays",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open your books are due",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Your books are due"
+      }
+     ]
+    },
+    {
+     "say": "click delete",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "no",
+     "needs": [
+      "no"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Your books are due"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-read-then-reply",
+   "title": "Hear a message read, then reply",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open your books are due",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Your books are due"
+      }
+     ]
+    },
+    {
+     "say": "read the page",
+     "needs": [
+      "read_page"
+     ],
+     "expect": [
+      {
+       "said_re": "(?i)thursday"
+      }
+     ]
+    },
+    {
+     "say": "click reply",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type I will bring them back",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "i will bring them back"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.to",
+       "is": "Library"
+      },
+      {
+       "js": "window.sent.subject",
+       "is": "Re: Your books are due"
+      },
+      {
+       "js": "window.sent.body.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "i will bring them back"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-back-then-reply",
+   "title": "Open a message, go back, open another and reply",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open the chess problem",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "The chess problem"
+      }
+     ]
+    },
+    {
+     "say": "go back",
+     "needs": [
+      "back"
+     ],
+     "expect": [
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "open notes on the engine",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Notes on the engine"
+      }
+     ]
+    },
+    {
+     "say": "click reply",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type thank you for the tables",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "thank you for the tables"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.to",
+       "is": "Ada Lovelace"
+      },
+      {
+       "js": "window.sent.subject",
+       "is": "Re: Notes on the engine"
+      },
+      {
+       "js": "window.sent.body.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "thank you for the tables"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-reply-fix-word",
+   "title": "Correct the last word of a reply before sending",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open lunch on Friday",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Lunch on Friday"
+      }
+     ]
+    },
+    {
+     "say": "click reply",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type see you at one",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "see you at one"
+      }
+     ]
+    },
+    {
+     "say": "delete the last word",
+     "needs": [
+      "delete_last_word"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "see you at"
+      }
+     ]
+    },
+    {
+     "say": "type noon",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "see you at noon"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.to",
+       "is": "Grace Hopper"
+      },
+      {
+       "js": "window.sent.subject",
+       "is": "Re: Lunch on Friday"
+      },
+      {
+       "js": "window.sent.body.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "see you at noon"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-mail-reply-read-back",
+   "title": "Hear a reply read back before sending",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/"
+   },
+   "steps": [
+    {
+     "say": "open notes on the engine",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Notes on the engine"
+      }
+     ]
+    },
+    {
+     "say": "click reply",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/message"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type the tables look right",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "the tables look right"
+      }
+     ]
+    },
+    {
+     "say": "read it back",
+     "needs": [
+      "read_back"
+     ],
+     "expect": [
+      {
+       "said_re": "(?i)tables"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.to",
+       "is": "Ada Lovelace"
+      },
+      {
+       "js": "window.sent.subject",
+       "is": "Re: Notes on the engine"
+      },
+      {
+       "js": "window.sent.body.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "the tables look right"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-order",
+   "title": "Buy a kettle: the cart, checkout and the order, each after a yes",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add kettle to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click town",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "town"
+      }
+     ]
+    },
+    {
+     "say": "type Paris",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('town').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "paris"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Steel kettle\"]"
+      },
+      {
+       "js": "window.order.name.toLowerCase()",
+       "is": "grace hopper"
+      },
+      {
+       "js": "window.order.town.toLowerCase()",
+       "is": "paris"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-two-items",
+   "title": "Buy two things",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add kettle to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ]
+    },
+    {
+     "say": "click add mug to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\", \"Blue mug\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Mary Smith",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Steel kettle\", \"Blue mug\"]"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-express",
+   "title": "Choose express delivery",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add toaster to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Two-slice toaster\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "select express delivery",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.querySelector('input[name=delivery]:checked').value",
+       "is": "express"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Two-slice toaster\"]"
+      },
+      {
+       "js": "window.order.delivery",
+       "is": "express"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-remove",
+   "title": "Take something out of the cart, after a yes, then buy the rest",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add kettle to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ]
+    },
+    {
+     "say": "click add toaster to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\", \"Two-slice toaster\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click remove steel kettle",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Two-slice toaster\"]"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Mary Smith",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Two-slice toaster\"]"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-remove-declined",
+   "title": "Say no when asked to remove: it stays in the cart",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add mug to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Blue mug\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click remove blue mug",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "no",
+     "needs": [
+      "no"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Blue mug\"]"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Blue mug\"]"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-order-declined",
+   "title": "Say no when asked to place the order: nothing is ordered",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add mug to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Blue mug\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Mary Smith",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "no",
+     "needs": [
+      "no"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      },
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-checkout-declined",
+   "title": "Say no when asked to check out: the cart stays",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add kettle to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "no",
+     "needs": [
+      "no"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      },
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-back-for-more",
+   "title": "Go back from the cart for one more thing",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add toaster to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Two-slice toaster\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "go back",
+     "needs": [
+      "back"
+     ],
+     "expect": [
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "click add mug to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Two-slice toaster\", \"Blue mug\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Two-slice toaster\", \"Blue mug\"]"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-read-cart",
+   "title": "Hear the cart read before checking out",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add kettle to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "read the page",
+     "needs": [
+      "read_page"
+     ],
+     "expect": [
+      {
+       "said_re": "(?i)steel kettle"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Steel kettle\"]"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-shop-full-address",
+   "title": "Give the whole address",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/"
+   },
+   "steps": [
+    {
+     "say": "click add kettle to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click street",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "street"
+      }
+     ]
+    },
+    {
+     "say": "type River Street",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('street').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "river street"
+      }
+     ]
+    },
+    {
+     "say": "click town",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "town"
+      }
+     ]
+    },
+    {
+     "say": "type Paris",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('town').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "paris"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "window.order.street.toLowerCase()",
+       "is": "river street"
+      },
+      {
+       "js": "window.order.town.toLowerCase()",
+       "is": "paris"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-form-full",
+   "title": "Fill the whole form and send it, after a yes",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/"
+   },
+   "steps": [
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Mary Smith",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ]
+    },
+    {
+     "say": "check send me the newsletter",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('news').checked",
+       "is": true
+      }
+     ]
+    },
+    {
+     "say": "check I agree to the rules",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('terms').checked",
+       "is": true
+      }
+     ]
+    },
+    {
+     "say": "click country",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "country"
+      }
+     ]
+    },
+    {
+     "say": "choose Spain",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('country').value",
+       "is": "es"
+      }
+     ]
+    },
+    {
+     "say": "select by letter",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.querySelector('input[name=contact]:checked').value",
+       "is": "letter"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.name || '').toLowerCase()",
+       "is": "mary smith"
+      },
+      {
+       "js": "(window.sent.news || '').toLowerCase()",
+       "is": "on"
+      },
+      {
+       "js": "(window.sent.terms || '').toLowerCase()",
+       "is": "on"
+      },
+      {
+       "js": "(window.sent.country || '').toLowerCase()",
+       "is": "es"
+      },
+      {
+       "js": "(window.sent.contact || '').toLowerCase()",
+       "is": "letter"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-form-uncheck",
+   "title": "Check a box, change your mind, and send",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/"
+   },
+   "steps": [
+    {
+     "say": "check send me the newsletter",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('news').checked",
+       "is": true
+      }
+     ]
+    },
+    {
+     "say": "uncheck send me the newsletter",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('news').checked",
+       "is": false
+      }
+     ]
+    },
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.name || '').toLowerCase()",
+       "is": "john brown"
+      },
+      {
+       "js": "window.sent.news === undefined",
+       "is": true
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-form-declined",
+   "title": "Say no when asked to submit: nothing is sent",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/"
+   },
+   "steps": [
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "no",
+     "needs": [
+      "no"
+     ],
+     "expect": [
+      {
+       "path": "/"
+      },
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-form-correct-name",
+   "title": "Clear a wrong name and type it again",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/"
+   },
+   "steps": [
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "clear the field",
+     "needs": [
+      "clear_field"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value",
+       "is": ""
+      }
+     ]
+    },
+    {
+     "say": "type Mary Smith",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.name || '').toLowerCase()",
+       "is": "mary smith"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-form-country-phone",
+   "title": "Choose a country and a way to be contacted",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/"
+   },
+   "steps": [
+    {
+     "say": "click country",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "country"
+      }
+     ]
+    },
+    {
+     "say": "choose Italy",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('country').value",
+       "is": "it"
+      }
+     ]
+    },
+    {
+     "say": "select by phone",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.querySelector('input[name=contact]:checked').value",
+       "is": "phone"
+      }
+     ]
+    },
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.country || '').toLowerCase()",
+       "is": "it"
+      },
+      {
+       "js": "(window.sent.contact || '').toLowerCase()",
+       "is": "phone"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-form-scroll",
+   "title": "Scroll the page, come back up, and send the form",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/"
+   },
+   "steps": [
+    {
+     "say": "scroll to the bottom",
+     "needs": [
+      "scroll_to_bottom"
+     ],
+     "expect": [
+      {
+       "js": "window.scrollY > 1000",
+       "is": true
+      }
+     ]
+    },
+    {
+     "say": "scroll to the top",
+     "needs": [
+      "scroll_to_top"
+     ],
+     "expect": [
+      {
+       "js": "window.scrollY < 50",
+       "is": true
+      }
+     ]
+    },
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.name || '').toLowerCase()",
+       "is": "grace hopper"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-form-read-back",
+   "title": "Hear the name read back before sending",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/"
+   },
+   "steps": [
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Mary Smith",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ]
+    },
+    {
+     "say": "read it back",
+     "needs": [
+      "read_back"
+     ],
+     "expect": [
+      {
+       "said_re": "(?i)mary smith"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.name || '').toLowerCase()",
+       "is": "mary smith"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-cross-shop-then-mail",
+   "title": "Order in one tab, then write about it in another",
+   "task": "phase2",
+   "start": {
+    "url": "https://shop.test/",
+    "tabs": [
+     "https://mail.test/"
+    ]
+   },
+   "steps": [
+    {
+     "say": "click add kettle to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Steel kettle\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Steel kettle\"]"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "switch to tab 2",
+     "needs": [
+      "switch_tab"
+     ],
+     "expect": [
+      {
+       "host": "mail.test"
+      }
+     ]
+    },
+    {
+     "say": "click compose",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "click to",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "to"
+      }
+     ]
+    },
+    {
+     "say": "type Grace Hopper",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('to').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "grace hopper"
+      }
+     ]
+    },
+    {
+     "say": "click subject",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "subject"
+      }
+     ]
+    },
+    {
+     "say": "type the kettle",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('subject').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "the kettle"
+      }
+     ]
+    },
+    {
+     "say": "click message",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "body"
+      }
+     ]
+    },
+    {
+     "say": "type it comes on friday",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('body').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "it comes on friday"
+      }
+     ]
+    },
+    {
+     "say": "click send",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/compose"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/sent"
+      },
+      {
+       "js": "window.sent.subject.toLowerCase()",
+       "is": "the kettle"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-cross-mail-then-form",
+   "title": "Read a message in one tab, then fill a form in another",
+   "task": "phase2",
+   "start": {
+    "url": "https://mail.test/",
+    "tabs": [
+     "https://forms.test/"
+    ]
+   },
+   "steps": [
+    {
+     "say": "open your books are due",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/message"
+      },
+      {
+       "js": "document.getElementById('subject').textContent",
+       "is": "Your books are due"
+      }
+     ]
+    },
+    {
+     "say": "read the page",
+     "needs": [
+      "read_page"
+     ],
+     "expect": [
+      {
+       "said_re": "(?i)thursday"
+      }
+     ]
+    },
+    {
+     "say": "switch to tab 2",
+     "needs": [
+      "switch_tab"
+     ],
+     "expect": [
+      {
+       "host": "forms.test"
+      }
+     ]
+    },
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type Mary Smith",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "mary smith"
+      }
+     ]
+    },
+    {
+     "say": "check I agree to the rules",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('terms').checked",
+       "is": true
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.name || '').toLowerCase()",
+       "is": "mary smith"
+      },
+      {
+       "js": "(window.sent.terms || '').toLowerCase()",
+       "is": "on"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  },
+  {
+   "id": "p2-cross-form-then-shop",
+   "title": "Send a form, then buy something in another tab",
+   "task": "phase2",
+   "start": {
+    "url": "https://forms.test/",
+    "tabs": [
+     "https://shop.test/"
+    ]
+   },
+   "steps": [
+    {
+     "say": "click your name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "click submit",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/thanks"
+      },
+      {
+       "js": "(window.sent.name || '').toLowerCase()",
+       "is": "john brown"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "switch to tab 2",
+     "needs": [
+      "switch_tab"
+     ],
+     "expect": [
+      {
+       "host": "shop.test"
+      }
+     ]
+    },
+    {
+     "say": "click add mug to cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "JSON.stringify(shop.items())",
+       "is": "[\"Blue mug\"]"
+      }
+     ]
+    },
+    {
+     "say": "click cart",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "click checkout",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/cart"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/checkout"
+      }
+     ],
+     "answer": true
+    },
+    {
+     "say": "click full name",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "js": "document.activeElement.id",
+       "is": "name"
+      }
+     ]
+    },
+    {
+     "say": "type John Brown",
+     "needs": [
+      "type"
+     ],
+     "expect": [
+      {
+       "js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
+       "is": "john brown"
+      }
+     ]
+    },
+    {
+     "say": "click place order",
+     "needs": [
+      "choose"
+     ],
+     "expect": [
+      {
+       "confirm": "open"
+      },
+      {
+       "path": "/checkout"
+      }
+     ]
+    },
+    {
+     "say": "yes",
+     "needs": [
+      "yes"
+     ],
+     "expect": [
+      {
+       "path": "/done"
+      },
+      {
+       "js": "JSON.stringify(window.order.items)",
+       "is": "[\"Blue mug\"]"
+      }
+     ],
+     "answer": true
+    }
+   ]
+  }
+ ]
+}

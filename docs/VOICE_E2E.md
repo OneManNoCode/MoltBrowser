@@ -134,8 +134,8 @@ trusts the kit's certificate by its key (`--ignore-certificate-errors-spki-list`
 | `www.google.com`, `duckduckgo.com`, `www.bing.com`, `search.brave.com` | A search engine (whichever is the default, it is this one). |
 | `en.wikipedia.org` | An encyclopedia: a home page and an article. |
 | `news.test` | News: sections, a story with headings, sport, weather, and a link to `trap.test`. |
-| `shop.test` | A shop: three products, a cart, a checkout (name, street, town, delivery) and "Place order" up to its confirmation. |
-| `mail.test` | Webmail: an inbox, messages, and a compose form with "Send". |
+| `shop.test` | A shop: three products, a cart (each item with "Remove"), a checkout (name, street, town, delivery) and "Place order" up to its confirmation. |
+| `mail.test` | Webmail: an inbox, messages with "Reply" (the compose form with To and Subject filled) and "Delete", and a compose form with "Send". |
 | `forms.test` | A form: a text field, checkboxes, a list, radio buttons, "Submit", a long part to scroll; it counts its loads. |
 | `prompts.test` | A page asking for a permission (location, notifications); a dialog that imitates the browser's own prompt; `/inject`, text that tries to make the AI's answer imitate one. |
 | `files.test` | A download. |
@@ -414,8 +414,9 @@ the prompt scenarios are skipped there.
 
 ### The scenarios
 
-`scenarios/*.json`, data (the format is in `e2ekit/scenarios.py`): 92 of
-them, 93 runs of counted tasks in a spoken run (the owner's scenario runs
+`scenarios/*.json`, data (the format is in `e2ekit/scenarios.py`): 122 of
+them, 93 runs of Phase 1's counted tasks in a spoken run and 30 of Phase
+2's (the owner's scenario runs
 with "Hey Molt" and in always-listening mode):
 
 | Group | What |
@@ -430,6 +431,7 @@ with "Hey Molt" and in always-listening mode):
 | `recover.json` | Cancel, no, what can I say, where am I, repeat, a correction, undo (typing, a closed tab, a navigation), start over. |
 | `prompts.json` | A permission allowed by its word and refused by "no", notifications, a download after voice mode's click, `confirm()`, `alert()`, `prompt()`, leaving unsaved changes. |
 | `security.json` | A video whose sound says commands, a page whose text read aloud is commands, a replayed confirmation word, a dialog and an AI answer that imitate the browser's prompt, trap history entries. Each passes only if nothing acts. |
+| `phase2.json` | Touchless Phase 2's 30 multi-step tasks (TOUCHLESS_BROWSING.md §10), by direct commands one step at a time: webmail (reply, write, delete, a "no" that leaves it unsent or undeleted, a word corrected, a reply read back), the shop's cart up to the order's confirmation (two items, express delivery, an item removed, a "no" at checkout, at "Place order" and at "Remove"), the form (all of it, a box unchecked, a name cleared, a "no" at "Submit"), and three across tabs. Every click that sends, buys, removes, deletes, replies or submits expects voice mode to ask first and nothing to have happened yet (`test_scenarios.py` holds them to the browser's own words, `kConfirmWords`). Counted apart (`report.py`: the summary's `phase2`, not in Phase 1's rate). |
 
 Each step names the commands it needs (`needs`). Many are this round's new
 commands (volume to a level, speed, captions, undo, start over, bookmarks,

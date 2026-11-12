@@ -106,6 +106,20 @@ class ReportTest(unittest.TestCase):
                                               steps=[step(status="failed")])] + scs[1:])
         self.assertFalse(report.build([sad], {})["ok"])
 
+    def test_phase2_is_counted_apart(self):
+        scs = [scenario("owner-song", task="owner")] + \
+              [scenario("go-%d" % i) for i in range(9)] + \
+              [scenario("p2-a", task="phase2"),
+               scenario("p2-b", task="phase2", status="failed", steps=[step(status="failed")])]
+        rep = report.build([run("pulse/clean", scs)], {})
+        s = rep["runs"][0]["summary"]
+        self.assertEqual(s["counted"], 10)
+        self.assertEqual(s["passed"], 10)
+        self.assertEqual(s["phase2"], {"ran": 2, "passed": 1, "failed": ["p2-b"]})
+        self.assertTrue(rep["ok"], rep["reasons"])
+        self.assertIn("Phase 2's tasks (multi-step, without a hand; counted apart): "
+                      "pulse/clean 1/2.", report.markdown(rep))
+
     def test_a_security_scenario_that_did_not_get_to_its_check(self):
         # sec-replayed-word in the twenty-fifth build: the user's own word
         # was misheard, so the replay its check is about never ran. Still

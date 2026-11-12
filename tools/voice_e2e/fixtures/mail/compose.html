@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!-- Writing a message (mail.test/compose): To, Subject, the message, and
-     "Send" (voice mode asks before it presses it). It goes to /sent. -->
+     "Send" (voice mode asks before it presses it). It goes to /sent. A
+     reply comes with ?to=...&subject=... filled in. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -21,5 +22,10 @@
     <button id="send" type="submit">Send</button>
   </form>
 </main>
+<script>
+  const p = new URLSearchParams(location.search);
+  document.getElementById('to').value = p.get('to') || '';
+  document.getElementById('subject').value = p.get('subject') || '';
+</script>
 </body>
 </html>

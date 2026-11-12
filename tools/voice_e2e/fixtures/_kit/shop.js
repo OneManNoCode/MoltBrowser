@@ -18,6 +18,15 @@ window.shop = {
     sessionStorage.setItem('cart', JSON.stringify(items));
     shop.show();
   },
+  remove(name) {
+    const items = shop.items();
+    const at = items.indexOf(name);
+    if (at >= 0) {
+      items.splice(at, 1);
+    }
+    sessionStorage.setItem('cart', JSON.stringify(items));
+    shop.show();
+  },
   clear() {
     sessionStorage.removeItem('cart');
     shop.show();

@@ -114,6 +114,43 @@ class ShippedTest(unittest.TestCase):
         self.assertEqual(u, scen.utterances(scen.load_dir(SHIPPED)))
         self.assertIn("open YouTube", u)
 
+    def test_phase2s_thirty_tasks(self):
+        # TOUCHLESS_BROWSING.md §10: 30 multi-step tasks (mail, a cart up to
+        # the confirmation, a form), every irreversible step asked about.
+        p2 = [s for s in self.scs if s.task == "phase2"]
+        self.assertEqual(len(p2), 30)
+        self.assertTrue(all(len(s.steps) >= 3 for s in p2))
+        host = lambda s: s.start["url"].split("/")[2]
+        self.assertGreaterEqual(sum(1 for s in p2 if host(s) == "mail.test" and not s.start.get("tabs")), 10)
+        self.assertGreaterEqual(sum(1 for s in p2 if host(s) == "shop.test" and not s.start.get("tabs")), 10)
+        self.assertGreaterEqual(sum(1 for s in p2 if host(s) == "forms.test" and not s.start.get("tabs")), 7)
+        self.assertGreaterEqual(sum(1 for s in p2 if s.start.get("tabs")), 3)
+
+    def test_phase2_asks_before_every_irreversible_step(self):
+        # The words that make a click ask first, as the browser has them.
+        import re
+        src = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))),
+                           "src", "chrome", "browser", "molt_ai", "voice",
+                           "voice_controller_logic.cc")
+        with open(src) as f:
+            text = f.read()
+        block = text[text.index("kConfirmWords[] = {"):]
+        block = block[:block.index("};")]
+        words = set(re.findall(r'"([a-z]+)"', block))
+        self.assertIn("send", words)
+        for s in (s for s in self.scs if s.task == "phase2"):
+            for i, st in enumerate(s.steps):
+                said = st.value.lower().split() if st.action == "say" else []
+                irreversible = said[:1] == ["click"] and bool(words & set(said[1:]))
+                asked = any(e.get("confirm") == "open" for e in st.expect)
+                self.assertEqual(irreversible, asked, "%s step %d" % (s.id, i + 1))
+                if asked:
+                    nxt = s.steps[i + 1]
+                    self.assertTrue(nxt.answer and nxt.value in ("yes", "no"),
+                                    "%s step %d" % (s.id, i + 2))
+                    # Nothing has happened yet: the page is where it was.
+                    self.assertTrue(any("path" in e for e in st.expect), s.id)
+
     def test_every_start_url_is_a_fixture_or_blank(self):
         from e2ekit import fixtures
         import urllib.parse
