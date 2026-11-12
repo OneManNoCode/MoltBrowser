@@ -97,8 +97,8 @@ _llama_cpp_visibility = [
 ]
 
 # MoltBrowser: build for Chrome's seccomp-bpf sandbox. src/llama-mmap.cpp
-# doesn't pass MAP_POPULATE, which the sandbox answers with SIGSYS. See
-# README.chromium.
+# doesn't pass MAP_POPULATE or call posix_fadvise, which the sandbox
+# answers with SIGSYS. See README.chromium.
 config("llama_sandboxed") {
   defines = [ "LLAMA_MOLTBROWSER_SANDBOXED" ]
 }

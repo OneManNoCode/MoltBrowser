@@ -235,6 +235,14 @@ Local Modifications:
       seccomp-bpf-helpers/syscall_parameters_restrictions.cc). The
       posix_madvise(POSIX_MADV_WILLNEED) that follows still prefetches
       the same range.
+    src/llama-mmap.cpp: with LLAMA_MOLTBROWSER_SANDBOXED, no
+      posix_fadvise(POSIX_FADV_SEQUENTIAL) before that mmap: fadvise64
+      is in no allowed syscall set (sandbox/linux/seccomp-bpf-helpers/
+      syscall_sets.cc lists it after IsAllowedFileSystemAccessViaFd()'s
+      "return true"), so the baseline policy answers it with SIGSYS. Found
+      by the first real model load in the spoken suite (Chromium 156,
+      kOnDeviceModelExecution's GPU policy). It is only a readahead hint;
+      madvise(WILLNEED/RANDOM) is allowed (baseline_policy.cc).
     src/llama-memory-hybrid-idx.cpp: struct kpool_layout defined before
       the constructor (as C++23, which Chromium uses, libc++ rejects the
       constexpr ~unique_ptr of an incomplete type there).

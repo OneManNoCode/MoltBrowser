@@ -2637,7 +2637,9 @@ item says otherwise.
 ### 7.2 Linux
 
 - [ ] The inference sandbox (from #15): load a model and chat.
-  *Expected:* no SIGSYS (the `MAP_POPULATE` patch); the process is listed
+  *Expected:* no SIGSYS (the `MAP_POPULATE` and `posix_fadvise` patches;
+  without the second, the first load died in `llama_mmap`, found by the
+  spoken suite's model run on CI); the process is listed
   on `chrome://sandbox`; an 8B and a 20B model load with repacking under
   `RLIMIT_DATA`; `socket(AF_INET)` is denied.
 - [ ] The helper sandbox (from #16): with the distribution's root-owned

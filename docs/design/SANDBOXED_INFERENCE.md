@@ -18,7 +18,7 @@ Pin: Chromium 152.0.7977.169 (`92a6f151`). Upstream files below were read at tha
 3. **Files cross the boundary as handles, never paths.**
    - The browser opens the GGUF read-only and sends `mojo_base.mojom.ReadOnlyFile`. Its traits `CHECK` on the sending side that the handle is not writable.
    - The service converts it to a `FILE*` and calls `llama_model_load_from_file_ptr()` (`include/llama.h:532`, already in b11641). mmap still works.
-4. **One required llama.cpp patch.** llama.cpp passes `MAP_POPULATE` on every Linux mmap load (`src/llama-mmap.cpp:493`, called via `init_mappings(true)` at `src/llama-model.cpp:1874`). Chrome's seccomp answers that flag with `CrashSIGSYS` (`sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc:245-256`). llama.cpp already calls `posix_madvise(WILLNEED)` on the same range, which seccomp allows, so the patch only drops the flag.
+4. **Two required llama.cpp patches.** llama.cpp passes `MAP_POPULATE` on every Linux mmap load (`src/llama-mmap.cpp:493`, called via `init_mappings(true)` at `src/llama-model.cpp:1874`). Chrome's seccomp answers that flag with `CrashSIGSYS` (`sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc:245-256`). llama.cpp already calls `posix_madvise(WILLNEED)` on the same range, which seccomp allows, so the patch only drops the flag. Just before that, it calls `posix_fadvise(POSIX_FADV_SEQUENTIAL)`, and `fadvise64` is in none of seccomp's allowed sets, so that is `CrashSIGSYS` too: the second patch skips it (a readahead hint only). The first real model loaded in the spoken suite found it.
 5. **Most of the runtime moves into the service, and the browser validates what comes back.**
    - Moving: the chat template, context budget, special-token neutralization and the reasoning filters (Harmony, `GemmaThoughtFilter`, `<think>`).
    - Checked in the browser: UTF-8, sizes, counts, protocol order and liveness of everything coming back.
@@ -119,7 +119,8 @@ Use `kOnDeviceModelExecution` everywhere:
 |---|---|---|
 | Open the GGUF by path | No (broker) | `ReadOnlyFile` + `fdopen`. Call `TakePlatformFile()` before `fdopen` so no `ScopedFD` still owns the fd (fd-ownership enforcement). |
 | `mmap(..., MAP_SHARED \| MAP_POPULATE)` (`llama-mmap.cpp:493`) | **No: `CrashSIGSYS`** | Local patch: don't add `MAP_POPULATE`. The existing `posix_madvise(POSIX_MADV_WILLNEED)` at `:516` still prefetches. |
-| `posix_fadvise`, `madvise(WILLNEED/RANDOM)` | Yes (`baseline_policy.cc:243`) | — |
+| `posix_fadvise(POSIX_FADV_SEQUENTIAL)` (`llama-mmap.cpp:488`, before the mmap) | **No: `CrashSIGSYS`** (`fadvise64` is in no allowed set: `syscall_sets.cc` lists it after `IsAllowedFileSystemAccessViaFd()`'s `return true`) | Local patch: not called when sandboxed (a readahead hint only). Found when the spoken suite first loaded a real model (TinyLlama, Chromium 156): the service died with SIGSYS in `llama_mmap`, and the browser said it couldn't start the on-device AI. |
+| `madvise(WILLNEED/RANDOM)` | Yes (`baseline_policy.cc:243`) | — |
 | `fopen("/proc/cpuinfo")` (CPU device name) | No (broker) | Harmless: falls back to "CPU". |
 | `/proc/self/status`, `prctl(PR_SET_PTRACER)` (ggml backtrace) | Would be denied or crash | Already compiled out by `GGML_MOLTBROWSER_NO_BACKTRACE`. Keep it so. |
 | `arch_prctl(ARCH_REQ_XCOMP_PERM)` (AMX, `amx.cpp:216`) | Risky | Compiled out: it only exists under `__AMX_INT8__ && __AVX512VNNI__`, and BUILD.gn doesn't set those. Keep it that way, or call it pre-sandbox if AMX is ever enabled. |
@@ -592,7 +593,7 @@ Total is roughly 2,500 changed lines, about half of them moves: 5–7 days of de
   - First-load latency, which now includes Metal pipeline creation per process.
   - Codesigned and notarized build: the helper launches and Metal works under the hardened runtime.
 - **Linux:**
-  - No SIGSYS: `MAP_POPULATE` patched, plus `fadvise`/`madvise`, `clone3` fallback and thread creation.
+  - No SIGSYS: `MAP_POPULATE` and `posix_fadvise` patched, plus `madvise`, `clone3` fallback and thread creation. (The spoken suite now loads a real model in the CI build's sandbox: `e2e_model` in `molt-test-build.json`.)
   - `RLIMIT_DATA` with repack on 8B and 20B models.
   - `/proc/cpuinfo` denial harmless.
   - `socket(AF_INET)` denied.
