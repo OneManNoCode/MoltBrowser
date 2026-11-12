@@ -272,12 +272,11 @@ LanguagePhrases MakeEnglishPhrases() {
   // well (the spoken suite's file run).
   // "Chekai agreed to the rules", "Chekkai agreed to the rules": "check I
   // agree to the rules" (the spoken suite's Phase 2 runs), the pronoun run
-  // in.
-  p.glued_verbs = {{"click", "click"},
-                   {"press", "press"},
-                   {"tap", "tap"},
-                   {"lick", "click"},
-                   {"chek", "check"}};
+  // in; "Hekkai agreed to the rules" (build 48's), its first sound lost
+  // too, only so.
+  p.glued_verbs = {{"click", "click"}, {"press", "press"},
+                   {"tap", "tap"},     {"lick", "click"},
+                   {"chek", "check"},  {"hek", "check", /*pronoun_only=*/true}};
   p.glued_pronoun_spellings = {"ai", "i"};
   p.glued_pronoun = "i";
   // "Quick your name", "kick send me the newsletter": "click" and "check"

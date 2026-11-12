@@ -3327,10 +3327,11 @@ class Planner : public TurnPlanner {
   // newsletter": "check", for a check box only ("fix" is a request of its
   // own too). Only after the wake phrase, and only in English; "good
   // morning" with nothing named just "Morning" is still the planner's.
+  // Also after a list was read (build 48: "Good checkout" on the cart it
+  // had read): the misheard "click" is no answer to the list, and a name
+  // of its items said so is pressed as "click" would press it.
   bool PressNameAfterMisheardClick(const VoiceCommand& command) {
-    const ConversationState& s = state();
-    if (s.list != ListContext::kNone || s.expecting_choice ||
-        env_.language != Language::kEnglish ||
+    if (env_.language != Language::kEnglish ||
         !(command.wake_said || env_.wake_heard)) {
       return false;
     }

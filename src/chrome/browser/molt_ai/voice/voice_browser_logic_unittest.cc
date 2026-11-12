@@ -494,6 +494,14 @@ TEST(VoiceDictationTest, SpokenPunctuationInEnglish) {
   EXPECT_EQ(ApplySpokenPunctuation("thanks period CU", Language::kEnglish),
             "thanks. See you");
   EXPECT_EQ(ApplySpokenPunctuation("cu CUP", Language::kEnglish), "cu CUP");
+  // So is "C you" at a sentence's start; a "C" anywhere else stays.
+  EXPECT_EQ(ApplySpokenPunctuation("C you at one.", Language::kEnglish),
+            "see you at one.");
+  EXPECT_EQ(ApplySpokenPunctuation("thanks period C you", Language::kEnglish),
+            "thanks. See you");
+  EXPECT_EQ(ApplySpokenPunctuation("plan C you said", Language::kEnglish),
+            "plan C you said");
+  EXPECT_EQ(ApplySpokenPunctuation("C major", Language::kEnglish), "C major");
 }
 
 TEST(VoiceDictationTest, SpokenPunctuationInSpanish) {

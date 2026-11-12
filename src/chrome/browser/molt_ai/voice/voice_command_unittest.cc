@@ -230,6 +230,15 @@ TEST(VoiceCommandTest, AGluedVerbIsReadApart) {
             Fields(ParseVoiceCommand("check i agreed to the rules", context)));
   EXPECT_NE(ParseVoiceCommand("chekkai", context).kind,
             VoiceCommandKind::kChoose);
+  // Its first sound lost too ("Hekkai", build 48's): before the pronoun
+  // only.
+  EXPECT_EQ(Fields(ParseVoiceCommand("He mold. Hekkai agreed to the rules.",
+                                     context)),
+            Fields(ParseVoiceCommand("check i agreed to the rules", context)));
+  for (const char* said : {"hekkai", "hektares of land", "heknow the rules"}) {
+    EXPECT_NE(ParseVoiceCommand(said, context).kind, VoiceCommandKind::kChoose)
+        << said;
+  }
   // A short word after the verb, with more after it: apart too
   // ("clickad toaster to cart" for "click add toaster to cart").
   EXPECT_EQ(Fields(ParseVoiceCommand("clickad toaster to cart", context)),
@@ -406,6 +415,7 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"Himalt, tucked the river walk", "type", "text=the river walk", kField},
       {"He mold. Picked John Brown.", "type", "text=John Brown", kField},
       {"Himalt. Pipe Grace Hopper.", "type", "text=Grace Hopper", kField},
+      {"Hey, Molt, typed C you at one.", "type", "text=C you at one", kField},
       // ... where "take me to", "take me home" and "take me back" still
       // mean themselves.
       {"take me to the new york times", "open_site", "site=newyorktimes",
@@ -440,8 +450,9 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
   // Without a focused text field, "take" types nothing.
   EXPECT_NE(ParseVoiceCommand("take hello there", MakeContext(kNone)).kind,
             VoiceCommandKind::kType);
-  for (const char* said : {"took the river walk", "tucked in the kids",
-                           "picked John Brown", "pipe Grace Hopper"}) {
+  for (const char* said :
+       {"took the river walk", "tucked in the kids", "picked John Brown",
+        "pipe Grace Hopper", "typed C you at one"}) {
     EXPECT_NE(ParseVoiceCommand(said, MakeContext(kNone)).kind,
               VoiceCommandKind::kType)
         << said;

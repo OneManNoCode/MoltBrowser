@@ -1558,6 +1558,9 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
                          (HasPhrase(p.glued_pronoun_spellings, rest) ||
                           HasPhrase(p.glued_pronoun_spellings, after_double)) &&
                          !p.glued_pronoun.empty();
+    if (glued.pronoun_only && !pronoun) {
+      continue;
+    }
     // A sound-alike of the verb ("lick") is a guess: a word of its own
     // after it only.
     if (!pronoun && rest.size() < 4 &&

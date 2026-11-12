@@ -214,8 +214,13 @@ std::string ApplySpokenPunctuation(std::string_view text, Language language) {
     }
     if (!found) {
       // "See you" as the recognizer writes it, in texting's "CU" (the
-      // spoken suite's runs): the words said.
+      // spoken suite's runs), or as "C you" at a sentence's start (build
+      // 48's): the words said.
+      const bool c_you = !spanish && tokens[i] == "C" &&
+                         i + 1 < tokens.size() && folded[i + 1] == "you" &&
+                         (out.empty() || EndsSentence(out));
       add_word(!spanish && tokens[i] == "CU" ? std::string_view("see you")
+               : c_you                       ? std::string_view("see")
                                              : tokens[i]);
       ++i;
       continue;
