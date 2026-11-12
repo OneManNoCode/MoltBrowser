@@ -633,6 +633,9 @@ source_set("browser_tests") {
     # What a page may do with the activation those actions give it.
     "//chrome/browser/molt_ai/security:browser_tests",
 
+    # The planner's model: a real one loaded by the sandboxed service.
+    "//chrome/browser/molt_ai/runtime:browser_tests",
+
     # The Agent studio's storage, answered from its sequences (shared with
     # voice mode's routines).
     "//chrome/browser/ui/webui/molt_ai:browser_tests",
