@@ -25,7 +25,8 @@ StructuredPage ParseCapped(std::string html, std::string url) {
 }  // namespace
 
 DOMContentBridge::DOMContentBridge(content::WebContents* web_contents)
-    : web_contents_(web_contents) {}
+    : web_contents_(web_contents ? web_contents->GetWeakPtr()
+                                 : base::WeakPtr<content::WebContents>()) {}
 
 DOMContentBridge::~DOMContentBridge() = default;
 

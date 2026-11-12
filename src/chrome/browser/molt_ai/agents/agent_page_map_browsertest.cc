@@ -11,6 +11,8 @@
 //     and the video plays with sound;
 //   - on a page whose accessibility tree has nothing to act on, it falls
 //     back to the element snapshot;
+//   - a run whose tab closes under it ends then, and a late answer to its
+//     question does nothing;
 //   - in a MoltNet window it never takes the accessibility mode;
 //   - a frame of the page's origin that another site's frame embeds isn't
 //     listed;
@@ -32,15 +34,17 @@
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/run_loop.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
-#include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
@@ -66,10 +70,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_utils.h"
 #include "media/base/media_switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -363,6 +369,67 @@ IN_PROC_BROWSER_TEST_F(AgentPageMapBrowserTest, SearchesChoosesAndPlays) {
   agent_.reset();
   EXPECT_FALSE(web_contents()->GetAccessibilityMode().has_mode(
       voice::VoicePageController::AccessibilityMode().flags()));
+}
+
+// The tab closes while the run waits for the answer to its question: the
+// run ends then ("The tab was closed."), and the late answer does nothing.
+IN_PROC_BROWSER_TEST_F(AgentPageMapBrowserTest, EndsWhenItsTabCloses) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), Url("video.test", "/molt_voice/video_home.html")));
+  // The run's tab is a second one, so the window stays.
+  ASSERT_TRUE(ui_test_utils::NavigateToURLWithDisposition(
+      browser(), Url("video.test", "/molt_voice/video_home.html"),
+      WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP));
+  content::WebContents* contents = web_contents();
+  int asked_model = 0;
+  WebAgent::SetModelForTesting(base::BindRepeating(
+      [](int* asked_model, const std::string& prompt,
+         const PromptOptions& options) {
+        ++*asked_model;
+        // The search button submits the site's search form: a question.
+        return Reply(Click(ElementWith(prompt, "button \"Search\"")));
+      },
+      &asked_model));
+  int question = 0;
+  bool done = false;
+  bool success = true;
+  std::string result;
+  agent_ =
+      std::make_unique<WebAgent>(contents, &BrowserAIRuntime::GetInstance());
+  agent_->Start("search the video site", base::DoNothing(),
+                base::BindOnce(
+                    [](bool* done, bool* success, std::string* result, bool ok,
+                       std::string text) {
+                      *done = true;
+                      *success = ok;
+                      *result = std::move(text);
+                    },
+                    &done, &success, &result),
+                base::BindRepeating(
+                    [](int* question, const WebAgent::ConfirmRequest& request) {
+                      *question = request.id;
+                    },
+                    &question),
+                WebAgent::PlanCallback());
+  ASSERT_TRUE(base::test::RunUntil([&]() { return question != 0; }));
+  ASSERT_FALSE(done);
+
+  content::WebContentsDestroyedWatcher destroyed(contents);
+  browser()->GetTabStripModel()->CloseWebContents(
+      contents, TabCloseTypes::CLOSE_USER_GESTURE);
+  destroyed.Wait();
+  ASSERT_TRUE(base::test::RunUntil([&]() { return done; }));
+  EXPECT_FALSE(success);
+  EXPECT_EQ(result, WebAgent::kTabClosedResult);
+
+  // The answer comes late: nothing more is asked of the model or done.
+  const int asked = asked_model;
+  agent_->ResolveConfirmation(question, true);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(asked_model, asked);
+  agent_.reset();
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), 1);
 }
 
 // No accessibility tree to act on: the element snapshot.

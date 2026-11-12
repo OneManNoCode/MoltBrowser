@@ -435,7 +435,8 @@ class NavigationSettleWaiter : public content::WebContentsObserver {
 AutomationRunner::AutomationRunner(content::WebContents* target_contents,
                                    BrowserAIRuntime* ai_runtime,
                                    const base::FilePath& storage_dir)
-    : target_contents_(target_contents),
+    : target_contents_(target_contents ? target_contents->GetWeakPtr()
+                                       : base::WeakPtr<content::WebContents>()),
       ai_runtime_(ai_runtime),
       storage_dir_(storage_dir) {}
 
@@ -980,7 +981,7 @@ void AutomationRunner::BeginClickSettle(const std::string& note) {
       base::BindOnce(&AutomationRunner::OnStepTimeout,
                      weak_factory_.GetWeakPtr()));
   nav_waiter_ = std::make_unique<NavigationSettleWaiter>(
-      target_contents_, /*grace=*/base::Milliseconds(350),
+      target_contents_.get(), /*grace=*/base::Milliseconds(350),
       /*settle=*/base::Milliseconds(600), /*max_wait=*/base::Seconds(12),
       base::BindOnce(&AutomationRunner::OnStepFinished,
                      weak_factory_.GetWeakPtr(), true, note));

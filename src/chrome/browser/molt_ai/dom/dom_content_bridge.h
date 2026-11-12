@@ -12,7 +12,7 @@
 #include <functional>
 
 #include "base/functional/callback.h"
-#include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 
 namespace content {
 class WebContents;
@@ -66,7 +66,8 @@ class DOMContentBridge {
   bool IsPageReady() const;
 
  private:
-  raw_ptr<content::WebContents> web_contents_;
+  // Null once the tab is gone (the bridge's owner can outlive it).
+  base::WeakPtr<content::WebContents> web_contents_;
 };
 
 }  // namespace molt_ai

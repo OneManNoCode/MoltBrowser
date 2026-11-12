@@ -367,7 +367,9 @@ class AutomationRunner {
   void OnChildLoaded(std::string child_id, std::optional<Script> child);
 
   // ---- State ----
-  raw_ptr<content::WebContents> target_contents_;  // not owned
+  // The run's tab: null once it is gone (the user can close the run
+  // window); its steps then fail with "No target tab".
+  base::WeakPtr<content::WebContents> target_contents_;
   raw_ptr<BrowserAIRuntime> ai_runtime_;           // not owned
   // The shared storage's directory; empty: nothing kept.
   const base::FilePath storage_dir_;
