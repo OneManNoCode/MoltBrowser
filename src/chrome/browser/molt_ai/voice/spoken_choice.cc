@@ -73,6 +73,22 @@ constexpr char kOneSaid[] = "wun";
 // well ("card" for the "Cart (1)" tied with "Add mug to cart": one sound
 // apart in a short word).
 constexpr double kNamedBySound = 0.8;
+// A said word that matches no item's word at all, but sounds nearer one
+// item's word than any other item's, counts this much for that item: less
+// than a match (kGoodMatch: it adds nothing to how many items have the
+// word), enough to break a tie between items alike in every other word
+// said ("mud" for "Add mug to cart" among "Add kettle to cart" and "Add
+// toaster to cart": the recognizer swapped one stop for another, past
+// what a short word allows).
+constexpr double kNearestSound = 0.6;
+// How far the nearest word may be: this many half-edits past
+// PhoneticBound() (a stop for a stop in a three-letter key), at most
+// kMaxNearestSound.
+constexpr int kNearestSoundExtra = 2;
+constexpr int kMaxNearestSound = 4;
+// How much nearer the nearest item's word must be than every other
+// item's: a consonant inserted or dropped.
+constexpr int kNearestSoundGap = 2;
 // With an ordinal ("the second live one"), the items the description
 // matches are those within this much of the best.
 constexpr double kOrdinalBand = 0.25;
@@ -706,6 +722,107 @@ std::vector<RefUnit> MakeUnits(const std::vector<std::string>& words,
   return units;
 }
 
+// The item (index into |prepared|) whose title has a word, or two adjacent
+// words read as one, nearest |said| in sound, when that is within
+// kNearestSoundExtra past what a match allows and every other item's
+// nearest is at least kNearestSoundGap farther. Title words in |claimed|
+// (matched by another word said: "cart" for "cart") and stopwords are not
+// compared: "kel" in "click it kel to cart" is compared with "kettle", not
+// with the "cart" every item has.
+std::optional<size_t> NearestBySound(const Sound& said,
+                                     const std::vector<Prepared>& prepared,
+                                     const std::vector<Sound>& sounds,
+                                     const std::vector<bool>& claimed,
+                                     const LanguagePhrases& phrases) {
+  if (!said.sound_alike || said.numeric || said.key.size() < 3) {
+    return std::nullopt;
+  }
+  constexpr int kSearch = kMaxNearestSound + kNearestSoundGap;
+  const auto comparable = [&](uint32_t id) {
+    return id != kNoWord && id < sounds.size() && !claimed[id] &&
+           sounds[id].sound_alike && !sounds[id].numeric &&
+           !InSortedList(phrases.choice_stopwords, sounds[id].text);
+  };
+  // Each title word once (|single|), joined pairs per item.
+  std::vector<int> single(sounds.size(), -1);
+  struct Nearest {
+    int distance = kSearch + 1;
+    bool near = false;
+  };
+  const auto consider = [&](std::string_view key, int distance,
+                            Nearest& nearest) {
+    const size_t longer = std::max(said.key.size(), key.size());
+    const int allowed =
+        std::min(kMaxNearestSound, PhoneticBound(longer) + kNearestSoundExtra);
+    nearest.distance = std::min(nearest.distance, distance);
+    nearest.near = nearest.near || distance <= allowed;
+  };
+  const auto far = [&](const SoundCounts& counts, size_t key_size,
+                       const SoundCounts* extra, int seam) {
+    const size_t gap = key_size > said.key.size() ? key_size - said.key.size()
+                                                  : said.key.size() - key_size;
+    return static_cast<int>(gap) > kSearch ||
+           SoundsLowerBound(said.counts, counts, extra, seam) > kSearch;
+  };
+  std::vector<Nearest> nearest(prepared.size());
+  for (size_t e = 0; e < prepared.size(); ++e) {
+    const Prepared& item = prepared[e];
+    for (const Segment& segment : item.segments) {
+      if (segment.kind != kTitleSegment) {
+        continue;
+      }
+      for (uint32_t k = 0; k < segment.size; ++k) {
+        const uint32_t id = item.words[segment.begin + k];
+        if (!comparable(id)) {
+          continue;
+        }
+        const Sound& word = sounds[id];
+        if (single[id] < 0) {
+          single[id] = far(word.counts, word.key.size(), nullptr, -1)
+                           ? kSearch + 1
+                           : PhoneticDistance(said.key, word.key, kSearch);
+        }
+        consider(word.key, single[id], nearest[e]);
+        // Two title words heard as one ("Admud" for "Add mug"), which
+        // keeps the first one's first sound.
+        if (k + 1 >= segment.size || said.text.size() < kMinMergedLetters ||
+            !SameOrCloseSounds(said.key.front(), word.key.front())) {
+          continue;
+        }
+        const uint32_t next = item.words[segment.begin + k + 1];
+        if (!comparable(next)) {
+          continue;
+        }
+        const Sound& right = sounds[next];
+        const bool seam = word.key.back() == right.key.front();
+        if (far(word.counts, word.key.size() + right.key.size() - seam,
+                &right.counts, seam ? SoundClass(right.key.front()) : -1)) {
+          continue;
+        }
+        const std::string joined = JoinPhoneticKeys(word.key, right.key);
+        consider(joined, PhoneticDistance(said.key, joined, kSearch),
+                 nearest[e]);
+      }
+    }
+  }
+  std::optional<size_t> best;
+  for (size_t e = 0; e < nearest.size(); ++e) {
+    if (!best || nearest[e].distance < nearest[*best].distance) {
+      best = e;
+    }
+  }
+  if (!best || !nearest[*best].near) {
+    return std::nullopt;
+  }
+  for (size_t e = 0; e < nearest.size(); ++e) {
+    if (e != *best &&
+        nearest[e].distance < nearest[*best].distance + kNearestSoundGap) {
+      return std::nullopt;
+    }
+  }
+  return best;
+}
+
 struct Scored {
   size_t index = 0;
   int position = 0;
@@ -869,6 +986,28 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
           hits[v] |= uint64_t{1} << u;
       }
     }
+    // An item word a word said names as spelled is that word's: words
+    // said around it, joined, don't also match it ("kel to" is not "cart"
+    // in "kel to cart").
+    for (size_t v = 0; v < sounds.size(); ++v) {
+      for (uint64_t m = hits[v]; m; m &= m - 1) {
+        const auto said = static_cast<size_t>(std::countr_zero(m));
+        if (units[said].count != 1 ||
+            table[said * sounds.size() + v] / 250.0 < kSpelledMatch) {
+          continue;
+        }
+        for (uint64_t j = hits[v]; j; j &= j - 1) {
+          const auto u = static_cast<size_t>(std::countr_zero(j));
+          const RefUnit& unit = units[u];
+          if (unit.count > 1 &&
+              (units[said].first < unit.first ||
+               units[said].first >= unit.first + unit.count)) {
+            table[u * sounds.size() + v] = 0;
+            hits[v] &= ~(uint64_t{1} << u);
+          }
+        }
+      }
+    }
     for (size_t e = 0; e < n; ++e) {
       const Prepared& item = prepared[e];
       for (const Segment& segment : item.segments) {
@@ -944,6 +1083,39 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
             for (size_t w = unit.first; w < end; ++w) {
               best[w][e] = std::max(best[w][e], s * kJoinedWords * factor);
             }
+          }
+        }
+      }
+    }
+    // A word that matched nothing at all, but sounds nearest one item's
+    // word (NearestBySound()): a little for that item.
+    if (group == kDescription) {
+      std::vector<bool> claimed(sounds.size(), false);
+      for (size_t v = 0; v < sounds.size(); ++v) {
+        for (uint64_t m = hits[v]; m && !claimed[v]; m &= m - 1) {
+          const auto u = static_cast<size_t>(std::countr_zero(m));
+          claimed[v] = table[u * sounds.size() + v] / 250.0 >= kGoodMatch;
+        }
+      }
+      for (const RefUnit& unit : units) {
+        std::vector<double>& row = best[unit.first];
+        if (unit.count != 1 ||
+            std::any_of(row.begin(), row.end(),
+                        [](double s) { return s > 0; }) ||
+            InSortedList(phrases.choice_particles, group_words[unit.first])) {
+          continue;
+        }
+        // Only for an item another word said matches: it breaks a tie, it
+        // doesn't make a match of a word alone ("the newest one").
+        const std::optional<size_t> e =
+            NearestBySound(unit.sound, prepared, sounds, claimed, phrases);
+        if (!e) {
+          continue;
+        }
+        for (size_t w = 0; w < best.size(); ++w) {
+          if (w != unit.first && best[w][*e] >= kGoodMatch) {
+            row[*e] = kNearestSound;
+            break;
           }
         }
       }

@@ -29,7 +29,14 @@
 //     compared joined across two or three words on either side, or on
 //     both, so a recognizer that split or merged words still matches
 //     ("Bohemian rap city" -> "Bohemian Rhapsody", "signin" -> "Sign in",
-//     "Ed kel" -> "Add kettle").
+//     "Ed kel" -> "Add kettle"). An item word one word said names as
+//     spelled is that word's: other words said, joined, don't match it
+//     too ("kel to" is not the "cart" said after it).
+//   - A word that matches no item's word at all but sounds nearest one
+//     item's word, past what a match allows but nearer than every other
+//     item's ("mud" for "Add mug to cart", not the kettle's or the
+//     toaster's), counts a little for that item when another word said
+//     matches it: it breaks a tie, it makes no match alone.
 //   - When some item has a word exactly as spelled, other items' sound-
 //     alikes of it count less: the recognizer is biased toward the words
 //     on screen, so "AirPods" means the AirPods, not the earbuds.

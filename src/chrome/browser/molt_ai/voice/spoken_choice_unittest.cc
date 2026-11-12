@@ -758,6 +758,43 @@ TEST(SpokenChoiceMatchTest, WordsSplitOnBothSides) {
   EXPECT_EQ(m.index, 2u);
 }
 
+// The one word that sets items apart, misheard past what a match allows
+// ("click add mug to cart" heard as "add mud to cart", "Admud to car" and
+// "it kel to cart" in the spoken suite's Phase 2 runs on build 46): it
+// sounds nearest one item's word, so it breaks the tie for that item.
+TEST(SpokenChoiceMatchTest, TheWordThatSetsItemsApartMisheard) {
+  const auto items = MakeList({{"Shop", ""},
+                               {"Cart (0)", ""},
+                               {"Add kettle to cart", ""},
+                               {"Add toaster to cart", ""},
+                               {"Add mug to cart", ""}},
+                              ChoiceRole::kButton);
+  for (const char* said :
+       {"add mud to cart", "Admud to cart", "Edmud to cart", "Admud to car"}) {
+    const ChoiceMatch m = Match(said, items);
+    ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique)
+        << said << ": " << Describe(m, items);
+    EXPECT_EQ(m.index, 4u) << said;
+  }
+  // "Kel" said with "to" isn't the "cart" said after it: the kettle's.
+  ChoiceMatch m = Match("it kel to cart", items);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique) << Describe(m, items);
+  EXPECT_EQ(m.index, 2u);
+  // The word alone makes no match: it only breaks a tie...
+  EXPECT_EQ(Match("mud", items).outcome, ChoiceOutcome::kNoMatch);
+  // ... and only when one item's word is nearest: "mud" is as near "map"
+  // as "mug".
+  const auto two_near = MakeList({{"Add mug to cart", ""},
+                                  {"Add map to cart", ""},
+                                  {"Add kettle to cart", ""}},
+                                 ChoiceRole::kButton);
+  m = Match("add mud to cart", two_near);
+  ASSERT_EQ(m.outcome, ChoiceOutcome::kAmbiguous) << Describe(m, two_near);
+  EXPECT_EQ(m.close.size(), 3u);
+  // A word nearer none of them than a whole other sound stays a question.
+  EXPECT_EQ(Match("add pin to cart", items).outcome, ChoiceOutcome::kAmbiguous);
+}
+
 // "One" run onto the last word ("the Live Aid one" heard as "The Live
 // AWAN", the owner's scenario in the spoken suite's always-listening runs
 // on build 37): the word and "one" against an item word and "one".

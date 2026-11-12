@@ -876,6 +876,8 @@ TEST(VoiceCommandTest, Dictation) {
       {"clear everything", "clear_field", "", kField},
       {"read it back", "read_back", "", kField},
       {"Hey, Molt, read it, Beck.", "read_back", "", kField},
+      {"Himalt. Readed back.", "read_back", "", kField},
+      {"readed back", "unknown"},
       {"what did I type", "read_back", "", kField},
       {"submit", "submit", "", kField},
       {"send", "submit", "", kField},
