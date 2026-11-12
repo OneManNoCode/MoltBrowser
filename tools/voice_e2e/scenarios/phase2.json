@@ -1241,7 +1241,7 @@
      "expect": [
       {
        "js": "JSON.stringify(shop.items())",
-       "is": "[\"Steel kettle\", \"Blue mug\"]"
+       "is": "[\"Steel kettle\",\"Blue mug\"]"
       }
      ]
     },
@@ -1331,7 +1331,7 @@
       },
       {
        "js": "JSON.stringify(window.order.items)",
-       "is": "[\"Steel kettle\", \"Blue mug\"]"
+       "is": "[\"Steel kettle\",\"Blue mug\"]"
       }
      ],
      "answer": true
@@ -1495,7 +1495,7 @@
      "expect": [
       {
        "js": "JSON.stringify(shop.items())",
-       "is": "[\"Steel kettle\", \"Two-slice toaster\"]"
+       "is": "[\"Steel kettle\",\"Two-slice toaster\"]"
       }
      ]
     },
@@ -1985,7 +1985,7 @@
      "expect": [
       {
        "js": "JSON.stringify(shop.items())",
-       "is": "[\"Two-slice toaster\", \"Blue mug\"]"
+       "is": "[\"Two-slice toaster\",\"Blue mug\"]"
       }
      ]
     },
@@ -2075,7 +2075,7 @@
       },
       {
        "js": "JSON.stringify(window.order.items)",
-       "is": "[\"Two-slice toaster\", \"Blue mug\"]"
+       "is": "[\"Two-slice toaster\",\"Blue mug\"]"
       }
      ],
      "answer": true
