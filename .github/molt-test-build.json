@@ -1,11 +1,11 @@
 {
- "resume_run": "43225270161",
+ "resume_run": "43256379934",
  "run_tests": true,
  "e2e_only": false,
- "e2e_runs": "typed,file:clean,pulse:clean",
+ "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "tinyllama-1.1b",
- "request": "Forty-seventh build (incremental on the forty-sixth, run 43225270161): compiles and runs InferenceSandboxBrowserTest (a tiny GGUF loaded and run by the real sandboxed inference service); the choice matcher breaks a tie by the word that sets items apart, misheard ('add mud to cart', 'Admud', 'it kel to cart' for the shop's buttons; build 46's file run lost 7 of its 13 Phase 2 tasks so); 'readed back' reads a field back; a number voice mode said within a longer one ('one' of 'nineteen eighty one') is its own voice heard back (build 46's speakers run played the first result so). Then the spoken suite with TinyLlama at its pin: Phase 2's 30 tasks with the planner behind the grammar, the scenarios that need a model, the owner's and the choosing ones, typed, file and on speakers. On the forty-sixth: Phase 2 typed 30, file 17, headphones 23, speakers 21, music 18 and 12 of 30 (asked which, then answered: 5, 4, 4, 1); Phase 1 100/94/90/89%, music 78/81%.",
- "e2e_scenarios": "p2-,browser-ask-ai,sec-answer-imitates-prompt,owner-,choose-"
+ "request": "Forty-eighth build (incremental on the forty-seventh, run 43256379934): no std::random_device in the sandboxed inference service. InferenceSandboxBrowserTest found the first token killing the service on the forty-seventh (llama_sampler_init_dist(LLAMA_DEFAULT_SEED) -> get_rng_seed() -> libc++'s random_device, which can't open /dev/urandom there): the service now seeds the sampler from base::RandUint64(), and local patches keep random_device out of llama-sampler.cpp and clip.cpp. The browser test must pass; then the spoken suite with TinyLlama, typed and on speakers: Phase 2's 30 tasks with the planner behind the grammar and the two scenarios that need a model. On the forty-seventh: Phase 2 typed 30, file 17, speakers 22 of 30; both model scenarios failed on that crash.",
+ "e2e_scenarios": "p2-,browser-ask-ai,sec-answer-imitates-prompt"
 }
