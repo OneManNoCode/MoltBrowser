@@ -1,0 +1,6 @@
+{
+ "request": "First survey: every registry entry against Hugging Face (none is pinned yet; this sandbox cannot reach huggingface.co). Confirm the hidden entries' repo and file names, pin, and hash the planner's candidates and the small models here.",
+ "only": [],
+ "verify": ["tinyllama-1.1b", "qwen3.5-4b", "gemma4-e4b", "qwen3-embedding-0.6b"],
+ "search": ["Qwen3.5-4B", "gemma-4-E4B", "Qwen3-VL-2B-Instruct", "Voxtral-Mini-3B", "Qwen3-Embedding-0.6B"]
+}

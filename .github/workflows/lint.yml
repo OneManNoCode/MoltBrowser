@@ -29,7 +29,9 @@ name: Lint
 #     package-linux.sh, run on a fake build, writes them (blocking; in the
 #     linux-repo job, which has dpkg-deb and rpmbuild)
 #   * the model pinning tool (tools/models/pin_models.py) parses both model
-#     registries and pins a copy offline; a half-filled pin fails (blocking)
+#     registries and pins a copy offline; a half-filled pin fails; the
+#     survey that checks them against Hugging Face (hf_survey.py) offline
+#     (blocking)
 #   * the MoltNet font tooling (tools/fonts/): the font reader against
 #     hostile input, the pinned font manifest's rules, the generated Blink
 #     and browser tables and allow-list copy are current, fetching and
@@ -211,6 +213,8 @@ jobs:
           persist-credentials: false
       - name: tools/models/pin_models_test.py (offline, both registries)
         run: python3 tools/models/pin_models_test.py -v
+      - name: tools/models/hf_survey_test.py (offline, stand-in replies)
+        run: python3 tools/models/hf_survey_test.py -v
       - name: tools/models/gguf_types_test.py (GGUF types vs the Vulkan build)
         run: python3 tools/models/gguf_types_test.py -v
 

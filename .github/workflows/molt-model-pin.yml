@@ -1,0 +1,110 @@
+# MoltBrowser model pins: the on-device model registries checked against
+# Hugging Face, from a machine that can reach huggingface.co.
+# Copyright 2026 GenEye AI Labs Inc.
+#
+# For every registry entry tools/models/pin_models.py pins (the chat models
+# in browser_ai_runtime.cc, the memory search model), the log shows: the
+# repo's revision, the model card's license, whether the repo is gated,
+# whether the registry's file (and projector) is there, and the repo's GGUF
+# files when it isn't (tools/models/hf_survey.py). Then the registries as
+# pin_models.py pins them, as a diff in the log for review; then, for the
+# entries named in "verify", each file downloaded and hashed here against
+# that pin. Nothing is committed, pushed or uploaded: whoever reads the log
+# applies the diff, checks the licenses, and commits.
+#
+# Trigger: a push to a claude/ branch that changes
+# .github/molt-model-pin.json ({"only": ["<id>", ...] (empty: all),
+# "verify": ["<id>", ...], "search": ["<query>", ...], "request": "..."}),
+# or Actions > "MoltBrowser model pins" > Run workflow.
+
+name: MoltBrowser model pins
+
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['.github/molt-model-pin.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: molt-model-pin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the request
+        id: request
+        run: |
+          set -euo pipefail
+          CONFIG=.github/molt-model-pin.json
+          ids() {
+            # Model ids only: lower case letters, digits, '.', '-'.
+            jq -r "(.$1 // []) | .[]" "$CONFIG" |
+              grep -E '^[a-z0-9][a-z0-9.-]{0,63}$' | tr '\n' ' ' || true
+          }
+          if [ -f "$CONFIG" ]; then
+            echo "only=$(ids only)" >> "$GITHUB_OUTPUT"
+            echo "verify=$(ids verify)" >> "$GITHUB_OUTPUT"
+            jq -r '(.search // []) | .[]' "$CONFIG" |
+              grep -E '^[A-Za-z0-9 ._-]{1,80}$' > "$RUNNER_TEMP/search.txt" || true
+            echo "request: $(jq -r '.request // ""' "$CONFIG" | tr -d '\n' | head -c 600)"
+          else
+            echo "only=" >> "$GITHUB_OUTPUT"
+            echo "verify=" >> "$GITHUB_OUTPUT"
+            : > "$RUNNER_TEMP/search.txt"
+          fi
+
+      - name: Survey the registries' repos
+        env:
+          ONLY: ${{ steps.request.outputs.only }}
+        run: |
+          set -euo pipefail
+          args=()
+          for id in $ONLY; do args+=(--only "$id"); done
+          python3 tools/models/hf_survey.py survey "$RUNNER_TEMP/hf" "${args[@]}"
+
+      - name: Search for repos
+        run: |
+          set -euo pipefail
+          if [ -s "$RUNNER_TEMP/search.txt" ]; then
+            mapfile -t queries < "$RUNNER_TEMP/search.txt"
+            python3 tools/models/hf_survey.py search "${queries[@]}"
+          else
+            echo "no searches asked for"
+          fi
+
+      - name: Pin the registries (the diff to review)
+        env:
+          ONLY: ${{ steps.request.outputs.only }}
+        run: |
+          set -uo pipefail
+          args=()
+          for id in $ONLY; do args+=(--only "$id"); done
+          python3 tools/models/pin_models.py --from-json "$RUNNER_TEMP/hf" \
+            --write "${args[@]}"
+          echo "pin_models.py exit $?"
+          echo "::group::git diff (the pins)"
+          git diff -- src/
+          echo "::endgroup::"
+
+      - name: Hash the files asked for
+        env:
+          VERIFY: ${{ steps.request.outputs.verify }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VERIFY" ]; then
+            echo "no files asked for"
+            exit 0
+          fi
+          df -h "$RUNNER_TEMP" | tail -1
+          # shellcheck disable=SC2086  # the ids are checked above
+          python3 tools/models/hf_survey.py verify "$RUNNER_TEMP/hf" $VERIFY
