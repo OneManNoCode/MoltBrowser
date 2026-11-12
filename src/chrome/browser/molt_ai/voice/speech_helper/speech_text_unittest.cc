@@ -348,5 +348,36 @@ TEST(SpeechTextTest, KnowsTheWakePhraseBegun) {
   EXPECT_TRUE(OnlyAWakePhraseBegun("Oye, mo", {"oye molt"}));
 }
 
+TEST(SpeechTextTest, WordStartSeconds) {
+  // The bundled English model's tokens for "Hey mold. Next video.": a word
+  // begins at a space (the listener measured none before, so a command
+  // said with the wake phrase was told apart only by its word count).
+  EXPECT_EQ(WordStartSeconds({" He", "y", " mo", "ld", ".", " N", "e", "x", "t",
+                              " video", "."},
+                             {0.60f, 0.76f, 0.88f, 1.04f, 1.28f, 1.60f, 1.64f,
+                              1.68f, 1.72f, 1.92f, 2.56f}),
+            (std::vector<float>{0.60f, 0.88f, 1.60f, 1.92f}));
+  // SentencePiece's mark, and a first token without either.
+  EXPECT_EQ(WordStartSeconds({WS "HE", "Y", WS "MOLT"}, {0.1f, 0.2f, 0.5f}),
+            (std::vector<float>{0.1f, 0.5f}));
+  EXPECT_EQ(WordStartSeconds({"He", "y", " molt"}, {0.1f, 0.2f, 0.5f}),
+            (std::vector<float>{0.1f, 0.5f}));
+  // A run with no letter is no word, as the listener counts; one whose
+  // letters come in a later token starts there.
+  EXPECT_EQ(
+      WordStartSeconds({" play", " .", " ,", "x"}, {0.1f, 0.4f, 0.5f, 0.6f}),
+      (std::vector<float>{0.1f, 0.6f}));
+  EXPECT_EQ(WordStartSeconds({WS, "a", " ", "b"}, {0.1f, 0.2f, 0.3f, 0.4f}),
+            (std::vector<float>{0.2f, 0.4f}));
+  // Spanish: a multi-byte character is a letter.
+  EXPECT_EQ(WordStartSeconds({" \xC2\xBF", "Qu", "\xC3\xA9", " pasa"},
+                             {0.1f, 0.2f, 0.3f, 0.6f}),
+            (std::vector<float>{0.1f, 0.6f}));
+  // Mismatched sizes: only what both have.
+  EXPECT_EQ(WordStartSeconds({" a", " b", " c"}, {0.1f, 0.2f}),
+            (std::vector<float>{0.1f, 0.2f}));
+  EXPECT_TRUE(WordStartSeconds({}, {}).empty());
+}
+
 }  // namespace
 }  // namespace molt_speech

@@ -160,6 +160,16 @@ bool OnlyAWakePhraseBegun(std::string_view text,
 // boundary.
 std::string CleanEventText(std::string_view text, size_t max_bytes);
 
+// When each word of a recognizer's result starts, from its tokens and
+// their times (|seconds|, as many): a word begins at a token that begins
+// with a space (the bundled English and Spanish models' tokens, " mo",
+// "ld") or kWordStart (SentencePiece's), or at the first token, and starts
+// at its first token with a letter, a digit or a byte of a multi-byte
+// character, as the listener counts words in the result's text (a run
+// with none is no word: " ."). Extra tokens or times are left out.
+std::vector<float> WordStartSeconds(const std::vector<std::string_view>& tokens,
+                                    const std::vector<float>& seconds);
+
 }  // namespace molt_speech
 
 #endif  // CHROME_BROWSER_MOLT_AI_VOICE_SPEECH_HELPER_SPEECH_TEXT_H_
