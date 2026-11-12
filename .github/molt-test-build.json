@@ -1,11 +1,11 @@
 {
  "resume_run": "43189322599",
- "run_tests": false,
- "e2e_only": true,
- "e2e_runs": "typed,pulse:clean",
+ "run_tests": true,
+ "e2e_only": false,
+ "e2e_runs": "typed,file:clean,pulse:clean:noloop,pulse:clean,pulse:music10:noloop,pulse:music10",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "e2e_model": "tinyllama-1.1b",
- "request": "The spoken suite with a real on-device model, on the forty-fifth build (run 43189322599): TinyLlama 1.1B at its pin, downloaded and checked here. The two scenarios that need a model (asking the AI, a page that makes the answer imitate a prompt), and Phase 2's 30 tasks with the planner behind the grammar (what is misheard now goes to the planner). Typed and headphones.",
- "e2e_scenarios": "p2-,browser-ask-ai,sec-answer-imitates-prompt"
+ "e2e_model": "",
+ "request": "Forty-sixth build (incremental on the forty-fifth): the inference sandbox no longer kills the first real model load (llama.cpp's posix_fadvise left out, as MAP_POPULATE is); the first command after start-up waits up to 8 s for the page's own tree; a misheard click before a whole name ('good country', 'thick reply', 'clicked message', 'fix' before a check box) presses it after the wake phrase; 'pipe' types into a focused field; the kit answers 'Did you mean 1, 2 or 3?' as a user would (counted apart). The whole spoken suite, no model. On the forty-fifth (run 43189322599): Phase 2 typed 30, file 18, headphones 17, speakers 15, music 14 and 12 of 30; Phase 1 99/94/93/91%, music 87/81%.",
+ "e2e_scenarios": ""
 }
