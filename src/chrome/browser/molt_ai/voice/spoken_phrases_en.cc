@@ -273,6 +273,11 @@ LanguagePhrases MakeEnglishPhrases() {
                    {"press", "press"},
                    {"tap", "tap"},
                    {"lick", "click"}};
+  // "Quick your name", "kick send me the newsletter": "click" and "check"
+  // as the recognizer hears them over music (the spoken suite's music
+  // runs); both are the click of kChoose.
+  p.verb_sound_alikes = {
+      {"quick", "click"}, {"kick", "click"}, {"lick", "click"}};
 
   p.volume_words = {
       {"half", 50},     {"halfway", 50},         {"max", 100},

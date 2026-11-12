@@ -1481,6 +1481,28 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     }
     return command;
   }
+  // A verb heard as another word ("quick your name"): once more with the
+  // verb, taken only as a click (kChoose), never as another command.
+  if (u.words.size() >= 2) {
+    for (const GluedVerb& alike : p.verb_sound_alikes) {
+      if (u.words[0] != alike.heard) {
+        continue;
+      }
+      std::string again_text(alike.verb);
+      for (size_t i = 1; i < u.words.size(); ++i) {
+        again_text += " ";
+        again_text += u.words[i];
+      }
+      VoiceCommand again = ParseVoiceCommand(again_text, context);
+      if (again.kind == VoiceCommandKind::kChoose &&
+          again.verb == ChoiceVerb::kClick) {
+        again.heard = command.heard;
+        again.wake_said = command.wake_said;
+        return again;
+      }
+      break;
+    }
+  }
   // A verb heard glued to the next word ("clickname a color", as the
   // bundled English recognizer hears "click name a colour", or "lickname
   // color" with its first sound lost): once more, apart. Only when nothing
