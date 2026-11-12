@@ -4,8 +4,9 @@
 (docs/design/TOUCHLESS_BROWSING.md §10):
 
   - the scripted tasks (scenarios with "counts") pass at SUCCESS_TARGET or
-    better in every spoken run (quiet and with music), the owner's
-    scenario included;
+    better in every spoken run in quiet, and at SUCCESS_TARGET_MUSIC with
+    music playing (the owner's decision, November 2026: with music, what
+    is left is the recognizer), the owner's scenario included;
   - no security scenario acts (a failure there fails the report whatever
     the rate), and each gets to its checks (one whose earlier step failed
     fails it too, reported as such: it acted only if a check failed);
@@ -25,6 +26,7 @@ import os
 from . import KIT_VERSION, REPORT_SCHEMA
 
 SUCCESS_TARGET = 0.9
+SUCCESS_TARGET_MUSIC = 0.85
 LATENCY_TARGET_MS = 1500
 
 
@@ -128,16 +130,24 @@ def summarize_run(run):
     }
 
 
+def success_target(run):
+    """The pass rate |run| is held to: SUCCESS_TARGET in quiet,
+    SUCCESS_TARGET_MUSIC with music playing."""
+    return SUCCESS_TARGET_MUSIC if str(run.get("condition", "")).startswith("music") \
+        else SUCCESS_TARGET
+
+
 def verdict(runs, gate_latency=False):
     """(ok, reasons)."""
     reasons = []
     for run in runs:
         s = run["summary"]
         label = run["label"]
-        if s["counted"] and (s["success_rate"] or 0) < SUCCESS_TARGET:
+        target = success_target(run)
+        if s["counted"] and (s["success_rate"] or 0) < target:
             reasons.append("%s: %d of %d tasks passed (%.0f%%, the target is %.0f%%)"
                            % (label, s["passed"], s["counted"], 100 * (s["success_rate"] or 0),
-                              100 * SUCCESS_TARGET))
+                              100 * target))
         for o in s["owner"]:
             if o["status"] != "passed":
                 reasons.append("%s: the owner's scenario (%s) %s" % (label, o["mode"], o["status"]))
@@ -162,7 +172,8 @@ def build(runs, meta, gate_latency=False):
         run["summary"] = summarize_run(run)
     ok, reasons = verdict(runs, gate_latency)
     return {"schema": REPORT_SCHEMA, "kit_version": KIT_VERSION, "meta": meta,
-            "targets": {"success": SUCCESS_TARGET, "latency_ms": LATENCY_TARGET_MS,
+            "targets": {"success": SUCCESS_TARGET, "success_music": SUCCESS_TARGET_MUSIC,
+                        "latency_ms": LATENCY_TARGET_MS,
                         "latency_gates": gate_latency},
             "ok": ok, "reasons": reasons, "runs": runs}
 

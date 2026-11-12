@@ -84,6 +84,28 @@ class ReportTest(unittest.TestCase):
         self.assertIn("Not in the grammar yet: `bookmark_page`.", md)
         self.assertIn("Not met:", md)
 
+    def test_with_music_the_target_is_lower(self):
+        # The owner's decision (November 2026): 85% with music playing,
+        # 90% in quiet; the owner's scenario and security as everywhere.
+        scs = [scenario("owner-song", task="owner")] + \
+              [scenario("go-%d" % i) for i in range(17)] + \
+              [scenario("go-bad-%d" % i, status="failed", steps=[step(status="failed")])
+               for i in range(3)]
+        quiet = run("pulse/clean", scs)
+        music = dict(run("pulse/music10", scs), condition="music10")
+        self.assertEqual(report.success_target(quiet), 0.9)
+        self.assertEqual(report.success_target(music), 0.85)
+        rep = report.build([quiet, music], {})
+        self.assertFalse(rep["ok"])
+        self.assertEqual(len(rep["reasons"]), 1)
+        self.assertIn("pulse/clean: 18 of 21 tasks passed (86%, the target is 90%)",
+                      rep["reasons"][0])
+        self.assertTrue(report.build([music], {})["ok"])
+        self.assertEqual(rep["targets"]["success_music"], 0.85)
+        sad = dict(music, scenarios=[scenario("owner-song", task="owner", status="failed",
+                                              steps=[step(status="failed")])] + scs[1:])
+        self.assertFalse(report.build([sad], {})["ok"])
+
     def test_a_security_scenario_that_did_not_get_to_its_check(self):
         # sec-replayed-word in the twenty-fifth build: the user's own word
         # was misheard, so the replay its check is about never ran. Still

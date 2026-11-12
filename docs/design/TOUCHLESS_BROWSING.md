@@ -760,6 +760,8 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - The owner's song scenario and 50 scripted spoken tasks pass with at least 90% success, in a quiet room and with music playing.
 - A direct command starts acting within 1.5 s of the end of speech on the minimum hardware.
 
+**Status (November 2026): met in a quiet room; with music, accepted at 86% for now (the owner's decision).** The spoken suite (`docs/VOICE_E2E.md`) on the forty-second and forty-third builds: 90 to 95% on headphones and speakers in quiet and 93% by file, every run at 90% or more. The owner's song passed in both listening modes in every run of the forty-second build; on the forty-third, always-listening on speakers missed once ("Hey Molt, pause" over the video written "pay mold. Thaus"). With music 10 dB under the speech the whole time, 86% on headphones and on speakers; what is left there is the recognizer (dictated names, place names), and a stronger one (an optional Whisper small.en second pass, §9) is the remaining option. The kit holds runs with music to 85%. Nothing a page said or played acted in any run. The latency target is reported, not gated: the runner isn't the minimum hardware (median 0.9 to 1.4 s from the end of speech to the action on headphones and speakers; file capture adds its own delay).
+
 ### Phase 2: Conversation and tasks (about 4 to 6 rounds)
 - **Planning:** open-ended tasks through the planner, with spoken steps and confirmations.
 - **Dialog:** disambiguation, correction and undo.

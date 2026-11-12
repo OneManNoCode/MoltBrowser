@@ -6,7 +6,9 @@ is used on. It measures touchless browsing's Phase 1 exit
 ([TOUCHLESS_BROWSING.md](design/TOUCHLESS_BROWSING.md) §10, §12):
 
 - the owner's song scenario and at least 50 scripted spoken tasks pass at
-  90% or better, in quiet and with music playing;
+  90% or better in quiet, and 85% or better with music playing (the
+  owner's decision, November 2026: with music, what is left is the
+  recognizer, below);
 - a direct command acts within 1.5 s of the end of speech (reported: the
   machine that runs it isn't the minimum hardware);
 - nothing a page says, plays or shows acts (Phase 3's exit, for the
@@ -458,7 +460,7 @@ report directory. The speech check feeds every rendered utterance to the
 bundle's helper: as said, with the wake phrase before it, and with the
 wake phrase, a 0.7 s pause and then the utterance, every utterance
 counting, which must come out as one utterance (the helper waits out the
-pause, SPEECH_HELPER_PROTOCOL.md §3.5). The verdict fails on a run under 90%, an owner's
+pause, SPEECH_HELPER_PROTOCOL.md §3.5). The verdict fails on a run under 90% (85% with music), an owner's
 scenario that didn't pass, a security scenario that acted, or a scenario
 that couldn't run (and on the latency median with `--gate-latency`). A
 security scenario acted when one of its checks failed: a step that only
@@ -565,6 +567,14 @@ What this says before the build runs:
   than the phrase has, while the helper found no word's start in the
   bundled model's results (SPEECH_HELPER_PROTOCOL.md §4.1, since fixed).
   The music run hadn't been measured since the ninth build (48%).
+  The forty-third build (run 43127305088) takes those four words and finds
+  where words start: headphones 78 of 91 (86%), speakers 78 of 91 (86%),
+  with quiet runs unchanged (file 81 of 87, headphones 84 of 91, speakers
+  82 of 91). Offline, the bundle's helper over the kit's music heard as
+  many commands with Chrome's noise suppression as without it (102 and
+  103 of 120); what is left is the recognizer (dictated names, "trims in
+  Lion", "This" for "yes"), and the owner accepted that for now: the kit's
+  target with music is 85% (`report.SUCCESS_TARGET_MUSIC`).
 
 ## Limits
 
