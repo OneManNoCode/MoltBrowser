@@ -61,6 +61,13 @@ MAX_GGUF_LISTED = 60
 # The start of a file kept for its GGUF header (metadata with the
 # tokenizer's vocabulary, then the tensor table).
 HEADER_BYTES = 96 << 20
+# Turn markers in a chat template, as the vendored llama.cpp's
+# llm_chat_detect_template() looks for them (src/third_party/llama_cpp/src/
+# llama-chat.cpp): which format the engine will write the model's chats in.
+TEMPLATE_MARKERS = ('<|im_start|>', '<|im_sep|>', '<|turn>', '<turn|>',
+                    '<start_of_turn>', '<|start_header_id|>', '[INST]',
+                    '<|start|>', '<|channel|>', '<|user|>', '<|assistant|>',
+                    '<think>')
 
 
 def clean(value, cap=200):
@@ -245,7 +252,7 @@ def describe_header(prefix):
   def show(key):
     value = metadata.get(key)
     if isinstance(value, tuple):
-      return '%d items' % value[2]
+      return '%d' % value[2]
     return clean(value, 80) if value is not None else '-'
 
   template = metadata.get('tokenizer.chat_template')
@@ -257,8 +264,10 @@ def describe_header(prefix):
        show(arch + '.block_count')),
       'tokenizer %s, %s tokens; chat template %s' %
       (show('tokenizer.ggml.model'), show('tokenizer.ggml.tokens'),
-       '%d characters' % len(template) if isinstance(template, str) else
-       'none'),
+       '%d characters, markers %s' % (
+           len(template),
+           ' '.join(m for m in TEMPLATE_MARKERS if m in template) or 'none')
+       if isinstance(template, str) else 'none'),
       'tensors: %s' % ', '.join('%s %d' % (clean(k, 20), v)
                                 for k, v in sorted(counts.items())),
   ]

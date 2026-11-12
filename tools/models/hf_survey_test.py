@@ -36,7 +36,7 @@ def tiny_gguf():
         gguf_string('qwen3') +
         gguf_string('qwen3.context_length') + struct.pack('<II', 4, 40960) +
         gguf_string('tokenizer.chat_template') + struct.pack('<I', 8) +
-        gguf_string('{{ messages }}'))
+        gguf_string('<|im_start|>{{ m }}'))
   tensor = (gguf_string('blk.0.attn_q.weight') + struct.pack('<I', 1) +
             struct.pack('<Q', 8) + struct.pack('<I', 12) +
             struct.pack('<Q', 0))
@@ -155,7 +155,7 @@ class HfSurveyTest(unittest.TestCase):
     self.assertEqual(code, 0, out)
     self.assertIn('architecture qwen3', out)
     self.assertIn('context 40960', out)
-    self.assertIn('chat template 14 characters', out)
+    self.assertIn('chat template 19 characters, markers <|im_start|>', out)
     self.assertIn('tensors: q4_K 1', out)
     self.assertIn('Vulkan: every type has shaders', out)
     # Not a GGUF: said so, and the hash still decides.
