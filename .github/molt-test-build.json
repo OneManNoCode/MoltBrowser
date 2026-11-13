@@ -1,11 +1,11 @@
 {
- "resume_run": "43395839595",
+ "resume_run": "43406444500",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-sixth build (incremental on the fifty-fifth, run 43395839595). The fifty-fifth passed the model's tasks 4/4 typed and 4/4 on pulse. Pulse misheard browser-ask-ai (\"is fai what is a trem\"), which went to the planner, and the new REFUSED_PLAN lines showed why such runs fail: both times, the model copied the prompt's format as its plan ({\"goal\":\"<the first step>\",...}). New since: the planner's prompt shows the format by a real example plan (for \"find when the city museum opens on Sunday\"), and a step copied from it is refused (RefusesTheExamplesStepsCopied, PlanPromptLayout). Only the model's tasks and Phase 1's two model scenarios run: the model's four tasks check that real plans still come out with the new prompt.",
+ "request": "Fifty-seventh build (incremental on the fifty-sixth, run 43406444500). The fifty-sixth passed 3061/3061 unit tests and 122/122 browser tests, and the model's tasks 3/4 typed and 3/4 on pulse: the order task failed on both, and its REFUSED lines showed why. The planner wrote a plan of \"...\" twice and the agent copied the action format's first example, NAVIGATE \"<a full https:// address>\", four times; once as \"<https://...>\", which slipped past the placeholder check. The agent's text-only requests went to the model as one raw document without its chat template. New since: every agent request (plan and action) goes as a chat, the rules as the system prompt and the turn as the user message, as the screenshot path always did, and a placeholder in angle brackets is refused. Only the model's tasks and Phase 1's two model scenarios run.",
  "e2e_scenarios": "model-,browser-ask-ai,sec-answer-imitates-prompt"
 }
