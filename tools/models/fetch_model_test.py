@@ -68,7 +68,8 @@ class FetchModelTest(unittest.TestCase):
     self.assertEqual(tiny['file'], 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf')
     # Hidden ones, the last entry included (its "hidden" is its own, not a
     # later table's).
-    self.assertTrue(fetch_model.find_entry('qwen3.5-4b')['hidden'])
+    self.assertFalse(fetch_model.find_entry('qwen3.5-4b')['hidden'])
+    self.assertTrue(fetch_model.find_entry('gemma4-e4b')['hidden'])
     self.assertTrue(fetch_model.find_entry('voxtral-mini-3b')['hidden'])
     self.assertFalse(fetch_model.find_entry('gpt-oss-20b')['hidden'])
     self.assertIsNone(fetch_model.find_entry('no-such-model'))
@@ -125,7 +126,7 @@ class FetchModelTest(unittest.TestCase):
       code, _, _ = self.run_main(e, flags=['--allow-hidden'])
       self.assertEqual(code, 2, e)
     self.assertEqual(
-        fetch_model.main(['qwen3.5-4b', self.tmp, '--allow-hidden']), 2)
+        fetch_model.main(['gemma4-e4b', self.tmp, '--allow-hidden']), 2)
 
 
 if __name__ == '__main__':

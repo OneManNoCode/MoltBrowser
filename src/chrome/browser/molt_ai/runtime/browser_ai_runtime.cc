@@ -176,7 +176,10 @@ const ModelRegistryEntry kModelRegistry[] = {
     // Qwen (Alibaba) — Qwen3.5 4B, Apache 2.0 (Qwen/Qwen3.5-4B's card).
     // Qwen publishes no GGUF of it: unsloth's conversion, the most used.
     // Needs the vendored llama.cpp's "qwen35" architecture (present at
-    // 00de615).
+    // 00de615). Offered since the spoken suite measured it on a real build
+    // (the planner's requests and questions about a page, typed and spoken,
+    // on builds 57-59, none refused): the smallest model that plans voice
+    // mode's requests well.
     {"qwen3.5-4b",
      "Qwen3.5 4B",
      "unsloth/Qwen3.5-4B-GGUF",
@@ -189,7 +192,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      "Q4_K_M",
      "Qwen",
      "apache-2.0",
-     true},
+     false},
 
     // Gemma — Gemma 4 E4B, Apache 2.0 (google/gemma-4-E4B-it's card, unlike
     // Gemma 3's own terms). Runtime support is in place: the vendored
