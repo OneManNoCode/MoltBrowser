@@ -1,11 +1,11 @@
 {
- "resume_run": "43302310139",
+ "resume_run": "43319669706",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
- "e2e_model": "tinyllama-1.1b",
- "request": "Fiftieth build (incremental on the forty-ninth, run 43302310139). The forty-ninth passed 3043/3043 unit tests and 121/121 browser tests (with EndsWhenItsTabCloses), Phase 2 typed 30 and pulse:clean 24 of 30, and the dangling tab pointer was gone. New since: choices matched by Spanish sounds in Spanish (spoken_choice, voice_controller_logic; check molt_ai_unittests' Spanish cases), \"Still working on it.\" heard back is voice mode's own voice and said at 15 s, 30 s, then each 60 s, and \"say that again\" isn't asked twice over its own echo. The spoken suite adds the model's tasks (scenarios/model.json): a question about a news story, and planner requests to send an order off (must ask before Place order; no leaves it), get rid of a message (must ask before Delete), and put a name into a form.",
+ "e2e_model": "qwen3.5-4b",
+ "request": "Fifty-first build (incremental on the fiftieth, run 43319669706). The fiftieth passed 3047/3047 unit tests and 121/121 browser tests; Phase 2 typed 30/30 and pulse:clean 25/30 (three \"Grace Hopper\" heard as \"Grace Harp\"); with TinyLlama the model's tasks were typed 2/4 and pulse 1/4: on pulse the planner's own \"Still working on it.\" heard back one or two words off stopped it. New since: over voice mode's own voice, while it works on something, words that choose nothing are set aside before anything stops (ItsOwnWordsHeardBackDontStopThePlanner); a breath written as \"a\" after the wake phrase is dropped before a command (voice_repair); each action the planner's model chose is a \"planner\" line in the test log (APlannerLine); the agent refuses a URL whose host names no site (RejectsAHostThatNamesNoSite). The spoken suite runs the model's tasks with Qwen3.5 4B (pinned) in place of TinyLlama, a planner step waiting up to twenty minutes.",
  "e2e_scenarios": "p2-,model-,browser-ask-ai,sec-answer-imitates-prompt"
 }
