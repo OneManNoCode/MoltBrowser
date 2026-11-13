@@ -1,11 +1,11 @@
 {
  "resume_run": "43418432405",
  "run_tests": true,
- "e2e_only": true,
+ "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-eighth run: the spoken suite only, every scenario, on the fifty-seventh build (run 43418432405, merged as PR #126). The fifty-seventh passed 3061/3061 unit tests and 122/122 browser tests, and the model's tasks 4/4 typed and 4/4 on pulse with no reply refused, after every agent request (plan and action) began going to the model as a chat. This run checks Phase 1, Phase 2's 30 tasks and the model's tasks together with that change, typed and on pulse.",
+ "request": "Fifty-eighth build (incremental on the fifty-seventh, run 43418432405). Run 58 put the whole spoken suite on the fifty-seventh: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 83/93 (89%), Phase 2 22/30, the model's tasks 4/4, nothing refused. Most pulse misses are the recognizer's words (\"A to Lovelace\", \"Grace Hark\"), but three were voice mode's: its reading of the results heard back as \"Daily trem\" chose the first result; \"Himalt the cart.\" went to the planner because a list had been read earlier on that page; \"Hey mold to Spain.\" right after the country list's options went to the planner. New since: a two-word name it just read, its second word misheard, is its own voice heard back (NameItReadMisheard); a name said alone presses its item unless a list still waits for its answer; an option named whole within 30 s of its list's options, alone or after \"to\", chooses it. The whole spoken suite runs, typed and on pulse.",
  "e2e_scenarios": ""
 }
