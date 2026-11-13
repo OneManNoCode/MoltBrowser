@@ -496,6 +496,7 @@ class VoiceController : public VoicePlanner::Delegate,
   // Routines (planner-routines): the steps the planner carried out go to
   // "this", and a routine's replayed step reports how it went.
   void PlannerCarriedOut(const PlannerStep& step) override;
+  void PlannerActed(const PlannerAction& action) override;
   void PlannerReplayed(PlannerReplay outcome) override;
   // A routine's step the planner carried out before, replayed by the
   // planner in the active tab (voice_learning_loop.h). False when there is

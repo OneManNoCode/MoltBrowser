@@ -95,7 +95,10 @@ need one), `--model-file <file>.gguf` (that model, named as the browser's
 registry names it and checked against its pin already, is linked into each
 scenario's home, `~/.moltbrowser/models/`, where the browser loads it; the
 link is removed after the scenario, so the report never carries the model;
-it implies `--model`), `--gate-latency` (the 1.5 s target fails the run) and
+it implies `--model`; the browser is started with
+`--molt-ai-test-hidden-models`, so a hidden registry entry that is fully
+pinned can be measured before it is offered, as CI's `e2e_model` does with
+`tools/models/fetch_model.py --allow-hidden`), `--gate-latency` (the 1.5 s target fails the run) and
 `--browser-flag` (one more flag for the browser), and `--display current`
 to watch it on a real screen.
 
@@ -285,6 +288,7 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"helper","event":"wake","lag_ms":140,"note":"taken"}
 {"t":...,"w":1,"e":"earcon","kind":"listening"}
 {"t":...,"w":1,"e":"duck","on":true,"tabs":1}
+{"t":...,"w":1,"e":"planner","step":2,"action":"CLICK","target":"button \"Delete\"","ok":false,"note":"...","reason":"..."}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -330,6 +334,13 @@ in `VoiceController`):
 - `prompt`, `confirm`: the browser's prompts and a page's dialogs, and the
   loop's own yes-or-no questions (a purchase, the activation guard's), as
   they open and close.
+- `planner`: each action the planner's model chose (with the model,
+  `--model-file`) and how its run went: the plan step it worked on, the
+  action (`CLICK`, `TYPE`, `NAVIGATE`, ...), what it acted on and with,
+  whether it worked, the browser's note and the model's stated reason,
+  masked as every text is. A planner task that failed shows where: a step
+  the model planned on nothing the page has, an action on the wrong item,
+  or one the browser refused.
 
 In PulseAudio runs the kit also passes `--molt-voice-test-audio=<absolute
 path>` (`voice/voice_test_audio.*`): what voice mode's microphone gave
@@ -451,7 +462,7 @@ with "Hey Molt" and in always-listening mode):
 | `prompts.json` | A permission allowed by its word and refused by "no", notifications, a download after voice mode's click, `confirm()`, `alert()`, `prompt()`, leaving unsaved changes. |
 | `security.json` | A video whose sound says commands, a page whose text read aloud is commands, a replayed confirmation word, a dialog and an AI answer that imitate the browser's prompt, trap history entries. Each passes only if nothing acts. |
 | `phase2.json` | Touchless Phase 2's 30 multi-step tasks (TOUCHLESS_BROWSING.md §10), by direct commands one step at a time: webmail (reply, write, delete, a "no" that leaves it unsent or undeleted, a word corrected, a reply read back), the shop's cart up to the order's confirmation (two items, express delivery, an item removed, a "no" at checkout, at "Place order" and at "Remove"), the form (all of it, a box unchecked, a name cleared, a "no" at "Submit"), and three across tabs. Every click that sends, buys, removes, deletes, replies or submits expects voice mode to ask first and nothing to have happened yet (`test_scenarios.py` holds them to the browser's own words, `kConfirmWords`). Counted apart (`report.py`: the summary's `phase2`, not in Phase 1's rate). |
-| `model.json` | The tasks that need the on-device model (they run only with `--model-file`): a question about a news story answered from its text, and requests the grammar has no command for, which go to the planner: send an order off (it must ask before Place order, and a "no" leaves it unplaced), get rid of a message (it must ask before Delete), and put a name into a form (typed, nothing sent). Each planner request's parse is `unknown`, so it reaches the planner. A step waits up to ten minutes: a model on a CI runner's CPU takes minutes for one. Counted apart (`report.py`: the summary's `model`). |
+| `model.json` | The tasks that need the on-device model (they run only with `--model-file`): a question about a news story answered from its text, and requests the grammar has no command for, which go to the planner: send an order off (it must ask before Place order, and a "no" leaves it unplaced), get rid of a message (it must ask before Delete), and put a name into a form (typed, nothing sent). Each planner request's parse is `unknown`, so it reaches the planner. A planner step waits up to twenty minutes and the question up to ten: a model on a CI runner's CPU takes minutes for a call, and a plan makes one for each action. Counted apart (`report.py`: the summary's `model`). |
 
 Each step names the commands it needs (`needs`). Many are this round's new
 commands (volume to a level, speed, captions, undo, start over, bookmarks,

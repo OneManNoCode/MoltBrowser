@@ -67,6 +67,8 @@ WORD_TRIES = 3
 # What voice mode's microphone gave in a pulse run (--molt-voice-test-audio):
 # raw 16 kHz mono 16-bit, in the scenario's run directory.
 MIC_DUMP = "mic.pcm"
+# browser_ai_runtime.h's kTestListHiddenModelsSwitch.
+TEST_HIDDEN_MODELS_SWITCH = "molt-ai-test-hidden-models"
 # How much of it the kit's recognizer hears back for a failed scenario.
 MIC_DUMP_MAX_S = 90
 
@@ -395,6 +397,11 @@ class Runner(object):
             # digest: in file mode too, where the file is what was said.
             f.append("--molt-voice-test-audio=" +
                      os.path.join(os.path.dirname(log_path), MIC_DUMP))
+        if self.config.model_file:
+            # The model registry's pinned hidden entries listed too
+            # (browser_ai_runtime.h): a model measured here before it is
+            # offered to anyone.
+            f.append("--" + TEST_HIDDEN_MODELS_SWITCH)
         if wav:
             f += ["--use-fake-device-for-media-stream",
                   "--use-file-for-fake-audio-capture=%s%%noloop" % wav]

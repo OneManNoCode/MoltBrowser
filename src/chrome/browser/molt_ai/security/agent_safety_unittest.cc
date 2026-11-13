@@ -60,6 +60,23 @@ TEST(AgentSafetyTest, RejectsInvalidUrls) {
   EXPECT_FALSE(IsAllowedNavigationURL(GURL("https://")));
 }
 
+TEST(AgentSafetyTest, RejectsAHostThatNamesNoSite) {
+  // A small model's placeholder, and hosts with an empty label.
+  for (const char* url : {"https://...", "https://.../a", "http://..",
+                          "https://a..b", "https://.example.com",
+                          "https://example..com/", "https://example.com.."}) {
+    EXPECT_FALSE(IsAllowedNavigationURL(GURL(url))) << url;
+  }
+  // One trailing dot, an address, a port, a long name and a one-letter host
+  // still name a site.
+  for (const char* url :
+       {"https://example.com./", "http://192.168.0.1/", "http://[::1]:8080/",
+        "https://shop.test:8443/checkout", "https://www.example.co.uk/",
+        "http://a/"}) {
+    EXPECT_TRUE(IsAllowedNavigationURL(GURL(url))) << url;
+  }
+}
+
 TEST(AgentSafetyTest, ExtractsExplicitUrlsFromGoal) {
   EXPECT_EQ(ExtractExplicitURLs("Compare https://a.example.com/x and "
                                 "http://b.example.org."),

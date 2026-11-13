@@ -31,10 +31,12 @@ namespace agent_safety {
 // Navigation
 // ---------------------------------------------------------------------------
 
-// True iff |url| is a valid http:// or https:// URL. Every navigation that an
-// agent, a chat action or an automation replay starts must pass this, so
-// javascript:, data:, file:, blob:, filesystem:, view-source:, chrome:,
-// molt:, about: etc. are never reachable from model output or a .molt file.
+// True iff |url| is a valid http:// or https:// URL whose host names a site
+// (a letter or digit, and no empty label but for one trailing dot: never
+// "https://..."). Every navigation that an agent, a chat action or an
+// automation replay starts must pass this, so javascript:, data:, file:,
+// blob:, filesystem:, view-source:, chrome:, molt:, about: etc. are never
+// reachable from model output or a .molt file.
 bool IsAllowedNavigationURL(const GURL& url);
 
 // The explicit http(s) URLs written in |text| (e.g. the user's agent goal),

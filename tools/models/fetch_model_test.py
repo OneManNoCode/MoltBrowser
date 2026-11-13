@@ -54,11 +54,11 @@ class FetchModelTest(unittest.TestCase):
       return Response(content)
     return opener
 
-  def run_main(self, e, content=CONTENT):
+  def run_main(self, e, content=CONTENT, flags=()):
     out, err = io.StringIO(), io.StringIO()
     with mock.patch.object(fetch_model, 'find_entry', return_value=e), \
         contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-      code = fetch_model.main([e['id'] if e else 'x', self.tmp],
+      code = fetch_model.main(list(flags) + [e['id'] if e else 'x', self.tmp],
                               urlopen=self.urlopen(content))
     return code, out.getvalue(), err.getvalue()
 
@@ -113,6 +113,19 @@ class FetchModelTest(unittest.TestCase):
     code, _, _ = self.run_main(None)
     self.assertEqual(code, 2)
     self.assertEqual(fetch_model.main(['../etc', self.tmp]), 2)
+
+  def test_a_hidden_entry_with_allow_hidden_but_only_at_its_pin(self):
+    # The spoken test kit measures a hidden entry before it is offered: it
+    # is fetched at its pin as any other.
+    code, out, err = self.run_main(entry(hidden=True), flags=['--allow-hidden'])
+    self.assertEqual(code, 0, err)
+    self.assertTrue(out.strip().endswith('.gguf'))
+    # Never one that isn't pinned, and the flag comes first or not at all.
+    for e in (entry(hidden=True, sha256=''), entry(hidden=True, size='0')):
+      code, _, _ = self.run_main(e, flags=['--allow-hidden'])
+      self.assertEqual(code, 2, e)
+    self.assertEqual(
+        fetch_model.main(['qwen3.5-4b', self.tmp, '--allow-hidden']), 2)
 
 
 if __name__ == '__main__':

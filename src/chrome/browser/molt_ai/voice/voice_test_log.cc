@@ -138,6 +138,20 @@ class VoiceTestLog::Writer {
 
   void Duck(int64_t ms, bool on, int tabs) { Write(lines_.Duck(ms, on, tabs)); }
 
+  void Planner(int64_t ms,
+               const PlannerAction& action,
+               const std::string& pending_word) {
+    TestLogLines::PlannerSummary summary;
+    summary.plan_step = action.plan_step;
+    summary.action = action.action;
+    summary.target = action.target;
+    summary.value = action.value;
+    summary.ok = action.ok;
+    summary.note = action.note;
+    summary.reason = action.reason;
+    Write(lines_.Planner(ms, summary, pending_word));
+  }
+
   void Changed(int64_t ms,
                const std::string& activity,
                bool mic,
@@ -283,6 +297,13 @@ void VoiceTestLog::OnEarcon(std::string_view kind) {
 
 void VoiceTestLog::OnDuck(bool on, int tabs) {
   writer_.AsyncCall(&Writer::Duck).WithArgs(NowMs(), on, tabs);
+}
+
+void VoiceTestLog::OnPlanner(const PlannerAction& action,
+                             const ConversationState& state) {
+  writer_.AsyncCall(&Writer::Planner)
+      .WithArgs(NowMs(), action,
+                state.prompt.id != 0 ? state.prompt.word : std::string());
 }
 
 void VoiceTestLog::OnLoop(VoiceActivity activity,

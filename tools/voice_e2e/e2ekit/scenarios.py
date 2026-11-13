@@ -129,8 +129,9 @@ MEDIA_KEYS = {"paused", "muted", "volume", "rate", "time_min", "time_max",
               "seeked", "captions", "fullscreen", "src_has"}
 
 DEFAULT_TIMEOUT = 20.0
-# A model's step on a CI runner's CPU (scenarios/model.json) can take minutes.
-MAX_TIMEOUT = 600.0
+# A model's step on a CI runner's CPU (scenarios/model.json) can take minutes:
+# a 4B model's plan, a call for each action, up to twenty.
+MAX_TIMEOUT = 1200.0
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 INTENT_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 MAX_TEXT = 300

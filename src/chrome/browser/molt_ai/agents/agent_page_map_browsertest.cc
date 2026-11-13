@@ -731,6 +731,51 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest, HandsTheRestToThePlanner) {
             "tomorrow\". Say what can I say to hear what I can do.");
 }
 
+// Over voice mode's own voice while the planner works, its own words heard
+// back mangled ("still working with it" for "Still working on it.", the
+// spoken suite on build 50) choose nothing: the run goes on, and its
+// question still takes its "yes". A choice said there isn't set aside.
+IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest,
+                       ItsOwnWordsHeardBackDontStopThePlanner) {
+  StubPlanner::Log log;
+  ASSERT_TRUE(voice()->Start());
+  voice()->SetPlannerForTesting(std::make_unique<StubPlanner>(&log));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), Url("video.test", "/molt_voice/video_home.html")));
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    voice::VoicePageController* page =
+        voice::VoicePageController::FromWebContents(web_contents());
+    return page && page->BuildMap().items.size() >= 3;
+  }));
+  Say("find me a train from Paris to Lyon tomorrow");
+  ASSERT_TRUE(voice()->planner_running());
+  tts_.TakeSpoken();
+  const int cancelled = log.cancelled;
+
+  voice()->HandleHeardUtterance("still working with it",
+                                /*heard_cleanly=*/false, /*woke=*/false,
+                                /*list_choice_only=*/true);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(voice()->planner_running());
+  EXPECT_EQ(log.cancelled, cancelled);
+  EXPECT_EQ(tts_.TakeSpoken(), "");
+  Say("yes");
+  EXPECT_EQ(log.answers, (std::vector<std::string>{"1 yes"}));
+  EXPECT_EQ(tts_.TakeSpoken(), "Done. The 7:04 train.");
+  EXPECT_FALSE(voice()->planner_running());
+
+  // Heard so while nothing runs, it is asked for again as before.
+  voice()->HandleHeardUtterance("still working with it",
+                                /*heard_cleanly=*/false, /*woke=*/false,
+                                /*list_choice_only=*/true);
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return !voice()->busy() &&
+           voice()->activity() != voice::VoiceActivity::kSpeaking;
+  }));
+  EXPECT_EQ(tts_.TakeSpoken(), "I've stopped. Now say that again.");
+  voice()->SetPlannerForTesting(nullptr);
+}
+
 // Through the web agent: placing the order waits for a spoken "yes".
 IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest, AnOrderWaitsForAYes) {
   ASSERT_TRUE(voice()->Start());

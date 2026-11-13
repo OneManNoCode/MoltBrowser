@@ -180,6 +180,43 @@ TEST(VoiceTestLogLinesTest, HelperAndEarconLines) {
             "{\"t\":9,\"w\":1,\"e\":\"duck\",\"on\":false,\"tabs\":0}\n");
 }
 
+TEST(VoiceTestLogLinesTest, APlannerLine) {
+  TestLogLines lines(1);
+  TestLogLines::PlannerSummary action;
+  action.plan_step = 2;
+  action.action = "CLICK";
+  action.target = "button \"Delete\"";
+  action.ok = false;
+  action.note = "Element not found";
+  action.reason = "The user wants it gone, so I press maple";
+  EXPECT_EQ(lines.Planner(4, action, ""),
+            "{\"t\":4,\"w\":1,\"e\":\"planner\",\"step\":2,"
+            "\"action\":\"CLICK\",\"target\":\"button \\\"Delete\\\"\","
+            "\"ok\":false,\"note\":\"Element not found\",\"reason\":\"The "
+            "user wants it gone, so I press [word]\"}\n");
+  // Without a plan, a value, a note or a reason they're left out; what was
+  // typed is masked as every text is, the pending word too.
+  TestLogLines::PlannerSummary typed;
+  typed.action = "TYPE";
+  typed.target = "input \"Your name\"";
+  typed.value = "harbor Smith";
+  typed.ok = true;
+  EXPECT_EQ(lines.Planner(5, typed, "harbor"),
+            "{\"t\":5,\"w\":1,\"e\":\"planner\",\"action\":\"TYPE\","
+            "\"target\":\"input \\\"Your name\\\"\",\"value\":\"[word] "
+            "Smith\",\"ok\":true}\n");
+  // A long target is capped.
+  TestLogLines::PlannerSummary navigate;
+  navigate.action = "NAVIGATE";
+  const std::string url = "https://shop.test/" + std::string(1000, 'a');
+  navigate.target = url;
+  const std::string line = lines.Planner(6, navigate, "");
+  EXPECT_NE(line.find(url.substr(0, kMaxTestLogPlannerBytes) + "\""),
+            std::string::npos);
+  EXPECT_EQ(line.find(url.substr(0, kMaxTestLogPlannerBytes + 1)),
+            std::string::npos);
+}
+
 TEST(VoiceTestLogLinesTest, WritesWhatChanged) {
   TestLogLines lines(1);
   TestLogState state;

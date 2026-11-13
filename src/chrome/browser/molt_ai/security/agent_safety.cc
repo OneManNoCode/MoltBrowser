@@ -31,6 +31,30 @@ bool IsAsciiSpace(char c) {
          c == '\v';
 }
 
+// |host| (a canonical GURL host) names a site: a letter or digit, and no
+// empty label but for one trailing dot. "..." (a model's placeholder) or
+// "a..b" can't be loaded, and asking to open "the site ..." says nothing.
+bool HostNamesASite(std::string_view host) {
+  if (!host.empty() && host.back() == '.') {
+    host.remove_suffix(1);
+  }
+  bool letter_or_digit = false;
+  size_t label = 0;
+  for (char c : host) {
+    if (c == '.') {
+      if (label == 0) {
+        return false;
+      }
+      label = 0;
+      continue;
+    }
+    ++label;
+    letter_or_digit = letter_or_digit || (c >= 'a' && c <= 'z') ||
+                      (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+  }
+  return label > 0 && letter_or_digit;
+}
+
 bool StartsWith(std::string_view s, std::string_view prefix) {
   return s.size() >= prefix.size() && s.substr(0, prefix.size()) == prefix;
 }
@@ -144,7 +168,8 @@ constexpr char kElementProbeFn[] = R"JS((sels) => sels.map((sel) => {
 // ---------------------------------------------------------------------------
 
 bool IsAllowedNavigationURL(const GURL& url) {
-  return url.is_valid() && url.SchemeIsHTTPOrHTTPS();
+  return url.is_valid() && url.SchemeIsHTTPOrHTTPS() &&
+         HostNamesASite(url.host());
 }
 
 std::vector<std::string> ExtractExplicitURLs(std::string_view text) {

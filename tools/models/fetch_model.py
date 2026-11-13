@@ -3,12 +3,14 @@
 # Licensed under GPLv3. See LICENSE file.
 """Downloads one on-device model at its pin, for a test that runs a real one.
 
-  tools/models/fetch_model.py <model id> <dir>
+  tools/models/fetch_model.py [--allow-hidden] <model id> <dir>
 
 Reads the entry from the chat model registry (kModelRegistry in
 src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc, as
 pin_models.py does), refuses one that isn't pinned or is hidden (the
-browser never loads a hidden entry), and fetches
+browser never loads a hidden entry; with --allow-hidden, one the spoken
+test kit measures before it is offered, which the browser lists only with
+its --molt-ai-test-hidden-models switch), and fetches
 https://huggingface.co/<repo>/resolve/<revision>/<file> into <dir>/<file>,
 hashing as it streams. The file is kept only if its size and SHA-256 are
 the pin's; one already there is kept only if they still are. Prints the
@@ -103,6 +105,9 @@ def fetch(entry, path, urlopen=urllib.request.urlopen):
 
 
 def main(argv, urlopen=urllib.request.urlopen):
+  allow_hidden = bool(argv) and argv[0] == '--allow-hidden'
+  if allow_hidden:
+    argv = argv[1:]
   if len(argv) != 2 or not ID_RE.match(argv[0]):
     print(__doc__.split('\n\n')[1], file=sys.stderr)
     return 2
@@ -111,7 +116,7 @@ def main(argv, urlopen=urllib.request.urlopen):
   if entry is None:
     print('no registry entry %s' % model_id, file=sys.stderr)
     return 2
-  if entry['hidden']:
+  if entry['hidden'] and not allow_hidden:
     print('%s is hidden: the browser never loads it' % model_id,
           file=sys.stderr)
     return 2

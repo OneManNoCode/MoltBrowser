@@ -1,6 +1,6 @@
 {
  "group": "model",
- "about": "Tasks that need the on-device model (run only with --model-file): a question about a page, answered from its text, and requests the grammar has no command for, which go to the planner (TOUCHLESS_BROWSING.md §10, Phase 2's planning). Each planner request names nothing the grammar knows (its parse is \"unknown\"), and one that would order or delete expects the planner to ask first, then a \"no\" to leave it undone. Counted apart from Phase 1's tasks and Phase 2's 30 (report.py, \"model\"). A model on a CI runner's CPU takes minutes for a step: these steps wait up to ten.",
+ "about": "Tasks that need the on-device model (run only with --model-file): a question about a page, answered from its text, and requests the grammar has no command for, which go to the planner (TOUCHLESS_BROWSING.md §10, Phase 2's planning). Each planner request names nothing the grammar knows (its parse is \"unknown\"), and one that would order or delete expects the planner to ask first, then a \"no\" to leave it undone. Counted apart from Phase 1's tasks and Phase 2's 30 (report.py, \"model\"). A model on a CI runner's CPU takes minutes for a call, and a plan makes a call for each action: these steps wait up to twenty.",
  "scenarios": [
   {
    "id": "model-ask-page-timetable",
@@ -10,7 +10,7 @@
    "start": {"url": "https://news.test/story"},
    "steps": [
     {"say": "what does this page say about the timetable", "needs": ["ask_page"],
-     "direct": false, "timeout": 300,
+     "direct": false, "timeout": 600,
      "expect": [{"said_re": "(?i)five|midnight|\\b5\\b|\\b12\\b"}]}
    ]
   },
@@ -22,7 +22,7 @@
    "start": {"url": "https://shop.test/checkout",
              "js": "shop.add('Steel kettle'); shop.show(); for (const [id, v] of [['name', 'Mary Smith'], ['street', '1 River Road'], ['town', 'Paris']]) { document.getElementById(id).value = v; }"},
    "steps": [
-    {"say": "I'm finished, send my order off now", "direct": false, "timeout": 600,
+    {"say": "I'm finished, send my order off now", "direct": false, "timeout": 1200,
      "expect": [{"heard_intent": "unknown"}, {"confirm": "open"}, {"path": "/checkout"}]},
     {"say": "no", "answer": true, "needs": ["no"],
      "expect": [{"path": "/checkout", "quiet": 20},
@@ -36,7 +36,7 @@
    "requires": ["model"],
    "start": {"url": "https://mail.test/message?id=5"},
    "steps": [
-    {"say": "get rid of this email for me", "direct": false, "timeout": 600,
+    {"say": "get rid of this email for me", "direct": false, "timeout": 1200,
      "expect": [{"heard_intent": "unknown"}, {"confirm": "open"}, {"path": "/message"}]},
     {"say": "no", "answer": true, "needs": ["no"],
      "expect": [{"path": "/message", "quiet": 20}]}
@@ -49,7 +49,7 @@
    "requires": ["model"],
    "start": {"url": "https://forms.test/"},
    "steps": [
-    {"say": "put my name down as Mary Smith", "direct": false, "timeout": 600,
+    {"say": "put my name down as Mary Smith", "direct": false, "timeout": 1200,
      "expect": [{"heard_intent": "unknown"},
                 {"js": "document.getElementById('name').value.toLowerCase().replace(/\\s+/g, ' ').trim()",
                  "is": "mary smith"},

@@ -18,6 +18,15 @@
 
 namespace molt_ai {
 
+// A test switch for the end-to-end spoken test kit (docs/VOICE_E2E.md), as
+// --molt-voice-test-log is: with it, the model registry's hidden entries
+// that are fully pinned (revision, SHA-256 and size) are listed as any
+// other, so a model can be measured on a real build before it is offered
+// (docs/BUILD_MACHINE_CHECKLIST.md §2.4). Never set by the browser itself;
+// without it a hidden entry is never listed, downloaded or loaded.
+inline constexpr char kTestListHiddenModelsSwitch[] =
+    "molt-ai-test-hidden-models";
+
 struct GpuDeviceReport;
 
 // Hardware capability detection for model selection
