@@ -25,6 +25,8 @@ LINES = [
     '{"t":11000,"w":1,"e":"activity","activity":"listening","mic":true,"waiting":true}',
     '{"t":12000,"w":1,"e":"prompt","op":"open","id":4,"kind":"permission"}',
     '{"t":13000,"w":1,"e":"confirm","op":"open","what":"press Buy now"}',
+    '{"t":14000,"w":1,"e":"planner","step":2,"action":"CLICK","target":"button '
+    '\\"Delete\\"","ok":false,"note":"Element not found"}',
 ]
 
 
@@ -46,9 +48,11 @@ class TestLogTest(unittest.TestCase):
             self.assertEqual(len(evs), len(LINES))
             self.assertEqual(log.kinds(), ["unknown", "open_site"])
             self.assertEqual(log.activity()["activity"], "listening")
-            self.assertEqual([e["e"] for e in log.events(since=11.5)], ["prompt", "confirm"])
+            self.assertEqual([e["e"] for e in log.events(since=11.5)],
+                             ["prompt", "confirm", "planner"])
             self.assertEqual([e["e"] for e in log.events(window=1)],
-                             ["activity", "prompt", "confirm"])
+                             ["activity", "prompt", "confirm", "planner"])
+            self.assertEqual(log.last("planner")["target"], 'button "Delete"')
             self.assertEqual(log.bad_lines, 0)
 
     def test_an_event_in_the_same_millisecond_counts(self):

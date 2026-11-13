@@ -83,6 +83,26 @@ struct PlannerStep {
   std::string why;
 };
 
+// An action the planner's model chose and how its run went, worked or not
+// (Delegate::PlannerActed()): for voice mode's test log alone
+// (voice_test_log.h), where a run that failed shows why. Never said, kept
+// or acted on. Every string is untrusted: page text and the model's.
+struct PlannerAction {
+  // The plan step it worked on (1-based); 0 without a plan.
+  int plan_step = 0;
+  // "CLICK", "TYPE", "NAVIGATE", ... (the web agent's step).
+  std::string action;
+  // What it acted on (`button "Delete"`), the URL or query.
+  std::string target;
+  // What it typed, a scroll's direction, a tool's arguments.
+  std::string value;
+  bool ok = false;
+  // The browser's note on how it went ("Element not found").
+  std::string note;
+  // The model's stated reason.
+  std::string reason;
+};
+
 // How a replayed step ended (Delegate::PlannerReplayed()).
 enum class PlannerReplay {
   kDone,       // it ran
@@ -115,6 +135,9 @@ class VoicePlanner {
     virtual void PlannerFinished() = 0;
     // Start()'s run carried out |step| (it ran and worked), in order.
     virtual void PlannerCarriedOut(const PlannerStep& step) {}
+    // Start()'s run tried |action| (worked or not), in order, before any
+    // PlannerCarriedOut() for it.
+    virtual void PlannerActed(const PlannerAction& action) {}
     // Replay()'s step ended so, right before PlannerFinished().
     virtual void PlannerReplayed(PlannerReplay outcome) {}
 

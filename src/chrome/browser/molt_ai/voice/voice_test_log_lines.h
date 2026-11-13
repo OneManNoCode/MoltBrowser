@@ -21,6 +21,8 @@
 //    "reason":"no wake phrase"}
 //   {"t":...,"w":1,"e":"map","items":12,"lists":1,"media":1,
 //    "selection":false,"selected_text":false,"labels":["Search",...]}
+//   {"t":...,"w":1,"e":"planner","step":2,"action":"CLICK",
+//    "target":"button \"Delete\"","ok":false,"note":"...","reason":"..."}
 //
 // "t" is the wall clock in milliseconds since the Unix epoch (the kit
 // compares it with its own clock), "w" the window's number in this run of
@@ -59,6 +61,9 @@ inline constexpr size_t kMaxTestLogTextBytes = 2048;
 // A "map" line's labels: at most this many, each up to this many bytes.
 inline constexpr size_t kMaxTestLogLabels = 40;
 inline constexpr size_t kMaxTestLogLabelBytes = 60;
+// A "planner" line's target, value and note, each up to this many bytes
+// (its reason up to kMaxTestLogTextBytes).
+inline constexpr size_t kMaxTestLogPlannerBytes = 300;
 
 // What stands for a masked confirmation word.
 inline constexpr std::string_view kTestLogMaskedWord = "[word]";
@@ -167,6 +172,25 @@ class TestLogLines {
   // Other tabs' media lowered (|on|) or restored while a command is said,
   // in |tabs| tabs (0: none had a media session to lower).
   std::string Duck(int64_t ms, bool on, int tabs) const;
+
+  // An action the planner's model chose and how its run went
+  // (PlannerAction, voice_planner.h): the plan step it worked on (left out
+  // when 0), the action, what it acted on and with, whether it worked, the
+  // browser's note and the model's reason (each left out when empty), every
+  // text masked as every text is: where a planner's run that failed shows
+  // why.
+  struct PlannerSummary {
+    int plan_step = 0;
+    std::string_view action;
+    std::string_view target;
+    std::string_view value;
+    bool ok = false;
+    std::string_view note;
+    std::string_view reason;
+  };
+  std::string Planner(int64_t ms,
+                      const PlannerSummary& action,
+                      std::string_view pending_word) const;
 
   // The lines for what changed since the last call (the first call compares
   // with a TestLogState{}).

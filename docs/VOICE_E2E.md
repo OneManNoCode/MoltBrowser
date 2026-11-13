@@ -285,6 +285,7 @@ in `VoiceController`):
 {"t":...,"w":1,"e":"helper","event":"wake","lag_ms":140,"note":"taken"}
 {"t":...,"w":1,"e":"earcon","kind":"listening"}
 {"t":...,"w":1,"e":"duck","on":true,"tabs":1}
+{"t":...,"w":1,"e":"planner","step":2,"action":"CLICK","target":"button \"Delete\"","ok":false,"note":"...","reason":"..."}
 ```
 
 - `t` is the wall clock in milliseconds, which the kit compares with its
@@ -330,6 +331,13 @@ in `VoiceController`):
 - `prompt`, `confirm`: the browser's prompts and a page's dialogs, and the
   loop's own yes-or-no questions (a purchase, the activation guard's), as
   they open and close.
+- `planner`: each action the planner's model chose (with the model,
+  `--model-file`) and how its run went: the plan step it worked on, the
+  action (`CLICK`, `TYPE`, `NAVIGATE`, ...), what it acted on and with,
+  whether it worked, the browser's note and the model's stated reason,
+  masked as every text is. A planner task that failed shows where: a step
+  the model planned on nothing the page has, an action on the wrong item,
+  or one the browser refused.
 
 In PulseAudio runs the kit also passes `--molt-voice-test-audio=<absolute
 path>` (`voice/voice_test_audio.*`): what voice mode's microphone gave

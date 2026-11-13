@@ -199,6 +199,20 @@ void VoiceAgentPlanner::OnStep(const WebAgent::Step& step) {
     return;
   }
   const base::WeakPtr<VoiceAgentPlanner> self = weak_factory_.GetWeakPtr();
+  if (delegate_) {
+    voice::PlannerAction tried;
+    tried.plan_step = step.plan_step;
+    tried.action = step.action;
+    tried.target = step.target;
+    tried.value = step.value;
+    tried.ok = step.success;
+    tried.note = step.note;
+    tried.reason = step.reason;
+    delegate_->PlannerActed(tried);
+    if (!self) {
+      return;
+    }
+  }
   for (const voice::PlannerStep& carried :
        voice_agent::PlannerStepsFor(ToRunStep(step))) {
     if (!self || !delegate_) {

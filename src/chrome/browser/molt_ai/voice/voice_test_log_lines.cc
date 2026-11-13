@@ -336,6 +336,35 @@ std::string TestLogLines::Duck(int64_t ms, bool on, int tabs) const {
   return out;
 }
 
+std::string TestLogLines::Planner(int64_t ms,
+                                  const PlannerSummary& action,
+                                  std::string_view pending_word) const {
+  std::string out = Head(ms, "planner");
+  if (action.plan_step > 0) {
+    out.append(",\"step\":");
+    out.append(std::to_string(std::min(action.plan_step, 1000)));
+  }
+  AppendString(out, "action", CleanSpokenText(action.action, 32));
+  const auto masked = [&](std::string_view text, size_t cap) {
+    return MaskConfirmationWords(CleanSpokenText(text, cap), pending_word);
+  };
+  if (!action.target.empty()) {
+    AppendString(out, "target", masked(action.target, kMaxTestLogPlannerBytes));
+  }
+  if (!action.value.empty()) {
+    AppendString(out, "value", masked(action.value, kMaxTestLogPlannerBytes));
+  }
+  AppendBool(out, "ok", action.ok);
+  if (!action.note.empty()) {
+    AppendString(out, "note", masked(action.note, kMaxTestLogPlannerBytes));
+  }
+  if (!action.reason.empty()) {
+    AppendString(out, "reason", masked(action.reason, kMaxTestLogTextBytes));
+  }
+  out.append("}\n");
+  return out;
+}
+
 std::string TestLogLines::Earcon(int64_t ms, std::string_view kind) const {
   std::string out = Head(ms, "earcon");
   AppendString(out, "kind", CleanSpokenText(kind, 32));

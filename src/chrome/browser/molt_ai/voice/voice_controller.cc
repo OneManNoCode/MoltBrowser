@@ -2226,6 +2226,12 @@ void VoiceController::PlannerCarriedOut(const PlannerStep& step) {
   }
 }
 
+void VoiceController::PlannerActed(const PlannerAction& action) {
+  if (planner_running_ && test_log_) {
+    test_log_->OnPlanner(action, state_);
+  }
+}
+
 void VoiceController::PlannerReplayed(PlannerReplay outcome) {
   if (planner_running_ && learning_) {
     learning_->OnPlannerReplayed(outcome);

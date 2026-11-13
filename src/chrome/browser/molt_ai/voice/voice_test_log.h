@@ -92,6 +92,8 @@ class VoiceTestLog : public VoiceController::Observer {
   // Other tabs' media lowered or restored while a command is said, and in
   // how many tabs.
   void OnDuck(bool on, int tabs);
+  // An action the planner's model chose, and how it went.
+  void OnPlanner(const PlannerAction& action, const ConversationState& state);
 
   // The loop's state as the caption bar shows it.
   void OnLoop(VoiceActivity activity,
