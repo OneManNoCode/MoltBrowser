@@ -761,6 +761,7 @@ IN_PROC_BROWSER_TEST_F(VoicePlannerBrowserTest,
   EXPECT_EQ(tts_.TakeSpoken(), "");
   Say("yes");
   EXPECT_EQ(log.answers, (std::vector<std::string>{"1 yes"}));
+  EXPECT_EQ(tts_.TakeSpoken(), "Done. The 7:04 train.");
   EXPECT_FALSE(voice()->planner_running());
 
   // Heard so while nothing runs, it is asked for again as before.
