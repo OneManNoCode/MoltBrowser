@@ -602,6 +602,19 @@ VoiceTurn PlanBrowserItems(const VoiceStep& asked,
                            const VoiceEnvironment& env,
                            const ConversationState& state);
 
+// Whether an utterance understood as |kind| is set aside before anything
+// stops: said over voice mode's own voice and taken only as a choice from
+// a list read or offered (|list_choice_only|, VoiceEnvironment::
+// list_choice_only), words the grammar has nothing for choose nothing, and
+// while the browser works on something that reads no list (|working|: the
+// planner, a question about the page, the AI) they are most likely its own
+// words heard back. Its "Still working on it." heard as "still working
+// with it" stopped the planner (the spoken suite on build 50); "stop", and
+// a command said again once it is quiet, still end the run.
+bool SetAsideOverOwnVoice(VoiceCommandKind kind,
+                          bool list_choice_only,
+                          bool working);
+
 // Whether |command| is an answer to the browser's prompt |state| holds.
 // While the loop waits for a "yes" to a question it asked after the
 // prompt, a plain yes or no is that question's.

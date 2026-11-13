@@ -16,7 +16,8 @@
 //      half"); or, after a wake phrase the grammar took (in the utterance,
 //      or before it: ParseContext::wake_said), a first word that is only
 //      the stop the name ends on ("him all to scroll to the top": the "t"
-//      of "Molt" heard as "to").
+//      of "Molt" heard as "to"), or a breath written as "a" ("Hey Molt, a
+//      type Grace Hopper").
 //   2. One word, or two run together, swapped for a word of the grammar's
 //      own patterns that sounds the same or nearly (phonetic_key.h:
 //      "tip"/"tab", "joe"/"show", "on mute"/"unmute"), the rest as heard.
@@ -31,8 +32,9 @@
 // scrap dropped, the command's words are as said ("Kalt, click empty the
 // cart."), and more kinds may run (RepairableAsSaidKind(): presses and
 // submissions too, which ask first as they would in full); a command as
-// said that isn't one of them is never swapped into another. Never while voice mode waits for a yes or no, and
-// only in English (the phonetic key is English's).
+// said that isn't one of them is never swapped into another. Never while voice
+// mode waits for a yes or no, and only in English (the phonetic key is
+// English's).
 //
 // The planner applies it last, to what nothing else took: after the
 // browser's prompt, a stray yes or no, a routine's name and a site's name

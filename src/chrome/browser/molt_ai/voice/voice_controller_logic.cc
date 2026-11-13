@@ -3680,6 +3680,12 @@ VoiceTurn PlanBrowserItems(const VoiceStep& asked,
   return planner.Finish();
 }
 
+bool SetAsideOverOwnVoice(VoiceCommandKind kind,
+                          bool list_choice_only,
+                          bool working) {
+  return list_choice_only && working && kind == VoiceCommandKind::kUnknown;
+}
+
 bool AnswersBrowserPrompt(const VoiceCommand& command,
                           const VoiceEnvironment& env,
                           const ConversationState& state) {

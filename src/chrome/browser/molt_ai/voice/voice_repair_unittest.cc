@@ -103,6 +103,39 @@ TEST(VoiceRepairTest, TheWakePhrasesLastSoundAsAWordOfItsOwn) {
   EXPECT_FALSE(RepairMisheardCommand("him all to close this window", context));
 }
 
+// The fiftieth build's pulse run: a breath before the command, after the
+// wake phrase, written as "a".
+TEST(VoiceRepairTest, ABreathWrittenAsAWordAfterTheWakePhrase) {
+  const ParseContext context;
+  struct Case {
+    const char* heard;
+    K kind;
+    const char* repaired;
+  } kCases[] = {
+      {"Hey molt, a type Grace Hopper", K::kType, "type Grace Hopper"},
+      {"Hey Molt a scroll down", K::kScrollDown, "scroll down"},
+      {"Hey molt, a click add kettle to cart", K::kChoose,
+       "click add kettle to cart"},
+  };
+  for (const Case& c : kCases) {
+    SCOPED_TRACE(c.heard);
+    ASSERT_EQ(ParseVoiceCommand(c.heard, context).kind, K::kUnknown);
+    const std::optional<RepairedCommand> r =
+        RepairMisheardCommand(c.heard, context);
+    ASSERT_TRUE(r);
+    EXPECT_EQ(r->command.kind, c.kind);
+    EXPECT_EQ(r->text, c.repaired);
+    EXPECT_TRUE(r->as_said);
+  }
+  // Not without the wake phrase in front, nor before what isn't a command
+  // as said, nor before one that may not run on a guess.
+  EXPECT_FALSE(RepairMisheardCommand("a scroll down", context));
+  EXPECT_FALSE(
+      RepairMisheardCommand("Hey molt, a quiz you will love", context));
+  EXPECT_FALSE(RepairMisheardCommand("Hey molt, a voice mode off", context));
+  EXPECT_FALSE(RepairMisheardCommand("Hey molt, a close this window", context));
+}
+
 // The twenty-eighth build's headphones run: the wake detector heard "Hey
 // Molt", and the recognizer wrote it as words that sound nothing like it.
 // Up to the first break, they are the wake phrase.

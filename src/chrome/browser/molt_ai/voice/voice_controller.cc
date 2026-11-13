@@ -1040,9 +1040,33 @@ void VoiceController::HandleHeardUtterance(const std::string& text,
 
 void VoiceController::HandleUtterance(const std::string& text) {
   // Typed, unless HandleHeardUtterance() said otherwise just now.
+  const HeardEvidence before = heard_evidence_;
   heard_evidence_ = std::exchange(next_evidence_, HeardEvidence());
   if (!browser_ || !VoiceModeEnabled()) {
     return;
+  }
+  // Over voice mode's own voice, words that choose nothing while it works
+  // on something are its own words heard back: set aside before anything
+  // stops, an utterance waiting for the page included
+  // (SetAsideOverOwnVoice()).
+  if (heard_evidence_.list_choice_only) {
+    const bool working = planner_running_ ||
+                         (page_questions_ && page_questions_->running()) ||
+                         (browser_actions_ && browser_actions_->busy());
+    if (working) {
+      const std::string utterance = text.substr(0, kMaxUtteranceInputBytes);
+      const VoiceCommandKind kind =
+          ParseVoiceCommand(utterance,
+                            ContextFor(state_, CurrentMap(), Environment()))
+              .kind;
+      if (SetAsideOverOwnVoice(kind, /*list_choice_only=*/true, working)) {
+        NoteDroppedUtterance(utterance,
+                             "over voice mode's voice, and chooses nothing");
+        // What the loop works on was heard as it was.
+        heard_evidence_ = before;
+        return;
+      }
+    }
   }
   // A newer utterance replaces one still waiting for the page.
   DropDeferredUtterance();

@@ -479,7 +479,9 @@ std::optional<RepairedCommand> RepairMisheardCommand(
   // Molt, scroll to the top": the "t" of "Molt", clipped, as "to"), in
   // |utterance| or before it (ParseContext::wake_said: the controller
   // repairs a command's |heard|): a first word of one consonant, the stop
-  // the name ends on. Only when what follows is a command as said.
+  // the name ends on. Or a breath, or the "uh" before a command, written as
+  // "a" ("Hey molt, a type Grace Hopper", the spoken suite on build 50).
+  // Only when what follows is a command as said.
   if (rest.empty() && !understood_as_said && n.words.size() >= 2 &&
       n.words[0].ascii && !n.words[0].numeric && !name_key.empty() &&
       (context.wake_said || BeginsWithWakePhrase(utterance, context))) {
@@ -490,8 +492,9 @@ std::optional<RepairedCommand> RepairMisheardCommand(
         first.push_back(c);
       }
     }
-    if ((last == 'P' || last == 'T' || last == 'K') && first.size() == 1 &&
-        first[0] == last) {
+    const bool stop = (last == 'P' || last == 'T' || last == 'K') &&
+                      first.size() == 1 && first[0] == last;
+    if (stop || n.Word(0) == "a") {
       understood_as_said =
           repairer.Try(heard.substr(n.words[1].source_begin), 1,
                        /*swapped=*/false) != K::kUnknown;

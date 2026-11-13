@@ -2696,6 +2696,20 @@ TEST(VoiceControllerLogicTest, ACommandWaitsLongerForThePagesOwnTree) {
   EXPECT_EQ(DecideDeferredWait(facts), DeferredWaitDecision::kPlan);
 }
 
+// Over voice mode's own voice, while it works on something: words that
+// choose nothing are set aside, a choice or a command isn't, nor anything
+// heard while nothing runs or said clear of its voice.
+TEST(VoiceControllerLogicTest, OverItsVoiceWhileWorkingWordsThatChooseNothing) {
+  using K = VoiceCommandKind;
+  EXPECT_TRUE(SetAsideOverOwnVoice(K::kUnknown, /*list_choice_only=*/true,
+                                   /*working=*/true));
+  EXPECT_FALSE(SetAsideOverOwnVoice(K::kChoose, true, true));
+  EXPECT_FALSE(SetAsideOverOwnVoice(K::kStop, true, true));
+  EXPECT_FALSE(SetAsideOverOwnVoice(K::kUnknown, true, /*working=*/false));
+  EXPECT_FALSE(
+      SetAsideOverOwnVoice(K::kUnknown, /*list_choice_only=*/false, true));
+}
+
 }  // namespace
 }  // namespace voice
 }  // namespace molt_ai
