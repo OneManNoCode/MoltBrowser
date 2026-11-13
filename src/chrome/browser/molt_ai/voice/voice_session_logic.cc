@@ -513,6 +513,7 @@ VoiceSessionLogic::Utterance VoiceSessionLogic::NewUtterance(
   utterance.open =
       !woke && (settings_.always_listening || FollowUpOpen(now_ms) ||
                 BargeInOpen() || begun_in_window);
+  utterance.heard_all = !woke && !wake_required_;
   // When its audio was captured: the browser's echo tail reaches back
   // that far for a helper that runs behind.
   utterance.during_speech = SpeakingOrTail(heard_ms);
@@ -667,6 +668,16 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
       if (!take) {
         reason = "a tab's sound, and not heard surely";
       }
+    } else if (!utterance.open && utterance.heard_all &&
+               !utterance.during_speech &&
+               AddressedToVoiceMode(text, utterance.begun_ms)) {
+      // Begun with the wake phrase while the browser worked: the helper
+      // hears everything then (for "stop"), so it spots no wake phrase,
+      // and the phrase is in the text alone. The spoken suite on build 58:
+      // "Hey, Molt, scroll down." said while the planner worked was
+      // dropped, and only "stop" could end the run.
+      take = true;
+      addressed = true;
     } else if (!utterance.open) {
       reason = "no wake phrase";
     } else if (!utterance.echo_cancelled) {
