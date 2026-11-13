@@ -1,11 +1,11 @@
 {
- "resume_run": "43319669706",
+ "resume_run": "43340315665",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-first build (incremental on the fiftieth, run 43319669706). The fiftieth passed 3047/3047 unit tests and 121/121 browser tests; Phase 2 typed 30/30 and pulse:clean 25/30 (three \"Grace Hopper\" heard as \"Grace Harp\"); with TinyLlama the model's tasks were typed 2/4 and pulse 1/4: on pulse the planner's own \"Still working on it.\" heard back one or two words off stopped it. New since: over voice mode's own voice, while it works on something, words that choose nothing are set aside before anything stops (ItsOwnWordsHeardBackDontStopThePlanner); a breath written as \"a\" after the wake phrase is dropped before a command (voice_repair); each action the planner's model chose is a \"planner\" line in the test log (APlannerLine); the agent refuses a URL whose host names no site (RejectsAHostThatNamesNoSite). The spoken suite runs the model's tasks with Qwen3.5 4B (pinned) in place of TinyLlama, a planner step waiting up to twenty minutes.",
+ "request": "Fifty-second build (incremental on the fifty-first, run 43340315665). The fifty-first passed 3051/3051 unit tests (the new APlannerLine, RejectsAHostThatNamesNoSite, ABreathWrittenAsAWordAfterTheWakePhrase, OverItsVoiceWhileWorkingWordsThatChooseNothing among them) and 121/122 browser tests: the new ItsOwnWordsHeardBackDontStopThePlanner took the stub planner's \"Done\" sentence late (a test bug, fixed). Its spoken suite never ran: Qwen3.5 4B is a hidden registry entry (pinned, not yet offered), and the model step refused it. New since: the browser lists pinned hidden models only with the test switch --molt-ai-test-hidden-models, which the kit passes with a model file, and fetch_model.py --allow-hidden fetches one at its pin. The spoken suite runs typed and pulse:clean on Phase 2's tasks and the model's, with Qwen3.5 4B planning.",
  "e2e_scenarios": "p2-,model-,browser-ask-ai,sec-answer-imitates-prompt"
 }
