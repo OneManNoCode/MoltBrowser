@@ -416,6 +416,12 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
       {"He mold. Picked John Brown.", "type", "text=John Brown", kField},
       {"Himalt. Pipe Grace Hopper.", "type", "text=Grace Hopper", kField},
       {"Hey, Molt, typed C you at one.", "type", "text=C you at one", kField},
+      // Build 52's: "touch", "cut", "Pepe".
+      {"Himalt. Touch the tables look right.", "type",
+       "text=the tables look right", kField},
+      {"He mold. Cut John Brown.", "type", "text=John Brown", kField},
+      {"He mold. Pepe I will bring him back.", "type",
+       "text=I will bring him back", kField},
       // ... where "take me to", "take me home" and "take me back" still
       // mean themselves.
       {"take me to the new york times", "open_site", "site=newyorktimes",
@@ -452,7 +458,8 @@ TEST(VoiceCommandTest, CommandWordsAsTheRecognizerHearsThem) {
             VoiceCommandKind::kType);
   for (const char* said :
        {"took the river walk", "tucked in the kids", "picked John Brown",
-        "pipe Grace Hopper", "typed C you at one"}) {
+        "pipe Grace Hopper", "typed C you at one", "touch the screen",
+        "cut the price", "pepe the frog"}) {
     EXPECT_NE(ParseVoiceCommand(said, MakeContext(kNone)).kind,
               VoiceCommandKind::kType)
         << said;

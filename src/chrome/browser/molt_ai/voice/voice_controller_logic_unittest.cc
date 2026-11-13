@@ -1315,6 +1315,42 @@ TEST(VoiceControllerLogicTest, PickIntoAFocusedFieldTypesWhatNothingIsNamed) {
   EXPECT_TRUE(Actions(turn).empty());
 }
 
+// Right after "Message field. Say type, then your text.", words the grammar
+// has nothing for are that text: "type" lost or mangled by the recognizer
+// (build 52's spoken suite: "I will try the rook"). Only the very next
+// utterance, within kFieldPromptTextMs, of two words or more.
+TEST(VoiceControllerLogicTest, AfterTheFieldsPromptItsTextIsTyped) {
+  Conversation c(BuildPageMap(ShopPage(false)), Env());
+  VoiceTurn turn = c.Say("click the message field");
+  ASSERT_NE(Said(turn).find("Say type, then your text."), std::string::npos);
+  turn = c.Say("I will try the rook.");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSetText}));
+  EXPECT_EQ(turn.steps[0].text, "Hello I will try the rook");
+  // Once only: the next one goes to the planner as before.
+  turn = c.Say("I will bring them back");
+  EXPECT_EQ(Find(turn, K::kSetText), nullptr);
+  EXPECT_NE(Find(turn, K::kToPlanner), nullptr);
+
+  // Not after another command, nor once the window has passed, nor a
+  // single word.
+  for (int which = 0; which < 3; ++which) {
+    SCOPED_TRACE(which);
+    Conversation d(BuildPageMap(ShopPage(false)), Env());
+    d.Say("click the message field");
+    if (which == 0) {
+      d.Say("scroll down");
+    } else if (which == 1) {
+      d.env().now_ms += kFieldPromptTextMs + 1;
+    }
+    turn = d.Say(which == 2 ? "rook" : "I will try the rook");
+    EXPECT_EQ(Find(turn, K::kSetText), nullptr);
+  }
+  // Never without a field in focus.
+  Conversation unfocused(BuildPageMap(ShopPage(false)), Env());
+  turn = unfocused.Say("I will try the rook");
+  EXPECT_EQ(Find(turn, K::kSetText), nullptr);
+}
+
 TEST(VoiceControllerLogicTest, SendingAFormThatIsntASearchAsksFirst) {
   Conversation c(BuildPageMap(ShopPage(false)), Env());
   c.Say("click the message field");

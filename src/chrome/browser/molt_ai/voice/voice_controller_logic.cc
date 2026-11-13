@@ -448,6 +448,9 @@ class Planner : public TurnPlanner {
     if (depth == 0 && command.kind != K::kUnknown &&
         command.kind != K::kRepeat) {
       state().expecting_site = false;
+      // Only the utterance right after the field's prompt is taken as its
+      // text (TypeAfterTheFieldPrompt()).
+      state().field_prompt_ms = -1;
     }
     // The browser's prompt hears its answers first.
     if (depth == 0 && AnswerBrowserPrompt(command)) {
@@ -1736,6 +1739,7 @@ class Planner : public TurnPlanner {
           said += Tr(" It says: {0}.", {PageText(item->value)});
         }
         Say(said + Tr(" Say type, then your text."));
+        state().field_prompt_ms = env_.now_ms;
         return;
       }
       case ItemKind::kMedia:
@@ -3310,12 +3314,48 @@ class Planner : public TurnPlanner {
     if (depth == 0 && !confirming && PressNameAfterMisheardClick(command)) {
       return;
     }
+    if (depth == 0 && !confirming && TypeAfterTheFieldPrompt(command)) {
+      return;
+    }
     VoiceStep planner = Step(VoiceStepKind::kToPlanner);
     planner.text = command.heard;
     planner.preface = Tr(
         "I can't do that yet: {0}. Say what can I say to hear what I can do.",
         {Quoted(echo)});
     Add(std::move(planner));
+  }
+
+  // Right after "<name> field. Say type, then your text." (within
+  // kFieldPromptTextMs, on that page, the field still the one in focus),
+  // two words or more the grammar has nothing for are that text: typed as
+  // "type" and they would be, and said back ("Typed: ..."), "undo" taking
+  // them out. Never a credential field (Dictation() refuses it).
+  bool TypeAfterTheFieldPrompt(const VoiceCommand& command) {
+    ConversationState& s = state();
+    const int64_t since = env_.now_ms - s.field_prompt_ms;
+    if (s.field_prompt_ms < 0 || since < 0 || since > kFieldPromptTextMs ||
+        s.field_page_id != env_.page_id || !s.field.valid()) {
+      return false;
+    }
+    const PageItem* field = map_.ItemForHandle(s.field);
+    if (!field || field->kind != ItemKind::kTextField || !field->writable ||
+        field->credential != CredentialKind::kNone) {
+      return false;
+    }
+    const NormalizedText words = NormalizeSpokenText(command.heard, {});
+    if (words.words.size() < 2) {
+      return false;
+    }
+    // The text as "type <it>" gives it: spoken punctuation, the sentence's
+    // last stop.
+    const VoiceCommand typed = ParseVoiceCommand(
+        "type " + command.heard, ContextFor(state(), map_, env_));
+    if (typed.kind != K::kType || typed.text.empty()) {
+      return false;
+    }
+    s.field_prompt_ms = -1;
+    Dictation(typed);
+    return true;
   }
 
   // A name said alone presses the one item on the page named just that
