@@ -1,11 +1,11 @@
 {
- "resume_run": "43347221765",
+ "resume_run": "43363518824",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-third build (incremental on the fifty-second, run 43347221765). The fifty-second passed 3051/3051 unit tests and 122/122 browser tests; with Qwen3.5 4B (via --molt-ai-test-hidden-models) typed passed Phase 2 30/30 and the model's tasks 2/4: it asked before Delete and a no left the message, and it filled the form's name; but it typed \"...\" and \"Town\" over the checkout's filled fields, its run died at 14 minutes on the browser's 120 s liveness limit (a 2048-token prompt chunk on four cores), and asking the AI or about the page gave up at 40 s; pulse:clean passed Phase 2 21/30, four dictations going to the planner with \"type\" lost or misheard. New since: the agent prompts say what goes in each value instead of \"...\", the browser refuses a placeholder value (RefusesAPlaceholderWhereARealValueGoes), ELEMENTS show what a text field holds (never a credential field's), prompts are decoded at most 512 tokens a call with progress between, and AI answers wait up to 3 minutes with repeated \"Still working on it.\". The words right after \"Say type, then your text.\" are typed (AfterTheFieldsPromptItsTextIsTyped), and \"touch\", \"cut\", \"tied\", \"pepe\" type into a focused field.",
+ "request": "Fifty-fourth build (incremental on the fifty-third, run 43363518824). The fifty-third passed 3051/3053 unit tests (two fixed since: field values were shown against the design, so a filled field is now marked \"(filled)\" and nothing more; PlanPromptLayout checked the old format) and 121/122 browser tests (the routine test raced a navigation; it now waits for the load). With Qwen3.5 4B typed passed Phase 2 30/30, the model's tasks 3/4 and asking the AI; the order task failed: the plan's first step was \"<the first step>\" (said aloud), then the model typed \"123 Main St\" over the form's \"1 River Road\" and retyped it until time ran out. New since: a plan step that is a placeholder is refused (RefusesTheFormatsPlaceholders); TYPE and FILL_FORM into a filled field type only the user's own words, and text a field already holds isn't typed again (AFilledFieldKeepsWhatThePersonPutThere); the element probe returns an ordinary field's text for that check (ParsesAnOrdinaryFieldsTextOnly); the agent's rules say to leave a (filled) field.",
  "e2e_scenarios": "p2-,model-,browser-ask-ai,sec-answer-imitates-prompt"
 }
