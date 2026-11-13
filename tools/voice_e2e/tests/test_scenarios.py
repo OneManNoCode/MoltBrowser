@@ -245,7 +245,7 @@ class RefusedTest(unittest.TestCase):
         self.bad(one(steps=[{"say": "x", "expect": [{"query": {"q": ["a", 1]}}]}]),
                  "query takes")
         self.bad(one(steps=[{"say": "x", "expect": [{"tabs": -1}]}]), "count")
-        self.bad(one(steps=[{"say": "x", "timeout": 999}]), "timeout")
+        self.bad(one(steps=[{"say": "x", "timeout": 1999}]), "timeout")
         self.bad(one(requires=["telepathy"]), "requires takes")
         self.bad(one(voice="alexa"), "voice must be one of")
         self.bad(one(voice=["libritts-m"]), "voice must be one of")
