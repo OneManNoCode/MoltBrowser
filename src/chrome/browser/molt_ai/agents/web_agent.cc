@@ -800,6 +800,13 @@ void WebAgent::OnTypeProbed(std::vector<ElementProbe> probes) {
     OnActionDone(false, kRefusePasswordNote);
     return;
   }
+  const agent_page_map::OverwriteCheck overwrite =
+      CheckOverwrite(p.text, pending_action_.text);
+  if (overwrite != agent_page_map::OverwriteCheck::kType) {
+    OnActionDone(overwrite == agent_page_map::OverwriteCheck::kAlreadyThere,
+                 std::string(agent_page_map::OverwriteNote(overwrite)));
+    return;
+  }
   if (agent_safety::IsSensitive(p.field_kind)) {
     RequestConfirmation(
         "TYPE",
@@ -869,6 +876,8 @@ void WebAgent::OnFillFormProbed(FieldList fields,
   FieldList keep;
   std::vector<Step::Element> kept_elements;  // in step with |keep|
   int skipped_passwords = 0;
+  int already_there = 0;
+  int left_filled = 0;
   FieldKind sensitive = FieldKind::kOrdinary;
   for (size_t i = 0; i < fields.size(); ++i) {
     const FieldKind kind = probes[i].field_kind;
@@ -876,6 +885,20 @@ void WebAgent::OnFillFormProbed(FieldList fields,
       ++skipped_passwords;  // never filled from model output
       continue;
     }
+    bool write = false;
+    switch (CheckOverwrite(probes[i].text, fields[i].second)) {
+      case agent_page_map::OverwriteCheck::kType:
+        write = true;
+        break;
+      case agent_page_map::OverwriteCheck::kAlreadyThere:
+        ++already_there;
+        break;
+      case agent_page_map::OverwriteCheck::kKeep:
+        ++left_filled;
+        break;
+    }
+    if (!write)
+      continue;
     if (agent_safety::IsSensitive(kind))
       sensitive = kind;
     keep.push_back(std::move(fields[i]));
@@ -890,8 +913,19 @@ void WebAgent::OnFillFormProbed(FieldList fields,
     note = " (skipped " + base::NumberToString(skipped_passwords) +
            " password field(s): the agent never types passwords)";
   }
+  if (already_there > 0) {
+    note += " (" + base::NumberToString(already_there) +
+            " field(s) already held that text)";
+  }
+  if (left_filled > 0) {
+    note += " (left " + base::NumberToString(left_filled) +
+            " already filled field(s) as they are: the agent replaces what "
+            "is in a field only with words the user said)";
+  }
   if (keep.empty()) {
-    OnActionDone(false, "Filled 0 fields" + note);
+    // Done when every field it could write already held its text.
+    OnActionDone(already_there > 0 && left_filled == 0,
+                 "Filled 0 fields" + note);
     return;
   }
   if (agent_safety::IsSensitive(sensitive)) {
@@ -1946,6 +1980,13 @@ void WebAgent::DoPageMapType(const agent_actions::ObservedElement& element) {
                  std::string(agent_page_map::TypeRefusalNote(refusal)));
     return;
   }
+  const agent_page_map::OverwriteCheck overwrite =
+      CheckOverwrite(target.item.value, pending_action_.text);
+  if (overwrite != agent_page_map::OverwriteCheck::kType) {
+    OnActionDone(overwrite == agent_page_map::OverwriteCheck::kAlreadyThere,
+                 std::string(agent_page_map::OverwriteNote(overwrite)));
+    return;
+  }
   const PageActionResult result =
       PageController()->SetText(target.handle, pending_action_.text);
   switch (result) {
@@ -1968,10 +2009,23 @@ void WebAgent::DoPageMapType(const agent_actions::ObservedElement& element) {
   }
 }
 
+agent_page_map::OverwriteCheck WebAgent::CheckOverwrite(
+    std::string_view current,
+    std::string_view text) const {
+  const agent_page_map::OverwriteCheck check =
+      agent_page_map::CheckOverwrite(current, text, goal_);
+  // A replayed step types the user's own text from their routine (the
+  // picker's, not the model's), so only text already there is skipped.
+  if (replay_pick_ && check == agent_page_map::OverwriteCheck::kKeep)
+    return agent_page_map::OverwriteCheck::kType;
+  return check;
+}
+
 void WebAgent::DoPageMapFillForm() {
   pending_step_.elements.clear();
   int filled = 0;
   int refused = 0;
+  int kept = 0;
   for (const agent_actions::FormFieldValue& field : pending_action_.fields) {
     const ObservedElement* element = observation_.Find(field.ref);
     if (!element || !element->typeable) {
@@ -1991,6 +2045,18 @@ void WebAgent::DoPageMapFillForm() {
       ++refused;
       continue;
     }
+    switch (CheckOverwrite(target.item.value, field.text)) {
+      case agent_page_map::OverwriteCheck::kType:
+        break;
+      case agent_page_map::OverwriteCheck::kAlreadyThere:
+        // It holds what this fill would write: done, without typing.
+        ++filled;
+        pending_step_.elements.push_back(StepElement(*element, field.text));
+        continue;
+      case agent_page_map::OverwriteCheck::kKeep:
+        ++kept;
+        continue;
+    }
     if (PageController()->SetText(target.handle, field.text) ==
         PageActionResult::kDone) {
       ++filled;
@@ -2001,6 +2067,11 @@ void WebAgent::DoPageMapFillForm() {
   if (refused > 0) {
     note += " (skipped " + base::NumberToString(refused) +
             " password, card or code field(s): the agent never types there)";
+  }
+  if (kept > 0) {
+    note += " (left " + base::NumberToString(kept) +
+            " already filled field(s) as they are: the agent replaces what "
+            "is in a field only with words the user said)";
   }
   if (static_cast<size_t>(filled) != pending_action_.fields.size())
     pending_step_.elements.clear();

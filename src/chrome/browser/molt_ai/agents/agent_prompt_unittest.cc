@@ -130,6 +130,18 @@ TEST(AgentPromptTest, TextOnlyNeverMentionsAnImage) {
   }
 }
 
+// A field the map marks (filled) holds the user's text: the rules say to
+// leave it (the agent keeps it anyway: agent_page_map::CheckOverwrite).
+TEST(AgentPromptTest, SaysToLeaveAFilledField) {
+  const AgentPrompt p = BuildAgentPrompt(SampleInput());
+  const size_t line = p.system.find(
+      "- A field marked (filled) already holds the user's text: leave it as "
+      "it is unless the GOAL gives new words for it.\n");
+  ASSERT_NE(line, std::string::npos);
+  EXPECT_LT(p.system.find("\nRULES:\n"), line);
+  EXPECT_LT(line, p.system.find("SECURITY RULES"));
+}
+
 TEST(AgentPromptTest, ScreenshotAddsItsRulesAndNoteAndNothingElse) {
   PromptInput text_in = SampleInput();
   PromptInput image_in = text_in;

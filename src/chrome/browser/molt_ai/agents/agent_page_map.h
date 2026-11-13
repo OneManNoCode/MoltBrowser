@@ -225,6 +225,25 @@ TypeCheck CheckType(const voice::PageItem& live);
 // The step notes for the refusals above (fixed text).
 std::string_view TypeRefusalNote(TypeCheck check);
 
+// Typing |text| into a text field that holds |current| now, for a person
+// whose request was |request| (the agent's goal). The model sees a filled
+// field only as "(filled)" (ElementLine), so it can't know what it would
+// replace: what the person put there stays unless the new text is the
+// person's own words, and text the field already holds isn't typed again
+// (a model that retypes the same field would loop until time runs out).
+// Compared without ASCII case, punctuation or runs of spaces.
+enum class OverwriteCheck {
+  kType,          // an empty field, or words from |request| replace it
+  kAlreadyThere,  // the field already holds |text|: nothing to type
+  kKeep,          // filled, and |text| isn't in what the person said
+};
+OverwriteCheck CheckOverwrite(std::string_view current,
+                              std::string_view text,
+                              std::string_view request);
+
+// The step notes for kAlreadyThere and kKeep (fixed text; "" for kType).
+std::string_view OverwriteNote(OverwriteCheck check);
+
 }  // namespace agent_page_map
 }  // namespace molt_ai
 

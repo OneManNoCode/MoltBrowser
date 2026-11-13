@@ -91,6 +91,8 @@ const char kRulesPrompt[] =
     "- After NAVIGATE, SEARCH, CLICK or SCROLL the page is observed "
     "automatically.\n"
     "- Read the page content carefully before choosing an element.\n"
+    "- A field marked (filled) already holds the user's text: leave it as "
+    "it is unless the GOAL gives new words for it.\n"
     "- Each <...> in the actions above says what goes there: write the real "
     "value (the user's words, the page's, a full address), never the <...> "
     "or \"...\" itself.\n"

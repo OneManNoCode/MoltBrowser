@@ -493,6 +493,10 @@ class WebAgent : public content::WebContentsObserver,
   void PressNow();
   void DoPageMapType(const agent_actions::ObservedElement& element);
   void DoPageMapFillForm();
+  // agent_page_map::CheckOverwrite for typing |text| into a field holding
+  // |current|: against the goal, or, for a replayed step, the user's own.
+  agent_page_map::OverwriteCheck CheckOverwrite(std::string_view current,
+                                                std::string_view text) const;
   void DoSelect();
   // After an accessibility action (it reaches the page apart from scripts):
   // a moment for its effects, then the page is observed once it has

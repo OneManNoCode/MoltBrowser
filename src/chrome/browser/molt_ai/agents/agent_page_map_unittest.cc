@@ -849,6 +849,49 @@ TEST(AgentPageMapTest, TypesOnlyIntoWritableNonCredentialFields) {
   EXPECT_TRUE(TypeRefusalNote(TypeCheck::kType).empty());
 }
 
+// Build 53: on a checkout form already holding the person's address, the
+// model typed "123 Main St" over "1 River Road", then typed it again and
+// again until the task ran out of time.
+TEST(AgentPageMapTest, AFilledFieldKeepsWhatThePersonPutThere) {
+  using O = OverwriteCheck;
+  const std::string_view request = "I'm finished, send my order off now";
+  // An empty field takes anything (the model's own words too).
+  EXPECT_EQ(CheckOverwrite("", "Mary Smith", request), O::kType);
+  EXPECT_EQ(CheckOverwrite("  ", "Mary Smith", request), O::kType);
+  // A filled one keeps what's in it...
+  EXPECT_EQ(CheckOverwrite("1 River Road", "123 Main St", request), O::kKeep);
+  // ...and isn't typed again with what it holds, whatever the case,
+  // punctuation or spaces.
+  EXPECT_EQ(CheckOverwrite("1 River Road", "1 River Road", request),
+            O::kAlreadyThere);
+  EXPECT_EQ(CheckOverwrite("1 River Road", " 1 river road. ", request),
+            O::kAlreadyThere);
+  EXPECT_EQ(CheckOverwrite("Mary  Smith", "mary smith", ""), O::kAlreadyThere);
+
+  // The person's own words replace it, as whole words, without case.
+  EXPECT_EQ(CheckOverwrite("1 River Road", "5 Elm Road",
+                           "change my street to 5 elm road"),
+            O::kType);
+  EXPECT_EQ(CheckOverwrite("Paris", "Lyon", "make the town Lyon, please"),
+            O::kType);
+  EXPECT_EQ(CheckOverwrite("1", "2", "I want 2 of these"), O::kType);
+  // Not part of a word, and not the model's version of them.
+  EXPECT_EQ(CheckOverwrite("1", "2", "I want 22 of these"), O::kKeep);
+  EXPECT_EQ(CheckOverwrite("Paris", "Lyo", "make the town Lyon"), O::kKeep);
+  EXPECT_EQ(CheckOverwrite("1 River Road", "5 Elm Rd",
+                           "change my street to 5 elm road"),
+            O::kKeep);
+  // Text with no letters or digits never replaces anything.
+  EXPECT_EQ(CheckOverwrite("1 River Road", "!!", "!!"), O::kKeep);
+  // Non-ASCII text compares as it is.
+  EXPECT_EQ(CheckOverwrite("Lyon", "Zürich", "move it to Zürich"), O::kType);
+  EXPECT_EQ(CheckOverwrite("Zürich", "Zürich", ""), O::kAlreadyThere);
+
+  EXPECT_TRUE(OverwriteNote(O::kType).empty());
+  EXPECT_FALSE(OverwriteNote(O::kAlreadyThere).empty());
+  EXPECT_FALSE(OverwriteNote(O::kKeep).empty());
+}
+
 }  // namespace
 }  // namespace agent_page_map
 }  // namespace molt_ai

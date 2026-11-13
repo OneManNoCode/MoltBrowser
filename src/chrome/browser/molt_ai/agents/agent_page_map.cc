@@ -615,5 +615,75 @@ std::string_view TypeRefusalNote(TypeCheck check) {
   return "";
 }
 
+namespace {
+
+// |s| for comparing what a person said with what a field holds: ASCII
+// letters lower case, every other ASCII character but a digit a space,
+// runs of spaces one, none at the ends. Other characters are kept as
+// they are.
+std::string ComparableWords(std::string_view s) {
+  std::string out;
+  out.reserve(s.size());
+  bool space = false;
+  for (char ch : s) {
+    const unsigned char c = static_cast<unsigned char>(ch);
+    const bool keep = c >= 0x80 || (c >= '0' && c <= '9') ||
+                      (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    if (!keep) {
+      space = !out.empty();
+      continue;
+    }
+    if (space) {
+      out += ' ';
+      space = false;
+    }
+    out += (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : ch;
+  }
+  return out;
+}
+
+// Whether |words| (comparable) occurs in |in| (comparable) as whole words.
+bool HasWords(std::string_view in, std::string_view words) {
+  if (words.empty())
+    return false;
+  for (size_t at = in.find(words); at != std::string_view::npos;
+       at = in.find(words, at + 1)) {
+    const size_t end = at + words.size();
+    if ((at == 0 || in[at - 1] == ' ') && (end == in.size() || in[end] == ' '))
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+OverwriteCheck CheckOverwrite(std::string_view current,
+                              std::string_view text,
+                              std::string_view request) {
+  const std::string now = ComparableWords(current);
+  if (now.empty())
+    return OverwriteCheck::kType;
+  const std::string typed = ComparableWords(text);
+  if (typed == now)
+    return OverwriteCheck::kAlreadyThere;
+  return HasWords(ComparableWords(request), typed) ? OverwriteCheck::kType
+                                                   : OverwriteCheck::kKeep;
+}
+
+std::string_view OverwriteNote(OverwriteCheck check) {
+  switch (check) {
+    case OverwriteCheck::kType:
+      return "";
+    case OverwriteCheck::kAlreadyThere:
+      return "Nothing typed: the field already holds that text. Go on to "
+             "the next thing.";
+    case OverwriteCheck::kKeep:
+      return "Not typed: the field is already filled, and the agent replaces "
+             "what is in a field only with words the user said. Leave it as "
+             "it is.";
+  }
+  return "";
+}
+
 }  // namespace agent_page_map
 }  // namespace molt_ai

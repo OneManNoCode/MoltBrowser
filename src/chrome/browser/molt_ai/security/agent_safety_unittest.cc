@@ -210,6 +210,54 @@ TEST(AgentSafetyTest, ParsesProbeResults) {
   EXPECT_FALSE(probes[4].found);  // missing entry
 }
 
+// A field's text comes back for the browser's own comparison
+// (agent_page_map::CheckOverwrite), only an ordinary field's, and capped.
+TEST(AgentSafetyTest, ParsesAnOrdinaryFieldsTextOnly) {
+  base::ListValue list;
+  list.Append(base::DictValue()
+                  .Set("found", true)
+                  .Set("type", "text")
+                  .Set("autocomplete", "street-address")
+                  .Set("text", "1 River Road"));
+  list.Append(base::DictValue()
+                  .Set("found", true)
+                  .Set("type", "text")
+                  .Set("autocomplete", "cc-number")
+                  .Set("text", "4111 1111 1111 1111"));
+  list.Append(base::DictValue()
+                  .Set("found", true)
+                  .Set("type", "password")
+                  .Set("text", "hunter2"));
+  list.Append(base::DictValue()
+                  .Set("found", true)
+                  .Set("type", "text")
+                  .Set("autocomplete", "one-time-code")
+                  .Set("text", "123456"));
+  list.Append(base::DictValue()
+                  .Set("found", true)
+                  .Set("type", "textarea")
+                  .Set("text", std::string(kMaxProbeTextBytes + 100, 'a')));
+  list.Append(
+      base::DictValue().Set("found", true).Set("type", "text").Set("text", 5));
+  std::vector<ElementProbe> probes =
+      ParseElementProbes(base::Value(std::move(list)), 6);
+  ASSERT_EQ(probes.size(), 6u);
+  EXPECT_EQ(probes[0].text, "1 River Road");
+  EXPECT_EQ(probes[1].text, "");
+  EXPECT_EQ(probes[2].text, "");
+  EXPECT_EQ(probes[3].text, "");
+  EXPECT_EQ(probes[4].text.size(), kMaxProbeTextBytes);
+  EXPECT_EQ(probes[5].text, "");  // not a string
+
+  // The script reads the text of a text field or text area only, never of
+  // a password field.
+  const std::string js = BuildElementProbeScript({"#a"});
+  EXPECT_NE(js.find("el.localName === 'input' && el.type !== 'password'"),
+            std::string::npos);
+  EXPECT_NE(js.find("out.text = String(el.value || '').slice(0, 512)"),
+            std::string::npos);
+}
+
 TEST(AgentSafetyTest, ProbeParseToleratesNonList) {
   std::vector<ElementProbe> probes = ParseElementProbes(base::Value(), 2);
   ASSERT_EQ(probes.size(), 2u);
