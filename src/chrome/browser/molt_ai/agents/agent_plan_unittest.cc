@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/strings/string_util.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -192,6 +193,53 @@ TEST(AgentPlanTest, RefusesTheFormatsPlaceholders) {
   }
 }
 
+TEST(AgentPlanTest, RefusesTheExamplesStepsCopied) {
+  // Build 55: asked for a plan for misheard speech ("is fai what is a
+  // trem"), the model copied the prompt's example. The prompt now shows a
+  // real plan as its example; a step copied from it is refused, case,
+  // spaces at the ends and a final full stop aside.
+  for (const ExampleStep& step : kExamplePlan) {
+    const std::string goal(step.goal);
+    const std::string done_when(step.done_when);
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson(goal, done_when) + "]}"),
+              PlanError::kCopiedExample)
+        << goal;
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson(goal, "x") + "]}"),
+              PlanError::kCopiedExample)
+        << goal;
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson("x", done_when) + "]}"),
+              PlanError::kCopiedExample)
+        << done_when;
+    EXPECT_EQ(
+        ErrorOf("{\"steps\":[" + StepJson("a", "b") + "," +
+                StepJson(" " + base::ToUpperASCII(goal) + ". ", "x") + "]}"),
+        PlanError::kCopiedExample)
+        << goal;
+  }
+  EXPECT_EQ(
+      ErrorOf("{\"steps\":[" + StepJson(std::string(kExampleGoal), "x") + "]}"),
+      PlanError::kCopiedExample);
+  // Steps that only share words with it are the model's own.
+  for (std::string_view fine :
+       {"Search for the library's opening hours",
+        "Open the museum's page about opening hours on Monday",
+        "the results list the shop's website"}) {
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson(fine, "x") + "]}"),
+              PlanError::kNone)
+        << fine;
+  }
+  const ModelReply copied =
+      Reply("{\"steps\":[" +
+            StepJson(std::string(kExamplePlan[0].goal),
+                     std::string(kExamplePlan[0].done_when)) +
+            "]}");
+  PlanOutcome o = InterpretPlanReply(copied, 0);
+  EXPECT_EQ(o.decision, PlanDecision::kRetry);
+  EXPECT_EQ(o.refusal,
+            "Your previous plan was not usable: it copied the example's "
+            "steps instead of planning the GOAL.");
+}
+
 TEST(AgentPlanTest, ShowsHiddenCharactersAsReplacement) {
   // Bidi controls, zero-width characters, BOM, the line and paragraph
   // separators and C1 controls reorder, hide or break text: shown as
@@ -326,7 +374,7 @@ TEST(AgentPlanTest, ErrorTextsAreFixedAndNeverEmpty) {
   for (PlanError e :
        {PlanError::kNotJsonObject, PlanError::kWrongKeys, PlanError::kStepCount,
         PlanError::kTooLong, PlanError::kEmpty, PlanError::kBadCharacters,
-        PlanError::kPlaceholder}) {
+        PlanError::kPlaceholder, PlanError::kCopiedExample}) {
     EXPECT_FALSE(PlanErrorText(e).empty());
   }
   EXPECT_EQ(PlanErrorText(PlanError::kStepCount), "a plan has 1 to 6 steps");

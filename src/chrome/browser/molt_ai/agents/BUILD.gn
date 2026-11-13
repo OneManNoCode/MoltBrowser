@@ -199,6 +199,8 @@ source_set("agent_prompt") {
   ]
 
   deps = [
+    # The planner's example plan.
+    ":agent_plan",
     "//base",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]

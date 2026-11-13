@@ -68,6 +68,26 @@ struct PlanStep {
 // 1 to kMaxPlanSteps steps, in order.
 using Plan = std::vector<PlanStep>;
 
+// The plan the planner's prompt shows as its example (agent_prompt.cc
+// writes it from these), for kExampleGoal from a search page. Given a GOAL
+// it can't make out (misheard speech: build 55's "is fai what is a trem"),
+// a small model copies the example it was shown, so a goal or done_when
+// copied from it is refused (kCopiedExample), as the format's "<...>"
+// descriptions were (kPlaceholder). Asked for exactly the example's GOAL,
+// the run would go on without a plan: that costs only the plan.
+inline constexpr std::string_view kExampleGoal =
+    "find when the city museum opens on Sunday";
+struct ExampleStep {
+  std::string_view goal;
+  std::string_view done_when;
+};
+inline constexpr ExampleStep kExamplePlan[] = {
+    {"Search for the city museum's opening hours",
+     "the results list the museum's website"},
+    {"Open the museum's page about opening hours",
+     "the page shows Sunday's opening time"},
+};
+
 // The JSON Schema of the plan:
 //   {"steps": [{"goal": "...", "done_when": "..."}, ...]}
 // 1 to kMaxPlanSteps steps, every key required and no others, each string
@@ -83,7 +103,8 @@ enum class PlanError {
   kTooLong,
   kEmpty,          // a blank goal or done_when
   kBadCharacters,  // control characters (a line break too)
-  kPlaceholder,    // the format's "<...>" or "..." copied, not a real step
+  kPlaceholder,    // a "<...>" or "..." copied, not a real step
+  kCopiedExample,  // a goal or done_when copied from kExamplePlan
 };
 
 // Fixed text, for the retry note the model sees.
