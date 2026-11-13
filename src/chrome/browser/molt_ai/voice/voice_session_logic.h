@@ -559,6 +559,11 @@ class VoiceSessionLogic {
   bool EchoOfBrowser(std::string_view text, int64_t now_ms) const;
   // Whether |text| is one word, and one the browser said lately.
   bool OneWordItSaid(std::string_view text, int64_t now_ms) const;
+  // Whether |text| is two words that choose from a list by name and
+  // nothing else, the first a word the browser said lately and the second
+  // misheard from one of the two it said next: a name it read heard back
+  // ("1: Daily News: trams return to Lyon" heard as "daily trem").
+  bool NameItReadMisheard(std::string_view text, int64_t now_ms) const;
   // Whether |text| is one number word, one the browser said lately within
   // a longer number ("one" of the "nineteen eighty one" it says for
   // "1981"): its voice heard back, however it stood out.

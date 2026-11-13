@@ -27,6 +27,10 @@ constexpr size_t kMaxSaidBytes = 4096;
 // folded word, so no run of words reaches across it.
 constexpr std::string_view kFormSeam = "|";
 
+// A name heard back with its second word misheard (NameItReadMisheard())
+// begins with a word at least this long: not "the", "a" or "my".
+constexpr size_t kMinLooseEchoLetters = 4;
+
 // What the browser said, as folded words: as written, and as its voice
 // says them (voice_said_aloud.h: "example dot com", "two", "molt
 // browser"), which is how an echo the canceller missed is heard.
@@ -132,6 +136,32 @@ bool SaysWithOneWordOff(const std::vector<std::string_view>& said,
     }
     if (fits) {
       return true;
+    }
+  }
+  return false;
+}
+
+// Whether |said| has |wanted|'s two words: the first as said, the second
+// misheard (MisheardAs()) from one of the two words said after it. Not
+// across kFormSeam. Long first words only: "the first" is no echo of "2:
+// The fist ...".
+bool SaysTwoWordsWithTheSecondOff(const std::vector<std::string_view>& said,
+                                  const std::vector<std::string_view>& wanted) {
+  if (wanted.size() != 2 || wanted[0].size() < kMinLooseEchoLetters ||
+      wanted[1].size() < 2) {
+    return false;
+  }
+  for (size_t i = 0; i < said.size(); ++i) {
+    if (said[i] != wanted[0]) {
+      continue;
+    }
+    for (size_t j = i + 1; j < said.size() && j <= i + 2; ++j) {
+      if (said[j] == kFormSeam) {
+        break;
+      }
+      if (said[j] != wanted[1] && MisheardAs(said[j], wanted[1])) {
+        return true;
+      }
     }
   }
   return false;
@@ -652,7 +682,8 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
                         confidence >= kMinConfidenceWithoutWake;
       const bool echo =
           sure && ((!StoodOutOfCancelledVoice(utterance) &&
-                    EchoOfBrowser(text, utterance.begun_ms)) ||
+                    (EchoOfBrowser(text, utterance.begun_ms) ||
+                     NameItReadMisheard(text, utterance.begun_ms))) ||
                    NumberItSaidInALongerOne(text, utterance.begun_ms));
       take = sure && !echo;
       if (!sure) {
@@ -1127,6 +1158,37 @@ bool VoiceSessionLogic::OneWordItSaid(std::string_view text,
                                       int64_t now_ms) const {
   const std::string folded = FoldForComparison(text.substr(0, kMaxSaidBytes));
   return SplitWords(folded).size() == 1 && EchoOfBrowser(text, now_ms);
+}
+
+bool VoiceSessionLogic::NameItReadMisheard(std::string_view text,
+                                           int64_t now_ms) const {
+  // A choice by name, and nothing more: a command of its own ("stop
+  // reading") is never taken for it.
+  ParseContext own;
+  own.language = settings_.language;
+  if (ParseVoiceCommand(text, own).kind != VoiceCommandKind::kUnknown) {
+    return false;
+  }
+  ParseContext list;
+  list.expecting_choice = true;
+  list.language = settings_.language;
+  const VoiceCommand in_list = ParseVoiceCommand(text, list);
+  if (in_list.kind != VoiceCommandKind::kChoose ||
+      in_list.choice.kind != ChoiceRef::Kind::kDescription ||
+      in_list.choice.ordinal != 0) {
+    return false;
+  }
+  const std::string folded = FoldForComparison(text.substr(0, kMaxSaidBytes));
+  const std::vector<std::string_view> wanted = SplitWords(folded);
+  std::vector<std::string_view> said;
+  for (const auto& [when, words] : said_) {
+    if (!SaidLately(when, now_ms)) {
+      continue;
+    }
+    const std::vector<std::string_view> these = SplitWords(words);
+    said.insert(said.end(), these.begin(), these.end());
+  }
+  return SaysTwoWordsWithTheSecondOff(said, wanted);
 }
 
 bool VoiceSessionLogic::StoodOutOfCancelledVoice(

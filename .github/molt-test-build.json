@@ -1,11 +1,11 @@
 {
- "resume_run": "43406444500",
+ "resume_run": "43418432405",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-seventh build (incremental on the fifty-sixth, run 43406444500). The fifty-sixth passed 3061/3061 unit tests and 122/122 browser tests, and the model's tasks 3/4 typed and 3/4 on pulse: the order task failed on both, and its REFUSED lines showed why. The planner wrote a plan of \"...\" twice and the agent copied the action format's first example, NAVIGATE \"<a full https:// address>\", four times; once as \"<https://...>\", which slipped past the placeholder check. The agent's text-only requests went to the model as one raw document without its chat template. New since: every agent request (plan and action) goes as a chat, the rules as the system prompt and the turn as the user message, as the screenshot path always did, and a placeholder in angle brackets is refused. Only the model's tasks and Phase 1's two model scenarios run.",
- "e2e_scenarios": "model-,browser-ask-ai,sec-answer-imitates-prompt"
+ "request": "Fifty-eighth build (incremental on the fifty-seventh, run 43418432405). Run 58 put the whole spoken suite on the fifty-seventh: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 83/93 (89%), Phase 2 22/30, the model's tasks 4/4, nothing refused. Most pulse misses are the recognizer's words (\"A to Lovelace\", \"Grace Hark\"), but three were voice mode's: its reading of the results heard back as \"Daily trem\" chose the first result; \"Himalt the cart.\" went to the planner because a list had been read earlier on that page; \"Hey mold to Spain.\" right after the country list's options went to the planner. New since: a two-word name it just read, its second word misheard, is its own voice heard back (NameItReadMisheard); a name said alone presses its item unless a list still waits for its answer; an option named whole within 30 s of its list's options, alone or after \"to\", chooses it. The whole spoken suite runs, typed and on pulse.",
+ "e2e_scenarios": ""
 }

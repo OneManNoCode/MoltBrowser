@@ -1504,6 +1504,36 @@ TEST_F(VoiceSessionLogicTest, ItsOwnWordsHeardBackWithOneMangled) {
   EXPECT_EQ(off_two.utterance, "play the daily news");
 }
 
+// Two words heard back, the second misheard: the spoken suite's speakers
+// run on build 57 heard "1: Daily News: trams return to Lyon" back as
+// "Daily trem" before the echo canceller settled, and chose the first
+// result as it read them. A name of the user's own words, a command or a
+// number is still the user's.
+TEST_F(VoiceSessionLogicTest, ANameItReadHeardBackWithItsSecondWordOff) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("search the web for trams in lyon", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid(
+      "10 results. 1: Daily News: trams return to Lyon. 2: Weather in Lyon "
+      "this week. Say a number or a name.",
+      now_);
+  for (const char* echo : {"Daily trem", "weather lying"}) {
+    logic_->OnSpeechStart(now_ + 600);
+    EXPECT_EQ(logic_->OnFinal(echo, 0.9, now_ + 1400).dropped_reason,
+              "voice mode's voice heard back")
+        << echo;
+  }
+  for (const char* user :
+       {"daily weather", "number two", "the weather", "play daily trams"}) {
+    logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+    logic_->OnSpeechStart(now_ + 1450);
+    EXPECT_EQ(logic_->OnFinal(user, 0.9, now_ + 1480).utterance, user) << user;
+  }
+}
+
 // Naming what it reads, over its voice: "play live aid" over "2: Live
 // Aid" and "forget my videos" over "Running my videos" are the user's, not
 // its words with one misheard.
