@@ -1811,6 +1811,116 @@ TEST(VoiceControllerLogicTest, AMisheardClickPressesANameAfterAListWasRead) {
   }
 }
 
+// Build 57's spoken suite: on the shop it had read after "go back" ("3
+// items. Say a number or a name."), a mug added since, "Himalt the cart."
+// went to the planner: a name said alone was taken only with no list read
+// at all. A list no longer waiting for its answer doesn't hold it back.
+TEST(VoiceControllerLogicTest, ANameSaidAloneAfterAListWasAnswered) {
+  const auto shop = [] {
+    TreeBuilder b("Corner Shop");
+    const uint32_t root =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Corner Shop", 0);
+    const uint32_t banner = b.Add(root, PageRole::kBanner, "", 0);
+    b.Heading(banner, 1, "Corner Shop");
+    const uint32_t nav = b.Add(banner, PageRole::kNavigation, "", 0);
+    b.Link(nav, "Shop", "https://shop.test/");
+    b.Link(nav, "Cart (1)", "https://shop.test/cart");
+    const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+    const uint32_t list = b.Add(main, PageRole::kList, "", 0);
+    for (const char* item : {"kettle", "mug", "toaster"}) {
+      const uint32_t li = b.Add(list, PageRole::kListItem, "", 0);
+      b.Heading(li, 2, std::string("Steel ") + item);
+      b.Button(li, std::string("Add ") + item + " to cart");
+    }
+    return BuildPageMap(b.Take());
+  };
+  Conversation clicked(shop(), Env());
+  const VoiceTurn click = clicked.Say("click cart");
+  ASSERT_FALSE(Actions(click).empty());
+
+  Conversation c(shop(), Env());
+  VoiceTurn turn = c.Say("reload");
+  const VoiceStep* wait = Find(turn, K::kWaitForPage);
+  ASSERT_NE(wait, nullptr);
+  turn = c.Loaded(*wait, shop(), 2);
+  ASSERT_NE(c.state().list, ListContext::kNone) << Said(turn);
+  turn = c.Say("Himalt, click add mud to cart.");
+  ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kPress}))
+      << Said(turn);
+  ASSERT_NE(c.state().list, ListContext::kNone);
+  ASSERT_FALSE(ContextFor(c.state(), c.map(), c.env()).expecting_choice);
+  turn = c.Say("Himalt the cart.");
+  EXPECT_EQ(Find(turn, K::kToPlanner), nullptr) << Said(turn);
+  EXPECT_EQ(Actions(turn), Actions(click)) << Said(turn);
+  EXPECT_EQ(Said(turn), Said(click));
+}
+
+// Build 57's spoken suite: right after "Country list ... Its options:
+// Choose a country, France, Spain, Italy. Say choose, then one.", "Hey
+// mold to Spain." ("choose" as the recognizer heard it) went to the
+// planner. An option's whole name said soon after, alone or after "to",
+// chooses it; later, or another list's, or more than a name: as before.
+TEST(VoiceControllerLogicTest, AnOptionNamedRightAfterItsListIsChosen) {
+  TreeBuilder b("Sign up - Club");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Sign up", 0);
+  const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+  const auto add_select = [&](std::string_view name,
+                              std::vector<std::string_view> options) {
+    const uint32_t select =
+        b.Add(main, PageRole::kSelect, name,
+              kStateFocusable | kStateHasDefaultAction | kStateCollapsed);
+    b.node(select).value = std::string(options[0]);
+    const uint32_t popup =
+        b.Add(select, PageRole::kGeneric, "", kStateInvisible);
+    for (std::string_view option : options) {
+      b.Add(popup, PageRole::kOption, option, kStateInvisible);
+    }
+    return select;
+  };
+  add_select("Country",
+             {"Choose a country", "France", "Spain", "Italy", "Germany"});
+  add_select("Size", {"Small", "Medium", "Large"});
+  const PageMap map = BuildPageMap(b.Take());
+
+  for (const char* said : {"Hey mold to Spain.", "Hey Molt, Spain"}) {
+    Conversation c(map, Env());
+    VoiceTurn turn = c.Say("He mold. Good country.");
+    ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kFocus}))
+        << Said(turn);
+    c.env().now_ms += 21000;
+    turn = c.Say(said);
+    ASSERT_EQ(Actions(turn), (std::vector<VoiceStepKind>{K::kSelectOption}))
+        << said << ": " << Said(turn);
+    EXPECT_EQ(Find(turn, K::kSelectOption)->target, c.map().items[0].handle);
+    EXPECT_EQ(Find(turn, K::kSelectOption)->text, "Spain");
+    EXPECT_EQ(Said(turn), "Chose Spain.");
+    // Chosen: a name said after is no longer the list's.
+    EXPECT_NE(Find(c.Say("Hey Molt, Italy"), K::kToPlanner), nullptr);
+  }
+  // Too late; another list's option; more than a name; something said in
+  // between: the planner's, as before.
+  {
+    Conversation c(map, Env());
+    c.Say("click country");
+    c.env().now_ms += kSelectPromptMs + 1;
+    EXPECT_NE(Find(c.Say("Hey Molt, Spain"), K::kToPlanner), nullptr);
+  }
+  for (const char* said :
+       {"Hey Molt, large", "Hey Molt, Spain and Italy please",
+        "Hey Molt, to Spain by train"}) {
+    Conversation c(map, Env());
+    c.Say("click country");
+    EXPECT_NE(Find(c.Say(said), K::kToPlanner), nullptr) << said;
+  }
+  {
+    Conversation c(map, Env());
+    c.Say("click country");
+    c.Say("scroll down");
+    EXPECT_NE(Find(c.Say("Hey Molt, Spain"), K::kToPlanner), nullptr);
+  }
+}
+
 // Something said over voice mode's voice that it can't take then is asked
 // for again once ("I've stopped. Now say that again."); that sentence
 // heard back over itself ("Stay that they give you", the spoken suite on

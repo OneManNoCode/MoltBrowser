@@ -449,8 +449,10 @@ class Planner : public TurnPlanner {
         command.kind != K::kRepeat) {
       state().expecting_site = false;
       // Only the utterance right after the field's prompt is taken as its
-      // text (TypeAfterTheFieldPrompt()).
+      // text (TypeAfterTheFieldPrompt()), and after a list's options as
+      // one of them (ChooseOptionNamedAfterItsList()).
       state().field_prompt_ms = -1;
+      state().select_prompt_ms = -1;
     }
     // The browser's prompt hears its answers first.
     if (depth == 0 && AnswerBrowserPrompt(command)) {
@@ -1485,7 +1487,9 @@ class Planner : public TurnPlanner {
   // Chooses the option |ref| names: of the select last chosen on this page,
   // or (|any_select|) of the one list on the page that has an option so
   // named. False when none does, clearly.
-  bool ChooseOption(const ChoiceRef& ref, bool any_select) {
+  bool ChooseOption(const ChoiceRef& ref,
+                    bool any_select,
+                    bool whole_name_only = false) {
     if (ref.kind != ChoiceRef::Kind::kDescription) {
       return false;
     }
@@ -1521,6 +1525,7 @@ class Planner : public TurnPlanner {
       MatchOptions options;
       options.language = env_.language;
       options.min_score = any_select ? kOpenOnThePageMinScore : kMinChoiceScore;
+      options.whole_name_only = whole_name_only;
       const ChoiceMatch match = MatchSpokenChoice(ref, candidates, options);
       if (match.outcome != ChoiceOutcome::kUnique) {
         continue;
@@ -1540,6 +1545,7 @@ class Planner : public TurnPlanner {
     Add(std::move(step));
     s.select = chosen_select->handle;
     s.select_page_id = env_.page_id;
+    s.select_prompt_ms = -1;
     s.offered.clear();
     s.expecting_choice = false;
     Status(Tr("Chose {0}", {PageText(chosen)}));
@@ -1784,6 +1790,7 @@ class Planner : public TurnPlanner {
           Add(NodeStep(VoiceStepKind::kFocus, target.handle, name));
           state().select = target.handle;
           state().select_page_id = env_.page_id;
+          state().select_prompt_ms = env_.now_ms;
           Status(Tr("List: {0}", {name}));
           Say(SelectSpeech(name, *item));
           return;
@@ -3314,6 +3321,9 @@ class Planner : public TurnPlanner {
     if (depth == 0 && !confirming && PressNameAfterMisheardClick(command)) {
       return;
     }
+    if (depth == 0 && !confirming && ChooseOptionNamedAfterItsList(command)) {
+      return;
+    }
     if (depth == 0 && !confirming && TypeAfterTheFieldPrompt(command)) {
       return;
     }
@@ -3362,14 +3372,17 @@ class Planner : public TurnPlanner {
   // (MatchOptions::whole_name_only): a short name (kMaxNameAloneWords
   // words once "the" and the like are gone), with no role, position or
   // "by" in it, and not while the browser waits for an answer to a list it
-  // read (Choose() takes those). Anything else goes on to the planner.
+  // read (Choose() takes those). A list read before and no longer waiting
+  // (answered, or read on another page) doesn't hold it back: build 57's
+  // "Himalt the cart." on the shop it had read ("3 items. Say a number or
+  // a name."), a mug added since, went to the planner. Anything else goes
+  // on to the planner.
   bool PressNameSaidAlone(const VoiceCommand& command) {
-    const ConversationState& s = state();
-    if (s.list != ListContext::kNone || s.expecting_choice) {
+    const ParseContext context = ContextFor(state(), map_, env_);
+    if (context.expecting_choice) {
       return false;
     }
-    return PressNameAlone(
-        CommandWords(command.heard, ContextFor(state(), map_, env_)));
+    return PressNameAlone(CommandWords(command.heard, context));
   }
 
   // "Good country", "thick reply", "clicked message" (the spoken suite's
@@ -3411,6 +3424,39 @@ class Planner : public TurnPlanner {
       return false;
     }
     return PressNameAlone(words.substr(space + 1), it->only);
+  }
+
+  // Right after "<name> list ... Its options: ... Say choose, then one."
+  // (within kSelectPromptMs, on that page, that list still there): the
+  // whole name of one of its options and nothing more chooses it, as
+  // "choose" would; so does one after "to", "choose" as the recognizer
+  // heard it (build 57's "Hey mold to Spain." after the country list's
+  // options went to the planner). Only that list's options, named wholly.
+  bool ChooseOptionNamedAfterItsList(const VoiceCommand& command) {
+    const ConversationState& s = state();
+    const int64_t since = env_.now_ms - s.select_prompt_ms;
+    if (s.select_prompt_ms < 0 || since < 0 || since > kSelectPromptMs ||
+        s.select_page_id != env_.page_id || !s.select.valid()) {
+      return false;
+    }
+    std::string words =
+        CommandWords(command.heard, ContextFor(state(), map_, env_));
+    if (env_.language == Language::kEnglish &&
+        std::string_view(words).starts_with("to ")) {
+      words.erase(0, 3);
+    }
+    if (words.empty()) {
+      return false;
+    }
+    const std::optional<ChoiceRef> ref =
+        ParseChoiceRef(words, env_.language, /*bare_numbers=*/false);
+    if (!ref || ref->kind != ChoiceRef::Kind::kDescription || ref->roles ||
+        ref->ordinal != 0 || ref->words.empty() ||
+        ref->words.size() > kMaxNameAloneWords || !ref->by_words.empty() ||
+        !ref->from_words.empty()) {
+      return false;
+    }
+    return ChooseOption(*ref, /*any_select=*/false, /*whole_name_only=*/true);
   }
 
   // The one item on the page whose whole name is |words| (of role |only|,

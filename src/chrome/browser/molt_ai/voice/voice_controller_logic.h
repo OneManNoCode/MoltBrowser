@@ -120,6 +120,11 @@ inline constexpr int64_t kSaidAgainEchoMs = 6000;
 // "type" came first. The recognizer loses or mangles "type" ("I will try
 // the rook", the spoken suite on build 52).
 inline constexpr int64_t kFieldPromptTextMs = 30000;
+// After "<name> list ... Its options: ... Say choose, then one.": for this
+// long, an option's whole name said with no verb chooses it, as "choose"
+// would. The recognizer loses or mangles "choose" ("Hey mold to Spain.",
+// the spoken suite on build 57).
+inline constexpr int64_t kSelectPromptMs = 30000;
 // The player's default skip.
 inline constexpr int kDefaultSkipSeconds = 10;
 // Increments per "louder" or "quieter" on a page's volume slider.
@@ -453,6 +458,10 @@ struct ConversationState {
   // France" names first.
   PageNodeHandle select;
   int64_t select_page_id = -1;
+  // When voice mode last read |select|'s options (-1: not since, or one
+  // was chosen since): an option's name said soon after chooses it
+  // (kSelectPromptMs).
+  int64_t select_prompt_ms = -1;
 
   // "Next heading", "next link": 1-based positions on |cursor_page_id|.
   int heading_cursor = 0;
