@@ -903,11 +903,13 @@ bool IsPlaceholder(std::string_view value) {
   if (dots)
     return true;
   // A description in angle brackets, of words: "<the text to type>", not
-  // a tag someone may mean to type ("<b>").
+  // a tag someone may mean to type ("<b>"); or a placeholder in angle
+  // brackets, "<...>" or "<https://...>" (build 56 navigated to that).
   if (value.size() >= 3 && value.front() == '<' && value.back() == '>') {
     const std::string_view inner = value.substr(1, value.size() - 2);
-    return inner.find_first_of("<>") == std::string_view::npos &&
-           inner.find(' ') != std::string_view::npos;
+    if (inner.find_first_of("<>") != std::string_view::npos)
+      return false;
+    return inner.find(' ') != std::string_view::npos || IsPlaceholder(inner);
   }
   return false;
 }

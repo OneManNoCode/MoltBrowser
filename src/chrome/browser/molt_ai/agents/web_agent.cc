@@ -114,6 +114,31 @@ WebAgent::Step::Element StepElement(const ObservedElement& element,
   return out;
 }
 
+// Runs one of the agent's requests (an action, or the planner's) as a chat:
+// the rules as the system prompt and the (untrusted) turn as the user
+// message, with the screenshot if there is one, so the model reads them
+// through its own chat template (and Qwen3's thinking switch). Sent as one
+// raw document, a chat-tuned model continued it with the format's first
+// example instead: build 56's Qwen3.5 4B answered "send my order off" with
+// NAVIGATE "<a full https:// address>" four times, and a plan of "...".
+// As RunPrompt(), an empty answer that wasn't cancelled is no answer.
+// Blocking: runs on a worker.
+GenerationResult RunAgentRequest(BrowserAIRuntime* rt,
+                                 agent_prompt::AgentPrompt prompt,
+                                 std::optional<ModelImage> image,
+                                 const PromptOptions& opts) {
+  ChatPrompt chat;
+  chat.system_prompt = std::move(prompt.system);
+  chat.user_message = std::move(prompt.user);
+  if (image) {
+    chat.user_images.push_back(std::move(*image));
+  }
+  GenerationResult result = rt->StreamChat(chat, TokenCallback(), opts);
+  result.success =
+      result.success && (!result.text.empty() || result.was_cancelled);
+  return result;
+}
+
 }  // namespace
 
 WebAgent::PendingMap::PendingMap() = default;
@@ -446,28 +471,18 @@ void WebAgent::AskLLM() {
 
   // Generation is blocking. Post it to a background thread; reply on UI.
   base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE,
-      {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
           [](BrowserAIRuntime* rt, agent_prompt::AgentPrompt p,
              std::optional<ModelImage> image,
              PromptOptions opts) -> GenerationResult {
-            if (!image) {
-              // Text-only: one raw prompt, as without vision.
-              return rt->RunPrompt(agent_prompt::ToRawPrompt(p), opts);
-            }
-            // With a screenshot: a chat request, the rules as the system
-            // prompt and the image with the (untrusted) user turn.
-            ChatPrompt chat;
-            chat.system_prompt = std::move(p.system);
-            chat.user_message = std::move(p.user);
-            chat.user_images.push_back(std::move(*image));
-            return rt->StreamChat(chat, TokenCallback(), opts);
+            return RunAgentRequest(rt, std::move(p), std::move(image), opts);
           },
           rt, std::move(prompt), screenshot_, std::move(opts)),
       base::BindOnce(
           [](base::WeakPtr<WebAgent> self, GenerationResult result) {
-            if (self) self->OnLLMDecision(std::move(result));
+            if (self)
+              self->OnLLMDecision(std::move(result));
           },
           self));
 }
@@ -2150,8 +2165,7 @@ void WebAgent::AskPlanner() {
   input.replan_reason = replan_reason_;
   input.retry_note = plan_retry_note_;
   input.max_plan_steps = static_cast<int>(agent_plan::kMaxPlanSteps);
-  std::string prompt =
-      agent_prompt::ToRawPrompt(agent_prompt::BuildPlanPrompt(input));
+  agent_prompt::AgentPrompt prompt = agent_prompt::BuildPlanPrompt(input);
 
   PromptOptions opts;
   opts.max_tokens = agent_plan::kMaxPlanReplyTokens;
@@ -2161,7 +2175,8 @@ void WebAgent::AskPlanner() {
   opts.json_schema = agent_plan::BuildPlanSchema();
 
   if (HasModelForTesting()) {
-    GenerationResult result = TestingModel().Run(prompt, opts);
+    GenerationResult result =
+        TestingModel().Run(agent_prompt::ToRawPrompt(prompt), opts);
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&WebAgent::OnPlanReply,
                                   weak_factory_.GetWeakPtr(),
@@ -2172,17 +2187,17 @@ void WebAgent::AskPlanner() {
   // Text-only, even when the model sees images: a plan needs the page's
   // text, and the screenshot belongs to the next action's request.
   base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE,
-      {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
-          [](BrowserAIRuntime* rt, std::string p,
+          [](BrowserAIRuntime* rt, agent_prompt::AgentPrompt p,
              PromptOptions opts) -> GenerationResult {
-            return rt->RunPrompt(p, opts);
+            return RunAgentRequest(rt, std::move(p), std::nullopt, opts);
           },
           runtime_.get(), std::move(prompt), std::move(opts)),
       base::BindOnce(
           [](base::WeakPtr<WebAgent> self, GenerationResult result) {
-            if (self) self->OnPlanReply(std::move(result));
+            if (self)
+              self->OnPlanReply(std::move(result));
           },
           weak_factory_.GetWeakPtr()));
 }

@@ -416,10 +416,19 @@ TEST(AgentActionsTest, RefusesAPlaceholderWhereARealValueGoes) {
       ActionError::kPlaceholder);
   EXPECT_EQ(ErrorOf(R"({"reason":"r","action":"NAVIGATE","url":"HTTP://…"})"),
             ActionError::kPlaceholder);
+  // Build 56 navigated to "<https://...>" and said "Opening <https:.".
+  for (const char* bracketed :
+       {"<https://...>", "<...>", "< … >", "<http://…>"}) {
+    EXPECT_TRUE(IsPlaceholder(bracketed)) << bracketed;
+  }
+  EXPECT_EQ(
+      ErrorOf(R"({"reason":"r","action":"NAVIGATE","url":"<https://...>"})"),
+      ActionError::kPlaceholder);
   // Real values, a tag someone means to type and a sentence that trails
   // off are not placeholders; nor is the reason ever refused for one.
-  for (const char* real : {"Mary Smith", "<b>", "Wait...", "1...2",
-                           "https://shop.test/", "a < b > c", ""}) {
+  for (const char* real :
+       {"Mary Smith", "<b>", "Wait...", "1...2", "https://shop.test/",
+        "a < b > c", "", "<https://shop.test/>", "<>", "<<...>>"}) {
     EXPECT_FALSE(IsPlaceholder(real)) << real;
   }
   EXPECT_TRUE(Parse(R"({"reason":"...","action":"TYPE","target":"e2",)"

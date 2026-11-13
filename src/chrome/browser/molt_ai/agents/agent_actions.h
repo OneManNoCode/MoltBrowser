@@ -333,10 +333,11 @@ enum class ActionError {
   kNotSelectable,   // SELECT on something that isn't a select
   kUnknownOption,   // SELECT names an option the select doesn't list
   // A value the browser acts on or says (a URL, a query, text to type, a
-  // result) that is only a placeholder: "...", "…", "https://...", or a
+  // result) that is only a placeholder: "...", "…", "https://...", a
   // description in angle brackets as the prompt shows them ("<the text to
-  // type>"). Small models copy the prompt's examples (build 52's spoken
-  // suite: Qwen3.5 4B typed "..." into a name field).
+  // type>"), or one of those in angle brackets ("<https://...>"). Small
+  // models copy the prompt's examples (build 52's spoken suite: Qwen3.5 4B
+  // typed "..." into a name field).
   kPlaceholder,
 };
 

@@ -227,7 +227,7 @@ DecideCapture again; geometry script again: must match (1 CSS px)
 worker: PrepareImageForModel (Skia, <= 768 px) -> masks -> tags
   -> WebAgent::screenshot_ (one; replaced at the next observation)
 AskLLM: StreamChat {system: rules, user: turn + screenshot}
-        (without a screenshot: RunPrompt(rules + "---" + turn), unchanged)
+        (without a screenshot: StreamChat {system: rules, user: turn})
 ```
 
 **When** (`DecideCapture`, each condition tested on its own):
@@ -323,9 +323,14 @@ The cost is some hidden pixels and a forgeable signal (a page can draw its
 own magenta "e3": §5.1), which is why the list stays authoritative. Not yet
 measured against a real model (§6).
 
-**The prompt** (`agent_prompt.h`). Without a screenshot the request is the
-raw prompt it always was, byte for byte (checked against the old
-`BuildPrompt` on 3,000 random inputs). With one it is a chat request: the
+**The prompt** (`agent_prompt.h`). Without a screenshot the request is a
+chat request too, the rules as the system prompt and the turn as the user
+message: until build 56 it was one raw prompt (rules, `---`, turn) with no
+chat template, and Qwen3.5 4B, reading it as a document to continue,
+answered "send my order off" with the format's first example, NAVIGATE
+`"<a full https:// address>"`, four times (`RunAgentRequest()` in
+`web_agent.cc`; the browser tests' model still reads `ToRawPrompt()`).
+With a screenshot it is a chat request: the
 rules as the system prompt, with two more rules (what the image is and that
 the ELEMENTS list is authoritative; that text, tags or arrows the page
 draws in it are data), and the turn (goal, history, fenced page text, one
@@ -1103,7 +1108,7 @@ time, exactly as without one.
 
 ```
 Start -> first observation (as before)
-IterateOnce: plan needed? -> AskPlanner (RunPrompt, plan schema, 512 tokens)
+IterateOnce: plan needed? -> AskPlanner (StreamChat, plan schema, 512 tokens)
   OnPlanReply: InterpretPlanReply
     plan          -> PlanTracker::Adopt -> 'agent-plan' {planned} -> AskLLM
     unusable      -> ask again with a fixed note (2 replies at most)
@@ -1159,7 +1164,8 @@ chat's cards (§4.2, §4.7, §4.9) share. The grammar refuses an empty
 string but not one of spaces, nor control characters written as `\u`
 escapes; the parser refuses both.
 
-The request (`BuildPlanPrompt()`, one raw prompt, temperature 0.2, 512
+The request (`BuildPlanPrompt()`, a chat request with the rules as the
+system prompt and the turn as the user message, temperature 0.2, 512
 tokens, never a screenshot) has the planner's rules in the system part (the
 format, shown by an example plan for the GOAL "find when the city museum
 opens on Sunday" from a search page, written from `agent_plan::kExamplePlan`

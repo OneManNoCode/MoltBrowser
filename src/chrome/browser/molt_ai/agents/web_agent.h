@@ -277,8 +277,9 @@ class WebAgent : public content::WebContentsObserver,
   };
 
   // A model in place of the on-device runtime, for browser tests: it gets
-  // the raw prompt (ToRawPrompt()) and the options (its json_schema says
-  // whether a plan or an action is asked for) and answers at once.
+  // the request as one raw prompt (ToRawPrompt(); the runtime gets it as a
+  // chat) and the options (its json_schema says whether a plan or an
+  // action is asked for) and answers at once.
   using ModelForTesting = base::RepeatingCallback<GenerationResult(
       const std::string& prompt,
       const PromptOptions& options)>;

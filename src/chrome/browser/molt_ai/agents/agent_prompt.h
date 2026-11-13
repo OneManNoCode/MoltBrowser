@@ -5,11 +5,13 @@
 //
 // Two parts: the rules (MoltBrowser's own text) and the turn (the user's
 // goal, then the history and the current page, both page-derived and
-// fenced with agent_safety::FenceUntrustedText). Without a screenshot the
-// model gets them as one raw prompt, exactly as before. With one, it gets
-// them as a chat: the rules as the system prompt, the turn as the user
-// message, and the screenshot with the user message only (an image is
-// page content: untrusted, like page text, never in the system prompt).
+// fenced with agent_safety::FenceUntrustedText). The model gets them as a
+// chat, with or without a screenshot: the rules as the system prompt, the
+// turn as the user message, and a screenshot with the user message only (an
+// image is page content: untrusted, like page text, never in the system
+// prompt). As one raw document (ToRawPrompt(), now only for the browser
+// tests' model), a chat-tuned model continued it with the format's first
+// example (build 56).
 //
 // The planner (agent_plan.h, docs/design/AGENT_ACTIONS.md §2.8): with a
 // plan, the turn also shows it after the GOAL line, fenced like page text
@@ -123,10 +125,11 @@ struct PlanPromptInput {
 };
 
 // The rules (system) and the goal, history, earlier plan and page (user),
-// as for an action. Always text-only (ToRawPrompt()).
+// as for an action. Always text-only.
 AgentPrompt BuildPlanPrompt(const PlanPromptInput& input);
 
-// The text-only request: one raw prompt, rules and turn split by "---".
+// The request as one raw prompt, rules and turn split by "---": what the
+// browser tests' model (WebAgent::ModelForTesting) reads.
 std::string ToRawPrompt(const AgentPrompt& prompt);
 
 }  // namespace agent_prompt
