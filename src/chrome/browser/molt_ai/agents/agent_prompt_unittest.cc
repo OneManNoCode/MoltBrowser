@@ -244,7 +244,7 @@ TEST(AgentPromptTest, HistoryIsSanitizedAndObservationsFencedAndCut) {
 
 // The pieces site tools add (agent_prompt.cc).
 constexpr std::string_view kToolAction =
-    "  {\"reason\":\"...\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
+    "  {\"reason\":\"<why>\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
     "\"arguments\":{...}}\n"
     "      call tool t1 of the TOOLS list with its arguments\n";
 constexpr std::string_view kToolRules =
@@ -328,7 +328,7 @@ TEST(AgentPromptTest, PageToolsTextStaysInsideTheFence) {
 
 // The pieces a plan adds (agent_prompt.cc; agent_plan.h).
 constexpr std::string_view kReplanAction =
-    "  {\"reason\":\"...\",\"step\":2,\"action\":\"REPLAN\"}\n"
+    "  {\"reason\":\"<why>\",\"step\":2,\"action\":\"REPLAN\"}\n"
     "      the PLAN no longer fits: a new plan is written from the current "
     "page\n";
 constexpr std::string_view kPlanRules =

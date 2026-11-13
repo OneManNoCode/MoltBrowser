@@ -1794,6 +1794,9 @@ std::optional<EngineStatus> LlamaEngine::EvalMediaPrompt(
       llama_batch_ext_init(m.ctx));
   const int n_embd = llama_model_n_embd_inp(m.model);
   const size_t n_batch = static_cast<size_t>(std::max(1, m.n_batch));
+  // Its text in chunks of at most kPromptChunkTokens, progress between
+  // them (an image's embeddings keep n_batch: a non-causal one goes whole).
+  const size_t text_chunk = std::min<size_t>(n_batch, kPromptChunkTokens);
   if (!batch || n_embd <= 0) return fail(EngineStatus::kDecodeFailed);
   const bool mrope = mtmd_decode_use_mrope(m.mtmd);
 
@@ -1818,7 +1821,7 @@ std::optional<EngineStatus> LlamaEngine::EvalMediaPrompt(
     for (size_t j = 0; j < n;) {
       if (cancelled()) return Step::kCancelled;
       llama_batch_ext_clear(batch.get());
-      const size_t take = std::min(n_batch, n - j);
+      const size_t take = std::min(text_chunk, n - j);
       int32_t idx = -1;
       for (size_t k = 0; k < take; ++k) {
         idx = llama_batch_ext_add_token(batch.get(), 0, toks[j + k]);
@@ -2030,12 +2033,14 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
     }
     last_progress = Clock::now();
   }
+  // Chunks of at most kPromptChunkTokens: progress goes out between them.
+  const size_t chunk =
+      static_cast<size_t>(std::clamp(m.n_batch, 1, kPromptChunkTokens));
   for (size_t i = n_keep; i < work.size();) {
     if (cancelled()) {
       return EngineStatus::kCancelled;  // kv_tokens matches what was decoded
     }
-    const size_t n =
-        std::min<size_t>(static_cast<size_t>(m.n_batch), work.size() - i);
+    const size_t n = std::min<size_t>(chunk, work.size() - i);
     llama_batch batch =
         llama_batch_get_one(work.data() + i, static_cast<int32_t>(n));
     if (molt_llama::Decode(m.ctx, batch) != 0) return fail_decode();

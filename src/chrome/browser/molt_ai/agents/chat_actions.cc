@@ -161,29 +161,32 @@ constexpr char kDecisionActions[] =
     "be done in the web page they are looking at. Choose at most ONE "
     "browser action for it, as ONE JSON object: \"reason\" (one short "
     "sentence) first, then \"action\" and its fields:\n"
-    "  {\"reason\":\"...\",\"action\":\"CLICK\",\"target\":\"e3\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"CLICK\",\"target\":\"e3\"}\n"
     "      click element e3\n"
-    "  {\"reason\":\"...\",\"action\":\"TYPE\",\"target\":\"e4\","
-    "\"text\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"TYPE\",\"target\":\"e4\","
+    "\"text\":\"<the text to type>\"}\n"
     "      type text into text field e4\n"
-    "  {\"reason\":\"...\",\"action\":\"FILL_FORM\",\"fields\":"
-    "[{\"target\":\"e4\",\"text\":\"...\"},{\"target\":\"e5\","
-    "\"text\":\"...\"}]}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"FILL_FORM\",\"fields\":"
+    "[{\"target\":\"e4\",\"text\":\"<text for e4>\"},{\"target\":\"e5\","
+    "\"text\":\"<text for e5>\"}]}\n"
     "      fill several text fields\n"
-    "  {\"reason\":\"...\",\"action\":\"SCROLL\",\"direction\":\"down\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"SCROLL\",\"direction\":\"down\"}\n"
     "      scroll \"down\" or \"up\"\n"
-    "  {\"reason\":\"...\",\"action\":\"NAVIGATE\",\"url\":\"https://...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"NAVIGATE\",\"url\":\"<a full "
+    "https:// address>\"}\n"
     "      open a full http(s) URL\n"
-    "  {\"reason\":\"...\",\"action\":\"SEARCH\",\"query\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"SEARCH\",\"query\":\"<words to "
+    "search for>\"}\n"
     "      search the web\n"
-    "  {\"reason\":\"...\",\"action\":\"DONE\",\"result\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"DONE\",\"result\":\"<why, in a few "
+    "words>\"}\n"
     "      no action: the request needs none, nothing on the page fits, or "
     "it can't be done here; say why in a few words\n";
 
 // Only when the page offers tools (WebMCP; docs/design/AGENT_ACTIONS.md
 // §4.9).
 constexpr char kToolAction[] =
-    "  {\"reason\":\"...\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
+    "  {\"reason\":\"<why>\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
     "\"arguments\":{...}}\n"
     "      call tool t1 of the TOOLS list with its arguments\n";
 
@@ -193,6 +196,8 @@ constexpr char kDecisionRules[] =
     "- \"target\" is an element id (e1, e2, ...) from the ELEMENTS list of "
     "the CURRENT PAGE; no other ids exist. TYPE and FILL_FORM take only "
     "elements marked (text field).\n"
+    "- Each <...> in the actions above says what goes there: write the real "
+    "value, never the <...> or \"...\" itself.\n"
     "- Do only what the REQUEST asks, in one action. If it is a question, "
     "answer DONE.\n"
     "- MoltBrowser shows your action to the user, who can refuse it.\n";

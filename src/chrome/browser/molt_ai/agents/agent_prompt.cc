@@ -25,33 +25,37 @@ const char kActionsPrompt[] =
     "\n"
     "Each turn, reply with ONE JSON object: \"reason\" (one short sentence) "
     "first, then \"action\" and its fields. The actions:\n"
-    "  {\"reason\":\"...\",\"action\":\"NAVIGATE\",\"url\":\"https://...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"NAVIGATE\",\"url\":"
+    "\"<a full https:// address>\"}\n"
     "      load a full http(s) URL\n"
-    "  {\"reason\":\"...\",\"action\":\"SEARCH\",\"query\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"SEARCH\",\"query\":"
+    "\"<words to search for>\"}\n"
     "      search the web\n"
-    "  {\"reason\":\"...\",\"action\":\"CLICK\",\"target\":\"e3\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"CLICK\",\"target\":\"e3\"}\n"
     "      click element e3\n"
-    "  {\"reason\":\"...\",\"action\":\"TYPE\",\"target\":\"e4\","
-    "\"text\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"TYPE\",\"target\":\"e4\","
+    "\"text\":\"<the text to type>\"}\n"
     "      type text into text field e4\n"
-    "  {\"reason\":\"...\",\"action\":\"FILL_FORM\",\"fields\":"
-    "[{\"target\":\"e4\",\"text\":\"...\"},{\"target\":\"e5\","
-    "\"text\":\"...\"}]}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"FILL_FORM\",\"fields\":"
+    "[{\"target\":\"e4\",\"text\":\"<text for e4>\"},{\"target\":\"e5\","
+    "\"text\":\"<text for e5>\"}]}\n"
     "      fill several text fields\n"
-    "  {\"reason\":\"...\",\"action\":\"SCROLL\",\"direction\":\"down\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"SCROLL\",\"direction\":\"down\"}\n"
     "      scroll \"down\" or \"up\"\n"
-    "  {\"reason\":\"...\",\"action\":\"OBSERVE\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"OBSERVE\"}\n"
     "      read the current page again\n"
-    "  {\"reason\":\"...\",\"action\":\"DONE\",\"result\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"DONE\",\"result\":"
+    "\"<the answer, or what was done>\"}\n"
     "      the task is complete; give the result\n"
-    "  {\"reason\":\"...\",\"action\":\"ERROR\",\"result\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"ERROR\",\"result\":"
+    "\"<why it can't be done>\"}\n"
     "      the task is impossible; say why\n";
 
 // The action and its rule when the ELEMENTS list a select (an observation
 // through the page map; docs/design/AGENT_ACTIONS.md §2.10).
 const char kSelectAction[] =
-    "  {\"reason\":\"...\",\"action\":\"SELECT\",\"target\":\"e5\","
-    "\"option\":\"...\"}\n"
+    "  {\"reason\":\"<why>\",\"action\":\"SELECT\",\"target\":\"e5\","
+    "\"option\":\"<one of its options>\"}\n"
     "      choose an option of element e5\n";
 
 const char kSelectRules[] =
@@ -61,7 +65,7 @@ const char kSelectRules[] =
 // The action and its rules when the page offers tools (WebMCP;
 // docs/design/AGENT_ACTIONS.md §2.7).
 const char kToolAction[] =
-    "  {\"reason\":\"...\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
+    "  {\"reason\":\"<why>\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
     "\"arguments\":{...}}\n"
     "      call tool t1 of the TOOLS list with its arguments\n";
 
@@ -87,6 +91,9 @@ const char kRulesPrompt[] =
     "- After NAVIGATE, SEARCH, CLICK or SCROLL the page is observed "
     "automatically.\n"
     "- Read the page content carefully before choosing an element.\n"
+    "- Each <...> in the actions above says what goes there: write the real "
+    "value (the user's words, the page's, a full address), never the <...> "
+    "or \"...\" itself.\n"
     "- Maximum %d total steps. Be efficient.\n";
 
 // Added to the rules when a screenshot comes with the step.
@@ -109,7 +116,7 @@ const char kScreenshotNote[] =
 // The action and its rules while the run follows a plan (agent_plan.h;
 // docs/design/AGENT_ACTIONS.md §2.8).
 const char kReplanAction[] =
-    "  {\"reason\":\"...\",\"step\":2,\"action\":\"REPLAN\"}\n"
+    "  {\"reason\":\"<why>\",\"step\":2,\"action\":\"REPLAN\"}\n"
     "      the PLAN no longer fits: a new plan is written from the current "
     "page\n";
 
@@ -141,15 +148,18 @@ const char kPlannerPrompt[] =
     "that pages offer. Before it acts, write a short plan for it.\n"
     "\n"
     "Reply with ONE JSON object:\n"
-    "  {\"steps\":[{\"goal\":\"...\",\"done_when\":\"...\"},"
-    "{\"goal\":\"...\",\"done_when\":\"...\"}]}\n"
+    "  {\"steps\":[{\"goal\":\"<the first step>\",\"done_when\":"
+    "\"<what the page shows then>\"},{\"goal\":\"<the next step>\","
+    "\"done_when\":\"<what the page shows then>\"}]}\n"
     "\n"
     "RULES:\n"
     "- \"steps\": 1 to %d steps, in order. Fewer is better: a simple task "
     "needs one or two.\n"
     "- \"goal\": what the step achieves, in a few plain words.\n"
     "- \"done_when\": what the page shows once the step is done.\n"
-    "- Plan only what the GOAL asks for, starting from the CURRENT PAGE.\n";
+    "- Plan only what the GOAL asks for, starting from the CURRENT PAGE.\n"
+    "- Each <...> above says what goes there: write the real words, never "
+    "the <...> or \"...\" itself.\n";
 
 const char kReplanRules[] =
     "- The EARLIER PLAN stopped working, for the reason given. Write a new "

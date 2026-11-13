@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
@@ -383,6 +384,50 @@ TEST(AgentActionsTest, RefusesNonJsonAndTextAroundIt) {
             ActionError::kNotJsonObject);
   EXPECT_EQ(ErrorOf("{\"reason\":\"\xC3\",\"action\":\"OBSERVE\"}"),
             ActionError::kNotJsonObject);  // invalid UTF-8
+}
+
+// The prompt's examples copied as they are (build 52's spoken suite:
+// Qwen3.5 4B typed "..." into a name field; TinyLlama opened
+// "https://..."): asked again, never acted on.
+TEST(AgentActionsTest, RefusesAPlaceholderWhereARealValueGoes) {
+  for (const char* placeholder :
+       {"...", " ... ", "\xE2\x80\xA6", "....", "<the text to type>",
+        "<a full https:// address>"}) {
+    SCOPED_TRACE(placeholder);
+    EXPECT_TRUE(IsPlaceholder(placeholder));
+    std::string value;
+    ASSERT_TRUE(base::JSONWriter::Write(base::Value(placeholder), &value));
+    EXPECT_EQ(ErrorOf(R"({"reason":"r","action":"TYPE","target":"e2","text":)" +
+                      value + "}"),
+              ActionError::kPlaceholder);
+    EXPECT_EQ(
+        ErrorOf(R"({"reason":"r","action":"SEARCH","query":)" + value + "}"),
+        ActionError::kPlaceholder);
+    EXPECT_EQ(
+        ErrorOf(R"({"reason":"r","action":"DONE","result":)" + value + "}"),
+        ActionError::kPlaceholder);
+    EXPECT_EQ(ErrorOf(R"({"reason":"r","action":"FILL_FORM","fields":[)"
+                      R"({"target":"e2","text":)" +
+                      value + "}]}"),
+              ActionError::kPlaceholder);
+  }
+  EXPECT_EQ(
+      ErrorOf(R"({"reason":"r","action":"NAVIGATE","url":"https://..."})"),
+      ActionError::kPlaceholder);
+  EXPECT_EQ(ErrorOf(R"({"reason":"r","action":"NAVIGATE","url":"HTTP://…"})"),
+            ActionError::kPlaceholder);
+  // Real values, a tag someone means to type and a sentence that trails
+  // off are not placeholders; nor is the reason ever refused for one.
+  for (const char* real : {"Mary Smith", "<b>", "Wait...", "1...2",
+                           "https://shop.test/", "a < b > c", ""}) {
+    EXPECT_FALSE(IsPlaceholder(real)) << real;
+  }
+  EXPECT_TRUE(Parse(R"({"reason":"...","action":"TYPE","target":"e2",)"
+                    R"("text":"Mary Smith"})")
+                  .action);
+  EXPECT_TRUE(
+      Parse(R"({"reason":"<why>","action":"CLICK","target":"e3"})").action);
+  EXPECT_FALSE(ActionErrorText(ActionError::kPlaceholder).empty());
 }
 
 TEST(AgentActionsTest, RefusesDeepNesting) {

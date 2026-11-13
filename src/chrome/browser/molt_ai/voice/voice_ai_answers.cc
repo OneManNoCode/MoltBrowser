@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/voice/voice_ai_answers.h"
 
+#include <algorithm>
+
 #include <utility>
 #include <vector>
 
@@ -130,7 +132,8 @@ void VoiceAiAnswers::Ask(const std::string& question,
   if (progress_) {
     progress_.Run(Localized(language, kStart));
   }
-  still_working_timer_.Start(FROM_HERE, kStillWorking,
+  still_working_after_ = kStillWorking;
+  still_working_timer_.Start(FROM_HERE, still_working_after_,
                              base::BindOnce(&VoiceAiAnswers::OnStillWorking,
                                             weak_factory_.GetWeakPtr(), run_));
   ChatPrompt chat;
@@ -238,9 +241,16 @@ void VoiceAiAnswers::OnReply(int run, GenerationResult result) {
 }
 
 void VoiceAiAnswers::OnStillWorking(int run) {
-  if (run == run_ && progress_) {
-    progress_.Run(Localized(language_, kStillWorkingText));
+  if (run != run_ || !progress_) {
+    return;
   }
+  progress_.Run(Localized(language_, kStillWorkingText));
+  // Again after twice as long, at most kStillWorkingLongest apart.
+  still_working_after_ =
+      std::min(still_working_after_ * 2, kStillWorkingLongest);
+  still_working_timer_.Start(FROM_HERE, still_working_after_,
+                             base::BindOnce(&VoiceAiAnswers::OnStillWorking,
+                                            weak_factory_.GetWeakPtr(), run_));
 }
 
 void VoiceAiAnswers::OnTimeLimit(int run) {

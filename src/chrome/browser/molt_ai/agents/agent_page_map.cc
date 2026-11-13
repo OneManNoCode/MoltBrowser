@@ -134,6 +134,15 @@ std::string ElementLine(const ObservedElement& e, const PageItem& item) {
   if (item.kind == ItemKind::kSelect && !item.value.empty()) {
     line += " (now \"" + PromptText(item.value, 60) + "\")";
   }
+  // What a text field holds already (never a credential field's value: the
+  // map leaves it out), so the model doesn't type over a filled one (build
+  // 52's spoken suite: Qwen3.5 4B retyped a checkout's filled fields).
+  if (e.typeable && !item.value.empty()) {
+    const std::string held = PromptText(item.value, 60);
+    if (!held.empty()) {
+      line += " (holds \"" + held + "\")";
+    }
+  }
   return line + "\n";
 }
 

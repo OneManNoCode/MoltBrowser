@@ -361,6 +361,13 @@ class LlamaEngine {
   // Matches molt_ai.mojom.kMaxChunkBytes.
   static constexpr size_t kMaxChunkBytes = 4096;
   static constexpr int kProgressIntervalMs = 500;
+  // Prompt tokens per decode call (at most n_batch, kMaxBatchTokens):
+  // progress, the browser's liveness, goes out only between calls, and a
+  // whole n_batch of a 4B model on a slow CPU outlasts the browser's stall
+  // limit (inference_process_host.h: 120 s; the spoken suite on build 52,
+  // Qwen3.5 4B on four cores). llama.cpp works in micro-batches of 512
+  // either way.
+  static constexpr int kPromptChunkTokens = 512;
 
   // Whether this CPU can run llama.cpp's CPU kernels: on x86-64, at least
   // the x86-64-v2 level (SSE4.2, POPCNT; design section 12). True
