@@ -1,11 +1,11 @@
 {
- "resume_run": "43418432405",
+ "resume_run": "43453467642",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-eighth build (incremental on the fifty-seventh, run 43418432405). Run 58 put the whole spoken suite on the fifty-seventh: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 83/93 (89%), Phase 2 22/30, the model's tasks 4/4, nothing refused. Most pulse misses are the recognizer's words (\"A to Lovelace\", \"Grace Hark\"), but three were voice mode's: its reading of the results heard back as \"Daily trem\" chose the first result; \"Himalt the cart.\" went to the planner because a list had been read earlier on that page; \"Hey mold to Spain.\" right after the country list's options went to the planner. New since: a two-word name it just read, its second word misheard, is its own voice heard back (NameItReadMisheard); a name said alone presses its item unless a list still waits for its answer; an option named whole within 30 s of its list's options, alone or after \"to\", chooses it. The whole spoken suite runs, typed and on pulse.",
+ "request": "Fifty-ninth build (incremental on the fifty-eighth, run 43453467642). Build 58's spoken suite: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 85/93 (91%, from 83), Phase 2 25/30 (from 22), the model's tasks 4/4. Of its three fixes, p2-shop-back-for-more passed and go-search-web's reading wasn't taken as a choice; go-search-web (\"trims in Lion\") and p2-form-full (\"Heck I agreed to the rules\", before the country step) failed on misheard words. Most pulse misses are the recognizer's words; one was voice mode's: \"Hey, Molt, scroll down.\" said while the planner worked was dropped as having no wake phrase, since the helper hears everything while the browser is busy and spots none. New since: an utterance begun with the wake phrase (in its text) counts while the browser thinks, and ends a planner run. The whole spoken suite runs, typed and on pulse.",
  "e2e_scenarios": ""
 }

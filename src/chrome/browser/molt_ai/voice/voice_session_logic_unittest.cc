@@ -433,6 +433,58 @@ TEST_F(VoiceSessionLogicTest, AnUtteranceBegunAsTheWindowClosed) {
       logic_->OnFinal("next page", 0.9, bare + 100, 0).utterance.has_value());
 }
 
+// The spoken suite on build 58: "Hey, Molt, scroll down." said while the
+// planner worked was dropped for want of a wake phrase. The helper hears
+// everything while the browser is busy, so it spots none; the phrase is in
+// the text, and the command is taken (and ends the run).
+TEST_F(VoiceSessionLogicTest, TheWakePhraseInTheTextWhileTheBrowserWorks) {
+  Begin();
+  logic_->OnOwnSpeechInReference(true, now_);
+  logic_->OnWake(now_);
+  logic_->OnFinal("new moltnet window", 0.9, now_ + 500);
+  now_ += 1000;
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_);
+  EXPECT_FALSE(logic_->wake_required());
+  now_ += 15000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("Still working on it.", now_);
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 1000);
+  now_ += 15000;
+  logic_->OnSpeechStart(now_);
+  SessionActions taken =
+      logic_->OnFinal("Hey, Molt, scroll down.", 0.9, now_ + 2400);
+  EXPECT_EQ(taken.utterance, "Hey, Molt, scroll down.");
+  EXPECT_TRUE(taken.dropped_reason.empty());
+
+  // Without the phrase, still nothing but the "stop" words.
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 3000);
+  now_ += 5000;
+  logic_->OnSpeechStart(now_);
+  SessionActions bare = logic_->OnFinal("scroll down", 0.9, now_ + 1500);
+  EXPECT_FALSE(bare.utterance.has_value());
+  EXPECT_EQ(bare.dropped_reason, "no wake phrase");
+
+  // The phrase alone, and a pause: a wake, and the command after it.
+  now_ += 5000;
+  logic_->OnSpeechStart(now_);
+  SessionActions alone = logic_->OnFinal("Hey Molt.", 0.9, now_ + 800);
+  EXPECT_FALSE(alone.utterance.has_value());
+  EXPECT_TRUE(alone.dropped_reason.empty());
+  logic_->OnSpeechStart(now_ + 2000);
+  EXPECT_EQ(logic_->OnFinal("scroll down", 0.9, now_ + 3000).utterance,
+            "scroll down");
+
+  // Its own voice saying the phrase, heard back while it speaks: not the
+  // user (the helper hears that as over its voice, as before).
+  logic_->OnBrowserActivity(BrowserActivity::kThinking, now_ + 3500);
+  now_ += 10000;
+  logic_->OnBrowserActivity(BrowserActivity::kSpeaking, now_);
+  logic_->OnBrowserSaid("Hey Molt fan club, the official page.", now_);
+  logic_->OnSpeechStart(now_ + 300);
+  SessionActions echo = logic_->OnFinal("Hey Molt fan club", 0.9, now_ + 1500);
+  EXPECT_FALSE(echo.utterance.has_value());
+}
+
 // The spoken suite's file run: "Leave dialogs.test? ... Say leave or stay."
 // held up the "go back" that raised it, so the browser stayed busy after
 // asking; "stay" without the wake phrase was dropped.

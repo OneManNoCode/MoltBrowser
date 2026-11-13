@@ -506,6 +506,10 @@ class VoiceSessionLogic {
     bool woke = false;
     // It began in always-listening mode or the follow-up window.
     bool open = false;
+    // It began while the helper heard everything (the browser busy, no
+    // wake phrase asked of it): a wake phrase reaches the browser only in
+    // its text.
+    bool heard_all = false;
     // It began while the browser spoke (or just after).
     bool during_speech = false;
     // And that speech was in the echo canceller's reference.
