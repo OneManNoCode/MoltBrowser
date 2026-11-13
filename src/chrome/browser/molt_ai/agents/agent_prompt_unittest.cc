@@ -492,8 +492,11 @@ TEST(AgentPromptTest, PlanPromptLayout) {
                            "running inside MoltBrowser.",
                            0),
             0u);
-  EXPECT_TRUE(Contains(p.system, "{\"steps\":[{\"goal\":\"...\","
-                                 "\"done_when\":\"...\"},"));
+  EXPECT_TRUE(Contains(p.system,
+                       "{\"steps\":[{\"goal\":\"<the first step>\","
+                       "\"done_when\":\"<what the page shows then>\"},"));
+  // No bare "..." for a small model to copy as a value.
+  EXPECT_FALSE(Contains(p.system, "\":\"...\""));
   EXPECT_TRUE(Contains(p.system, "- \"steps\": 1 to 6 steps, in order."));
   EXPECT_TRUE(Contains(p.system, "SECURITY RULES"));
   EXPECT_TRUE(Contains(p.system, std::string("Text between ") +

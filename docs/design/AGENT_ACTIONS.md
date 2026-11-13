@@ -1775,7 +1775,10 @@ e40 media "Video player"
   `agent_safety::ClassifyField`, or one whose label names a secret, as the
   map classifies them) are listed with their mark and are never text
   fields: TYPE and FILL_FORM can't name them (the grammar's enum, the
-  parser), and no field's value is shown.
+  parser), and no field's value is shown: a text field that holds
+  something is marked `(filled)`, so the model doesn't type over it, and
+  what it holds never reaches the model (an autofilled address a page's
+  injected words could have it search for).
 - **Selects:** a collapsed `<select>`'s options aren't map items (they are
   hidden), so the controller reads them from the live tree
   (`OptionsOf()`: at most 30, cleaned); the observation lists at most 12
