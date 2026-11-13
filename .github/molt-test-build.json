@@ -1,11 +1,11 @@
 {
- "resume_run": "43378590553",
+ "resume_run": "43395839595",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-fifth build (incremental on the fifty-fourth, run 43378590553). The fifty-fourth passed 3057/3057 unit tests and 122/122 browser tests. With Qwen3.5 4B, pulse passed the model's tasks 4/4: the order task asked before Place order, a no left the order, and the filled fields were kept. Typed passed Phase 2 30/30 and the model's tasks 3/4: the order task stopped with \"the model's replies couldn't be used\" after its replies were refused (no plan was said), nothing done to the page, and the log didn't say why. New since: voice mode's test log has a planner line for each model reply the agent refuses (REFUSED or REFUSED_PLAN, with the reply and why), and the kit's digest shows planner lines in full (ARefusedReplySaysWhyApart, ARefusedPlanSaysWhyApart, ARefusedReplysLine). Only the model's tasks and Phase 1's two model scenarios run.",
+ "request": "Fifty-sixth build (incremental on the fifty-fifth, run 43395839595). The fifty-fifth passed the model's tasks 4/4 typed and 4/4 on pulse. Pulse misheard browser-ask-ai (\"is fai what is a trem\"), which went to the planner, and the new REFUSED_PLAN lines showed why such runs fail: both times, the model copied the prompt's format as its plan ({\"goal\":\"<the first step>\",...}). New since: the planner's prompt shows the format by a real example plan (for \"find when the city museum opens on Sunday\"), and a step copied from it is refused (RefusesTheExamplesStepsCopied, PlanPromptLayout). Only the model's tasks and Phase 1's two model scenarios run: the model's four tasks check that real plans still come out with the new prompt.",
  "e2e_scenarios": "model-,browser-ask-ai,sec-answer-imitates-prompt"
 }
