@@ -47,8 +47,14 @@ class VoiceAiAnswers {
   static void SetModelForTesting(ModelForTesting model);
   static bool HasModelForTesting();
 
-  static constexpr base::TimeDelta kTimeLimit = base::Seconds(40);
+  // How long an answer may take: a 4B model on a CPU takes minutes (the
+  // spoken suite on build 52 gave up at 40 s); "stop" ends it at any time.
+  static constexpr base::TimeDelta kTimeLimit = base::Minutes(3);
+  // "Still working on it." after this, then after twice as long each time,
+  // at most kStillWorkingLongest apart, as the planner says it
+  // (voice_controller.h): a wait is never silent for long.
   static constexpr base::TimeDelta kStillWorking = base::Seconds(12);
+  static constexpr base::TimeDelta kStillWorkingLongest = base::Seconds(60);
 
   VoiceAiAnswers();
   VoiceAiAnswers(const VoiceAiAnswers&) = delete;
@@ -90,6 +96,8 @@ class VoiceAiAnswers {
   ProgressCallback progress_;
   DoneCallback done_;
   base::OneShotTimer still_working_timer_;
+  // The wait before the next "Still working on it.".
+  base::TimeDelta still_working_after_ = kStillWorking;
   base::OneShotTimer time_limit_timer_;
   base::WeakPtrFactory<VoiceAiAnswers> weak_factory_{this};
 };

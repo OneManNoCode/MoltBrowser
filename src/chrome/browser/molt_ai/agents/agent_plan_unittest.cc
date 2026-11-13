@@ -166,6 +166,32 @@ TEST(AgentPlanTest, RefusesControlCharactersAndLineBreaks) {
   }
 }
 
+TEST(AgentPlanTest, RefusesTheFormatsPlaceholders) {
+  // Build 53: a plan of {"goal":"<the first step>",...} was adopted and
+  // its goal spoken as "I'll <the first step>.".
+  for (std::string_view bad : {"<the first step>", "<what the page shows then>",
+                               "...", " ... ", "\u2026"}) {
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson(bad, "x") + "]}"),
+              PlanError::kPlaceholder)
+        << bad;
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson("x", bad) + "]}"),
+              PlanError::kPlaceholder)
+        << bad;
+    // On any step, not only the first.
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson("a", "b") + "," +
+                      StepJson(bad, "x") + "]}"),
+              PlanError::kPlaceholder)
+        << bad;
+  }
+  // Real steps that merely contain angle brackets or dots are kept.
+  for (std::string_view fine : {"Open the cart", "Type 1 < 2 into the box",
+                                "Wait...then click Next", "<Next>"}) {
+    EXPECT_EQ(ErrorOf("{\"steps\":[" + StepJson(fine, "x") + "]}"),
+              PlanError::kNone)
+        << fine;
+  }
+}
+
 TEST(AgentPlanTest, ShowsHiddenCharactersAsReplacement) {
   // Bidi controls, zero-width characters, BOM, the line and paragraph
   // separators and C1 controls reorder, hide or break text: shown as
@@ -298,9 +324,9 @@ TEST(AgentPlanTest, RefusesWrongKeysAndTypes) {
 
 TEST(AgentPlanTest, ErrorTextsAreFixedAndNeverEmpty) {
   for (PlanError e :
-       {PlanError::kNotJsonObject, PlanError::kWrongKeys,
-        PlanError::kStepCount, PlanError::kTooLong, PlanError::kEmpty,
-        PlanError::kBadCharacters}) {
+       {PlanError::kNotJsonObject, PlanError::kWrongKeys, PlanError::kStepCount,
+        PlanError::kTooLong, PlanError::kEmpty, PlanError::kBadCharacters,
+        PlanError::kPlaceholder}) {
     EXPECT_FALSE(PlanErrorText(e).empty());
   }
   EXPECT_EQ(PlanErrorText(PlanError::kStepCount), "a plan has 1 to 6 steps");

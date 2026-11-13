@@ -10,6 +10,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
@@ -287,6 +288,9 @@ ActionError ReadText(const base::DictValue& d,
     return ActionError::kEmpty;
   if (HasControlChars(*s, multiline))
     return ActionError::kBadCharacters;
+  // The reason is only shown; every other value is acted on or said.
+  if (key != "reason" && IsPlaceholder(*s))
+    return ActionError::kPlaceholder;
   *out = *s;
   return ActionError::kNone;
 }
@@ -860,8 +864,52 @@ std::string_view ActionErrorText(ActionError error) {
       return "it chose an option of an element that lists no options";
     case ActionError::kUnknownOption:
       return "it named an option that the element doesn't list";
+    case ActionError::kPlaceholder:
+      return "it wrote a placeholder (\"...\" or <...>) where a real value "
+             "goes";
   }
   return "";
+}
+
+bool IsPlaceholder(std::string_view value) {
+  // Trimmed of ASCII spaces, and of a scheme ("https://...").
+  while (!value.empty() && (value.front() == ' ' || value.front() == '\t'))
+    value.remove_prefix(1);
+  while (!value.empty() && (value.back() == ' ' || value.back() == '\t'))
+    value.remove_suffix(1);
+  for (std::string_view scheme : {"https://", "http://"}) {
+    if (value.size() > scheme.size() &&
+        base::StartsWith(value, scheme, base::CompareCase::INSENSITIVE_ASCII)) {
+      value.remove_prefix(scheme.size());
+      break;
+    }
+  }
+  if (value.empty())
+    return false;
+  // Only dots and ellipses.
+  constexpr std::string_view kEllipsis = "\xE2\x80\xA6";  // U+2026
+  std::string_view rest = value;
+  bool dots = true;
+  while (!rest.empty()) {
+    if (rest.front() == '.') {
+      rest.remove_prefix(1);
+    } else if (base::StartsWith(rest, kEllipsis)) {
+      rest.remove_prefix(kEllipsis.size());
+    } else {
+      dots = false;
+      break;
+    }
+  }
+  if (dots)
+    return true;
+  // A description in angle brackets, of words: "<the text to type>", not
+  // a tag someone may mean to type ("<b>").
+  if (value.size() >= 3 && value.front() == '<' && value.back() == '>') {
+    const std::string_view inner = value.substr(1, value.size() - 2);
+    return inner.find_first_of("<>") == std::string_view::npos &&
+           inner.find(' ') != std::string_view::npos;
+  }
+  return false;
 }
 
 ParsedAction ParseAction(std::string_view json,

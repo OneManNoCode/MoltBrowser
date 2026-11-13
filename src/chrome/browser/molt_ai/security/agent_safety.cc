@@ -155,6 +155,10 @@ constexpr char kElementProbeFn[] = R"JS((sels) => sels.map((sel) => {
                        el.getAttribute('placeholder') || el.textContent ||
                        (buttonish ? el.value : '') || '')
                     .replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (el.localName === 'textarea' ||
+        (el.localName === 'input' && el.type !== 'password')) {
+      out.text = String(el.value || '').slice(0, 512);
+    }
     return out;
   } catch (e) {
     return {found: false};
@@ -363,6 +367,10 @@ std::vector<ElementProbe> ParseElementProbes(const base::Value& result,
       p.navigates_to = *nav;
     if (const std::string* label = d.FindString("label"))
       p.label = *label;
+    // Only an ordinary field's: never a password, card or code field's.
+    const std::string* text = d.FindString("text");
+    if (text && p.field_kind == FieldKind::kOrdinary)
+      p.text = text->substr(0, kMaxProbeTextBytes);
   }
   return out;
 }

@@ -80,6 +80,11 @@ PlanError ReadStepText(const base::DictValue& step,
     return PlanError::kBadCharacters;
   if (std::all_of(s->begin(), s->end(), IsAsciiSpace))
     return PlanError::kEmpty;
+  // A goal is spoken ("I'll <the first step>.") and both steer the agent,
+  // so the format's example copied as-is is refused like the agent's own
+  // placeholders (agent_actions::IsPlaceholder).
+  if (agent_actions::IsPlaceholder(*s))
+    return PlanError::kPlaceholder;
   *out = Shown(*s);
   return PlanError::kNone;
 }
@@ -136,6 +141,9 @@ std::string_view PlanErrorText(PlanError error) {
     case PlanError::kBadCharacters:
       return "a goal or done_when contained line breaks or control "
              "characters";
+    case PlanError::kPlaceholder:
+      return "a goal or done_when was a placeholder (\"...\" or <...>) "
+             "where a real step goes";
   }
   return "";
 }

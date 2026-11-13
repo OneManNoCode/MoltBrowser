@@ -396,6 +396,9 @@ IN_PROC_BROWSER_TEST_F(VoiceLearningBrowserTest,
   voice()->HandleUtterance("my videos");
   EXPECT_TRUE(Spoke("Running my videos."));
   Say("stop");
+  // The site its first step began to open may still commit: once it has,
+  // the page stays (a confirmation holds on one page only).
+  content::WaitForLoadStop(web_contents());
 
   // Forgotten after a spoken "yes".
   Say("forget my videos");

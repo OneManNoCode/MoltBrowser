@@ -83,6 +83,7 @@ enum class PlanError {
   kTooLong,
   kEmpty,          // a blank goal or done_when
   kBadCharacters,  // control characters (a line break too)
+  kPlaceholder,    // the format's "<...>" or "..." copied, not a real step
 };
 
 // Fixed text, for the retry note the model sees.

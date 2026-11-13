@@ -1140,9 +1140,12 @@ Schema (`BuildPlanSchema()`), every key required, no others:
 `ParsePlan()` reads it with `base::JSONReader` (RFC, nesting at most 4:
 object, list, step, string) and refuses anything else: text around it, a
 second object, other or missing keys, other types, no step or more than 6,
-a string over its cap in characters, a blank one, and control characters,
+a string over its cap in characters, a blank one, control characters,
 line breaks and tabs included (a step is one line, so it can't put lines of
-its own into a prompt). Characters that reorder, hide or break text, or
+its own into a prompt), and the format's own example copied as it is (a
+`<...>` description or `...`, `agent_actions::IsPlaceholder()`: build 53
+adopted `{"goal":"<the first step>",...}` and said "I'll <the first
+step>."). Characters that reorder, hide or break text, or
 show nothing (C1 controls, bidi controls, zero-width characters, U+2028 /
 U+2029, U+FEFF, the soft hyphen U+00AD, the Hangul fillers U+115F, U+1160,
 U+3164 and U+FFA0, the variation selectors U+FE00-U+FE0F and
@@ -1775,7 +1778,10 @@ e40 media "Video player"
   `agent_safety::ClassifyField`, or one whose label names a secret, as the
   map classifies them) are listed with their mark and are never text
   fields: TYPE and FILL_FORM can't name them (the grammar's enum, the
-  parser), and no field's value is shown.
+  parser), and no field's value is shown: a text field that holds
+  something is marked `(filled)`, so the model doesn't type over it, and
+  what it holds never reaches the model (an autofilled address a page's
+  injected words could have it search for).
 - **Selects:** a collapsed `<select>`'s options aren't map items (they are
   hidden), so the controller reads them from the live tree
   (`OptionsOf()`: at most 30, cleaned); the observation lists at most 12
@@ -1826,6 +1832,7 @@ Every rule of the snapshot's path applies at the same point:
 | Leaving the run's sites | a click whose node or nearest link ancestor links to another origin asks "Click X — it opens <origin>" (`CheckClick()`, the same function the snapshot's path now uses); a page that moved asks CONTINUE as before |
 | Form submits | a `<button>` (whose type the tree doesn't say: taken as a submit, the HTML default) or `<input type=submit|image>` inside a form asks "— it submits a form on <origin>", and so does an `<input type=submit|image>` outside any form (it can only submit one it is tied to with `form="id"`, which the tree doesn't show either). The question can't name the form's action (the tree doesn't have it); the page it loads is checked as any other. On the element snapshot's path, which reads the action, a form going to another origin is "submits a form to <origin>". The page's label is quoted with its own quotes and dashes made plain (`agent_page_map::QuotedLabel()`), and said as "the one labelled ..." in one phrase |
 | Password fields | never typed into, by grammar, parser, the agent's check of the live node, and the controller |
+| A filled field | what a field holds stays unless the new text is the user's own words: TYPE or FILL_FORM into a field that isn't empty types only text found, as whole words, in the GOAL (without ASCII case, punctuation or runs of spaces), and text the field already holds isn't typed again ("Nothing typed: the field already holds that text", a step that succeeds). `agent_page_map::CheckOverwrite()`, on the live node's value; on the element snapshot's path, on the probe's `text` (an ordinary field's only, never shown to the model). A replayed routine step types the user's own text, so only text already there is skipped. Build 53: on a checkout form holding the person's address the model typed "123 Main St" over "1 River Road", then the same street again until the task ran out of time |
 | Payment card and one-time code fields | stricter: never typed into on this path (the snapshot's path asks, then types); the user types them, as passwords |
 | Untrusted page text | everything in the observation is page text, cleaned, one line per name, fenced; a name can't close its quotes or start a line |
 | Confirmations | the same `RequestConfirmation()` and chat chips; nothing in the map is read as a command |

@@ -130,6 +130,18 @@ TEST(AgentPromptTest, TextOnlyNeverMentionsAnImage) {
   }
 }
 
+// A field the map marks (filled) holds the user's text: the rules say to
+// leave it (the agent keeps it anyway: agent_page_map::CheckOverwrite).
+TEST(AgentPromptTest, SaysToLeaveAFilledField) {
+  const AgentPrompt p = BuildAgentPrompt(SampleInput());
+  const size_t line = p.system.find(
+      "- A field marked (filled) already holds the user's text: leave it as "
+      "it is unless the GOAL gives new words for it.\n");
+  ASSERT_NE(line, std::string::npos);
+  EXPECT_LT(p.system.find("\nRULES:\n"), line);
+  EXPECT_LT(line, p.system.find("SECURITY RULES"));
+}
+
 TEST(AgentPromptTest, ScreenshotAddsItsRulesAndNoteAndNothingElse) {
   PromptInput text_in = SampleInput();
   PromptInput image_in = text_in;
@@ -244,7 +256,7 @@ TEST(AgentPromptTest, HistoryIsSanitizedAndObservationsFencedAndCut) {
 
 // The pieces site tools add (agent_prompt.cc).
 constexpr std::string_view kToolAction =
-    "  {\"reason\":\"...\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
+    "  {\"reason\":\"<why>\",\"action\":\"CALL_TOOL\",\"tool\":\"t1\","
     "\"arguments\":{...}}\n"
     "      call tool t1 of the TOOLS list with its arguments\n";
 constexpr std::string_view kToolRules =
@@ -328,7 +340,7 @@ TEST(AgentPromptTest, PageToolsTextStaysInsideTheFence) {
 
 // The pieces a plan adds (agent_prompt.cc; agent_plan.h).
 constexpr std::string_view kReplanAction =
-    "  {\"reason\":\"...\",\"step\":2,\"action\":\"REPLAN\"}\n"
+    "  {\"reason\":\"<why>\",\"step\":2,\"action\":\"REPLAN\"}\n"
     "      the PLAN no longer fits: a new plan is written from the current "
     "page\n";
 constexpr std::string_view kPlanRules =
@@ -492,8 +504,11 @@ TEST(AgentPromptTest, PlanPromptLayout) {
                            "running inside MoltBrowser.",
                            0),
             0u);
-  EXPECT_TRUE(Contains(p.system, "{\"steps\":[{\"goal\":\"...\","
-                                 "\"done_when\":\"...\"},"));
+  EXPECT_TRUE(Contains(p.system,
+                       "{\"steps\":[{\"goal\":\"<the first step>\","
+                       "\"done_when\":\"<what the page shows then>\"},"));
+  // No bare "..." for a small model to copy as a value.
+  EXPECT_FALSE(Contains(p.system, "\":\"...\""));
   EXPECT_TRUE(Contains(p.system, "- \"steps\": 1 to 6 steps, in order."));
   EXPECT_TRUE(Contains(p.system, "SECURITY RULES"));
   EXPECT_TRUE(Contains(p.system, std::string("Text between ") +

@@ -96,11 +96,21 @@ struct ElementProbe {
   std::string navigates_to;
   // Short visible label (aria-label / text / value), for confirmation UI.
   std::string label;
+  // A text <input>'s or a <textarea>'s current text, at most
+  // kMaxProbeTextBytes; empty for a password, card or code field. The
+  // browser's own, to compare with what the agent would type there
+  // (agent_page_map::CheckOverwrite): never shown to the model.
+  std::string text;
 };
 
+// The probe reads at most 512 characters of a field's text; in UTF-8 at
+// most 4 bytes each.
+inline constexpr size_t kMaxProbeTextBytes = 2048;
+
 // Builds a script (run it in an isolated world) that evaluates to a list
-// with one {found, type, autocomplete, submit, nav, label} dict per selector
-// in |selectors|, in order. Selectors are JSON-encoded, never spliced raw.
+// with one {found, type, autocomplete, submit, nav, label, text} dict per
+// selector in |selectors|, in order. Selectors are JSON-encoded, never
+// spliced raw.
 std::string BuildElementProbeScript(const std::vector<std::string>& selectors);
 
 // Parses the result of BuildElementProbeScript. Always returns |expected|

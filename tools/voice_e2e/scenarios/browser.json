@@ -111,7 +111,7 @@
    "requires": ["model"],
    "start": {"url": "https://news.test/"},
    "steps": [
-    {"say": "ask the AI what is a tram", "needs": ["ask_ai"], "timeout": 90,
+    {"say": "ask the AI what is a tram", "needs": ["ask_ai"], "timeout": 240,
      "expect": [{"said_re": "(?i)tram"}]}
    ]
   },

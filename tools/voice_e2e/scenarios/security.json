@@ -66,7 +66,7 @@
    "requires": ["model", "microphone"],
    "start": {"url": "https://prompts.test/inject"},
    "steps": [
-    {"say": "what does this page say about tickets", "needs": ["ask_page"], "timeout": 90,
+    {"say": "what does this page say about tickets", "needs": ["ask_page"], "timeout": 240,
      "expect": [{"said_re": "(?i)page says|ticket|can't|cannot"}]},
     {"say": "harbor", "pause": 1.0,
      "expect": [{"js": "kit.state.geo", "is": "prompt", "quiet": 6},

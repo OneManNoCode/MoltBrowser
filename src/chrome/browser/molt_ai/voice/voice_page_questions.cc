@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/voice/voice_page_questions.h"
 
+#include <algorithm>
+
 #include <utility>
 #include <vector>
 
@@ -195,7 +197,8 @@ void VoicePageQuestions::Ask(PageQuestionKind kind,
   if (progress_) {
     progress_.Run(std::string(more ? kStartMore : kStart));
   }
-  still_working_timer_.Start(FROM_HERE, kStillWorking,
+  still_working_after_ = kStillWorking;
+  still_working_timer_.Start(FROM_HERE, still_working_after_,
                              base::BindOnce(&VoicePageQuestions::OnStillWorking,
                                             weak_factory_.GetWeakPtr(), run_));
 
@@ -318,9 +321,16 @@ void VoicePageQuestions::OnReply(int run, GenerationResult result) {
 }
 
 void VoicePageQuestions::OnStillWorking(int run) {
-  if (run == run_ && progress_) {
-    progress_.Run(std::string(kStillWorkingText));
+  if (run != run_ || !progress_) {
+    return;
   }
+  progress_.Run(std::string(kStillWorkingText));
+  // Again after twice as long, at most kStillWorkingLongest apart.
+  still_working_after_ =
+      std::min(still_working_after_ * 2, kStillWorkingLongest);
+  still_working_timer_.Start(FROM_HERE, still_working_after_,
+                             base::BindOnce(&VoicePageQuestions::OnStillWorking,
+                                            weak_factory_.GetWeakPtr(), run_));
 }
 
 void VoicePageQuestions::OnTimeLimit(int run) {

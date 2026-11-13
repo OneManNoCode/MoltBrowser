@@ -115,6 +115,11 @@ inline constexpr int64_t kConfirmationTimeoutMs = 30000;
 // After "I've stopped. Now say that again.": how long what is heard over
 // its voice is that sentence heard back (ConversationState::said_again_ms).
 inline constexpr int64_t kSaidAgainEchoMs = 6000;
+// After "<name> field. Say type, then your text.": for this long, words the
+// grammar has nothing for (two or more) are typed into that field, as if
+// "type" came first. The recognizer loses or mangles "type" ("I will try
+// the rook", the spoken suite on build 52).
+inline constexpr int64_t kFieldPromptTextMs = 30000;
 // The player's default skip.
 inline constexpr int kDefaultSkipSeconds = 10;
 // Increments per "louder" or "quieter" on a page's volume slider.
@@ -440,6 +445,10 @@ struct ConversationState {
   // The text field being typed into.
   PageNodeHandle field;
   int64_t field_page_id = -1;
+  // When voice mode last said "<name> field. Say type, then your text."
+  // (-1: not since): what follows soon is likely that text
+  // (kFieldPromptTextMs).
+  int64_t field_prompt_ms = -1;
   // The select last chosen ("click country"), whose options "choose
   // France" names first.
   PageNodeHandle select;

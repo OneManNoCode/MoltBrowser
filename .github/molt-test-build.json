@@ -1,11 +1,11 @@
 {
- "resume_run": "43340315665",
+ "resume_run": "43363518824",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-second build (incremental on the fifty-first, run 43340315665). The fifty-first passed 3051/3051 unit tests (the new APlannerLine, RejectsAHostThatNamesNoSite, ABreathWrittenAsAWordAfterTheWakePhrase, OverItsVoiceWhileWorkingWordsThatChooseNothing among them) and 121/122 browser tests: the new ItsOwnWordsHeardBackDontStopThePlanner took the stub planner's \"Done\" sentence late (a test bug, fixed). Its spoken suite never ran: Qwen3.5 4B is a hidden registry entry (pinned, not yet offered), and the model step refused it. New since: the browser lists pinned hidden models only with the test switch --molt-ai-test-hidden-models, which the kit passes with a model file, and fetch_model.py --allow-hidden fetches one at its pin. The spoken suite runs typed and pulse:clean on Phase 2's tasks and the model's, with Qwen3.5 4B planning.",
+ "request": "Fifty-fourth build (incremental on the fifty-third, run 43363518824). The fifty-third passed 3051/3053 unit tests (two fixed since: field values were shown against the design, so a filled field is now marked \"(filled)\" and nothing more; PlanPromptLayout checked the old format) and 121/122 browser tests (the routine test raced a navigation; it now waits for the load). With Qwen3.5 4B typed passed Phase 2 30/30, the model's tasks 3/4 and asking the AI; the order task failed: the plan's first step was \"<the first step>\" (said aloud), then the model typed \"123 Main St\" over the form's \"1 River Road\" and retyped it until time ran out. New since: a plan step that is a placeholder is refused (RefusesTheFormatsPlaceholders); TYPE and FILL_FORM into a filled field type only the user's own words, and text a field already holds isn't typed again (AFilledFieldKeepsWhatThePersonPutThere); the element probe returns an ordinary field's text for that check (ParsesAnOrdinaryFieldsTextOnly); the agent's rules say to leave a (filled) field.",
  "e2e_scenarios": "p2-,model-,browser-ask-ai,sec-answer-imitates-prompt"
 }
