@@ -325,7 +325,10 @@ jobs:
         if: env.E2E_MODEL != ''
         run: |
           set -euo pipefail
-          path="$(python3 -I tools/models/fetch_model.py "$E2E_MODEL" "$HOME/.cache/moltbrowser-models")"
+          # A hidden entry too: the suite measures a model before it is
+          # offered (the kit starts the browser with
+          # --molt-ai-test-hidden-models).
+          path="$(python3 -I tools/models/fetch_model.py --allow-hidden "$E2E_MODEL" "$HOME/.cache/moltbrowser-models")"
           ls -l "$path"
           echo "VOICE_E2E_MODEL_FILE=$path" >> "$GITHUB_ENV"
       - name: Keep the pinned model

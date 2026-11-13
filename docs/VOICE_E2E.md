@@ -95,7 +95,10 @@ need one), `--model-file <file>.gguf` (that model, named as the browser's
 registry names it and checked against its pin already, is linked into each
 scenario's home, `~/.moltbrowser/models/`, where the browser loads it; the
 link is removed after the scenario, so the report never carries the model;
-it implies `--model`), `--gate-latency` (the 1.5 s target fails the run) and
+it implies `--model`; the browser is started with
+`--molt-ai-test-hidden-models`, so a hidden registry entry that is fully
+pinned can be measured before it is offered, as CI's `e2e_model` does with
+`tools/models/fetch_model.py --allow-hidden`), `--gate-latency` (the 1.5 s target fails the run) and
 `--browser-flag` (one more flag for the browser), and `--display current`
 to watch it on a real screen.
 

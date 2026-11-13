@@ -406,6 +406,19 @@ class RunnerTest(unittest.TestCase):
         self.assertIn("--use-file-for-fake-audio-capture=/x/scenario.wav%noloop", f)
         self.assertNotIn(dump, flags("typed"))
 
+    def test_a_model_file_lists_the_hidden_models(self):
+        # With a model file, the browser lists the registry's pinned hidden
+        # entries: the suite measures one before it is offered.
+        def flags(model_file):
+            cfg = runner.RunConfig(audio="typed", model_file=model_file)
+            r = runner.Runner(self.exe, os.path.join(self.d, "speech"),
+                              os.path.join(self.d, "report"), FakeServer(), "spki",
+                              cfg, log=lambda *a: None)
+            return r.flags("log")
+        switch = "--molt-ai-test-hidden-models"
+        self.assertIn(switch, flags(os.path.join(self.d, "m.gguf")))
+        self.assertNotIn(switch, flags(None))
+
     def test_shields_off_disables_molt_shield(self):
         cfg = runner.RunConfig(audio="typed", settle=0.2)
         r = runner.Runner(self.exe, os.path.join(self.d, "speech"),

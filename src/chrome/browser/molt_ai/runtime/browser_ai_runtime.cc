@@ -409,6 +409,12 @@ bool IsLowerHex(const char* s, size_t length) {
   return true;
 }
 
+// The model's own file pinned: its revision, SHA-256 and size.
+bool IsPinned(const ModelRegistryEntry& entry) {
+  return IsLowerHex(entry.revision, 40) && IsLowerHex(entry.sha256, 64) &&
+         entry.file_size_bytes > 0;
+}
+
 // Fail closed for multimodal models: the model and its projector both
 // pinned.
 bool IsPinnedWithProjector(const ModelRegistryEntry& entry,
@@ -1067,9 +1073,15 @@ struct BrowserAIRuntime::Impl {
 
   void InitializeModelRegistry() {
     std::lock_guard<std::mutex> lock(models_mutex);
+    // The spoken test kit's switch lists the pinned hidden entries too.
+    const bool list_hidden = base::CommandLine::ForCurrentProcess()->HasSwitch(
+        kTestListHiddenModelsSwitch);
     for (size_t i = 0; i < kModelRegistrySize; ++i) {
       const auto& entry = kModelRegistry[i];
-      if (entry.hidden) continue;  // not offered until pinned
+      // Not offered until pinned and measured (unhidden by hand).
+      if (entry.hidden && !(list_hidden && IsPinned(entry))) {
+        continue;
+      }
       const ProjectorEntry* projector = FindProjector(entry.model_id);
       if (projector && !IsPinnedWithProjector(entry, *projector)) {
         continue;  // fail closed: a multimodal model only when fully pinned

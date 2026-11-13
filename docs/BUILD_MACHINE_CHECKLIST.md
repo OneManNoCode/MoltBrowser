@@ -513,7 +513,11 @@ dimensions; every file's tensor types have Vulkan shaders; the licences
 were read from the base models' cards (Gemma 4 E4B is Apache 2.0, Gemma 3
 keeps its own terms). The items below are what to re-run when re-pinning;
 hidden entries (`qwen3.5-4b`, `gemma4-e4b`, `voxtral-mini-3b`) stay hidden
-until run with these files on the build machine.
+until run with these files on the build machine. The spoken suite measures
+a hidden chat model on a real build first (`"e2e_model": "qwen3.5-4b"` in
+`.github/molt-test-build.json`: the browser lists pinned hidden entries only
+with its test switch `--molt-ai-test-hidden-models`); it is unhidden by hand
+once it runs and plans well there.
 
 - [x] Embedding model (from #28; done from CI):
   ```bash
