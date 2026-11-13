@@ -4,10 +4,12 @@
 #include "chrome/browser/molt_ai/agents/agent_plan.h"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 #include "base/json/json_reader.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/hidden_chars.h"
 
@@ -59,6 +61,22 @@ std::string Shown(std::string_view s) {
   return out.substr(begin, end - begin + 1);
 }
 
+// True if |s| is a text of the example plan or its GOAL (ASCII case,
+// spaces at the ends and a final full stop aside).
+bool IsFromExample(std::string_view s) {
+  s = base::TrimWhitespaceASCII(s, base::TRIM_ALL);
+  if (!s.empty() && s.back() == '.')
+    s.remove_suffix(1);
+  if (base::EqualsCaseInsensitiveASCII(s, kExampleGoal))
+    return true;
+  return std::any_of(std::begin(kExamplePlan), std::end(kExamplePlan),
+                     [s](const ExampleStep& step) {
+                       return base::EqualsCaseInsensitiveASCII(s, step.goal) ||
+                              base::EqualsCaseInsensitiveASCII(s,
+                                                               step.done_when);
+                     });
+}
+
 ParsedPlan Fail(PlanError error) {
   ParsedPlan p;
   p.error = error;
@@ -81,10 +99,12 @@ PlanError ReadStepText(const base::DictValue& step,
   if (std::all_of(s->begin(), s->end(), IsAsciiSpace))
     return PlanError::kEmpty;
   // A goal is spoken ("I'll <the first step>.") and both steer the agent,
-  // so the format's example copied as-is is refused like the agent's own
-  // placeholders (agent_actions::IsPlaceholder).
+  // so a placeholder is refused like the agent's own
+  // (agent_actions::IsPlaceholder), and so is the prompt's example copied.
   if (agent_actions::IsPlaceholder(*s))
     return PlanError::kPlaceholder;
+  if (IsFromExample(*s))
+    return PlanError::kCopiedExample;
   *out = Shown(*s);
   return PlanError::kNone;
 }
@@ -144,6 +164,8 @@ std::string_view PlanErrorText(PlanError error) {
     case PlanError::kPlaceholder:
       return "a goal or done_when was a placeholder (\"...\" or <...>) "
              "where a real step goes";
+    case PlanError::kCopiedExample:
+      return "it copied the example's steps instead of planning the GOAL";
   }
   return "";
 }
@@ -210,6 +232,7 @@ PlanOutcome InterpretPlanReply(const agent_actions::ModelReply& reply,
     note = "Your previous plan was not usable: " +
            std::string(PlanErrorText(parsed.error)) + ".";
   }
+  out.refusal = note;
   if (bad_replies + 1 >= kMaxPlanAttempts) {
     out.decision = PlanDecision::kWithoutPlan;
     out.message =

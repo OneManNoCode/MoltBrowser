@@ -150,7 +150,8 @@ def voice_log_digest(path, limit_events=60):
         out.append("  %7s %-9s %s" % (
             "%+.1fs" % ((t - t0) / 1000.0) if isinstance(t, (int, float)) else "",
             ev.get("e", "?"),
-            json.dumps(rest, ensure_ascii=False)[:1500 if ev.get("e") == "map" else 300]))
+            json.dumps(rest, ensure_ascii=False)[
+                :1500 if ev.get("e") in ("map", "planner") else 300]))
     return out
 
 

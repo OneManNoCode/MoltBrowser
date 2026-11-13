@@ -1,11 +1,11 @@
 {
- "resume_run": "43363518824",
+ "resume_run": "43406444500",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed,pulse:clean",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-fourth build (incremental on the fifty-third, run 43363518824). The fifty-third passed 3051/3053 unit tests (two fixed since: field values were shown against the design, so a filled field is now marked \"(filled)\" and nothing more; PlanPromptLayout checked the old format) and 121/122 browser tests (the routine test raced a navigation; it now waits for the load). With Qwen3.5 4B typed passed Phase 2 30/30, the model's tasks 3/4 and asking the AI; the order task failed: the plan's first step was \"<the first step>\" (said aloud), then the model typed \"123 Main St\" over the form's \"1 River Road\" and retyped it until time ran out. New since: a plan step that is a placeholder is refused (RefusesTheFormatsPlaceholders); TYPE and FILL_FORM into a filled field type only the user's own words, and text a field already holds isn't typed again (AFilledFieldKeepsWhatThePersonPutThere); the element probe returns an ordinary field's text for that check (ParsesAnOrdinaryFieldsTextOnly); the agent's rules say to leave a (filled) field.",
- "e2e_scenarios": "p2-,model-,browser-ask-ai,sec-answer-imitates-prompt"
+ "request": "Fifty-seventh build (incremental on the fifty-sixth, run 43406444500). The fifty-sixth passed 3061/3061 unit tests and 122/122 browser tests, and the model's tasks 3/4 typed and 3/4 on pulse: the order task failed on both, and its REFUSED lines showed why. The planner wrote a plan of \"...\" twice and the agent copied the action format's first example, NAVIGATE \"<a full https:// address>\", four times; once as \"<https://...>\", which slipped past the placeholder check. The agent's text-only requests went to the model as one raw document without its chat template. New since: every agent request (plan and action) goes as a chat, the rules as the system prompt and the turn as the user message, as the screenshot path always did, and a placeholder in angle brackets is refused. Only the model's tasks and Phase 1's two model scenarios run.",
+ "e2e_scenarios": "model-,browser-ask-ai,sec-answer-imitates-prompt"
 }

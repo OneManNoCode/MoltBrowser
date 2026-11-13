@@ -86,15 +86,18 @@ struct PlannerStep {
 // An action the planner's model chose and how its run went, worked or not
 // (Delegate::PlannerActed()): for voice mode's test log alone
 // (voice_test_log.h), where a run that failed shows why. Never said, kept
-// or acted on. Every string is untrusted: page text and the model's.
+// or acted on. Every string is untrusted: page text and the model's. A
+// model reply the run refused is reported as one too (kPlannerRefused).
 struct PlannerAction {
   // The plan step it worked on (1-based); 0 without a plan.
   int plan_step = 0;
-  // "CLICK", "TYPE", "NAVIGATE", ... (the web agent's step).
+  // "CLICK", "TYPE", "NAVIGATE", ... (the web agent's step), or
+  // kPlannerRefused / kPlannerRefusedPlan.
   std::string action;
   // What it acted on (`button "Delete"`), the URL or query.
   std::string target;
-  // What it typed, a scroll's direction, a tool's arguments.
+  // What it typed, a scroll's direction, a tool's arguments; a refused
+  // reply's text.
   std::string value;
   bool ok = false;
   // The browser's note on how it went ("Element not found").
@@ -102,6 +105,11 @@ struct PlannerAction {
   // The model's stated reason.
   std::string reason;
 };
+
+// PlannerAction::action for a model reply the run refused, as an action or
+// as a plan: |value| is the reply and |note| why it was refused.
+inline constexpr char kPlannerRefused[] = "REFUSED";
+inline constexpr char kPlannerRefusedPlan[] = "REFUSED_PLAN";
 
 // How a replayed step ended (Delegate::PlannerReplayed()).
 enum class PlannerReplay {

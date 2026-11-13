@@ -903,11 +903,13 @@ bool IsPlaceholder(std::string_view value) {
   if (dots)
     return true;
   // A description in angle brackets, of words: "<the text to type>", not
-  // a tag someone may mean to type ("<b>").
+  // a tag someone may mean to type ("<b>"); or a placeholder in angle
+  // brackets, "<...>" or "<https://...>" (build 56 navigated to that).
   if (value.size() >= 3 && value.front() == '<' && value.back() == '>') {
     const std::string_view inner = value.substr(1, value.size() - 2);
-    return inner.find_first_of("<>") == std::string_view::npos &&
-           inner.find(' ') != std::string_view::npos;
+    if (inner.find_first_of("<>") != std::string_view::npos)
+      return false;
+    return inner.find(' ') != std::string_view::npos || IsPlaceholder(inner);
   }
   return false;
 }
@@ -1091,6 +1093,7 @@ ReplyOutcome InterpretReply(const ModelReply& reply,
     note = "Your previous reply was not a usable action: " +
            std::string(ActionErrorText(parsed.error)) + ".";
   }
+  out.refusal = note;
   if (bad_in_a_row + 1 >= kMaxAttemptsPerStep ||
       bad_total + 1 >= kMaxBadRepliesPerRun) {
     out.message =

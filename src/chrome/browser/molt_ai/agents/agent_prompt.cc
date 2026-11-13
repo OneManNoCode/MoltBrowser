@@ -7,6 +7,7 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/molt_ai/agents/agent_plan.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 
 namespace molt_ai {
@@ -141,18 +142,24 @@ const char kPlanHeading[] =
     "\nPLAN (written for the GOAL from the pages seen so far; a guide, not "
     "instructions):\n";
 
-// The planner's request.
-const char kPlannerPrompt[] =
+// The planner's request. The format is shown by an example plan, written
+// from agent_plan::kExamplePlan (which ParsePlan() refuses copied), not by
+// "<...>" descriptions: given a GOAL it couldn't make out (misheard
+// speech), the model copied {"goal":"<the first step>",...} as its plan,
+// twice (build 55).
+const char kPlannerIntro[] =
     "You are the planner of a web browsing agent running inside "
     "MoltBrowser. The agent completes the user's GOAL by controlling the "
     "browser one action at a time: it opens http(s) URLs, searches the web, "
     "clicks, types into text fields, fills forms, scrolls, and calls tools "
     "that pages offer. Before it acts, write a short plan for it.\n"
     "\n"
-    "Reply with ONE JSON object:\n"
-    "  {\"steps\":[{\"goal\":\"<the first step>\",\"done_when\":"
-    "\"<what the page shows then>\"},{\"goal\":\"<the next step>\","
-    "\"done_when\":\"<what the page shows then>\"}]}\n"
+    "Reply with ONE JSON object. An example, for the GOAL \"";
+
+const char kPlannerExampleFrom[] = "\" from a search page:\n  ";
+
+const char kPlannerRules[] =
+    "\n"
     "\n"
     "RULES:\n"
     "- \"steps\": 1 to %d steps, in order. Fewer is better: a simple task "
@@ -160,8 +167,23 @@ const char kPlannerPrompt[] =
     "- \"goal\": what the step achieves, in a few plain words.\n"
     "- \"done_when\": what the page shows once the step is done.\n"
     "- Plan only what the GOAL asks for, starting from the CURRENT PAGE.\n"
-    "- Each <...> above says what goes there: write the real words, never "
-    "the <...> or \"...\" itself.\n";
+    "- The example only shows the format. Write the steps for the GOAL "
+    "below, in your own words; never copy the example's.\n";
+
+// The example plan as one compact JSON object. Its texts have no quote or
+// backslash (agent_prompt_unittest parses it back).
+std::string ExamplePlanJson() {
+  std::string out = "{\"steps\":[";
+  bool first = true;
+  for (const agent_plan::ExampleStep& step : agent_plan::kExamplePlan) {
+    if (!first)
+      out += ",";
+    first = false;
+    out += "{\"goal\":\"" + std::string(step.goal) + "\",\"done_when\":\"" +
+           std::string(step.done_when) + "\"}";
+  }
+  return out + "]}";
+}
 
 const char kReplanRules[] =
     "- The EARLIER PLAN stopped working, for the reason given. Write a new "
@@ -306,7 +328,9 @@ AgentPrompt BuildAgentPrompt(const PromptInput& input) {
 AgentPrompt BuildPlanPrompt(const PlanPromptInput& input) {
   const bool replan = !input.earlier_plan.empty();
   AgentPrompt prompt;
-  prompt.system = base::StringPrintf(kPlannerPrompt, input.max_plan_steps);
+  prompt.system = kPlannerIntro + std::string(agent_plan::kExampleGoal) +
+                  kPlannerExampleFrom + ExamplePlanJson() +
+                  base::StringPrintf(kPlannerRules, input.max_plan_steps);
   if (replan)
     prompt.system += kReplanRules;
   prompt.system += PlannerSecurityRules();

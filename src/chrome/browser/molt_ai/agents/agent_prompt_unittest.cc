@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "chrome/browser/molt_ai/agents/agent_plan.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -504,11 +505,27 @@ TEST(AgentPromptTest, PlanPromptLayout) {
                            "running inside MoltBrowser.",
                            0),
             0u);
+  // The format is shown by the example plan, never by "<...>" descriptions
+  // or a bare "..." for a small model to copy as a value (build 55 copied
+  // {"goal":"<the first step>",...}).
+  const std::string example =
+      "{\"steps\":[{\"goal\":\"Search for the city museum's opening hours\","
+      "\"done_when\":\"the results list the museum's website\"},"
+      "{\"goal\":\"Open the museum's page about opening hours\","
+      "\"done_when\":\"the page shows Sunday's opening time\"}]}";
   EXPECT_TRUE(Contains(p.system,
-                       "{\"steps\":[{\"goal\":\"<the first step>\","
-                       "\"done_when\":\"<what the page shows then>\"},"));
-  // No bare "..." for a small model to copy as a value.
+                       "Reply with ONE JSON object. An example, for the GOAL "
+                       "\"find when the city museum opens on Sunday\" from a "
+                       "search page:\n  " +
+                           example + "\n\nRULES:\n"));
+  // (The security rules quote the fence markers, which have "<".)
+  EXPECT_FALSE(
+      Contains(p.system.substr(0, p.system.find("SECURITY RULES")), "<"));
   EXPECT_FALSE(Contains(p.system, "\":\"...\""));
+  EXPECT_TRUE(Contains(p.system, "never copy the example's."));
+  // The example is a plan in the format, which the parser refuses copied.
+  EXPECT_EQ(agent_plan::ParsePlan(example).error,
+            agent_plan::PlanError::kCopiedExample);
   EXPECT_TRUE(Contains(p.system, "- \"steps\": 1 to 6 steps, in order."));
   EXPECT_TRUE(Contains(p.system, "SECURITY RULES"));
   EXPECT_TRUE(Contains(p.system, std::string("Text between ") +
