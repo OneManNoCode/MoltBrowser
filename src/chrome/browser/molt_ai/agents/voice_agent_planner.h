@@ -89,6 +89,11 @@ class VoiceAgentPlanner : public voice::VoicePlanner {
   void OnAction(const WebAgent::Step& step);
   // A step Start()'s run carried out: reported to the delegate.
   void OnStep(const WebAgent::Step& step);
+  // A model reply Start()'s run refused: reported to the delegate as a
+  // PlannerAction for the test log.
+  void OnRefusedReply(bool plan,
+                      const std::string& why,
+                      const std::string& reply);
   // Replay(): the reply for the observation (the step, then the end), the
   // step as it ran, and the run's end.
   std::string PickReplay(const agent_actions::Observation& observation);

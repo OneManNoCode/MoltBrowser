@@ -217,6 +217,28 @@ TEST(VoiceTestLogLinesTest, APlannerLine) {
             std::string::npos);
 }
 
+TEST(VoiceTestLogLinesTest, ARefusedReplysLine) {
+  // A model reply the agent refused (voice::kPlannerRefused): the reply as
+  // the value, why as the note.
+  TestLogLines lines(1);
+  TestLogLines::PlannerSummary refused;
+  refused.action = "REFUSED";
+  refused.value = R"({"reason":"r","action":"DONE","result":"..."})";
+  refused.ok = false;
+  refused.note =
+      "Your previous reply was not a usable action: it was a placeholder.";
+  const std::string line = lines.Planner(7, refused, "");
+  EXPECT_EQ(line.find("{\"t\":7,\"w\":1,\"e\":\"planner\",\"action\":"
+                      "\"REFUSED\",\"value\":\"{"),
+            0u)
+      << line;
+  EXPECT_NE(line.find("DONE"), std::string::npos) << line;
+  EXPECT_NE(line.find(",\"ok\":false,\"note\":\"Your previous reply was not "
+                      "a usable action: it was a placeholder.\"}\n"),
+            std::string::npos)
+      << line;
+}
+
 TEST(VoiceTestLogLinesTest, WritesWhatChanged) {
   TestLogLines lines(1);
   TestLogState state;

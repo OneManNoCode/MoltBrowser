@@ -18,7 +18,9 @@ voice_test_log.cc): one JSON object per line, appended as it happens.
   {"e": "earcon", "kind"}
   {"e": "duck", "on", "tabs"}
   {"e": "planner", "step"?, "action", "target"?, "value"?, "ok", "note"?,
-   "reason"?}  (an action the planner's model chose, and how it went)
+   "reason"?}  (an action the planner's model chose, and how it went;
+   "action" REFUSED or REFUSED_PLAN for a reply the agent refused, with the
+   reply as "value" and why as "note")
 
 The browser writes it; the kit reads it as untrusted input all the same
 (a line too long, not JSON or not an object is skipped and counted).

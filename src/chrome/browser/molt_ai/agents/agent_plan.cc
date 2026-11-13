@@ -210,6 +210,7 @@ PlanOutcome InterpretPlanReply(const agent_actions::ModelReply& reply,
     note = "Your previous plan was not usable: " +
            std::string(PlanErrorText(parsed.error)) + ".";
   }
+  out.refusal = note;
   if (bad_replies + 1 >= kMaxPlanAttempts) {
     out.decision = PlanDecision::kWithoutPlan;
     out.message =

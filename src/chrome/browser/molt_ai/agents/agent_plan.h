@@ -125,6 +125,10 @@ struct PlanOutcome {
   PlanDecision decision = PlanDecision::kStop;
   Plan plan;
   std::string message;
+  // Why the reply was refused, when it was (asked again, or the run goes on
+  // without a plan): a fixed text, never the reply's words. Empty for a
+  // usable plan and for a stop that isn't the reply's fault.
+  std::string refusal;
 };
 
 // What to do with a plan reply. |bad_replies| counts the unusable replies

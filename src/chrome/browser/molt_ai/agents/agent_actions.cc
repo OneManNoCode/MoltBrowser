@@ -1091,6 +1091,7 @@ ReplyOutcome InterpretReply(const ModelReply& reply,
     note = "Your previous reply was not a usable action: " +
            std::string(ActionErrorText(parsed.error)) + ".";
   }
+  out.refusal = note;
   if (bad_in_a_row + 1 >= kMaxAttemptsPerStep ||
       bad_total + 1 >= kMaxBadRepliesPerRun) {
     out.message =

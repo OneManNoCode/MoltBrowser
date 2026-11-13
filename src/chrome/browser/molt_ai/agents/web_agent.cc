@@ -170,6 +170,10 @@ void WebAgent::SetActionCallback(StepCallback on_action) {
   action_cb_ = std::move(on_action);
 }
 
+void WebAgent::SetRefusedReplyCallback(RefusedReplyCallback on_refused) {
+  refused_cb_ = std::move(on_refused);
+}
+
 // ----------------------------------------------------------------
 // Public API
 // ----------------------------------------------------------------
@@ -497,6 +501,12 @@ void WebAgent::OnLLMDecision(GenerationResult result) {
   // content.
   DVLOG(1) << "[WebAgent] LLM replied (" << reply.text.size()
            << " chars) decision=" << static_cast<int>(outcome.decision);
+  if (!outcome.refusal.empty() && refused_cb_) {
+    const base::WeakPtr<WebAgent> self = weak_factory_.GetWeakPtr();
+    refused_cb_.Run(/*plan=*/false, outcome.refusal, reply.text);
+    if (!self || cancelled_)
+      return;
+  }
 
   switch (outcome.decision) {
     case agent_actions::ReplyDecision::kStop:
@@ -2180,11 +2190,18 @@ void WebAgent::AskPlanner() {
 void WebAgent::OnPlanReply(GenerationResult result) {
   if (cancelled_) return;
 
-  agent_plan::PlanOutcome outcome = agent_plan::InterpretPlanReply(
-      ToModelReply(result), bad_plan_replies_);
+  const agent_actions::ModelReply reply = ToModelReply(result);
+  agent_plan::PlanOutcome outcome =
+      agent_plan::InterpretPlanReply(reply, bad_plan_replies_);
   // Model output: log only its shape.
   DVLOG(1) << "[WebAgent] Plan reply: decision="
            << static_cast<int>(outcome.decision);
+  if (!outcome.refusal.empty() && refused_cb_) {
+    const base::WeakPtr<WebAgent> self = weak_factory_.GetWeakPtr();
+    refused_cb_.Run(/*plan=*/true, outcome.refusal, reply.text);
+    if (!self || cancelled_)
+      return;
+  }
 
   switch (outcome.decision) {
     case agent_plan::PlanDecision::kStop:

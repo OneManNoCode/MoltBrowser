@@ -405,6 +405,10 @@ struct ReplyOutcome {
   ReplyDecision decision = ReplyDecision::kStop;
   AgentAction action;
   std::string message;
+  // Why the reply was refused, when it was (retried, or the run stops on
+  // one bad reply too many): a fixed text, never the reply's words. Empty
+  // for a usable reply and for a stop that isn't the reply's fault.
+  std::string refusal;
 };
 
 // |bad_in_a_row| and |bad_total| count the unusable replies before this

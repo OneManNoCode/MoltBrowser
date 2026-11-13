@@ -261,6 +261,14 @@ class WebAgent : public content::WebContentsObserver,
   // current step changes, or the run goes on without one.
   using PlanCallback = base::RepeatingCallback<void(const PlanUpdate&)>;
 
+  // A model reply the run refused, as a plan (|plan|) or as an action: why
+  // (the browser's fixed note, as the model's next request gives it) and
+  // the reply itself, untrusted model text. For voice mode's test log
+  // alone, where a run the model's replies stopped shows why: never said,
+  // kept or acted on.
+  using RefusedReplyCallback = base::RepeatingCallback<
+      void(bool plan, const std::string& why, const std::string& reply)>;
+
   // How the run observed pages: the observations through the page map and
   // through the element snapshot.
   struct ObservationCounts {
@@ -310,6 +318,10 @@ class WebAgent : public content::WebContentsObserver,
   // it runs (voice mode says what the agent is about to do). Set before
   // Start(); may be null.
   void SetActionCallback(StepCallback on_action);
+
+  // Called with each model reply the run refuses (RefusedReplyCallback),
+  // before it asks again or stops. Set before Start(); may be null.
+  void SetRefusedReplyCallback(RefusedReplyCallback on_refused);
 
   // The run uses the page map (outside MoltNet windows) even while
   // #molt-agent-page-map is off: voice mode's runs, which act on the page
@@ -564,6 +576,7 @@ class WebAgent : public content::WebContentsObserver,
   ConfirmCallback confirm_cb_;
   PlanCallback plan_cb_;
   StepCallback action_cb_;
+  RefusedReplyCallback refused_cb_;
 
   // The page map (#molt-agent-page-map, read at Start(); never in MoltNet):
   // whether the run uses it, holds the tab's controller, the observation

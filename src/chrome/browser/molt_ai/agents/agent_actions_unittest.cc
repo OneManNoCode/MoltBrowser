@@ -682,6 +682,38 @@ TEST(AgentActionsTest, CutOffAndMalformedRepliesAreRetried) {
   EXPECT_EQ(o.message.find("e99"), std::string::npos);
 }
 
+TEST(AgentActionsTest, ARefusedReplySaysWhyApart) {
+  // Usable: nothing refused.
+  EXPECT_TRUE(
+      InterpretReply(Ok(R"({"reason":"r","action":"CLICK","target":"e3"})"),
+                     SampleObservation(), 0, 0)
+          .refusal.empty());
+  // Asked again: why, without the retry's instructions or the reply.
+  ReplyOutcome o =
+      InterpretReply(Ok(R"({"reason":"r","action":"CLICK","target":"e99"})"),
+                     SampleObservation(), 0, 0);
+  ASSERT_EQ(o.decision, ReplyDecision::kRetry);
+  EXPECT_EQ(o.refusal,
+            "Your previous reply was not a usable action: it named an element "
+            "that is not in ELEMENTS.");
+  EXPECT_EQ(o.message.find(o.refusal), 0u);
+  // The reply that stops the run is refused too.
+  ModelReply bad;
+  bad.invalid_output = true;
+  o = InterpretReply(bad, SampleObservation(), kMaxAttemptsPerStep - 1, 0);
+  ASSERT_EQ(o.decision, ReplyDecision::kStop);
+  EXPECT_FALSE(o.refusal.empty());
+  // A stop that isn't the reply's fault refuses nothing.
+  ModelReply failed;
+  failed.error_message = "No model is loaded.";
+  EXPECT_TRUE(
+      InterpretReply(failed, SampleObservation(), 0, 0).refusal.empty());
+  ModelReply cancelled;
+  cancelled.cancelled = true;
+  EXPECT_TRUE(
+      InterpretReply(cancelled, SampleObservation(), 0, 0).refusal.empty());
+}
+
 TEST(AgentActionsTest, RetriesAreBounded) {
   ModelReply bad;
   bad.invalid_output = true;

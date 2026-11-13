@@ -174,6 +174,8 @@ void VoiceAgentPlanner::OnModelChecked(
                                       &BrowserAIRuntime::GetInstance());
   agent_->SetActionCallback(base::BindRepeating(&VoiceAgentPlanner::OnAction,
                                                 weak_factory_.GetWeakPtr()));
+  agent_->SetRefusedReplyCallback(base::BindRepeating(
+      &VoiceAgentPlanner::OnRefusedReply, weak_factory_.GetWeakPtr()));
   agent_->SetUsePageMap(true);
   agent_->Start(goal,
                 base::BindRepeating(&VoiceAgentPlanner::OnStep,
@@ -220,6 +222,20 @@ void VoiceAgentPlanner::OnStep(const WebAgent::Step& step) {
     }
     delegate_->PlannerCarriedOut(carried);
   }
+}
+
+void VoiceAgentPlanner::OnRefusedReply(bool plan,
+                                       const std::string& why,
+                                       const std::string& reply) {
+  if (replaying_ || !delegate_) {
+    return;
+  }
+  voice::PlannerAction refused;
+  refused.action = plan ? voice::kPlannerRefusedPlan : voice::kPlannerRefused;
+  refused.value = reply;
+  refused.ok = false;
+  refused.note = why;
+  delegate_->PlannerActed(refused);
 }
 
 void VoiceAgentPlanner::Replay(content::WebContents* contents,

@@ -384,6 +384,29 @@ TEST(AgentPlanTest, UnusableRepliesAreAskedAgainOnceThenDropped) {
   }
 }
 
+TEST(AgentPlanTest, ARefusedPlanSaysWhyApart) {
+  EXPECT_TRUE(InterpretPlanReply(Reply(PlanJson(2)), 0).refusal.empty());
+  const ModelReply placeholder = Reply(
+      "{\"steps\":[{\"goal\":\"<the first step>\",\"done_when\":"
+      "\"<what the page shows then>\"}]}");
+  PlanOutcome o = InterpretPlanReply(placeholder, 0);
+  ASSERT_EQ(o.decision, PlanDecision::kRetry);
+  EXPECT_EQ(o.refusal,
+            "Your previous plan was not usable: a goal or done_when was a "
+            "placeholder (\"...\" or <...>) where a real step goes.");
+  EXPECT_FALSE(Contains(o.refusal, "first step"));
+  // The one after which the run goes on without a plan is refused too.
+  o = InterpretPlanReply(placeholder, kMaxPlanAttempts - 1);
+  ASSERT_EQ(o.decision, PlanDecision::kWithoutPlan);
+  EXPECT_EQ(o.refusal,
+            "Your previous plan was not usable: a goal or done_when was a "
+            "placeholder (\"...\" or <...>) where a real step goes.");
+  // A stop that isn't the reply's fault refuses nothing.
+  ModelReply failed;
+  failed.error_message = "No model loaded";
+  EXPECT_TRUE(InterpretPlanReply(failed, 0).refusal.empty());
+}
+
 TEST(AgentPlanTest, FailuresThatRetryingCannotFixStop) {
   ModelReply cancelled;
   cancelled.cancelled = true;
