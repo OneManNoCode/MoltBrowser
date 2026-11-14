@@ -26,7 +26,8 @@
 #   * a crate only the overlay has loses its BUILD.gn and README.chromium
 #     once gnrt no longer builds it (gone, or back to a placeholder);
 #   * with --fresh, a crate the overlay only patches is patched afresh;
-#   * a patch the overlay removed, left in the checkout, isn't applied;
+#   * a patch the overlay removed, left in the checkout with the crate it
+#     patched, isn't applied or copied back with --fresh;
 #   * without --fresh, gnrt's output that differs from the overlay's stays.
 
 set -euo pipefail
@@ -178,8 +179,10 @@ UNFORMATTED"
   put "$o/dropped/v1/BUILD.gn" "$HEADER
 dropped
 UNFORMATTED"
-  # An earlier run left a patch the overlay has since removed.
+  # An earlier run left a patch the overlay has since removed, and the
+  # crate it patched.
   put "$CR/third_party/rust/chromium_crates_io/patches/stale-v1/0001-x.patch" 'stale patch'
+  put "$CR/third_party/rust/chromium_crates_io/vendor/stale-v1/src/lib.rs" 'stale patched'
   # CI copies the overlay in first: here only wrapper/, so handedit/ is a
   # hand-edited file the checkout has as upstream.
   cp "$o/wrapper/v1/lib.rs" "$CR/third_party/rust/wrapper/v1/lib.rs"

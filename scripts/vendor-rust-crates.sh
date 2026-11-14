@@ -127,8 +127,13 @@ fi
 cd "$CHROMIUM_SRC"
 
 if [[ "$FRESH" == 1 ]]; then
-  # Every crate the overlay vendors or patches: gnrt keeps a crate directory
-  # that exists and patches only the crates it downloads.
+  # vendor/ is gnrt's output alone: back to upstream's first, so what an
+  # earlier run downloaded or patched there (a crate the overlay has since
+  # stopped vendoring or patching) isn't kept and copied back.
+  git -C "$CHROMIUM_SRC" clean -fdxq -- third_party/rust/chromium_crates_io/vendor
+  git -C "$CHROMIUM_SRC" checkout -q -- third_party/rust/chromium_crates_io/vendor
+  # Then every crate the overlay vendors or patches: gnrt keeps a crate
+  # directory that exists and patches only the crates it downloads.
   echo "==> Fresh: removing the overlay's vendored and patched crates from the checkout"
   for dir in "$OVERLAY_CIO"/vendor/*/ "$OVERLAY_CIO"/patches/*/; do
     [[ -d "$dir" ]] || continue
@@ -345,6 +350,7 @@ PY
   # from the overlay so upstream's version is used.
   overrides=()
   for dir in "$OVERLAY_CIO"/vendor/*/; do
+    [[ -d "$dir" ]] || continue
     name="$(basename "$dir")"
     if [[ -n "$(git ls-files -- "third_party/rust/chromium_crates_io/vendor/$name" | head -n 1)" ]]; then
       overrides+=("$name")
