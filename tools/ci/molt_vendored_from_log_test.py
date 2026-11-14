@@ -76,6 +76,12 @@ class VendoredFromLogTest(unittest.TestCase):
             self.repo, 'src/third_party/rust/chromium_crates_io/vendor/a/build.sh'), os.X_OK))
         self.assertFalse(os.path.exists(os.path.join(self.repo, 'src/third_party/rust/old/gone.rs')))
 
+    def test_byte_order_marks_where_the_log_chunks_start(self):
+        data = archive([('file', 'src/third_party/rust/a.rs', b'a' * 4000)])
+        lines = log(data).splitlines()
+        lines = ['\ufeff' + l if i % 3 == 0 else l for i, l in enumerate(lines)]
+        self.assertEqual(self.run_log('\n'.join(lines) + '\n'), 0)
+
     def test_a_log_without_timestamps(self):
         data = archive([('file', 'src/third_party/rust/a.rs', b'a')])
         self.assertEqual(self.run_log(log(data, stamp=False)), 0)

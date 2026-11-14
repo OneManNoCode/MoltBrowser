@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "inout"
   epoch = "0.1"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/inout-v0_1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/inout-v0_1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/inout-v0_1/src/errors.rs",
     "//third_party/rust/chromium_crates_io/vendor/inout-v0_1/src/inout.rs",
@@ -21,28 +20,33 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/inout-v0_1/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/inout-v0_1/src/reserved.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
-  cargo_pkg_authors = "RustCrypto Developers"
+      cargo_pkg_authors = "RustCrypto Developers"
   cargo_pkg_name = "inout"
-  cargo_pkg_description = "Custom reference types for code generic over in-place and buffer-to-buffer modes of operation."
-  cargo_pkg_repository = "https://github.com/RustCrypto/utils"
+      cargo_pkg_description = "Custom reference types for code generic over in-place and buffer-to-buffer modes of operation."
+      cargo_pkg_repository = "https://github.com/RustCrypto/utils"
   cargo_pkg_version = "0.1.4"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/block_padding/v0_3:lib",
-    "//third_party/rust/generic_array/v0_14:lib",
+      "//third_party/rust/block_padding/v0_3:lib",
+      "//third_party/rust/generic_array/v0_14:lib",
   ]
-  features = [ "block-padding" ]
+  features = [
+    "block-padding",
+  ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -60,11 +64,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

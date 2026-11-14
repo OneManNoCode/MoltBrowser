@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "atoi_simd"
   epoch = "0.18"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/atoi_simd-v0_18/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/atoi_simd-v0_18/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/atoi_simd-v0_18/src/error.rs",
     "//third_party/rust/chromium_crates_io/vendor/atoi_simd-v0_18/src/fallback.rs",
@@ -30,21 +29,23 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/atoi_simd-v0_18/src/simd/shared_64.rs",
     "//third_party/rust/chromium_crates_io/vendor/atoi_simd-v0_18/src/simd/sse_avx.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
-  cargo_pkg_authors = "Dmitry Rodionov <gh@rdmtr.com>"
+      cargo_pkg_authors = "Dmitry Rodionov <gh@rdmtr.com>"
   cargo_pkg_name = "atoi_simd"
-  cargo_pkg_description = "Fast `&[u8]` to integer parser"
-  cargo_pkg_repository = "https://github.com/RoDmitry/atoi_simd"
+      cargo_pkg_description = "Fast `&[u8]` to integer parser"
+      cargo_pkg_repository = "https://github.com/RoDmitry/atoi_simd"
   cargo_pkg_version = "0.18.1"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/debug_unsafe/v0_1:lib",
-    "//third_party/rust/rustversion/v1:lib",
+      "//third_party/rust/debug_unsafe/v0_1:lib",
+      "//third_party/rust/rustversion/v1:lib",
   ]
   features = [
     "default",
@@ -55,6 +56,7 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -72,11 +74,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

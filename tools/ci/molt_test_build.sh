@@ -116,11 +116,15 @@ cmd_overlay() {
   cp -R "$ROOT/src/." "$SRC/"
   [ -d "$SRC/chrome/browser/molt_ai" ] || { echo "overlay copy failed"; exit 1; }
   say "Rust crates (gnrt)"
+  # With its copy-back: the vendored tree is committed in src/, and must be
+  # what gnrt makes of it, since a Mac build uses it without gnrt.
+  "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC"
   if [ "${MOLT_VENDOR_DUMP:-0}" = 1 ]; then
-    "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC"
     dump_vendored
-  else
-    "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC" --no-copy-back
+  elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- src/third_party/rust)" ]; then
+    echo "::error::gnrt's output differs from the vendored tree in src/third_party/rust: commit it with tools/ci/molt_vendored_from_log.py on this log"
+    dump_vendored
+    exit 1
   fi
 }
 

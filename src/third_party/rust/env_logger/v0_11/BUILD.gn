@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "env_logger"
   epoch = "0.11"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/fmt/humantime.rs",
     "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/fmt/kv.rs",
@@ -24,23 +23,26 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/writer/mod.rs",
     "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/writer/target.rs",
   ]
-  inputs = [ "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/../README.md" ]
+  inputs = [
+    "//third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/src/../README.md",
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
   cargo_pkg_name = "env_logger"
-  cargo_pkg_description = "A logging implementation for `log` which is configured via an environment variable."
-  cargo_pkg_repository = "https://github.com/rust-cli/env_logger"
+      cargo_pkg_description = "A logging implementation for `log` which is configured via an environment variable."
+      cargo_pkg_repository = "https://github.com/rust-cli/env_logger"
   cargo_pkg_version = "0.11.11"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
   deps = [
-    "//third_party/rust/anstream/v1:lib",
-    "//third_party/rust/anstyle/v1:lib",
-    "//third_party/rust/env_filter/v2:lib",
-    "//third_party/rust/jiff/v0_2:lib",
-    "//third_party/rust/log/v0_4:lib",
+      "//third_party/rust/anstream/v1:lib",
+      "//third_party/rust/anstyle/v1:lib",
+      "//third_party/rust/env_filter/v2:lib",
+      "//third_party/rust/jiff/v0_2:lib",
+      "//third_party/rust/log/v0_4:lib",
   ]
   features = [
     "auto-color",
@@ -54,6 +56,7 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -71,11 +74,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

@@ -12,29 +12,34 @@ cargo_crate("lib") {
   crate_name = "block_buffer"
   epoch = "0.10"
   crate_type = "rlib"
-  crate_root = "//third_party/rust/chromium_crates_io/vendor/block-buffer-v0_10/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/block-buffer-v0_10/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/block-buffer-v0_10/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/block-buffer-v0_10/src/sealed.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2018"
-  cargo_pkg_authors = "RustCrypto Developers"
+      cargo_pkg_authors = "RustCrypto Developers"
   cargo_pkg_name = "block-buffer"
-  cargo_pkg_description = "Buffer type for block processing of data"
-  cargo_pkg_repository = "https://github.com/RustCrypto/utils"
+      cargo_pkg_description = "Buffer type for block processing of data"
+      cargo_pkg_repository = "https://github.com/RustCrypto/utils"
   cargo_pkg_version = "0.10.4"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
-  deps = [ "//third_party/rust/generic_array/v0_14:lib" ]
+  deps = [
+      "//third_party/rust/generic_array/v0_14:lib",
+  ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -52,11 +57,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

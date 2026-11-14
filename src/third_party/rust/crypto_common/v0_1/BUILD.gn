@@ -12,30 +12,37 @@ cargo_crate("lib") {
   crate_name = "crypto_common"
   epoch = "0.1"
   crate_type = "rlib"
-  crate_root = "//third_party/rust/chromium_crates_io/vendor/crypto-common-v0_1/src/lib.rs"
-  sources = [ "//third_party/rust/chromium_crates_io/vendor/crypto-common-v0_1/src/lib.rs" ]
-  inputs = []
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/crypto-common-v0_1/src/lib.rs"
+  sources = [
+    "//third_party/rust/chromium_crates_io/vendor/crypto-common-v0_1/src/lib.rs",
+  ]
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2018"
-  cargo_pkg_authors = "RustCrypto Developers"
+      cargo_pkg_authors = "RustCrypto Developers"
   cargo_pkg_name = "crypto-common"
-  cargo_pkg_description = "Common cryptographic traits"
-  cargo_pkg_repository = "https://github.com/RustCrypto/traits"
+      cargo_pkg_description = "Common cryptographic traits"
+      cargo_pkg_repository = "https://github.com/RustCrypto/traits"
   cargo_pkg_version = "0.1.7"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
   deps = [
-    "//third_party/rust/generic_array/v0_14:lib",
-    "//third_party/rust/typenum/v1:lib",
+      "//third_party/rust/generic_array/v0_14:lib",
+      "//third_party/rust/typenum/v1:lib",
   ]
-  features = [ "std" ]
+  features = [
+    "std",
+  ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -53,11 +60,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

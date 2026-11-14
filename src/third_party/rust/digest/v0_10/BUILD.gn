@@ -12,40 +12,40 @@ cargo_crate("lib") {
   crate_name = "digest"
   epoch = "0.10"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/lib.rs"
   sources = [
-    "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/core_api.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/core_api/ct_variable.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/core_api/rt_variable.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/core_api/wrapper.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/core_api/xof_reader.rs",
-    "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/dev.rs",
+    "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/core_api.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/dev/fixed.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/dev/mac.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/dev/rng.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/dev/variable.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/dev/xof.rs",
+    "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/dev.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/digest.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/digest-v0_10/src/mac.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2018"
-  cargo_pkg_authors = "RustCrypto Developers"
+      cargo_pkg_authors = "RustCrypto Developers"
   cargo_pkg_name = "digest"
-  cargo_pkg_description =
-      "Traits for cryptographic hash functions and message authentication codes"
-  cargo_pkg_repository = "https://github.com/RustCrypto/traits"
+      cargo_pkg_description = "Traits for cryptographic hash functions and message authentication codes"
+      cargo_pkg_repository = "https://github.com/RustCrypto/traits"
   cargo_pkg_version = "0.10.7"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
   deps = [
-    "//third_party/rust/block_buffer/v0_10:lib",
-    "//third_party/rust/crypto_common/v0_1:lib",
+      "//third_party/rust/block_buffer/v0_10:lib",
+      "//third_party/rust/crypto_common/v0_1:lib",
   ]
   features = [
     "alloc",
@@ -59,6 +59,7 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -76,11 +77,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

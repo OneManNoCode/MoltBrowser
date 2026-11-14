@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "anydoc"
   epoch = "0.1"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/error.rs",
     "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/csv.rs",
@@ -81,28 +80,32 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/text.rs",
     "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/uri.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2024"
   cargo_pkg_name = "anydoc"
-  cargo_pkg_description = "Convert documents (doc, docx, odt, rtf, epub, pdf, presentations, spreadsheets, csv) to GitHub-Flavored Markdown"
-  cargo_pkg_repository = "https://github.com/firecrawl/anydoc"
+      cargo_pkg_description = "Convert documents (doc, docx, odt, rtf, epub, pdf, presentations, spreadsheets, csv) to GitHub-Flavored Markdown"
+      cargo_pkg_repository = "https://github.com/firecrawl/anydoc"
   cargo_pkg_version = "0.1.6"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
   deps = [
-    "//third_party/rust/calamine/v0_36:lib",
-    "//third_party/rust/cfb/v0_14:lib",
-    "//third_party/rust/csv/v1:lib",
-    "//third_party/rust/encoding_rs/v0_8:lib",
-    "//third_party/rust/flate2/v1:lib",
-    "//third_party/rust/log/v0_4:lib",
-    "//third_party/rust/pdf_inspector/v0_1:lib",
-    "//third_party/rust/quick_xml/v0_41:lib",
-    "//third_party/rust/zip/v8:lib",
+      "//third_party/rust/calamine/v0_36:lib",
+      "//third_party/rust/cfb/v0_14:lib",
+      "//third_party/rust/csv/v1:lib",
+      "//third_party/rust/encoding_rs/v0_8:lib",
+      "//third_party/rust/flate2/v1:lib",
+      "//third_party/rust/log/v0_4:lib",
+      "//third_party/rust/pdf_inspector/v0_1:lib",
+      "//third_party/rust/quick_xml/v0_41:lib",
+      "//third_party/rust/zip/v8:lib",
   ]
+
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -120,11 +123,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

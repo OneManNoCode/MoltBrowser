@@ -1,12 +1,12 @@
 {
- "resume_run": "43527235720",
- "run_tests": false,
+ "resume_run": "43571112825",
+ "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixty-first build (incremental on the sixtieth, run 43527235720), for MoltShield's vendored Rust crates. The adblock crates aren't committed in src/: every test build vendors them with gnrt on the runner and throws the result away, and a Mac build (the owner's v0.3.0 release, or a test build) has to vendor them itself first. With vendor_dump, stage 1 runs vendor-rust-crates.sh with its copy-back and prints what changed under src/third_party/rust into its log, so the tree can be committed (tools/ci/molt_vendored_from_log.py). No tests: only stage 1's overlay step matters here.",
+ "request": "Sixty-second build (incremental on the sixty-first, run 43571112825). Build 61 printed what gnrt vendors for MoltShield (1040 files: adblock 0.13.3 and its crates, the regenerated BUILD.gn files and Cargo.lock), and it is now committed in src/third_party/rust, so a Mac build needs no gnrt step. Every stage now vendors with the copy-back and fails, printing the tree, if gnrt's output differs from what is committed. The tests run, and the typed spoken suite.",
  "e2e_scenarios": "",
- "vendor_dump": true
+ "vendor_dump": false
 }

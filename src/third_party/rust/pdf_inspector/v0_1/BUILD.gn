@@ -12,7 +12,7 @@ cargo_crate("lib") {
   crate_name = "pdf_inspector"
   epoch = "0.1"
   crate_type = "rlib"
-  crate_root = "//third_party/rust/chromium_crates_io/vendor/pdf-inspector-v0_1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/pdf-inspector-v0_1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/pdf-inspector-v0_1/src/adobe_korea1.rs",
     "//third_party/rust/chromium_crates_io/vendor/pdf-inspector-v0_1/src/bin/detect_pdf.rs",
@@ -53,35 +53,40 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/pdf-inspector-v0_1/src/tounicode.rs",
     "//third_party/rust/chromium_crates_io/vendor/pdf-inspector-v0_1/src/types.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
-  cargo_pkg_authors = "Firecrawl Team"
+      cargo_pkg_authors = "Firecrawl Team"
   cargo_pkg_name = "pdf-inspector"
-  cargo_pkg_description = "Fast PDF inspection, classification, and text extraction with smart scanned vs text-based detection"
-  cargo_pkg_repository = "https://github.com/firecrawl/pdf-inspector"
+      cargo_pkg_description = "Fast PDF inspection, classification, and text extraction with smart scanned vs text-based detection"
+      cargo_pkg_repository = "https://github.com/firecrawl/pdf-inspector"
   cargo_pkg_version = "0.1.7"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
   deps = [
-    "//third_party/rust/env_logger/v0_11:lib",
-    "//third_party/rust/log/v0_4:lib",
-    "//third_party/rust/lopdf/v0_41:lib",
-    "//third_party/rust/once_cell/v1:lib",
-    "//third_party/rust/rayon/v1:lib",
-    "//third_party/rust/regex/v1:lib",
-    "//third_party/rust/thiserror/v2:lib",
-    "//third_party/rust/ttf_parser/v0_25:lib",
-    "//third_party/rust/unicode_normalization/v0_1:lib",
+      "//third_party/rust/env_logger/v0_11:lib",
+      "//third_party/rust/log/v0_4:lib",
+      "//third_party/rust/lopdf/v0_41:lib",
+      "//third_party/rust/once_cell/v1:lib",
+      "//third_party/rust/rayon/v1:lib",
+      "//third_party/rust/regex/v1:lib",
+      "//third_party/rust/thiserror/v2:lib",
+      "//third_party/rust/ttf_parser/v0_25:lib",
+      "//third_party/rust/unicode_normalization/v0_1:lib",
   ]
-  features = [ "default" ]
+  features = [
+    "default",
+  ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -99,11 +104,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

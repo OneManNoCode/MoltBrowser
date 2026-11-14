@@ -33,7 +33,8 @@ STAMP = re.compile(r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z ')
 
 
 def strip(line):
-    return STAMP.sub('', line.rstrip('\r\n'))
+    # GitHub's logs come in chunks, each starting with a byte order mark.
+    return STAMP.sub('', line.rstrip('\r\n').lstrip('\ufeff'))
 
 
 def parse(text):
