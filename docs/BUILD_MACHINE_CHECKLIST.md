@@ -398,9 +398,15 @@ to §6 hold the detail (from build-readiness, round 44).
   *Expected:* exit 0. Exit 1: rerun with `--write` and commit. Exit 2: a
   new Blink string needs a decision (docs/FINGERPRINTING.md, "MoltNet: the
   browser's UI language").
-- [ ] Vendor the Rust crates with gnrt (from #11, MoltShield on adblock-rust).
-  The adblock crates are **not** in `src/` yet, so the shield targets don't
-  build without this:
+- [x] Vendor the Rust crates with gnrt (from #11, MoltShield on adblock-rust).
+  *Done from CI (November 2026): the vendored tree is committed in
+  `src/third_party/rust` (test build 61 printed gnrt's output,
+  `tools/ci/molt_vendored_from_log.py` wrote it), and every test build
+  checks that gnrt still produces exactly that tree, so the build machine
+  doesn't run this step. After a crate change, a test build with
+  `"vendor_dump": true` (or a failed drift check) prints the tree to commit;
+  or run it here as below and commit the result.* Before that, the adblock
+  crates weren't in `src/`, and the shield targets didn't build without this:
   ```bash
   ./scripts/vendor-rust-crates.sh 2>&1 | tee ~/molt-v0.3.0/vendor-rust.log
   git status --short src/third_party/rust | head

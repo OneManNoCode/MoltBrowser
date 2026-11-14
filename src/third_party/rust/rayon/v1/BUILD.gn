@@ -116,7 +116,7 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/rayon-v1/src/string.rs",
     "//third_party/rust/chromium_crates_io/vendor/rayon-v1/src/vec.rs",
   ]
-  inputs = [ "//third_party/rust/chromium_crates_io/vendor/rayon-v1/src/iter/plumbing/README.md" ]
+  inputs = []
 
   build_native_rust_unit_tests = false
   edition = "2021"

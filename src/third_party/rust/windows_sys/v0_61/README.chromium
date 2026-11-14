@@ -1,0 +1,11 @@
+Name: windows-sys
+URL: https://crates.io/crates/windows-sys
+Version: 0.61.2
+Revision: 32c3144490c016fe496a0aed769bce60987a2e9d
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/windows-sys-v0_61/license-apache-2.0
+Shipped: yes
+Security Critical: yes
+
+Description: Rust for Windows

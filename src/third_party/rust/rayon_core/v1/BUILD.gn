@@ -42,7 +42,7 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/rayon-core-v1/src/thread_pool/test.rs",
     "//third_party/rust/chromium_crates_io/vendor/rayon-core-v1/src/unwind.rs",
   ]
-  inputs = [ "//third_party/rust/chromium_crates_io/vendor/rayon-core-v1/src/sleep/README.md" ]
+  inputs = []
 
   build_native_rust_unit_tests = false
   edition = "2021"

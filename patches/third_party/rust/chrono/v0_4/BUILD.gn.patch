@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/rust/chrono/v0_4/BUILD.gn
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
+Generated from src/third_party/rust/chrono/v0_4/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chrono/v0_4/BUILD.gn b/third_party/rust/chrono/v0_4/BUILD.gn
+index e1ea166eeb8bf84721bf9a579cab151eb0b0b1b6..e752207842d9fbb0d0758386dae21704fc2e259f 100644
+--- a/third_party/rust/chrono/v0_4/BUILD.gn
++++ b/third_party/rust/chrono/v0_4/BUILD.gn
+@@ -68,7 +68,10 @@ cargo_crate("lib") {
+ 
+   allow_unsafe = true
+ 
+-  deps = [ "//third_party/rust/num_traits/v0_2:lib" ]
++  deps = [
++    "//third_party/rust/num_traits/v0_2:lib",
++    "//third_party/rust/serde/v1:lib",
++  ]
+   if (!is_win) {
+     deps += [ "//third_party/rust/iana_time_zone/v0_1:lib" ]
+   }
+@@ -83,6 +86,7 @@ cargo_crate("lib") {
+     "js-sys",
+     "now",
+     "oldtime",
++    "serde",
+     "std",
+     "wasm-bindgen",
+     "wasmbind",

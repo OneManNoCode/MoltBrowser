@@ -22,6 +22,12 @@
 # Usage:
 #   ./scripts/vendor-rust-crates.sh [--chromium-src PATH] [--no-copy-back]
 #                                   [--build-dir out/MoltBrowser] [--check]
+#                                   [--fresh]
+#
+# --fresh removes the overlay's vendored crates from the checkout first, so
+# gnrt downloads and patches each of them again: what the overlay commits is
+# then gnrt's whole output, not what it left of the copies already there
+# (gnrt keeps a crate directory that exists, missing files and all).
 #
 # --check runs `gn check` and builds //chrome/browser/molt_ai/shield/adblock
 # and //chrome/services/molt_ai/document_parser/anydoc afterwards.
@@ -53,6 +59,7 @@ CHROMIUM_SRC="$ROOT_DIR/chromium/src"
 BUILD_DIR="out/MoltBrowser"
 COPY_BACK=1
 CHECK=0
+FRESH=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,7 +67,8 @@ while [[ $# -gt 0 ]]; do
     --build-dir) BUILD_DIR="$2"; shift 2 ;;
     --no-copy-back) COPY_BACK=0; shift ;;
     --check) CHECK=1; shift ;;
-    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
+    --fresh) FRESH=1; shift ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -76,12 +84,36 @@ else
   export PATH="$ROOT_DIR/depot_tools:$PATH"
 fi
 
+# gnrt formats every BUILD.gn it writes with the `gn` on PATH and only warns
+# when that fails. depot_tools' gn wrapper fails until gclient has
+# bootstrapped depot_tools (as on CI), and the unformatted files then differ
+# from upstream's in formatting alone: copied back, each one would shadow
+# upstream as a patched file. gnrt gets the checkout's own gn binary instead
+# (the one DEPS pins), and its output is checked afterwards.
+case "$(uname -s)" in
+  Darwin) GN_BIN="$CHROMIUM_SRC/buildtools/mac/gn" ;;
+  Linux) GN_BIN="$CHROMIUM_SRC/buildtools/linux64/gn" ;;
+  *) GN_BIN="" ;;
+esac
+if [[ -z "$GN_BIN" || ! -x "$GN_BIN" ]]; then
+  echo "error: no gn binary at ${GN_BIN:-buildtools/<os>/gn}: run gclient sync (or gclient runhooks) first" >&2
+  exit 1
+fi
+GN_SHIM="$(mktemp -d)"
+trap 'rm -rf "${GN_SHIM:?}"' EXIT
+ln -s "$GN_BIN" "$GN_SHIM/gn"
+
 OVERLAY_CIO="$ROOT_DIR/src/third_party/rust/chromium_crates_io"
 CR_CIO="$CHROMIUM_SRC/third_party/rust/chromium_crates_io"
 
 echo "==> [1/4] Copying crate config into $CR_CIO"
 cp "$OVERLAY_CIO/Cargo.toml" "$CR_CIO/Cargo.toml"
 cp "$OVERLAY_CIO/gnrt_config.toml" "$CR_CIO/gnrt_config.toml"
+# The checkout's patches/ back to upstream's first, so a patch since removed
+# from the overlay isn't applied again (and copied back) from a checkout
+# the overlay was copied into before.
+git -C "$CHROMIUM_SRC" clean -fdxq -- third_party/rust/chromium_crates_io/patches
+git -C "$CHROMIUM_SRC" checkout -q -- third_party/rust/chromium_crates_io/patches
 if [[ -d "$OVERLAY_CIO/patches" ]]; then
   # rsync without --delete: upstream Chromium keeps its own patches there.
   rsync -a "$OVERLAY_CIO/patches/" "$CR_CIO/patches/"
@@ -94,21 +126,61 @@ fi
 
 cd "$CHROMIUM_SRC"
 
+if [[ "$FRESH" == 1 ]]; then
+  # vendor/ is gnrt's output alone: back to upstream's first, so what an
+  # earlier run downloaded or patched there (a crate the overlay has since
+  # stopped vendoring or patching) isn't kept and copied back.
+  git -C "$CHROMIUM_SRC" clean -fdxq -- third_party/rust/chromium_crates_io/vendor
+  git -C "$CHROMIUM_SRC" checkout -q -- third_party/rust/chromium_crates_io/vendor
+  # Then every crate the overlay vendors or patches: gnrt keeps a crate
+  # directory that exists and patches only the crates it downloads.
+  echo "==> Fresh: removing the overlay's vendored and patched crates from the checkout"
+  for dir in "$OVERLAY_CIO"/vendor/*/ "$OVERLAY_CIO"/patches/*/; do
+    [[ -d "$dir" ]] || continue
+    name="$(basename "$dir")"
+    target="$CR_CIO/vendor/$name"
+    if [[ -n "$name" && -d "$target" ]]; then
+      rm -rf "${target:?}"
+    fi
+  done
+fi
+
 echo "==> [2/4] gnrt vendor"
 python3 tools/crates/run_gnrt.py vendor
 
 echo "==> [3/4] gnrt gen"
-python3 tools/crates/run_gnrt.py gen
+PATH="$GN_SHIM:$PATH" python3 tools/crates/run_gnrt.py gen
+# Every BUILD.gn gnrt wrote must be as `gn format` leaves it. (-m lists the
+# ones gnrt deleted too: the crates it no longer vendors.)
+unformatted=()
+while IFS= read -r -d '' f; do
+  [[ -f "$f" ]] || continue
+  rc=0
+  "$GN_BIN" format --dry-run "$f" >/dev/null 2>&1 || rc=$?
+  [[ "$rc" == 0 ]] || unformatted+=("$f (gn format --dry-run exited $rc)")
+done < <(git ls-files -z -m -o -- ':(glob)third_party/rust/*/*/BUILD.gn')
+if [[ ${#unformatted[@]} -gt 0 ]]; then
+  echo "error: gnrt left BUILD.gn files gn format would change (exit 2) or can't read (exit 1):" >&2
+  printf '  %s\n' "${unformatted[@]}" >&2
+  exit 1
+fi
 
 if [[ "$COPY_BACK" == 1 ]]; then
   echo "==> [4/4] Copying gnrt output back into the overlay"
   # Everything gnrt added or modified under third_party/rust in the Chromium
   # checkout (which is a git checkout of upstream at the pin).
-  git status --porcelain --untracked-files=all -- third_party/rust \
-    | sed -E 's/^.{3}//' \
-    | while IFS= read -r path; do
-        # Renames show as "old -> new".
-        path="${path##* -> }"
+  # Ignored files too (each one, not just its directory): crates ship
+  # build/ scripts and the like, which gnrt's BUILD.gn files may name and
+  # an ignore rule would leave behind.
+  # NUL-separated, so no name is quoted (git quotes non-ASCII ones).
+  git status --porcelain=v1 -z --untracked-files=all --ignored=traditional -- third_party/rust \
+    | while IFS= read -r -d '' entry; do
+        xy="${entry:0:2}"
+        path="${entry:3}"
+        # A rename or copy is followed by its source path.
+        case "$xy" in
+          *R*|*C*) IFS= read -r -d '' _ || true ;;
+        esac
         src="$CHROMIUM_SRC/$path"
         dst="$ROOT_DIR/src/$path"
         if [[ -e "$src" ]]; then
@@ -118,13 +190,167 @@ if [[ "$COPY_BACK" == 1 ]]; then
           rm -f "$dst"
         fi
       done
-  echo "    done. Review: git -C \"$ROOT_DIR\" status -- src/third_party/rust"
+  # What the overlay no longer needs goes, or it would shadow upstream as a
+  # stale patched file (and fail patches/'s check), and every file dropped
+  # or kept is named:
+  #   * a copy of an upstream file the checkout has as upstream, if it is
+  #     the same bytes;
+  #   * with --fresh, gnrt's own output the checkout has as upstream: a
+  #     crate's BUILD.gn or README.chromium, and anything under an overlay
+  #     vendor/ crate, which --fresh had gnrt download and patch afresh
+  #     (a vendor/ file gnrt no longer writes goes too). Without --fresh
+  #     gnrt keeps the checkout's crate directories, which are upstream's if
+  #     the overlay wasn't copied in, so its output may not reflect the
+  #     overlay;
+  #   * the BUILD.gn and README.chromium of a crate only the overlay has,
+  #     once gnrt no longer builds it: gnrt gen wrote no BUILD.gn for it
+  #     (it writes one for every crate in use, the overlay copied in or
+  #     not; a crate gone or left as a placeholder gets none).
+  # Any other copy of an upstream file the checkout has as upstream is kept.
+  python3 -I - "$CHROMIUM_SRC" "$ROOT_DIR/src" "$FRESH" <<'PY'
+import os
+import subprocess
+import sys
+
+cr, ov = (os.fsencode(a) for a in sys.argv[1:3])
+fresh = sys.argv[3] == '1'
+
+
+def git(*args):
+    return subprocess.run(('git',) + args, cwd=cr, check=True,
+                          stdout=subprocess.PIPE).stdout.split(b'\0')
+
+
+tracked = set(p for p in git('ls-files', '-z', '--', 'third_party/rust') if p)
+dirty = set()
+items = git('status', '--porcelain=v1', '-z', '--untracked-files=all',
+            '--ignored=traditional', '--', 'third_party/rust')
+i = 0
+while i < len(items):
+    entry = items[i]
+    i += 1
+    if not entry:
+        continue
+    dirty.add(entry[3:])
+    if b'R' in entry[:2] or b'C' in entry[:2]:
+        if i < len(items):
+            dirty.add(items[i])
+        i += 1
+
+MARK = b'@generated from third_party/rust/chromium_crates_io/BUILD.gn.hbs'
+CIO = b'third_party/rust/chromium_crates_io/'
+VENDOR = CIO + b'vendor/'
+# The crate config this script copies in (step 1) stays, whatever it holds.
+INPUTS = (CIO + b'Cargo.toml', CIO + b'gnrt_config.toml')
+
+
+def read(path, n=-1):
+    try:
+        with open(path, 'rb') as f:
+            return f.read(n)
+    except OSError:
+        return None
+
+
+def generated(rel):
+    d, name = os.path.split(rel)
+    if name not in (b'BUILD.gn', b'README.chromium'):
+        return False
+    return MARK in (read(os.path.join(cr, d, b'BUILD.gn'), 4096) or b'')
+
+
+# Crates only the overlay has that gnrt no longer builds.
+gone = set()
+root = os.path.join(ov, b'third_party', b'rust')
+for crate in os.listdir(root):
+    if crate == b'chromium_crates_io' or not os.path.isdir(
+            os.path.join(root, crate)):
+        continue
+    for epoch in os.listdir(os.path.join(root, crate)):
+        rel_dir = b'third_party/rust/' + crate + b'/' + epoch
+        if not os.path.isdir(os.path.join(ov, rel_dir)):
+            continue
+        build = read(os.path.join(ov, rel_dir, b'BUILD.gn'))
+        if not build or MARK not in build[:4096]:
+            continue
+        if rel_dir + b'/BUILD.gn' in tracked:
+            continue
+        if not os.path.exists(os.path.join(cr, rel_dir, b'BUILD.gn')):
+            gone.add(rel_dir)
+
+dropped = 0
+
+
+def drop(full, rel, why):
+    global dropped
+    os.remove(full)
+    dropped += 1
+    print('    dropped %s (%s)' % (os.fsdecode(rel), why))
+
+
+for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+    for name in filenames:
+        full = os.path.join(dirpath, name)
+        rel = os.path.relpath(full, ov)
+        if os.path.islink(full):
+            continue
+        if rel in INPUTS or rel.startswith(CIO + b'patches/'):
+            continue
+        if (os.path.dirname(rel) in gone and
+                name in (b'BUILD.gn', b'README.chromium')):
+            drop(full, rel, 'gnrt no longer builds its crate')
+            continue
+        vendored = fresh and rel.startswith(VENDOR)
+        if vendored and not os.path.lexists(os.path.join(cr, rel)):
+            drop(full, rel, 'gnrt no longer writes it')
+            continue
+        if rel not in tracked or rel in dirty:
+            continue
+        same = read(full) == read(os.path.join(cr, rel))
+        if same:
+            drop(full, rel, 'the same as upstream\'s')
+        elif fresh and (vendored or generated(rel)):
+            drop(full, rel, 'gnrt now writes upstream\'s')
+        elif generated(rel):
+            print('    kept %s: gnrt generated upstream\'s, but without '
+                  '--fresh it may not have seen the overlay\'s crates'
+                  % os.fsdecode(rel))
+        else:
+            print('    kept %s: the checkout has upstream\'s copy '
+                  '(was the overlay copied in first?)' % os.fsdecode(rel))
+    if dirpath != root and not os.listdir(dirpath):
+        os.rmdir(dirpath)
+print('    dropped %d overlay files gnrt no longer needs' % dropped)
+PY
+  # A crate only the overlay vendors is the overlay's whole copy of it: a
+  # file gnrt no longer writes goes from the overlay too, and so does a
+  # crate gnrt removed. (For a crate upstream vendors too, the overlay keeps
+  # only the files MoltBrowser changes.)
+  for dir in "$OVERLAY_CIO"/vendor/*/; do
+    [[ -d "$dir" ]] || continue
+    name="$(basename "$dir")"
+    [[ -n "$name" ]] || continue
+    if [[ -n "$(git ls-files -- "third_party/rust/chromium_crates_io/vendor/$name" | head -n 1)" ]]; then
+      continue
+    fi
+    if [[ ! -d "$CR_CIO/vendor/$name" ]]; then
+      rm -rf "${OVERLAY_CIO:?}/vendor/${name:?}"
+      continue
+    fi
+    (cd "$OVERLAY_CIO/vendor/$name" && find . -type f -print0) |
+      while IFS= read -r -d '' f; do
+        [[ -e "$CR_CIO/vendor/$name/$f" ]] || rm -f "$OVERLAY_CIO/vendor/$name/$f"
+      done
+  done
+  echo "    done. Review: git -C \"$ROOT_DIR\" status --ignored -- src/third_party/rust"
+  echo "    (commit with git add -f: crates' own .gitignore files hide some of their files)"
 
   # Overlay vendor dirs that upstream also vendors replace upstream's copy
   # (Chromium allows one version per epoch). Usually they should be dropped
   # from the overlay so upstream's version is used.
   overrides=()
   for dir in "$OVERLAY_CIO"/vendor/*/; do
+    [[ -d "$dir" ]] || continue
     name="$(basename "$dir")"
     if [[ -n "$(git ls-files -- "third_party/rust/chromium_crates_io/vendor/$name" | head -n 1)" ]]; then
       overrides+=("$name")
