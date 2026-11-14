@@ -104,11 +104,18 @@ if [[ "$COPY_BACK" == 1 ]]; then
   echo "==> [4/4] Copying gnrt output back into the overlay"
   # Everything gnrt added or modified under third_party/rust in the Chromium
   # checkout (which is a git checkout of upstream at the pin).
-  git status --porcelain --untracked-files=all -- third_party/rust \
-    | sed -E 's/^.{3}//' \
-    | while IFS= read -r path; do
-        # Renames show as "old -> new".
-        path="${path##* -> }"
+  # Ignored files too (each one, not just its directory): crates ship
+  # build/ scripts and the like, which gnrt's BUILD.gn files may name and
+  # an ignore rule would leave behind.
+  # NUL-separated, so no name is quoted (git quotes non-ASCII ones).
+  git status --porcelain=v1 -z --untracked-files=all --ignored=traditional -- third_party/rust \
+    | while IFS= read -r -d '' entry; do
+        xy="${entry:0:2}"
+        path="${entry:3}"
+        # A rename or copy is followed by its source path.
+        case "$xy" in
+          *R*|*C*) IFS= read -r -d '' _ || true ;;
+        esac
         src="$CHROMIUM_SRC/$path"
         dst="$ROOT_DIR/src/$path"
         if [[ -e "$src" ]]; then

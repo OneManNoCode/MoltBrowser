@@ -69,3 +69,9 @@ node_modules/
 
 # Release signing keys (keep OFFLINE; never commit)
 *.key
+
+# The vendored Rust crates are committed exactly as gnrt writes them (every
+# test build checks it), so nothing under src/third_party/rust is ignored:
+# crates ship build/ scripts, *.bin test data and the like.
+!/src/third_party/rust/**/
+!/src/third_party/rust/**
