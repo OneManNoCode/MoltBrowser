@@ -571,6 +571,46 @@ EOF
   echo "$ORT_SHA" > "$ORT_STAMP"
 fi
 
+# sherpa-onnx's session.cc includes ONNX Runtime's CoreML header on Apple and
+# calls its entry point when asked for the CoreML provider, which molt-speech
+# and molt-voice never are. This ONNX Runtime has no CoreML: the header, from
+# the pinned source, and if the library lacks the entry point, a stand-in that
+# says CoreML isn't there. Outside the build above, so an ONNX Runtime built
+# before this was added gets it too.
+if [[ "$OS" == mac && ! -f "$ORT_OUT/include/coreml_provider_factory.h" ]]; then
+  coreml_header="$ORT_PREFIX/include/onnxruntime/core/providers/coreml/coreml_provider_factory.h"
+  rm -rf "$WORK/coreml"
+  mkdir -p "$WORK/coreml"
+  tar -xzf "$DL/$ORT_PREFIX.tar.gz" -C "$WORK/coreml" "$coreml_header" ||
+    die "$coreml_header isn't in $DL/$ORT_PREFIX.tar.gz"
+  if ! nm -g "$ORT_OUT/lib/libonnxruntime.a" 2>/dev/null |
+       grep -q ' T _OrtSessionOptionsAppendExecutionProvider_CoreML$'; then
+    cat > "$WORK/coreml/stand-in.c" <<'EOF'
+/* scripts/bundle-speech.sh: this ONNX Runtime is built without CoreML. */
+#include "onnxruntime_c_api.h"
+#include "coreml_provider_factory.h"
+
+OrtStatus* ORT_API_CALL OrtSessionOptionsAppendExecutionProvider_CoreML(
+    OrtSessionOptions* options, uint32_t coreml_flags) {
+  (void)options;
+  (void)coreml_flags;
+  return OrtGetApiBase()->GetApi(ORT_API_VERSION)->CreateStatus(
+      ORT_NOT_IMPLEMENTED, "this ONNX Runtime is built without CoreML");
+}
+EOF
+    xcrun clang -c -O2 -arch arm64 -mmacosx-version-min=12.0 \
+      -I"$ORT_OUT/include" -I"$WORK/coreml/$(dirname "$coreml_header")" \
+      -o "$WORK/coreml/stand-in.o" "$WORK/coreml/stand-in.c" ||
+      die "the CoreML stand-in didn't compile"
+    libtool -static -o "$ORT_OUT/lib/libonnxruntime-full.a" \
+      "$ORT_OUT/lib/libonnxruntime.a" "$WORK/coreml/stand-in.o"
+    mv "$ORT_OUT/lib/libonnxruntime-full.a" "$ORT_OUT/lib/libonnxruntime.a"
+    log "ONNX Runtime: a stand-in for its CoreML entry point (built without CoreML)"
+  fi
+  # Last: its presence means the library is ready.
+  cp "$WORK/coreml/$coreml_header" "$ORT_OUT/include/"
+fi
+
 # ---------------------------------------------------------------- sherpa-onnx
 SHERPA_PREFIX_DIR="sherpa-onnx-2.0.1"
 SHERPA_SRC="$WORK/src/$SHERPA_PREFIX_DIR"
