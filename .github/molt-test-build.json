@@ -6,7 +6,7 @@
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixty-sixth build (incremental on the sixty-fifth, run 43585381968). patches-in-sync found about 264 upstream BUILD.gn and README.chromium files in the vendored tree that differ from upstream in formatting alone: gnrt formats with the gn on PATH and only warns when that fails, and depot_tools' gn wrapper fails on CI before gclient has bootstrapped depot_tools. vendor-rust-crates.sh now gives gnrt the checkout's own gn, fails on any unformatted BUILD.gn, and drops overlay copies the checkout has as upstream. This build prints what that changes (vendor_dump) to commit it. No tests, no spoken suite.",
+ "request": "Sixty-seventh build (incremental on the sixty-fifth, run 43585381968). The sixty-sixth showed gnrt now formats with the checkout's gn, but the new format check also counted the BUILD.gn files gnrt deletes (upstream's windows-sys 0.52 crates) and stopped the run. Fixed; this build prints the vendored tree that gnrt formats with the checkout's gn, with the overlay copies it now generates as upstream's dropped (vendor_dump), to commit it. No tests, no spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": true
 }
