@@ -1614,6 +1614,7 @@ def mirror_changes(old, new, keep, log=log):
     u = up.Upstream(up.DEFAULT_CACHE, up.DEFAULT_REMOTE, False)
     ta, tb = u.tree(u.resolve(old)), u.tree(u.resolve(new))
     added, removed, gitlinks, kept = [], [], [], []
+    differ = 0
     for path in sorted(set(ta) | set(tb)):
         a, b = ta.get(path), tb.get(path)
         if (a.oid if a else None) == (b.oid if b else None):
@@ -1622,6 +1623,7 @@ def mirror_changes(old, new, keep, log=log):
                 b is not None and b.type == "commit"):
             gitlinks.append(path)
             continue
+        differ += 1
         if b is None:
             removed.append(path)
         elif a is None:
@@ -1630,9 +1632,9 @@ def mirror_changes(old, new, keep, log=log):
             kept.append(path)
     blobs = u.blobs([tb[p].oid for p in kept if p in tb])
     files = {p: (blobs[tb[p].oid] if p in tb else None) for p in kept}
-    log("fetch: %d of chromium/src's files differ between %s and %s, %d of "
-        "them kept here, %d subprojects moved" % (
-            len(added) + len(removed) + len(kept), old, new, len(kept),
+    log("fetch: %d of chromium/src's files differ between %s and %s (%d "
+        "added, %d removed), %d of them kept here; %d subprojects moved" % (
+            differ, old, new, len(added), len(removed), len(kept),
             len(gitlinks)))
     return files, added, removed, gitlinks
 
