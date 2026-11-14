@@ -18,7 +18,10 @@
 #   * a file gnrt changed is copied back; a hand-edited upstream file the
 #     checkout has as upstream is kept and named;
 #   * a crate only the overlay vendors loses the files gnrt no longer writes;
-#   * the crate config and patches the script copies in stay.
+#   * an upstream crate gnrt deletes passes the format check and its overlay
+#     copy goes;
+#   * the crate config and patches the script copies in stay;
+#   * without --fresh, gnrt's output that differs from the overlay's stays.
 
 set -euo pipefail
 
@@ -56,6 +59,7 @@ exit 1'
   local gn='#!/bin/bash
 [ "$1" = format ] || exit 1
 if [ "$2" = --dry-run ]; then
+  [ -f "$3" ] || { echo "cannot read $3 for formatting" >&2; exit 1; }
   if grep -q UNFORMATTED "$3"; then exit 2; fi
   exit 0
 fi
@@ -81,6 +85,8 @@ if sys.argv[1] == "vendor":
     write(v + "up-v1/src/lib.rs", "up\n", fmt=False)
     write(v + "ours-v1/src/lib.rs", "ours\n", fmt=False)
 else:
+    import shutil
+    shutil.rmtree("third_party/rust/dropped/v1")
     write("third_party/rust/same/v1/BUILD.gn", HEADER + "same\n")
     write("third_party/rust/same/v1/README.chromium", "Name: same\n", fmt=False)
     write("third_party/rust/changed/v1/BUILD.gn", HEADER + "new\n")
@@ -99,6 +105,9 @@ same"
 old"
   put "$CR/third_party/rust/wrapper/v1/lib.rs" 'upstream'
   put "$CR/third_party/rust/handedit/v1/lib.rs" 'upstream'
+  put "$CR/third_party/rust/dropped/v1/BUILD.gn" "$HEADER
+dropped"
+  put "$CR/third_party/rust/dropped/v1/README.chromium" 'Name: dropped'
   git -C "$CR" init -q
   git -C "$CR" add -A
   git -C "$CR" -c user.name=t -c user.email=t@example.invalid \
@@ -123,6 +132,9 @@ new
 UNFORMATTED"
   put "$o/wrapper/v1/lib.rs" 'ours'
   put "$o/handedit/v1/lib.rs" 'ours'
+  put "$o/dropped/v1/BUILD.gn" "$HEADER
+dropped
+UNFORMATTED"
   # CI copies the overlay in first: here only wrapper/, so handedit/ is a
   # hand-edited file the checkout has as upstream.
   cp "$o/wrapper/v1/lib.rs" "$CR/third_party/rust/wrapper/v1/lib.rs"
@@ -138,11 +150,19 @@ mkdir -p "$3" && cp -pR "$2." "$3"'
   chmod +x "$BIN/rsync"
 fi
 
-run() {  # run LOG [ENV=VALUE...]
-  local log="$1"
+# Under this test's own bash (macOS's 3.2 in the Mac release preflight), not
+# the first bash on PATH.
+echo "bash $BASH_VERSION"
+
+run() {  # run LOG [--no-fresh] [ENV=VALUE...]
+  local log="$1" fresh=--fresh
   shift
-  (cd "$REPO" && env PATH="$BIN:$PATH" "$@" bash scripts/vendor-rust-crates.sh \
-     --chromium-src "$CR" --fresh) > "$log" 2>&1
+  if [[ "${1:-}" == --no-fresh ]]; then
+    fresh=""
+    shift
+  fi
+  (cd "$REPO" && env PATH="$BIN:$PATH" "$@" "$BASH" scripts/vendor-rust-crates.sh \
+     --chromium-src "$CR" ${fresh:+"$fresh"}) > "$log" 2>&1
 }
 
 # 1. The copy-back.
@@ -181,6 +201,9 @@ has "$o/chromium_crates_io/vendor/ours-v1/src/lib.rs" ours &&
   [[ ! -e "$o/chromium_crates_io/vendor/ours-v1/src/old.rs" ]] &&
   ok "an overlay-only crate loses what gnrt no longer writes" ||
   fail "vendor/ours-v1 not mirrored"
+[[ ! -e "$o/dropped" ]] &&
+  ok "a crate gnrt deleted: no error from the format check, its copy dropped" ||
+  fail "dropped/ is still in the overlay"
 has "$o/chromium_crates_io/Cargo.toml" 'our toml' &&
   has "$o/chromium_crates_io/gnrt_config.toml" 'upstream config' &&
   has "$o/chromium_crates_io/patches/up-v1/0001-x.patch" patch &&
@@ -198,7 +221,28 @@ else
   fail "unexpected failure:"; cat "$T/unformatted.log"
 fi
 
-# 3. No gn binary in the checkout.
+# 3. Without --fresh, gnrt keeps the checkout's crate directories (upstream's
+# if the overlay wasn't copied in): its output may not reflect the overlay,
+# so only the same bytes go.
+setup nofresh
+o="$REPO/src/third_party/rust"
+if run "$T/nofresh.log" --no-fresh; then
+  ok "without --fresh: the script succeeds"
+else
+  fail "without --fresh: the script failed:"; cat "$T/nofresh.log"
+fi
+if [[ -f "$o/same/v1/BUILD.gn" ]] &&
+   grep -q 'kept third_party/rust/same/v1/BUILD.gn: gnrt generated' "$T/nofresh.log"; then
+  ok "without --fresh: gnrt's output differing from the overlay's kept and named"
+else
+  fail "without --fresh: same/v1/BUILD.gn not kept and named"
+fi
+[[ ! -e "$o/chromium_crates_io/vendor/up-v1" ]] &&
+  grep -q 'dropped third_party/rust/chromium_crates_io/vendor/up-v1/src/lib.rs (the same' "$T/nofresh.log" &&
+  ok "without --fresh: the same bytes dropped and named" ||
+  fail "without --fresh: vendor/up-v1 not dropped and named"
+
+# 4. No gn binary in the checkout.
 setup nogn
 rm -f "$CR/buildtools/linux64/gn" "$CR/buildtools/mac/gn"
 if run "$T/nogn.log"; then

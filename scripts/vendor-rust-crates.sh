@@ -138,13 +138,17 @@ python3 tools/crates/run_gnrt.py vendor
 
 echo "==> [3/4] gnrt gen"
 PATH="$GN_SHIM:$PATH" python3 tools/crates/run_gnrt.py gen
-# Every BUILD.gn gnrt wrote must be as `gn format` leaves it.
+# Every BUILD.gn gnrt wrote must be as `gn format` leaves it. (-m lists the
+# ones gnrt deleted too: the crates it no longer vendors.)
 unformatted=()
 while IFS= read -r -d '' f; do
-  "$GN_BIN" format --dry-run "$f" >/dev/null 2>&1 || unformatted+=("$f")
+  [[ -f "$f" ]] || continue
+  rc=0
+  "$GN_BIN" format --dry-run "$f" >/dev/null 2>&1 || rc=$?
+  [[ "$rc" == 0 ]] || unformatted+=("$f (gn format --dry-run exited $rc)")
 done < <(git ls-files -z -m -o -- ':(glob)third_party/rust/*/*/BUILD.gn')
 if [[ ${#unformatted[@]} -gt 0 ]]; then
-  echo "error: gnrt left BUILD.gn files gn format would change:" >&2
+  echo "error: gnrt left BUILD.gn files gn format would change (exit 2) or can't read (exit 1):" >&2
   printf '  %s\n' "${unformatted[@]}" >&2
   exit 1
 fi
@@ -177,15 +181,19 @@ if [[ "$COPY_BACK" == 1 ]]; then
   # An overlay copy of an upstream file the checkout now has as upstream is
   # no MoltBrowser change any more: it goes, or it would shadow upstream as
   # a stale patched file (and fail patches/'s check). It goes if it is the
-  # same bytes, or if it is gnrt's own output (a crate's BUILD.gn or
-  # README.chromium, which gnrt has just regenerated). Any other such file
-  # is kept and named: the overlay may not have been copied in first.
-  python3 -I - "$CHROMIUM_SRC" "$ROOT_DIR/src" <<'PY'
+  # same bytes, or, with --fresh, if it is gnrt's own output (a crate's
+  # BUILD.gn or README.chromium): only then did gnrt download and patch
+  # every overlay crate itself, so what it generated reflects the overlay.
+  # (Without --fresh it keeps the checkout's crate directories, which are
+  # upstream's if the overlay wasn't copied in.) Any other such file is
+  # kept, and every file dropped or kept is named.
+  python3 -I - "$CHROMIUM_SRC" "$ROOT_DIR/src" "$FRESH" <<'PY'
 import os
 import subprocess
 import sys
 
 cr, ov = (os.fsencode(a) for a in sys.argv[1:3])
+fresh = sys.argv[3] == '1'
 
 
 def git(*args):
@@ -238,9 +246,17 @@ for dirpath, dirnames, filenames in os.walk(root, topdown=False):
             continue
         with open(full, 'rb') as a, open(os.path.join(cr, rel), 'rb') as b:
             same = a.read() == b.read()
-        if same or generated(rel):
+        if same or (fresh and generated(rel)):
             os.remove(full)
             dropped += 1
+            print('    dropped %s (%s)' % (
+                os.fsdecode(rel),
+                'the same as upstream\'s' if same else
+                'gnrt now generates upstream\'s'))
+        elif generated(rel):
+            print('    kept %s: gnrt generated upstream\'s, but without '
+                  '--fresh it may not have seen the overlay\'s crates'
+                  % os.fsdecode(rel))
         else:
             print('    kept %s: the checkout has upstream\'s copy '
                   '(was the overlay copied in first?)' % os.fsdecode(rel))
