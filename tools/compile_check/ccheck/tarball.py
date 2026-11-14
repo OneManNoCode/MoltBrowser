@@ -74,6 +74,13 @@ PINNED_SHA256 = {
     # bucket's and the .hashes file's agree).
     "chromium-156.0.8078.80-lite.tar.xz":
         "6c4dc0a9e809ed3ad44b69a9d4622f147f3b3f9b34740ec8fc9735a78bbde80b",
+    # 2,009,920,008 bytes; MD5 6c31aa054d051344f1749fc24bd1c7b9 (the
+    # bucket's and the .hashes file's agree). ChromeOS Stable's release:
+    # the newest published tarball of the 156 branch at or before the pin
+    # (156.0.8078.100, Extended Stable's, has none), which the compile check
+    # and the static GN check use as the nearest public tree.
+    "chromium-156.0.8078.93-lite.tar.xz":
+        "858bac041597aee091865adef72e39d469f40d3ed1da2136dab2073c60480a88",
 }
 
 

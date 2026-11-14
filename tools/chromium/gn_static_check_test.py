@@ -1110,6 +1110,74 @@ class FetchTest(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_tarball_release(self):
+        pins = {"chromium-1.2.3.4-lite.tar.xz": "a", "chromium-1.2.3.7-lite.tar.xz": "b",
+                "chromium-1.2.3.6.tar.xz": "c", "chromium-1.2.4.9-lite.tar.xz": "d"}
+        self.assertEqual(g.tarball_release("1.2.3.4", pins), "1.2.3.4")
+        # The newest pinned lite tarball of the branch before the pin.
+        self.assertEqual(g.tarball_release("1.2.3.9", pins), "1.2.3.7")
+        self.assertEqual(g.tarball_release("1.2.3.5", pins), "1.2.3.4")
+        self.assertEqual(g.tarball_release("1.2.3.6", pins), "1.2.3.4")
+        # None newer than the pin, of another branch, or not -lite.
+        self.assertIsNone(g.tarball_release("1.2.3.3", pins))
+        self.assertIsNone(g.tarball_release("1.2.2.9", pins))
+
+    def test_fetch_from_the_nearest_release_with_the_pins_changes(self):
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:xz") as tf:
+            for name, data in (("BUILD.gn", b"group(\"all\") {}\n"),
+                               ("a/b.gni", b"x = 1\n"),
+                               ("a/DEPS", b"include_rules = []\n"),
+                               ("a/c.cc", b"int c;\n"),
+                               ("chrome/VERSION", b"PATCH=4\n")):
+                info = tarfile.TarInfo("chromium-1.2.3.4/" + name)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+        pins = {"chromium-1.2.3.4-lite.tar.xz":
+                hashlib.sha256(buf.getvalue()).hexdigest()}
+        asked = []
+
+        def changes(old, new, keep):
+            asked.append((old, new, keep("a/x.gn"), keep("a/x.cc")))
+            return ({"a/b.gni": b"x = 2\n", "a/DEPS": None,
+                     "chrome/VERSION": b"PATCH=9\n",
+                     "n/BUILD.gn": b"group(\"n\") {}\n"},
+                    ["n/BUILD.gn", "n/x.cc"], ["a/DEPS"], ["v8"])
+
+        tmp = Path(tempfile.mkdtemp(prefix="gn-static-check-fetch-"))
+        try:
+            dest = tmp / "1.2.3.9"
+            g.fetch("1.2.3.9", dest, ["a/c.cc"], log=lambda m: None,
+                    opener=lambda url: io.BytesIO(buf.getvalue()), pins=pins,
+                    changes=changes)
+            self.assertEqual(asked, [("1.2.3.4", "1.2.3.9", True, False)])
+            tree = dest / "tree"
+            kept = sorted(str(p.relative_to(tree))
+                          for p in tree.rglob("*") if p.is_file())
+            self.assertEqual(kept, ["BUILD.gn", "a/b.gni", "a/c.cc",
+                                    "chrome/VERSION", "n/BUILD.gn"])
+            self.assertEqual((tree / "a/b.gni").read_bytes(), b"x = 2\n")
+            self.assertEqual((tree / "chrome/VERSION").read_bytes(),
+                             b"PATCH=9\n")
+            listed = g.load_paths(dest / "paths.txt")
+            self.assertIn("n/x.cc", listed)
+            self.assertIn("n/BUILD.gn", listed)
+            self.assertNotIn("a/DEPS", listed)
+            self.assertEqual((dest / "stand_ins.txt").read_text(),
+                             "v8\t1.2.3.4\n")
+            self.assertEqual((dest / "version.txt").read_text(), "1.2.3.9\n")
+
+            # A pin older than every pinned tarball of its branch: nothing.
+            with self.assertRaises(g.cctarball.TarballNotVerified):
+                g.fetch("1.2.3.3", tmp / "old", [], log=lambda m: None,
+                        opener=lambda url: io.BytesIO(buf.getvalue()),
+                        pins=pins, changes=changes)
+            self.assertFalse((tmp / "old").exists())
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_fetch_keeps_nothing_outside_the_tree(self):
         import io
         import tarfile

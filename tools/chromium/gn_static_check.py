@@ -1583,28 +1583,96 @@ def check_build_file(g, ug, overlay, bf, dot, findings):
 # fetch: Chromium's GN files from the official source tarball
 
 
-def fetch(version, dest, overlay_files, log=log, opener=None, pins=None):
-    """Streams chromium-<version>-lite.tar.xz once and keeps every BUILD.gn,
+def tarball_release(version, pins=None):
+    """The release whose tarball `fetch` streams for `version`: its own if
+    that is pinned, else the newest pinned tarball of the same branch
+    before it (the nearest public tree: Chromium publishes no tarball of
+    Extended Stable's respins). None if there is neither."""
+    pins = cctarball.PINNED_SHA256 if pins is None else pins
+    if "chromium-%s-lite.tar.xz" % version in pins:
+        return version
+    lite = [m.group(1) for m in map(cctarball.NAME_RE.match, pins)
+            if m and m.group(2)]
+    return cctarball.pick_version(version, lite)
+
+
+def _keep(rel, want):
+    """Whether fetch keeps an upstream file: the GN files, DEPS,
+    //chrome/VERSION, build/util and checkdeps, and the overlay's paths."""
+    base = rel.rsplit("/", 1)[-1]
+    return (base.endswith((".gn", ".gni")) or base == "DEPS" or
+            rel == "chrome/VERSION" or
+            rel.startswith(("buildtools/checkdeps/", "build/util/")) or
+            rel in want)
+
+
+def mirror_changes(old, new, keep, log=log):
+    """What chromium/src changes from release `old` to `new`, from the
+    GitHub mirror (tools/chromium/upstream.py): ({path: bytes, or None if
+    `new` has no such file} for the paths `keep` accepts, paths `new` adds,
+    paths it removes, DEPS subprojects whose commit differs)."""
+    u = up.Upstream(up.DEFAULT_CACHE, up.DEFAULT_REMOTE, False)
+    ta, tb = u.tree(u.resolve(old)), u.tree(u.resolve(new))
+    added, removed, gitlinks, kept = [], [], [], []
+    for path in sorted(set(ta) | set(tb)):
+        a, b = ta.get(path), tb.get(path)
+        if (a.oid if a else None) == (b.oid if b else None):
+            continue
+        if (a is not None and a.type == "commit") or (
+                b is not None and b.type == "commit"):
+            gitlinks.append(path)
+            continue
+        if b is None:
+            removed.append(path)
+        elif a is None:
+            added.append(path)
+        if keep(path):
+            kept.append(path)
+    blobs = u.blobs([tb[p].oid for p in kept if p in tb])
+    files = {p: (blobs[tb[p].oid] if p in tb else None) for p in kept}
+    log("fetch: %d of chromium/src's files differ between %s and %s, %d of "
+        "them kept here, %d subprojects moved" % (
+            len(added) + len(removed) + len(kept), old, new, len(kept),
+            len(gitlinks)))
+    return files, added, removed, gitlinks
+
+
+def fetch(version, dest, overlay_files, log=log, opener=None, pins=None,
+          changes=mirror_changes):
+    """Streams chromium-<release>-lite.tar.xz once and keeps every BUILD.gn,
     .gn, .gni and DEPS file, //chrome/VERSION and build/util (gn runs
     version.py), checkdeps, and the upstream copy of every overlay path;
     writes paths.txt (every file in the tarball). Kept only if the whole
     tarball matches its pinned SHA-256 (ccheck/tarball.py: PINNED_SHA256,
     or `pins`): checkdeps, the DEPS files it reads and version.py run
-    here."""
-    url = BUCKET + "chromium-%s-lite.tar.xz" % version
+    here.
+
+    <release> is `version` if its tarball is pinned, else the nearest
+    pinned release before it on its branch (tarball_release). Then every
+    chromium/src file that differs between that release and `version` is
+    taken from the GitHub mirror at `version` (`changes`), so the tree is
+    the pin's; only DEPS subprojects that moved in between stay the
+    nearest release's, listed in stand_ins.txt."""
+    want = set(overlay_files)
+    release = tarball_release(version, pins)
+    if release is None:
+        raise cctarball.TarballNotVerified(
+            "no pinned tarball of %s or of an earlier release of its branch: "
+            "add one to PINNED_SHA256 in tools/compile_check/ccheck/"
+            "tarball.py" % version)
+    url = BUCKET + "chromium-%s-lite.tar.xz" % release
     expected = cctarball.pinned_sha256(url, pins)
     dest = Path(dest)
     tmp = dest.with_name(dest.name + ".partial")
     shutil.rmtree(tmp, ignore_errors=True)
     (tmp / "tree").mkdir(parents=True)
-    top = "chromium-%s/" % version
-    keep_prefix = ("buildtools/checkdeps/", "build/util/")
-    want = set(overlay_files)
+    top = "chromium-%s/" % release
     t0 = time.time()
     log("fetch: streaming %s (about 5 minutes)" % url)
     n = kept = 0
+    paths = []
     opener = opener or urllib.request.urlopen
-    with open(tmp / "paths.txt", "w") as paths, opener(url) as r:
+    with opener(url) as r:
         hashed = cctarball.HashingReader(r)
         with tarfile.open(fileobj=hashed, mode="r|xz") as tf:
             for m in tf:
@@ -1615,13 +1683,8 @@ def fetch(version, dest, overlay_files, log=log, opener=None, pins=None):
                 if cctarball.safe_relpath(rel) is None:
                     continue
                 if m.isfile() or m.issym():
-                    paths.write(rel + "\n")
-                if not m.isfile():
-                    continue
-                base = rel.rsplit("/", 1)[-1]
-                if not (base.endswith((".gn", ".gni")) or base == "DEPS" or
-                        rel == "chrome/VERSION" or rel.startswith(keep_prefix)
-                        or rel in want):
+                    paths.append(rel)
+                if not m.isfile() or not _keep(rel, want):
                     continue
                 out = tmp / "tree" / rel
                 out.parent.mkdir(parents=True, exist_ok=True)
@@ -1632,6 +1695,31 @@ def fetch(version, dest, overlay_files, log=log, opener=None, pins=None):
         shutil.rmtree(tmp, ignore_errors=True)
         raise cctarball.TarballNotVerified(
             "%s: SHA-256 %s, not the pinned %s" % (url, got, expected))
+    if release != version:
+        log("fetch: %s has no pinned tarball; %s's, with chromium/src's "
+            "changes since from the GitHub mirror" % (version, release))
+        files, added, removed, gitlinks = changes(
+            release, version, lambda rel: _keep(rel, want))
+        for rel, data in sorted(files.items()):
+            if cctarball.safe_relpath(rel) is None:
+                continue
+            out = tmp / "tree" / rel
+            if data is None:
+                if out.is_file():
+                    out.unlink()
+                continue
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(data)
+        gone = set(removed)
+        paths = [p for p in paths if p not in gone] + [
+            p for p in added if cctarball.safe_relpath(p) is not None]
+        (tmp / "stand_ins.txt").write_text("".join(
+            "%s\t%s\n" % (g, release) for g in sorted(gitlinks)))
+        if gitlinks:
+            log("fetch: these DEPS subprojects are %s's, not %s's: %s" % (
+                release, version, ", ".join(sorted(gitlinks))))
+    with open(tmp / "paths.txt", "w") as out:
+        out.write("".join(p + "\n" for p in paths))
     (tmp / "version.txt").write_text(version + "\n")
     shutil.rmtree(dest, ignore_errors=True)
     tmp.rename(dest)
@@ -3207,6 +3295,13 @@ def main(argv=None):
             return 2
         root = dd / "tree"
         paths = load_paths(dd / "paths.txt")
+        stand_ins = dd / "stand_ins.txt"
+        if stand_ins.is_file() and stand_ins.read_text().strip():
+            log("note: the GN files of these DEPS subprojects are the "
+                "nearest public release's, not the pin's: %s" % ", ".join(
+                    "%s (%s)" % tuple(line.split("\t", 1))
+                    for line in stand_ins.read_text().splitlines()
+                    if "\t" in line))
     files = up.overlay_files()
     tree = Tree(root, up.OVERLAY_DIR, paths)
     upstream_tree = Tree(root, None, paths)
