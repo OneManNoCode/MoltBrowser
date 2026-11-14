@@ -380,6 +380,8 @@ the releases page to reinstall).
   are now merged with every security release too, and the built-in search
   engine list is Chromium 156's (DuckDuckGo stays the default).
 - **Chromium 156.0.8078.80**, with Chrome's security fixes of 2026-10-29.
+- **Chromium 156.0.8078.100**, with Chrome's security fixes of 2026-11-09
+  and 2026-11-11 (Extended Stable's 156.0.8078.88, .96 and .100).
 - MoltBrowser's encrypted stores (API keys, password vault, form-filler
   profile, chat history, AI memory) moved from the synchronous OSCrypt,
   which Chromium 152 removed, to `os_crypt_async`. Existing files open

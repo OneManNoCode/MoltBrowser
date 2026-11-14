@@ -6806,6 +6806,34 @@ asynchronous pipeline creation) fixes object lifetimes, crashes and stack
 use, and PDFium no longer draws zero-size text in its viewer; none changes
 a value MoltNet makes uniform.
 
+### The 156.0.8078.100 respin
+
+Chrome's security respins of 2026-11-09 and 2026-11-11 (156.0.8078.88,
+.96 and .100) change a few things a page can observe, the same on every
+install and none inside MoltNet's uniform values:
+
+- **Encoding detection.** For a page that declares no character set, the
+  top-level domain the detector uses as a hint now comes from the URL's
+  host, not from its userinfo (`TextEncodingDetectorTldHint`).
+- **Service worker scripts** are decoded with their own encoding, which
+  the V8 code cache now records too (`ServiceWorkerScriptEncoding`).
+  MoltNet's service worker key is still set before any script runs.
+- **Scroll snap events** never target a pseudo-element: they go to the
+  element it belongs to, or nowhere if it is gone.
+- **File System Access** refuses more locations (`~/.cache` everywhere,
+  `/run` on Linux, hypervisor shares on Windows, writes under `.mvn`), and
+  its rules now match regardless of case. What a page sees depends on
+  what the user picks, not on the install.
+
+Skia's raster fixes (the anti-aliasing blitter, hairline caps, glyph and
+region bounds) are integer and fixed-point code with no new libm call, so
+MoltNet's canvas output stays the same on every CPU; like any Skia
+change, an edge case can draw differently from 156.0.8078.80, but alike
+on every install of the same version. The rest (object lifetimes in
+Blink, V8's compilers and WebAssembly, GPU, media, extensions, storage
+and networking) fixes crashes and memory safety; none changes a value
+MoltNet makes uniform.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature

@@ -10,7 +10,7 @@ process and the tooling for it, plus the first dry run.
 | What | Where |
 |---|---|
 | The Chromium revision we build on | `chromium_version.txt` (`CHROMIUM_VERSION`, `CHROMIUM_REVISION`). The only copy: `scripts/setup.sh`, `build/docker/*`, every workflow and `tools/chromium/*` read it. Shell code uses `tools/chromium/pin.sh`. |
-| The SHA-256 of the release's source tarball | `PINNED_SHA256` in `tools/compile_check/ccheck/tarball.py`. The static GN check and the compile check stream Chromium's official source tarball and refuse one without a pin or with other bytes. When the pin moves, add the new release's (from its `.hashes` file in the bucket, checked against the MD5 the bucket reports for the tarball). |
+| The SHA-256 of the release's source tarball | `PINNED_SHA256` in `tools/compile_check/ccheck/tarball.py`. The static GN check and the compile check stream Chromium's official source tarball and refuse one without a pin or with other bytes. When the pin moves, add the new release's (from its `.hashes` file in the bucket, checked against the MD5 the bucket reports for the tarball). Chromium publishes no tarball of Extended Stable's respins (none for 156.0.8078.88, .96 or .100); the tools then stream the newest published release of the branch before the pin, so pin that one: the compile check takes chromium/src from the mirror at the pin anyway, and the static GN check takes the files that differ from the mirror, so only DEPS subprojects that moved in between are the nearer release's (each tool names them). |
 | MoltBrowser's own code | `src/` files that do not exist upstream (5525 at 156.0.8078.80: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
 | Our changes to upstream files | `src/` still holds whole copies (the build does `cp -R src/. chromium/src/`). `patches/` holds the same changes as one diff per file against the pin, generated from `src/`. |
 
@@ -121,8 +121,10 @@ our pin from 2026-10-16, was its last M152 release): with 2-week
 milestones, Google moved the extended channel to the current stable
 milestone, earlier than "~4 releases behind stable" suggested. Its first
 security respin, 156.0.8078.74, started on 2026-10-27, and its second,
-156.0.8078.80, on 2026-10-29. **Target: `156.0.8078.80`** (the
-[156.0.8078.80 respin](#1560807880-2026-10-30); before it, the
+156.0.8078.80, on 2026-10-29; then .88 (serving by 2026-11-09), and .96
+and .100 (2026-11-11, .100 to 25% of Windows and macOS). **Target:
+`156.0.8078.100`** (the [156.0.8078.100 respin](#15608078100-2026-11-14);
+before it, the [156.0.8078.80 respin](#1560807880-2026-10-30), the
 [156.0.8078.74 respin](#1560807874-2026-10-28) and the
 [156 rebase](#the-156-rebase-2026-10-23) to 156.0.8078.48). Same-branch
 respins follow (`156.0.8078.*` tags that Extended Stable ships). One pin
@@ -637,3 +639,127 @@ and 76 Chromium files move; V8's and Skia's headers reach most targets,
 so expect most of the build to recompile), then the build and tests as
 for 156, with the upstream suites of the merged files. No Rust crate
 changed.
+
+## 156.0.8078.100 (2026-11-14)
+
+The 156 branch's next three security respins, in one rebase. After .80,
+Extended Stable shipped 156.0.8078.88 (serving by 2026-11-09), then .96
+and .100 (2026-11-11; .100 to 25% of Windows and macOS, .96 to the rest).
+ChromeOS Stable's .93 and .102 are on the same branch; Windows and macOS
+Stable moved to 157. What the respins fix was read from the 446 commits
+between the tags (about 360 are profile, orderfile and translation rolls
+or version bumps) and from the V8, Skia and ANGLE branch commits their
+rolls bring.
+
+`tools/chromium/rebase.py 156.0.8078.100 --apply` from 156.0.8078.80:
+
+| | Files |
+|---|---|
+| Patched upstream files | 667: 5 clean 3-way merges, 662 left alone upstream, no conflict, none deleted or moved |
+| Identical copies | none |
+| First-party paths now upstream | 0 |
+| Removed upstream symbols our code uses | 0 (962 headers scanned, 2 changed) |
+| DEPS whole files | 66; 32 in a subproject that moved: 29 unchanged in it, 3 our own |
+
+The five merges, all in Blink. Each is upstream's own change line for
+line; none touches a MoltBrowser line (the nearest is 58 lines away, in
+the service worker header):
+
+- **Layout and scroll snapping** (`core/frame/local_frame_view.cc`): slot
+  assignment can't be recalculated during layout and frame-rect
+  propagation (a debug-build scope), and pending snap updates are swapped
+  out before they are iterated. MoltNet's whole-CSS-pixel viewport
+  (`UniformViewportSize`) reads only the MoltNet flag and the top frame's
+  origin, so the new scope can't fire because of it.
+- **`<img>` default size** (`core/html/html_image_element.cc`): an SVG
+  image is kept alive across `CreateViewInfo()`. MoltNet's device pixel
+  ratio of 1 for `srcset` choice is unchanged.
+- **Snap event targets** (`core/paint/paint_layer_scrollable_area.cc`): a
+  pseudo-element is no longer exposed as one. No MoltBrowser code reads
+  snap targets.
+- **Service worker script encoding**
+  (`modules/service_worker/service_worker_global_scope.{cc,h}`, behind the
+  stable kill switch `ServiceWorkerScriptEncoding`): the installed script's
+  encoding reaches script evaluation and the code cache. The farbling key
+  is still set in `InitializeGlobalScope()` before any script runs, and
+  our tests call `WorkerThread::EvaluateClassicScript()`, whose header is
+  unchanged.
+
+The two changed headers the API scan counts are `worker_global_scope.h`
+and `service_worker_global_scope.h` (the encoding change: four functions
+gain a `TextEncoding` parameter; nothing our code calls). Of the 44 headers
+that changed upstream in all, none declares anything MoltBrowser uses
+(checked by hand: the scan reads only headers first-party code includes
+directly, and now names the changed ones in `report.md`; it doesn't read
+headers inside DEPS subprojects).
+
+What the respins fix, by area (first tag that carries it; only what the
+public commit messages say):
+
+- **Blink** [.88-.100]: object lifetimes in SVG images (a merged file),
+  view-transition pseudo-elements, display locks, animations, slot
+  assignment during layout (merged), media players and accessibility; the
+  paste sanitizer and nested SVG `<use>`; the encoding detector's TLD hint
+  taken from a URL's host, not its userinfo; media controls' shadow DOM
+  kept read-only; WebAudio's media element source.
+- **V8** (15.6.75.27 to .57, 30 cherry-picks) [.88-.100]: Maglev,
+  TurboFan and Turbolev, WebAssembly, private names and eval scopes,
+  global-proxy access checks, the register allocator, and no object
+  changes during GC callbacks.
+- **Skia** (21 fixes) [.88-.100]: the analytic-AA blitter, the region
+  builder, glyph bounds and the remote glyph cache, Slug validation,
+  Ganesh and Graphite bounds. None of our 29 upstream whole files changed,
+  and the CPU raster fixes add no libm call, so MoltNet's portable-math
+  canvas is untouched.
+- **GPU** [.88-.100]: shared-image copies, gainmap decodes, readback after
+  a GPU reset (Android), compositor shaders past the raster pass,
+  duplicate render pass ids, four ANGLE fixes. Dawn's two rolls could not
+  be read (its branch isn't on GitHub).
+- **Media** [.96-.100]: Media Source GOP handling, AV1 decoder reset.
+- **Extensions** [.88-.100]: publisher proof for first Web Store installs;
+  window and tab lifetimes; installs no longer follow symlinks;
+  `mimeHandlerPrivate` only for allowlisted extensions (our only
+  mime-handler extension is the stock PDF viewer, which is on the list).
+- **Navigation, networking, storage and files** [.88-.100]: navigation
+  observers, Connection-Allowlist reports, the HTTP cache, SimpleCache,
+  Clear-Site-Data, data pipes; File System Access's sensitive paths
+  (hypervisor shares, `~/.cache`, `/run`, case-insensitive rules); symlink-
+  safe writes for NTP backgrounds, the image cache and Web Share files
+  (ours goes through the fixed `StoreFileTask`).
+- **Elsewhere** [.88-.96]: libxslt, ICU (collation search, number
+  formatting), the bookmarks side panel, printing, password toasts, PDF
+  thumbnails.
+
+**DEPS subprojects.** Seven move: V8 and Skia (their whole files above),
+ANGLE, Dawn, ICU, devtools-frontend and `src_internal`. No Rust crate
+changed upstream, so the vendored tree in `src/third_party/rust` stands
+(the test build's drift check confirms it).
+
+**No source tarball.** Chromium publishes none of Extended Stable's
+respins (.88, .96, .100), only ChromeOS Stable's (.93, .102). The .93
+tarball is pinned, the nearest before the pin; the compile check already
+fell back to it, and the static GN check now does too, taking the 151
+chromium/src files that differ from the mirror at the pin (only Dawn, ICU,
+Skia and V8, which moved between .93 and .100, are .93's; both tools name
+them).
+
+Checks here: `verify_patches.py` OK (667 patches, no identical copies, 66
+whole files at the pin's subproject commits); the static GN check at .100
+with the fallback: 0 errors and 0 warnings in its six configurations,
+`checkdeps` (1598 files), `blink-audit` (275 files) and the tests check
+(343 test sources) clean, the flags check's one known warning
+(`enums.xml`); the MoltNet locale tables are unchanged but for the
+version they name; the patch tools', compile check's and static GN
+check's own tests pass. The test build (molt-test-build, build 71) builds
+.100, runs the unit and browser tests and the typed spoken suite.
+
+Still to do on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`):
+`./scripts/setup.sh --resync` (seven subprojects and about 390 Chromium
+files move; V8's and Skia's headers reach most targets, so most of the
+build recompiles), then upstream's own tests for the merged files
+(`slot_assignment_test.cc`, `svg_image_test.cc`,
+`service_worker_installed_scripts_manager_test.cc`, and the WPT tests
+`css/css-scroll-snap/snap-events/snap-events-with-{disposed,nested}-pseudo-target.tentative.html`
+and `shadow-dom/manual-slot-assignment-with-details.html`) with ours
+(`letterbox_test.cc`, `shields_decision_test.cc`,
+`shared_worker_key_test.cc`).

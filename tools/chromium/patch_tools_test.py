@@ -306,6 +306,26 @@ class TarballTest(unittest.TestCase):
         self.assertIsNone(sp.published_hashes(url, opener))
 
 
+class RebaseReportTest(unittest.TestCase):
+    def test_changed_headers_are_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta = {"from": "1.0.0.1", "to": "1.0.0.2",
+                    "base_commit": "a" * 40, "new_commit": "b" * 40}
+            api = {"headers_scanned": 3, "headers_changed": 2,
+                   "changed_headers": {"x/a.h": ["chrome/molt_a.cc"],
+                                       "x/b.h": []},
+                   "headers_removed": {}, "symbols_removed": 0,
+                   "findings": []}
+            rebase.write_report(Path(tmp), meta, {}, {"api": api})
+            report = (Path(tmp) / "report.md").read_text()
+            self.assertIn("- `x/a.h` (`chrome/molt_a.cc`)", report)
+            self.assertIn("- `x/b.h`\n", report)
+            self.assertIn("are not scanned", report)
+            saved = json.loads((Path(tmp) / "report.json").read_text())
+            self.assertEqual(saved["api"]["changed_headers"]["x/a.h"],
+                             ["chrome/molt_a.cc"])
+
+
 class RebaseTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
