@@ -68,7 +68,7 @@ while [[ $# -gt 0 ]]; do
     --no-copy-back) COPY_BACK=0; shift ;;
     --check) CHECK=1; shift ;;
     --fresh) FRESH=1; shift ;;
-    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done

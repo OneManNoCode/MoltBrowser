@@ -313,7 +313,15 @@ has "$o/chromium_crates_io/vendor/fonts-v1/src/lib.rs" 'patched fonts' &&
   ok "without --fresh: an override crate's sources kept" ||
   fail "without --fresh: vendor/fonts-v1 changed"
 
-# 4. No gn binary in the checkout.
+# 4. -h prints the whole header.
+if "$BASH" "$ROOT/scripts/vendor-rust-crates.sh" -h > "$T/help.log" 2>&1 &&
+   grep -q 'tools/shield_bench' "$T/help.log" && ! grep -q 'set -euo' "$T/help.log"; then
+  ok "-h prints the whole header, and only it"
+else
+  fail "-h: $(tail -2 "$T/help.log")"
+fi
+
+# 5. No gn binary in the checkout.
 setup nogn
 rm -f "$CR/buildtools/linux64/gn" "$CR/buildtools/mac/gn"
 if run "$T/nogn.log"; then
