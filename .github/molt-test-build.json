@@ -1,12 +1,12 @@
 {
- "resume_run": "43585381968",
+ "resume_run": "43589673238",
  "run_tests": false,
  "e2e_only": false,
  "e2e_runs": "",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixty-seventh build (incremental on the sixty-fifth, run 43585381968). The sixty-sixth showed gnrt now formats with the checkout's gn, but the new format check also counted the BUILD.gn files gnrt deletes (upstream's windows-sys 0.52 crates) and stopped the run. Fixed; this build prints the vendored tree that gnrt formats with the checkout's gn, with the overlay copies it now generates as upstream's dropped (vendor_dump), to commit it. No tests, no spoken suite.",
+ "request": "Sixty-eighth build (incremental on the sixty-seventh, run 43589673238). The vendored tree now holds gnrt's output formatted as upstream's (253 format-only upstream copies dropped, 93 files formatted), and patches/ reproduces it. This build is the drift check with the final vendor-rust-crates.sh (override crates and dropped crates handled too): gnrt vendors fresh and the committed tree must match it exactly. No tests, no spoken suite.",
  "e2e_scenarios": "",
- "vendor_dump": true
+ "vendor_dump": false
 }
