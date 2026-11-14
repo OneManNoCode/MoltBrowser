@@ -74,6 +74,7 @@
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/scroll_marker_group_pseudo_element.h"
+#include "third_party/blink/renderer/core/dom/slot_assignment_recalc_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/drag_caret.h"
@@ -419,10 +420,21 @@ void LocalFrameView::Trace(Visitor* visitor) const {
 
 void LocalFrameView::ForAllChildViewsAndPlugins(
     base::FunctionRef<void(EmbeddedContentView&)> function) {
+#if DCHECK_IS_ON()
+  const unsigned initial_child_count = frame_->Tree().ChildCount();
+#endif
   for (Frame* child = frame_->Tree().FirstChild(); child;
        child = child->Tree().NextSibling()) {
+#if DCHECK_IS_ON()
+    Frame* next_sibling = child->Tree().NextSibling();
+#endif
     if (child->View())
       function(*child->View());
+#if DCHECK_IS_ON()
+    DCHECK_EQ(child->Tree().Parent(), frame_);
+    DCHECK_EQ(child->Tree().NextSibling(), next_sibling);
+    DCHECK_EQ(frame_->Tree().ChildCount(), initial_child_count);
+#endif
   }
 
   for (const auto& plugin : plugins_) {
@@ -751,6 +763,7 @@ void LocalFrameView::PerformLayout() {
   const bool has_subtree_layout_roots = HasSubtreeLayoutRoots();
 
   Document* document = GetFrame().GetDocument();
+  SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(*document);
   if (!has_subtree_layout_roots) {
     Node* body = document->body();
     if (IsA<HTMLFrameSetElement>(body) && body->GetLayoutObject()) {
@@ -2909,7 +2922,11 @@ bool LocalFrameView::RunStyleAndLayoutLifecyclePhases(
     frame_view.PerformScrollAnchoringAdjustments();
   });
 
-  ExecutePendingSnapUpdates();
+  {
+    SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(
+        *frame_->GetDocument());
+    ExecutePendingSnapUpdates();
+  }
 
   ExecutePendingScrollMarkerSelectionUpdates();
 
@@ -4211,6 +4228,7 @@ void LocalFrameView::PropagateFrameRectsInternal() {
 
 void LocalFrameView::PropagateFrameRectsRecursively() {
   CHECK(RuntimeEnabledFeatures::AvoidEmbeddedContentViewLocationEnabled());
+  SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(*frame_->GetDocument());
   if (NeedsFrameRectPropagation()) {
     PropagateFrameRects();
   }
@@ -5726,38 +5744,55 @@ void LocalFrameView::RemovePendingSnapUpdate(PaintLayerScrollableArea* object) {
   if (pending_snap_updates_) {
     pending_snap_updates_->erase(object);
   }
+  if (pending_perform_snap_) {
+    pending_perform_snap_->erase(object);
+  }
 }
 
 void LocalFrameView::ExecutePendingSnapUpdates() {
-  if (pending_snap_updates_) {
-    // Some scroll containers might be mid-scroll animation. Defer snapping
-    // those containers until after the scroll animation is done.
-    HeapHashSet<Member<PaintLayerScrollableArea>> deferred_updates;
+  if (pending_snap_updates_ && !pending_snap_updates_->empty()) {
+    // Move to a local set before iterating, since updating snap container data
+    // may detach layout objects and mutate `pending_snap_updates_`.
+    HeapHashSet<Member<PaintLayerScrollableArea>> snap_updates;
+    pending_snap_updates_->swap(snap_updates);
+
     // Iteration order of the objects doesn't matter as the snap-areas are
     // contained within each scroll-container.
-    for (PaintLayerScrollableArea* scrollable_area : *pending_snap_updates_) {
+    for (PaintLayerScrollableArea* scrollable_area : snap_updates) {
       auto* snap_container = scrollable_area->GetLayoutBox();
+      if (!snap_container) {
+        continue;
+      }
       DCHECK(snap_container->IsScrollContainer());
       if (SnapCoordinator::UpdateSnapContainerData(*snap_container)) {
-        if (!pending_perform_snap_) {
-          pending_perform_snap_ = MakeGarbageCollected<
-              GCedHeapHashSet<Member<PaintLayerScrollableArea>>>();
+        if (!scrollable_area->GetLayoutBox()) {
+          continue;
         }
         if (scrollable_area->HasRunningAnimation()) {
-          deferred_updates.insert(scrollable_area);
+          // Some scroll containers might be mid-scroll animation. Defer
+          // snapping those containers until after the scroll animation is done.
+          pending_snap_updates_->insert(scrollable_area);
         } else {
+          if (!pending_perform_snap_) {
+            pending_perform_snap_ = MakeGarbageCollected<
+                GCedHeapHashSet<Member<PaintLayerScrollableArea>>>();
+          }
           pending_perform_snap_->insert(scrollable_area);
         }
       }
     }
-    pending_snap_updates_->swap(deferred_updates);
   }
 
-  if (pending_perform_snap_ && !ShouldDeferLayoutSnap()) {
-    for (PaintLayerScrollableArea* scrollable_area : *pending_perform_snap_) {
+  if (pending_perform_snap_ && !pending_perform_snap_->empty() &&
+      !ShouldDeferLayoutSnap()) {
+    HeapHashSet<Member<PaintLayerScrollableArea>> perform_snap;
+    pending_perform_snap_->swap(perform_snap);
+    for (PaintLayerScrollableArea* scrollable_area : perform_snap) {
+      if (!scrollable_area->GetLayoutBox()) {
+        continue;
+      }
       scrollable_area->SnapAfterLayout();
     }
-    pending_perform_snap_->clear();
   }
 }
 
