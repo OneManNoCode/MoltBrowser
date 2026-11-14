@@ -615,7 +615,7 @@ of its dependencies.
   If the owner wants that confirmed first, the alternative is to spot the
   wake phrase in Kroko's own streaming transcript (no second model; Kroko
   listens all the time for about 6% of a core, [VOICE_BENCH.md](../VOICE_BENCH.md)
-  §3.6).
+  §3.6). The owner decided to ship it as is in v0.3.0 (2026-11-14).
 - Silero VAD is MIT (its licence text is in `LICENSES/README.md`);
   sherpa-onnx Apache-2.0; ONNX Runtime MIT.
 

@@ -1,6 +1,8 @@
 # S17: Safe Browsing decision memo
 
-**Status:** decision needed. **Audience:** GenEye lead. **Related:**
+**Status:** for v0.3.0 the owner kept today's default (2026-11-14); the
+choice among options A to D below stays open for a later release.
+**Audience:** GenEye lead. **Related:**
 [NETWORK_TRAFFIC.md](NETWORK_TRAFFIC.md) (P16).
 
 ## Where we are
