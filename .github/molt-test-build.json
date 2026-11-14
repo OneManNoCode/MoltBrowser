@@ -6,7 +6,7 @@
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixty-eighth build (incremental on the sixty-seventh, run 43589673238). The vendored tree now holds gnrt's output formatted as upstream's (253 format-only upstream copies dropped, 93 files formatted), and patches/ reproduces it. This build is the drift check with the final vendor-rust-crates.sh (override crates and dropped crates handled too): gnrt vendors fresh and the committed tree must match it exactly. No tests, no spoken suite.",
+ "request": "Sixty-ninth build (incremental on the sixty-seventh, run 43589673238; replaces the sixty-eighth, which ran the script before a third review's fixes). The vendored tree holds gnrt's output formatted as upstream's and patches/ reproduces it. This build is the drift check with the final vendor-rust-crates.sh (patched crates vendored afresh, stale checkout patches reset, placeholder crates handled): gnrt vendors fresh and the committed tree must match it exactly. No tests, no spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
