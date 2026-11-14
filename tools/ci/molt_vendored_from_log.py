@@ -113,6 +113,12 @@ def apply(repo, data, removed, dry_run):
         path = os.path.join(repo, name)
         if not dry_run and os.path.isfile(path) and not os.path.islink(path):
             os.remove(path)
+            # And the directories it leaves empty, up to src/third_party/rust.
+            d = os.path.dirname(path)
+            top = os.path.join(repo, PREFIX.rstrip('/'))
+            while d != top and os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+                d = os.path.dirname(d)
     return written
 
 

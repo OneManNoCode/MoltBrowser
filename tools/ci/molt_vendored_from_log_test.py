@@ -75,6 +75,9 @@ class VendoredFromLogTest(unittest.TestCase):
         self.assertTrue(os.access(os.path.join(
             self.repo, 'src/third_party/rust/chromium_crates_io/vendor/a/build.sh'), os.X_OK))
         self.assertFalse(os.path.exists(os.path.join(self.repo, 'src/third_party/rust/old/gone.rs')))
+        # The directory it left empty goes too, not src/third_party/rust.
+        self.assertFalse(os.path.exists(os.path.join(self.repo, 'src/third_party/rust/old')))
+        self.assertTrue(os.path.isdir(os.path.join(self.repo, 'src/third_party/rust')))
 
     def test_byte_order_marks_where_the_log_chunks_start(self):
         data = archive([('file', 'src/third_party/rust/a.rs', b'a' * 4000)])

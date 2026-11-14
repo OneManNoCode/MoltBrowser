@@ -1,0 +1,19 @@
+MoltBrowser patch for third_party/rust/anstyle/v1/README.chromium
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
+Generated from src/third_party/rust/anstyle/v1/README.chromium by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/anstyle/v1/README.chromium b/third_party/rust/anstyle/v1/README.chromium
+index df6c697800ba44635853dbe36ac8f24ac118d9ca..416139a376aefad0049e608cd81cff67cedd90c4 100644
+--- a/third_party/rust/anstyle/v1/README.chromium
++++ b/third_party/rust/anstyle/v1/README.chromium
+@@ -5,7 +5,7 @@ Revision: 0fe6f0ff6d52e9f91d4071199bd0b24bd46f3d35
+ Update Mechanism: Manual (https://crbug.com/449898466)
+ License: Apache-2.0
+ License File: //third_party/rust/chromium_crates_io/vendor/anstyle-v1/LICENSE-APACHE
+-Shipped: no
++Shipped: yes
+ Security Critical: yes
+ 
+ Description: ANSI text styling

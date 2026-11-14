@@ -1,0 +1,19 @@
+MoltBrowser patch for third_party/rust/aho_corasick/v1/BUILD.gn
+Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
+Generated from src/third_party/rust/aho_corasick/v1/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/aho_corasick/v1/BUILD.gn b/third_party/rust/aho_corasick/v1/BUILD.gn
+index d8f7028e7b166b2218dc2677a26516e4f3ef469c..18cf4146f79013fa422a57ae4c19fdbdf4649545 100644
+--- a/third_party/rust/aho_corasick/v1/BUILD.gn
++++ b/third_party/rust/aho_corasick/v1/BUILD.gn
+@@ -58,7 +58,7 @@ cargo_crate("lib") {
+   cargo_pkg_repository = "https://github.com/BurntSushi/aho-corasick"
+   cargo_pkg_version = "1.1.5"
+ 
+-  allow_unsafe = false
++  allow_unsafe = true
+ 
+   deps = [ "//third_party/rust/memchr/v2:lib" ]
+   features = [

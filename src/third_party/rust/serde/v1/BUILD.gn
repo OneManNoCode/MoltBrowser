@@ -12,7 +12,8 @@ cargo_crate("lib") {
   crate_name = "serde"
   epoch = "1"
   crate_type = "rlib"
-    crate_root = "//third_party/rust/chromium_crates_io/vendor/serde-v1/src/lib.rs"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/serde-v1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/serde-v1/src/core/crate_root.rs",
     "//third_party/rust/chromium_crates_io/vendor/serde-v1/src/core/de/ignored_any.rs",
@@ -39,23 +40,21 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/serde-v1/src/private/mod.rs",
     "//third_party/rust/chromium_crates_io/vendor/serde-v1/src/private/ser.rs",
   ]
-  inputs = [
-  ]
-
+  inputs = []
 
   build_native_rust_unit_tests = false
   edition = "2021"
-      cargo_pkg_authors = "Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
+  cargo_pkg_authors = "Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
   cargo_pkg_name = "serde"
-      cargo_pkg_description = "A generic serialization/deserialization framework"
-      cargo_pkg_repository = "https://github.com/serde-rs/serde"
+  cargo_pkg_description = "A generic serialization/deserialization framework"
+  cargo_pkg_repository = "https://github.com/serde-rs/serde"
   cargo_pkg_version = "1.0.229"
 
-    allow_unsafe =  false 
+  allow_unsafe = false
 
   deps = [
-      "//third_party/rust/serde_core/v1:lib",
-      "//third_party/rust/serde_derive/v1:lib",
+    "//third_party/rust/serde_core/v1:lib",
+    "//third_party/rust/serde_derive/v1:lib",
   ]
   features = [
     "alloc",
@@ -65,15 +64,10 @@ cargo_crate("lib") {
     "serde_derive",
     "std",
   ]
-    build_root = "//third_party/rust/chromium_crates_io/vendor/serde-v1/build.rs"
-    build_sources = [
-        "//third_party/rust/chromium_crates_io/vendor/serde-v1/build.rs",
-    ]
-      build_script_outputs = [
-          "private.rs",
-      ]
-
-
+  build_root = "//third_party/rust/chromium_crates_io/vendor/serde-v1/build.rs"
+  build_sources =
+      [ "//third_party/rust/chromium_crates_io/vendor/serde-v1/build.rs" ]
+  build_script_outputs = [ "private.rs" ]
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -91,14 +85,11 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
-
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += [
-  ]
-  _configs_to_add += [
-  ]
+  _configs_to_remove += []
+  _configs_to_add += []
 
   # Applying config changes.
   library_configs -= _configs_to_remove

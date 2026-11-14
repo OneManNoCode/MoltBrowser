@@ -12,7 +12,8 @@ cargo_crate("lib") {
   crate_name = "chrono"
   epoch = "0.4"
   crate_type = "rlib"
-    crate_root = "//third_party/rust/chromium_crates_io/vendor/chrono-v0_4/src/lib.rs"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/chrono-v0_4/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/chrono-v0_4/src/date.rs",
     "//third_party/rust/chromium_crates_io/vendor/chrono-v0_4/src/datetime/mod.rs",
@@ -56,32 +57,26 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/chrono-v0_4/src/weekday.rs",
     "//third_party/rust/chromium_crates_io/vendor/chrono-v0_4/src/weekday_set.rs",
   ]
-  inputs = [
-  ]
-
+  inputs = []
 
   build_native_rust_unit_tests = false
   edition = "2021"
   cargo_pkg_name = "chrono"
-      cargo_pkg_description = "Date and time library for Rust"
-      cargo_pkg_repository = "https://github.com/chronotope/chrono"
+  cargo_pkg_description = "Date and time library for Rust"
+  cargo_pkg_repository = "https://github.com/chronotope/chrono"
   cargo_pkg_version = "0.4.45"
 
-    allow_unsafe =  true 
+  allow_unsafe = true
 
   deps = [
-      "//third_party/rust/num_traits/v0_2:lib",
-      "//third_party/rust/serde/v1:lib",
+    "//third_party/rust/num_traits/v0_2:lib",
+    "//third_party/rust/serde/v1:lib",
   ]
   if (!is_win) {
-    deps += [
-      "//third_party/rust/iana_time_zone/v0_1:lib",
-    ]
+    deps += [ "//third_party/rust/iana_time_zone/v0_1:lib" ]
   }
   if (is_win) {
-    deps += [
-      "//third_party/rust/windows_link/v0_2:lib",
-    ]
+    deps += [ "//third_party/rust/windows_link/v0_2:lib" ]
   }
   features = [
     "alloc",
@@ -99,8 +94,6 @@ cargo_crate("lib") {
     "windows-link",
   ]
 
-
-
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
 
@@ -117,14 +110,11 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
-
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += [
-  ]
-  _configs_to_add += [
-  ]
+  _configs_to_remove += []
+  _configs_to_add += []
 
   # Applying config changes.
   library_configs -= _configs_to_remove

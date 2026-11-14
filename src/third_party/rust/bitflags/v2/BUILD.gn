@@ -12,18 +12,20 @@ cargo_crate("lib") {
   crate_name = "bitflags"
   epoch = "2"
   crate_type = "rlib"
-    crate_root = "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/lib.rs"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/example_generated.rs",
+    "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/external.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/external/arbitrary.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/external/bytemuck.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/external/serde.rs",
-    "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/external.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/internal.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/iter.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/parser.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/public.rs",
+    "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests/all.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests/all_named.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests/bitflags_match.rs",
@@ -57,32 +59,26 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests/union.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests/unknown.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests/unknown_bits.rs",
-    "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/tests.rs",
     "//third_party/rust/chromium_crates_io/vendor/bitflags-v2/src/traits.rs",
   ]
-  inputs = [
-  ]
-
+  inputs = []
 
   build_native_rust_unit_tests = false
   edition = "2021"
-      cargo_pkg_authors = "The Rust Project Developers"
+  cargo_pkg_authors = "The Rust Project Developers"
   cargo_pkg_name = "bitflags"
-      cargo_pkg_description = "A macro to generate structures which behave like bitflags."
-      cargo_pkg_repository = "https://github.com/bitflags/bitflags"
+  cargo_pkg_description =
+      "A macro to generate structures which behave like bitflags."
+  cargo_pkg_repository = "https://github.com/bitflags/bitflags"
   cargo_pkg_version = "2.13.2"
 
-    allow_unsafe =  false 
+  allow_unsafe = false
 
-  deps = [
-      "//third_party/rust/serde_core/v1:lib",
-  ]
+  deps = [ "//third_party/rust/serde_core/v1:lib" ]
   features = [
     "serde",
     "serde_core",
   ]
-
-
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -100,14 +96,11 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
-
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += [
-  ]
-  _configs_to_add += [
-  ]
+  _configs_to_remove += []
+  _configs_to_add += []
 
   # Applying config changes.
   library_configs -= _configs_to_remove

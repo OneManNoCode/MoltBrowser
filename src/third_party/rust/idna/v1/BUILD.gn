@@ -12,31 +12,30 @@ cargo_crate("lib") {
   crate_name = "idna"
   epoch = "1"
   crate_type = "rlib"
-    crate_root = "//third_party/rust/chromium_crates_io/vendor/idna-v1/src/lib.rs"
+  crate_root = "//third_party/rust/chromium_crates_io/vendor/idna-v1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/idna-v1/src/deprecated.rs",
     "//third_party/rust/chromium_crates_io/vendor/idna-v1/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/idna-v1/src/punycode.rs",
     "//third_party/rust/chromium_crates_io/vendor/idna-v1/src/uts46.rs",
   ]
-  inputs = [
-  ]
-
+  inputs = []
 
   build_native_rust_unit_tests = false
   edition = "2018"
-      cargo_pkg_authors = "The rust-url developers"
+  cargo_pkg_authors = "The rust-url developers"
   cargo_pkg_name = "idna"
-      cargo_pkg_description = "IDNA (Internationalizing Domain Names in Applications) and Punycode."
-      cargo_pkg_repository = "https://github.com/servo/rust-url/"
+  cargo_pkg_description =
+      "IDNA (Internationalizing Domain Names in Applications) and Punycode."
+  cargo_pkg_repository = "https://github.com/servo/rust-url/"
   cargo_pkg_version = "1.1.0"
 
-    allow_unsafe =  true 
+  allow_unsafe = true
 
   deps = [
-      "//third_party/rust/idna_adapter/v1:lib",
-      "//third_party/rust/smallvec/v1:lib",
-      "//third_party/rust/utf8_iter/v1:lib",
+    "//third_party/rust/idna_adapter/v1:lib",
+    "//third_party/rust/smallvec/v1:lib",
+    "//third_party/rust/utf8_iter/v1:lib",
   ]
   features = [
     "alloc",
@@ -49,7 +48,6 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
-
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -67,14 +65,11 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
-
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += [
-  ]
-  _configs_to_add += [
-  ]
+  _configs_to_remove += []
+  _configs_to_add += []
 
   # Applying config changes.
   library_configs -= _configs_to_remove

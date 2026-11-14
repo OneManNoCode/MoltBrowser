@@ -12,7 +12,8 @@ cargo_crate("lib") {
   crate_name = "seahash"
   epoch = "4"
   crate_type = "rlib"
-    crate_root = "//third_party/rust/chromium_crates_io/vendor/seahash-v4/src/lib.rs"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/seahash-v4/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/seahash-v4/src/buffer.rs",
     "//third_party/rust/chromium_crates_io/vendor/seahash-v4/src/helper.rs",
@@ -21,29 +22,25 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/seahash-v4/src/reference.rs",
     "//third_party/rust/chromium_crates_io/vendor/seahash-v4/src/stream.rs",
   ]
-  inputs = [
-  ]
-
+  inputs = []
 
   build_native_rust_unit_tests = false
   edition = "2015"
-      cargo_pkg_authors = "ticki <ticki@users.noreply.github.com>, Tom Almeida <tom@tommoa.me>"
+  cargo_pkg_authors =
+      "ticki <ticki@users.noreply.github.com>, Tom Almeida <tom@tommoa.me>"
   cargo_pkg_name = "seahash"
-      cargo_pkg_description = "A blazingly fast, portable hash function with proven statistical guarantees."
-      cargo_pkg_repository = "https://gitlab.redox-os.org/redox-os/seahash"
+  cargo_pkg_description = "A blazingly fast, portable hash function with proven statistical guarantees."
+  cargo_pkg_repository = "https://gitlab.redox-os.org/redox-os/seahash"
   cargo_pkg_version = "4.1.0"
 
-    allow_unsafe =  true 
+  allow_unsafe = true
 
-  features = [
-    "default",
-  ]
+  features = [ "default" ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
-
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -61,14 +58,11 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
-
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += [
-  ]
-  _configs_to_add += [
-  ]
+  _configs_to_remove += []
+  _configs_to_add += []
 
   # Applying config changes.
   library_configs -= _configs_to_remove
