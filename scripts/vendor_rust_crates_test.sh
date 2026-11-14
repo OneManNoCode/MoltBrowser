@@ -21,6 +21,10 @@
 #   * an upstream crate gnrt deletes passes the format check and its overlay
 #     copy goes;
 #   * the crate config and patches the script copies in stay;
+#   * with --fresh, an override crate's sources gnrt now writes as
+#     upstream's, or no longer writes, go;
+#   * a crate only the overlay has loses its BUILD.gn and README.chromium
+#     once gnrt no longer vendors it;
 #   * without --fresh, gnrt's output that differs from the overlay's stays.
 
 set -euo pipefail
@@ -83,6 +87,10 @@ def write(rel, body, fmt=True):
 v = "third_party/rust/chromium_crates_io/vendor/"
 if sys.argv[1] == "vendor":
     write(v + "up-v1/src/lib.rs", "up\n", fmt=False)
+    # An override crate whose overlay patch is gone: gnrt writes the upstream one
+    # (and keeps a directory that exists, as gnrt does).
+    if not os.path.isdir(v + "fonts-v1"):
+        write(v + "fonts-v1/src/lib.rs", "fonts\n", fmt=False)
     write(v + "ours-v1/src/lib.rs", "ours\n", fmt=False)
 else:
     import shutil
@@ -98,6 +106,7 @@ else:
   put "$CR/third_party/rust/chromium_crates_io/Cargo.lock" 'upstream lock'
   put "$CR/third_party/rust/chromium_crates_io/patches/up-v1/0001-x.patch" 'patch'
   put "$CR/third_party/rust/chromium_crates_io/vendor/up-v1/src/lib.rs" 'up'
+  put "$CR/third_party/rust/chromium_crates_io/vendor/fonts-v1/src/lib.rs" 'fonts'
   put "$CR/third_party/rust/same/v1/BUILD.gn" "$HEADER
 same"
   put "$CR/third_party/rust/same/v1/README.chromium" 'Name: same'
@@ -123,6 +132,14 @@ dropped"
   put "$o/chromium_crates_io/vendor/up-v1/src/lib.rs" 'up'
   put "$o/chromium_crates_io/vendor/ours-v1/src/lib.rs" 'ours'
   put "$o/chromium_crates_io/vendor/ours-v1/src/old.rs" 'gone'
+  # Patched sources of an override crate whose patch was since removed.
+  put "$o/chromium_crates_io/vendor/fonts-v1/src/lib.rs" 'patched fonts'
+  put "$o/chromium_crates_io/vendor/fonts-v1/src/extra.rs" 'added by the patch'
+  # A crate only the overlay has, which gnrt no longer vendors.
+  put "$o/chromium_crates_io/vendor/gonecrate-v1/src/lib.rs" 'gone crate'
+  put "$o/gonecrate/v1/BUILD.gn" "$HEADER
+crate_root = \"//third_party/rust/chromium_crates_io/vendor/gonecrate-v1/src/lib.rs\""
+  put "$o/gonecrate/v1/README.chromium" 'Name: gonecrate'
   put "$o/same/v1/BUILD.gn" "$HEADER
 same
 UNFORMATTED"
@@ -204,6 +221,15 @@ has "$o/chromium_crates_io/vendor/ours-v1/src/lib.rs" ours &&
 [[ ! -e "$o/dropped" ]] &&
   ok "a crate gnrt deleted: no error from the format check, its copy dropped" ||
   fail "dropped/ is still in the overlay"
+[[ ! -e "$o/chromium_crates_io/vendor/fonts-v1" ]] &&
+  grep -q 'dropped third_party/rust/chromium_crates_io/vendor/fonts-v1/src/lib.rs (gnrt now writes' "$T/copyback.log" &&
+  grep -q 'dropped third_party/rust/chromium_crates_io/vendor/fonts-v1/src/extra.rs (gnrt no longer writes' "$T/copyback.log" &&
+  ok "with --fresh, an override crate's stale sources dropped, added files too" ||
+  fail "vendor/fonts-v1 not dropped: $(find "$o/chromium_crates_io/vendor/fonts-v1" -type f 2>/dev/null)"
+[[ ! -e "$o/gonecrate" && ! -e "$o/chromium_crates_io/vendor/gonecrate-v1" ]] &&
+  grep -q 'dropped third_party/rust/gonecrate/v1/BUILD.gn (gnrt no longer vendors' "$T/copyback.log" &&
+  ok "a crate only the overlay had, no longer vendored: its BUILD.gn and README go" ||
+  fail "gonecrate not dropped: $(find "$o/gonecrate" -type f 2>/dev/null)"
 has "$o/chromium_crates_io/Cargo.toml" 'our toml' &&
   has "$o/chromium_crates_io/gnrt_config.toml" 'upstream config' &&
   has "$o/chromium_crates_io/patches/up-v1/0001-x.patch" patch &&
@@ -215,8 +241,9 @@ setup unformatted
 if run "$T/unformatted.log" FAKE_GNRT_SKIP_FORMAT=1; then
   fail "the script succeeded with unformatted BUILD.gn files"
 elif grep -q 'gn format would change' "$T/unformatted.log" &&
-     grep -q 'third_party/rust/changed/v1/BUILD.gn' "$T/unformatted.log"; then
-  ok "unformatted BUILD.gn files fail the script, named"
+     grep -q 'third_party/rust/changed/v1/BUILD.gn' "$T/unformatted.log" &&
+     grep -q 'third_party/rust/ours/v1/BUILD.gn' "$T/unformatted.log"; then
+  ok "unformatted BUILD.gn files fail the script, named (tracked and not)"
 else
   fail "unexpected failure:"; cat "$T/unformatted.log"
 fi
@@ -241,6 +268,10 @@ fi
   grep -q 'dropped third_party/rust/chromium_crates_io/vendor/up-v1/src/lib.rs (the same' "$T/nofresh.log" &&
   ok "without --fresh: the same bytes dropped and named" ||
   fail "without --fresh: vendor/up-v1 not dropped and named"
+has "$o/chromium_crates_io/vendor/fonts-v1/src/lib.rs" 'patched fonts' &&
+  has "$o/chromium_crates_io/vendor/fonts-v1/src/extra.rs" 'added by the patch' &&
+  ok "without --fresh: an override crate's sources kept" ||
+  fail "without --fresh: vendor/fonts-v1 changed"
 
 # 4. No gn binary in the checkout.
 setup nogn

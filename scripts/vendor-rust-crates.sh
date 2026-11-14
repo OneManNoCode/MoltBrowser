@@ -178,17 +178,24 @@ if [[ "$COPY_BACK" == 1 ]]; then
           rm -f "$dst"
         fi
       done
-  # An overlay copy of an upstream file the checkout now has as upstream is
-  # no MoltBrowser change any more: it goes, or it would shadow upstream as
-  # a stale patched file (and fail patches/'s check). It goes if it is the
-  # same bytes, or, with --fresh, if it is gnrt's own output (a crate's
-  # BUILD.gn or README.chromium): only then did gnrt download and patch
-  # every overlay crate itself, so what it generated reflects the overlay.
-  # (Without --fresh it keeps the checkout's crate directories, which are
-  # upstream's if the overlay wasn't copied in.) Any other such file is
-  # kept, and every file dropped or kept is named.
+  # What the overlay no longer needs goes, or it would shadow upstream as a
+  # stale patched file (and fail patches/'s check), and every file dropped
+  # or kept is named:
+  #   * a copy of an upstream file the checkout has as upstream, if it is
+  #     the same bytes;
+  #   * with --fresh, gnrt's own output the checkout has as upstream: a
+  #     crate's BUILD.gn or README.chromium, and anything under an overlay
+  #     vendor/ crate, which --fresh had gnrt download and patch afresh
+  #     (a vendor/ file gnrt no longer writes goes too). Without --fresh
+  #     gnrt keeps the checkout's crate directories, which are upstream's if
+  #     the overlay wasn't copied in, so its output may not reflect the
+  #     overlay;
+  #   * the BUILD.gn and README.chromium of a crate only the overlay has,
+  #     once gnrt no longer vendors it (its vendor/ directory is gone).
+  # Any other copy of an upstream file the checkout has as upstream is kept.
   python3 -I - "$CHROMIUM_SRC" "$ROOT_DIR/src" "$FRESH" <<'PY'
 import os
+import re
 import subprocess
 import sys
 
@@ -218,41 +225,85 @@ while i < len(items):
         i += 1
 
 MARK = b'@generated from third_party/rust/chromium_crates_io/BUILD.gn.hbs'
+CIO = b'third_party/rust/chromium_crates_io/'
+VENDOR = CIO + b'vendor/'
+# The crate config this script copies in (step 1) stays, whatever it holds.
+INPUTS = (CIO + b'Cargo.toml', CIO + b'gnrt_config.toml')
+CRATE_ROOT = re.compile(
+    rb'crate_root\s*=\s*"//third_party/rust/chromium_crates_io/vendor/([^/"]+)/')
+
+
+def read(path, n=-1):
+    try:
+        with open(path, 'rb') as f:
+            return f.read(n)
+    except OSError:
+        return None
 
 
 def generated(rel):
     d, name = os.path.split(rel)
     if name not in (b'BUILD.gn', b'README.chromium'):
         return False
-    try:
-        with open(os.path.join(cr, d, b'BUILD.gn'), 'rb') as f:
-            return MARK in f.read(4096)
-    except OSError:
-        return False
+    return MARK in (read(os.path.join(cr, d, b'BUILD.gn'), 4096) or b'')
 
 
-CIO = b'third_party/rust/chromium_crates_io/'
-# The crate config this script copies in (step 1) stays, whatever it holds.
-INPUTS = (CIO + b'Cargo.toml', CIO + b'gnrt_config.toml')
+# Crates only the overlay has whose vendor/ directory gnrt removed (gnrt
+# vendor runs above, so a crate it still vendors has one).
+gone = set()
 root = os.path.join(ov, b'third_party', b'rust')
+for crate in os.listdir(root):
+    if crate == b'chromium_crates_io' or not os.path.isdir(
+            os.path.join(root, crate)):
+        continue
+    for epoch in os.listdir(os.path.join(root, crate)):
+        rel_dir = b'third_party/rust/' + crate + b'/' + epoch
+        if not os.path.isdir(os.path.join(ov, rel_dir)):
+            continue
+        build = read(os.path.join(ov, rel_dir, b'BUILD.gn'))
+        if not build or MARK not in build[:4096]:
+            continue
+        if rel_dir + b'/BUILD.gn' in tracked:
+            continue
+        if os.path.exists(os.path.join(cr, rel_dir, b'BUILD.gn')):
+            continue
+        m = CRATE_ROOT.search(build)
+        if m and not os.path.isdir(os.path.join(cr, VENDOR + m.group(1))):
+            gone.add(rel_dir)
+
 dropped = 0
+
+
+def drop(full, rel, why):
+    global dropped
+    os.remove(full)
+    dropped += 1
+    print('    dropped %s (%s)' % (os.fsdecode(rel), why))
+
+
 for dirpath, dirnames, filenames in os.walk(root, topdown=False):
     for name in filenames:
         full = os.path.join(dirpath, name)
         rel = os.path.relpath(full, ov)
-        if rel not in tracked or rel in dirty or os.path.islink(full):
+        if os.path.islink(full):
             continue
         if rel in INPUTS or rel.startswith(CIO + b'patches/'):
             continue
-        with open(full, 'rb') as a, open(os.path.join(cr, rel), 'rb') as b:
-            same = a.read() == b.read()
-        if same or (fresh and generated(rel)):
-            os.remove(full)
-            dropped += 1
-            print('    dropped %s (%s)' % (
-                os.fsdecode(rel),
-                'the same as upstream\'s' if same else
-                'gnrt now generates upstream\'s'))
+        if (os.path.dirname(rel) in gone and
+                name in (b'BUILD.gn', b'README.chromium')):
+            drop(full, rel, 'gnrt no longer vendors its crate')
+            continue
+        vendored = fresh and rel.startswith(VENDOR)
+        if vendored and not os.path.lexists(os.path.join(cr, rel)):
+            drop(full, rel, 'gnrt no longer writes it')
+            continue
+        if rel not in tracked or rel in dirty:
+            continue
+        same = read(full) == read(os.path.join(cr, rel))
+        if same:
+            drop(full, rel, 'the same as upstream\'s')
+        elif fresh and (vendored or generated(rel)):
+            drop(full, rel, 'gnrt now writes upstream\'s')
         elif generated(rel):
             print('    kept %s: gnrt generated upstream\'s, but without '
                   '--fresh it may not have seen the overlay\'s crates'
@@ -262,7 +313,7 @@ for dirpath, dirnames, filenames in os.walk(root, topdown=False):
                   '(was the overlay copied in first?)' % os.fsdecode(rel))
     if dirpath != root and not os.listdir(dirpath):
         os.rmdir(dirpath)
-print('    dropped %d overlay copies the checkout has as upstream' % dropped)
+print('    dropped %d overlay files gnrt no longer needs' % dropped)
 PY
   # A crate only the overlay vendors is the overlay's whole copy of it: a
   # file gnrt no longer writes goes from the overlay too, and so does a
