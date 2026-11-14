@@ -346,6 +346,18 @@ mkdir -p "$WORK"
 
 # ---------------------------------------------------------------- fetching
 # fetch_pinned FILE URL SHA256 [GIT_URL COMMIT PREFIX]
+
+# A GNU gzip's path: GitHub's /archive/ tarballs are GNU gzip's output, and
+# macOS's /usr/bin/gzip (zlib) writes other bytes for the same tar.
+gnu_gzip() {
+  local g
+  for g in gzip /opt/homebrew/bin/gzip /usr/local/bin/gzip; do
+    case "$("$g" --version 2>/dev/null | head -1)" in
+      "gzip "[0-9]*) command -v "$g"; return 0 ;;
+    esac
+  done
+  return 1
+}
 fetch_pinned() {
   local file="$1" url="$2" sha="$3" git_url="${4:-}" commit="${5:-}" prefix="${6:-}"
   local rc=0
@@ -368,6 +380,10 @@ fetch_pinned() {
     log "download failed; reproducing it from git"
   fi
   [[ -n "$git_url" ]] || die "no git source for $url"
+  # GitHub's /archive/ tarballs, and so the pins, are GNU gzip's bytes;
+  # macOS's own gzip (zlib) compresses the same tar differently.
+  local gz
+  gz="$(gnu_gzip)" || die "reproducing $url from git needs GNU gzip (brew install gzip): macOS's gzip doesn't give GitHub's bytes"
   local tmp
   tmp="$(mktemp -d "$CACHE_DIR/build/git.XXXXXX")"
   git init -q "$tmp/r"
@@ -379,7 +395,7 @@ fetch_pinned() {
     rm -rf "$tmp"
     die "$git_url gave commit $got, pinned $commit"
   fi
-  git -C "$tmp/r" archive --format=tar --prefix="$prefix/" "$commit" | gzip -cn > "$file.tmp"
+  git -C "$tmp/r" archive --format=tar --prefix="$prefix/" "$commit" | "$gz" -cn > "$file.tmp"
   rm -rf "$tmp"
   rc=0
   verify_sha256 "$file.tmp" "$sha" || rc=$?
@@ -507,7 +523,7 @@ EOF
     win) ort_flags+=(-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded) ;;
   esac
   rm -rf "$ORT_BUILD"
-  cmake "${GENERATOR[@]}" -S "$ORT_SRC/cmake" -B "$ORT_BUILD" "${ort_flags[@]}" > "$WORK/ort-configure.log" 2>&1 ||
+  cmake ${GENERATOR[@]+"${GENERATOR[@]}"} -S "$ORT_SRC/cmake" -B "$ORT_BUILD" "${ort_flags[@]}" > "$WORK/ort-configure.log" 2>&1 ||
     { tail -40 "$WORK/ort-configure.log"; die "ONNX Runtime configure failed ($WORK/ort-configure.log)"; }
   # Nothing may come from the network: every Fetch line names a local file.
   if grep -E "^-- Fetch [A-Za-z0-9_]+ from https?://" "$WORK/ort-configure.log"; then
@@ -520,7 +536,7 @@ EOF
   for target in "" re2; do
     target_args=()
     [[ -n "$target" ]] && target_args=(--target "$target")
-    cmake --build "$ORT_BUILD" --config Release --parallel "$JOBS" "${target_args[@]}" \
+    cmake --build "$ORT_BUILD" --config Release --parallel "$JOBS" ${target_args[@]+"${target_args[@]}"} \
         >> "$WORK/ort-build.log" 2>&1 ||
       { grep -E "error|Error" "$WORK/ort-build.log" | head -30; die "ONNX Runtime build failed ($WORK/ort-build.log)"; }
   done
@@ -620,7 +636,7 @@ if [[ ! -f "$SHERPA_STAMP" || "$(cat "$SHERPA_STAMP")" != "$sherpa_key" ]]; then
   HOME="$WORK/empty-home" \
   SHERPA_ONNXRUNTIME_LIB_DIR="$ORT_OUT/lib" \
   SHERPA_ONNXRUNTIME_INCLUDE_DIR="$ORT_OUT/include" \
-    cmake "${GENERATOR[@]}" -S "$SHERPA_SRC" -B "$SHERPA_BUILD" "${sherpa_flags[@]}" \
+    cmake ${GENERATOR[@]+"${GENERATOR[@]}"} -S "$SHERPA_SRC" -B "$SHERPA_BUILD" "${sherpa_flags[@]}" \
       "${source_dir_flags[@]}" \
       > "$WORK/sherpa-configure.log" 2>&1 ||
     { tail -40 "$WORK/sherpa-configure.log"; die "sherpa-onnx configure failed ($WORK/sherpa-configure.log)"; }
@@ -679,7 +695,7 @@ case "$OS" in
   mac) helper_flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0) ;;
   win) helper_flags+=(-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded) ;;
 esac
-cmake "${GENERATOR[@]}" -S "$HELPER_SRC" -B "$HELPER_BUILD" "${helper_flags[@]}" \
+cmake ${GENERATOR[@]+"${GENERATOR[@]}"} -S "$HELPER_SRC" -B "$HELPER_BUILD" "${helper_flags[@]}" \
     > "$WORK/helper-configure.log" 2>&1 ||
   { tail -40 "$WORK/helper-configure.log"; die "molt-speech configure failed"; }
 cmake --build "$HELPER_BUILD" --config Release --parallel "$JOBS" --target molt-speech \
@@ -767,7 +783,7 @@ case "$OS" in
   mac) voice_flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0) ;;
   win) voice_flags+=(-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded) ;;
 esac
-cmake "${GENERATOR[@]}" -S "$VOICE_SRC" -B "$VOICE_BUILD" "${voice_flags[@]}" \
+cmake ${GENERATOR[@]+"${GENERATOR[@]}"} -S "$VOICE_SRC" -B "$VOICE_BUILD" "${voice_flags[@]}" \
     > "$WORK/voice-configure.log" 2>&1 ||
   { tail -40 "$WORK/voice-configure.log"; die "molt-voice configure failed"; }
 cmake --build "$VOICE_BUILD" --config Release --parallel "$JOBS" --target molt-voice \
