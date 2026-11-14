@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   shell:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -70,7 +70,7 @@ jobs:
         run: /bin/bash scripts/mac_bash32_test.sh
 
   bundles:
-    runs-on: macos-14
+    runs-on: macos-15
     # The first run builds ONNX Runtime from source (about an hour).
     timeout-minutes: 180
     steps:
@@ -112,7 +112,7 @@ jobs:
           /bin/bash scripts/bundle-fonts.sh --verify "$app/Contents/Resources"
 
   metallib:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
