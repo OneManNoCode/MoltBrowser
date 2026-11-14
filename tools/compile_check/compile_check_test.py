@@ -451,8 +451,17 @@ class TarballPinTest(unittest.TestCase):
         self.assertNothingKept()
 
     def test_the_pin_of_the_pinned_release(self):
+        # The tools stream the pin's tarball, or, as Chromium publishes none
+        # of Extended Stable's respins, the newest published release of its
+        # branch before it: one of them must be pinned.
         pin = sources._up.read_pin(sources.REPO_ROOT / "chromium_version.txt")
-        name = "chromium-%s-lite.tar.xz" % pin.version
+        lite = [m.group(1) for m in map(tarball.NAME_RE.match,
+                                        tarball.PINNED_SHA256)
+                if m and m.group(2)]
+        v = tarball.pick_version(pin.version, lite)
+        self.assertIsNotNone(v, "no pinned tarball of %s or of an earlier "
+                             "release of its branch" % pin.version)
+        name = "chromium-%s-lite.tar.xz" % v
         self.assertRegex(tarball.pinned_sha256(tarball.BUCKET + name),
                          "^[0-9a-f]{64}$")
 
