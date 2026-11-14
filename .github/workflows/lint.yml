@@ -272,6 +272,10 @@ jobs:
       # mirrors and release tarballs built in the test.
       - name: tools/chromium/patch_tools_test.py
         run: python3 tools/chromium/patch_tools_test.py -v
+      # The vendored Rust crates a test build prints, checked before they
+      # are written into the repository.
+      - name: tools/ci/molt_vendored_from_log_test.py
+        run: python3 -I tools/ci/molt_vendored_from_log_test.py -v
 
   gn-static-check:
     # The checks themselves, against the pin's BUILD.gn files with src/ on

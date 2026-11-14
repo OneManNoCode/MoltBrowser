@@ -1,11 +1,12 @@
 {
- "resume_run": "43486678502",
- "run_tests": true,
+ "resume_run": "43527235720",
+ "run_tests": false,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixtieth build (incremental on the fifty-ninth, run 43486678502). Build 59's spoken suite: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 85/93 (91%), Phase 2 25/30, the model's tasks 4/4, security 6/6, and browser-moltnet-window (\"Hey, Molt, scroll down.\" while the planner worked) passed; every pulse miss was a misheard word. Qwen3.5 4B has now planned well on builds 57-59, typed and spoken, none refused, so it is unhidden (offered in the model list). The tests run, and the typed spoken suite checks the model's tasks still pass with it listed.",
- "e2e_scenarios": ""
+ "request": "Sixty-first build (incremental on the sixtieth, run 43527235720), for MoltShield's vendored Rust crates. The adblock crates aren't committed in src/: every test build vendors them with gnrt on the runner and throws the result away, and a Mac build (the owner's v0.3.0 release, or a test build) has to vendor them itself first. With vendor_dump, stage 1 runs vendor-rust-crates.sh with its copy-back and prints what changed under src/third_party/rust into its log, so the tree can be committed (tools/ci/molt_vendored_from_log.py). No tests: only stage 1's overlay step matters here.",
+ "e2e_scenarios": "",
+ "vendor_dump": true
 }
