@@ -219,7 +219,7 @@
        class="btn-primary" id="heroDownload"
        data-mac-arm="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
        data-win="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe"
-       data-linux-deb="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb">
+       data-linux-deb="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.5/MoltBrowser-Linux-x64.deb">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span id="heroDownloadLabel">Download for Mac</span>
     </a>
@@ -283,16 +283,16 @@
          class="download-btn" id="mac-arm-download">Download for Apple Silicon (.dmg)</a>
     </div>
     <div class="download-card available" id="card-linux">
-      <h3>&#128039; Linux <span class="badge badge-green">Available</span></h3>
+      <h3>&#128039; Linux <span class="badge badge-green">v0.2.5</span></h3>
       <p>Ubuntu, Debian, Fedora, openSUSE, Arch. x86_64. Vulkan GPU acceleration ready.</p>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb"
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.5/MoltBrowser-Linux-x64.deb"
          class="download-btn">Download .deb (Ubuntu / Debian)</a>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.rpm"
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.5/MoltBrowser-Linux-x64.rpm"
          class="download-btn"
          style="margin-top:8px;background:transparent;border:1px solid var(--text2);color:var(--text2)">
         Download .rpm (Fedora / openSUSE)
       </a>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.tar.gz"
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.5/MoltBrowser-Linux-x64.tar.gz"
          class="download-btn"
          style="margin-top:8px;background:transparent;border:1px solid var(--text2);color:var(--text2)">
         Download .tar.gz (Arch / other)
@@ -368,8 +368,10 @@
 
 <script>
 // Auto-detect the visitor's OS and point the hero button to the right
-// installer. All URLs use the GitHub /releases/latest/download/ pattern,
-// which always serves the most-recent release without a redeploy.
+// installer. macOS uses the GitHub /releases/latest/download/ pattern,
+// which always serves the most-recent release without a redeploy; Linux
+// (v0.2.5) and Windows (v0.2.1) name their release, since v0.3.0 is macOS
+// only and "latest" has no Linux or Windows installer.
 (function() {
   var ua = navigator.userAgent;
   var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
@@ -396,8 +398,8 @@
     hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe';
     label = 'Download for Windows (v0.2.1)';
   } else if (isLinux) {
-    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb';
-    label = 'Download for Linux (.deb)';
+    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.5/MoltBrowser-Linux-x64.deb';
+    label = 'Download for Linux (.deb, v0.2.5)';
   } else if (isMac) {
     // Only an Apple Silicon (arm64) build is shipped.
     label = 'Download for Mac (Apple Silicon)';

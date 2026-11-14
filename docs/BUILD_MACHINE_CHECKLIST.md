@@ -4947,7 +4947,9 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
 
 ## 11. The owner's open decisions
 
-- [ ] **Safe Browsing.** The memo recommends option D for v0.3.0: default it
+- [x] **Safe Browsing.** *Decided for v0.3.0 (owner, 2026-11-14): keep today's
+  default; the choice among the memo's options stays open for a later
+  release.* The memo recommends option D for v0.3.0: default it
   off and say so in Settings and the privacy policy; not implemented yet
   (it's a pref default in `molt_privacy_prefs.cc` plus copy, so it needs a
   build). If D: on the build machine, confirm Safety Tips and lookalike
@@ -4976,7 +4978,10 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   ROADMAP.md, CLAUDE.md).
 - [ ] **Dependabot PR #42** (`actions/setup-java` 6.0.1 → 6.1.0, used only
   by `build-matrix.yml`): mergeable and clean; merge or close (from #42).
-- [ ] **The Linux archive key**: create it now, or ship v0.3.0 without the
+- [x] **The Linux archive key**: *decided (owner, 2026-11-14): v0.3.0 is
+  macOS only, so no Linux packages and no repository; Linux stays on v0.2.5
+  (the README's and website's Linux links name v0.2.5) until v0.3.1.*
+  Create it now, or ship v0.3.0 without the
   apt/rpm repository (from #25). Without it, should the unsigned
   `MoltBrowser-Linux-repository.tar` stay in the release (the signed
   manifest would list it), or be removed from the draft before signing
@@ -5001,13 +5006,15 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   default, and `MOLT_BUNDLE_SPEECH`/`MOLT_BUNDLE_VOICE` set in
   `release.yml` and `release-linux.yml`), about 80 MB of models and a
   27 MB helper per platform (§3.4), plus the voice's 70 MB.
-- [ ] And the wake-phrase model's training data:
+- [x] And the wake-phrase model's training data: *decided for v0.3.0
+  (owner, 2026-11-14): ship the GigaSpeech spotter as is.*
   the GigaSpeech spotter's model card says Apache-2.0, but GigaSpeech's own
   terms of use couldn't be read (they sit behind a request form). Confirm
   with its authors, or spot the wake phrase in Kroko's own transcript
   instead (no second model; a little more CPU while waiting)
   (`docs/design/SPEECH_HELPER_PROTOCOL.md` §7.3).
-- [ ] **Who builds the macOS release** (§10.1): `release.yml`'s macOS job
+- [x] **Who builds the macOS release** (§10.1): *v0.3.0 uses route B, by
+  hand with the runner stopped (the owner's release steps).* `release.yml`'s macOS job
   now runs the same scripts as §10.2 (the metallib, helper bundling,
   `Libraries/` signing and DMG name it lacked when this runbook was
   written are fixed), but it has never run end to end. Route A (the runner,
