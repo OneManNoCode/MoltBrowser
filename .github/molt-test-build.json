@@ -1,11 +1,12 @@
 {
- "resume_run": "43486678502",
- "run_tests": true,
+ "resume_run": "43585381968",
+ "run_tests": false,
  "e2e_only": false,
- "e2e_runs": "typed",
+ "e2e_runs": "",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixtieth build (incremental on the fifty-ninth, run 43486678502). Build 59's spoken suite: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 85/93 (91%), Phase 2 25/30, the model's tasks 4/4, security 6/6, and browser-moltnet-window (\"Hey, Molt, scroll down.\" while the planner worked) passed; every pulse miss was a misheard word. Qwen3.5 4B has now planned well on builds 57-59, typed and spoken, none refused, so it is unhidden (offered in the model list). The tests run, and the typed spoken suite checks the model's tasks still pass with it listed.",
- "e2e_scenarios": ""
+ "request": "Sixty-seventh build (incremental on the sixty-fifth, run 43585381968). The sixty-sixth showed gnrt now formats with the checkout's gn, but the new format check also counted the BUILD.gn files gnrt deletes (upstream's windows-sys 0.52 crates) and stopped the run. Fixed; this build prints the vendored tree that gnrt formats with the checkout's gn, with the overlay copies it now generates as upstream's dropped (vendor_dump), to commit it. No tests, no spoken suite.",
+ "e2e_scenarios": "",
+ "vendor_dump": true
 }

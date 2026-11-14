@@ -12,7 +12,7 @@ cargo_crate("lib") {
   crate_name = "csv"
   epoch = "1"
   crate_type = "rlib"
-  crate_root = "//third_party/rust/chromium_crates_io/vendor/csv-v1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/csv-v1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/csv-v1/src/byte_record.rs",
     "//third_party/rust/chromium_crates_io/vendor/csv-v1/src/cookbook.rs",
@@ -26,29 +26,32 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/csv-v1/src/tutorial.rs",
     "//third_party/rust/chromium_crates_io/vendor/csv-v1/src/writer.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
-  cargo_pkg_authors = "Andrew Gallant <jamslam@gmail.com>"
+      cargo_pkg_authors = "Andrew Gallant <jamslam@gmail.com>"
   cargo_pkg_name = "csv"
-  cargo_pkg_description = "Fast CSV parsing with support for serde."
-  cargo_pkg_repository = "https://github.com/BurntSushi/rust-csv"
+      cargo_pkg_description = "Fast CSV parsing with support for serde."
+      cargo_pkg_repository = "https://github.com/BurntSushi/rust-csv"
   cargo_pkg_version = "1.4.0"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/csv_core/v0_1:lib",
-    "//third_party/rust/itoa/v1:lib",
-    "//third_party/rust/ryu/v1:lib",
-    "//third_party/rust/serde_core/v1:lib",
+      "//third_party/rust/csv_core/v0_1:lib",
+      "//third_party/rust/itoa/v1:lib",
+      "//third_party/rust/ryu/v1:lib",
+      "//third_party/rust/serde_core/v1:lib",
   ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -66,11 +69,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

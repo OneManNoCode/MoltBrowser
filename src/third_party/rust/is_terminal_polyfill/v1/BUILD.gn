@@ -12,26 +12,32 @@ cargo_crate("lib") {
   crate_name = "is_terminal_polyfill"
   epoch = "1"
   crate_type = "rlib"
-  crate_root = "//third_party/rust/chromium_crates_io/vendor/is_terminal_polyfill-v1/src/lib.rs"
-  sources = [ "//third_party/rust/chromium_crates_io/vendor/is_terminal_polyfill-v1/src/lib.rs" ]
-  inputs = []
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/is_terminal_polyfill-v1/src/lib.rs"
+  sources = [
+    "//third_party/rust/chromium_crates_io/vendor/is_terminal_polyfill-v1/src/lib.rs",
+  ]
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
   cargo_pkg_name = "is_terminal_polyfill"
-  cargo_pkg_description =
-      "Polyfill for `is_terminal` stdlib feature for use with older MSRVs"
-  cargo_pkg_repository = "https://github.com/polyfill-rs/is_terminal_polyfill"
+      cargo_pkg_description = "Polyfill for `is_terminal` stdlib feature for use with older MSRVs"
+      cargo_pkg_repository = "https://github.com/polyfill-rs/is_terminal_polyfill"
   cargo_pkg_version = "1.70.2"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
-  features = [ "default" ]
+  features = [
+    "default",
+  ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -49,11 +55,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

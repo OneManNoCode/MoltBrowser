@@ -13,29 +13,34 @@ cargo_crate("lib") {
   epoch = "1"
   enabled = is_win
   crate_type = "rlib"
-  crate_root = "//third_party/rust/chromium_crates_io/vendor/once_cell_polyfill-v1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/once_cell_polyfill-v1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/once_cell_polyfill-v1/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/once_cell_polyfill-v1/src/sync/mod.rs",
   ]
-  inputs = [ "//third_party/rust/chromium_crates_io/vendor/once_cell_polyfill-v1/src/../README.md" ]
+  inputs = [
+    "//third_party/rust/chromium_crates_io/vendor/once_cell_polyfill-v1/src/../README.md",
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
   cargo_pkg_name = "once_cell_polyfill"
-  cargo_pkg_description =
-      "Polyfill for `OnceCell` stdlib feature for use with older MSRVs"
-  cargo_pkg_repository = "https://github.com/polyfill-rs/once_cell_polyfill"
+      cargo_pkg_description = "Polyfill for `OnceCell` stdlib feature for use with older MSRVs"
+      cargo_pkg_repository = "https://github.com/polyfill-rs/once_cell_polyfill"
   cargo_pkg_version = "1.70.2"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
-  features = [ "default" ]
+  features = [
+    "default",
+  ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -53,11 +58,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

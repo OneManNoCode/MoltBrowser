@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "jiff"
   epoch = "0.2"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/date.rs",
     "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/datetime.rs",
@@ -119,19 +118,20 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/../PLATFORM.md",
   ]
 
+
   build_native_rust_unit_tests = false
   edition = "2021"
-  cargo_pkg_authors = "Andrew Gallant <jamslam@gmail.com>"
+      cargo_pkg_authors = "Andrew Gallant <jamslam@gmail.com>"
   cargo_pkg_name = "jiff"
-  cargo_pkg_description = "A date-time library that encourages you to jump into the pit of success.  This library is heavily inspired by the Temporal project."
-  cargo_pkg_repository = "https://github.com/BurntSushi/jiff"
+      cargo_pkg_description = "A date-time library that encourages you to jump into the pit of success.  This library is heavily inspired by the Temporal project."
+      cargo_pkg_repository = "https://github.com/BurntSushi/jiff"
   cargo_pkg_version = "0.2.35"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/jiff_core/v0_1:lib",
-    "//third_party/rust/jiff_static/v0_2:lib",
+      "//third_party/rust/jiff_core/v0_1:lib",
+      "//third_party/rust/jiff_static/v0_2:lib",
   ]
   if (is_win) {
     deps += [
@@ -159,6 +159,7 @@ cargo_crate("lib") {
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
 
+
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
 
@@ -175,11 +176,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

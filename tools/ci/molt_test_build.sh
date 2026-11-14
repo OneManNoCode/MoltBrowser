@@ -116,7 +116,64 @@ cmd_overlay() {
   cp -R "$ROOT/src/." "$SRC/"
   [ -d "$SRC/chrome/browser/molt_ai" ] || { echo "overlay copy failed"; exit 1; }
   say "Rust crates (gnrt)"
-  "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC" --no-copy-back
+  # The vendored tree is committed in src/ and a Mac build uses it without
+  # gnrt, so it must be gnrt's whole output: every crate downloaded and
+  # patched afresh (--fresh), then copied back and compared. Ignored files
+  # count: crates' own .gitignore files hide some of theirs.
+  "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC" --fresh
+  if [ "${MOLT_VENDOR_DUMP:-0}" = 1 ]; then
+    dump_vendored
+  elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all --ignored=traditional -- src/third_party/rust)" ]; then
+    echo "::error::gnrt's output differs from the vendored tree in src/third_party/rust: commit it with tools/ci/molt_vendored_from_log.py on this log (git add -f)"
+    dump_vendored
+    exit 1
+  fi
+}
+
+# What gnrt added, changed or removed under the overlay's src/third_party/rust
+# (vendor-rust-crates.sh copied it back), printed into the log as a base64
+# tar.gz between markers, with its SHA-256 and the removed paths, so a machine
+# without a Chromium checkout can commit the vendored tree:
+# tools/ci/molt_vendored_from_log.py <job log>.
+dump_vendored() {
+  local files="$STATE/vendored-files.txt" removed="$STATE/vendored-removed.txt"
+  local archive="$STATE/vendored.tar.gz"
+  # NUL-separated, so no file name is quoted or split.
+  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all --ignored=traditional -- src/third_party/rust |
+    python3 -I -c '
+import sys
+items = sys.stdin.buffer.read().split(b"\0")
+keep, gone = [], []
+i = 0
+while i < len(items):
+    entry = items[i]
+    i += 1
+    if not entry:
+        continue
+    xy, path = entry[:2], entry[3:]
+    if b"R" in xy or b"C" in xy:
+        i += 1
+    (gone if b"D" in xy else keep).append(path)
+open(sys.argv[1], "wb").write(b"".join(p + b"\0" for p in sorted(keep)))
+open(sys.argv[2], "wb").write(b"".join(p + b"\n" for p in sorted(gone)))
+' "$files" "$removed"
+  local n_files n_removed
+  n_files="$(tr -cd '\000' < "$files" | wc -c | tr -d ' ')"
+  n_removed="$(wc -l < "$removed" | tr -d ' ')"
+  say "Vendored: $n_files files added or changed, $n_removed removed"
+  if [ "$n_files" = 0 ] && [ "$n_removed" = 0 ]; then
+    echo "MOLT-VENDORED-NONE"
+    return 0
+  fi
+  tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='2000-01-01 00:00:00Z' \
+    --null -czf "$archive" -C "$ROOT" -T "$files"
+  echo "MOLT-VENDORED-SHA256 $(sha256sum "$archive" | cut -d' ' -f1)"
+  echo "MOLT-VENDORED-BEGIN"
+  base64 -w 76 "$archive"
+  echo "MOLT-VENDORED-END"
+  echo "MOLT-VENDORED-REMOVED-BEGIN"
+  cat "$removed"
+  echo "MOLT-VENDORED-REMOVED-END"
 }
 
 cmd_restore() {

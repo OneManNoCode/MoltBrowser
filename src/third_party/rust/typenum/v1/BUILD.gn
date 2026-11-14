@@ -12,15 +12,14 @@ cargo_crate("lib") {
   crate_name = "typenum"
   epoch = "1"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/array.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/bit.rs",
-    "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/gen.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/gen/consts.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/gen/generic_const_mappings.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/gen/op.rs",
+    "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/gen.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/int.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/marker_traits.rs",
@@ -30,21 +29,25 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/type_operators.rs",
     "//third_party/rust/chromium_crates_io/vendor/typenum-v1/src/uint.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2018"
   cargo_pkg_name = "typenum"
-  cargo_pkg_description = "Typenum is a Rust library for type-level numbers evaluated at     compile time. It currently supports bits, unsigned integers, and signed     integers. It also provides a type-level array of type-level numbers, but its     implementation is incomplete."
-  cargo_pkg_repository = "https://github.com/paholg/typenum"
+      cargo_pkg_description = "Typenum is a Rust library for type-level numbers evaluated at     compile time. It currently supports bits, unsigned integers, and signed     integers. It also provides a type-level array of type-level numbers, but its     implementation is incomplete."
+      cargo_pkg_repository = "https://github.com/paholg/typenum"
   cargo_pkg_version = "1.20.1"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
+
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -62,11 +65,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

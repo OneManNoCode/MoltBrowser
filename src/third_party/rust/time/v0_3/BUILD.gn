@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "time"
   epoch = "0.3"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/date.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/component_range.rs",
@@ -43,8 +42,8 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/parse/lexer_ast.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/parse/mod.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/parse/strftime.rs",
-    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/iso8601.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/iso8601/adt_hack.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/iso8601.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/rfc2822.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/rfc3339.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/formatting/component_provider.rs",
@@ -118,23 +117,25 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/util.rs",
     "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/weekday.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2024"
-  cargo_pkg_authors = "Jacob Pratt <open-source@jhpratt.dev>, Time contributors"
+      cargo_pkg_authors = "Jacob Pratt <open-source@jhpratt.dev>, Time contributors"
   cargo_pkg_name = "time"
-  cargo_pkg_description = "Date and time library. Fully interoperable with the standard library. Mostly compatible with #![no_std]."
-  cargo_pkg_repository = "https://github.com/time-rs/time"
+      cargo_pkg_description = "Date and time library. Fully interoperable with the standard library. Mostly compatible with #![no_std]."
+      cargo_pkg_repository = "https://github.com/time-rs/time"
   cargo_pkg_version = "0.3.55"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/deranged/v0_5:lib",
-    "//third_party/rust/num_conv/v0_2:lib",
-    "//third_party/rust/powerfmt/v0_2:lib",
-    "//third_party/rust/time_core/v0_1:lib",
+      "//third_party/rust/deranged/v0_5:lib",
+      "//third_party/rust/num_conv/v0_2:lib",
+      "//third_party/rust/powerfmt/v0_2:lib",
+      "//third_party/rust/time_core/v0_1:lib",
   ]
   features = [
     "alloc",
@@ -148,6 +149,7 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -165,11 +167,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

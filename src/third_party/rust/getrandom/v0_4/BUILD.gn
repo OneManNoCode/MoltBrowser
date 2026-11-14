@@ -12,10 +12,8 @@ cargo_crate("lib") {
   crate_name = "getrandom"
   epoch = "0.4"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/lib.rs"
   sources = [
-    "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends/apple_other.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends/custom.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends/efi_rng.rs",
@@ -40,6 +38,7 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends/wasm_js.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends/windows.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends/windows_legacy.rs",
+    "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/backends.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/error.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/error_std_impls.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/lib.rs",
@@ -51,39 +50,45 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/utils/sanitizer.rs",
     "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/utils/sys_fill_exact.rs",
   ]
-  inputs = [ "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/../README.md" ]
+  inputs = [
+    "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/src/../README.md",
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2024"
-  cargo_pkg_authors = "The Rand Project Developers"
+      cargo_pkg_authors = "The Rand Project Developers"
   cargo_pkg_name = "getrandom"
-  cargo_pkg_description = "A small cross-platform library for retrieving random data from system source"
-  cargo_pkg_repository = "https://github.com/rust-random/getrandom"
+      cargo_pkg_description = "A small cross-platform library for retrieving random data from system source"
+      cargo_pkg_repository = "https://github.com/rust-random/getrandom"
   cargo_pkg_version = "0.4.3"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/cfg_if/v1:lib",
-    "//third_party/rust/rand_core/v0_10:lib",
+      "//third_party/rust/cfg_if/v1:lib",
+      "//third_party/rust/rand_core/v0_10:lib",
   ]
   if (!is_fuchsia && !is_win) {
-    deps += [ "//third_party/rust/libc/v0_2:lib" ]
+    deps += [
+      "//third_party/rust/libc/v0_2:lib",
+    ]
   }
   features = [
     "std",
     "sys_rng",
     "wasm_js",
   ]
-  build_root =
-      "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/build.rs"
-  build_sources =
-      [ "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/build.rs" ]
+    build_root = "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/build.rs"
+    build_sources = [
+        "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/build.rs",
+    ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -101,11 +106,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

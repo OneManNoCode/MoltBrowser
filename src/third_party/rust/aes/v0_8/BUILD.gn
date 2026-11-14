@@ -12,53 +12,57 @@ cargo_crate("lib") {
   crate_name = "aes"
   epoch = "0.8"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/lib.rs"
   sources = [
-    "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/armv8.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/armv8/encdec.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/armv8/expand.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/armv8/hazmat.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/armv8/intrinsics.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/armv8/test_expand.rs",
+    "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/armv8.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/autodetect.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/hazmat.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/lib.rs",
-    "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni/aes128.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni/aes192.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni/aes256.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni/hazmat.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni/test_expand.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni/utils.rs",
-    "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/soft.rs",
+    "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/ni.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/soft/fixslice32.rs",
     "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/soft/fixslice64.rs",
+    "//third_party/rust/chromium_crates_io/vendor/aes-v0_8/src/soft.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
-  cargo_pkg_authors = "RustCrypto Developers"
+      cargo_pkg_authors = "RustCrypto Developers"
   cargo_pkg_name = "aes"
-  cargo_pkg_description = "Pure Rust implementation of the Advanced Encryption Standard (a.k.a. Rijndael)"
-  cargo_pkg_repository = "https://github.com/RustCrypto/block-ciphers"
+      cargo_pkg_description = "Pure Rust implementation of the Advanced Encryption Standard (a.k.a. Rijndael)"
+      cargo_pkg_repository = "https://github.com/RustCrypto/block-ciphers"
   cargo_pkg_version = "0.8.4"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/cfg_if/v1:lib",
-    "//third_party/rust/cipher/v0_4:lib",
+      "//third_party/rust/cfg_if/v1:lib",
+      "//third_party/rust/cipher/v0_4:lib",
   ]
   if (current_cpu == "arm64" || current_cpu == "x64" || current_cpu == "x86") {
-    deps += [ "//third_party/rust/cpufeatures/v0_2:lib" ]
+    deps += [
+      "//third_party/rust/cpufeatures/v0_2:lib",
+    ]
   }
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -76,11 +80,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

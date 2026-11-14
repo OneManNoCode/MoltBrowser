@@ -12,30 +12,33 @@ cargo_crate("lib") {
   crate_name = "debug_unsafe"
   epoch = "0.1"
   crate_type = "rlib"
-  crate_root = "//third_party/rust/chromium_crates_io/vendor/debug_unsafe-v0_1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/debug_unsafe-v0_1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/debug_unsafe-v0_1/src/arraystring.rs",
     "//third_party/rust/chromium_crates_io/vendor/debug_unsafe-v0_1/src/lib.rs",
     "//third_party/rust/chromium_crates_io/vendor/debug_unsafe-v0_1/src/option.rs",
     "//third_party/rust/chromium_crates_io/vendor/debug_unsafe-v0_1/src/slice.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2021"
-  cargo_pkg_authors = "Dmitry Rodionov <gh@rdmtr.com>"
+      cargo_pkg_authors = "Dmitry Rodionov <gh@rdmtr.com>"
   cargo_pkg_name = "debug_unsafe"
-  cargo_pkg_description =
-      "Uses `debug-assertions` as a switch of safe/unsafe behaviour"
-  cargo_pkg_repository = "https://github.com/RoDmitry/debug_unsafe"
+      cargo_pkg_description = "Uses `debug-assertions` as a switch of safe/unsafe behaviour"
+      cargo_pkg_repository = "https://github.com/RoDmitry/debug_unsafe"
   cargo_pkg_version = "0.1.4"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
+
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -53,11 +56,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

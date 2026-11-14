@@ -79,6 +79,7 @@ jobs:
       e2e_scenarios: ${{ steps.config.outputs.e2e_scenarios }}
       e2e_field_trials: ${{ steps.config.outputs.e2e_field_trials }}
       e2e_model: ${{ steps.config.outputs.e2e_model }}
+      vendor_dump: ${{ steps.config.outputs.vendor_dump }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -105,7 +106,9 @@ jobs:
             SPEECH_CHECK="$(jq -r 'if .e2e_speech_check == false then "0" else "1" end' .github/molt-test-build.json)"
             FIELD_TRIALS="$(jq -r '.e2e_field_trials // ""' .github/molt-test-build.json)"
             MODEL="$(jq -r '.e2e_model // ""' .github/molt-test-build.json)"
+            VENDOR_DUMP="$(jq -r 'if .vendor_dump == true then "true" else "false" end' .github/molt-test-build.json)"
           else
+            VENDOR_DUMP=false
             FIELD_TRIALS=""
             MODEL=""
             SPEECH_CHECK=1
@@ -150,6 +153,7 @@ jobs:
             echo "e2e_scenarios=$E2E_SCENARIOS"
             echo "e2e_field_trials=$FIELD_TRIALS"
             echo "e2e_model=$MODEL"
+            echo "vendor_dump=$VENDOR_DUMP"
           } >> "$GITHUB_OUTPUT"
           echo "resume_run='$RESUME' run_tests=$TESTS e2e_only=$E2E_ONLY"
           echo "e2e: $MATRIX scenarios='$E2E_SCENARIOS' field trials='$FIELD_TRIALS' model='$MODEL'"
@@ -168,6 +172,7 @@ jobs:
       resume_run: ${{ needs.config.outputs.resume_run }}
       run_tests: false
       recheck: true
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-1:
     needs: config
@@ -177,6 +182,7 @@ jobs:
       stage: 1
       resume_run: ${{ needs.config.outputs.resume_run }}
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-2:
     needs: [config, stage-1]
@@ -187,6 +193,7 @@ jobs:
     with:
       stage: 2
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-3:
     needs: [config, stage-2]
@@ -197,6 +204,7 @@ jobs:
     with:
       stage: 3
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-4:
     needs: [config, stage-3]
@@ -207,6 +215,7 @@ jobs:
     with:
       stage: 4
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-5:
     needs: [config, stage-4]
@@ -217,6 +226,7 @@ jobs:
     with:
       stage: 5
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   # The speech and voice helpers with their models, for the spoken suite
   # (molt-speech-bundle.yml; cached by their sources).

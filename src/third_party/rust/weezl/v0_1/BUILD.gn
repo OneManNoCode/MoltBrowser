@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "weezl"
   epoch = "0.1"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/weezl-v0_1/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/weezl-v0_1/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/weezl-v0_1/src/decode.rs",
     "//third_party/rust/chromium_crates_io/vendor/weezl-v0_1/src/decode_into_async.rs",
@@ -22,17 +21,19 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/weezl-v0_1/src/error.rs",
     "//third_party/rust/chromium_crates_io/vendor/weezl-v0_1/src/lib.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2018"
-  cargo_pkg_authors = "The image-rs Developers"
+      cargo_pkg_authors = "The image-rs Developers"
   cargo_pkg_name = "weezl"
-  cargo_pkg_description = "Fast LZW compression and decompression."
-  cargo_pkg_repository = "https://github.com/image-rs/weezl"
+      cargo_pkg_description = "Fast LZW compression and decompression."
+      cargo_pkg_repository = "https://github.com/image-rs/weezl"
   cargo_pkg_version = "0.1.12"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
   features = [
     "alloc",
@@ -44,6 +45,7 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -61,11 +63,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

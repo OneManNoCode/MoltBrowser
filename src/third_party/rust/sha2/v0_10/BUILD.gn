@@ -12,43 +12,46 @@ cargo_crate("lib") {
   crate_name = "sha2"
   epoch = "0.10"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/consts.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/core_api.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/lib.rs",
-    "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha256.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha256/aarch64.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha256/loongarch64_asm.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha256/soft.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha256/soft_compact.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha256/x86.rs",
-    "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha512.rs",
+    "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha256.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha512/aarch64.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha512/loongarch64_asm.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha512/soft.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha512/soft_compact.rs",
     "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha512/x86.rs",
+    "//third_party/rust/chromium_crates_io/vendor/sha2-v0_10/src/sha512.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2018"
-  cargo_pkg_authors = "RustCrypto Developers"
+      cargo_pkg_authors = "RustCrypto Developers"
   cargo_pkg_name = "sha2"
-  cargo_pkg_description = "Pure Rust implementation of the SHA-2 hash function family including SHA-224, SHA-256, SHA-384, and SHA-512."
-  cargo_pkg_repository = "https://github.com/RustCrypto/hashes"
+      cargo_pkg_description = "Pure Rust implementation of the SHA-2 hash function family including SHA-224, SHA-256, SHA-384, and SHA-512."
+      cargo_pkg_repository = "https://github.com/RustCrypto/hashes"
   cargo_pkg_version = "0.10.9"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/cfg_if/v1:lib",
-    "//third_party/rust/digest/v0_10:lib",
+      "//third_party/rust/cfg_if/v1:lib",
+      "//third_party/rust/digest/v0_10:lib",
   ]
   if (current_cpu == "arm64" || current_cpu == "x64" || current_cpu == "x86") {
-    deps += [ "//third_party/rust/cpufeatures/v0_2:lib" ]
+    deps += [
+      "//third_party/rust/cpufeatures/v0_2:lib",
+    ]
   }
   features = [
     "default",
@@ -59,6 +62,7 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -76,11 +80,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

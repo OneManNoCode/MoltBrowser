@@ -6,7 +6,9 @@
 #   * shell: the release scripts under macOS's own /bin/bash 3.2, the bash
 #     the release Mac runs them with: they parse (bash -n), and
 #     scripts/mac_bash32_test.sh runs release-sbom.sh with a stand-in SBOM
-#     tool and checks bundle-speech.sh's guards for arrays that may be empty;
+#     tool and checks bundle-speech.sh's guards for arrays that may be empty,
+#     and scripts/vendor_rust_crates_test.sh runs vendor-rust-crates.sh's
+#     copy-back on a stand-in Chromium checkout;
 #   * bundles: scripts/bundle-speech.sh builds the speech helper and voice
 #     mode's voice from their pinned sources and verifies them, and
 #     scripts/bundle-fonts.sh bundles MoltNet's fonts, both in release mode
@@ -68,6 +70,8 @@ jobs:
           done
       - name: scripts/mac_bash32_test.sh under bash 3.2
         run: /bin/bash scripts/mac_bash32_test.sh
+      - name: scripts/vendor_rust_crates_test.sh under bash 3.2
+        run: /bin/bash scripts/vendor_rust_crates_test.sh
 
   bundles:
     runs-on: macos-15

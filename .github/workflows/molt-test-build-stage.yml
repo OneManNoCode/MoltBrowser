@@ -28,6 +28,10 @@ on:
         description: 'Only rebuild the steps the restored build failed, then stop'
         type: boolean
         default: false
+      vendor_dump:
+        description: 'Print what gnrt vendors into the log, to commit it (tools/ci/molt_vendored_from_log.py)'
+        type: boolean
+        default: false
     outputs:
       status:
         description: 'complete, errors or partial'
@@ -102,6 +106,8 @@ jobs:
         run: tools/ci/molt_test_build.sh sync
 
       - name: Overlay and Rust crates
+        env:
+          MOLT_VENDOR_DUMP: ${{ inputs.vendor_dump && '1' || '0' }}
         run: tools/ci/molt_test_build.sh overlay
 
       - name: Restore the out dir

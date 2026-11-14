@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "encoding_rs"
   epoch = "0.8"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/encoding_rs-v0_8/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/encoding_rs-v0_8/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/encoding_rs-v0_8/src/ascii.rs",
     "//third_party/rust/chromium_crates_io/vendor/encoding_rs-v0_8/src/big5.rs",
@@ -38,20 +37,23 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/encoding_rs-v0_8/src/variant.rs",
     "//third_party/rust/chromium_crates_io/vendor/encoding_rs-v0_8/src/x_user_defined.rs",
   ]
-  inputs = []
+  inputs = [
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2018"
-  cargo_pkg_authors = "Henri Sivonen <hsivonen@hsivonen.fi>"
+      cargo_pkg_authors = "Henri Sivonen <hsivonen@hsivonen.fi>"
   cargo_pkg_name = "encoding_rs"
-  cargo_pkg_description =
-      "A Gecko-oriented implementation of the Encoding Standard"
-  cargo_pkg_repository = "https://github.com/hsivonen/encoding_rs"
+      cargo_pkg_description = "A Gecko-oriented implementation of the Encoding Standard"
+      cargo_pkg_repository = "https://github.com/hsivonen/encoding_rs"
   cargo_pkg_version = "0.8.35"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
-  deps = [ "//third_party/rust/cfg_if/v1:lib" ]
+  deps = [
+      "//third_party/rust/cfg_if/v1:lib",
+  ]
   features = [
     "alloc",
     "default",
@@ -61,6 +63,7 @@ cargo_crate("lib") {
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -78,11 +81,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

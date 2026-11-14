@@ -12,8 +12,7 @@ cargo_crate("lib") {
   crate_name = "lopdf"
   epoch = "0.41"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/lib.rs"
   sources = [
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/bookmarks.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/cmap_section.rs",
@@ -28,11 +27,11 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/glyphnames.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/mappings.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/mod.rs",
-    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/algorithms.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/crypt_filters.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/pkcs5.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/rc4.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/error.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/filters/mod.rs",
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/filters/png.rs",
@@ -58,41 +57,41 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/../README.md",
   ]
 
+
   build_native_rust_unit_tests = false
   edition = "2024"
-  cargo_pkg_authors =
-      "Junfeng Liu <china.liujunfeng@gmail.com>, Emulator <emulator@hotmail.it>"
+      cargo_pkg_authors = "Junfeng Liu <china.liujunfeng@gmail.com>, Emulator <emulator@hotmail.it>"
   cargo_pkg_name = "lopdf"
-  cargo_pkg_description = "A Rust library for PDF document manipulation."
-  cargo_pkg_repository = "https://github.com/J-F-Liu/lopdf.git"
+      cargo_pkg_description = "A Rust library for PDF document manipulation."
+      cargo_pkg_repository = "https://github.com/J-F-Liu/lopdf.git"
   cargo_pkg_version = "0.41.0"
 
-  allow_unsafe = false
+    allow_unsafe =  false 
 
   deps = [
-    "//third_party/rust/aes/v0_8:lib",
-    "//third_party/rust/bitflags/v2:lib",
-    "//third_party/rust/cbc/v0_1:lib",
-    "//third_party/rust/chrono/v0_4:lib",
-    "//third_party/rust/ecb/v0_1:lib",
-    "//third_party/rust/encoding_rs/v0_8:lib",
-    "//third_party/rust/flate2/v1:lib",
-    "//third_party/rust/getrandom/v0_4:lib",
-    "//third_party/rust/indexmap/v2:lib",
-    "//third_party/rust/itoa/v1:lib",
-    "//third_party/rust/jiff/v0_2:lib",
-    "//third_party/rust/log/v0_4:lib",
-    "//third_party/rust/md_5/v0_10:lib",
-    "//third_party/rust/nom/v8:lib",
-    "//third_party/rust/rand/v0_10:lib",
-    "//third_party/rust/rangemap/v1:lib",
-    "//third_party/rust/rayon/v1:lib",
-    "//third_party/rust/sha2/v0_10:lib",
-    "//third_party/rust/stringprep/v0_1:lib",
-    "//third_party/rust/thiserror/v2:lib",
-    "//third_party/rust/time/v0_3:lib",
-    "//third_party/rust/ttf_parser/v0_25:lib",
-    "//third_party/rust/weezl/v0_1:lib",
+      "//third_party/rust/aes/v0_8:lib",
+      "//third_party/rust/bitflags/v2:lib",
+      "//third_party/rust/cbc/v0_1:lib",
+      "//third_party/rust/chrono/v0_4:lib",
+      "//third_party/rust/ecb/v0_1:lib",
+      "//third_party/rust/encoding_rs/v0_8:lib",
+      "//third_party/rust/flate2/v1:lib",
+      "//third_party/rust/getrandom/v0_4:lib",
+      "//third_party/rust/indexmap/v2:lib",
+      "//third_party/rust/itoa/v1:lib",
+      "//third_party/rust/jiff/v0_2:lib",
+      "//third_party/rust/log/v0_4:lib",
+      "//third_party/rust/md_5/v0_10:lib",
+      "//third_party/rust/nom/v8:lib",
+      "//third_party/rust/rand/v0_10:lib",
+      "//third_party/rust/rangemap/v1:lib",
+      "//third_party/rust/rayon/v1:lib",
+      "//third_party/rust/sha2/v0_10:lib",
+      "//third_party/rust/stringprep/v0_1:lib",
+      "//third_party/rust/thiserror/v2:lib",
+      "//third_party/rust/time/v0_3:lib",
+      "//third_party/rust/ttf_parser/v0_25:lib",
+      "//third_party/rust/weezl/v0_1:lib",
   ]
   aliased_deps = {
     md5 = "//third_party/rust/md_5/v0_10:lib"
@@ -111,6 +110,7 @@ cargo_crate("lib") {
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
 
+
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
 
@@ -127,11 +127,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove

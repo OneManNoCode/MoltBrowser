@@ -12,15 +12,14 @@ cargo_crate("lib") {
   crate_name = "chacha20"
   epoch = "0.10"
   crate_type = "rlib"
-  crate_root =
-      "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/lib.rs"
+    crate_root = "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/lib.rs"
   sources = [
-    "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/backends.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/backends/avx2.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/backends/avx512.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/backends/neon.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/backends/soft.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/backends/sse2.rs",
+    "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/backends.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/chacha.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/legacy.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/lib.rs",
@@ -28,31 +27,39 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/variants.rs",
     "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/xchacha.rs",
   ]
-  inputs = [ "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/../README.md" ]
+  inputs = [
+    "//third_party/rust/chromium_crates_io/vendor/chacha20-v0_10/src/../README.md",
+  ]
+
 
   build_native_rust_unit_tests = false
   edition = "2024"
-  cargo_pkg_authors = "RustCrypto Developers"
+      cargo_pkg_authors = "RustCrypto Developers"
   cargo_pkg_name = "chacha20"
-  cargo_pkg_description = "The ChaCha20 stream cipher (RFC 8439) implemented in pure Rust using traits from the RustCrypto `cipher` crate, with optional architecture-specific hardware acceleration (AVX2, SSE2). Additionally provides the ChaCha8, ChaCha12, XChaCha20, XChaCha12 and XChaCha8 stream ciphers, and also optional rand_core-compatible RNGs based on those ciphers."
-  cargo_pkg_repository = "https://github.com/RustCrypto/stream-ciphers"
+      cargo_pkg_description = "The ChaCha20 stream cipher (RFC 8439) implemented in pure Rust using traits from the RustCrypto `cipher` crate, with optional architecture-specific hardware acceleration (AVX2, SSE2). Additionally provides the ChaCha8, ChaCha12, XChaCha20, XChaCha12 and XChaCha8 stream ciphers, and also optional rand_core-compatible RNGs based on those ciphers."
+      cargo_pkg_repository = "https://github.com/RustCrypto/stream-ciphers"
   cargo_pkg_version = "0.10.1"
 
-  allow_unsafe = true
+    allow_unsafe =  true 
 
   deps = [
-    "//third_party/rust/cfg_if/v1:lib",
-    "//third_party/rust/rand_core/v0_10:lib",
+      "//third_party/rust/cfg_if/v1:lib",
+      "//third_party/rust/rand_core/v0_10:lib",
   ]
   if (current_cpu == "x64" || current_cpu == "x86") {
-    deps += [ "//third_party/rust/cpufeatures/v0_3:lib" ]
+    deps += [
+      "//third_party/rust/cpufeatures/v0_3:lib",
+    ]
   }
-  features = [ "rng" ]
+  features = [
+    "rng",
+  ]
 
   # Only for usage from third-party crates. Add the crate to
   # //third_party/rust/chromium_crates_io/Cargo.toml to use
   # it from first-party code.
   visibility = [ "//third_party/rust/*" ]
+
 
   #####################################################################
   # Tweaking which GN `config`s apply to this target.
@@ -70,11 +77,14 @@ cargo_crate("lib") {
   ]
   _configs_to_add = []
 
+
   # Changing (if needed) which configs apply to this specific crate (based on
   # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
   # `gnrt_config.toml`).
-  _configs_to_remove += []
-  _configs_to_add += []
+  _configs_to_remove += [
+  ]
+  _configs_to_add += [
+  ]
 
   # Applying config changes.
   library_configs -= _configs_to_remove
