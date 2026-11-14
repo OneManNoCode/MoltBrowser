@@ -116,13 +116,15 @@ cmd_overlay() {
   cp -R "$ROOT/src/." "$SRC/"
   [ -d "$SRC/chrome/browser/molt_ai" ] || { echo "overlay copy failed"; exit 1; }
   say "Rust crates (gnrt)"
-  # With its copy-back: the vendored tree is committed in src/, and must be
-  # what gnrt makes of it, since a Mac build uses it without gnrt.
-  "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC"
+  # The vendored tree is committed in src/ and a Mac build uses it without
+  # gnrt, so it must be gnrt's whole output: every crate downloaded and
+  # patched afresh (--fresh), then copied back and compared. Ignored files
+  # count: crates' own .gitignore files hide some of theirs.
+  "$ROOT/scripts/vendor-rust-crates.sh" --chromium-src "$SRC" --fresh
   if [ "${MOLT_VENDOR_DUMP:-0}" = 1 ]; then
     dump_vendored
-  elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- src/third_party/rust)" ]; then
-    echo "::error::gnrt's output differs from the vendored tree in src/third_party/rust: commit it with tools/ci/molt_vendored_from_log.py on this log"
+  elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all --ignored=traditional -- src/third_party/rust)" ]; then
+    echo "::error::gnrt's output differs from the vendored tree in src/third_party/rust: commit it with tools/ci/molt_vendored_from_log.py on this log (git add -f)"
     dump_vendored
     exit 1
   fi
@@ -137,7 +139,7 @@ dump_vendored() {
   local files="$STATE/vendored-files.txt" removed="$STATE/vendored-removed.txt"
   local archive="$STATE/vendored.tar.gz"
   # NUL-separated, so no file name is quoted or split.
-  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all -- src/third_party/rust |
+  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all --ignored=traditional -- src/third_party/rust |
     python3 -I -c '
 import sys
 items = sys.stdin.buffer.read().split(b"\0")

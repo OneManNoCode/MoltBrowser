@@ -172,6 +172,7 @@ jobs:
       resume_run: ${{ needs.config.outputs.resume_run }}
       run_tests: false
       recheck: true
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-1:
     needs: config
@@ -192,6 +193,7 @@ jobs:
     with:
       stage: 2
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-3:
     needs: [config, stage-2]
@@ -202,6 +204,7 @@ jobs:
     with:
       stage: 3
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-4:
     needs: [config, stage-3]
@@ -212,6 +215,7 @@ jobs:
     with:
       stage: 4
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   stage-5:
     needs: [config, stage-4]
@@ -222,6 +226,7 @@ jobs:
     with:
       stage: 5
       run_tests: ${{ needs.config.outputs.run_tests == 'true' }}
+      vendor_dump: ${{ needs.config.outputs.vendor_dump == 'true' }}
 
   # The speech and voice helpers with their models, for the spoken suite
   # (molt-speech-bundle.yml; cached by their sources).

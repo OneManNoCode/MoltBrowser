@@ -1,12 +1,12 @@
 {
- "resume_run": "43571112825",
+ "resume_run": "43575194012",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixty-third build (incremental on the sixty-first, run 43571112825: build 62 stopped at the drift check and saved no out dir). Build 62's new check caught a drift: thiserror/v1/BUILD.gn lost build/probe.rs from its build_script_inputs, because that file never reached the commit (the root .gitignore ignores build/, so neither the copy-back's git status nor the dump saw it). Now nothing under src/third_party/rust is ignored, and vendor-rust-crates.sh copies back the files Chromium's checkout ignores too, NUL-separated. This build prints the complete tree (vendor_dump) and runs the tests and the typed spoken suite on it.",
+ "request": "Sixty-fourth build (incremental on the sixty-third, run 43575194012, whose stage 1 passed every test: 3065/3065 unit, 122/122 browser). A review of the vendoring found the drift check only proved gnrt leaves the committed copies alone: gnrt keeps a crate directory that exists, so thiserror's missing build/probe.rs (and three Cargo.lock files a crate's own .gitignore hides) could never come back, and the committed thiserror BUILD.gn names a file a Mac build wouldn't have. CI now vendors fresh (vendor-rust-crates.sh --fresh removes the overlay's crates from the checkout first), the copy-back mirrors deletions for crates only the overlay vendors, and the check and the dump count ignored files. This build prints gnrt's whole output and runs the tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": true
 }

@@ -14,8 +14,10 @@ MOLT-VENDORED-BEGIN and MOLT-VENDORED-END, its SHA-256, and the removed paths.
 It checks the archive against its SHA-256, accepts only regular files and
 directories under src/third_party/rust (no links, no absolute paths, no ..),
 writes them into the repository, and removes the listed paths. Review with
-`git status -- src/third_party/rust` before committing. The log comes from our
-own CI, but it is checked as if it didn't.
+`git status --ignored -- src/third_party/rust` and commit with
+`git add -f -- src/third_party/rust`: crates' own .gitignore files hide some
+of their files. The log comes from our own CI, but it is checked as if it
+didn't. It reads a log downloaded from the API or with `gh run view --log`.
 """
 
 import argparse
@@ -33,8 +35,12 @@ STAMP = re.compile(r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z ')
 
 
 def strip(line):
+    line = line.rstrip('\r\n')
+    # `gh run view --log` puts the job's and the step's names first, each
+    # followed by a tab (the archive and the markers have none).
+    line = line.rsplit('\t', 1)[-1]
     # GitHub's logs come in chunks, each starting with a byte order mark.
-    return STAMP.sub('', line.rstrip('\r\n').lstrip('\ufeff'))
+    return STAMP.sub('', line.lstrip('\ufeff'))
 
 
 def parse(text):
@@ -71,6 +77,9 @@ def safe(name):
         return False
     parts = name.split('/')
     if any(p in ('', '.', '..') for p in parts[:-1]) or parts[-1] in ('.', '..'):
+        return False
+    # No nested repository (its config could run commands).
+    if any(p.lower() == '.git' for p in parts):
         return False
     return (name + '/').startswith(PREFIX) and name != PREFIX.rstrip('/')
 

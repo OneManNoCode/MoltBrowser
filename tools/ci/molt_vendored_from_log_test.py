@@ -82,6 +82,12 @@ class VendoredFromLogTest(unittest.TestCase):
         lines = ['\ufeff' + l if i % 3 == 0 else l for i, l in enumerate(lines)]
         self.assertEqual(self.run_log('\n'.join(lines) + '\n'), 0)
 
+    def test_a_log_from_gh_run_view(self):
+        data = archive([('file', 'src/third_party/rust/a.rs', b'a' * 3000)])
+        lines = ['stage-1 / stage\tOverlay and Rust crates\t' + l
+                 for l in log(data).splitlines()]
+        self.assertEqual(self.run_log('\n'.join(lines) + '\n'), 0)
+
     def test_a_log_without_timestamps(self):
         data = archive([('file', 'src/third_party/rust/a.rs', b'a')])
         self.assertEqual(self.run_log(log(data, stamp=False)), 0)
@@ -98,6 +104,8 @@ class VendoredFromLogTest(unittest.TestCase):
                 ([('link', 'src/third_party/rust/x', b'')], ()),
                 ([('file', 'src/third_party/rust/a.rs', b'x')], ('src/chrome/BUILD.gn',)),
                 ([('file', 'src/third_party/rust/a.rs', b'x')], ('src/third_party/rust/../../x',)),
+                ([('file', 'src/third_party/rust/vendor/x/.git/config', b'x')], ()),
+                ([('file', 'src/third_party/rust/vendor/x/.GIT/hooks/post-checkout', b'x')], ()),
         ):
             with self.assertRaises(SystemExit, msg=(members, removed)):
                 self.run_log(log(archive(members), removed))

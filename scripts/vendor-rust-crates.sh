@@ -22,6 +22,12 @@
 # Usage:
 #   ./scripts/vendor-rust-crates.sh [--chromium-src PATH] [--no-copy-back]
 #                                   [--build-dir out/MoltBrowser] [--check]
+#                                   [--fresh]
+#
+# --fresh removes the overlay's vendored crates from the checkout first, so
+# gnrt downloads and patches each of them again: what the overlay commits is
+# then gnrt's whole output, not what it left of the copies already there
+# (gnrt keeps a crate directory that exists, missing files and all).
 #
 # --check runs `gn check` and builds //chrome/browser/molt_ai/shield/adblock
 # and //chrome/services/molt_ai/document_parser/anydoc afterwards.
@@ -53,6 +59,7 @@ CHROMIUM_SRC="$ROOT_DIR/chromium/src"
 BUILD_DIR="out/MoltBrowser"
 COPY_BACK=1
 CHECK=0
+FRESH=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --build-dir) BUILD_DIR="$2"; shift 2 ;;
     --no-copy-back) COPY_BACK=0; shift ;;
     --check) CHECK=1; shift ;;
+    --fresh) FRESH=1; shift ;;
     -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -94,6 +102,18 @@ fi
 
 cd "$CHROMIUM_SRC"
 
+if [[ "$FRESH" == 1 ]]; then
+  echo "==> Fresh: removing the overlay's vendored crates from the checkout"
+  for dir in "$OVERLAY_CIO"/vendor/*/; do
+    [[ -d "$dir" ]] || continue
+    name="$(basename "$dir")"
+    target="$CR_CIO/vendor/$name"
+    if [[ -n "$name" && -d "$target" ]]; then
+      rm -rf "${target:?}"
+    fi
+  done
+fi
+
 echo "==> [2/4] gnrt vendor"
 python3 tools/crates/run_gnrt.py vendor
 
@@ -125,7 +145,28 @@ if [[ "$COPY_BACK" == 1 ]]; then
           rm -f "$dst"
         fi
       done
-  echo "    done. Review: git -C \"$ROOT_DIR\" status -- src/third_party/rust"
+  # A crate only the overlay vendors is the overlay's whole copy of it: a
+  # file gnrt no longer writes goes from the overlay too, and so does a
+  # crate gnrt removed. (For a crate upstream vendors too, the overlay keeps
+  # only the files MoltBrowser changes.)
+  for dir in "$OVERLAY_CIO"/vendor/*/; do
+    [[ -d "$dir" ]] || continue
+    name="$(basename "$dir")"
+    [[ -n "$name" ]] || continue
+    if [[ -n "$(git ls-files -- "third_party/rust/chromium_crates_io/vendor/$name" | head -n 1)" ]]; then
+      continue
+    fi
+    if [[ ! -d "$CR_CIO/vendor/$name" ]]; then
+      rm -rf "${OVERLAY_CIO:?}/vendor/${name:?}"
+      continue
+    fi
+    (cd "$OVERLAY_CIO/vendor/$name" && find . -type f -print0) |
+      while IFS= read -r -d '' f; do
+        [[ -e "$CR_CIO/vendor/$name/$f" ]] || rm -f "$OVERLAY_CIO/vendor/$name/$f"
+      done
+  done
+  echo "    done. Review: git -C \"$ROOT_DIR\" status --ignored -- src/third_party/rust"
+  echo "    (commit with git add -f: crates' own .gitignore files hide some of their files)"
 
   # Overlay vendor dirs that upstream also vendors replace upstream's copy
   # (Chromium allows one version per epoch). Usually they should be dropped
