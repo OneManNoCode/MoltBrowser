@@ -354,7 +354,10 @@ if [ -n "$SIGN_IDENTITY" ]; then
   # --deep doesn't look into Resources/: check each helper there itself.
   while IFS= read -r -d '' f; do
     codesign --verify --strict "$f"
-    if ! codesign -dv "$f" 2>&1 | grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime'; then
+    # Read it whole first: with pipefail, grep -q exiting at its match can
+    # leave codesign writing into a closed pipe and fail the check.
+    cd_info="$(codesign -dv "$f" 2>&1)"
+    if ! grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime' <<< "$cd_info"; then
       echo "  ❌ FATAL: $f is not signed with the hardened runtime"
       exit 1
     fi
@@ -452,7 +455,7 @@ AI-native privacy browser with on-device LLM inference.
 - 🧩 Chrome extension compatibility
 
 ## System Requirements
-- macOS 12.0 (Monterey) or later
+- macOS 13 (Ventura) or later (Chromium 156 no longer runs on macOS 12)
 - $([ "$UNIVERSAL" = true ] && echo "Apple Silicon or Intel Mac (universal binary)" || echo "Apple Silicon Mac (arm64)")
 - 8 GB RAM minimum (16 GB recommended for larger models)
 - 4-8 GB free disk space for model files
@@ -504,7 +507,7 @@ cat > "$DOWNLOADS_JSON" << DLJSON
         "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/v${VERSION}/${DMG_NAME}.dmg",
         "size_bytes": $DMG_SIZE_BYTES
       },
-      "min_os": "12.0",
+      "min_os": "13.0",
       "architectures": $([ "$UNIVERSAL" = true ] && echo '["arm64", "x86_64"]' || echo '["arm64"]')
     }
   }

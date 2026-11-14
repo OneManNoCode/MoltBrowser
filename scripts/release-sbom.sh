@@ -81,7 +81,11 @@ for a in "${ARTIFACTS[@]}"; do
   ARGS+=(--artifact "$a")
 done
 
-mapfile -t SBOMS < <("$PYTHON" "$SBOM_TOOL" "${ARGS[@]}")
+# One path per line (no mapfile: macOS's /bin/bash is 3.2).
+SBOMS=()
+while IFS= read -r sbom; do
+  SBOMS+=("$sbom")
+done < <("$PYTHON" "$SBOM_TOOL" "${ARGS[@]}")
 if [ ${#SBOMS[@]} -ne ${#ARTIFACTS[@]} ]; then
   echo "release-sbom: expected ${#ARTIFACTS[@]} SBOM(s), got ${#SBOMS[@]}" >&2
   exit 1

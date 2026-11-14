@@ -1,0 +1,131 @@
+# Mac release preflight: the parts of the macOS release path that need no
+# Chromium build, on GitHub's Apple Silicon runners, so the owner's release
+# build is not the first time they run on a Mac
+# (docs/BUILD_MACHINE_CHECKLIST.md §10.2):
+#
+#   * shell: the release scripts under macOS's own /bin/bash 3.2, the bash
+#     the release Mac runs them with: they parse (bash -n), and
+#     scripts/mac_bash32_test.sh runs release-sbom.sh with a stand-in SBOM
+#     tool and checks bundle-speech.sh's guards for arrays that may be empty;
+#   * bundles: scripts/bundle-speech.sh builds the speech helper and voice
+#     mode's voice from their pinned sources and verifies them, and
+#     scripts/bundle-fonts.sh bundles MoltNet's fonts, both in release mode
+#     (MOLT_RELEASE_BUILD=1: everything must match its pin), as
+#     scripts/build.sh does on a Mac;
+#   * metallib: scripts/build-ggml-metallib.sh compiles llama.cpp's Metal
+#     kernels into default.metallib, as scripts/release.sh does (v0.2.2
+#     shipped without it, and no model could load).
+#
+# Not here: Tor and whisper (pinned on the build machine), tesseract
+# (Homebrew's), the Chromium build, signing and notarization (the owner's
+# Developer ID).
+
+name: Mac release preflight
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/*.sh'
+      - 'src/chrome/browser/molt_ai/voice/speech_helper/**'
+      - 'src/chrome/browser/molt_ai/voice/voice_helper/**'
+      - 'src/third_party/llama_cpp/ggml/src/ggml-metal/**'
+      - 'tools/fonts/**'
+      - '.github/workflows/mac-release-preflight.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-release-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: macOS's own bash is 3.2
+        run: |
+          /bin/bash --version | head -1
+          /bin/bash --version | head -1 | grep -q 'version 3\.2\.'
+      - name: The macOS release scripts parse under bash 3.2
+        run: |
+          for f in scripts/setup.sh scripts/configure.sh scripts/build.sh \
+                   scripts/vendor-rust-crates.sh scripts/bundle-speech.sh \
+                   scripts/bundle-tor.sh scripts/bundle-whisper.sh \
+                   scripts/bundle-tesseract.sh scripts/bundle-fonts.sh \
+                   scripts/build-ggml-metallib.sh scripts/lib-bundle-verify.sh \
+                   scripts/release.sh scripts/patch-info-plist.sh \
+                   scripts/lib-release-names.sh scripts/release-sbom.sh \
+                   scripts/release-checksums.sh scripts/release-provenance.sh \
+                   scripts/release-draft.sh scripts/publish-release-signature.sh \
+                   scripts/dev-install-mac.sh tools/chromium/pin.sh; do
+            /bin/bash -n "$f"
+          done
+      - name: scripts/mac_bash32_test.sh under bash 3.2
+        run: /bin/bash scripts/mac_bash32_test.sh
+
+  bundles:
+    runs-on: macos-15
+    # The first run builds ONNX Runtime from source (about an hour).
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tools
+        run: |
+          brew install ninja cmake
+          cmake --version | head -1
+          ninja --version
+          xcodebuild -version
+      - name: Cache the pinned downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .molt-speech-cache/downloads
+          key: mac-speech-downloads-${{ hashFiles('scripts/bundle-speech.sh') }}
+      - name: The speech helper and the voice, from pinned sources (release mode)
+        env:
+          MOLT_RELEASE_BUILD: '1'
+        run: |
+          app="$RUNNER_TEMP/MoltBrowser.app"
+          mkdir -p "$app/Contents/Resources"
+          /bin/bash scripts/bundle-speech.sh --app "$app" --parts speech,voice --jobs 3
+          /bin/bash scripts/bundle-speech.sh --verify "$app/Contents/Resources" --parts speech,voice
+          file "$app/Contents/Resources/speech/molt-speech" "$app/Contents/Resources/voice/molt-voice"
+          otool -L "$app/Contents/Resources/speech/molt-speech" "$app/Contents/Resources/voice/molt-voice"
+      - name: The speech helper's log on failure
+        if: failure()
+        run: |
+          find .molt-speech-cache/build -name '*.log' -newer scripts/bundle-speech.sh -print0 2>/dev/null |
+            while IFS= read -r -d '' f; do echo "== $f"; tail -60 "$f"; done
+      - name: MoltNet's fonts (release mode)
+        env:
+          MOLT_RELEASE_BUILD: '1'
+        run: |
+          app="$RUNNER_TEMP/MoltBrowser.app"
+          /bin/bash scripts/bundle-fonts.sh --app "$app"
+          /bin/bash scripts/bundle-fonts.sh --verify "$app/Contents/Resources"
+
+  metallib:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Metal compiler
+        run: |
+          xcodebuild -version
+          if ! xcrun -f metal >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun -f metal
+      - name: default.metallib from the vendored ggml kernels
+        run: |
+          /bin/bash scripts/build-ggml-metallib.sh "$RUNNER_TEMP/default.metallib"
+          ls -l "$RUNNER_TEMP/default.metallib"
