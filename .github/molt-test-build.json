@@ -1,12 +1,12 @@
 {
- "resume_run": "43577768342",
+ "resume_run": "43585381968",
  "run_tests": false,
  "e2e_only": false,
  "e2e_runs": "",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixty-fifth build (incremental on the sixty-fourth, run 43577768342, which passed 3065/3065 unit, 122/122 browser tests and the typed spoken suite). The nine files the sixty-fourth's fresh vendoring added are now committed, so this build is only the drift check: gnrt vendors fresh and the committed tree under src/third_party/rust must match it exactly, ignored files included. No tests, no spoken suite.",
+ "request": "Sixty-sixth build (incremental on the sixty-fifth, run 43585381968). patches-in-sync found about 264 upstream BUILD.gn and README.chromium files in the vendored tree that differ from upstream in formatting alone: gnrt formats with the gn on PATH and only warns when that fails, and depot_tools' gn wrapper fails on CI before gclient has bootstrapped depot_tools. vendor-rust-crates.sh now gives gnrt the checkout's own gn, fails on any unformatted BUILD.gn, and drops overlay copies the checkout has as upstream. This build prints what that changes (vendor_dump) to commit it. No tests, no spoken suite.",
  "e2e_scenarios": "",
- "vendor_dump": false
+ "vendor_dump": true
 }
