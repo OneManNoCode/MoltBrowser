@@ -1,12 +1,12 @@
 {
- "resume_run": "43573206423",
+ "resume_run": "43571112825",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Sixty-third build (incremental on the sixty-second, run 43573206423). Build 62's new check caught a drift: thiserror/v1/BUILD.gn lost build/probe.rs from its build_script_inputs, because that file never reached the commit (the root .gitignore ignores build/, so neither the copy-back's git status nor the dump saw it). Now nothing under src/third_party/rust is ignored, and vendor-rust-crates.sh copies back the files Chromium's checkout ignores too, NUL-separated. This build prints the complete tree (vendor_dump) and runs the tests and the typed spoken suite on it.",
+ "request": "Sixty-third build (incremental on the sixty-first, run 43571112825: build 62 stopped at the drift check and saved no out dir). Build 62's new check caught a drift: thiserror/v1/BUILD.gn lost build/probe.rs from its build_script_inputs, because that file never reached the commit (the root .gitignore ignores build/, so neither the copy-back's git status nor the dump saw it). Now nothing under src/third_party/rust is ignored, and vendor-rust-crates.sh copies back the files Chromium's checkout ignores too, NUL-separated. This build prints the complete tree (vendor_dump) and runs the tests and the typed spoken suite on it.",
  "e2e_scenarios": "",
  "vendor_dump": true
 }
