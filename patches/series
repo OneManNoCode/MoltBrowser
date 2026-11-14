@@ -67,6 +67,8 @@ chrome/browser/extensions/chrome_extension_cookies.cc.patch
 chrome/browser/extensions/chrome_extension_function_details.cc.patch
 chrome/browser/extensions/chrome_extensions_browser_client.cc.patch
 chrome/browser/extensions/chrome_extensions_browser_client.h.patch
+chrome/browser/file_system_access/chrome_file_system_access_permission_context.cc.patch
+chrome/browser/file_system_access/chrome_file_system_access_permission_context_unittest.cc.patch
 chrome/browser/flag-metadata.json.patch
 chrome/browser/flag-never-expire-list.json.patch
 chrome/browser/gcm/gcm_profile_service_factory.cc.patch

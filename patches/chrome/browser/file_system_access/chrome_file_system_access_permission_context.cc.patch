@@ -1,0 +1,23 @@
+MoltBrowser patch for chrome/browser/file_system_access/chrome_file_system_access_permission_context.cc
+Upstream base: chromium/src@46876a0c2df3492ed67a8846950ba6d37170b58c (156.0.8078.100)
+Generated from src/chrome/browser/file_system_access/chrome_file_system_access_permission_context.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permission_context.cc b/chrome/browser/file_system_access/chrome_file_system_access_permission_context.cc
+index 20784acf0b2787b2e72a13aa6a2f00f17799fade..f5db153ae1d79a935a2d3754eb822c3fbbeb284e 100644
+--- a/chrome/browser/file_system_access/chrome_file_system_access_permission_context.cc
++++ b/chrome/browser/file_system_access/chrome_file_system_access_permission_context.cc
+@@ -508,6 +508,12 @@ GenerateBlockPaths(bool should_normalize_file_path) {
+       // tools, so block it on all platforms, see crbug.com/577400245.
+       BlockPath::CreateRelative(base::DIR_HOME, FILE_PATH_LITERAL(".cache"),
+                                 BlockType::kBlockAllChildren),
++      // MoltBrowser's own data folder (molt_ai/common/molt_home_dir.h): its
++      // workflows with their trust and triggers, and its settings, which no
++      // site may read or write.
++      BlockPath::CreateRelative(base::DIR_HOME,
++                                FILE_PATH_LITERAL(".moltbrowser"),
++                                BlockType::kBlockAllChildren),
+       // Shell startup files in the home directory, including the ones read by
+       // Git Bash on Windows, see crbug.com/558362029.
+       BlockPath::CreateRelative(base::DIR_HOME,
