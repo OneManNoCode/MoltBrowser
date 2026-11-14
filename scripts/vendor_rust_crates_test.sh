@@ -24,7 +24,9 @@
 #   * with --fresh, an override crate's sources gnrt now writes as
 #     upstream's, or no longer writes, go;
 #   * a crate only the overlay has loses its BUILD.gn and README.chromium
-#     once gnrt no longer vendors it;
+#     once gnrt no longer builds it (gone, or back to a placeholder);
+#   * with --fresh, a crate the overlay only patches is patched afresh;
+#   * a patch the overlay removed, left in the checkout, isn't applied;
 #   * without --fresh, gnrt's output that differs from the overlay's stays.
 
 set -euo pipefail
@@ -91,6 +93,19 @@ if sys.argv[1] == "vendor":
     # (and keeps a directory that exists, as gnrt does).
     if not os.path.isdir(v + "fonts-v1"):
         write(v + "fonts-v1/src/lib.rs", "fonts\n", fmt=False)
+    # An upstream crate the overlay only patches: patched when downloaded.
+    p = "third_party/rust/chromium_crates_io/patches/"
+    if not os.path.isdir(v + "up2-v1"):
+        patched = os.path.isdir(p + "up2-v1")
+        write(v + "up2-v1/src/lib.rs", "up2 patched\n" if patched else "up2\n",
+              fmt=False)
+    # A crate a stale checkout patch would change.
+    if not os.path.isdir(v + "stale-v1"):
+        patched = os.path.isdir(p + "stale-v1")
+        write(v + "stale-v1/src/lib.rs", "stale patched\n" if patched else "stale\n",
+              fmt=False)
+    # A crate no longer used: gnrt leaves the placeholder upstream has.
+    write(v + "ph-v1/Cargo.toml", "placeholder\n", fmt=False)
     write(v + "ours-v1/src/lib.rs", "ours\n", fmt=False)
 else:
     import shutil
@@ -107,6 +122,9 @@ else:
   put "$CR/third_party/rust/chromium_crates_io/patches/up-v1/0001-x.patch" 'patch'
   put "$CR/third_party/rust/chromium_crates_io/vendor/up-v1/src/lib.rs" 'up'
   put "$CR/third_party/rust/chromium_crates_io/vendor/fonts-v1/src/lib.rs" 'fonts'
+  put "$CR/third_party/rust/chromium_crates_io/vendor/up2-v1/src/lib.rs" 'up2'
+  put "$CR/third_party/rust/chromium_crates_io/vendor/stale-v1/src/lib.rs" 'stale'
+  put "$CR/third_party/rust/chromium_crates_io/vendor/ph-v1/Cargo.toml" 'placeholder'
   put "$CR/third_party/rust/same/v1/BUILD.gn" "$HEADER
 same"
   put "$CR/third_party/rust/same/v1/README.chromium" 'Name: same'
@@ -140,6 +158,14 @@ dropped"
   put "$o/gonecrate/v1/BUILD.gn" "$HEADER
 crate_root = \"//third_party/rust/chromium_crates_io/vendor/gonecrate-v1/src/lib.rs\""
   put "$o/gonecrate/v1/README.chromium" 'Name: gonecrate'
+  # A new overlay patch for an upstream crate, not yet vendored.
+  put "$o/chromium_crates_io/patches/up2-v1/0001-x.patch" 'up2 patch'
+  # A crate the overlay vendored, now back to upstream's placeholder.
+  put "$o/chromium_crates_io/vendor/ph-v1/Cargo.toml" 'real'
+  put "$o/chromium_crates_io/vendor/ph-v1/src/lib.rs" 'real'
+  put "$o/ph/v1/BUILD.gn" "$HEADER
+ph"
+  put "$o/ph/v1/README.chromium" 'Name: ph'
   put "$o/same/v1/BUILD.gn" "$HEADER
 same
 UNFORMATTED"
@@ -152,6 +178,8 @@ UNFORMATTED"
   put "$o/dropped/v1/BUILD.gn" "$HEADER
 dropped
 UNFORMATTED"
+  # An earlier run left a patch the overlay has since removed.
+  put "$CR/third_party/rust/chromium_crates_io/patches/stale-v1/0001-x.patch" 'stale patch'
   # CI copies the overlay in first: here only wrapper/, so handedit/ is a
   # hand-edited file the checkout has as upstream.
   cp "$o/wrapper/v1/lib.rs" "$CR/third_party/rust/wrapper/v1/lib.rs"
@@ -227,9 +255,18 @@ has "$o/chromium_crates_io/vendor/ours-v1/src/lib.rs" ours &&
   ok "with --fresh, an override crate's stale sources dropped, added files too" ||
   fail "vendor/fonts-v1 not dropped: $(find "$o/chromium_crates_io/vendor/fonts-v1" -type f 2>/dev/null)"
 [[ ! -e "$o/gonecrate" && ! -e "$o/chromium_crates_io/vendor/gonecrate-v1" ]] &&
-  grep -q 'dropped third_party/rust/gonecrate/v1/BUILD.gn (gnrt no longer vendors' "$T/copyback.log" &&
+  grep -q 'dropped third_party/rust/gonecrate/v1/BUILD.gn (gnrt no longer builds' "$T/copyback.log" &&
   ok "a crate only the overlay had, no longer vendored: its BUILD.gn and README go" ||
   fail "gonecrate not dropped: $(find "$o/gonecrate" -type f 2>/dev/null)"
+has "$o/chromium_crates_io/vendor/up2-v1/src/lib.rs" 'up2 patched' &&
+  ok "with --fresh, a new overlay patch for an upstream crate is applied" ||
+  fail "vendor/up2-v1 not patched"
+[[ ! -e "$o/chromium_crates_io/patches/stale-v1" && ! -e "$o/chromium_crates_io/vendor/stale-v1" ]] &&
+  ok "a patch the overlay removed isn't applied or copied back from the checkout" ||
+  fail "the stale patch came back: $(find "$o/chromium_crates_io/patches/stale-v1" "$o/chromium_crates_io/vendor/stale-v1" -type f 2>/dev/null)"
+[[ ! -e "$o/ph" && ! -e "$o/chromium_crates_io/vendor/ph-v1" ]] &&
+  ok "a crate back to upstream's placeholder: its BUILD.gn, README and sources go" ||
+  fail "ph not dropped: $(find "$o/ph" "$o/chromium_crates_io/vendor/ph-v1" -type f 2>/dev/null)"
 has "$o/chromium_crates_io/Cargo.toml" 'our toml' &&
   has "$o/chromium_crates_io/gnrt_config.toml" 'upstream config' &&
   has "$o/chromium_crates_io/patches/up-v1/0001-x.patch" patch &&

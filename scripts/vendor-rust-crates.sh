@@ -109,6 +109,11 @@ CR_CIO="$CHROMIUM_SRC/third_party/rust/chromium_crates_io"
 echo "==> [1/4] Copying crate config into $CR_CIO"
 cp "$OVERLAY_CIO/Cargo.toml" "$CR_CIO/Cargo.toml"
 cp "$OVERLAY_CIO/gnrt_config.toml" "$CR_CIO/gnrt_config.toml"
+# The checkout's patches/ back to upstream's first, so a patch since removed
+# from the overlay isn't applied again (and copied back) from a checkout
+# the overlay was copied into before.
+git -C "$CHROMIUM_SRC" clean -fdxq -- third_party/rust/chromium_crates_io/patches
+git -C "$CHROMIUM_SRC" checkout -q -- third_party/rust/chromium_crates_io/patches
 if [[ -d "$OVERLAY_CIO/patches" ]]; then
   # rsync without --delete: upstream Chromium keeps its own patches there.
   rsync -a "$OVERLAY_CIO/patches/" "$CR_CIO/patches/"
@@ -122,8 +127,10 @@ fi
 cd "$CHROMIUM_SRC"
 
 if [[ "$FRESH" == 1 ]]; then
-  echo "==> Fresh: removing the overlay's vendored crates from the checkout"
-  for dir in "$OVERLAY_CIO"/vendor/*/; do
+  # Every crate the overlay vendors or patches: gnrt keeps a crate directory
+  # that exists and patches only the crates it downloads.
+  echo "==> Fresh: removing the overlay's vendored and patched crates from the checkout"
+  for dir in "$OVERLAY_CIO"/vendor/*/ "$OVERLAY_CIO"/patches/*/; do
     [[ -d "$dir" ]] || continue
     name="$(basename "$dir")"
     target="$CR_CIO/vendor/$name"
@@ -191,11 +198,12 @@ if [[ "$COPY_BACK" == 1 ]]; then
   #     the overlay wasn't copied in, so its output may not reflect the
   #     overlay;
   #   * the BUILD.gn and README.chromium of a crate only the overlay has,
-  #     once gnrt no longer vendors it (its vendor/ directory is gone).
+  #     once gnrt no longer builds it: gnrt gen wrote no BUILD.gn for it
+  #     (it writes one for every crate in use, the overlay copied in or
+  #     not; a crate gone or left as a placeholder gets none).
   # Any other copy of an upstream file the checkout has as upstream is kept.
   python3 -I - "$CHROMIUM_SRC" "$ROOT_DIR/src" "$FRESH" <<'PY'
 import os
-import re
 import subprocess
 import sys
 
@@ -229,8 +237,6 @@ CIO = b'third_party/rust/chromium_crates_io/'
 VENDOR = CIO + b'vendor/'
 # The crate config this script copies in (step 1) stays, whatever it holds.
 INPUTS = (CIO + b'Cargo.toml', CIO + b'gnrt_config.toml')
-CRATE_ROOT = re.compile(
-    rb'crate_root\s*=\s*"//third_party/rust/chromium_crates_io/vendor/([^/"]+)/')
 
 
 def read(path, n=-1):
@@ -248,8 +254,7 @@ def generated(rel):
     return MARK in (read(os.path.join(cr, d, b'BUILD.gn'), 4096) or b'')
 
 
-# Crates only the overlay has whose vendor/ directory gnrt removed (gnrt
-# vendor runs above, so a crate it still vendors has one).
+# Crates only the overlay has that gnrt no longer builds.
 gone = set()
 root = os.path.join(ov, b'third_party', b'rust')
 for crate in os.listdir(root):
@@ -265,10 +270,7 @@ for crate in os.listdir(root):
             continue
         if rel_dir + b'/BUILD.gn' in tracked:
             continue
-        if os.path.exists(os.path.join(cr, rel_dir, b'BUILD.gn')):
-            continue
-        m = CRATE_ROOT.search(build)
-        if m and not os.path.isdir(os.path.join(cr, VENDOR + m.group(1))):
+        if not os.path.exists(os.path.join(cr, rel_dir, b'BUILD.gn')):
             gone.add(rel_dir)
 
 dropped = 0
@@ -291,7 +293,7 @@ for dirpath, dirnames, filenames in os.walk(root, topdown=False):
             continue
         if (os.path.dirname(rel) in gone and
                 name in (b'BUILD.gn', b'README.chromium')):
-            drop(full, rel, 'gnrt no longer vendors its crate')
+            drop(full, rel, 'gnrt no longer builds its crate')
             continue
         vendored = fresh and rel.startswith(VENDOR)
         if vendored and not os.path.lexists(os.path.join(cr, rel)):
