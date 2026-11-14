@@ -1,11 +1,11 @@
 {
- "resume_run": "43453467642",
+ "resume_run": "43486678502",
  "run_tests": true,
  "e2e_only": false,
- "e2e_runs": "typed,pulse:clean",
+ "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Fifty-ninth build (incremental on the fifty-eighth, run 43453467642). Build 58's spoken suite: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 85/93 (91%, from 83), Phase 2 25/30 (from 22), the model's tasks 4/4. Of its three fixes, p2-shop-back-for-more passed and go-search-web's reading wasn't taken as a choice; go-search-web (\"trims in Lion\") and p2-form-full (\"Heck I agreed to the rules\", before the country step) failed on misheard words. Most pulse misses are the recognizer's words; one was voice mode's: \"Hey, Molt, scroll down.\" said while the planner worked was dropped as having no wake phrase, since the helper hears everything while the browser is busy and spots none. New since: an utterance begun with the wake phrase (in its text) counts while the browser thinks, and ends a planner run. The whole spoken suite runs, typed and on pulse.",
+ "request": "Sixtieth build (incremental on the fifty-ninth, run 43486678502). Build 59's spoken suite: typed met Phase 1 (81/81), Phase 2 30/30, the model's tasks 4/4; pulse 85/93 (91%), Phase 2 25/30, the model's tasks 4/4, security 6/6, and browser-moltnet-window (\"Hey, Molt, scroll down.\" while the planner worked) passed; every pulse miss was a misheard word. Qwen3.5 4B has now planned well on builds 57-59, typed and spoken, none refused, so it is unhidden (offered in the model list). The tests run, and the typed spoken suite checks the model's tasks still pass with it listed.",
  "e2e_scenarios": ""
 }

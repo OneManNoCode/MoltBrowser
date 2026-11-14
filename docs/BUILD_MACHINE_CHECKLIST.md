@@ -512,12 +512,14 @@ and its GGUF header read. The memory search model is `qwen3` with 1024
 dimensions; every file's tensor types have Vulkan shaders; the licences
 were read from the base models' cards (Gemma 4 E4B is Apache 2.0, Gemma 3
 keeps its own terms). The items below are what to re-run when re-pinning;
-hidden entries (`qwen3.5-4b`, `gemma4-e4b`, `voxtral-mini-3b`) stay hidden
-until run with these files on the build machine. The spoken suite measures
-a hidden chat model on a real build first (`"e2e_model": "qwen3.5-4b"` in
+hidden entries (`gemma4-e4b`, `voxtral-mini-3b`) stay hidden until run with
+these files on the build machine. The spoken suite measures a hidden chat
+model on a real build first (`"e2e_model"` in
 `.github/molt-test-build.json`: the browser lists pinned hidden entries only
 with its test switch `--molt-ai-test-hidden-models`); it is unhidden by hand
-once it runs and plans well there.
+once it runs and plans well there. `qwen3.5-4b` was, after the planner's
+requests and the questions about a page passed typed and spoken on builds
+57-59 with no reply refused.
 
 - [x] Embedding model (from #28; done from CI):
   ```bash
@@ -553,7 +555,7 @@ once it runs and plans well there.
   `_ggml_vk_dropped_types` in `src/third_party/llama_cpp/BUILD.gn`, or the
   model's operations on it run on the CPU with the GPU switch on.
 - [x] Optional: the chat models, `python3 tools/models/pin_models.py` (dry
-  run, then `--write`); hidden entries (`qwen3.5-4b`, `gemma4-e4b`) stay
+  run, then `--write`); hidden entries (`gemma4-e4b`) stay
   hidden. Set `HF_TOKEN` for gated repositories (from
   `tools/models/pin_models.py`). Done from CI, above.
 - [x] `python3 tools/models/pin_models_test.py` passes (fails on a
