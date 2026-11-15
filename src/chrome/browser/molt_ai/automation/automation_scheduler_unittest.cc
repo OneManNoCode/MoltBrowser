@@ -5,8 +5,9 @@
 // directory with a workflow record (workflow_record.h), on mock time: it
 // fires a catch-up of a workflow the browser saved; never one whose file
 // was changed outside the browser, whether that is found when it is listed
-// or when its timer's reload comes; and a forged earlier last fire forces
-// no catch-up run.
+// or when its timer's reload comes; a forged earlier last fire forces no
+// catch-up run (fired here or not), a forged later one doesn't stall the
+// schedule, and a schedule saved afresh starts over.
 
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 
@@ -86,10 +87,25 @@ class AutomationSchedulerTest : public testing::Test {
     const base::FilePath file = dir_.AppendASCII(id + ".molt");
     std::string bytes;
     ASSERT_TRUE(base::ReadFileToString(file, &bytes));
-    std::optional<base::Value> value = base::JSONReader::Read(bytes);
+    std::optional<base::Value> value =
+        base::JSONReader::Read(bytes, base::JSON_ALLOW_TRAILING_COMMAS);
     ASSERT_TRUE(value && value->is_dict());
     (*value->GetDict().FindList("steps"))[0].GetDict().Set(
         "target", "https://evil.example/");
+    ASSERT_TRUE(base::JSONWriter::Write(*value, &bytes));
+    ASSERT_TRUE(base::WriteFile(file, bytes));
+  }
+  // Another program writes the workflow's last fire time (bookkeeping: the
+  // file is still the browser's).
+  void SetLastFiredOutside(const std::string& id, int64_t last_fired) {
+    const base::FilePath file = dir_.AppendASCII(id + ".molt");
+    std::string bytes;
+    ASSERT_TRUE(base::ReadFileToString(file, &bytes));
+    std::optional<base::Value> value =
+        base::JSONReader::Read(bytes, base::JSON_ALLOW_TRAILING_COMMAS);
+    ASSERT_TRUE(value && value->is_dict());
+    value->GetDict().FindDict("trigger")->Set("last_fired_unix",
+                                              static_cast<double>(last_fired));
     ASSERT_TRUE(base::JSONWriter::Write(*value, &bytes));
     ASSERT_TRUE(base::WriteFile(file, bytes));
   }
@@ -154,21 +170,64 @@ TEST_F(AutomationSchedulerTest, AForgedEarlierLastFiredForcesNoCatchUp) {
   const int64_t now = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
   ASSERT_TRUE(storage_->RecordFire("wf_1", now));
-  // Another program writes a last fire a day back (bookkeeping: the file
-  // is still the browser's).
-  const base::FilePath file = dir_.AppendASCII("wf_1.molt");
-  std::string bytes;
-  ASSERT_TRUE(base::ReadFileToString(file, &bytes));
-  std::optional<base::Value> value = base::JSONReader::Read(bytes);
-  ASSERT_TRUE(value && value->is_dict());
-  value->GetDict().FindDict("trigger")->Set("last_fired_unix",
-                                            static_cast<double>(now - 86400));
-  ASSERT_TRUE(base::JSONWriter::Write(*value, &bytes));
-  ASSERT_TRUE(base::WriteFile(file, bytes));
+  // Another program writes a last fire a day back.
+  SetLastFiredOutside("wf_1", now - 86400);
   std::optional<Script> loaded = storage_->Load("wf_1");
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
   EXPECT_EQ(loaded->trigger.last_fired_unix, now);
+  scheduler_.Start();
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+}
+
+// The same for workflows saved here that this browser hasn't fired yet
+// (no fire of its own to hold on to): a weekly one, and an hourly one.
+TEST_F(AutomationSchedulerTest,
+       AForgedEarlierLastFiredOfAWorkflowNeverFiredHereForcesNoCatchUp) {
+  Script weekly = Interval("wf_weekly", 3600, 0);
+  weekly.trigger.type = TriggerType::CRON;
+  weekly.trigger.expression = "0 9 * * 1";
+  weekly.security.trust = TrustLevel::TRUSTED;
+  ASSERT_TRUE(storage_->Save(weekly));
+  ASSERT_TRUE(storage_->Save(Interval("wf_hourly", 3600, 0)));
+  SetLastFiredOutside("wf_weekly", 1);
+  SetLastFiredOutside("wf_hourly", 1);
+  for (const char* id : {"wf_weekly", "wf_hourly"}) {
+    std::optional<Script> loaded = storage_->Load(id);
+    ASSERT_TRUE(loaded) << id;
+    EXPECT_FALSE(loaded->security.changed_outside) << id;
+    EXPECT_EQ(loaded->trigger.last_fired_unix, 0) << id;
+  }
+  scheduler_.Start();
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+}
+
+// A last fire in the future written outside can't stall the schedule: an
+// overdue workflow still fires.
+TEST_F(AutomationSchedulerTest, AForgedLaterLastFiredDoesNotStallTheSchedule) {
+  const int64_t now = Unix(base::Time::Now());
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", now - 7200));
+  SetLastFiredOutside("wf_1", 4102444800);
+  scheduler_.Start();
+  Tick();
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// A schedule saved afresh (the Agent studio's Schedule writes a new
+// trigger, never fired) starts over: the old schedule's last fire, five
+// hours back, forces no catch-up run of the new hourly one.
+TEST_F(AutomationSchedulerTest, AScheduleSavedAfreshForcesNoCatchUp) {
+  const int64_t now = Unix(base::Time::Now());
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 86400, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", now - 5 * 3600));
+  const Trigger hourly = Interval("wf_1", 3600, 0).trigger;
+  ASSERT_TRUE(storage_->Update("wf_1", [&hourly](Script& script) {
+    script.trigger = hourly;
+    return true;
+  }));
   scheduler_.Start();
   Tick();
   EXPECT_TRUE(fired_.empty());

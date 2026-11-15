@@ -469,7 +469,9 @@ std::optional<Script> AutomationStorage::Vetted(base::DictValue dict,
     return script;
   }
   const std::string name = NameOf(path);
-  if (!record->Vouches(name, AutomationSecurity::SecurityDigest(*script))) {
+  const bool vouched =
+      record->Vouches(name, AutomationSecurity::SecurityDigest(*script));
+  if (!vouched) {
     if (held == Held::kNothing) {
       // A change of this browser's in progress (the file renamed, the
       // record not set yet, or the reverse) ends before this second look.
@@ -485,10 +487,13 @@ std::optional<Script> AutomationStorage::Vetted(base::DictValue dict,
     // Changed outside this browser: an unconfirmed import.
     AutomationSecurity::ClampUnvouched(*script);
   }
-  // Never an earlier last fire than this browser wrote or saw: a forged one
-  // would force catch-up runs.
+  // Its last fire time (bookkeeping, outside the digest): the file's own
+  // only when the record vouches for the file and it can be a fire since
+  // this browser last wrote there, else what this browser wrote or fired
+  // there (WorkflowRecord::LastFired()). A forged earlier one would force a
+  // catch-up run; a forged later one would stall the schedule.
   script->trigger.last_fired_unix =
-      std::max(script->trigger.last_fired_unix, record->FiredFloor(name));
+      record->LastFired(name, vouched ? script->trigger.last_fired_unix : 0);
   return script;
 }
 
@@ -648,7 +653,8 @@ bool AutomationStorage::SaveLocked(const Script& script) {
   if (!WriteScriptBytesLocked(path, bytes)) {
     return false;
   }
-  // What this browser wrote, as a reader will parse it.
+  // What this browser wrote, as a reader will parse it, its last fire time
+  // included (0 for a schedule saved afresh: it starts over).
   if (WorkflowRecord* record = Record()) {
     std::optional<Script> written = ParseScriptBytes(bytes);
     record->Set(
@@ -741,12 +747,9 @@ bool AutomationStorage::UpdateBookkeepingLocked(const std::string& id,
                << " not saved: bookkeeping may not change the workflow";
     return false;
   }
-  if (!WriteScriptBytesLocked(path, bytes))
-    return false;
-  if (WorkflowRecord* record = Record()) {
-    record->NoteFired(NameOf(path), written->trigger.last_fired_unix);
-  }
-  return true;
+  // The record is left as it was: a fire time read from the file is never
+  // recorded (RecordFire() records the scheduler's own first).
+  return WriteScriptBytesLocked(path, bytes);
 }
 
 // static
@@ -828,15 +831,23 @@ std::optional<Script> AutomationStorage::Take(const std::string& id) {
     Taking::Get().Stop(set_aside.file);
     return std::nullopt;
   }
+  // Its record goes with it: under the new name first, so that whichever
+  // name holds the file if the browser ends mid-move is vouched for (the
+  // other entry is dropped at the next load).
+  WorkflowRecord* record = Record();
+  const bool copied =
+      record && record->Copy(id + kScriptExt, NameOf(set_aside.file));
   // One rename: a second taker (another profile, another browser on the
   // same home directory) finds the file gone.
   if (!base::ReplaceFile(GetScriptPath(id), set_aside.file, nullptr)) {
+    if (copied) {
+      record->Forget(NameOf(set_aside.file));
+    }
     Taking::Get().Stop(set_aside.file);
     return std::nullopt;
   }
-  // Its record goes with it.
-  if (WorkflowRecord* record = Record()) {
-    record->Move(id + kScriptExt, NameOf(set_aside.file));
+  if (record) {
+    record->Forget(id + kScriptExt);
   }
   // Set aside now: InterruptedTakes() leaves it to its taker for a while.
   const base::Time now = base::Time::Now();
@@ -912,15 +923,20 @@ bool AutomationStorage::ReturnSetAsideLocked(const SetAside& set_aside) {
     // saved under that id meanwhile.
     std::optional<std::string> back = FreeIdLocked(id);
     if (back) {
+      // Its record with it, first under the name it gets back, as Take()
+      // does. A set-aside file the record has nothing for (unvouched, or
+      // set aside without this browser's record: another browser's move, a
+      // rename cut short) leaves the record of <back>.molt as it was, kept
+      // for it while it was set aside (workflow_record.h).
+      WorkflowRecord* record = Record();
+      const std::string to = *back + kScriptExt;
+      const bool copied = record && record->Copy(NameOf(set_aside.file), to);
       returned =
           base::ReplaceFile(set_aside.file, GetScriptPath(*back), nullptr);
-      // Its record with it. A set-aside file the record has nothing for
-      // (unvouched, or a move cut short before its record moved) leaves
-      // the record of <back>.molt as it was.
-      if (returned) {
-        if (WorkflowRecord* record = Record()) {
-          record->Move(NameOf(set_aside.file), *back + kScriptExt);
-        }
+      if (record && returned) {
+        record->Forget(NameOf(set_aside.file));
+      } else if (copied) {
+        record->Forget(to);
       }
       if (returned && *back != id) {
         LOG(WARNING) << "[Automation] "

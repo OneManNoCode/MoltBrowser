@@ -89,6 +89,49 @@ std::string NowIso8601() {
                             e.day_of_month, e.hour, e.minute, e.second);
 }
 
+// Now, in unix seconds (as the scheduler counts fire times).
+int64_t NowUnix() {
+  return static_cast<int64_t>(base::Time::Now().ToTimeT());
+}
+
+// A time in the record: a non-negative number of seconds; nullopt for
+// anything else.
+std::optional<int64_t> RecordedSeconds(const base::Value* value) {
+  if (!value) {
+    return std::nullopt;
+  }
+  int64_t seconds = 0;
+  if (value->is_int()) {
+    seconds = value->GetInt();
+  } else if (value->is_double()) {
+    seconds = base::saturated_cast<int64_t>(value->GetDouble());
+  } else {
+    return std::nullopt;
+  }
+  if (seconds < 0) {
+    return std::nullopt;
+  }
+  return seconds;
+}
+
+// Whether a script set aside from |name| ("<id>.molt") is among |names|
+// (<id>.molt.<token>.taken: a script id has no dot).
+bool IsSetAsideIn(const std::string& name, const std::set<std::string>& names) {
+  if (!base::EndsWith(name, ".molt", base::CompareCase::SENSITIVE)) {
+    return false;
+  }
+  const std::string prefix = name + ".";
+  for (auto it = names.lower_bound(prefix);
+       it != names.end() &&
+       base::StartsWith(*it, prefix, base::CompareCase::SENSITIVE);
+       ++it) {
+    if (base::EndsWith(*it, ".taken", base::CompareCase::SENSITIVE)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // A script's file name in the directory, as the record keeps it: 1 to 200
 // bytes, no separator, not hidden, a script's or a set-aside script's.
 bool IsValidName(std::string_view name) {
@@ -126,7 +169,9 @@ struct ParsedRecord {
 // The record file's contents, checked: nullopt when it isn't a record at
 // all (corrupt); a malformed entry is dropped on its own.
 std::optional<ParsedRecord> ParseRecord(std::string_view contents) {
-  std::optional<base::Value> value = base::JSONReader::Read(contents);
+  // Written by base::JSONWriter: plain JSON.
+  std::optional<base::Value> value =
+      base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
   if (!value || !value->is_dict()) {
     return std::nullopt;
   }
@@ -158,20 +203,17 @@ std::optional<ParsedRecord> ParseRecord(std::string_view contents) {
     if (!digest || !IsValidDigest(*digest)) {
       continue;
     }
-    int64_t fired = 0;
+    // "fired" is left out when 0; "written" is always there.
+    std::optional<int64_t> fired = 0;
     if (const base::Value* value_fired = entry.Find("fired")) {
-      if (value_fired->is_int()) {
-        fired = value_fired->GetInt();
-      } else if (value_fired->is_double()) {
-        fired = base::saturated_cast<int64_t>(value_fired->GetDouble());
-      } else {
-        continue;
-      }
-      if (fired < 0) {
-        continue;
-      }
+      fired = RecordedSeconds(value_fired);
     }
-    parsed.files[name] = {*digest, fired};
+    const std::optional<int64_t> written =
+        RecordedSeconds(entry.Find("written"));
+    if (!fired || !written) {
+      continue;
+    }
+    parsed.files[name] = {*digest, *fired, *written};
   }
   return parsed;
 }
@@ -391,10 +433,13 @@ void WorkflowRecord::LoadLocked(
         origin = Origin::kFresh;
       } else {
         // The first start of this version: the workflows there now, as
-        // the previous build ran them. Once (the marker follows the
-        // record).
+        // the previous build ran them (their own last fire times too).
+        // Once (the marker follows the record). A fire the file claims
+        // later is believed only if it is since now (LastFired()).
+        const int64_t now = NowUnix();
         for (const std::string& name : names) {
           if (std::optional<Entry> entry = entry_of(name)) {
+            entry->written = now;
             files[name] = std::move(*entry);
           }
         }
@@ -419,9 +464,11 @@ void WorkflowRecord::LoadLocked(
       return;
   }
 
-  // Files no longer there (deleted by another browser, by hand).
+  // Files no longer there (deleted by another browser, by hand); but a
+  // script set aside now (another browser's move in progress, or one cut
+  // short) keeps its entry, to be vouched for again once it is put back.
   for (auto it = files.begin(); it != files.end();) {
-    if (names.count(it->first)) {
+    if (names.count(it->first) || IsSetAsideIn(it->first, names)) {
       ++it;
     } else {
       it = files.erase(it);
@@ -432,11 +479,10 @@ void WorkflowRecord::LoadLocked(
     if (generation != generation_) {
       return;
     }
-    // What this process wrote before the record was configured.
+    // What this process wrote before the record was configured: later
+    // than anything recorded.
     for (const auto& [name, entry] : entries_) {
-      Entry& merged = files[name];
-      merged.digest = entry.digest;
-      merged.fired = std::max(merged.fired, entry.fired);
+      files[name] = entry;
     }
     entries_ = std::move(files);
     origin_ = origin;
@@ -468,17 +514,37 @@ int64_t WorkflowRecord::FiredFloor(const std::string& name) const {
   return it == entries_.end() ? 0 : it->second.fired;
 }
 
+int64_t WorkflowRecord::LastFired(const std::string& name,
+                                  int64_t file_fired) const {
+  const int64_t now = NowUnix();
+  base::AutoLock hold(lock_);
+  auto it = entries_.find(name);
+  if (it == entries_.end()) {
+    return std::max<int64_t>(0, file_fired);
+  }
+  const Entry& entry = it->second;
+  // Another browser's run since this one last wrote the file. Anything
+  // earlier was in what this one wrote (or is forged: it would force a
+  // catch-up run), anything in the future is no fire (it would stall the
+  // schedule).
+  const bool since_written =
+      file_fired >= entry.written && file_fired <= now + kLastFiredSlackSeconds;
+  return since_written ? std::max(entry.fired, file_fired) : entry.fired;
+}
+
 void WorkflowRecord::Set(const std::string& name,
                          std::string digest,
                          int64_t fired) {
+  const int64_t now = NowUnix();
   {
     base::AutoLock hold(lock_);
     if (digest.empty()) {
       entries_.erase(name);
     } else {
-      Entry& entry = entries_[name];
-      entry.digest = std::move(digest);
-      entry.fired = std::max(entry.fired, fired);
+      // What it wrote, as it wrote it: a fire time it lowered (a schedule
+      // saved afresh) is lowered here too.
+      entries_[name] = {std::move(digest), std::max<int64_t>(0, fired),
+                        std::max<int64_t>(0, now)};
     }
   }
   Persist();
@@ -499,21 +565,18 @@ void WorkflowRecord::NoteFired(const std::string& name, int64_t fired) {
   }
 }
 
-void WorkflowRecord::Move(const std::string& from, const std::string& to) {
-  bool changed = false;
+bool WorkflowRecord::Copy(const std::string& from, const std::string& to) {
   {
     base::AutoLock hold(lock_);
     auto it = entries_.find(from);
-    if (it != entries_.end()) {
-      Entry entry = std::move(it->second);
-      entries_.erase(it);
-      entries_[to] = std::move(entry);
-      changed = true;
+    if (it == entries_.end()) {
+      return false;
     }
+    Entry entry = it->second;
+    entries_[to] = std::move(entry);
   }
-  if (changed) {
-    Persist();
-  }
+  Persist();
+  return true;
 }
 
 void WorkflowRecord::Forget(const std::string& name) {
@@ -546,6 +609,7 @@ void WorkflowRecord::Persist() {
       if (entry.fired > 0) {
         value.Set("fired", static_cast<double>(entry.fired));
       }
+      value.Set("written", static_cast<double>(entry.written));
       files.Set(name, std::move(value));
     }
     root.Set("format", kFormat);

@@ -8,8 +8,9 @@
 // read-modify-write whichever thread, and moves cut short reported; since
 // round 45, a fresh id when every simple one is taken; and the workflow
 // record (workflow_record.h): a file is trusted only as far as this browser
-// wrote it, on every read and write path, with the fire floor, the
-// one-time seeding and two browsers over one directory.
+// wrote it, on every read and write path, with its last fire believed only
+// since this browser's last write, moves cut short, the one-time seeding
+// and two browsers over one directory.
 
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
@@ -623,6 +624,20 @@ TEST(AutomationStorageTest, TheSharedStorageIsInMoltHomeDir) {
 // ---------------------------------------------------------------------------
 
 constexpr int64_t kFired = 1'800'000'000;
+// A last fire in the year 2100.
+constexpr int64_t kFarFuture = 4'102'444'800;
+
+int64_t NowUnix() {
+  return static_cast<int64_t>(base::Time::Now().ToTimeT());
+}
+
+// A workflow that runs every hour.
+Script Hourly(const std::string& id) {
+  Script script = Named(id, "Prices");
+  script.trigger.type = TriggerType::INTERVAL;
+  script.trigger.expression = "3600";
+  return script;
+}
 
 // What a planted file might claim: TRUSTED, scheduled, a site of its own,
 // no approvals, a history.
@@ -688,10 +703,18 @@ class AutomationStorageRecordTest : public testing::Test {
   std::optional<Script> Raw(const std::string& id) {
     return Script::FromJSONString(Bytes(id));
   }
+  // The file's last fire time, written by another program.
+  void SetLastFiredOutside(const std::string& id, int64_t last_fired) {
+    EditRaw(id, [last_fired](base::DictValue& d) {
+      d.FindDict("trigger")->Set("last_fired_unix",
+                                 static_cast<double>(last_fired));
+    });
+  }
   // The file's JSON edited by another program.
   void EditRaw(const std::string& id,
                base::FunctionRef<void(base::DictValue&)> edit) {
-    std::optional<base::Value> value = base::JSONReader::Read(Bytes(id));
+    std::optional<base::Value> value =
+        base::JSONReader::Read(Bytes(id), base::JSON_ALLOW_TRAILING_COMMAS);
     ASSERT_TRUE(value && value->is_dict());
     edit(value->GetDict());
     std::string out;
@@ -721,7 +744,8 @@ class AutomationStorageRecordTest : public testing::Test {
             &contents)) {
       return names;
     }
-    std::optional<base::Value> value = base::JSONReader::Read(contents);
+    std::optional<base::Value> value =
+        base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
     if (value && value->is_dict()) {
       if (const base::DictValue* files = value->GetDict().FindDict("files")) {
         for (const auto item : *files) {
@@ -817,14 +841,13 @@ TEST_F(AutomationStorageRecordTest, RunBookkeepingMayChangeOutside) {
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
   EXPECT_EQ(loaded->stats.runs, 99);
-  // A later last fire (another browser's run) too.
-  EditRaw("wf_1", [](base::DictValue& d) {
-    d.FindDict("trigger")->Set("last_fired_unix", static_cast<double>(kFired));
-  });
+  // A later last fire (another browser's run, since the save) too.
+  const int64_t ran = NowUnix();
+  SetLastFiredOutside("wf_1", ran);
   loaded = Load("wf_1");
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
-  EXPECT_EQ(loaded->trigger.last_fired_unix, kFired);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, ran);
   EXPECT_TRUE(Vouched("wf_1.molt"));
 }
 
@@ -843,6 +866,100 @@ TEST_F(AutomationStorageRecordTest,
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
   EXPECT_EQ(loaded->trigger.last_fired_unix, kFired);
+}
+
+// Saved here (or seeded at the upgrade) and not fired here yet: an earlier
+// last fire written outside, which would force a catch-up run, is still
+// not believed.
+TEST_F(AutomationStorageRecordTest,
+       AnEarlierLastFiredOfAWorkflowNotFiredHereIsNotBelieved) {
+  Script legacy = Hourly("legacy");
+  Plant("legacy", legacy);
+  Restart(/*may_seed=*/true);
+  ASSERT_FALSE(Load("legacy")->security.changed_outside);
+  SetLastFiredOutside("legacy", 1);
+  std::optional<Script> loaded = Load("legacy");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, 0);
+
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  SetLastFiredOutside("wf_1", 1);
+  loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, 0);
+  SetLastFiredOutside("wf_1", NowUnix() - 86400);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
+  // Nor once written back (a Trust click), nor at the next start.
+  ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::APPROVED));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
+  SetLastFiredOutside("wf_1", 1);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
+}
+
+// A later last fire written outside that can't be a fire (in the future)
+// isn't believed, and no write records a fire time read from the file (a
+// run's stats, a Trust click): it never stalls the schedule.
+TEST_F(AutomationStorageRecordTest,
+       AFutureLastFiredIsNeitherBelievedNorRecorded) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t fired = NowUnix() - 7200;
+  ASSERT_TRUE(storage().RecordFire("wf_1", fired));
+  SetLastFiredOutside("wf_1", kFarFuture);
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, fired);
+  WorkflowRecord* record = WorkflowRecord::For(dir_);
+  ASSERT_TRUE(record);
+  // A run's stats: the file's own last fire written back, not recorded.
+  ASSERT_TRUE(storage().UpdateBookkeeping("wf_1", [](Script& script) {
+    script.stats.runs = 1;
+    return true;
+  }));
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, kFarFuture);
+  EXPECT_EQ(record->FiredFloor("wf_1.molt"), fired);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, fired);
+  // A Trust click writes what it read.
+  ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::APPROVED));
+  EXPECT_EQ(record->FiredFloor("wf_1.molt"), fired);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, fired);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, fired);
+}
+
+// A schedule saved afresh (the Agent studio's Schedule: a new trigger,
+// never fired) starts over, as it did before the record: no catch-up run
+// of the old schedule's last fire. It also clears a fire time recorded on
+// a clock that was ahead.
+TEST_F(AutomationStorageRecordTest, AScheduleSavedAfreshStartsOver) {
+  Script daily = Named("wf_1", "Prices");
+  daily.trigger.type = TriggerType::CRON;
+  daily.trigger.expression = "0 9 * * *";
+  ASSERT_TRUE(storage().Save(daily));
+  ASSERT_TRUE(storage().RecordFire("wf_1", NowUnix() - 6 * 3600));
+  Trigger noon;
+  noon.type = TriggerType::CRON;
+  noon.expression = "0 12 * * *";
+  auto reschedule = [&noon](Script& script) {
+    script.trigger = noon;
+    return true;
+  };
+  ASSERT_TRUE(storage().Update("wf_1", reschedule));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.expression, "0 12 * * *");
+  EXPECT_EQ(loaded->trigger.last_fired_unix, 0);
+  // A fire on a clock far ahead, then the schedule saved again.
+  ASSERT_TRUE(storage().RecordFire("wf_1", kFarFuture));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, kFarFuture);
+  ASSERT_TRUE(storage().Update("wf_1", reschedule));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
 }
 
 TEST_F(AutomationStorageRecordTest, AHandCopyUnderAnotherIdIsNotVouched) {
@@ -1086,6 +1203,50 @@ TEST_F(AutomationStorageRecordTest, TakeAndReturnCarryTheVerdict) {
   EXPECT_TRUE(IsClamped(*taken));
   ASSERT_TRUE(storage().ReturnTaken("b"));
   EXPECT_TRUE(IsClamped(*Load("b")));
+}
+
+// A move cut short on either side of its rename (the browser ended, or
+// another browser's move was in progress at this start): put back, the
+// workflow is vouched for as it was.
+TEST_F(AutomationStorageRecordTest, AMoveCutShortIsVouchedForOncePutBack) {
+  Script script = Named("a", "A");
+  script.security.trust = TrustLevel::APPROVED;
+  ASSERT_TRUE(storage().Save(script));
+  const base::Time before_grace = base::Time::Now() - base::Minutes(5);
+  // Renamed, before the record had it under the new name.
+  const base::FilePath renamed = dir_.AppendASCII("a.molt.00ff.taken");
+  ASSERT_TRUE(base::ReplaceFile(File("a"), renamed, nullptr));
+  ASSERT_TRUE(base::TouchFile(renamed, before_grace, before_grace));
+  Restart(/*may_seed=*/false);
+  std::vector<AutomationStorage::SetAside> cut = storage().InterruptedTakes();
+  ASSERT_EQ(cut.size(), 1u);
+  ASSERT_TRUE(storage().ReturnSetAside(cut[0]));
+  std::optional<Script> back = Load("a");
+  ASSERT_TRUE(back);
+  EXPECT_FALSE(back->security.changed_outside);
+  EXPECT_EQ(back->security.trust, TrustLevel::APPROVED);
+
+  // Renamed after the record had it under both names (as Take() does),
+  // before the old one was forgotten.
+  WorkflowRecord* record = WorkflowRecord::For(dir_);
+  ASSERT_TRUE(record && record->loaded());
+  ASSERT_TRUE(record->Copy("a.molt", "a.molt.0abc.taken"));
+  const base::FilePath copied = dir_.AppendASCII("a.molt.0abc.taken");
+  ASSERT_TRUE(base::ReplaceFile(File("a"), copied, nullptr));
+  ASSERT_TRUE(base::TouchFile(copied, before_grace, before_grace));
+  Restart(/*may_seed=*/false);
+  cut = storage().InterruptedTakes();
+  ASSERT_EQ(cut.size(), 1u);
+  std::optional<Script> read = storage().ReadSetAside(cut[0]);
+  ASSERT_TRUE(read);
+  EXPECT_FALSE(read->security.changed_outside);
+  EXPECT_EQ(read->security.trust, TrustLevel::APPROVED);
+  ASSERT_TRUE(storage().ReturnSetAside(cut[0]));
+  back = Load("a");
+  ASSERT_TRUE(back);
+  EXPECT_FALSE(back->security.changed_outside);
+  EXPECT_EQ(back->security.trust, TrustLevel::APPROVED);
+  EXPECT_EQ(RecordedNames(), std::set<std::string>{"a.molt"});
 }
 
 TEST_F(AutomationStorageRecordTest, FinishTakeForgetsTheSetAsideFile) {

@@ -18,8 +18,10 @@
 // MayFireUnattended()): never a workflow whose file was changed outside the
 // browser (the storage loads it as an unconfirmed draft), checked when it is
 // listed and again when its timer's reload comes. Its last fire time is
-// never earlier than the one the browser recorded (automation_storage.h),
-// so a forged earlier one forces no catch-up run. base only (the storage's
+// the file's own only when it can be a fire since the browser last wrote
+// the file, else the one the browser wrote or fired at
+// (automation_storage.h): a forged earlier one forces no catch-up run, a
+// forged later one stalls no schedule. base only (the storage's
 // sequences), so molt_ai_unittests tests it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_

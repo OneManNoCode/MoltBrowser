@@ -6,8 +6,10 @@
 // new user data directory, nor after a loss or a corruption), never read
 // through or written over when it isn't a regular file, nor kept in
 // ~/.moltbrowser; malformed entries dropped one by one, entries of files
-// gone dropped at load, moves carried, the fire floor only rising, and a
-// session's writes before configuration kept.
+// gone dropped at load (not while set aside), moves copied first, the fire
+// time set by writes and raised by fires, a file's last fire believed only
+// since this browser's last write, and a session's writes before
+// configuration kept.
 
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
 
@@ -23,6 +25,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
@@ -37,6 +40,10 @@ using Origin = WorkflowRecord::Origin;
 // A digest as the storage computes them: 64 lowercase hex digits.
 std::string Digest(char c) {
   return std::string(64, c);
+}
+
+int64_t NowUnix() {
+  return static_cast<int64_t>(base::Time::Now().ToTimeT());
 }
 
 class WorkflowRecordTest : public testing::Test {
@@ -91,7 +98,8 @@ class WorkflowRecordTest : public testing::Test {
     if (!base::ReadFileToString(record_file_, &contents)) {
       return names;
     }
-    std::optional<base::Value> value = base::JSONReader::Read(contents);
+    std::optional<base::Value> value =
+        base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
     if (!value || !value->is_dict()) {
       return names;
     }
@@ -160,6 +168,27 @@ TEST_F(WorkflowRecordTest, AnUpgradeSeedsWhatIsThereOnce) {
   EXPECT_TRUE(audit_.empty());
 }
 
+// A seeded workflow's last fire is the one its file had at the upgrade: a
+// file claiming an earlier one later (one that never fired: 0) is not
+// believed, nor one in the future; another browser's run since is.
+TEST_F(WorkflowRecordTest, ASeededEntryBelievesOnlyAFireSinceTheSeeding) {
+  Have("fired.molt", Digest('a'), 1800000000);
+  Have("never.molt", Digest('b'));
+  const int64_t before = NowUnix();
+  WorkflowRecord* record = Start(/*may_seed=*/true);
+  EXPECT_EQ(record->LastFired("fired.molt", 1800000000), 1800000000);
+  EXPECT_EQ(record->LastFired("fired.molt", 1), 1800000000);
+  EXPECT_EQ(record->FiredFloor("never.molt"), 0);
+  EXPECT_EQ(record->LastFired("never.molt", 1), 0);
+  EXPECT_EQ(record->LastFired("never.molt", before - 3600), 0);
+  EXPECT_EQ(record->LastFired("never.molt", 4102444800), 0);
+  EXPECT_EQ(record->LastFired("never.molt", before + 60), before + 60);
+  // As at the next start.
+  record = Start(/*may_seed=*/true);
+  EXPECT_EQ(record->LastFired("never.molt", 1), 0);
+  EXPECT_EQ(record->LastFired("fired.molt", 1), 1800000000);
+}
+
 // The flaw a record written only on change would have: a first run that
 // writes nothing must still leave the record, so a later start never takes
 // files planted in between for an upgrade's.
@@ -205,7 +234,8 @@ TEST_F(WorkflowRecordTest, ACorruptRecordIsKeptAsideAndNeverSeeds) {
   // A valid, empty record in its place, and the marker repaired.
   std::string contents;
   ASSERT_TRUE(base::ReadFileToString(record_file_, &contents));
-  std::optional<base::Value> value = base::JSONReader::Read(contents);
+  std::optional<base::Value> value =
+      base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
   ASSERT_TRUE(value && value->is_dict());
   EXPECT_EQ(value->GetDict().FindInt("format"), 1);
   EXPECT_TRUE(RecordedNames().empty());
@@ -286,11 +316,12 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
        {std::string("a.molt"), std::string("b.molt.0123.taken"),
         std::string("x/y.molt"), std::string(".hidden.molt"), long_name,
         std::string("short.molt"), std::string("upper.molt"),
-        std::string("fired.molt"), std::string("notes.txt")}) {
+        std::string("fired.molt"), std::string("written.molt"),
+        std::string("unwritten.molt"), std::string("notes.txt")}) {
     present_.insert(name);
   }
   auto entry = [](const std::string& digest) {
-    return base::DictValue().Set("digest", digest);
+    return base::DictValue().Set("digest", digest).Set("written", 1.0);
   };
   base::DictValue files;
   files.Set("a.molt", entry(good).Set("fired", 1800000000.0));
@@ -302,6 +333,8 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
   files.Set("short.molt", entry(std::string(63, 'a')));
   files.Set("upper.molt", entry(std::string(64, 'A')));
   files.Set("fired.molt", entry(good).Set("fired", "x"));
+  files.Set("written.molt", entry(good).Set("written", -1.0));
+  files.Set("unwritten.molt", base::DictValue().Set("digest", good));
   files.Set("notes.txt", entry(good));
   base::DictValue root;
   root.Set("format", 1);
@@ -321,7 +354,8 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
   for (const std::string& dropped :
        {std::string("x/y.molt"), std::string(".hidden.molt"), std::string(),
         long_name, std::string("short.molt"), std::string("upper.molt"),
-        std::string("fired.molt"), std::string("notes.txt")}) {
+        std::string("fired.molt"), std::string("written.molt"),
+        std::string("unwritten.molt"), std::string("notes.txt")}) {
     EXPECT_FALSE(loaded->Vouches(dropped, good)) << dropped;
   }
   EXPECT_FALSE(loaded->Vouches("short.molt", std::string(63, 'a')));
@@ -345,16 +379,43 @@ TEST_F(WorkflowRecordTest, EntriesForFilesNoLongerThereAreDroppedAtLoad) {
   EXPECT_EQ(RecordedNames(), std::set<std::string>{"a.molt"});
 }
 
-TEST_F(WorkflowRecordTest, MoveCarriesAndForgetErasesAcrossARestart) {
+// Another browser's move in progress at this start (or one cut short):
+// the script is there under its set-aside name only, and keeps its entry
+// for when it is put back; once it is gone for good, the entry goes.
+TEST_F(WorkflowRecordTest, AnEntryIsKeptWhileItsFileIsSetAside) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  Have("a.molt", Digest('a'));
+  Have("ab.molt", Digest('b'));
+  record->Set("a.molt", Digest('a'), 0);
+  record->Set("ab.molt", Digest('b'), 0);
+  present_ = {"a.molt.00ff.taken"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('a')));
+  // Not another script's set-aside file.
+  EXPECT_FALSE(record->Vouches("ab.molt", Digest('b')));
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('a')));
+  present_.clear();
+  record = Start(/*may_seed=*/false);
+  EXPECT_FALSE(record->Vouches("a.molt", Digest('a')));
+}
+
+TEST_F(WorkflowRecordTest, CopyThenForgetCarriesAnEntryAcrossARestart) {
   WorkflowRecord* record = Start(/*may_seed=*/false);
   record->Set("a.molt", Digest('a'), 7);
   record->Set("b.molt", Digest('b'), 0);
-  record->Move("a.molt", "a.molt.00ff.taken");
-  EXPECT_FALSE(record->Vouches("a.molt", Digest('a')));
+  // A move: the entry copied before the rename, the old one forgotten
+  // after.
+  EXPECT_TRUE(record->Copy("a.molt", "a.molt.00ff.taken"));
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('a')));
   EXPECT_TRUE(record->Vouches("a.molt.00ff.taken", Digest('a')));
   EXPECT_EQ(record->FiredFloor("a.molt.00ff.taken"), 7);
-  // Nothing to move: the target's entry stays.
-  record->Move("none.molt.00ff.taken", "b.molt");
+  record->Forget("a.molt");
+  EXPECT_FALSE(record->Vouches("a.molt", Digest('a')));
+  EXPECT_TRUE(record->Vouches("a.molt.00ff.taken", Digest('a')));
+  // Nothing to copy: the target's entry stays.
+  EXPECT_FALSE(record->Copy("none.molt.00ff.taken", "b.molt"));
   EXPECT_TRUE(record->Vouches("b.molt", Digest('b')));
   record->Set("c.molt", Digest('c'), 0);
   record->Forget("c.molt");
@@ -367,7 +428,28 @@ TEST_F(WorkflowRecordTest, MoveCarriesAndForgetErasesAcrossARestart) {
   EXPECT_FALSE(record->Vouches("c.molt", Digest('c')));
 }
 
-TEST_F(WorkflowRecordTest, TheFiredFloorOnlyRises) {
+// A move cut short on either side of its rename: whichever name holds the
+// file at the next start has its entry.
+TEST_F(WorkflowRecordTest, AMoveCutShortKeepsTheEntryOfWhereTheFileIs) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  record->Set("a.molt", Digest('a'), 7);
+  ASSERT_TRUE(record->Copy("a.molt", "a.molt.00ff.taken"));
+  // Before the rename.
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('a')));
+  EXPECT_EQ(RecordedNames(), std::set<std::string>{"a.molt"});
+  // After it, before the old name was forgotten.
+  ASSERT_TRUE(record->Copy("a.molt", "a.molt.00ff.taken"));
+  present_ = {"a.molt.00ff.taken"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_TRUE(record->Vouches("a.molt.00ff.taken", Digest('a')));
+  EXPECT_EQ(record->FiredFloor("a.molt.00ff.taken"), 7);
+}
+
+// A fire raises the fire time; a write sets it to what it wrote, lower
+// too (a schedule saved afresh starts over).
+TEST_F(WorkflowRecordTest, AFireRaisesTheFireTimeAndAWriteSetsIt) {
   WorkflowRecord* record = Start(/*may_seed=*/false);
   record->Set("a.molt", Digest('a'), 100);
   EXPECT_EQ(record->FiredFloor("a.molt"), 100);
@@ -376,9 +458,13 @@ TEST_F(WorkflowRecordTest, TheFiredFloorOnlyRises) {
   record->NoteFired("a.molt", 200);
   EXPECT_EQ(record->FiredFloor("a.molt"), 200);
   record->Set("a.molt", Digest('b'), 10);
-  EXPECT_EQ(record->FiredFloor("a.molt"), 200);
+  EXPECT_EQ(record->FiredFloor("a.molt"), 10);
   EXPECT_TRUE(record->Vouches("a.molt", Digest('b')));
-  // No entry, no floor: a fire of a file it doesn't vouch for.
+  record->Set("a.molt", Digest('b'), 0);
+  EXPECT_EQ(record->FiredFloor("a.molt"), 0);
+  record->NoteFired("a.molt", 200);
+  EXPECT_EQ(record->FiredFloor("a.molt"), 200);
+  // No entry, no fire time: a fire of a file it doesn't vouch for.
   record->NoteFired("none.molt", 300);
   EXPECT_EQ(record->FiredFloor("none.molt"), 0);
   EXPECT_FALSE(record->Vouches("none.molt", Digest('a')));
@@ -390,6 +476,42 @@ TEST_F(WorkflowRecordTest, TheFiredFloorOnlyRises) {
   record->Set("a.molt", std::string(), 0);
   EXPECT_FALSE(record->Vouches("a.molt", std::string()));
   EXPECT_FALSE(record->Vouches("a.molt", Digest('b')));
+}
+
+// The file's own last fire is believed only when it can be a fire since
+// this browser last wrote there (another browser's run), and never below
+// what this browser wrote or fired: an earlier one would force a catch-up
+// run, one in the future would stall the schedule.
+TEST_F(WorkflowRecordTest, AFilesLastFireIsBelievedOnlySinceTheLastWrite) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t before = NowUnix();
+  // Saved, never fired.
+  record->Set("a.molt", Digest('a'), 0);
+  EXPECT_EQ(record->LastFired("a.molt", 0), 0);
+  EXPECT_EQ(record->LastFired("a.molt", 1), 0);
+  EXPECT_EQ(record->LastFired("a.molt", before - 3600), 0);
+  EXPECT_EQ(record->LastFired("a.molt", before + 60), before + 60);
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), 0);
+  // Fired here: never below that.
+  record->NoteFired("a.molt", before + 10);
+  EXPECT_EQ(record->LastFired("a.molt", 1), before + 10);
+  EXPECT_EQ(record->LastFired("a.molt", before + 5), before + 10);
+  EXPECT_EQ(record->LastFired("a.molt", before + 60), before + 60);
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), before + 10);
+  // A fire time this browser wrote is believed, in the future too (a
+  // snoozed workflow).
+  record->Set("b.molt", Digest('b'), before + 3600);
+  EXPECT_EQ(record->LastFired("b.molt", before + 3600), before + 3600);
+  EXPECT_EQ(record->LastFired("b.molt", 1), before + 3600);
+  // No entry: the file's own (it isn't vouched for, so it doesn't fire).
+  EXPECT_EQ(record->LastFired("none.molt", 42), 42);
+  EXPECT_EQ(record->LastFired("none.molt", -5), 0);
+  // As at the next start.
+  present_ = {"a.molt", "b.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->LastFired("a.molt", 1), before + 10);
+  EXPECT_EQ(record->LastFired("a.molt", before - 3600), before + 10);
+  EXPECT_EQ(record->LastFired("b.molt", 1), before + 3600);
 }
 
 TEST_F(WorkflowRecordTest, WritesBeforeConfigurationAreKept) {

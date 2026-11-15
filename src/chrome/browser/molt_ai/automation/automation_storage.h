@@ -57,25 +57,30 @@
 // unconfirmed import (AutomationSecurity::ClampUnvouched(): CASUAL, no
 // sites, its history cleared, SecurityPolicy::changed_outside set), which
 // doesn't run, fire or get trusted until the user confirms it in the Agent
-// studio; and trigger.last_fired_unix is never earlier than the record's
-// fire time for it. A read that finds a file unvouched looks again under
-// the directory's lock, so a save in progress in this browser is never
-// taken for a change. Every write records what it wrote (the bytes it
-// writes, parsed as a reader parses them): Save(), SaveNew(),
-// SaveChecked(), Update() (so SetTrustLevel()), and a move's renames and
-// deletions carry or forget the entry. What a write was given from an
-// unvouched read stays an unconfirmed import (ClampTrustForSave() and the
-// studio's KeepPolicy() keep the policy as read), so no write launders a
-// file. Run bookkeeping (stats, trigger.last_fired_unix) is outside the
-// digest and is written by UpdateBookkeeping() and RecordFire(), never
-// Update(): a run in one browser leaves another browser's record of the
-// file intact. The record is loaded (and, on the first start of this
-// version, seeded once from the files there) by PrepareRecord(), which
-// every script read and write calls first, outside the directory's lock.
-// A storage of its own directory (a profile's voice routines) has no
-// record, and loads files as they are; the shared directory without a
-// configured record (tests) gets a session-only one that trusts only
-// this process's writes (docs/design/AGENT_ACTIONS.md §3.6).
+// studio; and trigger.last_fired_unix is the file's own only when the
+// record vouches for the file and it can be a fire since this browser last
+// wrote there, else the one this browser wrote or fired at
+// (WorkflowRecord::LastFired(): a forged earlier one forces no catch-up
+// run, a forged later one stalls no schedule). A read that finds a file
+// unvouched looks again under the directory's lock, so a save in progress
+// in this browser is never taken for a change. Every write records what it
+// wrote (the bytes it writes, parsed as a reader parses them, its last fire
+// time included): Save(), SaveNew(), SaveChecked(), Update() (so
+// SetTrustLevel()); a move's renames copy the entry to the new name first
+// and forget the old one after, and deletions forget it. What a write was
+// given from an unvouched read stays an unconfirmed import
+// (ClampTrustForSave() and the studio's KeepPolicy() keep the policy as
+// read), so no write launders a file. Run bookkeeping (stats,
+// trigger.last_fired_unix) is outside the digest and is written by
+// UpdateBookkeeping() and RecordFire(), never Update(): a run in one
+// browser leaves another browser's record of the file intact. The record
+// is loaded (and, on the first start of this version, seeded once from the
+// files there) by PrepareRecord(), which every script read and write calls
+// first, outside the directory's lock. A storage of its own directory (a
+// profile's voice routines) has no record, and loads files as they are;
+// the shared directory without a configured record (tests) gets a
+// session-only one that trusts only this process's writes
+// (docs/design/AGENT_ACTIONS.md §3.6).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_

@@ -16,17 +16,29 @@
 //                "other_directory",
 //      "created": "<ISO 8601>",
 //      "files": {"<file name>": {"digest": "<64 lowercase hex>",
-//                                "fired": <unix seconds>}}}
+//                                "fired": <unix seconds>,
+//                                "written": <unix seconds>}}}
 //   <user data dir>/Molt Workflow Record Started   ("1\n", never deleted)
 //
 // An entry, by the file's base name in the directory (<id>.molt, or a
 // script set aside by a move, <id>.molt.<token>.taken): the
 // AutomationSecurity::SecurityDigest() of what this browser last wrote
-// under that name (one only: an older version doesn't match), and the
-// highest fire time it wrote or saw there (a floor for the file's
-// trigger.last_fired_unix, so an earlier one written there forces no
-// catch-up run). A deleted file's entry is forgotten (put back, it doesn't
-// match), and an entry whose file is gone is dropped at the next load.
+// under that name (one only: an older version doesn't match); "fired", the
+// trigger.last_fired_unix it wrote there (a schedule saved afresh writes
+// 0), or a later fire its scheduler recorded; and "written", when it wrote
+// there last (when it seeded the entry, for one seeded). The file's own
+// last fire time (bookkeeping, outside the digest: other browsers' runs
+// change it) is believed only when it can be a fire since that write (no
+// earlier, nor later than now by kLastFiredSlackSeconds): LastFired(). So
+// an earlier one written there forces no catch-up run, a later one stalls
+// no schedule, and no fire time read from a file is ever recorded (but at
+// seeding). A deleted file's entry is forgotten (put back, it doesn't
+// match), and an entry whose file is gone is dropped at the next load,
+// unless the file is set aside now (<id>.molt while <id>.molt.*.taken is
+// there: another browser's move, or one cut short), so it is vouched for
+// again once it is put back. A move copies the entry to the new name
+// before its rename and forgets the old one after (Copy(), Forget()), so
+// whichever name holds the file if the browser ends in between has one.
 //
 // The first load. The record is always written at its first load (empty
 // when there is nothing to record), and the "Started" marker never goes
@@ -42,12 +54,12 @@
 // written only as regular files (molt_regular_file.h), atomically.
 //
 // Threads. Configure() and For() run anywhere (no I/O). LoadLocked() and
-// every change (Set(), NoteFired(), Move(), Forget()) run only under the
+// every change (Set(), NoteFired(), Copy(), Forget()) run only under the
 // storage's change scope of |directory| (its lock, then its lock file), so
 // each is ordered with the file change it mirrors; their writes of the
-// record happen there too, one at a time. Vouches(), FiredFloor() and
-// loaded() take only this record's own lock, the innermost of all (the
-// registry's is another, never held with it). base only, so
+// record happen there too, one at a time. Vouches(), FiredFloor(),
+// LastFired() and loaded() take only this record's own lock, the innermost
+// of all (the registry's is another, never held with it). base only, so
 // molt_ai_unittests tests it on real files.
 //
 // Tests: ScopedWorkflowRecordForTesting (workflow_record_test_util.h).
@@ -80,6 +92,9 @@ inline constexpr base::FilePath::CharType kWorkflowRecordFileName[] =
 inline constexpr size_t kMaxWorkflowRecordBytes = 16 * 1024 * 1024;
 // And holds at most this many entries.
 inline constexpr size_t kMaxWorkflowRecordEntries = 65536;
+// A file's last fire time later than now by more than this is no fire
+// (WorkflowRecord::LastFired()).
+inline constexpr int64_t kLastFiredSlackSeconds = 5 * 60;
 
 class WorkflowRecord {
  public:
@@ -93,7 +108,11 @@ class WorkflowRecord {
   };
   struct Entry {
     std::string digest;
+    // The last fire time this browser wrote under the name, or a later one
+    // it fired at (unix seconds).
     int64_t fired = 0;
+    // When this browser last wrote under the name (unix seconds).
+    int64_t written = 0;
   };
   enum class Origin {
     kSeeded,
@@ -131,8 +150,9 @@ class WorkflowRecord {
   // seeds) the record, then writes it, as above; nothing once loaded.
   // |present|: the names of the regular script and set-aside files in the
   // directory. |entry_of|: what a present file holds, read as the storage
-  // reads it (nullopt when it can't be read). |audit|: an audit line
-  // (event, extra) for the directory's log.
+  // reads it (nullopt when it can't be read; its |written| is set to the
+  // time of the load). |audit|: an audit line (event, extra) for the
+  // directory's log.
   void LoadLocked(
       base::FunctionRef<std::set<std::string>()> present,
       base::FunctionRef<std::optional<Entry>(const std::string& name)> entry_of,
@@ -141,20 +161,31 @@ class WorkflowRecord {
 
   // Whether |digest| is the one recorded for |name| ("" never is).
   bool Vouches(const std::string& name, std::string_view digest) const;
-  // The highest fire time recorded for |name|; 0 when none.
+  // The fire time recorded for |name| (Entry::fired); 0 when none.
   int64_t FiredFloor(const std::string& name) const;
+  // The last fire time to believe for |name|, whose file says |file_fired|
+  // (unix seconds): |file_fired| when it can be a fire since this browser
+  // last wrote there (at least Entry::written, at most now plus
+  // kLastFiredSlackSeconds), never earlier than FiredFloor(); otherwise
+  // FiredFloor() (a fire before that write is in what it wrote). With no
+  // entry for |name|, |file_fired| (at least 0).
+  int64_t LastFired(const std::string& name, int64_t file_fired) const;
 
-  // Under the storage's change scope of |directory|, after the change on
-  // disk, each written to the record file at once:
-  // This browser wrote |digest| under |name| ("" forgets it), fired then
-  // (the floor rises to it, never falls).
+  // Under the storage's change scope of |directory|, each written to the
+  // record file at once:
+  // After the write: this browser wrote |digest| under |name| ("" forgets
+  // it) now, with |fired| as its last fire time (the entry's from now on,
+  // lower or higher: a schedule saved afresh starts over).
   void Set(const std::string& name, std::string digest, int64_t fired);
-  // A fire at |fired| of |name| (an entry's floor rises; no entry, nothing).
+  // A fire of |name| at |fired| by this browser's scheduler, on its own
+  // clock, never a time read from a file (an entry's fire time rises to
+  // it; no entry, nothing).
   void NoteFired(const std::string& name, int64_t fired);
-  // |from| was renamed |to|: its entry with it. With no entry for |from|,
-  // |to|'s is left as it is.
-  void Move(const std::string& from, const std::string& to);
-  // |name| was deleted.
+  // Before |from| is renamed |to|: |from|'s entry, under |to| too (then
+  // the rename, then Forget(|from|); Forget(|to|) if it failed). False,
+  // and nothing changed, with no entry for |from| (|to|'s, if any, stays).
+  bool Copy(const std::string& from, const std::string& to);
+  // |name| was deleted, or renamed (its entry copied first).
   void Forget(const std::string& name);
 
   Origin origin() const;

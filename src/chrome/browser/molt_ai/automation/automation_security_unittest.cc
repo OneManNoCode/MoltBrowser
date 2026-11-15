@@ -558,14 +558,15 @@ TEST(AutomationSecurityTest, SecurityDigestCoversEveryOtherField) {
 TEST(AutomationSecurityTest, SecurityDigestSurvivesTheFileRoundTrip) {
   Script s = RichScript();
   // Times past what a double holds exactly, doubles and nested values in a
-  // step's extra, invalid UTF-8 and U+2028 in strings.
+  // step's extra, U+2028 in strings. (A script holds valid UTF-8 only: a
+  // file that doesn't is never read, below.)
   s.created_at_unix = std::numeric_limits<int64_t>::max();
   s.trigger.until_unix = (int64_t{1} << 53) + 1;
   base::ListValue nested;
   nested.Append(1.5);
   nested.Append(base::DictValue().Set("k", "v"));
   s.steps[1].extra.GetDict().Set("nested", std::move(nested));
-  s.name = "bad \xC3 UTF-8 and a \xE2\x80\xA8 line separator";
+  s.name = "a \xE2\x80\xA8 line separator";
   s.steps[2].value = "\xE2\x80\xA8";
   // As AutomationStorage writes it, and as its readers parse it.
   base::DictValue json = s.ToJSON();
@@ -581,6 +582,20 @@ TEST(AutomationSecurityTest, SecurityDigestSurvivesTheFileRoundTrip) {
   EXPECT_EQ(AutomationSecurity::SecurityDigest(s), digest);
   // And again: written by the browser that read it, the same.
   EXPECT_EQ(AutomationSecurity::DigestAsStored(*read), digest);
+}
+
+// A file with invalid UTF-8 in it (written by something else) doesn't
+// parse, as the storage's readers parse it: never a script to digest.
+TEST(AutomationSecurityTest, AFileWithInvalidUtf8IsNoScript) {
+  const std::string placeholder = "Q7X-NAME-Q7X";
+  Script s = RichScript();
+  s.name = placeholder;
+  std::string bytes = s.ToJSONString();
+  const size_t at = bytes.find(placeholder);
+  ASSERT_NE(at, std::string::npos);
+  ASSERT_TRUE(Script::FromJSONString(bytes));
+  bytes.replace(at, placeholder.size(), "bad \xC3 UTF-8");
+  EXPECT_FALSE(Script::FromJSONString(bytes));
 }
 
 TEST(AutomationSecurityTest, SecurityDigestIsScrubInvariant) {

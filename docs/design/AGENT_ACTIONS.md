@@ -2278,15 +2278,21 @@ produce an entry.
 ```json
 {"format": 1, "directory": "/Users/u/.moltbrowser/automations",
  "origin": "seeded", "created": "2026-11-15T10:00:00Z",
- "files": {"wf_1.molt": {"digest": "<64 lowercase hex>", "fired": 1763200000},
-           "news.molt.0123abcd.taken": {"digest": "<64 lowercase hex>"}}}
+ "files": {"wf_1.molt": {"digest": "<64 lowercase hex>", "fired": 1763200000,
+                         "written": 1763190000},
+           "news.molt.0123abcd.taken": {"digest": "<64 lowercase hex>",
+                                        "written": 1763190000}}}
 ```
 
 - An entry per file name in the shared directory (`<id>.molt`, or a script
   a move set aside, `<id>.molt.<token>.taken`): the security digest of what
   this browser **last** wrote under that name (one per name: an older
-  version doesn't match, so a rollback needs a review), and `fired`, the
-  highest fire time it wrote or saw there.
+  version doesn't match, so a rollback needs a review); `fired`, the
+  `trigger.last_fired_unix` it wrote there (a schedule saved afresh writes
+  0, so it starts over) or a later fire its scheduler recorded
+  (`RecordFire()`, on its own clock); and `written`, when it last wrote
+  there (for a seeded entry, when it seeded it). No fire time read from a
+  file is ever recorded, except at seeding.
 - `directory` is the folder it covers; another one means "start empty".
   `origin` (`seeded`, `fresh`, `after_loss`, `after_corrupt`,
   `other_directory`) is informational.
@@ -2295,11 +2301,18 @@ produce an entry.
   a rename), never over a link. Validation is linear (no `std::regex`):
   format 1, at most 65,536 entries; a name of 1 to 200 bytes, without `/`,
   `\`, `:` or NUL, not hidden, ending in `.molt` or `.taken`; a digest of
-  exactly 64 `[0-9a-f]`; `fired` a non-negative number. A bad entry is
-  dropped alone; a bad file is corrupt.
+  exactly 64 `[0-9a-f]`; `fired` (left out when 0) and `written` (always
+  there) non-negative numbers. A bad entry is dropped alone; a bad file is
+  corrupt.
 - At each load, entries whose file is gone (deleted by another browser, by
-  hand) are dropped; `Delete()` forgets an entry at once, so a deleted file
-  put back needs a review.
+  hand) are dropped, except `<id>.molt` while a set-aside `<id>.molt.*.taken`
+  is there (another browser's move in progress, or one cut short), so the
+  script is vouched for again once it is put back; `Delete()` forgets an
+  entry at once, so a deleted file put back needs a review.
+- A move (`Take()`, `ReturnTaken()`) copies the entry to the new name and
+  writes the record **before** its rename, and forgets the old name after
+  (the new one if the rename failed): whichever name holds the file if the
+  browser ends in between has an entry.
 - Missing, corrupt or unusable:
   - missing with the marker present: **lost**, starts empty, never seeds
     (audit `record_reset | lost`);
@@ -2340,11 +2353,21 @@ that.
   file the record doesn't vouch for is clamped by `ClampUnvouched()` (the
   default policy: CASUAL, no sites, the default approvals and limits;
   `sites_unconfirmed` and `changed_outside` set; its stats cleared; its
-  steps, trigger, enabled flag, variables and name kept for the review),
-  and `trigger.last_fired_unix` is never earlier than the record's `fired`
-  (so a forged earlier one forces no catch-up run). Every caller gets this
-  with no change of its own: the scheduler, the run window, `RUN_SCRIPT`,
-  the Agent studio, molt://ai-automation, voice mode's claims.
+  steps, trigger, enabled flag, variables and name kept for the review).
+  `trigger.last_fired_unix` (bookkeeping, outside the digest: other
+  browsers' runs change it) is `WorkflowRecord::LastFired()`: the file's own
+  only when the record vouches for the file and it can be a fire since this
+  browser last wrote there (at least `written`, at most now plus 5 minutes),
+  and never earlier than `fired`; otherwise `fired` (a fire before that
+  write is in what it wrote). So a forged earlier one forces no catch-up
+  run, whether or not this browser has fired the workflow yet, and a forged
+  later one stalls no schedule. A browser-made write sets `fired` to what
+  it wrote, lower too: molt://ai-automation's Snooze and Skip (a fire time
+  in the future) are believed, and a schedule saved afresh starts over with
+  no catch-up run (this also clears a fire time recorded on a clock that
+  was ahead). Every caller gets this with no change of its own: the
+  scheduler, the run window, `RUN_SCRIPT`, the Agent studio,
+  molt://ai-automation, voice mode's claims.
 - **A save in progress is never a change.** Reads take no lock; one that
   finds a file unvouched reads it again under the directory's lock, after
   any change of this browser's in progress (file renamed before the record
@@ -2359,9 +2382,9 @@ that.
 - **Bookkeeping** (stats, last fire) is written by `UpdateBookkeeping()`
   (reads the file as it is, never clamped; writes only if the digest of the
   bytes it writes is unchanged; leaves the record as it was) and
-  `RecordFire()` (raises the record's floor first, then that). Never
-  `Update()`: a run in one browser leaves another browser's record intact,
-  and a refused run writes nothing.
+  `RecordFire()` (raises the record's `fired` to the scheduler's own fire
+  time first, then that). Never `Update()`: a run in one browser leaves
+  another browser's record intact, and a refused run writes nothing.
 - A storage of its own directory (a profile's voice routines) has no record
   and loads its files as they are.
 
@@ -2487,33 +2510,41 @@ All in `molt_ai_unittests` except the last item:
   isn't a regular file (link, directory) is left alone and retried; never
   under `~/.moltbrowser`; another directory's vouches nothing; malformed
   entries dropped one by one; entries of files gone dropped at load; moves
-  carried and forgets kept across a restart; the fire floor only rising;
-  writes before configuration kept.
+  copied first and forgets kept across a restart; a move cut short on
+  either side of its rename; an entry kept while its file is set aside; a
+  fire raising `fired` and a write setting it; a file's last fire believed
+  only since the last write (seeded entries too); writes before
+  configuration kept.
 - `automation/automation_security_unittest.cc`: the digest ignores only
   bookkeeping, covers every other field (table-driven), survives the file
-  round trip (large times, doubles and nested values, invalid UTF-8,
-  U+2028) and the scrub; the clamp is an unconfirmed import; the
-  predicates; `changed_outside` cleared by a confirm and carried by a save;
-  the review message.
+  round trip (large times, doubles and nested values, U+2028; a file with
+  invalid UTF-8 doesn't parse) and the scrub; the clamp is an unconfirmed
+  import; the predicates; `changed_outside` cleared by a confirm and
+  carried by a save; the review message.
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip.
 - `automation/automation_storage_unittest.cc` (`AutomationStorageRecordTest`):
   a planted file loads clamped through `Load()` and `ListAll()`, unchanged
   on disk; every security field changed outside is caught; bookkeeping may
-  change outside; the fire floor; a hand copy, a rollback and a deleted file
+  change outside; an earlier last fire never believed (fired here or not,
+  seeded or saved), a future one neither believed nor recorded, a schedule
+  saved afresh starting over; a hand copy, a rollback and a deleted file
   put back aren't vouched for; every write path vouches; writes never
   launder an unvouched read; `SetTrustLevel()` refuses a review;
   `UpdateBookkeeping()` keeps the verdict and refuses security changes;
   `RecordFire()` keeps the floor when the file can't be written; the scrub
-  rewrite keeps the verdict; moves carry it; finishing a move forgets it;
-  reads never see a save in progress as a change (two threads); two user
-  data dirs over one folder; seeding keeps every legacy workflow as it was
-  (and skips a link); a directory without a record is unchanged; the real
-  shared folder without configuration fails closed.
+  rewrite keeps the verdict; moves carry it; a move cut short on either
+  side of its rename is vouched for once put back; finishing a move
+  forgets it; reads never see a save in progress as a change (two
+  threads); two user data dirs over one folder; seeding keeps every legacy
+  workflow as it was (and skips a link); a directory without a record is
+  unchanged; the real shared folder without configuration fails closed.
 - `automation/automation_scheduler_unittest.cc` (mock time): a vouched
   catch-up fires once; a planted file never fires; a timer's reload that
   finds a change doesn't fire (the next one still does); a forged earlier
-  last fire forces no catch-up.
+  last fire forces no catch-up, also for a weekly and an hourly workflow
+  this browser hasn't fired yet; a forged later one doesn't stall an
+  overdue workflow; a schedule saved afresh forces no catch-up.
 - `voice/voice_routine_store_unittest.cc`: a routine changed outside is
   claimed as a draft; a vouched one as it was; a claim of a changed one cut
   short is still recognised.
