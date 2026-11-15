@@ -225,22 +225,6 @@ std::string NameOf(const base::FilePath& path) {
   return path.BaseName().AsUTF8Unsafe();
 }
 
-// A save of |script| over a stored workflow whose last fire is believed to
-// be |believed| (Vetted(): this browser's, or another browser's run seen
-// since): an earlier nonzero last fire comes from a page opened before
-// that fire, which would run it again, so the believed one is written
-// instead. 0 (a schedule saved afresh) and a later one (a snooze) are kept,
-// and so is any one when the believed fire is still to come (a snooze, or
-// a clock that was ahead), as WorkflowRecord::Set() keeps them.
-void KeepBelievedFire(Script& script, int64_t believed) {
-  const int64_t now = static_cast<int64_t>(base::Time::Now().ToTimeT());
-  int64_t& fired = script.trigger.last_fired_unix;
-  if (fired > 0 && fired < believed &&
-      believed <= now + kLastFiredSlackSeconds) {
-    fired = believed;
-  }
-}
-
 }  // namespace
 
 class AutomationStorage::BlockingScope {
@@ -526,14 +510,13 @@ std::optional<Script> AutomationStorage::Vetted(base::DictValue dict,
     // Changed outside this browser: an unconfirmed import.
     AutomationSecurity::ClampUnvouched(*script);
   }
-  // Its last fire time (bookkeeping, outside the digest): the file's own
-  // only when the record vouches for the file and it can be a fire since
-  // this browser last wrote there, else what this browser wrote or fired
-  // there, or, still to come, when this browser first read it
-  // (WorkflowRecord::LastFired()). A forged earlier one would force a
-  // catch-up run; a later one believed would stall the schedule.
-  script->trigger.last_fired_unix =
-      record->LastFired(name, vouched ? script->trigger.last_fired_unix : 0);
+  // Its last fire time (bookkeeping, outside the digest), for scheduling:
+  // only this browser's own, the one it wrote there or fired at
+  // (WorkflowRecord::LastFired()), vouched or not (a clamped workflow
+  // doesn't fire). Never the file's, which anything can write: another
+  // browser's runs and snoozes, or a forged time (earlier, it would force a
+  // catch-up run; later, it would stall the schedule).
+  script->trigger.last_fired_unix = record->LastFired(name);
   return script;
 }
 
@@ -675,8 +658,6 @@ bool AutomationStorage::SaveChecked(Script script, SaveCheck check) {
              : std::nullopt;
     if (!check(stored ? &*stored : nullptr, script) || script.id != id)
       return false;
-    if (stored)
-      KeepBelievedFire(script, stored->trigger.last_fired_unix);
     saved = SaveLocked(script);
   }
   if (saved)
@@ -696,8 +677,9 @@ bool AutomationStorage::SaveLocked(const Script& script) {
   // rename): a browser that ends in between leaves the file as it was,
   // which the record no longer vouches for (one review), never an older
   // version vouched for again. What this browser writes, as a reader will
-  // parse it, its last fire time included (0 for a schedule saved afresh:
-  // it starts over).
+  // parse it, its last fire time included, as WorkflowRecord::Set() takes
+  // it (0 for a schedule saved afresh: it starts over; an earlier one, from
+  // a page opened before a fire, keeps that fire).
   WorkflowRecord* record = Record();
   const std::string name = NameOf(path);
   std::optional<WorkflowRecord::Entry> before;
@@ -742,10 +724,8 @@ bool AutomationStorage::Update(const std::string& script_id,
              : std::nullopt;
     if (!script)
       return false;
-    const int64_t believed = script->trigger.last_fired_unix;
     if (!change(*script) || script->id != id)
       return false;
-    KeepBelievedFire(*script, believed);
     saved = SaveLocked(*script);
   }
   if (saved)

@@ -203,28 +203,15 @@ std::optional<ParsedRecord> ParseRecord(std::string_view contents) {
     if (!digest || !IsValidDigest(*digest)) {
       continue;
     }
-    // "fired" is left out when 0; "written" is always there.
+    // "fired" is left out when 0.
     std::optional<int64_t> fired = 0;
     if (const base::Value* value_fired = entry.Find("fired")) {
       fired = RecordedSeconds(value_fired);
     }
-    const std::optional<int64_t> written =
-        RecordedSeconds(entry.Find("written"));
-    if (!fired || !written) {
+    if (!fired) {
       continue;
     }
-    WorkflowRecord::Entry& kept = parsed.files[name];
-    kept = {*digest, *fired, *written};
-    // A pending fire time and when it was first read (LastFired()), left
-    // out when there is none; a malformed pair is none.
-    const std::optional<int64_t> pending =
-        RecordedSeconds(entry.Find("pending"));
-    const std::optional<int64_t> pending_seen =
-        RecordedSeconds(entry.Find("pending_seen"));
-    if (pending && pending_seen && *pending > 0) {
-      kept.pending = *pending;
-      kept.pending_seen = *pending_seen;
-    }
+    parsed.files[name] = {*digest, *fired};
   }
   return parsed;
 }
@@ -444,13 +431,11 @@ void WorkflowRecord::LoadLocked(
         origin = Origin::kFresh;
       } else {
         // The first start of this version: the workflows there now, as
-        // the previous build ran them (their own last fire times too).
-        // Once (the marker follows the record). A fire the file claims
-        // later is believed only if it is since now (LastFired()).
-        const int64_t now = NowUnix();
+        // the previous build ran them (their own last fire times too, the
+        // only ones ever taken from the files). Once (the marker follows
+        // the record).
         for (const std::string& name : names) {
           if (std::optional<Entry> entry = entry_of(name)) {
-            entry->written = now;
             files[name] = std::move(*entry);
           }
         }
@@ -519,7 +504,7 @@ bool WorkflowRecord::Vouches(const std::string& name,
   return it != entries_.end() && it->second.digest == digest;
 }
 
-int64_t WorkflowRecord::FiredFloor(const std::string& name) const {
+int64_t WorkflowRecord::LastFired(const std::string& name) const {
   base::AutoLock hold(lock_);
   auto it = entries_.find(name);
   return it == entries_.end() ? 0 : it->second.fired;
@@ -533,52 +518,6 @@ std::optional<WorkflowRecord::Entry> WorkflowRecord::EntryOf(
     return std::nullopt;
   }
   return it->second;
-}
-
-int64_t WorkflowRecord::LastFired(const std::string& name, int64_t file_fired) {
-  const int64_t now = NowUnix();
-  int64_t last = 0;
-  bool changed = false;
-  {
-    base::AutoLock hold(lock_);
-    auto it = entries_.find(name);
-    if (it == entries_.end()) {
-      return std::max<int64_t>(0, file_fired);
-    }
-    Entry& entry = it->second;
-    if (file_fired >= entry.written &&
-        file_fired > now + kLastFiredSlackSeconds) {
-      // Written since, and still to come: another browser's Snooze or
-      // Skip, or forged. Until it comes, a fire when this browser first
-      // read it: no catch-up run of what was due before (this browser's
-      // own last fire may be long past, the other browser's run since
-      // unseen), and no schedule held back more than an interval (believed,
-      // a forged one would stall it). Kept in the record: read afresh at
-      // each start, a value written once would hold the schedule back
-      // again at each one.
-      if (entry.pending != file_fired) {
-        entry.pending = file_fired;
-        entry.pending_seen = now;
-        changed = true;
-      }
-      last = std::max(entry.fired, entry.pending_seen);
-    } else {
-      if (entry.pending != 0) {
-        entry.pending = 0;
-        entry.pending_seen = 0;
-        changed = true;
-      }
-      // Earlier: in what this browser wrote there, or forged (it would
-      // force a catch-up run). Otherwise another browser's run since this
-      // one last wrote the file.
-      last = file_fired < entry.written ? entry.fired
-                                        : std::max(entry.fired, file_fired);
-    }
-  }
-  if (changed) {
-    Persist();
-  }
-  return last;
 }
 
 void WorkflowRecord::Set(const std::string& name,
@@ -602,8 +541,7 @@ void WorkflowRecord::Set(const std::string& name,
           it->second.fired <= now + kLastFiredSlackSeconds) {
         written_fired = it->second.fired;
       }
-      entries_[name] = {std::move(digest), written_fired,
-                        std::max<int64_t>(0, now)};
+      entries_[name] = {std::move(digest), written_fired};
     }
   }
   Persist();
@@ -634,9 +572,6 @@ void WorkflowRecord::NoteFired(const std::string& name, int64_t fired) {
         (fired > it->second.fired ||
          (fired > 0 && it->second.fired > fired + kLastFiredSlackSeconds))) {
       it->second.fired = fired;
-      // Its fire is written to the file next.
-      it->second.pending = 0;
-      it->second.pending_seen = 0;
       changed = true;
     }
   }
@@ -671,9 +606,6 @@ void WorkflowRecord::Forget(const std::string& name) {
 }
 
 void WorkflowRecord::Persist() {
-  // One write at a time, each of the record as it is when it starts: a
-  // reader's (LastFired()) never lands after a later change's.
-  base::AutoLock write(write_lock_);
   base::FilePath record_file;
   base::DictValue root;
   {
@@ -691,11 +623,6 @@ void WorkflowRecord::Persist() {
       value.Set("digest", entry.digest);
       if (entry.fired > 0) {
         value.Set("fired", static_cast<double>(entry.fired));
-      }
-      value.Set("written", static_cast<double>(entry.written));
-      if (entry.pending > 0) {
-        value.Set("pending", static_cast<double>(entry.pending));
-        value.Set("pending_seen", static_cast<double>(entry.pending_seen));
       }
       files.Set(name, std::move(value));
     }

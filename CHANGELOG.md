@@ -366,9 +366,11 @@ For longer narrative posts behind each entry see
   existing workflows are kept exactly as they are the first time you start
   this version. Run history and the last time a schedule ran don't count
   as changes. If you use two copies of MoltBrowser with different profile
-  folders, a change to a workflow's steps, sites, trust or schedule in one
-  needs one review in the other. If MoltBrowser's profile folder is reset
-  or replaced, every workflow needs one review. Design:
+  folders, each runs scheduled workflows on its own schedule, so a
+  scheduled workflow can run in both, and snoozing or skipping a run in one
+  doesn't change the other; a change to a workflow's steps, sites, trust or
+  schedule in one needs one review in the other. If MoltBrowser's profile
+  folder is reset or replaced, every workflow needs one review. Design:
   [docs/design/AGENT_ACTIONS.md §3.6](docs/design/AGENT_ACTIONS.md).
 
 ## 2026-11-06 — v0.3.0: Private by default

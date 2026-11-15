@@ -20,17 +20,15 @@
 // listed and again when its timer's reload comes. A catch-up's next fire is
 // counted from the catch-up itself, and a timer's reload fires a cron or
 // interval workflow only if it is still due after its last fire (not
-// fired since it was listed), so an overdue workflow runs once. Its last
-// fire time is
-// the file's own only when it can be a fire since the browser last wrote
-// the file, else the one the browser wrote or fired at, or, for one still
-// to come (another browser's Snooze or Skip), when the browser first read
-// it, across restarts too (automation_storage.h): a forged earlier one
-// forces no catch-up run, a later one written once forces none either and
-// holds the schedule back at most an interval from that read (so another
-// browser's Snooze longer than the interval holds it back only that long
-// here). base only (the storage's sequences), so molt_ai_unittests tests
-// it.
+// fired or snoozed since it was listed), so an overdue workflow runs once.
+// Its last fire time is this browser's own, as its workflow record has it
+// (the one it saved, or a fire it recorded: automation_storage.h), never
+// the file's: a fire time written into the file outside this browser
+// (another browser's run, Snooze or Skip, or a forged one) neither forces
+// a catch-up run nor holds the schedule back, and two browsers with
+// different user data directories sharing the folder each fire on their
+// own schedule (a workflow can run in both). base only (the storage's
+// sequences), so molt_ai_unittests tests it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_

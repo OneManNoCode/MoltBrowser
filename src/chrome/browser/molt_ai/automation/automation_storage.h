@@ -57,21 +57,20 @@
 // unconfirmed import (AutomationSecurity::ClampUnvouched(): CASUAL, no
 // sites, its history cleared, SecurityPolicy::changed_outside set), which
 // doesn't run, fire or get trusted until the user confirms it in the Agent
-// studio; and trigger.last_fired_unix is the file's own only when the
-// record vouches for the file and it can be a fire since this browser last
-// wrote there, else the one this browser wrote or fired at, or, for one
-// written since that is still to come (another browser's Snooze or Skip),
-// when this browser first read it, kept in the record across restarts
-// (WorkflowRecord::LastFired(): a forged earlier one forces no catch-up
-// run, a later one written once forces none either and holds a schedule
-// back at most an interval). A read that finds a file
-// unvouched looks again under the directory's lock, so a save in progress
-// in this browser is never taken for a change. Every write records what it
-// wrote (the bytes it writes, parsed as a reader parses them, its last fire
-// time included; SaveChecked() and Update() write the last fire believed
-// in place of an earlier nonzero one, which comes from a page opened
-// before a fire, this browser's or another's, and would run it again):
-// Save(), SaveNew(), SaveChecked(), Update() (so
+// studio; and trigger.last_fired_unix, for scheduling, is only this
+// browser's own: the one it wrote there or fired at, as the record has it
+// (WorkflowRecord::LastFired()), never the file's. The file's is still
+// written (RecordFire(), UpdateBookkeeping(), saves) for older builds, but
+// anything can write it, so a fire time written there outside this
+// browser (another browser's run, Snooze or Skip, or a forged one) changes
+// nothing here: two browsers with different user data directories sharing
+// the directory each run their own schedules (a workflow can run in both).
+// A read that finds a file unvouched looks again under the directory's
+// lock, so a save in progress in this browser is never taken for a change.
+// Every write records what it wrote (the bytes it writes, parsed as a
+// reader parses them, its last fire time included, as WorkflowRecord::Set()
+// takes it: an earlier nonzero one, from a page opened before a fire,
+// keeps that fire): Save(), SaveNew(), SaveChecked(), Update() (so
 // SetTrustLevel()), each setting the entry before it renames the file into
 // place (put back as it was if the file can't be written); a move's renames
 // copy the entry to the new name first and forget the old one after, and
@@ -83,13 +82,14 @@
 // read), so no write launders a file. Run bookkeeping (stats,
 // trigger.last_fired_unix) is outside the digest and is written by
 // UpdateBookkeeping() and RecordFire(), never Update(): a run in one
-// browser leaves another browser's record of the file intact. The record
-// is loaded (and, on the first start of this version, seeded once from the
-// files there) by PrepareRecord(), which every script read and write calls
-// first, outside the directory's lock, and which ConfigureSharedRecord()
-// posts at startup, so a launch that reads no workflow still leaves it on
-// disk. A storage of its own directory (a
-// profile's voice routines) has no record, and loads files as they are;
+// browser leaves another browser's record of the file intact (its digest,
+// and its own last fire). The record is loaded (and, on the first start of
+// this version, seeded once from the files there, their last fire times
+// too) by PrepareRecord(), which every script read and write calls first,
+// outside the directory's lock, and which ConfigureSharedRecord() posts at
+// startup, so a launch that reads no workflow still leaves it on disk. A
+// storage of its own directory (a profile's voice routines) has no record,
+// and loads files as they are, their last fire times included;
 // the shared directory without a configured record (tests) gets a
 // session-only one that trusts only this process's writes
 // (docs/design/AGENT_ACTIONS.md §3.6).
@@ -232,8 +232,8 @@ class AutomationStorage {
   // unvouched stays unvouched). False, and nothing written, otherwise.
   bool UpdateBookkeeping(const std::string& id, ScriptChange change);
   // The scheduler's fire of |id| at |fired_unix|: the record's fire time
-  // for it rises first (kept even if the file can't be written), then
-  // UpdateBookkeeping() of trigger.last_fired_unix.
+  // for it first (WorkflowRecord::NoteFired(); kept even if the file can't
+  // be written), then UpdateBookkeeping() of trigger.last_fired_unix.
   bool RecordFire(const std::string& id, int64_t fired_unix);
 
   // Loads the workflow record (workflow_record.h), and on the first start
@@ -331,7 +331,7 @@ class AutomationStorage {
   WorkflowRecord* Record() const;
   // The one parse-and-verify step: |dict| (read from |path|) as a script
   // known by |id|, clamped unless the record vouches for it, its last
-  // fire time at least the record's.
+  // fire time the record's (with a record).
   std::optional<Script> Vetted(base::DictValue dict,
                                const std::string& id,
                                const base::FilePath& path,

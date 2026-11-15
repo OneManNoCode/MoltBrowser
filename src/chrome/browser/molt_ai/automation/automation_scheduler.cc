@@ -78,11 +78,11 @@ constexpr base::TimeDelta kDueSlack = base::Seconds(1);
 
 // Whether |script|, read again when its timer comes, is due at |now|: a
 // cron or interval workflow whose last fire is known only once the next
-// fire after that one has come (else it fired, or was snoozed, since it
-// was listed: a catch-up, another browser's run). A cron workflow whose
-// last fire is still in the future (a clock that was ahead) is due, as
-// before: its timer doesn't wait for that time, and its fire records the
-// real one.
+// fire after that one has come (else this browser fired it, or it was
+// snoozed here, since it was listed: a catch-up, a Snooze). A cron
+// workflow whose last fire is still in the future (a clock that was ahead)
+// is due, as before: its timer doesn't wait for that time, and its fire
+// records the real one.
 bool IsDue(const Script& script, base::Time now) {
   const Trigger& trigger = script.trigger;
   if ((trigger.type != TriggerType::CRON &&

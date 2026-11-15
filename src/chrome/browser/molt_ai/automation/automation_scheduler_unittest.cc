@@ -6,12 +6,11 @@
 // fires a catch-up of a workflow the browser saved, once, and its next
 // fire an interval later; never one whose file was changed outside the
 // browser, whether that is found when it is listed or when its timer's
-// reload comes, nor one its timer's reload finds fired since; a forged
-// earlier last fire forces no catch-up run (fired here or not), a later
-// one still to come (another browser's Snooze, or forged) forces none
-// either and holds the schedule back at most an interval from when it was
-// first read (across restarts too, and for a snooze longer than the
-// interval), and a schedule saved afresh starts over.
+// reload comes, nor one its timer's reload finds snoozed since. It fires
+// on this browser's own last fire only: a last fire written into the file
+// outside (another browser's run or Snooze, or a forged one, earlier or
+// later) changes nothing, a Snooze saved here holds, a restart keeps the
+// recorded fire, and a schedule saved afresh starts over.
 
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 
@@ -119,8 +118,9 @@ class AutomationSchedulerTest : public testing::Test {
     ASSERT_TRUE(base::JSONWriter::Write(*value, &bytes));
     ASSERT_TRUE(base::WriteFile(file, bytes));
   }
-  // Another program writes the workflow's last fire time (bookkeeping: the
-  // file is still the browser's).
+  // Another program (another browser's run or Snooze) writes the
+  // workflow's last fire time (bookkeeping: the file is still the
+  // browser's).
   void SetLastFiredOutside(const std::string& id, int64_t last_fired) {
     const base::FilePath file = dir_.AppendASCII(id + ".molt");
     std::string bytes;
@@ -195,10 +195,11 @@ TEST_F(AutomationSchedulerTest, ATimerReloadThatFindsAChangeDoesNotFire) {
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_b"});
 }
 
-// A timer's reload that finds the workflow fired since its last listing
-// (by another browser on the same folder) doesn't fire it again; an
-// interval after that run, it fires.
-TEST_F(AutomationSchedulerTest, ATimerReloadOfAWorkflowFiredSinceDoesNotFire) {
+// A timer's reload that finds the workflow snoozed here since its last
+// listing (molt://ai-automation's Snooze writes a last fire still to come)
+// doesn't fire it; an interval after the snoozed time, it fires.
+TEST_F(AutomationSchedulerTest,
+       ATimerReloadOfAWorkflowSnoozedSinceDoesNotFire) {
   const int64_t now = Unix(base::Time::Now());
   // Due in 70 s.
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 90, now - 20)));
@@ -206,31 +207,67 @@ TEST_F(AutomationSchedulerTest, ATimerReloadOfAWorkflowFiredSinceDoesNotFire) {
   Tick();
   task_environment_.FastForwardBy(base::Seconds(65));
   EXPECT_TRUE(fired_.empty());
-  // Run elsewhere after the heartbeat's listing at 60 s, before the timer.
-  SetLastFiredOutside("wf_1", now + 65);
+  // Snoozed here for an hour, after the heartbeat's listing at 60 s and
+  // before the timer: next due at 65 + 3600 + 90 s.
+  ASSERT_TRUE(storage_->Update("wf_1", [now](Script& script) {
+    script.trigger.last_fired_unix = now + 65 + 3600;
+    return true;
+  }));
   task_environment_.FastForwardBy(base::Seconds(10));
   EXPECT_TRUE(fired_.empty());
-  task_environment_.FastForwardBy(base::Seconds(85));
+  // At 3754 s.
+  task_environment_.FastForwardBy(base::Seconds(3600 + 90 - 10 - 1));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
 }
 
-TEST_F(AutomationSchedulerTest, AForgedEarlierLastFiredForcesNoCatchUp) {
+// Another browser on the same folder runs the workflow (its fire written
+// into the file) just before this browser's timer: this browser still
+// fires it on its own schedule.
+TEST_F(AutomationSchedulerTest, AnotherBrowsersFireDoesNotMoveThisOnes) {
   const int64_t now = Unix(base::Time::Now());
-  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
-  ASSERT_TRUE(storage_->RecordFire("wf_1", now));
-  // Another program writes a last fire a day back.
-  SetLastFiredOutside("wf_1", now - 86400);
-  std::optional<Script> loaded = storage_->Load("wf_1");
-  ASSERT_TRUE(loaded);
-  EXPECT_FALSE(loaded->security.changed_outside);
-  EXPECT_EQ(loaded->trigger.last_fired_unix, now);
+  // Due in 70 s.
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 90, now - 20)));
+  scheduler_.Start();
+  Tick();
+  task_environment_.FastForwardBy(base::Seconds(65));
+  EXPECT_TRUE(fired_.empty());
+  SetLastFiredOutside("wf_1", now + 65);
+  task_environment_.FastForwardBy(base::Seconds(10));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// A last fire written outside, earlier or later than this browser's own,
+// changes nothing: no catch-up run (an earlier one would force one), no
+// schedule stalled (a later one would hold it back); each fires an
+// interval after this browser's own fire.
+TEST_F(AutomationSchedulerTest, AForgedLastFiredChangesNothing) {
+  const int64_t now = Unix(base::Time::Now());
+  for (const char* id : {"wf_earlier", "wf_later"}) {
+    ASSERT_TRUE(storage_->Save(Interval(id, 3600, 0)));
+    ASSERT_TRUE(storage_->RecordFire(id, now - 600));
+  }
+  SetLastFiredOutside("wf_earlier", now - 86400);
+  SetLastFiredOutside("wf_later", 4102444800);
+  for (const char* id : {"wf_earlier", "wf_later"}) {
+    std::optional<Script> loaded = storage_->Load(id);
+    ASSERT_TRUE(loaded) << id;
+    EXPECT_FALSE(loaded->security.changed_outside) << id;
+    EXPECT_EQ(loaded->trigger.last_fired_unix, now - 600) << id;
+  }
   scheduler_.Start();
   Tick();
   EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(49));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_.size(), 2u);
 }
 
 // The same for workflows saved here that this browser hasn't fired yet
-// (no fire of its own to hold on to): a weekly one, and an hourly one.
+// (no fire of its own): an earlier last fire written outside forces no
+// catch-up run of a weekly one, nor of an hourly one.
 TEST_F(AutomationSchedulerTest,
        AForgedEarlierLastFiredOfAWorkflowNeverFiredHereForcesNoCatchUp) {
   Script weekly = Interval("wf_weekly", 3600, 0);
@@ -252,36 +289,58 @@ TEST_F(AutomationSchedulerTest,
   EXPECT_TRUE(fired_.empty());
 }
 
-// A last fire far in the future written outside counts as a fire when it
-// was first read: no catch-up run of the overdue workflow, which fires an
-// interval later (the heartbeat's listings don't push it back), not when
-// that time comes; its fire replaces it.
-TEST_F(AutomationSchedulerTest, AForgedLaterLastFiredDoesNotStallTheSchedule) {
-  const int64_t now = Unix(base::Time::Now());
+// Another browser on the same folder ran the workflow and then snoozed it
+// there (its last fire an hour ahead in the file): this browser runs the
+// catch-up its own last fire calls for at once, and its next run an
+// interval after that.
+TEST_F(AutomationSchedulerTest, AnotherBrowsersRunAndSnoozeDoNotHoldThisOne) {
+  const int64_t saved = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
-  ASSERT_TRUE(storage_->RecordFire("wf_1", now - 7200));
-  SetLastFiredOutside("wf_1", 4102444800);
+  ASSERT_TRUE(storage_->RecordFire("wf_1", saved));
+  // Three hours on, the other browser's run half an hour ago, then its
+  // Snooze.
+  task_environment_.FastForwardBy(base::Hours(3));
+  const int64_t now = Unix(base::Time::Now());
+  SetLastFiredOutside("wf_1", now - 1800);
+  SetLastFiredOutside("wf_1", now + 3600);
   scheduler_.Start();
   Tick();
-  EXPECT_TRUE(fired_.empty());
-  task_environment_.FastForwardBy(base::Minutes(59));
-  EXPECT_TRUE(fired_.empty());
-  task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
-  task_environment_.FastForwardBy(base::Hours(1));
+  task_environment_.FastForwardBy(base::Minutes(59));
+  EXPECT_EQ(fired_.size(), 1u);
+  task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_.size(), 2u);
 }
 
-// The same across restarts: when the value was first read is kept in the
-// record, so a daily workflow of a browser restarted every eight hours
-// still runs a day after that read (read afresh at each start, it never
-// would).
-TEST_F(AutomationSchedulerTest,
-       AForgedLaterLastFiredDoesNotStallTheScheduleAcrossRestarts) {
+// A Snooze saved here (a browser write: the record takes its later last
+// fire) holds the schedule for the whole snooze, and the workflow runs an
+// interval after the snoozed time.
+TEST_F(AutomationSchedulerTest, ASnoozeSavedHereHolds) {
+  const int64_t saved = Unix(base::Time::Now());
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 900, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", saved));
+  task_environment_.FastForwardBy(base::Minutes(10));
+  const int64_t snoozed = Unix(base::Time::Now()) + 3600;
+  ASSERT_TRUE(storage_->Update("wf_1", [snoozed](Script& script) {
+    script.trigger.last_fired_unix = snoozed;
+    return true;
+  }));
+  scheduler_.Start();
+  Tick();
+  task_environment_.FastForwardBy(base::Minutes(60 + 14));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// A restart keeps the recorded fire: a daily workflow of a browser
+// restarted every eight hours runs a day after its last fire here, not
+// after the later one another browser wrote into the file.
+TEST_F(AutomationSchedulerTest, ARestartKeepsTheRecordedFire) {
   const int64_t now = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 86400, 0)));
   ASSERT_TRUE(storage_->RecordFire("wf_1", now - 3600));
-  SetLastFiredOutside("wf_1", 4102444800);
+  SetLastFiredOutside("wf_1", now - 1800);
   scheduler_.Start();
   Tick();
   EXPECT_TRUE(fired_.empty());
@@ -290,55 +349,7 @@ TEST_F(AutomationSchedulerTest,
     Restart();
     EXPECT_TRUE(fired_.empty());
   }
-  task_environment_.FastForwardBy(base::Hours(7) + base::Minutes(59));
-  EXPECT_TRUE(fired_.empty());
-  task_environment_.FastForwardBy(base::Minutes(2));
-  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
-}
-
-// Another browser on the same folder ran the workflow (seen here), then
-// the user snoozed it there (its last fire an hour ahead): this browser
-// runs no catch-up from its own old fire, nothing while the snooze lasts,
-// and runs it an interval after the snoozed time, as the other browser
-// does.
-TEST_F(AutomationSchedulerTest, AnotherBrowsersSnoozeHoldsTheScheduleHere) {
-  const int64_t saved = Unix(base::Time::Now());
-  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
-  ASSERT_TRUE(storage_->RecordFire("wf_1", saved));
-  // Three hours on, the other browser's run half an hour ago.
-  task_environment_.FastForwardBy(base::Hours(3));
-  const int64_t now = Unix(base::Time::Now());
-  SetLastFiredOutside("wf_1", now - 1800);
-  scheduler_.Start();
-  Tick();
-  EXPECT_TRUE(fired_.empty());
-  // Snoozed there for an hour.
-  SetLastFiredOutside("wf_1", now + 3600);
-  Tick();
-  EXPECT_TRUE(fired_.empty());
-  task_environment_.FastForwardBy(base::Minutes(119));
-  EXPECT_TRUE(fired_.empty());
-  task_environment_.FastForwardBy(base::Minutes(2));
-  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
-}
-
-// A snooze there longer than the interval holds the schedule here back one
-// interval from when this browser first read it, not for the whole snooze
-// (until the snoozed time is 5 minutes away, it is no fire this browser can
-// believe): a 15-minute workflow snoozed there for an hour runs here 15
-// minutes after that read.
-TEST_F(AutomationSchedulerTest,
-       AnotherBrowsersLongerSnoozeHoldsTheScheduleHereOneInterval) {
-  const int64_t saved = Unix(base::Time::Now());
-  ASSERT_TRUE(storage_->Save(Interval("wf_1", 900, 0)));
-  ASSERT_TRUE(storage_->RecordFire("wf_1", saved));
-  task_environment_.FastForwardBy(base::Minutes(10));
-  // Snoozed there for an hour.
-  SetLastFiredOutside("wf_1", Unix(base::Time::Now()) + 3600);
-  scheduler_.Start();
-  Tick();
-  EXPECT_TRUE(fired_.empty());
-  task_environment_.FastForwardBy(base::Minutes(14));
+  task_environment_.FastForwardBy(base::Hours(6) + base::Minutes(59));
   EXPECT_TRUE(fired_.empty());
   task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});

@@ -8,8 +8,8 @@
 // read-modify-write whichever thread, and moves cut short reported; since
 // round 45, a fresh id when every simple one is taken; and the workflow
 // record (workflow_record.h): a file is trusted only as far as this browser
-// wrote it, on every read and write path, with its last fire believed only
-// since this browser's last write, moves cut short, a browser ending
+// wrote it, on every read and write path, with its last fire this
+// browser's own (never the file's), moves cut short, a browser ending
 // between a record change and its file change, the one-time seeding (a new
 // user data directory recorded at startup) and two browsers over one
 // directory.
@@ -844,13 +844,13 @@ TEST_F(AutomationStorageRecordTest, RunBookkeepingMayChangeOutside) {
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
   EXPECT_EQ(loaded->stats.runs, 99);
-  // A later last fire (another browser's run, since the save) too.
-  const int64_t ran = NowUnix();
-  SetLastFiredOutside("wf_1", ran);
+  // A last fire (another browser's run) too, which isn't this browser's:
+  // its own is still none.
+  SetLastFiredOutside("wf_1", NowUnix());
   loaded = Load("wf_1");
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
-  EXPECT_EQ(loaded->trigger.last_fired_unix, ran);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, 0);
   EXPECT_TRUE(Vouched("wf_1.molt"));
 }
 
@@ -902,47 +902,31 @@ TEST_F(AutomationStorageRecordTest,
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
 }
 
-// A later last fire written outside that is still to come (another
-// browser's Snooze or Skip, or forged) isn't believed: it counts as a fire
-// when this browser first read it, so it forces no catch-up run of the
-// old fire and holds the schedule back at most an interval (it never
-// stalls it), across a restart too. A bookkeeping write (a run's stats)
-// records no fire of it; a Trust click writes the fire it read, in place
-// of the one still to come.
+// A later last fire written outside (another browser's Snooze or Skip, or
+// forged) changes nothing either: a bookkeeping write (a run's stats)
+// keeps it in the file and records nothing, and this browser's own fire
+// holds, across a restart too, and is what a Trust click writes.
 TEST_F(AutomationStorageRecordTest,
-       AFutureLastFiredCountsAsAFireWhenFirstRead) {
+       ALaterLastFiredWrittenOutsideChangesNothing) {
   ASSERT_TRUE(storage().Save(Hourly("wf_1")));
   const int64_t fired = NowUnix() - 7200;
   ASSERT_TRUE(storage().RecordFire("wf_1", fired));
   SetLastFiredOutside("wf_1", kFarFuture);
-  const int64_t before = NowUnix();
   std::optional<Script> loaded = Load("wf_1");
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
-  const int64_t read = loaded->trigger.last_fired_unix;
-  EXPECT_GE(read, before);
-  EXPECT_LE(read, NowUnix());
-  WorkflowRecord* record = WorkflowRecord::For(dir_);
-  ASSERT_TRUE(record);
-  // A run's stats: the file's own last fire written back, not recorded.
+  EXPECT_EQ(loaded->trigger.last_fired_unix, fired);
   ASSERT_TRUE(storage().UpdateBookkeeping("wf_1", [](Script& script) {
     script.stats.runs = 1;
     return true;
   }));
   EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, kFarFuture);
-  EXPECT_EQ(record->FiredFloor("wf_1.molt"), fired);
-  // Read again: the same fire, after a restart too.
-  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, fired);
   Restart(/*may_seed=*/false);
-  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
-  record = WorkflowRecord::For(dir_);
-  ASSERT_TRUE(record);
-  // A Trust click writes what it read.
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, fired);
   ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::APPROVED));
-  EXPECT_EQ(record->FiredFloor("wf_1.molt"), read);
-  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, read);
-  Restart(/*may_seed=*/false);
-  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, fired);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, fired);
 }
 
 // A schedule saved afresh (the Agent studio's Schedule: a new trigger,
@@ -1003,56 +987,40 @@ TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsTheLastFire) {
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now - 60);
 }
 
-// The same for another browser's run, which this browser believes: a
-// save from a page opened before it (an editor, a card) writes that run,
-// not the page's earlier last fire, which would be believed here and run
-// it again at the next listing.
-TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsAnotherBrowsersRun) {
-  base::test::TaskEnvironment task_environment(
-      base::test::TaskEnvironment::TimeSource::MOCK_TIME);
-  task_environment.AdvanceClock(
-      base::Time::FromSecondsSinceUnixEpoch(1'800'000'000) - base::Time::Now());
+// Two user data dirs over one folder each keep their own last fire: one's
+// fire, written into the file, doesn't move the other's, nor does the
+// other's save, which writes its own earlier one there, move the first's
+// back.
+TEST_F(AutomationStorageRecordTest, EachUserDataDirKeepsItsOwnLastFire) {
   const base::FilePath a = user_data_dir_;
   const base::FilePath b = temp_.GetPath().AppendASCII("Other User Data");
   ASSERT_TRUE(base::CreateDirectory(b));
-  const int64_t start = NowUnix();
+  const int64_t start = NowUnix() - 7200;
   ASSERT_TRUE(storage().Save(Hourly("wf_1")));
   ASSERT_TRUE(storage().RecordFire("wf_1", start));
-  // B's first start of this version seeds it.
+  // B's first start of this version seeds it, with the file's last fire.
   Restart(/*may_seed=*/true, b);
-  ASSERT_FALSE(Load("wf_1")->security.changed_outside);
-  // Half an hour on, A's page opens it.
-  task_environment.AdvanceClock(base::Minutes(30));
+  ASSERT_EQ(Load("wf_1")->trigger.last_fired_unix, start);
+  // B runs it an hour later.
+  ASSERT_TRUE(storage().RecordFire("wf_1", start + 3600));
+  ASSERT_EQ(Raw("wf_1")->trigger.last_fired_unix, start + 3600);
+  // A still counts from its own fire, and its page saves its copy.
   Restart(/*may_seed=*/false, a);
   std::optional<Script> page = Load("wf_1");
   ASSERT_TRUE(page);
-  ASSERT_EQ(page->trigger.last_fired_unix, start);
-  // B runs it an hour after the first run.
-  task_environment.AdvanceClock(base::Minutes(30));
-  Restart(/*may_seed=*/true, b);
-  ASSERT_TRUE(storage().RecordFire("wf_1", start + 3600));
-  // Half an hour later, A's page saves its copy, renamed.
-  task_environment.AdvanceClock(base::Minutes(30));
-  Restart(/*may_seed=*/false, a);
-  ASSERT_EQ(Load("wf_1")->trigger.last_fired_unix, start + 3600);
-  page->name = "Prices, renamed";
+  EXPECT_FALSE(page->security.changed_outside);
+  EXPECT_EQ(page->trigger.last_fired_unix, start);
   ASSERT_TRUE(storage().SaveChecked(
       std::move(*page),
       [](const Script* stored, Script&) { return stored != nullptr; }));
-  std::optional<Script> loaded = Load("wf_1");
-  ASSERT_TRUE(loaded);
-  EXPECT_EQ(loaded->name, "Prices, renamed");
-  EXPECT_FALSE(loaded->security.changed_outside);
-  EXPECT_EQ(loaded->trigger.last_fired_unix, start + 3600);
-  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, start + 3600);
-  // A change that writes a page's earlier one keeps it too.
-  ASSERT_TRUE(storage().Update("wf_1", [start](Script& script) {
-    script.trigger.last_fired_unix = start;
-    return true;
-  }));
-  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, start + 3600);
-  Restart(/*may_seed=*/false, a);
-  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, start + 3600);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, start);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, start);
+  // B: the same workflow, still vouched for, and still its own fire.
+  Restart(/*may_seed=*/true, b);
+  std::optional<Script> in_b = Load("wf_1");
+  ASSERT_TRUE(in_b);
+  EXPECT_FALSE(in_b->security.changed_outside);
+  EXPECT_EQ(in_b->trigger.last_fired_unix, start + 3600);
 }
 
 // A fire recorded while the clock was ahead gives way to the next fire on
@@ -1486,8 +1454,9 @@ TEST_F(AutomationStorageRecordTest,
 }
 
 // Two user data dirs (an installed and a portable browser) over one
-// ~/.moltbrowser: runs in one leave the other's record intact; a change to
-// what a workflow does needs a review in the other; reviews converge.
+// ~/.moltbrowser: runs in one leave the other's record intact (its last
+// fire too); a change to what a workflow does needs a review in the other;
+// reviews converge.
 TEST_F(AutomationStorageRecordTest, TwoUserDataDirsOverOneDirectory) {
   const base::FilePath a = user_data_dir_;
   const base::FilePath b = temp_.GetPath().AppendASCII("Other User Data");
@@ -1510,6 +1479,8 @@ TEST_F(AutomationStorageRecordTest, TwoUserDataDirsOverOneDirectory) {
   ASSERT_TRUE(in_a);
   EXPECT_FALSE(in_a->security.changed_outside);
   EXPECT_EQ(in_a->stats.runs, 1);
+  // B's fire is B's: A never fired it.
+  EXPECT_EQ(in_a->trigger.last_fired_unix, 0);
   // B changes what it is: A sees it changed.
   Restart(/*may_seed=*/true, b);
   ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
