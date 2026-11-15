@@ -155,9 +155,9 @@ TEST(AutomationScriptTest, AWaitWaitsTheSecondsItsValueSays) {
                    {"0", 0},       {"-0", 0},     {".5", 500},
                    {"1e1", 10000}, {"60", 60000}, {"0.001", 1}};
   for (const auto& c : kAccepted) {
-    std::optional<base::TimeDelta> wait = WaitDurationOf(c.value);
-    ASSERT_TRUE(wait) << c.value;
-    EXPECT_EQ(*wait, base::Milliseconds(c.ms)) << c.value;
+    std::optional<int> wait_ms = WaitMillisecondsOf(c.value);
+    ASSERT_TRUE(wait_ms) << c.value;
+    EXPECT_EQ(*wait_ms, c.ms) << c.value;
   }
 }
 
@@ -168,7 +168,7 @@ TEST(AutomationScriptTest, AWaitThatIsntZeroToSixtySecondsIsRefused) {
        {"-1", "60.5", "61",   "2000", "1e3", "1e400",    "abc",
         "2s", "1,5",  "0x10", "inf",  "nan", "{{secs}}", " 3 ",
         "3 ", "+3",   "3.",   "   ",  "3\n", "-",        "."}) {
-    EXPECT_FALSE(WaitDurationOf(value)) << value;
+    EXPECT_FALSE(WaitMillisecondsOf(value)) << value;
   }
 }
 

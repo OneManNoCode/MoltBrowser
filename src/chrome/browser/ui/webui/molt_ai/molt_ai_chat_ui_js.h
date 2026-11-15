@@ -2780,7 +2780,9 @@ function renderHistoryClusters(clusters, totalDocs) {
 }
 
 function tryDispatchActionCommand(text) {
-  var m = text.match(/^\s*\/(click|type|select|hover|right-click|rclick|drag|scroll|navigate|nav|goto|wait|wait-for|waitfor)\b\s*(.*)$/i);
+  // "wait-for" before "wait": the first alternative that matches wins, and
+  // \b matches between "wait" and "-for".
+  var m = text.match(/^\s*\/(click|type|select|hover|right-click|rclick|drag|scroll|navigate|nav|goto|wait-for|waitfor|wait)\b\s*(.*)$/i);
   if (!m) return false;
   var cmd = m[1].toLowerCase();
   var rest = (m[2] || '').trim();

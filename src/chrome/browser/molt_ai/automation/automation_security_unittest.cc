@@ -118,8 +118,8 @@ TEST(AutomationSecurityTest, EffectivePolicyAddsHostsTheStepsTarget) {
 
 // A whitelist entry that is itself a registry (a public suffix), from the
 // file's whitelist or a step's host, allows no site under it; an ordinary
-// one allows its subdomains, and an IP address or a single label only
-// itself.
+// one allows its subdomains within its own site, and an IP address or a
+// single label only itself.
 TEST(AutomationSecurityTest, ARegistryInTheWhitelistAllowsNoSiteUnderIt) {
   AutomationSecurity sec;
   SecurityPolicy p;
@@ -136,6 +136,11 @@ TEST(AutomationSecurityTest, ARegistryInTheWhitelistAllowsNoSiteUnderIt) {
   EXPECT_TRUE(sec.AllowNavigation(p, "http://192.168.1.1/"));
   EXPECT_TRUE(sec.AllowNavigation(p, "http://localhost:8080/"));
   EXPECT_FALSE(sec.AllowNavigation(p, "https://evilkayak.com/"));
+  // Nor across a registry below the entry: a bucket under s3.amazonaws.com
+  // is someone else's site.
+  p.domain_whitelist = {"amazonaws.com"};
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://bucket.s3.amazonaws.com/"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://console.amazonaws.com/"));
 
   // A step's recorded host, as a file can give it.
   Script script;

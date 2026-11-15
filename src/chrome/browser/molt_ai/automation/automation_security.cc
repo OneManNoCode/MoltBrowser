@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iterator>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -55,9 +56,10 @@ bool LooksLikePaymentCardValue(const std::string& value) {
   return (sum % 10) == 0;
 }
 
-// The approval categories every workflow below TRUSTED needs (the only ones
-// a check reads: AllowSubmit(), AllowSensitiveField()). A stored list adds
-// to them, never removes one (EffectivePolicy()).
+// The approval categories a CASUAL workflow always asks for (the only ones
+// a check reads: AllowSubmit(), AllowSensitiveField(); APPROVED lifts them
+// there, TRUSTED needs none). A stored list adds to them, never removes one
+// (EffectivePolicy()).
 constexpr const char* kDefaultApprovals[] = {"form_submit", "payment",
                                              "login"};
 
@@ -297,17 +299,24 @@ bool DomainMatchesWhitelist(const std::vector<std::string>& whitelist,
   for (const auto& entry : whitelist) {
     std::string e = base::ToLowerASCII(entry);
     if (h == e) return true;
-    // Suffix match: 'kayak.com' allows 'www.kayak.com'. Never from an entry
-    // that is itself a registry (a public suffix such as "com", "co.uk" or
-    // "github.io", which a file can list or name as a step's host): it
-    // would allow every site under it. An IP address or a single label
-    // ("localhost") matches only itself.
+    // Suffix match: 'kayak.com' allows 'www.kayak.com', within one site
+    // (registrable domain) only. Never from an entry that is itself a
+    // registry (a public suffix such as "com", "co.uk" or "github.io", which
+    // a file can list or name as a step's host), nor across one below it
+    // ("amazonaws.com" doesn't allow a bucket under "s3.amazonaws.com"): it
+    // would allow sites that are someone else's. An IP address or a single
+    // label ("localhost") matches only itself.
     if (h.size() > e.size() &&
-        h.compare(h.size() - e.size() - 1, e.size() + 1, "." + e) == 0 &&
-        !net::registry_controlled_domains::GetDomainAndRegistry(
-             e, net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)
-             .empty()) {
-      return true;
+        h.compare(h.size() - e.size() - 1, e.size() + 1, "." + e) == 0) {
+      const std::string site =
+          net::registry_controlled_domains::GetDomainAndRegistry(
+              e, net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+      if (!site.empty() &&
+          site == net::registry_controlled_domains::GetDomainAndRegistry(
+                      h, net::registry_controlled_domains::
+                             INCLUDE_PRIVATE_REGISTRIES)) {
+        return true;
+      }
     }
   }
   return false;

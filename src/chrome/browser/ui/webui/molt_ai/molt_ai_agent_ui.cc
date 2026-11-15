@@ -254,12 +254,18 @@ base::DictValue WorkflowSummary(const Script& s) {
     base::DictValue sch;
     sch.Set("label", ScheduleLabel(s.trigger));
     // Off (an import's schedule starts off): it doesn't run by itself
-    // until the user turns it on with Schedule.
+    // until the user turns it on with Schedule. An interval with no last
+    // fire (saved so by an earlier version) never comes either: the
+    // scheduler counts it from each listing until the schedule is saved
+    // again.
     base::Time next;
-    if (s.enabled) {
-      next = AutomationScheduler::NextFireTime(s.trigger, base::Time::Now());
-    } else {
+    if (!s.enabled) {
       sch.Set("paused", true);
+    } else if (s.trigger.type == TriggerType::INTERVAL &&
+               s.trigger.last_fired_unix <= 0) {
+      sch.Set("notStarted", true);
+    } else {
+      next = AutomationScheduler::NextFireTime(s.trigger, base::Time::Now());
     }
     sch.Set("nextFire",
             next.is_null() ? 0.0 : next.InSecondsFSinceUnixEpoch());
@@ -1123,6 +1129,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     } else if (type && *type == "cron") {
       trig.type = TriggerType::CRON;
       trig.expression = expr ? *expr : "";
+    } else if (base::Time at; type && *type == "at" && expr &&
+                              base::Time::FromString(expr->c_str(), &at)) {
+      // A one-time run the sheet was opened on (an import's), kept as it
+      // is: the scheduler reads it the same way.
+      trig.type = TriggerType::AT;
+      trig.expression = *expr;
     } else {
       trig.type = TriggerType::MANUAL;
     }
@@ -1948,12 +1960,22 @@ function buildCard(wf){
 
   if(wf.schedule){
     // Paused: an import's schedule starts off until Schedule turns it on.
+    // Not started: an interval an earlier version saved with no last run,
+    // which runs once its schedule is saved again.
     var chipAttrs={'class':'chip'};
-    if(wf.schedule.paused===true)chipAttrs.title='It won’t run by itself until you turn it on with Schedule.';
+    var chipState='';
+    if(wf.schedule.paused===true){
+      chipAttrs.title='It won’t run by itself until you turn it on with Schedule.';
+      chipState='  ·  paused';
+    }else if(wf.schedule.notStarted===true){
+      chipAttrs.title='Open Schedule and save it to start it.';
+      chipState='  ·  not started';
+    }else if(wf.schedule.nextFire){
+      chipState='  ·  next '+formatNext(wf.schedule.nextFire);
+    }
     card.appendChild(h('div',chipAttrs,[
       h('span',{'class':'cg','aria-hidden':'true'},'⏰'),
-      wf.schedule.label + (wf.schedule.paused===true?'  ·  paused':
-        (wf.schedule.nextFire?('  ·  next '+formatNext(wf.schedule.nextFire)):''))
+      wf.schedule.label + chipState
     ]));
   }
 
@@ -2447,7 +2469,7 @@ function buildEditorStep(s,i){
       onInput:function(){s[pf]=this.value;updateHeadTitle(card,s);}});
     // A textarea shows its text as its value, not its attribute.
     if(isMulti)inp.value=pval;
-    // What a wait runs (automation_script.h's WaitDurationOf()): 0 to 60
+    // What a wait runs (automation_script.h's WaitMillisecondsOf()): 0 to 60
     // seconds (kMaxWaitSeconds), fractions allowed.
     if(s.type==='wait'){inp.setAttribute('type','number');inp.setAttribute('min','0');inp.setAttribute('max','60');inp.setAttribute('step','any');}
     var fld=h('div',{'class':'efield'},[fieldLabelFor(fieldLabel(s.type),inp),inp]);
@@ -2880,13 +2902,16 @@ function closeRunSheet(){runSheet.open=false;closeScrim('runScrim');}
 
 /* ============================== SCHEDULE ============================== */
 function openScheduleSheet(id,name,trigger){
-  scheduleCtx={id:id,mode:'manual'};
+  scheduleCtx={id:id,mode:'manual',at:''};
   $('schedSubT').textContent=(name?('“'+name+'”'):'This workflow')+' — run it automatically.';
   var tr=trigger||{type:'manual',expression:''};
   scheduleCtx.mode=tr.type||'manual';
   var iv=tr.type==='interval'?savedInterval(tr.expression):parseInterval('');
   var daily=(tr.type==='daily'&&tr.expression)?tr.expression:'09:00';
   var cron=(tr.type==='cron'&&tr.expression)?tr.expression:'0 9 * * *';
+  // A one-time run (an import's, or one set in molt://ai-automation): kept
+  // as it is, so the sheet can turn it on.
+  if(tr.type==='at'&&typeof tr.expression==='string'&&tr.expression)scheduleCtx.at=tr.expression;
 
   var body=$('schedBody');clear(body);
 
@@ -2908,6 +2933,10 @@ function openScheduleSheet(id,name,trigger){
   }
 
   body.appendChild(opt('manual','Manual only','Runs only when you press Run.'));
+  if(scheduleCtx.at){
+    var atWhen=new Date(scheduleCtx.at);
+    body.appendChild(opt('at','Once','Runs once, at '+(isNaN(atWhen.getTime())?scheduleCtx.at:atWhen.toLocaleString())+'.'));
+  }
 
   var numI=h('input',{'class':'inp num',id:'ivNum',type:'number',min:'1',value:iv.n,'aria-label':'Every how many',onInput:updateNext,onFocus:function(){pickMode('interval');}});
   var unitI=h('select',{'class':'inp',id:'ivUnit','aria-label':'Seconds, minutes or hours',onChange:updateNext,onFocus:function(){pickMode('interval');}},[
@@ -2967,10 +2996,15 @@ function currentTrigger(){
   }
   if(mode==='daily')return {type:'daily',expression:$('dailyTime').value||'09:00'};
   if(mode==='cron')return {type:'cron',expression:($('cronExpr').value||'').trim()};
+  if(mode==='at'&&scheduleCtx.at)return {type:'at',expression:scheduleCtx.at};
   return {type:'manual',expression:''};
 }
 function previewNext(tr){
   var now=new Date();
+  if(tr.type==='at'){
+    var at=new Date(tr.expression).getTime();
+    return (!isNaN(at)&&at>now.getTime())?Math.floor(at/1000):null;
+  }
   if(tr.type==='interval'){
     var iv=parseInterval(tr.expression);
     var secs=iv.n*(iv.unit==='h'?3600:iv.unit==='s'?1:60);

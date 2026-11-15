@@ -299,9 +299,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (++checked > 64) break;
     // A wait runs only a value the studio's number field shows as it is:
     // "" (2 s), or a number from 0 to 60 with no spaces, '+' or trailing
-    // '.' (WaitDurationOf()).
-    if (std::optional<base::TimeDelta> wait = WaitDurationOf(step.value)) {
-      CHECK(!wait->is_negative() && *wait <= base::Seconds(kMaxWaitSeconds));
+    // '.' (WaitMillisecondsOf()).
+    if (std::optional<int> wait_ms = WaitMillisecondsOf(step.value)) {
+      CHECK(*wait_ms >= 0 && *wait_ms <= kMaxWaitSeconds * 1000);
       const std::string& v = step.value;
       if (!v.empty()) {
         CHECK(v.front() == '-' || v.front() == '.' ||

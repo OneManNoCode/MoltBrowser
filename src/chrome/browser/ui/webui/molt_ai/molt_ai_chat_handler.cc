@@ -3172,7 +3172,7 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
     step.target = value ? *value : "";
   } else if (t == "wait") {
     // P3: simple sleep. value is ms (default 1000), from 0 to the longest
-    // wait a step runs (automation::WaitDurationOf()), given to the step as
+    // wait a step runs (automation::WaitMillisecondsOf()), given to the step as
     // the seconds its value holds.
     step.type = molt_ai::automation::StepType::WAIT;
     int ms = 1000;
@@ -3202,11 +3202,8 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
                               base::Value(std::move(result)));
     return;
   }
-  // A wait-for's own ms is its timeout; a wait's timer is set past its
-  // wait (the runner's DoWait()).
-  if (t != "wait-for") {
-    step.timeout_ms = 8000;
-  }
+  // A wait's step timer is set past its wait (the runner's DoWait()).
+  step.timeout_ms = 8000;
   if (!confirmed && (t == "click" || t == "type")) {
     // The runner probes the element right before acting and stops with a
     // needs_confirmation message on a cross-origin link or a password /

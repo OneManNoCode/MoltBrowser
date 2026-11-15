@@ -3008,12 +3008,13 @@ All in `molt_ai_unittests` except the last item:
 - **Same-user code that can write the user data directory** can edit the
   record; it could already drive the browser.
 - **Closed since** (the workflow-gaps change):
-  - every workflow below TRUSTED needs the default approvals
+  - every CASUAL workflow asks first for the default approvals
     (`form_submit`, `payment`, `login`) whatever its file lists
-    (`EffectivePolicy()` adds a stored list to them, never drops one), so
-    workflows imported by earlier builds are covered too; below TRUSTED a
-    run's limit is at most the default 300 s (the runner reads it from the
-    run's policy);
+    (`EffectivePolicy()` adds a stored list to them, never drops one;
+    APPROVED lifts them in `AllowSubmit()`/`AllowSensitiveField()`,
+    TRUSTED needs none), so workflows imported by earlier builds are
+    covered too; below TRUSTED a run's limit is at most the default 300 s
+    (the runner reads it from the run's policy);
   - a workflow a save brings in (`ClampTrustForSave()` with no stored one:
     an import on either page, molt://ai-automation's save of a workflow not
     stored, a copy) gets `ApplyPolicyFloor()` (the default approvals, each
@@ -3022,15 +3023,19 @@ All in `molt_ai_unittests` except the last item:
     studio's Schedule sheet, which now opens on it); molt://ai-automation's
     save of a stored workflow keeps the stored policy, and the studio's edit
     keeps the stored schedule and whether it is on (only the Schedule sheet
-    changes them);
-  - a whitelist entry that is a registry (a public suffix: `com`, `co.uk`,
-    `github.io`), from the file or a step's recorded host, never
-    suffix-matches; an IP address or a single label matches only itself;
+    changes them; it keeps a one-time `at` schedule it is opened on);
+  - a whitelist entry suffix-matches a host only within one registrable
+    domain: never from an entry that is a registry (a public suffix: `com`,
+    `co.uk`, `github.io`), from the file or a step's recorded host, nor
+    across a registry below it; an IP address or a single label matches
+    only itself;
   - the chat's page watcher is saved CASUAL (its steps need nothing more;
     the scheduler fires it whatever its trust). Watchers made by earlier
     builds keep their trust until made again;
   - an interval molt://ai-automation saves with no last fire counts from
-    the save; the scheduler counts any interval as at least
+    the save; one an earlier version saved so (the record's last fire 0)
+    is shown "not started" on both pages until its schedule is saved
+    again, rather than started by the upgrade; the scheduler counts any interval as at least
     `kMinIntervalSeconds` (60 s), both pages and the chat refuse or raise a
     shorter one, and molt://ai-automation shows an interval in its largest
     whole unit (it showed seconds with "hours" selected, so re-saving one
@@ -3039,10 +3044,11 @@ All in `molt_ai_unittests` except the last item:
     Agent Inbox) is skipped (audit `scheduled_fire_skipped`), not opened as
     a second window;
   - a `wait` step runs the seconds its value says, as the studio's number
-    field shows them (`WaitDurationOf()`: 0 to 60, empty is 2; anything
+    field shows them (`WaitMillisecondsOf()`: 0 to 60, empty is 2; anything
     else fails the step), never its timeout (before, its timer and its wait
     raced, and a wait with a timeout always failed "Step timed out"); the
-    chat's `/wait` takes 0 to 60000 ms.
+    chat's `/wait` takes 0 to 60000 ms, and `/wait-for` is no longer read
+    as `/wait`.
 - **Existing gaps left as they are** (separate changes):
   molt://ai-automation's Snooze and Skip don't hold back a cron schedule's
   timer in any browser (they are written as a future last fire, which cron

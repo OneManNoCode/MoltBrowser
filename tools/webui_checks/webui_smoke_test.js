@@ -364,6 +364,12 @@ async function checkChatPageActions(window) {
   assert.strictEqual(JSON.stringify(calls('runMoltAction')),
                      '[["runMoltAction",{"type":"click","selector":"#buy","confirmed":true}]]');
   assert.strictEqual(calls('proposeChatAction').length, 0);
+  // "/wait-for" is a wait-for, not a "/wait" of "-for ...".
+  chatActionCalls.length = 0;
+  await send('/wait-for .results 3000');
+  const waitFor0 = calls('runMoltAction')[0];
+  assert(waitFor0 && waitFor0[1].type === 'wait-for' && waitFor0[1].selector === '.results',
+         'a wait-for: ' + JSON.stringify(waitFor0));
   window.setActionMode('ask');
   nextProposal = {status: 'none'};
 }
@@ -1684,7 +1690,15 @@ const PAGES = [
        {id: 'v2', name: 'trains', stepCount: 1, trust: 'approved',
         voice: true, nameClash: true, trigger: {type: 'manual'}},
        {id: 'c1', name: 'Planted <b>x</b>', stepCount: 1, trust: 'casual', draft: true,
-        changedOutside: true, host: 'evil.example', trigger: {type: 'cron'}}],
+        changedOutside: true, host: 'evil.example', trigger: {type: 'cron'}},
+       // An import's schedule, kept off; an interval an earlier version
+       // saved with no last run.
+       {id: 'p1', name: 'Imported', stepCount: 1, trust: 'casual', enabled: false,
+        trigger: {type: 'at', expression: '2099-01-01T09:00:00Z'},
+        schedule: {label: 'once', paused: true, nextFire: 0}},
+       {id: 'n1', name: 'Hourly', stepCount: 1, trust: 'casual',
+        trigger: {type: 'interval', expression: '3600'},
+        schedule: {label: 'every 1h', notStarted: true, nextFire: 0}}],
        unclaimed: [{id: 'old1', name: 'old <b>news</b>', steps: 2},
                    {id: 'old2', name: 'mail', steps: 1}],
        unclaimedHidden: 1},
@@ -2060,7 +2074,9 @@ const PAGES = [
      for (const [secs, num, unit, sent] of [['1800', '30', 'm', '30m'],
                                             ['7200', '2', 'h', '2h'],
                                             ['90', '90', 's', '90s'],
-                                            ['150', '150', 's', '150s']]) {
+                                            ['150', '150', 's', '150s'],
+                                            // Under a minute runs once a minute.
+                                            ['10', '1', 'm', '1m']]) {
        window.openScheduleSheet('w1', 'W', {type: 'interval', expression: secs});
        assert.strictEqual(doc.getElementById('ivNum').value, num, secs);
        assert.strictEqual(doc.getElementById('ivUnit').value, unit, secs);
@@ -2070,6 +2086,25 @@ const PAGES = [
                           JSON.stringify({type: 'interval', expression: sent}), secs);
        await tick();
      }
+     // A schedule that is off, or an interval never started, says so on
+     // its card, with no next run.
+     const chipOf = (id) => doc.querySelector('[data-wf-id="' + id + '"] .chip');
+     assert(/once\s+·\s+paused/.test(chipOf('p1').textContent), chipOf('p1').textContent);
+     assert(/not started/.test(chipOf('n1').textContent), chipOf('n1').textContent);
+     assert(!/next/.test(chipOf('n1').textContent), chipOf('n1').textContent);
+     // The sheet keeps a one-time schedule it is opened on, so saving it
+     // turns that on (it has no other way to set one).
+     window.openScheduleSheet('p1', 'Imported', {type: 'at', expression: '2099-01-01T09:00:00Z'});
+     assert(doc.getElementById('schedOpt-at').checked, 'the one-time run is chosen');
+     doc.getElementById('schedSave').click();
+     const atSaves = argsOf(window, 'saveSchedule');
+     assert.strictEqual(JSON.stringify(atSaves[atSaves.length - 1][1]),
+                        JSON.stringify({type: 'at', expression: '2099-01-01T09:00:00Z'}));
+     await tick();
+     // Opened on anything else, it offers no one-time run.
+     window.openScheduleSheet('w1', 'W', {type: 'manual'});
+     assert(!doc.getElementById('schedOpt-at'), 'no one-time option');
+     doc.getElementById('schedCancel').click();
      // A save waiting for another is of the editor it was asked in: dropped
      // when another editor was opened meanwhile (never that one's content
      // saved under the first's id), and Run doesn't run it.
@@ -2234,6 +2269,12 @@ const PAGES = [
        security: {trust: 'casual'},
        trigger: {type: 'interval', expression: '3600'},
        steps: [{type: 'navigate', target: 'https://news.example/'}],
+     }, {
+       // An interval an earlier version saved with no last run.
+       id: 's3', name: 'Old hourly', interval_not_started: true,
+       security: {trust: 'casual'},
+       trigger: {type: 'interval', expression: '3600'},
+       steps: [{type: 'navigate', target: 'https://news.example/'}],
      }]},
      getAuditForScript: {entries: [{ts: '<b>t</b>', event: 'run_failed', extra: '<i>e</i>'}]},
      auditTail: {lines: ['a', 'b']},
@@ -2273,6 +2314,12 @@ const PAGES = [
      assert(saved, 'a 90 s interval is saved');
      assert.strictEqual(saved[1][1].trigger.expression, '90');
      assert.strictEqual(saved[1][1].enabled, true);
+     // An interval never started says so, with no next run.
+     const old = doc.querySelector('[data-script-id="s3"]');
+     assert(/Every hour \(not started\)/.test(old.querySelector('.meta').textContent),
+            old.querySelector('.meta').textContent);
+     assert(/Not started/.test(old.querySelector('.next-fire').textContent),
+            old.querySelector('.next-fire').textContent);
    }},
   {name: 'molt://ai', file: 'molt_ai_ui.cc',
    listeners: ['#modelChip:click', '#sendBtn:click', '#cancelBtn:click',

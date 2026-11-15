@@ -1879,9 +1879,9 @@ void AutomationRunner::DoScroll(const Step& s) {
 
 void AutomationRunner::DoWait(const Step& s) {
   // The seconds the step's value says, as the Agent studio and its review
-  // show them (WaitDurationOf()); never its timeout_ms.
-  const std::optional<base::TimeDelta> wait = WaitDurationOf(Resolve(s.value));
-  if (!wait) {
+  // show them (WaitMillisecondsOf()); never its timeout_ms.
+  const std::optional<int> wait_ms = WaitMillisecondsOf(Resolve(s.value));
+  if (!wait_ms) {
     // Fixed words: the value may come from a variable (page text).
     OnStepFinished(false,
                    base::StringPrintf("A wait needs a number of seconds from "
@@ -1891,12 +1891,13 @@ void AutomationRunner::DoWait(const Step& s) {
   }
   // The step's timer (armed with its timeout_ms, which the studio neither
   // shows nor keeps) is set past the wait, so it never ends the wait first.
-  ExtendStepTimeout(*wait + kWaitStepSlack);
+  const base::TimeDelta wait = base::Milliseconds(*wait_ms);
+  ExtendStepTimeout(wait + kWaitStepSlack);
   base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&AutomationRunner::OnStepFinished,
                      weak_factory_.GetWeakPtr(), true, "Waited"),
-      *wait);
+      wait);
 }
 
 void AutomationRunner::DoWaitFor(const Step& s) {

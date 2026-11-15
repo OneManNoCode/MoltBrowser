@@ -54,6 +54,7 @@ using molt_ai::automation::PostSharedRead;
 using molt_ai::automation::Script;
 using molt_ai::automation::Step;
 using molt_ai::automation::StepType;
+using molt_ai::automation::TriggerType;
 using molt_ai::automation::TrustLevel;
 using molt_ai::automation::TrustLevelToString;
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
@@ -151,10 +152,19 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
     // Day 3: precompute next-fire time so the schedule UI doesn't need
     // a second IPC round-trip per card. None while the schedule is off (an
-    // import's starts off): it doesn't run by itself.
+    // import's starts off): it doesn't run by itself. Nor for an interval
+    // with no last fire (saved so by an earlier version): the scheduler
+    // counts it from each listing, so it never comes until the schedule is
+    // saved again.
+    const bool not_started = s.enabled &&
+                             s.trigger.type == TriggerType::INTERVAL &&
+                             s.trigger.last_fired_unix <= 0;
+    if (not_started) {
+      d.Set("interval_not_started", true);
+    }
     base::Time next = AutomationScheduler::NextFireTime(s.trigger,
                                                           base::Time::Now());
-    if (s.enabled && !next.is_null()) {
+    if (s.enabled && !not_started && !next.is_null()) {
       d.Set("next_fire_unix",
             static_cast<int>(next.InSecondsFSinceUnixEpoch()));
     }
@@ -630,7 +640,8 @@ function triggerLabel(s) {
     default:         return 'Manual';
   }
   // Off: an import's schedule starts off, until the user turns it on.
-  return s.enabled === false ? label + ' (paused)' : label;
+  if (s.enabled === false) return label + ' (paused)';
+  return s.interval_not_started === true ? label + ' (not started)' : label;
 }
 
 // Find every {{name}} placeholder used in step targets and values.
@@ -780,6 +791,11 @@ function buildScheduleHTML(s) {
     nextLine = '<div class="next-fire disabled">Paused &mdash; it won\'t run ' +
                'by itself. Tick Enabled and click Save schedule to turn it ' +
                'on.</div>';
+  } else if (s.interval_not_started === true) {
+    // Saved with no last run by an earlier version: never counted from.
+    nextLine = '<div class="next-fire disabled">Not started &mdash; click ' +
+               'Save schedule to start it; it then runs an interval later.' +
+               '</div>';
   } else if (s.next_fire_unix) {
     var d = new Date(s.next_fire_unix * 1000);
     var ms = d.getTime() - Date.now();

@@ -20,7 +20,6 @@
 #include <string_view>
 #include <vector>
 
-#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_locators.h"
 
@@ -38,7 +37,7 @@ enum class StepType {
   KEYPRESS,
 
   // Synchronization
-  WAIT,      // pause |value| seconds (WaitDurationOf())
+  WAIT,      // pause |value| seconds (WaitMillisecondsOf())
   WAIT_FOR,  // wait until selector matches
 
   // Data flow
@@ -102,7 +101,7 @@ struct Step {
   // also a hard cap on every other step type — the runner arms a
   // OneShotTimer that fails the step if its dispatched callback hasn't
   // fired by this deadline. Defaults to 5s. Never a WAIT step's run time:
-  // its timer is set past the wait its value says (WaitDurationOf()).
+  // its timer is set past the wait its value says (WaitMillisecondsOf()).
   int timeout_ms = 5000;
 
   // For LOOP / IF: max iterations or label, etc.
@@ -319,11 +318,12 @@ inline constexpr int kMinIntervalSeconds = 60;
 // (no surrounding spaces, no '+', no trailing '.'), from 0 to
 // kMaxWaitSeconds, fractions allowed; an empty value is kDefaultWaitSeconds
 // (the studio's title for one). Its timeout_ms is never its run time.
-// |resolved_value| is the value with its {{variables}} given. nullopt for
-// anything else: the step fails.
+// |resolved_value| is the value with its {{variables}} given. The wait in
+// milliseconds (0 to kMaxWaitSeconds * 1000); nullopt for anything else:
+// the step fails.
 inline constexpr int kDefaultWaitSeconds = 2;
 inline constexpr int kMaxWaitSeconds = 60;
-std::optional<base::TimeDelta> WaitDurationOf(std::string_view resolved_value);
+std::optional<int> WaitMillisecondsOf(std::string_view resolved_value);
 
 // An interval schedule the browser writes with no last fire (a schedule
 // saved afresh, a page watcher, one confirmed after a review) counts from

@@ -243,10 +243,10 @@ bool FiresByItself(const Trigger& trigger) {
          trigger.type == TriggerType::AT;
 }
 
-std::optional<base::TimeDelta> WaitDurationOf(std::string_view v) {
+std::optional<int> WaitMillisecondsOf(std::string_view v) {
   if (v.empty()) {
     // The studio's "Wait 2 seconds".
-    return base::Seconds(kDefaultWaitSeconds);
+    return kDefaultWaitSeconds * 1000;
   }
   // What the studio's number field shows (it blanks anything else to its
   // "2" placeholder): no surrounding spaces, no '+', no trailing '.'.
@@ -263,7 +263,7 @@ std::optional<base::TimeDelta> WaitDurationOf(std::string_view v) {
       seconds < 0 || seconds > kMaxWaitSeconds) {
     return std::nullopt;
   }
-  return base::Milliseconds(std::llround(seconds * 1000));
+  return static_cast<int>(std::llround(seconds * 1000));
 }
 
 void CountIntervalFromNow(Trigger& trigger, int64_t now_unix) {
