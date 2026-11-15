@@ -1109,51 +1109,148 @@ Script ConfirmedOnItsListedSite(const std::string& first) {
 }
 
 // The page a run window opens before its runner's checks, in the user's
-// profile: only the first NAVIGATE step's URL when it is static, http(s)
-// and one of the workflow's sites. A {{variable}} URL's site is none the
-// review listed (HostsReferencedBy() skips it): the runner opens that step
-// itself, resolved and checked.
-TEST(AutomationSecurityTest, ARunWindowOpensOnlyAStaticPageOfItsSites) {
-  // A {{variable}} URL's site, which the review didn't list.
+// profile: only the first NAVIGATE step's URL as the runner opens it (its
+// {{variables}} given the run's values), when it is http(s) and one of the
+// workflow's sites. A {{variable}} URL's site is none the review listed
+// (HostsReferencedBy() skips it): only its resolved URL is checked.
+TEST(AutomationSecurityTest, ARunWindowOpensOnlyAPageOfItsSites) {
+  // A {{variable}} URL's site, which the review didn't list, with or
+  // without a value for it.
   Script unlisted =
       ConfirmedOnItsListedSite("http://192.168.1.1/reboot?x={{t}}");
   ASSERT_FALSE(unlisted.security.sites_unconfirmed);
   EXPECT_EQ(unlisted.security.domain_whitelist,
             std::vector<std::string>{"news.example"});
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted, 0), "");
+  unlisted.default_variables["t"] = "1";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted, 0), "");
   // Nor a later step's page, before the first's.
   unlisted.steps.push_back(
       MakeStep(StepType::NAVIGATE, "https://news.example/today"));
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted), "");
-  // A {{variable}} URL on one of its sites, at any trust: not the page the
-  // step opens.
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted, 0), "");
+  // A {{variable}} URL on one of its sites with no value for it, at any
+  // trust: not the page the step opens.
   Script templated = ConfirmedOnItsListedSite("https://news.example/?q={{q}}");
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(templated), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(templated, 0), "");
   templated.security.trust = TrustLevel::TRUSTED;
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(templated), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(templated, 0), "");
+  // With one, the page the step opens.
+  templated.security.trust = TrustLevel::APPROVED;
+  templated.default_variables["q"] = "tides";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(templated, 0),
+            "https://news.example/?q=tides");
   // A static page of its sites.
   Script fixed = ConfirmedOnItsListedSite("https://news.example/today");
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(fixed),
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(fixed, 0),
             "https://news.example/today");
   // Never a page that isn't http(s).
   for (const char* code : {"javascript:alert(1)", "file:///etc/passwd"}) {
-    EXPECT_EQ(
-        AutomationSecurity::RunWindowStartURL(ConfirmedOnItsListedSite(code)),
-        "")
+    EXPECT_EQ(AutomationSecurity::RunWindowStartURL(
+                  ConfirmedOnItsListedSite(code), 0),
+              "")
         << code;
   }
   // No page to open.
   fixed.steps.erase(fixed.steps.begin());
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(fixed), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(fixed, 0), "");
   // An unconfirmed draft, a change not confirmed yet and a routine taught
   // by voice open nothing.
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(UnconfirmedDraft()), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(UnconfirmedDraft(), 0), "");
   Script changed = RichScript();
-  ASSERT_EQ(AutomationSecurity::RunWindowStartURL(changed),
+  ASSERT_EQ(AutomationSecurity::RunWindowStartURL(changed, 0),
             "https://shop.example/");
   AutomationSecurity::ClampUnvouched(changed);
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(changed), "");
-  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(VoiceRoutine()), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(changed, 0), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(VoiceRoutine(), 0), "");
+}
+
+// A confirmed workflow on shop.example whose first page has a {{variable}}.
+Script ShopSearch() {
+  Script shop;
+  shop.id = "wf_shop";
+  shop.security.trust = TrustLevel::APPROVED;
+  shop.security.domain_whitelist = {"shop.example"};
+  shop.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://shop.example/search?q={{item}}"));
+  shop.steps.push_back(MakeStep(StepType::CLICK, ".result"));
+  shop.steps.push_back(MakeStep(StepType::EXTRACT, ".price"));
+  shop.default_variables["item"] = "lamp";
+  return shop;
+}
+
+// A run started at a later step (molt://ai-automation's "retry from") skips
+// the steps before it, so its window opens the page that step expects: the
+// last NAVIGATE before it (with none before it, the first), resolved with
+// the run's values and checked as the runner checks that step.
+TEST(AutomationSecurityTest, ARunWindowOpensThePageItsFirstStepExpects) {
+  Script shop = ShopSearch();
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 0),
+            "https://shop.example/search?q=lamp");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 1),
+            "https://shop.example/search?q=lamp");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 2),
+            "https://shop.example/search?q=lamp");
+  // Out of range: the runner starts at the first step.
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 99),
+            "https://shop.example/search?q=lamp");
+  // A step before the first NAVIGATE.
+  shop.steps.insert(shop.steps.begin(), MakeStep(StepType::CLICK, ".cookies"));
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 0),
+            "https://shop.example/search?q=lamp");
+
+  // No value for a variable, or one that only a step sets: nothing.
+  shop = ShopSearch();
+  shop.default_variables.clear();
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 1), "");
+  shop.default_variables["item"] = "{{other}}";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 1), "");
+
+  // A value that takes it off its sites, or off http(s): nothing.
+  shop = ShopSearch();
+  shop.steps[0].target = "https://{{store}}/search";
+  shop.default_variables["store"] = "www.shop.example";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 1),
+            "https://www.shop.example/search");
+  shop.default_variables["store"] = "evil.example";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 1), "");
+  shop.steps[0].target = "{{page}}";
+  shop.default_variables["page"] = "javascript:alert(1)";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(shop, 1), "");
+
+  // Several pages: the last one before the step, never an earlier one.
+  Script tour;
+  tour.id = "wf_tour";
+  tour.security.trust = TrustLevel::APPROVED;
+  tour.security.domain_whitelist = {"shop.example"};
+  tour.steps.push_back(MakeStep(StepType::NAVIGATE, "https://shop.example/a"));
+  tour.steps.push_back(MakeStep(StepType::CLICK, ".next"));
+  tour.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://shop.example/b?q={{item}}"));
+  tour.steps.push_back(MakeStep(StepType::CLICK, ".buy"));
+  tour.steps.push_back(MakeStep(StepType::NAVIGATE, "https://shop.example/c"));
+  tour.default_variables["item"] = "lamp";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(tour, 0),
+            "https://shop.example/a");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(tour, 1),
+            "https://shop.example/a");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(tour, 2),
+            "https://shop.example/a");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(tour, 3),
+            "https://shop.example/b?q=lamp");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(tour, 4),
+            "https://shop.example/b?q=lamp");
+  tour.default_variables.clear();
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(tour, 3), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(tour, 1),
+            "https://shop.example/a");
+
+  // A draft, a change not confirmed yet and a routine taught by voice open
+  // nothing from any step.
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(UnconfirmedDraft(), 1), "");
+  Script changed = RichScript();
+  AutomationSecurity::ClampUnvouched(changed);
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(changed, 1), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(VoiceRoutine(), 1), "");
 }
 
 }  // namespace

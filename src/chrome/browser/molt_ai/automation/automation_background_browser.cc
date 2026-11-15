@@ -143,15 +143,25 @@ void StartBackgroundRun(base::WeakPtr<Profile> weak_profile,
     return;
   }
 
-  // The start page: the first NAVIGATE step's URL, else about:blank, so we
+  // MoltBrowser: apply one-off run-time variable overrides ("Run with these
+  // values" from the studio) ON TOP of the saved defaults, after the reload so
+  // they are not lost. The saved workflow on disk is untouched; only this run
+  // sees them. The scheduler passes no overrides → uses the saved defaults.
+  for (const auto& kv : variable_overrides) {
+    fresh->default_variables[kv.first] = kv.second;
+  }
+
+  // The start page: the page the step at |start_index| expects (the last
+  // NAVIGATE step before it, else the first one), else about:blank, so we
   // always have something to attach a runner to. This load happens before
-  // the runner's policy checks, so it opens only a static http(s) URL on
-  // one of the workflow's sites (never a {{variable}} URL, whose site the
-  // review never listed): AutomationSecurity::RunWindowStartURL(). An
+  // the runner's policy checks, so it opens only that step's URL with this
+  // run's {{variable}} values, when it is http(s) and the runner's check of
+  // that step would allow it: AutomationSecurity::RunWindowStartURL(). An
   // unconfirmed draft (a web agent run, agent_run_draft.h; a file changed
   // outside the browser) opens nothing: the runner refuses it on
   // about:blank, and the studio hears why.
-  const std::string start = AutomationSecurity::RunWindowStartURL(*fresh);
+  const std::string start =
+      AutomationSecurity::RunWindowStartURL(*fresh, start_index);
   const GURL start_url(start.empty() ? std::string("about:blank") : start);
 
   BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_POPUP, profile,
@@ -195,14 +205,6 @@ void StartBackgroundRun(base::WeakPtr<Profile> weak_profile,
   // per-run instance, which could be freed under an in-flight background task.
   molt_ai::BrowserAIRuntime* ai_runtime = &molt_ai::BrowserAIRuntime::GetInstance();
   ai_runtime->Initialize();
-
-  // MoltBrowser: apply one-off run-time variable overrides ("Run with these
-  // values" from the studio) ON TOP of the saved defaults, after the reload so
-  // they are not lost. The saved workflow on disk is untouched; only this run
-  // sees them. The scheduler passes no overrides → uses the saved defaults.
-  for (const auto& kv : variable_overrides) {
-    fresh->default_variables[kv.first] = kv.second;
-  }
 
   // The holder self-destructs when the run finishes.
   auto* holder =

@@ -398,24 +398,44 @@ SecurityPolicy AutomationSecurity::EffectivePolicy(const Script& script) {
 }
 
 // static
-std::string AutomationSecurity::RunWindowStartURL(const Script& script) {
+std::string AutomationSecurity::RunWindowStartURL(const Script& script,
+                                                  size_t start_index) {
   if (script.security.sites_unconfirmed || HasVoiceSteps(script)) {
     return std::string();
   }
-  for (const Step& step : script.steps) {
+  // The step the runner starts at (out of range: the first, as the runner
+  // clamps it) expects the page of the last NAVIGATE before it; with none
+  // before it, of the first one.
+  const size_t from = start_index < script.steps.size() ? start_index : 0;
+  const Step* page_step = nullptr;
+  for (size_t i = 0; i < script.steps.size(); ++i) {
+    const Step& step = script.steps[i];
     if (step.type != StepType::NAVIGATE || step.target.empty()) {
       continue;
     }
-    const GURL url(step.target);
-    if (step.target.find("{{") != std::string::npos ||
-        !agent_safety::IsAllowedNavigationURL(url) ||
-        !AutomationSecurity().AllowNavigation(EffectivePolicy(script),
-                                              url.spec())) {
-      return std::string();
+    if (page_step && i >= from) {
+      break;
     }
-    return url.spec();
+    page_step = &step;
   }
-  return std::string();
+  if (!page_step) {
+    return std::string();
+  }
+  // Its URL as the runner opens it (AutomationRunner::Resolve()): each
+  // {{name}} replaced by the run's value of it. One no value is given for
+  // (a value only a step sets) opens nothing.
+  std::string target = page_step->target;
+  for (const auto& [name, value] : script.default_variables) {
+    base::ReplaceSubstringsAfterOffset(&target, 0, "{{" + name + "}}", value);
+  }
+  const GURL url(target);
+  if (target.find("{{") != std::string::npos ||
+      !agent_safety::IsAllowedNavigationURL(url) ||
+      !AutomationSecurity().AllowNavigation(EffectivePolicy(script),
+                                            url.spec())) {
+    return std::string();
+  }
+  return url.spec();
 }
 
 // static

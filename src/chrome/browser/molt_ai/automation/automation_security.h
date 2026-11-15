@@ -143,15 +143,20 @@ class AutomationSecurity {
   static std::vector<std::string> HostsReferencedBy(
       const std::vector<Step>& steps);
 
-  // The page a run window opens before its runner starts (and so before
-  // any of the runner's checks: automation_background_browser.cc), in the
-  // user's profile: the first NAVIGATE step's URL, only when it is static
-  // (no {{variable}}: unresolved, it isn't the page the step opens, and its
-  // site is none the review listed), http(s), and allowed by
-  // EffectivePolicy(script). "" (about:blank) otherwise, and for an
-  // unconfirmed draft or a routine taught by voice: the runner then opens
-  // the step itself, resolved and checked (PreflightStepPolicy()).
-  static std::string RunWindowStartURL(const Script& script);
+  // The page a run window opens before its runner starts at |start_index|
+  // (and so before any of the runner's checks:
+  // automation_background_browser.cc), in the user's profile: the URL of
+  // the last NAVIGATE step before |start_index| (with none before it, of
+  // the first NAVIGATE step), its {{variables}} replaced by
+  // |script|.default_variables (the run's values: the caller puts its
+  // one-off values in them first) as the runner replaces them, only when
+  // none is left unresolved, it is http(s), and EffectivePolicy(script)
+  // allows it, as the runner checks that step (PreflightStepPolicy()). ""
+  // (about:blank) otherwise, and for an unconfirmed draft or a routine
+  // taught by voice: the runner then opens a NAVIGATE step itself when it
+  // reaches one, resolved and checked.
+  static std::string RunWindowStartURL(const Script& script,
+                                       size_t start_index);
 
   // Saving must never raise trust: |incoming| (a script about to be saved
   // from UI-supplied JSON) keeps |existing|'s trust if the script is

@@ -2264,7 +2264,7 @@ out of it; this section is about everything else.
 | `automation/automation_record_startup.{h,cc}` | configures the record, and posts its first load, when the first profile is created |
 | `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; each fire claimed in the record before it runs (`ClaimFire()`); times passed while held for review not caught up (`RecordPassed()`) |
 | `automation/automation_runner.cc` | a refused run keeps no stats; stats through `UpdateBookkeeping()`; `RUN_SCRIPT` refuses a child that needs review |
-| `automation/automation_background_browser.cc` | the run window opens, before the runner's checks, only a static page of the workflow's sites (`RunWindowStartURL()`) |
+| `automation/automation_background_browser.cc` | the run window opens, before the runner's checks, only the page its first step expects, resolved with the run's values and on the workflow's sites (`RunWindowStartURL()`) |
 | `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel (notes from what runs, hidden characters shown), the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over; a new routine under an id neither storage has; `NewWorkflowId()` with a random part); an editor's save of a draft refused once it is no longer one, and of a routine gone since it was opened; each site-tool value in a box of its own |
 | `ui/webui/molt_ai/molt_ai_automation_storage.cc`, `molt_ai_automation_ui.cc` | trust refused with the reason, no promotion suggestion for a draft, the badge; an import's schedule starts over |
 | `voice/voice_routines.cc`, `voice/voice_routines_logic.cc`, `voice/voice_routine_store.cc` | a routine changed outside is neither run nor confirmed by voice, and is claimed with its steps kept as the browser describes them (`DescribeRoutineStepsAsRun()`, `RoutineStepAsShown()`) |
@@ -2506,14 +2506,19 @@ next time (the same rule); after, it is final.
 - **Run window** (`automation_background_browser.cc`, for the scheduler's
   fires and the studio's and molt://ai-automation's runs): it opens a page
   in the user's profile before the runner starts, so before any of its
-  checks. That page is the first `navigate` step's only when it is static,
-  http(s) and one of the workflow's sites (`RunWindowStartURL()`:
-  `EffectivePolicy()`, as the runner checks it), never a draft's or a
-  routine's; otherwise about:blank, and the runner opens the step itself,
-  its variables resolved, and checked. A `{{variable}}` URL is never opened
-  first: unresolved, it isn't the page the step opens, and its site is none
-  the review listed (`HostsReferencedBy()` skips it), so the user never
-  confirmed it.
+  checks. That page is the one the step the run starts at expects: the
+  last `navigate` step before it (a "retry from" a later step skips the
+  steps before it), or with none before it the first. Its URL is opened as
+  the runner opens it, each `{{variable}}` given this run's value (the
+  saved default, or the studio's "Run with these values"), and only when
+  none is left without one, it is http(s) and one of the workflow's sites
+  (`RunWindowStartURL()`: `EffectivePolicy()`, as the runner checks that
+  step); never a draft's or a routine's. Otherwise about:blank, never an
+  earlier page, and the runner opens a `navigate` step itself when it
+  reaches one, resolved and checked. A `{{variable}}` URL is never opened
+  unresolved: that isn't the page the step opens, and its site is none the
+  review listed (`HostsReferencedBy()` skips it), so only the resolved
+  URL's site is checked against the list.
 - **Agent studio:** the card says "changed outside · review it", the
   library a banner ("N workflows were changed outside MoltBrowser and need
   your review."). Run, Schedule and Trust are refused
@@ -2830,10 +2835,14 @@ All in `molt_ai_unittests` except the last item:
   as it runs), a schedule's time zone
   and end gone (none when turned off), no variable's default value (twice
   is once); the predicates; `changed_outside` cleared by a confirm and carried by a
-  save; the review message; the run window's first page only a static
-  http(s) page of the workflow's sites (never a `{{variable}}` URL, at any
-  trust, nor a later step's page, nor a draft's, an unconfirmed change's or
-  a routine's).
+  save; the review message; the run window's first page only the page the
+  first step run expects (the last `navigate` before it, else the first; a
+  retry from a later step of a workflow whose page has a `{{variable}}`
+  opens it resolved; never an earlier page when that one is refused), its
+  `{{variable}}`s given the run's values, http(s) and on the workflow's
+  sites (never one left unresolved or a value that takes it elsewhere, at
+  any trust for the former, nor a draft's, an unconfirmed change's or a
+  routine's).
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
   when it is written (`CountIntervalFromNow()`).
