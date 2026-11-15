@@ -1928,7 +1928,24 @@ extension enablement and `MediaRouterEnabled()`).
     deleted, the audit log; a listing isn't answered while the shared
     storage's change sequence is held, and is once released.
   - `TheChatsSavesRunOnTheStoragesSequence`: two plans in one second are
-    two workflows; a watcher is saved.
+    two workflows; a watcher is saved, with its interval counted from then
+    (workflow-integrity).
+- [ ] The workflow record and the data folder (workflow-integrity, and
+  from #133):
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='MoltDataFolderBrowserTest.*:MoltWorkflowRecordBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/workflow-record-browser-tests.log
+  ```
+  *Expected:* all pass:
+  - `MoltDataFolderBrowserTest.NoSiteMayOpenOrWriteIt`: File System Access
+    refuses `~/.moltbrowser`, its `automations/`, a workflow file and the
+    settings, and allows the home folder's other children.
+  - `MoltWorkflowRecordBrowserTest.TheWorkflowRecordIsInTheUserDataDir`:
+    `Molt Workflow Record` and its `Started` marker are in the profile
+    folder, never under the test's `~/.moltbrowser`.
+  - `MoltWorkflowRecordBrowserTest.AWorkflowPlantedAfterStartupNeedsReview`:
+    a workflow file written into the folder after startup loads as a draft
+    marked changed outside.
 
   Every MoltBrowser browser test now holds a `ScopedMoltHomeDirForTesting`
   (molt_home_dir_test_util.h) but `ActivationGuardBrowserTest`,
@@ -2779,6 +2796,26 @@ WEB_AI_APIS.md §12):
   that typed into a password field, or called a site tool, can't be saved
   (from #54).
 - [ ] `molt://ai-automation`: trust changes need a real click (from #54).
+- [ ] Workflow files changed outside MoltBrowser (workflow-integrity;
+  docs/design/AGENT_ACTIONS.md §3.6). On a profile upgraded from v0.2.5,
+  with a scheduled Trusted workflow:
+  - after the upgrade it still runs on its schedule, headless, with no
+    review asked;
+  - edit its `.molt` by hand (a step's target, or its trust): the studio's
+    card and molt://ai-automation say it was changed outside; it doesn't
+    fire, Run is refused, and voice mode won't run it. The review panel
+    shows its steps, sites and schedule. *Confirm* makes it Casual on
+    those sites, and its schedule starts over; *Trust* makes it Approved;
+  - edit only its `last_fired_unix` or `stats` by hand: nothing changes
+    (no review, no extra or missed run);
+  - `cp a.molt b.molt`: `b` needs review; `a` doesn't;
+  - quit, delete `Molt Workflow Record` from the profile folder, start:
+    every workflow needs review, and none is trusted again by itself;
+  - a fresh `--user-data-dir` with `--no-first-run`: the workflows already
+    in `~/.moltbrowser/automations` need review there;
+  - two user data dirs at once: a run in one doesn't make the other ask
+    for a review; a trust change in one asks for one review in the other;
+    a scheduled workflow runs in each (expected, §3.6.7).
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world
