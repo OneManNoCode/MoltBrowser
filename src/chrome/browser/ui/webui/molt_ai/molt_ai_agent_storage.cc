@@ -145,13 +145,19 @@ base::DictValue SavedDict(const Script& script) {
 // The studio never edits the security policy, so whatever the page's dict
 // carries is ignored: an existing workflow keeps the policy stored on disk
 // (trust only changes with promoteTrust); a new one gets the default
-// CASUAL one, or APPROVED when the user just recorded it here.
+// CASUAL one, or APPROVED when the user just recorded it here. Nor does
+// its editor edit the schedule (only the Schedule sheet does: kSchedule):
+// an existing workflow keeps its stored schedule and whether it is on, so
+// an editor opened before a schedule was saved, turned on or off, doesn't
+// undo it; a new one's schedule (an import's) is turned off
+// (ClampTrustForSave()).
 void KeepPolicy(Script& script, const Script* existing, bool recorded_here) {
   if (existing) {
     script.security = existing->security;
+    script.trigger = existing->trigger;
+    script.enabled = existing->enabled;
   } else {
     script.security = automation::SecurityPolicy();
-    script.security.require_approval_for = {"form_submit", "payment", "login"};
   }
   AutomationSecurity::ClampTrustForSave(script, existing);
   if (recorded_here && !existing) {

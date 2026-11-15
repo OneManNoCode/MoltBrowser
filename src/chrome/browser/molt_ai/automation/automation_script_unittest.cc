@@ -131,6 +131,47 @@ TEST(AutomationScriptTest, AnIntervalWithNoLastFireCountsFromNow) {
   EXPECT_EQ(TriggerToDict(interval), *script.ToJSON().FindDict("trigger"));
 }
 
+TEST(AutomationScriptTest, OnlyATimedTriggerFiresByItself) {
+  for (TriggerType type :
+       {TriggerType::CRON, TriggerType::INTERVAL, TriggerType::AT}) {
+    Trigger t;
+    t.type = type;
+    EXPECT_TRUE(FiresByItself(t));
+  }
+  for (TriggerType type : {TriggerType::MANUAL, TriggerType::ON_EVENT}) {
+    Trigger t;
+    t.type = type;
+    EXPECT_FALSE(FiresByItself(t));
+  }
+}
+
+// A wait runs the seconds its value says, as the studio's number field
+// shows them: 0 to 60, fractions allowed, empty is 2.
+TEST(AutomationScriptTest, AWaitWaitsTheSecondsItsValueSays) {
+  const struct {
+    const char* value;
+    int ms;
+  } kAccepted[] = {{"", 2000},     {"2", 2000},   {"1.5", 1500},
+                   {"0", 0},       {"-0", 0},     {".5", 500},
+                   {"1e1", 10000}, {"60", 60000}, {"0.001", 1}};
+  for (const auto& c : kAccepted) {
+    std::optional<base::TimeDelta> wait = WaitDurationOf(c.value);
+    ASSERT_TRUE(wait) << c.value;
+    EXPECT_EQ(*wait, base::Milliseconds(c.ms)) << c.value;
+  }
+}
+
+// Anything the field wouldn't show as it runs, or out of range, fails the
+// step instead of waiting some other time.
+TEST(AutomationScriptTest, AWaitThatIsntZeroToSixtySecondsIsRefused) {
+  for (const char* value :
+       {"-1", "60.5", "61",   "2000", "1e3", "1e400",    "abc",
+        "2s", "1,5",  "0x10", "inf",  "nan", "{{secs}}", " 3 ",
+        "3 ", "+3",   "3.",   "   ",  "3\n", "-",        "."}) {
+    EXPECT_FALSE(WaitDurationOf(value)) << value;
+  }
+}
+
 }  // namespace
 }  // namespace automation
 }  // namespace molt_ai

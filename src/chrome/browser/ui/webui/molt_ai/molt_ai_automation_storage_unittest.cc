@@ -9,6 +9,8 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_storage.h"
 
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -18,6 +20,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
@@ -31,6 +34,9 @@ namespace {
 using automation::AutomationStorage;
 using automation::Script;
 using automation::TrustLevel;
+
+// The clock a save is given.
+constexpr int64_t kNow = 1'800'000'000;
 
 Script Workflow(const std::string& id, const std::string& name) {
   Script script;
@@ -112,11 +118,12 @@ TEST_F(AutomationPageStorageTest,
   EXPECT_FALSE(DeleteWorkflow("voice_1", storage()));
   EXPECT_TRUE(storage().Load("voice_1"));
   // Saved over, or saved as one: neither.
-  base::DictValue over = SaveWorkflow(Workflow("voice_1", "mine"), storage());
+  base::DictValue over =
+      SaveWorkflow(Workflow("voice_1", "mine"), kNow, storage());
   EXPECT_EQ(over.FindBool("success"), false);
   EXPECT_EQ(*over.FindString("error"), kVoiceRoutinesElsewhere);
   base::DictValue as_one =
-      SaveWorkflow(VoiceRoutine("wf_9", "news"), storage());
+      SaveWorkflow(VoiceRoutine("wf_9", "news"), kNow, storage());
   EXPECT_EQ(as_one.FindBool("success"), false);
   EXPECT_EQ(storage().Load("voice_1")->name, "news");
   EXPECT_FALSE(storage().Load("wf_9"));
@@ -131,7 +138,7 @@ TEST_F(AutomationPageStorageTest,
 TEST_F(AutomationPageStorageTest, ASaveKeepsTheStoredTrust) {
   Script first = Workflow("wf_1", "Prices");
   first.security.trust = TrustLevel::ADMIN;
-  EXPECT_EQ(SaveWorkflow(std::move(first), storage()).FindBool("success"),
+  EXPECT_EQ(SaveWorkflow(std::move(first), kNow, storage()).FindBool("success"),
             true);
   EXPECT_EQ(storage().Load("wf_1")->security.trust, TrustLevel::CASUAL);
   base::DictValue promoted =
@@ -140,7 +147,8 @@ TEST_F(AutomationPageStorageTest, ASaveKeepsTheStoredTrust) {
   EXPECT_EQ(*promoted.FindString("trust"), "approved");
   Script edit = Workflow("wf_1", "Prices, edited");
   edit.security.trust = TrustLevel::ADMIN;
-  EXPECT_EQ(SaveWorkflow(std::move(edit), storage()).FindBool("success"), true);
+  EXPECT_EQ(SaveWorkflow(std::move(edit), kNow, storage()).FindBool("success"),
+            true);
   std::optional<Script> saved = storage().Load("wf_1");
   ASSERT_TRUE(saved);
   EXPECT_EQ(saved->name, "Prices, edited");
@@ -241,8 +249,9 @@ TEST_F(AutomationPageStorageTest, ASaveKeepsAWorkflowChangedOutsideADraft) {
   ASSERT_TRUE(shown);
   EXPECT_TRUE(shown->security.changed_outside);
   shown->name = "Prices, edited";
-  EXPECT_EQ(SaveWorkflow(std::move(*shown), storage()).FindBool("success"),
-            true);
+  EXPECT_EQ(
+      SaveWorkflow(std::move(*shown), kNow, storage()).FindBool("success"),
+      true);
   std::optional<Script> saved = storage().Load("wf_1");
   ASSERT_TRUE(saved);
   EXPECT_EQ(saved->name, "Prices, edited");
@@ -266,6 +275,9 @@ TEST_F(AutomationPageStorageTest, AnImportIsVouchedAtCasual) {
   EXPECT_FALSE(imported->security.sites_unconfirmed);
   EXPECT_EQ(imported->security.trust, TrustLevel::CASUAL);
   EXPECT_EQ(imported->stats.runs, 0);
+  // Its sites are kept (its steps' hosts count anyway).
+  EXPECT_EQ(imported->security.domain_whitelist,
+            std::vector<std::string>{"evil.example"});
   // Trusted with a click, as ever.
   EXPECT_EQ(
       PromoteTrust("wf_9", TrustLevel::APPROVED, storage()).FindBool("success"),
@@ -304,6 +316,118 @@ TEST_F(AutomationPageStorageTest, AnImportStartsItsScheduleOver) {
   EXPECT_EQ(cron->trigger.last_fired_unix, 0);
   EXPECT_FALSE(interval->security.changed_outside);
   EXPECT_EQ(interval->trigger.last_fired_unix, kImportedAt);
+  // Both kept, turned off: they run by themselves only once the user turns
+  // them on (Save schedule), and the page and the audit log say so.
+  EXPECT_FALSE(cron->enabled);
+  EXPECT_FALSE(interval->enabled);
+  EXPECT_FALSE(automation::AutomationSecurity::MayFireUnattended(*cron));
+  EXPECT_EQ(cron_result.FindBool("schedule_off"), true);
+  bool logged = false;
+  for (const std::string& line : AuditTail(50, storage())) {
+    logged |=
+        line.find("imported | from_ui, schedule off") != std::string::npos;
+  }
+  EXPECT_TRUE(logged);
+  // A manual import is left as it is.
+  base::DictValue manual =
+      ImportWorkflow(Workflow("wf_manual", "Manual"), kImportedAt, storage());
+  EXPECT_EQ(manual.FindBool("schedule_off"), false);
+  EXPECT_TRUE(storage().Load(*manual.FindString("script_id"))->enabled);
+}
+
+// Whatever an imported file says about what it may do, it gets the default
+// approvals and limits: below Approved it can't submit a form or fill a
+// password by leaving them off its list.
+TEST_F(AutomationPageStorageTest, AnImportGetsTheDefaultApprovalsAndLimits) {
+  UseRecord();
+  Script file = Workflow("wf_9", "Prices");
+  file.security.require_approval_for = {"x"};
+  file.security.max_runtime_seconds = std::numeric_limits<int>::max();
+  file.security.max_navigations = 100000;
+  file.security.max_network_bytes = -1;
+  base::DictValue result = ImportWorkflow(std::move(file), kNow, storage());
+  ASSERT_EQ(result.FindBool("success"), true);
+  std::optional<Script> imported =
+      storage().Load(*result.FindString("script_id"));
+  ASSERT_TRUE(imported);
+  const automation::SecurityPolicy defaults;
+  EXPECT_EQ(imported->security.require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login"}));
+  EXPECT_EQ(imported->security.max_runtime_seconds,
+            defaults.max_runtime_seconds);
+  EXPECT_EQ(imported->security.max_navigations, defaults.max_navigations);
+  EXPECT_EQ(imported->security.max_network_bytes, defaults.max_network_bytes);
+}
+
+// A save keeps the policy stored, whatever the page's dict says.
+TEST_F(AutomationPageStorageTest, ASaveKeepsTheStoredPolicy) {
+  Script stored = Workflow("wf_1", "Prices");
+  stored.security.max_runtime_seconds = 120;
+  stored.security.domain_whitelist = {"news.example"};
+  ASSERT_TRUE(storage().Save(stored));
+  Script edit = Workflow("wf_1", "Prices, edited");
+  edit.security.require_approval_for = {"x"};
+  edit.security.max_runtime_seconds = 100000;
+  edit.security.domain_whitelist = {"com"};
+  EXPECT_EQ(SaveWorkflow(std::move(edit), kNow, storage()).FindBool("success"),
+            true);
+  std::optional<Script> saved = storage().Load("wf_1");
+  ASSERT_TRUE(saved);
+  EXPECT_EQ(saved->name, "Prices, edited");
+  EXPECT_EQ(saved->security.require_approval_for,
+            stored.security.require_approval_for);
+  EXPECT_EQ(saved->security.max_runtime_seconds, 120);
+  EXPECT_EQ(saved->security.domain_whitelist,
+            std::vector<std::string>{"news.example"});
+}
+
+// A save of a workflow not stored (deleted in another tab, or a dict the
+// page made) is taken as an import: no runs, no last fire (an early one
+// would force a catch-up run), the policy floor, and its schedule off.
+TEST_F(AutomationPageStorageTest, ASaveOfAWorkflowNotStoredIsAnImport) {
+  UseRecord();
+  Script made = Claiming("wf_new");
+  made.security.require_approval_for = {"x"};
+  made.trigger.type = automation::TriggerType::CRON;
+  made.trigger.expression = "* * * * *";
+  made.trigger.last_fired_unix = 1;
+  EXPECT_EQ(SaveWorkflow(std::move(made), kNow, storage()).FindBool("success"),
+            true);
+  std::optional<Script> saved = storage().Load("wf_new");
+  ASSERT_TRUE(saved);
+  EXPECT_EQ(saved->security.trust, TrustLevel::CASUAL);
+  EXPECT_EQ(saved->stats.runs, 0);
+  EXPECT_EQ(saved->trigger.last_fired_unix, 0);
+  EXPECT_EQ(saved->security.require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login"}));
+  EXPECT_FALSE(saved->enabled);
+}
+
+// An interval saved with no last fire (molt://ai-automation's Save schedule
+// sends none) counts from the save, so it fires an interval later; the
+// scheduler would count one with none from each listing, and never fire it.
+// Turning an imported schedule on is that save.
+TEST_F(AutomationPageStorageTest, AnIntervalSavedWithNoLastFireCountsFromIt) {
+  UseRecord();
+  Script hourly = Workflow("wf_hourly", "Hourly");
+  hourly.trigger.type = automation::TriggerType::INTERVAL;
+  hourly.trigger.expression = "3600";
+  base::DictValue imported = ImportWorkflow(std::move(hourly), 1, storage());
+  const std::string id = *imported.FindString("script_id");
+  std::optional<Script> shown = LoadWorkflow(id, storage());
+  ASSERT_TRUE(shown);
+  ASSERT_FALSE(shown->enabled);
+  // Tick Enabled, Save schedule: the page sends the trigger anew.
+  shown->enabled = true;
+  shown->trigger.last_fired_unix = 0;
+  EXPECT_EQ(
+      SaveWorkflow(std::move(*shown), kNow, storage()).FindBool("success"),
+      true);
+  std::optional<Script> saved = storage().Load(id);
+  ASSERT_TRUE(saved);
+  EXPECT_TRUE(saved->enabled);
+  EXPECT_EQ(saved->trigger.last_fired_unix, kNow);
+  EXPECT_TRUE(automation::AutomationSecurity::MayFireUnattended(*saved));
 }
 
 }  // namespace

@@ -110,6 +110,8 @@ int64_t PassedUntil(const Trigger& trigger, base::Time now) {
   if (trigger.type == TriggerType::INTERVAL && trigger.last_fired_unix > 0 &&
       trigger.last_fired_unix < now_unix &&
       base::StringToInt(trigger.expression, &seconds) && seconds > 0) {
+    // As NextFireTime() counts it.
+    seconds = std::max(seconds, kMinIntervalSeconds);
     return trigger.last_fired_unix +
            (now_unix - trigger.last_fired_unix) / seconds * seconds;
   }
@@ -180,6 +182,9 @@ base::Time AutomationScheduler::NextFireTime(const Trigger& trigger,
       int seconds = 0;
       if (!base::StringToInt(trigger.expression, &seconds) || seconds <= 0)
         return base::Time();
+      // Never more often than once a minute, whatever the file says (an
+      // import, a file from an older build or a page): kMinIntervalSeconds.
+      seconds = std::max(seconds, kMinIntervalSeconds);
       base::Time base_time = trigger.last_fired_unix > 0
           ? base::Time::FromTimeT(trigger.last_fired_unix)
           : now;

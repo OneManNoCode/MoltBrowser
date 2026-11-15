@@ -2228,6 +2228,12 @@ const PAGES = [
        variables: {'a"b': 'c'},
        stats: {runs: 1, ai_tokens_total: '<i>9</i>',
                history: [{ok: true, dur_ms: 5, ts: 1, ai_tokens: '<i>x</i>'}]},
+     }, {
+       // An import's hourly schedule, kept turned off.
+       id: 's2', name: 'Imported', enabled: false,
+       security: {trust: 'casual'},
+       trigger: {type: 'interval', expression: '3600'},
+       steps: [{type: 'navigate', target: 'https://news.example/'}],
      }]},
      getAuditForScript: {entries: [{ts: '<b>t</b>', event: 'run_failed', extra: '<i>e</i>'}]},
      auditTail: {lines: ['a', 'b']},
@@ -2242,6 +2248,31 @@ const PAGES = [
          e.hasAttribute('onmouseover') || e.hasAttribute('onfocus'));
      assert.strictEqual(injected.length, 0, 'script data stays text: ' +
          injected.map((e) => e.outerHTML).join(' '));
+     // A schedule that is off says so, with no next run; its interval shows
+     // in its largest whole unit (3600 s as 1 hours, not 3600 hours).
+     const paused = doc.querySelector('[data-script-id="s2"]');
+     assert(paused, 'the paused card rendered');
+     const meta = paused.querySelector('.meta').textContent;
+     assert(/Every hour \(paused\)/.test(meta), 'a paused schedule says so: ' + meta);
+     const next = paused.querySelector('.next-fire').textContent;
+     assert(/Paused/.test(next) && !/Next fire/.test(next), 'no next run while off: ' + next);
+     const num = paused.querySelector('[data-sched="expr-interval-num"]');
+     const unit = paused.querySelector('[data-sched="expr-interval-unit"]');
+     assert.strictEqual(num.value, '1');
+     assert.strictEqual(unit.value, '3600');
+     // More often than once a minute is refused: nothing is saved.
+     num.value = '10';
+     unit.value = '1';
+     const before = window.__sent.length;
+     paused.querySelector('[data-act="save-schedule"]').click();
+     assert(!window.__sent.slice(before).includes('saveScript'), 'a 10 s interval is not saved');
+     num.value = '90';
+     paused.querySelector('[data-sched="enabled"]').checked = true;
+     paused.querySelector('[data-act="save-schedule"]').click();
+     const saved = window.__sendArgs.filter(([m]) => m === 'saveScript').pop();
+     assert(saved, 'a 90 s interval is saved');
+     assert.strictEqual(saved[1][1].trigger.expression, '90');
+     assert.strictEqual(saved[1][1].enabled, true);
    }},
   {name: 'molt://ai', file: 'molt_ai_ui.cc',
    listeners: ['#modelChip:click', '#sendBtn:click', '#cancelBtn:click',

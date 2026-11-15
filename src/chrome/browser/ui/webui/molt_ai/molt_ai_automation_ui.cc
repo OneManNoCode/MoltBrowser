@@ -150,10 +150,11 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     d.Set("success_rate", rate);
 
     // Day 3: precompute next-fire time so the schedule UI doesn't need
-    // a second IPC round-trip per card.
+    // a second IPC round-trip per card. None while the schedule is off (an
+    // import's starts off): it doesn't run by itself.
     base::Time next = AutomationScheduler::NextFireTime(s.trigger,
                                                           base::Time::Now());
-    if (!next.is_null()) {
+    if (s.enabled && !next.is_null()) {
       d.Set("next_fire_unix",
             static_cast<int>(next.InSecondsFSinceUnixEpoch()));
     }
@@ -230,12 +231,13 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       Resolve(callback_id, std::move(result));
       return;
     }
-    // The dict's security.trust is UI-supplied and ignored: a save keeps
-    // the trust stored on disk (set only via promoteTrust) or starts a new
-    // script at CASUAL, in one read-modify-write.
+    // The dict's security is UI-supplied and ignored: a save keeps the
+    // policy stored on disk (trust set only via promoteTrust) or takes a
+    // script not stored as an import, in one read-modify-write.
     PostSharedChange(
         Dir(),
-        base::BindOnce(&automation_page::SaveWorkflow, std::move(*script)),
+        base::BindOnce(&automation_page::SaveWorkflow, std::move(*script),
+                       static_cast<int64_t>(std::time(nullptr))),
         base::BindOnce(&MoltAIAutomationHandler::Resolve,
                        weak_factory_.GetWeakPtr(), callback_id));
   }
@@ -550,7 +552,8 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   base::WeakPtrFactory<MoltAIAutomationHandler> weak_factory_{this};
 };
 
-constexpr char kAutomationPageJs[] = R"JS(// Automations page script, served as /app.js under the strict molt
+constexpr char kAutomationPageJs[] =
+    R"JS(// Automations page script, served as /app.js under the strict molt
 // WebUI CSP (molt_webui_csp.h), after the shared moltHTML() Trusted
 // Types prologue.
 var idCounter = 0;
@@ -597,15 +600,37 @@ function dotClass(s) {
   return '';
 }
 
+// An interval's seconds in its largest whole unit: {n, unit} with unit
+// 3600 (hours), 60 (minutes) or 1 (seconds). A new one is an hour.
+function intervalParts(secs) {
+  if (!(secs > 0)) return {n: 1, unit: 3600};
+  if (secs % 3600 === 0) return {n: secs / 3600, unit: 3600};
+  if (secs % 60 === 0) return {n: secs / 60, unit: 60};
+  return {n: secs, unit: 1};
+}
+
+// Every so often, in words. The scheduler never runs one more often than
+// once a minute (automation_script.h's kMinIntervalSeconds).
+function intervalLabel(expr) {
+  var secs = parseInt(expr, 10);
+  if (!(secs > 0)) return 'Every ?';
+  var p = intervalParts(Math.max(secs, 60));
+  var unit = p.unit === 3600 ? 'hour' : p.unit === 60 ? 'minute' : 'second';
+  return 'Every ' + (p.n === 1 ? unit : p.n + ' ' + unit + 's');
+}
+
 function triggerLabel(s) {
   if (!s.trigger) return 'Manual';
+  var label;
   switch (s.trigger.type) {
-    case 'cron':     return 'Cron: ' + (s.trigger.expression || '?');
-    case 'interval': return 'Every ' + (s.trigger.expression || '?') + 's';
-    case 'at':       return 'Once at ' + (s.trigger.expression || '?');
+    case 'cron':     label = 'Cron: ' + (s.trigger.expression || '?'); break;
+    case 'interval': label = intervalLabel(s.trigger.expression); break;
+    case 'at':       label = 'Once at ' + (s.trigger.expression || '?'); break;
     case 'on_event': return 'On: ' + (s.trigger.expression || '?');
     default:         return 'Manual';
   }
+  // Off: an import's schedule starts off, until the user turns it on.
+  return s.enabled === false ? label + ' (paused)' : label;
 }
 
 // Find every {{name}} placeholder used in step targets and values.
@@ -695,7 +720,7 @@ function buildScheduleHTML(s) {
   var typeSelect = '<select data-sched="type" aria-label="Schedule">' +
     opt('manual','Manual (only when I click Run)', t) +
     opt('cron','Cron expression', t) +
-    opt('interval','Every N seconds', t) +
+    opt('interval','Every so often', t) +
     opt('at','Once at a specific time', t) +
     '</select>';
 
@@ -718,19 +743,24 @@ function buildScheduleHTML(s) {
     '<div class="sched-help">Standard 5-field cron. Supports * , - / ranges and lists.</div>' +
     '</div>';
 
-  var intervalSecs = (t==='interval' && expr) ? parseInt(expr,10) : 3600;
+  // The saved seconds in their largest whole unit, that unit selected
+  // (3600 shows as 1 hours, 90 as 90 seconds); a new interval is an hour.
+  var iv = intervalParts(t==='interval' ? parseInt(expr,10) : 0);
+  function unitOpt(v, label) {
+    return '<option value="' + v + '"' + (v===iv.unit?' selected':'') + '>' +
+           label + '</option>';
+  }
   var intervalBlock = '<div data-sched-pane="interval"' +
       (t==='interval'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +
       '<span class="lbl">Run every</span>' +
-      '<input type="number" min="10" data-sched="expr-interval-num" aria-label="Run every"' +
-        ' value="' + intervalSecs + '" style="width:90px;">' +
+      '<input type="number" min="1" data-sched="expr-interval-num" aria-label="Run every"' +
+        ' value="' + iv.n + '" style="width:90px;">' +
       '<select data-sched="expr-interval-unit" aria-label="Unit">' +
-        '<option value="1">seconds</option>' +
-        '<option value="60">minutes</option>' +
-        '<option value="3600" selected>hours</option>' +
+        unitOpt(1, 'seconds') + unitOpt(60, 'minutes') + unitOpt(3600, 'hours') +
       '</select>' +
     '</div>' +
+    '<div class="sched-help">At most once a minute.</div>' +
     '</div>';
 
   // For "at": split ISO into datetime-local format.
@@ -745,7 +775,12 @@ function buildScheduleHTML(s) {
     '</div>';
 
   var nextLine = '';
-  if (s.next_fire_unix) {
+  if (s.enabled === false && t !== 'manual') {
+    // Off (an import's schedule starts off): no next fire is computed.
+    nextLine = '<div class="next-fire disabled">Paused &mdash; it won\'t run ' +
+               'by itself. Tick Enabled and click Save schedule to turn it ' +
+               'on.</div>';
+  } else if (s.next_fire_unix) {
     var d = new Date(s.next_fire_unix * 1000);
     var ms = d.getTime() - Date.now();
     var rel;
@@ -848,7 +883,8 @@ function buildTrustPanel(s) {
       '<button class="btn ghost small" data-act="save-trust">Save</button>' +
     '</div>' +
     '<div class="sched-help">' +
-      'Casual: only manual runs, no submit-shaped clicks. ' +
+      'Casual: no form submits, payments or saved logins; scheduled ' +
+      'runs open a window you can see. ' +
       'Approved: auto-fill OK after one approval. ' +
       'Trusted: scheduled headless runs allowed. ' +
       'Admin: RUN_JS and chained scripts.' +
@@ -1347,7 +1383,15 @@ function saveSchedule(scriptObj, card) {
     var n = parseInt(card.querySelector('[data-sched="expr-interval-num"]').value, 10);
     var u = parseInt(card.querySelector('[data-sched="expr-interval-unit"]').value, 10);
     if (!n || n < 1) { showToast('Enter a positive interval', true); return; }
-    expr = String(n * u);
+    var secs = n * u;
+    // The scheduler's floor (automation_script.h's kMinIntervalSeconds),
+    // and an int it can read.
+    if (secs < 60) {
+      showToast('Run it at most once a minute (60 seconds or more)', true);
+      return;
+    }
+    if (secs > 2147483647) { showToast('That interval is too long', true); return; }
+    expr = String(secs);
   } else if (t === 'at') {
     var v = card.querySelector('[data-sched="expr-at"]').value;
     if (!v) { showToast('Pick a date and time', true); return; }
@@ -1426,7 +1470,10 @@ function onImport(ev) {
     catch (e) { showToast('Not valid JSON: ' + e.message, true); return; }
     sendWithPromise('importScript', parsed).then(function(r){
       if (r.success) {
-        showToast('Imported as ' + r.script_id);
+        showToast(r.schedule_off
+            ? 'Imported as ' + r.script_id + '. Its schedule is off until ' +
+              'you turn it on: tick Enabled and click Save schedule.'
+            : 'Imported as ' + r.script_id);
         location.hash = '#new=' + r.script_id;
         refresh();
       } else {

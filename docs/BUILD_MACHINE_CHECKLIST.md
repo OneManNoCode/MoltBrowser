@@ -1929,7 +1929,7 @@ extension enablement and `MediaRouterEnabled()`).
     storage's change sequence is held, and is once released.
   - `TheChatsSavesRunOnTheStoragesSequence`: two plans in one second are
     two workflows; a watcher is saved, with its interval counted from then
-    (workflow-integrity).
+    (workflow-integrity), CASUAL, on its one site (workflow-gaps).
 - [ ] The workflow record and the data folder (workflow-integrity, and
   from #133):
   ```bash

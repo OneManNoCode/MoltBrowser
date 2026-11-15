@@ -57,11 +57,14 @@ std::optional<automation::Script> LoadToRun(
     int start_from,
     automation::AutomationStorage& storage);
 
-// saveScript: {success, error?}. The page's trust is ignored: the stored
-// trust is kept, or a new workflow starts CASUAL
-// (AutomationSecurity::ClampTrustForSave()); a routine taught by voice is
-// neither saved nor saved over.
+// saveScript: {success, error?}. The page's policy is ignored: a stored
+// workflow keeps its stored one (trust changed only by promoteTrust); one
+// not stored is taken as an import (no runs or last fire, CASUAL with the
+// policy floor, a schedule turned off: AutomationSecurity::
+// ClampTrustForSave()). An interval saved with no last fire counts from
+// |now_unix|. A routine taught by voice is neither saved nor saved over.
 base::DictValue SaveWorkflow(automation::Script script,
+                             int64_t now_unix,
                              automation::AutomationStorage& storage);
 
 // deleteScript: a workflow (never a routine taught by voice) and its
@@ -78,11 +81,14 @@ bool SaveSample(automation::Script script,
 std::string SaveBlank(automation::Script script,
                       automation::AutomationStorage& storage);
 
-// importScript: {success, script_id}. Never over a stored workflow: one of
-// its id is imported as "<id>-imported-<now_unix>" (or the first free id
-// after that); its stats start afresh, its trust CASUAL whatever it says,
-// its schedule starts over (no last fire; an interval counted from
-// |now_unix|), and the audit log says "imported".
+// importScript: {success, script_id, schedule_off}. Never over a stored
+// workflow: one of its id is imported as "<id>-imported-<now_unix>" (or the
+// first free id after that); its stats start afresh; whatever it says, it
+// is CASUAL with the default approvals and limits
+// (AutomationSecurity::ClampTrustForSave()); its schedule starts over (no
+// last fire; an interval counted from |now_unix|) and is turned off
+// (|schedule_off|) until the user turns it on; and the audit log says
+// "imported".
 base::DictValue ImportWorkflow(automation::Script script,
                                int64_t now_unix,
                                automation::AutomationStorage& storage);

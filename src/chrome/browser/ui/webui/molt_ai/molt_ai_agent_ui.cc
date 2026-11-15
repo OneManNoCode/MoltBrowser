@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -164,6 +165,10 @@ std::string ScheduleLabel(const Trigger& t) {
     case TriggerType::INTERVAL: {
       int secs = 0;
       base::StringToInt(t.expression, &secs);
+      // As it runs: never more often than once a minute.
+      if (secs > 0) {
+        secs = std::max(secs, molt_ai::automation::kMinIntervalSeconds);
+      }
       if (secs >= 3600 && secs % 3600 == 0)
         return "every " + base::NumberToString(secs / 3600) + "h";
       if (secs >= 60 && secs % 60 == 0)
@@ -248,11 +253,20 @@ base::DictValue WorkflowSummary(const Script& s) {
   if (s.trigger.type != TriggerType::MANUAL) {
     base::DictValue sch;
     sch.Set("label", ScheduleLabel(s.trigger));
-    base::Time next =
-        AutomationScheduler::NextFireTime(s.trigger, base::Time::Now());
+    // Off (an import's schedule starts off): it doesn't run by itself
+    // until the user turns it on with Schedule.
+    base::Time next;
+    if (s.enabled) {
+      next = AutomationScheduler::NextFireTime(s.trigger, base::Time::Now());
+    } else {
+      sch.Set("paused", true);
+    }
     sch.Set("nextFire",
             next.is_null() ? 0.0 : next.InSecondsFSinceUnixEpoch());
     d.Set("schedule", std::move(sch));
+    // For the card's Schedule button: the sheet opens on it (turning a
+    // paused one on is then one click).
+    d.Set("trigger", molt_ai::automation::TriggerToDict(s.trigger));
   }
   return d;
 }
@@ -1082,20 +1096,23 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     if (type && *type == "interval") {
       trig.type = TriggerType::INTERVAL;
       // UI sends "<n>s" / "<n>m" / "<n>h"; the engine wants seconds.
-      int secs = 3600;
+      int64_t secs = 3600;
       std::string e = expr ? *expr : "60m";
       if (!e.empty() &&
           (e.back() == 's' || e.back() == 'm' || e.back() == 'h')) {
         char unit = e.back();
         int n = 0;
         base::StringToInt(e.substr(0, e.size() - 1), &n);
-        secs = (unit == 'h') ? n * 3600 : (unit == 'm') ? n * 60 : n;
+        secs = (unit == 'h')   ? int64_t{n} * 3600
+               : (unit == 'm') ? int64_t{n} * 60
+                               : int64_t{n};
       } else {
-        base::StringToInt(e, &secs);
+        base::StringToInt64(e, &secs);
       }
-      if (secs < 60) {
-        secs = 60;
-      }
+      // At most once a minute (kMinIntervalSeconds), and an int the
+      // scheduler can read.
+      secs = std::clamp<int64_t>(secs, molt_ai::automation::kMinIntervalSeconds,
+                                 std::numeric_limits<int>::max());
       trig.expression = base::NumberToString(secs);
     } else if (type && *type == "daily" && expr) {
       // "HH:MM" -> cron "MM HH * * *".
@@ -1930,9 +1947,13 @@ function buildCard(wf){
   card.appendChild(sub);
 
   if(wf.schedule){
-    card.appendChild(h('div',{'class':'chip'},[
+    // Paused: an import's schedule starts off until Schedule turns it on.
+    var chipAttrs={'class':'chip'};
+    if(wf.schedule.paused===true)chipAttrs.title='It won’t run by itself until you turn it on with Schedule.';
+    card.appendChild(h('div',chipAttrs,[
       h('span',{'class':'cg','aria-hidden':'true'},'⏰'),
-      wf.schedule.label + (wf.schedule.nextFire?('  ·  next '+formatNext(wf.schedule.nextFire)):'')
+      wf.schedule.label + (wf.schedule.paused===true?'  ·  paused':
+        (wf.schedule.nextFire?('  ·  next '+formatNext(wf.schedule.nextFire)):''))
     ]));
   }
 
@@ -1958,7 +1979,7 @@ function buildCard(wf){
   }else{
     actions.appendChild(h('button',{'class':'mini run grow','aria-label':'Run '+wfName,onClick:function(){runWorkflowFlow(wf.id);}},['▶',' Run']));
     actions.appendChild(h('button',{'class':'mini','aria-label':'Edit '+wfName,onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
-    actions.appendChild(h('button',{'class':'mini','aria-label':'Schedule '+wfName,onClick:function(){openScheduleSheet(wf.id,wf.name);}},['⏰',' Schedule']));
+    actions.appendChild(h('button',{'class':'mini','aria-label':'Schedule '+wfName,onClick:function(){openScheduleSheet(wf.id,wf.name,wf.trigger);}},['⏰',' Schedule']));
   }
   actions.appendChild(h('button',{'class':'mini kebab',title:'More','aria-label':'More actions for '+wfName,
     'aria-expanded':'false',onClick:function(e){e.stopPropagation();toggleCardMenu(card,wf);}},'⋯'));
@@ -2033,7 +2054,11 @@ var fileInput=h('input',{type:'file',accept:'.json,application/json',style:'disp
           variables:w.variables||{},
           trigger:w.trigger||{type:'manual',expression:''}
         });
-        toast('Workflow imported — review & save','ok');
+        // A schedule it brings is saved turned off (ClampTrustForSave()).
+        var scheduled=w.trigger&&typeof w.trigger.type==='string'&&
+            ['cron','interval','at'].indexOf(w.trigger.type)>=0;
+        toast(scheduled?'Workflow imported — review & save. Its schedule stays off until you turn it on with Schedule.':
+            'Workflow imported — review & save','ok');
       }catch(err){toast('That file isn’t a valid workflow','err');}
       e.target.value='';
     };
@@ -2422,7 +2447,9 @@ function buildEditorStep(s,i){
       onInput:function(){s[pf]=this.value;updateHeadTitle(card,s);}});
     // A textarea shows its text as its value, not its attribute.
     if(isMulti)inp.value=pval;
-    if(s.type==='wait'){inp.setAttribute('type','number');inp.setAttribute('min','0');}
+    // What a wait runs (automation_script.h's WaitDurationOf()): 0 to 60
+    // seconds (kMaxWaitSeconds), fractions allowed.
+    if(s.type==='wait'){inp.setAttribute('type','number');inp.setAttribute('min','0');inp.setAttribute('max','60');inp.setAttribute('step','any');}
     var fld=h('div',{'class':'efield'},[fieldLabelFor(fieldLabel(s.type),inp),inp]);
     card.appendChild(fld);
     card.appendChild(h('div',{'class':'varrow'},[
@@ -2925,7 +2952,8 @@ function savedInterval(expr){
   var e=String(expr||'').trim();
   if(!/^\d+$/.test(e))return parseInterval(e);
   var secs=parseInt(e,10)||0;
-  if(secs<=0)return {n:1,unit:'m'};
+  // Under a minute runs once a minute (kMinIntervalSeconds).
+  if(secs<60)return {n:1,unit:'m'};
   if(secs>=3600&&secs%3600===0)return {n:secs/3600,unit:'h'};
   if(secs%60===0)return {n:secs/60,unit:'m'};
   return {n:secs,unit:'s'};

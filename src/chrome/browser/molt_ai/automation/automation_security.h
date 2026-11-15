@@ -89,8 +89,8 @@ class AutomationSecurity {
   ~AutomationSecurity();
 
   // Returns true if a navigation to |url| is permitted by |policy|.
-  // - CASUAL: only the domain whitelist
-  // - APPROVED: whitelist + same-eTLD as any whitelist entry
+  // - CASUAL, APPROVED: only the domain whitelist (a run's policy adds the
+  //   hosts its steps name: EffectivePolicy())
   // - TRUSTED+: any URL
   bool AllowNavigation(const SecurityPolicy& policy,
                        const std::string& url) const;
@@ -129,13 +129,22 @@ class AutomationSecurity {
 
   // The policy a run of |script| is checked against: the stored policy,
   // with the domain whitelist widened by HostsReferencedBy(script.steps)
-  // (older / studio-saved scripts were stored with an empty whitelist) and
-  // require_approval_for defaulted to {form_submit, payment, login} when
-  // empty. An unconfirmed draft (sites_unconfirmed) gets neither the
-  // widening nor its stored trust: its own whitelist (empty) at CASUAL. The
-  // runner refuses to run one at all; this keeps any other caller from
-  // reading it as allowed.
+  // (older / studio-saved scripts were stored with an empty whitelist),
+  // require_approval_for never without {form_submit, payment, login} (a
+  // stored list adds categories, never drops one), and below TRUSTED
+  // max_runtime_seconds at most the default (300 s). An unconfirmed draft
+  // (sites_unconfirmed) gets neither the widening nor its stored trust: its
+  // own whitelist (empty) at CASUAL. The runner refuses to run one at all;
+  // this keeps any other caller from reading it as allowed.
   static SecurityPolicy EffectivePolicy(const Script& script);
+
+  // The least a workflow brought in may require, whatever its file or a
+  // page said: the default approvals (anything else listed is dropped; it
+  // gates nothing), and each limit positive and at most its default
+  // (outside (0, default] it becomes the default; a lower one is kept).
+  // Trust and sites are left alone. ClampTrustForSave() applies it to
+  // every new workflow.
+  static void ApplyPolicyFloor(SecurityPolicy& policy);
 
   // Hosts a script's steps visibly target: static http(s) NAVIGATE URLs
   // ({{variable}} URLs are excluded — those are what the whitelist guards)
@@ -161,6 +170,10 @@ class AutomationSecurity {
   // Saving must never raise trust: |incoming| (a script about to be saved
   // from UI-supplied JSON) keeps |existing|'s trust if the script is
   // already on disk, else starts CASUAL. Only promoteTrust changes trust.
+  // A new one (|existing| null: an import, a copy, a page's save of one not
+  // stored) also gets ApplyPolicyFloor(), and a schedule it brings
+  // (FiresByItself()) is kept turned off (enabled false): it runs by itself
+  // only once the user turns it on with Save schedule.
   // Nor does saving confirm a draft's sites: if |existing| is an
   // unconfirmed draft, so is |incoming| (only ConfirmDraftSites clears it),
   // with |existing|'s changed_outside.

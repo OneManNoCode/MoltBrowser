@@ -16,6 +16,7 @@
 #include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "crypto/hash.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -54,10 +55,17 @@ bool LooksLikePaymentCardValue(const std::string& value) {
   return (sum % 10) == 0;
 }
 
-// Approval categories applied when a script's require_approval_for is empty
-// (the struct default; studio-saved scripts were stored that way).
+// The approval categories every workflow below TRUSTED needs (the only ones
+// a check reads: AllowSubmit(), AllowSensitiveField()). A stored list adds
+// to them, never removes one (EffectivePolicy()).
 constexpr const char* kDefaultApprovals[] = {"form_submit", "payment",
                                              "login"};
+
+// |value| when it is positive and at most |limit|, else |limit|.
+template <typename T>
+T WithinLimit(T value, T limit) {
+  return value > 0 && value <= limit ? value : limit;
+}
 
 bool Contains(const std::vector<std::string>& list, std::string_view item) {
   return std::find(list.begin(), list.end(), item) != list.end();
@@ -289,9 +297,16 @@ bool DomainMatchesWhitelist(const std::vector<std::string>& whitelist,
   for (const auto& entry : whitelist) {
     std::string e = base::ToLowerASCII(entry);
     if (h == e) return true;
-    // Suffix match: 'kayak.com' allows 'www.kayak.com'.
+    // Suffix match: 'kayak.com' allows 'www.kayak.com'. Never from an entry
+    // that is itself a registry (a public suffix such as "com", "co.uk" or
+    // "github.io", which a file can list or name as a step's host): it
+    // would allow every site under it. An IP address or a single label
+    // ("localhost") matches only itself.
     if (h.size() > e.size() &&
-        h.compare(h.size() - e.size() - 1, e.size() + 1, "." + e) == 0) {
+        h.compare(h.size() - e.size() - 1, e.size() + 1, "." + e) == 0 &&
+        !net::registry_controlled_domains::GetDomainAndRegistry(
+             e, net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)
+             .empty()) {
       return true;
     }
   }
@@ -390,11 +405,37 @@ SecurityPolicy AutomationSecurity::EffectivePolicy(const Script& script) {
     for (std::string& host : HostsReferencedBy(script.steps))
       AddUnique(p.domain_whitelist, std::move(host));
   }
-  if (p.require_approval_for.empty()) {
-    p.require_approval_for.assign(std::begin(kDefaultApprovals),
-                                  std::end(kDefaultApprovals));
+  // Never fewer approvals than the defaults: a file (an import from an
+  // older build, a legacy or hand-edited one) can't opt out of one; only
+  // trust lifts them (ApprovalRequired()). The defaults first, then any
+  // other the file lists.
+  std::vector<std::string> approvals(std::begin(kDefaultApprovals),
+                                     std::end(kDefaultApprovals));
+  for (std::string& approval : p.require_approval_for) {
+    AddUnique(approvals, std::move(approval));
+  }
+  p.require_approval_for = std::move(approvals);
+  // Below TRUSTED, a run is at most as long as the default allows, whatever
+  // its file says (one imported before this build, or a legacy file); a
+  // shorter limit is kept.
+  if (p.trust < TrustLevel::TRUSTED) {
+    p.max_runtime_seconds = WithinLimit(p.max_runtime_seconds,
+                                        SecurityPolicy().max_runtime_seconds);
   }
   return p;
+}
+
+// static
+void AutomationSecurity::ApplyPolicyFloor(SecurityPolicy& policy) {
+  policy.require_approval_for.assign(std::begin(kDefaultApprovals),
+                                     std::end(kDefaultApprovals));
+  const SecurityPolicy defaults;
+  policy.max_runtime_seconds =
+      WithinLimit(policy.max_runtime_seconds, defaults.max_runtime_seconds);
+  policy.max_navigations =
+      WithinLimit(policy.max_navigations, defaults.max_navigations);
+  policy.max_network_bytes =
+      WithinLimit(policy.max_network_bytes, defaults.max_network_bytes);
 }
 
 // static
@@ -463,6 +504,16 @@ void AutomationSecurity::ClampTrustForSave(Script& incoming,
                                            const Script* existing) {
   incoming.security.trust =
       existing ? existing->security.trust : TrustLevel::CASUAL;
+  if (!existing) {
+    // A workflow this save brings in (an import, a page's save of one not
+    // stored, a copy, a new one): nothing its JSON says about what it may
+    // do is believed, and a schedule it brings is kept but turned off. It
+    // runs by itself only once the user turns it on (Save schedule).
+    ApplyPolicyFloor(incoming.security);
+    if (FiresByItself(incoming.trigger)) {
+      incoming.enabled = false;
+    }
+  }
   if (existing && existing->security.sites_unconfirmed) {
     incoming.security.sites_unconfirmed = true;
     // A file changed outside the browser stays one until it is confirmed.

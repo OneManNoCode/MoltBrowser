@@ -65,6 +65,15 @@ void AgentInboxRegistry::Remove(int64_t id) {
   entries_.erase(id);
 }
 
+bool AgentInboxRegistry::IsRunning(const std::string& script_id) const {
+  for (const auto& [id, entry] : entries_) {
+    if (entry.script_id == script_id && entry.finished_at_unix == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::vector<AgentInboxEntry> AgentInboxRegistry::List() const {
   std::vector<AgentInboxEntry> out;
   out.reserve(entries_.size());
