@@ -36,11 +36,13 @@ void ConfigureWorkflowRecordOnce() {
       first_run::IsChromeFirstRun() || !local_state ||
       local_state->GetInitializationStatus() ==
           PrefService::INITIALIZATION_STATUS_CREATED_NEW_PREF_STORE;
-  WorkflowRecord::Configure({AutomationStorage::SharedDirectory(),
-                             have_user_data_dir
-                                 ? user_data_dir.Append(kWorkflowRecordFileName)
-                                 : base::FilePath(),
-                             /*may_seed=*/!fresh});
+  // Loaded at once on the shared storage's change sequence, whichever
+  // profile came first: a launch that reads no workflow (a guest window,
+  // the profile picker) still records a new user data directory as one.
+  AutomationStorage::ConfigureSharedRecord(
+      have_user_data_dir ? user_data_dir.Append(kWorkflowRecordFileName)
+                         : base::FilePath(),
+      /*may_seed=*/!fresh);
 }
 
 // static

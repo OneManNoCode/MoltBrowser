@@ -514,6 +514,16 @@ int64_t WorkflowRecord::FiredFloor(const std::string& name) const {
   return it == entries_.end() ? 0 : it->second.fired;
 }
 
+std::optional<WorkflowRecord::Entry> WorkflowRecord::EntryOf(
+    const std::string& name) const {
+  base::AutoLock hold(lock_);
+  auto it = entries_.find(name);
+  if (it == entries_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
+}
+
 int64_t WorkflowRecord::LastFired(const std::string& name,
                                   int64_t file_fired) const {
   const int64_t now = NowUnix();
@@ -541,10 +551,33 @@ void WorkflowRecord::Set(const std::string& name,
     if (digest.empty()) {
       entries_.erase(name);
     } else {
-      // What it wrote, as it wrote it: a fire time it lowered (a schedule
-      // saved afresh) is lowered here too.
-      entries_[name] = {std::move(digest), std::max<int64_t>(0, fired),
+      // What it writes: 0 (a schedule saved afresh starts over) and a later
+      // fire time (a snooze) as they are. An earlier one comes from a page
+      // opened before the last fire, which would run it again: the fire
+      // recorded is kept, unless it is still in the future (a snooze, or a
+      // clock that was ahead), which any write replaces.
+      int64_t written_fired = std::max<int64_t>(0, fired);
+      auto it = entries_.find(name);
+      if (written_fired > 0 && it != entries_.end() &&
+          written_fired < it->second.fired &&
+          it->second.fired <= now + kLastFiredSlackSeconds) {
+        written_fired = it->second.fired;
+      }
+      entries_[name] = {std::move(digest), written_fired,
                         std::max<int64_t>(0, now)};
+    }
+  }
+  Persist();
+}
+
+void WorkflowRecord::Restore(const std::string& name,
+                             const std::optional<Entry>& entry) {
+  {
+    base::AutoLock hold(lock_);
+    if (entry) {
+      entries_[name] = *entry;
+    } else {
+      entries_.erase(name);
     }
   }
   Persist();
@@ -555,7 +588,12 @@ void WorkflowRecord::NoteFired(const std::string& name, int64_t fired) {
   {
     base::AutoLock hold(lock_);
     auto it = entries_.find(name);
-    if (it != entries_.end() && fired > it->second.fired) {
+    // A later fire, or this one after a fire recorded while the clock was
+    // ahead (no fire happens later than one happening now): it would
+    // otherwise hold back every catch-up run until the clock reached it.
+    if (it != entries_.end() &&
+        (fired > it->second.fired ||
+         (fired > 0 && it->second.fired > fired + kLastFiredSlackSeconds))) {
       it->second.fired = fired;
       changed = true;
     }

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
@@ -39,6 +40,9 @@ constexpr char kReviewChangedFirst[] =
     "Review this workflow and confirm its sites first.";
 constexpr char kChangedSinceReview[] =
     "This workflow changed since you reviewed it. Review it again.";
+constexpr char kGoneSinceOpened[] =
+    "This workflow was deleted or changed since you opened it. Open it "
+    "again.";
 
 // The profile's routines' store; null off the record.
 std::unique_ptr<VoiceRoutineStore> RoutinesStore(const StudioPlaces& places) {
@@ -151,6 +155,17 @@ void KeepPolicy(Script& script, const Script* existing, bool recorded_here) {
   }
 }
 
+// An interval schedule the browser writes with no last fire (saved afresh,
+// or confirmed with none recorded) counts from now: its first fire is an
+// interval later. The scheduler would count it from each listing, so it
+// would never come.
+void CountIntervalFromNow(automation::Trigger& trigger) {
+  if (trigger.type == automation::TriggerType::INTERVAL &&
+      trigger.last_fired_unix <= 0) {
+    trigger.last_fired_unix = base::Time::Now().ToTimeT();
+  }
+}
+
 // |request| on its workflow |found|, in |storage| (the profile's routines'
 // when |routines|).
 Answer OnFound(const WorkflowRequest& request,
@@ -236,6 +251,7 @@ Answer OnFound(const WorkflowRequest& request,
         return NotOk(automation::kVoiceRoutineMessage);
       }
       const char* draft = nullptr;
+      automation::Trigger trigger;
       const bool saved = storage.Update(id, [&](Script& stored) {
         if (stored.security.sites_unconfirmed) {
           draft = AutomationSecurity::ReviewMessage(stored);
@@ -245,8 +261,10 @@ Answer OnFound(const WorkflowRequest& request,
           return false;
         }
         stored.trigger = request.trigger;
+        CountIntervalFromNow(stored.trigger);
         stored.enabled =
             request.trigger.type != automation::TriggerType::MANUAL;
+        trigger = stored.trigger;
         return true;
       });
       if (draft) {
@@ -254,7 +272,7 @@ Answer OnFound(const WorkflowRequest& request,
       }
       answer.out.Set("ok", saved);
       if (saved) {
-        answer.trigger = request.trigger;
+        answer.trigger = trigger;
       }
       return answer;
     }
@@ -297,6 +315,8 @@ Answer OnFound(const WorkflowRequest& request,
           steps_changed = true;
           return false;
         }
+        // A file changed outside has no last fire this browser believes.
+        CountIntervalFromNow(stored.trigger);
         for (const std::string& host : stored.security.domain_whitelist) {
           sites += (sites.empty() ? "" : " ") + host;
         }
@@ -469,7 +489,11 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
   std::optional<Script> existing;
   if (!places.shared_dir.empty()) {
     shared.emplace(places.shared_dir);
-    existing = shared->Load(script.id);
+    // A new workflow's id was made for it: whatever is stored under it is
+    // another workflow (its save picks a free id).
+    if (!request.new_workflow) {
+      existing = shared->Load(script.id);
+    }
   }
   if (existing && HasVoiceSteps(*existing)) {
     return Refused(kMadeBeforeProfiles);
@@ -483,33 +507,48 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
     return Answer();
   }
   Answer answer;
-  if (!existing) {
+  if (request.new_workflow) {
     KeepPolicy(script, nullptr, request.recorded_here);
-    if (shared->Save(script)) {
+    base::DictValue saved = SavedDict(script);
+    // Never over another file, whatever is there by now.
+    const std::optional<std::string> id = shared->SaveNew(std::move(script));
+    if (id) {
       if (request.recorded_here) {
-        shared->AppendAudit(script.id, "trust_changed",
+        shared->AppendAudit(*id, "trust_changed",
                             "casual -> approved (recorded in Agent studio)");
       }
-      answer.out = SavedDict(script);
+      saved.Set("id", *id);
+      answer.out = std::move(saved);
     }
     return answer;
   }
-  // An edit: the policy as stored when it is written (under the directory's
-  // lock: the runner and molt://ai-automation change it on the UI thread).
+  // An edit of a workflow the page read: the policy as stored when it is
+  // written, decided under the directory's lock (the runner and
+  // molt://ai-automation change it on the UI thread). Gone or unreadable by
+  // then (deleted, or changed outside the browser), it is refused: saved as
+  // a new workflow, what the page was shown of a draft (a file changed
+  // outside) would no longer be one.
+  bool gone = false;
   bool now_a_routine = false;
   base::DictValue saved;
-  // A copy: |script| is moved into the stored one below.
-  const std::string id = script.id;
-  if (!shared->Update(id, [&](Script& stored) {
-        if (HasVoiceSteps(stored)) {
-          now_a_routine = true;
-          return false;
-        }
-        KeepPolicy(script, &stored, /*recorded_here=*/false);
-        saved = SavedDict(script);
-        stored = std::move(script);
-        return true;
-      })) {
+  if (!shared->SaveChecked(std::move(script),
+                           [&](const Script* stored, Script& edit) {
+                             if (!stored) {
+                               gone = true;
+                               return false;
+                             }
+                             if (HasVoiceSteps(*stored)) {
+                               now_a_routine = true;
+                               return false;
+                             }
+                             KeepPolicy(edit, stored,
+                                        /*recorded_here=*/false);
+                             saved = SavedDict(edit);
+                             return true;
+                           })) {
+    if (gone) {
+      return Refused(kGoneSinceOpened);
+    }
     return now_a_routine ? Refused(kMadeBeforeProfiles) : Answer();
   }
   answer.out = std::move(saved);

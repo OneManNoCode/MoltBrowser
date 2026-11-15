@@ -2261,7 +2261,7 @@ out of it; this section is about everything else.
 | `automation/automation_storage.{h,cc}` | every read checked (`Vetted()`), every write recorded, `PrepareRecord()`, `UpdateBookkeeping()`, `RecordFire()` |
 | `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()`, `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()` |
 | `automation/automation_script.*` | `SecurityPolicy::changed_outside` (wording only; stored only when true) |
-| `automation/automation_record_startup.{h,cc}` | configures the record when the first profile is created |
+| `automation/automation_record_startup.{h,cc}` | configures the record, and posts its first load, when the first profile is created |
 | `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; `RecordFire()` |
 | `automation/automation_runner.cc` | a refused run keeps no stats; stats through `UpdateBookkeeping()`; `RUN_SCRIPT` refuses a child that needs review |
 | `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel, the badge and banner |
@@ -2288,11 +2288,17 @@ produce an entry.
   a move set aside, `<id>.molt.<token>.taken`): the security digest of what
   this browser **last** wrote under that name (one per name: an older
   version doesn't match, so a rollback needs a review); `fired`, the
-  `trigger.last_fired_unix` it wrote there (a schedule saved afresh writes
-  0, so it starts over) or a later fire its scheduler recorded
+  `trigger.last_fired_unix` it wrote there (a cron schedule saved afresh
+  writes 0, so it starts over; an interval one the studio writes counts
+  from then, §3.6.5) or a later fire its scheduler recorded
   (`RecordFire()`, on its own clock); and `written`, when it last wrote
   there (for a seeded entry, when it seeded it). No fire time read from a
-  file is ever recorded, except at seeding.
+  file is ever recorded, except at seeding. A write of an earlier nonzero
+  fire time than a past one recorded (a page opened before that fire)
+  leaves that fire as it is; only one still in the future (a snooze, a
+  clock that was ahead) gives way to it. A fire recorded more than 5
+  minutes after the one the scheduler makes now (on a clock that was
+  ahead) comes down to it (`NoteFired()`).
 - `directory` is the folder it covers; another one means "start empty".
   `origin` (`seeded`, `fresh`, `after_loss`, `after_corrupt`,
   `other_directory`) is informational.
@@ -2313,6 +2319,13 @@ produce an entry.
   writes the record **before** its rename, and forgets the old name after
   (the new one if the rename failed): whichever name holds the file if the
   browser ends in between has an entry.
+- A write sets the entry, and writes the record, **before** it renames the
+  file into place (put back exactly, `Restore()`, if the file can't be
+  written); a deletion forgets the entry **before** the file goes. A
+  browser that ends in between leaves the file as it was, which the record
+  no longer vouches for: one review, never an older version vouched for
+  again (a trust taken away, a schedule turned off or a deletion isn't
+  undone by writing the old bytes back).
 - Missing, corrupt or unusable:
   - missing with the marker present: **lost**, starts empty, never seeds
     (audit `record_reset | lost`);
@@ -2362,10 +2375,15 @@ that.
   write is in what it wrote). So a forged earlier one forces no catch-up
   run, whether or not this browser has fired the workflow yet, and a forged
   later one stalls no schedule. A browser-made write sets `fired` to what
-  it wrote, lower too: molt://ai-automation's Snooze and Skip (a fire time
-  in the future) are believed, and a schedule saved afresh starts over with
-  no catch-up run (this also clears a fire time recorded on a clock that
-  was ahead). Every caller gets this with no change of its own: the
+  it wrote when that is later, or 0: molt://ai-automation's Snooze and
+  Skip (a fire time in the future) are believed, and a schedule saved
+  afresh starts over with no catch-up run (this also clears a fire time
+  recorded on a clock that was ahead). An earlier nonzero one comes from a
+  page opened before the last fire (a card never refreshed, an editor):
+  the past fire is kept, so that save forces no second run; it replaces
+  only a fire time still in the future. The next fire after one recorded
+  on a clock that was ahead brings it down, so catch-up runs resume.
+  Every caller gets this with no change of its own: the
   scheduler, the run window, `RUN_SCRIPT`, the Agent studio,
   molt://ai-automation, voice mode's claims.
 - **A save in progress is never a change.** Reads take no lock; one that
@@ -2373,7 +2391,8 @@ that.
   any change of this browser's in progress (file renamed before the record
   is set, or the reverse).
 - **Writes** (`Save()`, `SaveNew()`, `SaveChecked()`, `Update()`, so
-  `SetTrustLevel()`) record what they wrote. A move's rename carries the
+  `SetTrustLevel()`) record what they write, the record first (§3.6.1);
+  `Delete()` forgets first. A move's rename carries the
   entry (`Take()`, `ReturnTaken()`); finishing it forgets it. A write of
   what an unvouched read gave is still an unconfirmed import:
   `ClampTrustForSave()` and the studio's `KeepPolicy()` keep the policy as
@@ -2390,9 +2409,11 @@ that.
 
 #### 3.6.4 The first start of this version (seeding, once)
 
-`PrepareRecord()` loads the record before any other script read or write
-(the scheduler's service calls it first thing at startup, on the shared
-storage's change sequence). It seeds only when **all** of these hold:
+`PrepareRecord()` loads the record before any other script read or write:
+`AutomationStorage::ConfigureSharedRecord()` posts it to the shared
+storage's change sequence as soon as the record is configured (the first
+profile of the launch, whatever its kind), and the scheduler's service
+calls it again first thing. It seeds only when **all** of these hold:
 
 1. `Molt Workflow Record` is missing (not a link, not unreadable, not
    corrupt);
@@ -2411,16 +2432,25 @@ workflows`, and a log line with the names. No file is rewritten.
 The record is **always** written at its first load, empty included, and the
 marker is written before it on a new user data directory and after it when
 seeding: a start that writes nothing still leaves the record, so files
-planted before a later start are never taken for an upgrade's. A crash
-before the seeded record is written seeds again next time (the same rule);
-after, it is final.
+planted before a later start are never taken for an upgrade's. Because the
+first load is posted when the record is configured, that holds for a
+launch that reads no workflow too (only a guest window, or only the
+profile picker). A crash before the seeded record is written seeds again
+next time (the same rule); after, it is final.
 
 #### 3.6.5 Consumers
 
 - **Scheduler:** `MayFireUnattended()` (enabled, sites confirmed, not a voice
   routine) at listing and again on the timer's reload; the service refuses
   a fire otherwise (`scheduled_fire_refused` in the audit log) and records
-  one with `RecordFire()`. The scheduler is its own base-only target now
+  one with `RecordFire()`. A catch-up's next fire counts from the catch-up
+  (from the stale last fire, an interval's would be overdue and its timer
+  would fire it again), and a timer's reload fires a cron or interval
+  workflow only while it is still due after its last fire as read then
+  (not fired since it was listed: by a catch-up, by another browser), so
+  an overdue workflow runs once. A cron workflow whose last fire is still
+  in the future (a clock that was ahead) still fires on its timer, which
+  records the real time. The scheduler is its own base-only target now
   (`:scheduler`), unit tested.
 - **Runner:** refuses an unconfirmed workflow with `ReviewMessage()`
   (`run_refused | changed_outside`), keeping no stats; writes stats with
@@ -2432,7 +2462,21 @@ after, it is final.
   library a banner ("N workflows were changed outside MoltBrowser and need
   your review."). Run, Schedule and Trust are refused
   (`kChangedOutsideMessage`, "Review this workflow and confirm its sites
-  first."). Edits and duplicates stay drafts.
+  first."). Edits and duplicates stay drafts. A save from the editor is an
+  edit of what is stored under its id when it is written, under the
+  directory's lock: if that file is gone or unreadable by then (deleted,
+  overwritten with something that doesn't parse, over the size cap) the
+  save is refused ("This workflow was deleted or changed since you opened
+  it. Open it again."), never written as a new workflow, which would make
+  the draft the page was shown (its steps and schedule) one the browser
+  vouches for. Only an id
+  the studio made for the save (`SaveRequest::new_workflow`: a blank or
+  imported workflow, or a recording) is new; it is saved under a free id
+  (`SaveNew()`), never over a file there. A recording whose first save
+  fails keeps its id for the next try. An interval schedule the studio
+  writes with no last fire (Schedule; Confirm, §3.6.6) counts from then:
+  the scheduler counts an interval with none from each listing, so it
+  would never fire.
 - **molt://ai-automation:** a badge ("Changed outside MoltBrowser — review
   it in Agent mode"), trust refused with that reason, no promotion
   suggestion for any draft (a file's history proves nothing).
@@ -2453,9 +2497,10 @@ after, it is final.
    again." otherwise), and the sites must be exactly the ones its steps
    target.
 3. It is then saved, and recorded, as a CASUAL workflow on those sites, not
-   a draft (`outside_change_confirmed` in the audit log). Trust is raised
-   again with separate clicks (the studio's Trust, or molt://ai-automation
-   for Trusted and Admin).
+   a draft (`outside_change_confirmed` in the audit log); an interval
+   schedule with no last fire this browser believes counts from the
+   confirmation. Trust is raised again with separate clicks (the studio's
+   Trust, or molt://ai-automation for Trusted and Admin).
 
 The token is required for an AI draft's confirmation too.
 
@@ -2474,16 +2519,19 @@ browser sees a change (fails closed).
 #### 3.6.8 Threading
 
 `ConfigureWorkflowRecordOnce()` on the UI thread does path math and reads
-cached first-run and Local State state; no I/O. All record I/O happens in
-`AutomationStorage` calls on the sequences that already block (the shared
-storage's change and read sequences, a profile's routines sequence). Every
-change of the record (load, `Set`, `NoteFired`, `Move`, `Forget`, its
-write) runs under the directory's change scope (its lock, then its lock
-file), ordered with the file change it mirrors. Readers take only the
-record's own lock, the innermost (directory lock, then lock file, then the
-record's lock; the registry's lock is never held with it). A
-thread-local depth check forbids `PrepareRecord()` and a read's second look
-inside a change scope (the directory lock isn't recursive).
+cached first-run and Local State state; no I/O there: it posts the
+record's first load to the shared storage's change sequence
+(BLOCK_SHUTDOWN). All record I/O happens in `AutomationStorage` calls on
+the sequences that already block (the shared storage's change and read
+sequences, a profile's routines sequence). Every
+change of the record (load, `Set`, `NoteFired`, `Move`, `Forget`,
+`Restore`, its write) runs under the directory's change scope (its lock,
+then its lock file), ordered before the file change it mirrors (§3.6.1).
+Readers take only the record's own lock, the innermost (directory lock,
+then lock file, then the record's lock; the registry's lock is never held
+with it). A thread-local depth check forbids `PrepareRecord()` and a
+read's second look inside a change scope (the directory lock isn't
+recursive).
 
 #### 3.6.9 Rules for code that touches workflow files
 
@@ -2512,9 +2560,11 @@ All in `molt_ai_unittests` except the last item:
   entries dropped one by one; entries of files gone dropped at load; moves
   copied first and forgets kept across a restart; a move cut short on
   either side of its rename; an entry kept while its file is set aside; a
-  fire raising `fired` and a write setting it; a file's last fire believed
-  only since the last write (seeded entries too); writes before
-  configuration kept.
+  fire raising `fired` and a write setting it; an earlier fire time
+  written keeping a past fire (one in the future gives way); a fire
+  recorded while the clock was ahead giving way to the next; an entry
+  restored exactly; a file's last fire believed only since the last write
+  (seeded entries too); writes before configuration kept.
 - `automation/automation_security_unittest.cc`: the digest ignores only
   bookkeeping, covers every other field (table-driven), survives the file
   round trip (large times, doubles and nested values, U+2028; a file with
@@ -2528,23 +2578,31 @@ All in `molt_ai_unittests` except the last item:
   on disk; every security field changed outside is caught; bookkeeping may
   change outside; an earlier last fire never believed (fired here or not,
   seeded or saved), a future one neither believed nor recorded, a schedule
-  saved afresh starting over; a hand copy, a rollback and a deleted file
-  put back aren't vouched for; every write path vouches; writes never
-  launder an unvouched read; `SetTrustLevel()` refuses a review;
+  saved afresh starting over, a stale page's save keeping the last fire, a
+  fire on a clock that was ahead giving way to the next; a hand copy, a
+  rollback and a deleted file put back aren't vouched for, nor the old
+  file after a browser ends between the record change and the file change
+  (a write, a deletion); a failed write leaves the record as it was; every
+  write path vouches; writes never launder an unvouched read;
+  `SetTrustLevel()` refuses a review;
   `UpdateBookkeeping()` keeps the verdict and refuses security changes;
   `RecordFire()` keeps the floor when the file can't be written; the scrub
   rewrite keeps the verdict; moves carry it; a move cut short on either
   side of its rename is vouched for once put back; finishing a move
   forgets it; reads never see a save in progress as a change (two
   threads); two user data dirs over one folder; seeding keeps every legacy
-  workflow as it was (and skips a link); a directory without a record is
-  unchanged; the real shared folder without configuration fails closed.
+  workflow as it was (and skips a link); a new user data directory is
+  recorded at startup even when nothing is read, so a later start doesn't
+  seed; a directory without a record is unchanged; the real shared folder
+  without configuration fails closed.
 - `automation/automation_scheduler_unittest.cc` (mock time): a vouched
-  catch-up fires once; a planted file never fires; a timer's reload that
-  finds a change doesn't fire (the next one still does); a forged earlier
-  last fire forces no catch-up, also for a weekly and an hourly workflow
-  this browser hasn't fired yet; a forged later one doesn't stall an
-  overdue workflow; a schedule saved afresh forces no catch-up.
+  catch-up fires once (no timer fires it again) and again an interval
+  later; a planted file never fires; a timer's reload that finds a change
+  doesn't fire (the next one still does), nor one that finds it fired
+  since; a forged earlier last fire forces no catch-up, also for a weekly
+  and an hourly workflow this browser hasn't fired yet; a forged later one
+  doesn't stall an overdue workflow; a schedule saved afresh forces no
+  catch-up and fires an interval later.
 - `voice/voice_routine_store_unittest.cc`: a routine changed outside is
   claimed as a draft; a vouched one as it was; a claim of a changed one cut
   short is still recognised.
@@ -2552,7 +2610,10 @@ All in `molt_ai_unittests` except the last item:
   with a token; neither run, scheduled nor trusted; confirming vouches for
   the reviewed content at CASUAL (then Trust works); refused when the file
   changed after the review; the token is needed (an AI draft's too); edits
-  and duplicates stay drafts.
+  and duplicates stay drafts; a save of a workflow deleted, unreadable or
+  over the cap since it was opened is refused, never saved as new; a new
+  workflow never goes over another file; an interval schedule counts from
+  when it is written (Schedule, Confirm).
 - `ui/webui/molt_ai/molt_ai_automation_storage_unittest.cc`: trust refused
   with the reason; a save keeps it a draft; an import is vouched for at
   CASUAL.
@@ -2570,6 +2631,12 @@ All in `molt_ai_unittests` except the last item:
 - **Seeding trusts what is there at the first start of this version**, as
   the previous build did. A one-time studio notice listing seeded
   TRUSTED/ADMIN or scheduled workflows would be a follow-up.
+- **A new user data directory whose first launch ends before the record's
+  first load runs** (a crash in its first seconds) leaves neither the
+  record nor its marker, while Chrome's first-run sentinel and Local State
+  are already written: files planted before the next start are seeded
+  then. Closing it would need the marker on disk before Chrome's own
+  first-run files.
 - **Stats stay outside the digest**: forged history on a vouched workflow
   is display only (the promotion suggestion is hidden for drafts; promotion
   and "Trust & re-run" still need clicks).
@@ -2581,7 +2648,9 @@ All in `molt_ai_unittests` except the last item:
 - **Existing gaps left as they are** (separate changes): imports keep the
   file's `require_approval_for` and limits; imported scheduled workflows
   fire at CASUAL right away; the chat's watcher is saved at APPROVED
-  without a click.
+  without a click; an interval schedule molt://ai-automation saves with no
+  last fire still never fires (the scheduler counts it from each listing;
+  the studio's now count from when they are written).
 
 #### 3.6.12 What users are told (release notes, ready to paste)
 

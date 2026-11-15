@@ -7,9 +7,10 @@
 // through or written over when it isn't a regular file, nor kept in
 // ~/.moltbrowser; malformed entries dropped one by one, entries of files
 // gone dropped at load (not while set aside), moves copied first, the fire
-// time set by writes and raised by fires, a file's last fire believed only
-// since this browser's last write, and a session's writes before
-// configuration kept.
+// time set by writes (never back below a past fire) and raised by fires (a
+// fire recorded on a clock that was ahead giving way), an entry restored
+// exactly, a file's last fire believed only since this browser's last
+// write, and a session's writes before configuration kept.
 
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
 
@@ -447,8 +448,8 @@ TEST_F(WorkflowRecordTest, AMoveCutShortKeepsTheEntryOfWhereTheFileIs) {
   EXPECT_EQ(record->FiredFloor("a.molt.00ff.taken"), 7);
 }
 
-// A fire raises the fire time; a write sets it to what it wrote, lower
-// too (a schedule saved afresh starts over).
+// A fire raises the fire time; a write sets it to what it wrote when that
+// is later, or 0 (a schedule saved afresh starts over).
 TEST_F(WorkflowRecordTest, AFireRaisesTheFireTimeAndAWriteSetsIt) {
   WorkflowRecord* record = Start(/*may_seed=*/false);
   record->Set("a.molt", Digest('a'), 100);
@@ -457,8 +458,8 @@ TEST_F(WorkflowRecordTest, AFireRaisesTheFireTimeAndAWriteSetsIt) {
   EXPECT_EQ(record->FiredFloor("a.molt"), 100);
   record->NoteFired("a.molt", 200);
   EXPECT_EQ(record->FiredFloor("a.molt"), 200);
-  record->Set("a.molt", Digest('b'), 10);
-  EXPECT_EQ(record->FiredFloor("a.molt"), 10);
+  record->Set("a.molt", Digest('b'), 300);
+  EXPECT_EQ(record->FiredFloor("a.molt"), 300);
   EXPECT_TRUE(record->Vouches("a.molt", Digest('b')));
   record->Set("a.molt", Digest('b'), 0);
   EXPECT_EQ(record->FiredFloor("a.molt"), 0);
@@ -512,6 +513,82 @@ TEST_F(WorkflowRecordTest, AFilesLastFireIsBelievedOnlySinceTheLastWrite) {
   EXPECT_EQ(record->LastFired("a.molt", 1), before + 10);
   EXPECT_EQ(record->LastFired("a.molt", before - 3600), before + 10);
   EXPECT_EQ(record->LastFired("b.molt", 1), before + 3600);
+}
+
+// An earlier fire time written than the one recorded comes from a page
+// opened before that fire: the past fire is kept (else the next listing
+// would run it again). One recorded in the future (a snooze, a clock that
+// was ahead) gives way to it.
+TEST_F(WorkflowRecordTest, AnEarlierFireTimeWrittenKeepsAPastFire) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  record->Set("a.molt", Digest('a'), now - 86400);
+  record->NoteFired("a.molt", now - 60);
+  // The page's copy, from before that fire, saved with a change.
+  record->Set("a.molt", Digest('b'), now - 86400);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('b')));
+  EXPECT_EQ(record->FiredFloor("a.molt"), now - 60);
+  EXPECT_EQ(record->LastFired("a.molt", now - 86400), now - 60);
+  // A snooze, then a write from before it.
+  record->Set("a.molt", Digest('b'), now + 3600);
+  EXPECT_EQ(record->FiredFloor("a.molt"), now + 3600);
+  record->Set("a.molt", Digest('b'), now - 60);
+  EXPECT_EQ(record->FiredFloor("a.molt"), now - 60);
+  // As at the next start.
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->FiredFloor("a.molt"), now - 60);
+}
+
+// A fire recorded while the clock was ahead is the last fire only until
+// the next fire on the corrected clock (else no catch-up would run until
+// the clock reached it); a fire within the slack of it leaves it.
+TEST_F(WorkflowRecordTest, AFireRecordedWhileTheClockWasAheadGivesWay) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  const int64_t ahead = now + 7 * 86400;
+  record->Set("a.molt", Digest('a'), 0);
+  record->NoteFired("a.molt", ahead);
+  EXPECT_EQ(record->FiredFloor("a.molt"), ahead);
+  record->NoteFired("a.molt", ahead - 60);
+  EXPECT_EQ(record->FiredFloor("a.molt"), ahead);
+  record->NoteFired("a.molt", now);
+  EXPECT_EQ(record->FiredFloor("a.molt"), now);
+  EXPECT_EQ(record->LastFired("a.molt", 0), now);
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->FiredFloor("a.molt"), now);
+  // No entry: still nothing.
+  record->NoteFired("none.molt", now);
+  EXPECT_FALSE(record->EntryOf("none.molt"));
+}
+
+// A write whose file couldn't be written puts the entry back exactly as it
+// was, in the record file too; none before, none after.
+TEST_F(WorkflowRecordTest, RestorePutsAnEntryBackExactly) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  record->Set("a.molt", Digest('a'), 7);
+  const std::optional<WorkflowRecord::Entry> before = record->EntryOf("a.molt");
+  ASSERT_TRUE(before);
+  EXPECT_EQ(before->digest, Digest('a'));
+  EXPECT_EQ(before->fired, 7);
+  std::string bytes;
+  ASSERT_TRUE(base::ReadFileToString(record_file_, &bytes));
+  record->Set("a.molt", Digest('b'), 0);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('b')));
+  record->Restore("a.molt", before);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('a')));
+  EXPECT_EQ(record->FiredFloor("a.molt"), 7);
+  EXPECT_EQ(record->EntryOf("a.molt")->written, before->written);
+  std::string restored;
+  ASSERT_TRUE(base::ReadFileToString(record_file_, &restored));
+  EXPECT_EQ(restored, bytes);
+  EXPECT_FALSE(record->EntryOf("b.molt"));
+  record->Set("b.molt", Digest('b'), 0);
+  record->Restore("b.molt", std::nullopt);
+  EXPECT_FALSE(record->EntryOf("b.molt"));
+  EXPECT_FALSE(record->Vouches("b.molt", Digest('b')));
+  EXPECT_EQ(RecordedNames(), std::set<std::string>{"a.molt"});
 }
 
 TEST_F(WorkflowRecordTest, WritesBeforeConfigurationAreKept) {

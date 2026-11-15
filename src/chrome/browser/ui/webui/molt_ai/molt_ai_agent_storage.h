@@ -28,7 +28,11 @@
 // unconfirmed draft, automation_storage.h) is shown for review like a
 // draft from an agent run: it neither runs, nor is scheduled or trusted,
 // until confirmDraftSites, after a real click, with the review token of
-// exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6).
+// exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6). A
+// save of a workflow the page opened is an edit of what is stored then,
+// refused if it is gone (SaveRequest). An interval schedule the studio
+// writes without a last fire (saveSchedule, confirmDraftSites) counts from
+// then.
 //
 // Blocking (file I/O); base::Value and the storages only, so
 // molt_ai_unittests tests it on temporary directories.
@@ -121,6 +125,11 @@ Answer AnswerInSharedStorage(const StudioPlaces& places,
 // saveWorkflow: |script| from the page (its id given or made, its creation
 // time set). |recorded_here|: its id was made by stopRecording in this
 // panel and this is its first save (UI state, used up by the caller).
+// |new_workflow|: its id was made for it (the page sent none, or
+// |recorded_here|), so it is saved under that id or a free one made from
+// it, never over another file. Any other id is of a workflow the page
+// read: an edit, refused when that workflow is gone or unreadable by the
+// time it is saved (never saved as a new one).
 struct SaveRequest {
   SaveRequest();
   ~SaveRequest();
@@ -129,6 +138,7 @@ struct SaveRequest {
 
   automation::Script script;
   bool recorded_here = false;
+  bool new_workflow = false;
 };
 
 // What a storage holds under an id, for a save to the other one.

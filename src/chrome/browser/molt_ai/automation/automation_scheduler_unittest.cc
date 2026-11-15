@@ -3,11 +3,13 @@
 //
 // AutomationScheduler (automation_scheduler.h) over a real shared workflow
 // directory with a workflow record (workflow_record.h), on mock time: it
-// fires a catch-up of a workflow the browser saved; never one whose file
-// was changed outside the browser, whether that is found when it is listed
-// or when its timer's reload comes; a forged earlier last fire forces no
-// catch-up run (fired here or not), a forged later one doesn't stall the
-// schedule, and a schedule saved afresh starts over.
+// fires a catch-up of a workflow the browser saved, once, and its next
+// fire an interval later; never one whose file was changed outside the
+// browser, whether that is found when it is listed or when its timer's
+// reload comes, nor one its timer's reload finds fired since; a forged
+// earlier last fire forces no catch-up run (fired here or not), a forged
+// later one doesn't stall the schedule, and a schedule saved afresh starts
+// over.
 
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 
@@ -121,16 +123,21 @@ class AutomationSchedulerTest : public testing::Test {
 };
 
 // The control: a workflow the browser saved, whose run was missed, fires
-// once.
+// once, then an interval after that run.
 TEST_F(AutomationSchedulerTest, FiresAVouchedCatchUp) {
   const int64_t now = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, now - 7200)));
   scheduler_.Start();
   Tick();
+  // Not again by a timer: counted from the last fire before the catch-up,
+  // the next one would be overdue.
+  task_environment_.FastForwardBy(base::Seconds(1));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
-  // Its fire was kept: not again.
+  // Its fire was kept: not again by the next listing.
   Tick();
   EXPECT_EQ(fired_.size(), 1u);
+  task_environment_.FastForwardBy(base::Hours(1));
+  EXPECT_EQ(fired_.size(), 2u);
 }
 
 TEST_F(AutomationSchedulerTest, NeverFiresAWorkflowChangedOutside) {
@@ -164,6 +171,25 @@ TEST_F(AutomationSchedulerTest, ATimerReloadThatFindsAChangeDoesNotFire) {
   // The other one's timer still fires it.
   task_environment_.FastForwardBy(base::Seconds(10));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_b"});
+}
+
+// A timer's reload that finds the workflow fired since its last listing
+// (by another browser on the same folder) doesn't fire it again; an
+// interval after that run, it fires.
+TEST_F(AutomationSchedulerTest, ATimerReloadOfAWorkflowFiredSinceDoesNotFire) {
+  const int64_t now = Unix(base::Time::Now());
+  // Due in 70 s.
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 90, now - 20)));
+  scheduler_.Start();
+  Tick();
+  task_environment_.FastForwardBy(base::Seconds(65));
+  EXPECT_TRUE(fired_.empty());
+  // Run elsewhere after the heartbeat's listing at 60 s, before the timer.
+  SetLastFiredOutside("wf_1", now + 65);
+  task_environment_.FastForwardBy(base::Seconds(10));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(85));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
 }
 
 TEST_F(AutomationSchedulerTest, AForgedEarlierLastFiredForcesNoCatchUp) {
@@ -217,13 +243,15 @@ TEST_F(AutomationSchedulerTest, AForgedLaterLastFiredDoesNotStallTheSchedule) {
 }
 
 // A schedule saved afresh (the Agent studio's Schedule writes a new
-// trigger, never fired) starts over: the old schedule's last fire, five
-// hours back, forces no catch-up run of the new hourly one.
+// trigger, an interval counted from then) starts over: the old schedule's
+// last fire, five hours back, forces no catch-up run of the new hourly
+// one, which fires an hour later (the heartbeat's listings don't push it
+// back).
 TEST_F(AutomationSchedulerTest, AScheduleSavedAfreshForcesNoCatchUp) {
   const int64_t now = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 86400, 0)));
   ASSERT_TRUE(storage_->RecordFire("wf_1", now - 5 * 3600));
-  const Trigger hourly = Interval("wf_1", 3600, 0).trigger;
+  const Trigger hourly = Interval("wf_1", 3600, now).trigger;
   ASSERT_TRUE(storage_->Update("wf_1", [&hourly](Script& script) {
     script.trigger = hourly;
     return true;
@@ -231,6 +259,10 @@ TEST_F(AutomationSchedulerTest, AScheduleSavedAfreshForcesNoCatchUp) {
   scheduler_.Start();
   Tick();
   EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(59));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
 }
 
 }  // namespace

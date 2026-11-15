@@ -9,8 +9,10 @@
 // round 45, a fresh id when every simple one is taken; and the workflow
 // record (workflow_record.h): a file is trusted only as far as this browser
 // wrote it, on every read and write path, with its last fire believed only
-// since this browser's last write, moves cut short, the one-time seeding
-// and two browsers over one directory.
+// since this browser's last write, moves cut short, a browser ending
+// between a record change and its file change, the one-time seeding (a new
+// user data directory recorded at startup) and two browsers over one
+// directory.
 
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
@@ -33,6 +35,7 @@
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/thread_pool.h"
+#include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -962,6 +965,125 @@ TEST_F(AutomationStorageRecordTest, AScheduleSavedAfreshStartsOver) {
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
 }
 
+// A save from a page opened before the last fire writes the fire before
+// it: the fire recorded is kept, so the next listing runs no catch-up.
+TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsTheLastFire) {
+  Script daily = Named("wf_1", "Prices");
+  daily.trigger.type = TriggerType::CRON;
+  daily.trigger.expression = "0 9 * * *";
+  ASSERT_TRUE(storage().Save(daily));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 86400));
+  // The page lists it, then the scheduler fires it.
+  std::optional<Script> listed = Load("wf_1");
+  ASSERT_TRUE(listed);
+  ASSERT_EQ(listed->trigger.last_fired_unix, now - 86400);
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 60));
+  // The page saves its copy, renamed.
+  listed->name = "Prices, renamed";
+  ASSERT_TRUE(storage().Save(*listed));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->name, "Prices, renamed");
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, now - 60);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now - 60);
+}
+
+// A fire recorded while the clock was ahead gives way to the next fire on
+// the corrected clock: it would hold back every catch-up run until then.
+TEST_F(AutomationStorageRecordTest,
+       AFireOnAClockThatWasAheadGivesWayToTheNext) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  const int64_t ahead = now + 7 * 86400;
+  ASSERT_TRUE(storage().RecordFire("wf_1", ahead));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, ahead);
+  ASSERT_TRUE(storage().RecordFire("wf_1", now));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now);
+}
+
+// The record is changed before the file: a browser that ends in between
+// (the record as it was then, the file as it was before) leaves the old
+// file needing a review, so a trust taken away can't come back by writing
+// the old bytes back.
+TEST_F(AutomationStorageRecordTest, ABrowserEndingMidWriteLeavesTheOldFile) {
+  Script trusted = Named("wf_1", "Prices");
+  trusted.security.trust = TrustLevel::TRUSTED;
+  ASSERT_TRUE(storage().Save(trusted));
+  const std::string old_bytes = Bytes("wf_1");
+  const base::FilePath record_file =
+      user_data_dir_.Append(kWorkflowRecordFileName);
+  std::string record_then;
+  storage().SetBeforeFileChangeForTesting(base::BindLambdaForTesting([&] {
+    ASSERT_TRUE(base::ReadFileToString(record_file, &record_then));
+    EXPECT_EQ(Bytes("wf_1"), old_bytes);
+  }));
+  ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::CASUAL));
+  storage().SetBeforeFileChangeForTesting(base::RepeatingClosure());
+  ASSERT_FALSE(record_then.empty());
+  ASSERT_TRUE(base::WriteFile(record_file, record_then));
+  ASSERT_TRUE(base::WriteFile(File("wf_1"), old_bytes));
+  Restart(/*may_seed=*/false);
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(IsClamped(*loaded));
+}
+
+// The same for a deletion: forgotten before the file goes.
+TEST_F(AutomationStorageRecordTest, ABrowserEndingMidDeleteLeavesTheFile) {
+  Script trusted = Named("wf_1", "Prices");
+  trusted.security.trust = TrustLevel::TRUSTED;
+  ASSERT_TRUE(storage().Save(trusted));
+  const std::string bytes = Bytes("wf_1");
+  const base::FilePath record_file =
+      user_data_dir_.Append(kWorkflowRecordFileName);
+  std::string record_then;
+  storage().SetBeforeFileChangeForTesting(base::BindLambdaForTesting([&] {
+    ASSERT_TRUE(base::ReadFileToString(record_file, &record_then));
+    EXPECT_TRUE(base::PathExists(File("wf_1")));
+  }));
+  ASSERT_TRUE(storage().Delete("wf_1"));
+  storage().SetBeforeFileChangeForTesting(base::RepeatingClosure());
+  ASSERT_FALSE(record_then.empty());
+  ASSERT_TRUE(base::WriteFile(record_file, record_then));
+  ASSERT_TRUE(base::WriteFile(File("wf_1"), bytes));
+  Restart(/*may_seed=*/false);
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(IsClamped(*loaded));
+}
+
+#if BUILDFLAG(IS_POSIX)
+// A write that fails after the record was set puts the record back exactly
+// as it was: the file it couldn't replace is still vouched for.
+TEST_F(AutomationStorageRecordTest, AWriteThatFailsLeavesTheRecordAsItWas) {
+  if (geteuid() == 0) {
+    GTEST_SKIP() << "root writes into a read-only directory";
+  }
+  Script trusted = Named("wf_1", "Prices");
+  trusted.security.trust = TrustLevel::TRUSTED;
+  ASSERT_TRUE(storage().Save(trusted));
+  const base::FilePath record_file =
+      user_data_dir_.Append(kWorkflowRecordFileName);
+  std::string record_before;
+  ASSERT_TRUE(base::ReadFileToString(record_file, &record_before));
+  ASSERT_TRUE(base::SetPosixFilePermissions(dir_, 0500));
+  EXPECT_FALSE(storage().SetTrustLevel("wf_1", TrustLevel::CASUAL));
+  ASSERT_TRUE(base::SetPosixFilePermissions(dir_, 0700));
+  std::string record_after;
+  ASSERT_TRUE(base::ReadFileToString(record_file, &record_after));
+  EXPECT_EQ(record_after, record_before);
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->security.trust, TrustLevel::TRUSTED);
+}
+#endif  // BUILDFLAG(IS_POSIX)
+
 TEST_F(AutomationStorageRecordTest, AHandCopyUnderAnotherIdIsNotVouched) {
   Script original = Named("a", "Prices");
   original.security.trust = TrustLevel::APPROVED;
@@ -1405,6 +1527,41 @@ TEST_F(AutomationStorageRecordTest, ADirectoryWithoutARecordIsUnchanged) {
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
   EXPECT_EQ(loaded->security.trust, TrustLevel::TRUSTED);
+}
+
+// At startup the record is configured and loaded at once (what
+// ConfigureWorkflowRecordOnce() does): a first launch that reads no
+// workflow (a guest window, the profile picker) still records a new user
+// data directory as one, so files planted before the next start (which may
+// seed: not Chrome's first run any more) aren't seeded.
+TEST_F(AutomationStorageRecordTest,
+       ANewUserDataDirIsRecordedAtStartupEvenIfNothingIsRead) {
+  base::test::TaskEnvironment task_environment;
+  WorkflowRecord::ResetForTesting();
+  SetMoltHomeDirForTesting(temp_.GetPath().AppendASCII("home"));
+  const base::FilePath udd = temp_.GetPath().AppendASCII("New User Data");
+  ASSERT_TRUE(base::CreateDirectory(udd));
+  const base::FilePath record_file = udd.Append(kWorkflowRecordFileName);
+  AutomationStorage::ConfigureSharedRecord(record_file, /*may_seed=*/false);
+  task_environment.RunUntilIdle();
+  EXPECT_TRUE(base::PathExists(record_file));
+  EXPECT_TRUE(base::PathExists(WorkflowRecord::MarkerFileFor(record_file)));
+  const base::FilePath shared_dir = AutomationStorage::SharedDirectory();
+  ASSERT_TRUE(base::CreateDirectory(shared_dir));
+  ASSERT_TRUE(base::WriteFile(shared_dir.AppendASCII("planted.molt"),
+                              Claiming("planted").ToJSONString()));
+  WorkflowRecord::ResetForTesting();
+  AutomationStorage::ConfigureSharedRecord(record_file, /*may_seed=*/true);
+  task_environment.RunUntilIdle();
+  {
+    AutomationStorage shared;
+    std::optional<Script> loaded = shared.Load("planted");
+    ASSERT_TRUE(loaded);
+    EXPECT_TRUE(IsClamped(*loaded));
+  }
+  EXPECT_TRUE(RecordedNames(udd).empty());
+  WorkflowRecord::ResetForTesting();
+  SetMoltHomeDirForTesting(base::FilePath());
 }
 
 TEST_F(AutomationStorageRecordTest,

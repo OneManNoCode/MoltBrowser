@@ -9,8 +9,13 @@
 // fresh --user-data-dir started with --no-first-run is new too). A
 // keyed-service factory whose only job is that, when the first profile
 // (regular, guest or system) is created; it builds no service. Path math
-// and cached state only, no I/O: the record is loaded on the storage's
-// sequence, at its first use (AutomationStorage::PrepareRecord()).
+// and cached state only, no I/O here: the record's first load
+// (AutomationStorage::PrepareRecord()) is posted to the shared storage's
+// change sequence at once (AutomationStorage::ConfigureSharedRecord()), so
+// a launch that opens only a guest window or the profile picker still
+// leaves the record and its marker, and a new user data directory never
+// seeds at a later start. A launch that ends before that task runs leaves
+// neither (docs/design/AGENT_ACTIONS.md §3.6.11).
 //
 // AutomationSchedulerServiceFactory DependsOn() it, which registers it and
 // orders it before the scheduler's service.

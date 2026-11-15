@@ -689,7 +689,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     }
     // Assign an id for brand-new (recorded / blank) workflows.
     const std::string* existing = in.FindString("id");
-    if (!existing || existing->empty()) {
+    const bool id_made_here = !existing || existing->empty();
+    if (id_made_here) {
       in.Set("id", molt_ai::agent_studio::NewWorkflowId());
     }
     std::optional<Script> s = Script::FromJSON(in);
@@ -707,6 +708,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     // First save of a draft that stopRecording produced in this panel (the
     // id was minted here and is used once).
     request.recorded_here = !voice_steps && recorded_ids_.erase(id) > 0;
+    // A new workflow only under an id made here; any other id the page
+    // sends is of a workflow it read (an edit, refused if that is gone).
+    request.new_workflow = id_made_here || request.recorded_here;
     // Routines taught by voice are kept in the profile (an edit, a rename,
     // an import of one), workflows in the shared storage: a look at the
     // other storage on its sequence, then the save on its own.
@@ -757,12 +761,23 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
                     SaveRequest request,
                     AnswerCallback done,
                     Holds in_routines) {
+    const std::string recorded_id =
+        request.recorded_here ? request.script.id : std::string();
     AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
         FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::SaveSharedWorkflow,
                        std::move(places), std::move(request), in_routines),
-        base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
+        base::BindOnce(&AgentStudioHandler::FinishSave,
+                       weak_factory_.GetWeakPtr(), recorded_id,
                        std::move(done)));
+  }
+  // A recording's first save that didn't save it: its id is this panel's
+  // again, so the next try is still that first save.
+  void FinishSave(std::string recorded_id, AnswerCallback done, Answer answer) {
+    if (!recorded_id.empty() && !answer.out.FindString("id")) {
+      recorded_ids_.insert(std::move(recorded_id));
+    }
+    Finish(std::move(done), std::move(answer));
   }
 
   // The frames of other sites the user let offer their tools to the

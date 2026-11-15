@@ -25,8 +25,11 @@
 // AutomationSecurity::SecurityDigest() of what this browser last wrote
 // under that name (one only: an older version doesn't match); "fired", the
 // trigger.last_fired_unix it wrote there (a schedule saved afresh writes
-// 0), or a later fire its scheduler recorded; and "written", when it wrote
-// there last (when it seeded the entry, for one seeded). The file's own
+// 0; an earlier one, from a page opened before a fire, leaves a past fire
+// it recorded as it is), or a fire its scheduler recorded since (one
+// recorded while the clock was ahead gives way to the next); and
+// "written", when it wrote there last (when it seeded the entry, for one
+// seeded). The file's own
 // last fire time (bookkeeping, outside the digest: other browsers' runs
 // change it) is believed only when it can be a fire since that write (no
 // earlier, nor later than now by kLastFiredSlackSeconds): LastFired(). So
@@ -54,11 +57,13 @@
 // written only as regular files (molt_regular_file.h), atomically.
 //
 // Threads. Configure() and For() run anywhere (no I/O). LoadLocked() and
-// every change (Set(), NoteFired(), Copy(), Forget()) run only under the
+// every change (Set(), NoteFired(), Copy(), Forget(), Restore()) run only
+// under the
 // storage's change scope of |directory| (its lock, then its lock file), so
 // each is ordered with the file change it mirrors; their writes of the
 // record happen there too, one at a time. Vouches(), FiredFloor(),
-// LastFired() and loaded() take only this record's own lock, the innermost
+// LastFired(), EntryOf() and loaded() take only this record's own lock, the
+// innermost
 // of all (the registry's is another, never held with it). base only, so
 // molt_ai_unittests tests it on real files.
 //
@@ -171,15 +176,28 @@ class WorkflowRecord {
   // entry for |name|, |file_fired| (at least 0).
   int64_t LastFired(const std::string& name, int64_t file_fired) const;
 
+  // The entry recorded for |name| now, if any (for Restore()).
+  std::optional<Entry> EntryOf(const std::string& name) const;
+
   // Under the storage's change scope of |directory|, each written to the
   // record file at once:
-  // After the write: this browser wrote |digest| under |name| ("" forgets
-  // it) now, with |fired| as its last fire time (the entry's from now on,
-  // lower or higher: a schedule saved afresh starts over).
+  // Before the write (AutomationStorage sets it, then renames the file
+  // into place): this browser writes |digest| under |name| ("" forgets it)
+  // now, with |fired| as its last fire time. 0 and a later one are the
+  // entry's as they are (a schedule saved afresh starts over; a snooze). An
+  // earlier one is a page's opened before a fire: the past fire recorded is
+  // kept, and only one still in the future (beyond now by
+  // kLastFiredSlackSeconds: a snooze, or a clock that was ahead) gives way
+  // to it.
   void Set(const std::string& name, std::string digest, int64_t fired);
+  // |name|'s entry exactly as |entry| was (EntryOf() before a Set() whose
+  // file couldn't be written); none: forgotten.
+  void Restore(const std::string& name, const std::optional<Entry>& entry);
   // A fire of |name| at |fired| by this browser's scheduler, on its own
-  // clock, never a time read from a file (an entry's fire time rises to
-  // it; no entry, nothing).
+  // clock, never a time read from a file: an entry's fire time rises to
+  // it, or comes down to it from beyond it by kLastFiredSlackSeconds (a
+  // fire recorded while the clock was ahead, which this fire shows wasn't
+  // one); no entry, nothing.
   void NoteFired(const std::string& name, int64_t fired);
   // Before |from| is renamed |to|: |from|'s entry, under |to| too (then
   // the rename, then Forget(|from|); Forget(|to|) if it failed). False,

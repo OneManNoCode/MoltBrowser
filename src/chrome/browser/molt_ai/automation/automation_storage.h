@@ -66,8 +66,12 @@
 // in this browser is never taken for a change. Every write records what it
 // wrote (the bytes it writes, parsed as a reader parses them, its last fire
 // time included): Save(), SaveNew(), SaveChecked(), Update() (so
-// SetTrustLevel()); a move's renames copy the entry to the new name first
-// and forget the old one after, and deletions forget it. What a write was
+// SetTrustLevel()), each setting the entry before it renames the file into
+// place (put back as it was if the file can't be written); a move's renames
+// copy the entry to the new name first and forget the old one after, and
+// deletions forget it before the file goes. So a browser that ends between
+// the two leaves a file the record no longer vouches for (one review),
+// never an older version vouched for again. What a write was
 // given from an unvouched read stays an unconfirmed import
 // (ClampTrustForSave() and the studio's KeepPolicy() keep the policy as
 // read), so no write launders a file. Run bookkeeping (stats,
@@ -76,7 +80,9 @@
 // browser leaves another browser's record of the file intact. The record
 // is loaded (and, on the first start of this version, seeded once from the
 // files there) by PrepareRecord(), which every script read and write calls
-// first, outside the directory's lock. A storage of its own directory (a
+// first, outside the directory's lock, and which ConfigureSharedRecord()
+// posts at startup, so a launch that reads no workflow still leaves it on
+// disk. A storage of its own directory (a
 // profile's voice routines) has no record, and loads files as they are;
 // the shared directory without a configured record (tests) gets a
 // session-only one that trusts only this process's writes
@@ -95,6 +101,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/functional/callback.h"
 #include "base/functional/function_ref.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
@@ -138,6 +145,15 @@ class AutomationStorage {
   // (no I/O).
   static base::FilePath SharedDirectory(
       const base::FilePath& root = base::FilePath());
+  // At startup (automation_record_startup.h), on the UI thread: the shared
+  // directory's workflow record is |record_file|, which may seed when
+  // |may_seed| (WorkflowRecord::Configure()), and its first load
+  // (PrepareRecord()) is posted to SharedSequence() at once, whatever this
+  // launch does next (one that opens only a guest window or the profile
+  // picker reads no workflow): a new user data directory is then recorded
+  // as one, and never seeds at a later start. No I/O here.
+  static void ConfigureSharedRecord(const base::FilePath& record_file,
+                                    bool may_seed);
   // The one sequence that changes the shared storage (MayBlock,
   // BLOCK_SHUTDOWN, made lazily), and the one its reads run on (MayBlock,
   // CONTINUE_ON_SHUTDOWN): a read that must see the changes posted before
@@ -287,6 +303,10 @@ class AutomationStorage {
   // Test seam: override the root directory (defaults to ~/.moltbrowser).
   // The shared storage only.
   void SetRootForTesting(const base::FilePath& root);
+  // Test seam: |closure| runs under the directory's lock when a write or a
+  // deletion has changed the record and not yet the file (where a browser
+  // that ends leaves them). It must not use a storage.
+  void SetBeforeFileChangeForTesting(base::RepeatingClosure closure);
 
  private:
   // Blocking checked, for the scope of a call.
@@ -353,6 +373,8 @@ class AutomationStorage {
   // The scripts this storage took and hasn't finished or returned yet: id
   // -> its set-aside file.
   std::map<std::string, base::FilePath> taken_;
+  // SetBeforeFileChangeForTesting().
+  base::RepeatingClosure before_file_change_for_testing_;
 };
 
 }  // namespace automation

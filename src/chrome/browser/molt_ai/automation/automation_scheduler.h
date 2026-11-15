@@ -17,7 +17,11 @@
 // Only what may run unattended fires (AutomationSecurity::
 // MayFireUnattended()): never a workflow whose file was changed outside the
 // browser (the storage loads it as an unconfirmed draft), checked when it is
-// listed and again when its timer's reload comes. Its last fire time is
+// listed and again when its timer's reload comes. A catch-up's next fire is
+// counted from the catch-up itself, and a timer's reload fires a cron or
+// interval workflow only if it is still due after its last fire (not
+// fired since it was listed), so an overdue workflow runs once. Its last
+// fire time is
 // the file's own only when it can be a fire since the browser last wrote
 // the file, else the one the browser wrote or fired at
 // (automation_storage.h): a forged earlier one forces no catch-up run, a

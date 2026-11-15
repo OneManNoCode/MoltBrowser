@@ -19,8 +19,10 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/files/important_file_writer.h"
+#include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/stack_allocated.h"
 #include "base/no_destructor.h"
@@ -274,6 +276,22 @@ base::FilePath AutomationStorage::SharedDirectory(const base::FilePath& root) {
 }
 
 // static
+void AutomationStorage::ConfigureSharedRecord(const base::FilePath& record_file,
+                                              bool may_seed) {
+  const base::FilePath dir = SharedDirectory();
+  WorkflowRecord::Configure({dir, record_file, may_seed});
+  // Loaded at once, whatever this launch does next: what it decides (a new
+  // user data directory never seeds) is then on disk before a file can be
+  // planted for the next start to take for an upgrade's.
+  SharedSequence()->PostTask(FROM_HERE,
+                             base::BindOnce(
+                                 [](const base::FilePath& dir) {
+                                   AutomationStorage(dir).PrepareRecord();
+                                 },
+                                 dir));
+}
+
+// static
 scoped_refptr<base::SequencedTaskRunner> AutomationStorage::SharedSequence() {
   return g_shared_sequence.Get();
 }
@@ -327,6 +345,11 @@ base::FilePath AutomationStorage::ArtifactsDir(
 
 void AutomationStorage::SetRootForTesting(const base::FilePath& root) {
   root_override_ = root;
+}
+
+void AutomationStorage::SetBeforeFileChangeForTesting(
+    base::RepeatingClosure closure) {
+  before_file_change_for_testing_ = std::move(closure);
 }
 
 bool AutomationStorage::EnsureDirectory() {
@@ -650,17 +673,32 @@ bool AutomationStorage::SaveLocked(const Script& script) {
     LOG(WARNING) << "[Automation] dropped secret value(s) before saving";
   const base::FilePath path = GetScriptPath(script.id);
   const std::string bytes = SerializeScript(json);
-  if (!WriteScriptBytesLocked(path, bytes)) {
-    return false;
-  }
-  // What this browser wrote, as a reader will parse it, its last fire time
-  // included (0 for a schedule saved afresh: it starts over).
-  if (WorkflowRecord* record = Record()) {
+  // The record first, then the file (as a move copies its entry before its
+  // rename): a browser that ends in between leaves the file as it was,
+  // which the record no longer vouches for (one review), never an older
+  // version vouched for again. What this browser writes, as a reader will
+  // parse it, its last fire time included (0 for a schedule saved afresh:
+  // it starts over).
+  WorkflowRecord* record = Record();
+  const std::string name = NameOf(path);
+  std::optional<WorkflowRecord::Entry> before;
+  if (record) {
+    before = record->EntryOf(name);
     std::optional<Script> written = ParseScriptBytes(bytes);
     record->Set(
-        NameOf(path),
+        name,
         written ? AutomationSecurity::SecurityDigest(*written) : std::string(),
         written ? written->trigger.last_fired_unix : 0);
+  }
+  if (before_file_change_for_testing_) {
+    before_file_change_for_testing_.Run();
+  }
+  if (!WriteScriptBytesLocked(path, bytes)) {
+    // Not written: the record as it was.
+    if (record) {
+      record->Restore(name, before);
+    }
+    return false;
   }
   return true;
 }
@@ -800,11 +838,15 @@ bool AutomationStorage::Delete(const std::string& id) {
   bool deleted_script = false;
   {
     ChangeScope locked(*this);
-    deleted_script = base::DeleteFile(GetScriptPath(id));
-    // Forgotten even if it wasn't deleted: put back, it needs a review.
+    // Forgotten first, and even if it isn't deleted: put back, or left
+    // there by a browser that ends before it is deleted, it needs a review.
     if (WorkflowRecord* record = Record()) {
       record->Forget(id + kScriptExt);
     }
+    if (before_file_change_for_testing_) {
+      before_file_change_for_testing_.Run();
+    }
+    deleted_script = base::DeleteFile(GetScriptPath(id));
   }
   base::DeletePathRecursively(ArtifactsDir(id));
   AppendAudit(id, "deleted", "");
@@ -893,12 +935,13 @@ void AutomationStorage::FinishSetAside(const SetAside& set_aside) {
   PrepareRecord();
   {
     ChangeScope locked(*this);
+    // Forgotten first, as Delete() does.
+    if (WorkflowRecord* record = Record()) {
+      record->Forget(NameOf(set_aside.file));
+    }
     if (MoltFileKindAt(set_aside.file, MoltFileLinks::kNotFollowed) ==
         MoltFileKind::kRegular) {
       base::DeleteFile(set_aside.file);
-    }
-    if (WorkflowRecord* record = Record()) {
-      record->Forget(NameOf(set_aside.file));
     }
   }
   Taking::Get().Stop(set_aside.file);

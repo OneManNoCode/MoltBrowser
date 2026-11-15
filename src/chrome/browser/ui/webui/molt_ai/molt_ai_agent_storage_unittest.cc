@@ -7,13 +7,18 @@
 // the studio's and voice mode's changes to the profile's routines on one
 // sequence never interleave; a workflow whose file was changed outside the
 // browser (workflow_record.h) is shown for review, neither runs nor is
-// scheduled or trusted, and is confirmed only as it was reviewed.
+// scheduled or trusted, and is confirmed only as it was reviewed; an edit
+// of a workflow gone since it was opened is refused, a new one never goes
+// over another file, and an interval schedule counts from when it is
+// written.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_storage.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -25,6 +30,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
@@ -86,10 +92,20 @@ WorkflowRequest Request(Kind kind, const std::string& id) {
   return request;
 }
 
-SaveRequest Save(Script script, bool recorded_here = false) {
+// A save of a workflow the page read (an edit).
+SaveRequest Save(Script script) {
+  SaveRequest request;
+  request.script = std::move(script);
+  return request;
+}
+
+// A save of a new workflow, its id made for it (blank, imported, or
+// recorded here).
+SaveRequest New(Script script, bool recorded_here = false) {
   SaveRequest request;
   request.script = std::move(script);
   request.recorded_here = recorded_here;
+  request.new_workflow = true;
   return request;
 }
 
@@ -208,12 +224,13 @@ TEST_F(AgentStudioStorageTest, SavesWhereItBelongsWithTheSameRefusals) {
   ASSERT_TRUE(Routines().Save(Routine("voice_1", "mail")));
 
   // A new workflow: the shared storage, Casual; recorded here: Approved.
-  Answer saved = SaveSharedWorkflow(places_, Save(Workflow("wf_2", "New")),
+  Answer saved = SaveSharedWorkflow(places_, New(Workflow("wf_2", "New")),
                                     Holds::kNothing);
+  EXPECT_EQ(*saved.out.FindString("id"), "wf_2");
   EXPECT_EQ(*saved.out.FindString("trust"), "casual");
   EXPECT_TRUE(Shared().Load("wf_2"));
   Answer recorded = SaveSharedWorkflow(
-      places_, Save(Workflow("wf_3", "Rec"), true), Holds::kNothing);
+      places_, New(Workflow("wf_3", "Rec"), true), Holds::kNothing);
   EXPECT_EQ(*recorded.out.FindString("trust"), "approved");
   // An edit keeps the stored policy, whatever the page sent.
   Script edit = Workflow("wf_2", "Renamed");
@@ -251,10 +268,16 @@ TEST_F(AgentStudioStorageTest, SavesWhereItBelongsWithTheSameRefusals) {
             "Keep it here first.");
   StudioPlaces off_the_record = places_;
   off_the_record.routines_dir = base::FilePath();
-  EXPECT_EQ(*Error(SaveSharedWorkflow(
-                off_the_record, Save(Routine("wf_5", "x")), Holds::kNothing)),
+  EXPECT_EQ(*Error(SaveSharedWorkflow(off_the_record, New(Routine("wf_5", "x")),
+                                      Holds::kNothing)),
             "Routines taught by voice can't be kept in this window.");
   EXPECT_FALSE(Shared().Load("wf_5"));
+  // An edit of a workflow that isn't there: refused, not saved as new.
+  EXPECT_EQ(*Error(SaveSharedWorkflow(places_, Save(Workflow("wf_6", "x")),
+                                      Holds::kNothing)),
+            "This workflow was deleted or changed since you opened it. Open "
+            "it again.");
+  EXPECT_FALSE(Shared().Load("wf_6"));
 }
 
 TEST_F(AgentStudioStorageTest, ChangesAWorkflowWhereItIs) {
@@ -569,6 +592,105 @@ TEST_F(AgentStudioStorageTest, ADuplicateOfAWorkflowChangedOutsideIsADraft) {
   EXPECT_TRUE(stored->security.domain_whitelist.empty());
   EXPECT_EQ(*Error(Ask(Request(Kind::kCheckRun, *copied.out.FindString("id")))),
             automation::kChangedOutsideMessage);
+}
+
+// The editor's save of a workflow it opened while it was changed outside,
+// whose file is gone or unreadable by then: refused, never saved as a new
+// workflow (what the page was shown, a draft with its schedule, would be
+// saved as one the browser vouches for, neither a draft nor reviewed).
+TEST_F(AgentStudioStorageTest, ASaveOfAWorkflowGoneSinceItWasOpenedIsRefused) {
+  UseRecord();
+  using Spoil = void (*)(const base::FilePath& file);
+  const std::pair<const char*, Spoil> kSpoils[] = {
+      {"deleted",
+       [](const base::FilePath& file) { ASSERT_TRUE(base::DeleteFile(file)); }},
+      {"unreadable",
+       [](const base::FilePath& file) {
+         ASSERT_TRUE(base::WriteFile(file, "not a workflow"));
+       }},
+      {"over the cap",
+       [](const base::FilePath& file) {
+         ASSERT_TRUE(base::WriteFile(
+             file, std::string(automation::kMaxScriptFileBytes + 1, ' ')));
+       }},
+  };
+  for (const auto& [what, spoil] : kSpoils) {
+    Plant(Claiming("wf_1"));
+    Answer get = Ask(Request(Kind::kGet, "wf_1"));
+    ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken"))) << what;
+    spoil(places_.shared_dir.AppendASCII("wf_1.molt"));
+    // What the page sends back: the steps, name and schedule it was shown,
+    // no security.
+    Script shown = Workflow("wf_1", "Prices");
+    shown.trigger = Claiming("wf_1").trigger;
+    Answer saved =
+        SaveSharedWorkflow(places_, Save(std::move(shown)), Holds::kNothing);
+    ASSERT_TRUE(Error(saved)) << what;
+    EXPECT_EQ(*Error(saved),
+              "This workflow was deleted or changed since you opened it. "
+              "Open it again.")
+        << what;
+    EXPECT_FALSE(saved.out.FindString("id")) << what;
+    EXPECT_FALSE(Shared().Load("wf_1")) << what;
+  }
+}
+
+// A new workflow's id was made for it: it is saved under a free one, never
+// over a file that is there by then.
+TEST_F(AgentStudioStorageTest, ANewWorkflowIsNeverSavedOverAnother) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  const std::string bytes = Bytes("wf_1");
+  Answer saved = SaveSharedWorkflow(
+      places_, New(Workflow("wf_1", "Mine"), /*recorded_here=*/true),
+      Holds::kNothing);
+  ASSERT_TRUE(saved.out.FindString("id"));
+  const std::string id = *saved.out.FindString("id");
+  EXPECT_NE(id, "wf_1");
+  EXPECT_EQ(*saved.out.FindString("trust"), "approved");
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+  std::optional<Script> mine = Shared().Load(id);
+  ASSERT_TRUE(mine);
+  EXPECT_EQ(mine->name, "Mine");
+  EXPECT_FALSE(mine->security.changed_outside);
+  EXPECT_EQ(mine->security.trust, TrustLevel::APPROVED);
+  EXPECT_TRUE(Shared().Load("wf_1")->security.changed_outside);
+}
+
+// An interval schedule the studio writes with no last fire counts from
+// then (the scheduler counts one with none from each listing, so it would
+// never fire): saved afresh, or confirmed after a review.
+TEST_F(AgentStudioStorageTest, AnIntervalScheduleCountsFromWhenItIsWritten) {
+  UseRecord();
+  ASSERT_TRUE(Shared().Save(Workflow("wf_1", "Prices")));
+  const int64_t before = base::Time::Now().ToTimeT();
+  WorkflowRequest schedule = Request(Kind::kSchedule, "wf_1");
+  schedule.trigger.type = automation::TriggerType::INTERVAL;
+  schedule.trigger.expression = "3600";
+  Answer scheduled = Ask(schedule);
+  ASSERT_TRUE(scheduled.trigger);
+  EXPECT_GE(scheduled.trigger->last_fired_unix, before);
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_GE(stored->trigger.last_fired_unix, before);
+  EXPECT_LE(stored->trigger.last_fired_unix, base::Time::Now().ToTimeT());
+  // A cron schedule saved afresh has none: no catch-up run.
+  schedule.trigger.type = automation::TriggerType::CRON;
+  schedule.trigger.expression = "0 9 * * *";
+  ASSERT_TRUE(Ask(schedule).trigger);
+  EXPECT_EQ(Shared().Load("wf_1")->trigger.last_fired_unix, 0);
+  // A file changed outside (its own last fire not believed), confirmed.
+  Plant(Claiming("wf_2"));
+  Answer get = Ask(Request(Kind::kGet, "wf_2"));
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_2");
+  confirm.sites = {"news.example"};
+  confirm.review_token = *get.out.FindString("reviewToken");
+  ASSERT_EQ(Ask(confirm).out.FindBool("ok"), true);
+  stored = Shared().Load("wf_2");
+  ASSERT_TRUE(stored);
+  EXPECT_FALSE(stored->security.changed_outside);
+  EXPECT_GE(stored->trigger.last_fired_unix, before);
 }
 
 }  // namespace

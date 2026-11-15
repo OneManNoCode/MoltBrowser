@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <ctime>
 #include <set>
 #include <sstream>
@@ -70,6 +71,32 @@ struct ExplodedLocal {
 ExplodedLocal Explode(const std::tm& tm) {
   return {tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
           tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday};
+}
+
+// A timer may come this much before its fire time by the wall clock.
+constexpr base::TimeDelta kDueSlack = base::Seconds(1);
+
+// Whether |script|, read again when its timer comes, is due at |now|: a
+// cron or interval workflow whose last fire is known only once the next
+// fire after that one has come (else it fired, or was snoozed, since it
+// was listed: a catch-up, another browser's run). A cron workflow whose
+// last fire is still in the future (a clock that was ahead) is due, as
+// before: its timer doesn't wait for that time, and its fire records the
+// real one.
+bool IsDue(const Script& script, base::Time now) {
+  const Trigger& trigger = script.trigger;
+  if ((trigger.type != TriggerType::CRON &&
+       trigger.type != TriggerType::INTERVAL) ||
+      trigger.last_fired_unix <= 0) {
+    return true;
+  }
+  const base::Time last_fired = base::Time::FromTimeT(trigger.last_fired_unix);
+  if (trigger.type == TriggerType::CRON && last_fired > now) {
+    return true;
+  }
+  const base::Time next =
+      AutomationScheduler::NextFireTime(trigger, last_fired);
+  return !next.is_null() && next <= now + kDueSlack;
 }
 
 }  // namespace
@@ -271,8 +298,12 @@ void AutomationScheduler::OnListed(base::Time now,
 
     if (catchup) {
       if (fire_cb_) fire_cb_.Run(s, now);
-      // After catch-up, recompute next.
-      next = NextFireTime(s.trigger, now);
+      // The next one after this fire: counted from the stale last fire, an
+      // interval's would be overdue, and its timer would fire it again.
+      Trigger fired = s.trigger;
+      fired.last_fired_unix =
+          static_cast<int64_t>(now.InSecondsFSinceUnixEpoch());
+      next = NextFireTime(fired, now);
     }
 
     if (next.is_null()) continue;
@@ -322,9 +353,11 @@ void AutomationScheduler::OnTimerScriptLoaded(std::optional<Script> script) {
   if (!started_)
     return;
   // As read now: a workflow changed (outside the browser, or into a draft)
-  // since it was listed doesn't fire.
-  if (script && fire_cb_ && AutomationSecurity::MayFireUnattended(*script)) {
-    fire_cb_.Run(*script, base::Time::Now());
+  // since it was listed doesn't fire, nor one fired since (IsDue()).
+  const base::Time now = base::Time::Now();
+  if (script && fire_cb_ && AutomationSecurity::MayFireUnattended(*script) &&
+      IsDue(*script, now)) {
+    fire_cb_.Run(*script, now);
   }
   Tick();
 }
