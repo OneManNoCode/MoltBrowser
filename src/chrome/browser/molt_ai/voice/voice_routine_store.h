@@ -185,7 +185,9 @@ class VoiceRoutineStore {
   // Deletes the routine called |name| (exactly one), or with id |id| when
   // |name| is empty.
   bool Delete(const std::string& name, const std::string& id);
-  // AutomationSecurity::ConfirmDraftSites() on exactly |sites|, then saved.
+  // AutomationSecurity::ConfirmDraftSites() on exactly |sites|, then saved;
+  // never for a routine changed outside the browser (security.
+  // changed_outside: confirmed in the Agent studio, after its review).
   bool ConfirmSites(const std::string& id,
                     const std::vector<std::string>& sites);
   // Every routine of the profile.

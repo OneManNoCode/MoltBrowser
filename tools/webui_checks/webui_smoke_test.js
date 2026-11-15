@@ -98,6 +98,19 @@ const CHANGED_WORKFLOW = {
   trigger: {type: 'cron', expression: '<b>* * * * *</b>'},
   steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'}],
 };
+// Another, of two sites, with a last fire from before the change; saved
+// with a step deleted, it targets one, and a confirm answers with its
+// schedule started over.
+const CHANGED_TWO_SITES = {
+  id: 'c2', name: 'Mail', variables: {},
+  security: {trust: 'casual', sites_unconfirmed: true, changed_outside: true},
+  draftSites: ['evil.example', 'mail.example'],
+  reviewToken: 'c'.repeat(64),
+  trigger: {type: 'cron', expression: '0 8 * * *', last_fired_unix: 1700000000},
+  steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'},
+          {type: 'navigate', target: 'https://mail.example/', description: 'Open mail.example'}],
+};
+const CONFIRMED_TRIGGER = {type: 'cron', expression: '0 8 * * *'};
 
 // The Agent studio's saves: a saved workflow's id is the one it sent, the
 // recording's it named, or a new one; a schedule is answered with the
@@ -1669,7 +1682,8 @@ const PAGES = [
        return {ok: true};
      },
      getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW :
-                            args[1] === 'c1' ? CHANGED_WORKFLOW : {
+                            args[1] === 'c1' ? CHANGED_WORKFLOW :
+                            args[1] === 'c2' ? CHANGED_TWO_SITES : {
        id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
        steps: [{type: 'navigate', target: 'https://www.example.com/'},
                {type: 'click', target: '#buy', description: 'Click "Buy"',
@@ -1689,12 +1703,19 @@ const PAGES = [
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
      saveWorkflow: (args) => {
        const w = args[1] || {};
+       // A draft saved: the sites its saved steps target, and the token of
+       // what was saved.
+       if (w.id === 'c2') {
+         return {id: 'c2', name: w.name, trust: 'casual',
+                 draftSites: ['evil.example'], reviewToken: 'd'.repeat(64)};
+       }
        return {id: w.id || w.recordedId || 'wf_new', name: w.name, trust: 'casual'};
      },
      saveSchedule: {ok: true, nextFire: 0, trigger: SAVED_TRIGGER},
      confirmDraftSites: (args) => {
        draftConfirmCalls.push(JSON.stringify(args.slice(1)));
-       return {ok: true, trust: 'casual'};
+       return args[1] === 'c2' ? {ok: true, trust: 'casual', trigger: CONFIRMED_TRIGGER}
+                               : {ok: true, trust: 'casual'};
      },
      voiceStatus: {enabled: true, moltnet: false},
      voiceCommand: (args) => {
@@ -1936,13 +1957,71 @@ const PAGES = [
      saved = saves().length;
      await window.saveEditor(true);
      assert.deepStrictEqual(saves()[saved].trigger, SAVED_TRIGGER);
-     // A saved interval (seconds) is shown in minutes or hours.
-     for (const [secs, num, unit] of [['1800', '30', 'm'], ['7200', '2', 'h']]) {
+     // A saved interval (seconds) is shown in hours or minutes when it is a
+     // whole number of them, else in seconds: saved unchanged, it is the
+     // same.
+     for (const [secs, num, unit, sent] of [['1800', '30', 'm', '30m'],
+                                            ['7200', '2', 'h', '2h'],
+                                            ['90', '90', 's', '90s'],
+                                            ['150', '150', 's', '150s']]) {
        window.openScheduleSheet('w1', 'W', {type: 'interval', expression: secs});
        assert.strictEqual(doc.getElementById('ivNum').value, num, secs);
        assert.strictEqual(doc.getElementById('ivUnit').value, unit, secs);
-       window.closeScrim('schedScrim');
+       doc.getElementById('schedSave').click();
+       const scheduled = argsOf(window, 'saveSchedule');
+       assert.strictEqual(JSON.stringify(scheduled[scheduled.length - 1][1]),
+                          JSON.stringify({type: 'interval', expression: sent}), secs);
+       await tick();
      }
+     // A save waiting for another is of the editor it was asked in: dropped
+     // when another editor was opened meanwhile (never that one's content
+     // saved under the first's id), and Run doesn't run it.
+     window.openEditor('w1');
+     await tick();
+     saved = saves().length;
+     const getsBefore = argsOf(window, 'getWorkflow').length;
+     const first = window.saveEditor(true);
+     const waiting = window.saveEditor(true);
+     doc.getElementById('edRunBtn').click();
+     window.openEditorDraft({name: 'Blank', steps: [], variables: {}});
+     assert.deepStrictEqual([await first, await waiting], ['w1', null]);
+     await tick();
+     assert.strictEqual(saves().length, saved + 1, 'only the first editor saved');
+     assert.strictEqual(window.editorState.id, null, 'the new editor keeps no id');
+     assert.strictEqual(window.editorState.name, 'Blank');
+     assert.strictEqual(argsOf(window, 'getWorkflow').length, getsBefore, 'nothing run');
+     // A changed workflow edited and not saved yet: Confirm saves it first
+     // (no confirm of the stored file with the token of what was opened),
+     // shows the sites its saved steps use, and a click of its own confirms
+     // them with the token of what was saved. The schedule is then the one
+     // confirmed, which the next save keeps.
+     window.openEditor('c2');
+     await tick();
+     assert.deepStrictEqual(
+         Array.from(doc.querySelectorAll('#edTrust .draft-site')).map((e) => e.textContent),
+         ['evil.example', 'mail.example']);
+     window.deleteStep(1);
+     saved = saves().length;
+     const confirmsBefore = draftConfirmCalls.length;
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.length, confirmsBefore, 'not confirmed unsaved');
+     assert.strictEqual(saves().length, saved + 1, 'saved first');
+     assert.strictEqual(saves()[saved].steps.length, 1);
+     await tick();
+     assert.deepStrictEqual(
+         Array.from(doc.querySelectorAll('#edTrust .draft-site')).map((e) => e.textContent),
+         ['evil.example'], 'the sites of the saved steps');
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(),
+                        '["c2",["evil.example"],"' + 'd'.repeat(64) + '"]',
+                        'confirmed with the token of what was saved');
+     await tick();
+     assert(!/Changed outside MoltBrowser/.test(doc.getElementById('edTrust').textContent));
+     assert.deepStrictEqual(window.editorState.trigger, CONFIRMED_TRIGGER);
+     saved = saves().length;
+     await window.saveEditor(true);
+     assert.deepStrictEqual(saves()[saved].trigger, CONFIRMED_TRIGGER,
+                            'no last fire from before the change written back');
      // A run's question: shown in the run's ticker as text; "Use it" and
      // "Stop the run" send the answer for that question from the click.
      window.showView('library');

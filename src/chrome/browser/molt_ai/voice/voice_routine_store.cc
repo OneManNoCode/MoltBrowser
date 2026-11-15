@@ -286,7 +286,10 @@ bool VoiceRoutineStore::ConfirmSites(const std::string& id,
                                      const std::vector<std::string>& sites) {
   std::vector<Script> routines = Routines();
   Script* script = Find(routines, std::string(), id);
-  if (!script || !AutomationSecurity::ConfirmDraftSites(*script, sites) ||
+  // One changed outside the browser is confirmed only in the Agent studio,
+  // with the review token of the steps it showed.
+  if (!script || script->security.changed_outside ||
+      !AutomationSecurity::ConfirmDraftSites(*script, sites) ||
       !mine_.Save(*script)) {
     return false;
   }

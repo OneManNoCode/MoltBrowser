@@ -623,8 +623,9 @@ TEST_F(VoiceRoutineStoreTest, TwoWritersOnTheProfilesSequence) {
 
 // ---- The shared storage's workflow record (workflow_record.h) ----------
 // A routine from before profiles whose file was changed outside the browser
-// is claimed as a draft; one the browser wrote, as it was; a claim of a
-// changed one cut short is still recognised.
+// is claimed as a draft, which voice mode neither runs nor confirms (only
+// the Agent studio does, after its review); one the browser wrote, as it
+// was; a claim of a changed one cut short is still recognised.
 
 class VoiceRoutineStoreRecordTest : public VoiceRoutineStoreTest {
  protected:
@@ -667,6 +668,21 @@ TEST_F(VoiceRoutineStoreRecordTest,
   EXPECT_TRUE(moved->security.domain_whitelist.empty());
   ASSERT_EQ(store.Summaries().size(), 1u);
   EXPECT_TRUE(store.Summaries()[0].needs_sites_confirmed);
+  // Not run nor confirmed by voice on its sites alone: its steps are
+  // reviewed in the Agent studio first.
+  std::optional<RoutineToRun> run = store.Load("my news", "");
+  ASSERT_TRUE(run);
+  EXPECT_FALSE(run->ok);
+  EXPECT_TRUE(run->steps.empty());
+  EXPECT_EQ(run->why,
+            "This routine was changed outside MoltBrowser. Review it in Agent "
+            "mode first.");
+  EXPECT_FALSE(store.ConfirmSites(moved->id, run->sites));
+  moved = store.storage().Load("voice_1");
+  ASSERT_TRUE(moved);
+  EXPECT_TRUE(moved->security.sites_unconfirmed);
+  EXPECT_TRUE(moved->security.changed_outside);
+  EXPECT_TRUE(moved->security.domain_whitelist.empty());
 }
 
 TEST_F(VoiceRoutineStoreRecordTest, AVouchedOldRoutineIsClaimedAsItWas) {

@@ -778,10 +778,38 @@ TEST_F(AgentStudioStorageTest,
     WorkflowRequest confirm = Request(Kind::kConfirmSites, id);
     confirm.sites = {"news.example"};
     confirm.review_token = *get.out.FindString("reviewToken");
-    ASSERT_EQ(Ask(confirm).out.FindBool("ok"), true) << id;
+    Answer confirmed = Ask(confirm);
+    ASSERT_EQ(confirmed.out.FindBool("ok"), true) << id;
     std::optional<Script> stored = Shared().Load(id);
     ASSERT_TRUE(stored) << id;
     EXPECT_FALSE(stored->security.changed_outside) << id;
+    if (interval) {
+      EXPECT_GE(stored->trigger.last_fired_unix, before) << id;
+    } else {
+      EXPECT_EQ(stored->trigger.last_fired_unix, 0) << id;
+    }
+    // Answered with the trigger as confirmed, which the editor keeps for
+    // its next save: the one it opened carries the fire from before the
+    // change, which written back would run a cron schedule at once.
+    const base::DictValue* trigger = confirmed.out.FindDict("trigger");
+    ASSERT_TRUE(trigger) << id;
+    const base::DictValue* opened = get.out.FindDict("trigger");
+    ASSERT_TRUE(opened) << id;
+    EXPECT_EQ(opened->FindDouble("last_fired_unix"),
+              std::optional<double>(two_days_ago))
+        << id;
+    base::DictValue page = changed.ToJSON();
+    page.Set("trigger", trigger->Clone());
+    std::optional<Script> edit = Script::FromJSON(page);
+    ASSERT_TRUE(edit) << id;
+    edit->name = "Prices, renamed";
+    EXPECT_FALSE(Error(
+        SaveSharedWorkflow(places_, Save(std::move(*edit)), Holds::kNothing)))
+        << id;
+    stored = Shared().Load(id);
+    ASSERT_TRUE(stored) << id;
+    EXPECT_EQ(stored->name, "Prices, renamed") << id;
+    EXPECT_FALSE(stored->security.sites_unconfirmed) << id;
     if (interval) {
       EXPECT_GE(stored->trigger.last_fired_unix, before) << id;
     } else {

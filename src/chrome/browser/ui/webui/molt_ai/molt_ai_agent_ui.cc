@@ -1076,14 +1076,15 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     Trigger trig;
     if (type && *type == "interval") {
       trig.type = TriggerType::INTERVAL;
-      // UI sends "<n>m" / "<n>h"; the engine wants seconds.
+      // UI sends "<n>s" / "<n>m" / "<n>h"; the engine wants seconds.
       int secs = 3600;
       std::string e = expr ? *expr : "60m";
-      if (!e.empty() && (e.back() == 'm' || e.back() == 'h')) {
+      if (!e.empty() &&
+          (e.back() == 's' || e.back() == 'm' || e.back() == 'h')) {
         char unit = e.back();
         int n = 0;
         base::StringToInt(e.substr(0, e.size() - 1), &n);
-        secs = (unit == 'h') ? n * 3600 : n * 60;
+        secs = (unit == 'h') ? n * 3600 : (unit == 'm') ? n * 60 : n;
       } else {
         base::StringToInt(e, &secs);
       }
@@ -1166,7 +1167,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   // (AutomationSecurity::ConfirmDraftSites). The draft (from an agent run,
   // or a file changed outside the browser) then becomes an ordinary CASUAL
   // workflow on those sites; trusting it is a separate click (the
-  // activation is consumed: ConsumeUserClick()).
+  // activation is consumed: ConsumeUserClick()). The page sends it only
+  // when the editor shows what is saved (edits not saved yet are saved
+  // first, and the sites they use shown for another click), and keeps the
+  // trigger it is answered with for its next save.
   void HandleConfirmDraftSites(const base::ListValue& args) {
     AllowJavascript();
     base::DictValue out;
@@ -2135,12 +2139,21 @@ function openEditorDraft(wf){
     draftSites:cleanSites(wf.draftSites),
     reviewToken:cleanToken(wf.reviewToken)
   };
+  editorState.savedName=editorState.name;
+  editorState.savedBody=editorBody(editorState);
   $('edName').value=editorState.name;
   renderEditorMeta();renderEditorSteps();
   showView('editor');
   $('edSteps').parentNode.scrollTop=0;
 }
 $('edName').addEventListener('input',function(){editorState.name=this.value;});
+/* Whether the editor |es| shows what was opened or last saved (its name,
+   steps and variables), or changes not saved yet. */
+function editorBody(es){return JSON.stringify([es.steps,es.variables]);}
+function editorChanged(es){
+  return (es.name||'Untitled workflow')!==(es.savedName||'Untitled workflow')||
+         editorBody(es)!==es.savedBody;
+}
 
 function renderEditorMeta(){
   var m=$('edMeta');clear(m);
@@ -2225,11 +2238,23 @@ function renderDraftPanel(box){
     sites.forEach(function(site){list.appendChild(h('span',{'class':'draft-site'},site));});
     kids.push(list);
     kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
+      // The browser confirms what is saved (the token is of that): edits
+      // not saved yet are saved first, and the sites they use now shown
+      // for a click of their own.
+      if(editorChanged(es)){
+        saveEditor(true).then(function(id){
+          if(id!=null&&editorState===es)toast('Saved — check the sites, then confirm','ok');
+        });
+        return;
+      }
       var shown=sites.slice();
       sendWithPromise('confirmDraftSites',es.id,shown,es.reviewToken||'').then(function(r){
         if(!r||!r.ok){toast((r&&r.error)||'Couldn’t confirm the sites','err');return;}
         es.draft=false;es.changedOutside=false;es.draftSites=[];es.reviewToken='';
         if(r.trust)es.trust=r.trust;
+        // The schedule as confirmed (started over): the one opened would
+        // write back the last fire from before the change.
+        if(r.trigger&&typeof r.trigger.type==='string')es.trigger=r.trigger;
         toast('Sites confirmed — it can run now','ok');
         renderEditorMeta();renderEditorSteps();
       }).catch(function(){toast('Couldn’t confirm the sites','err');});
@@ -2465,12 +2490,14 @@ $('edSaveBtn').addEventListener('click',function(){
   });
 });
 $('edRunBtn').addEventListener('click',function(){
-  saveEditor(true).then(function(id){if(id!=null)runWorkflowFlow(id);});
+  var es=editorState;
+  saveEditor(true).then(function(id){if(id!=null&&editorState===es)runWorkflowFlow(id);});
 });
 $('edSchedBtn').addEventListener('click',function(){
-  if(editorState&&editorState.draft){
-    toast(editorState.changedOutside?'Review this workflow first':'Confirm this draft’s sites first','err');return;}
-  saveEditor(true).then(function(id){if(id!=null)openScheduleSheet(id,editorState.name,editorState.trigger);});
+  var es=editorState;
+  if(es&&es.draft){
+    toast(es.changedOutside?'Review this workflow first':'Confirm this draft’s sites first','err');return;}
+  saveEditor(true).then(function(id){if(id!=null&&editorState===es)openScheduleSheet(id,es.name,es.trigger);});
 });
 /* A workflow opened here is saved under its id (an edit of what is
    stored); a new one with no id, and a recording's first save with the id
@@ -2485,29 +2512,36 @@ function collectWorkflow(){
 }
 /* One save at a time: a second one (a double click, Save then Run) waits
    for the first, so it is saved under the id the first was given, not as
-   a second new workflow. */
+   a second new workflow. Each save is of the editor it was asked in: one
+   that waited is dropped if another editor was opened meanwhile, and an
+   answer changes only its own editor. */
 var editorSaving=null;
 function saveEditor(quiet){
-  if(editorSaving)return editorSaving.then(function(){return saveEditor(quiet);});
-  if(!editorState)return Promise.resolve(null);
+  var es=editorState;
+  if(!es)return Promise.resolve(null);
+  if(editorSaving)return editorSaving.then(function(){
+    return editorState===es?saveEditor(quiet):null;});
   var w=collectWorkflow();
+  var body=editorBody(es);
   editorSaving=sendWithPromise('saveWorkflow',w).then(function(r){
     if(r&&typeof r.error==='string'){toast(r.error,'err');return null;}
     if(r&&r.id!=null){
-      editorState.id=r.id;
+      es.id=r.id;
       // A routine taught by voice may be renamed to keep its name its own.
-      if(typeof r.name==='string')editorState.name=r.name;
-      if(r.trust)editorState.trust=r.trust;
+      if(typeof r.name==='string')es.name=r.name;
+      if(r.trust)es.trust=r.trust;
+      es.savedName=typeof r.name==='string'?r.name:w.name;
+      es.savedBody=body;
       // Still a draft: the sites its saved steps target now, and the token
       // of what was saved (what a confirm now confirms).
-      if(editorState.draft){
-        editorState.draftSites=cleanSites(r.draftSites);
-        editorState.reviewToken=cleanToken(r.reviewToken);
+      if(es.draft){
+        es.draftSites=cleanSites(r.draftSites);
+        es.reviewToken=cleanToken(r.reviewToken);
       }
-      renderEditorMeta();
+      if(editorState===es)renderEditorMeta();
     }
     if(!quiet)toast('Saved','ok');
-    return editorState.id;
+    return es.id;
   }).catch(function(){toast('Couldn’t save','err');return null;})
     .then(function(id){editorSaving=null;return id;});
   return editorSaving;
@@ -2752,8 +2786,8 @@ function openScheduleSheet(id,name,trigger){
   body.appendChild(opt('manual','Manual only','Runs only when you press Run.'));
 
   var numI=h('input',{'class':'inp num',id:'ivNum',type:'number',min:'1',value:iv.n,'aria-label':'Every how many',onInput:updateNext,onFocus:function(){pickMode('interval');}});
-  var unitI=h('select',{'class':'inp',id:'ivUnit','aria-label':'Minutes or hours',onChange:updateNext,onFocus:function(){pickMode('interval');}},[
-    h('option',{value:'m'},'minutes'),h('option',{value:'h'},'hours')
+  var unitI=h('select',{'class':'inp',id:'ivUnit','aria-label':'Seconds, minutes or hours',onChange:updateNext,onFocus:function(){pickMode('interval');}},[
+    h('option',{value:'s'},'seconds'),h('option',{value:'m'},'minutes'),h('option',{value:'h'},'hours')
   ]);
   unitI.value=iv.unit;
   body.appendChild(opt('interval','Every so often','Repeat on a fixed timer.',
@@ -2783,18 +2817,21 @@ function pickMode(mode){
   updateNext();
 }
 function parseInterval(expr){
-  var m=/^(\d+)\s*([mh])?$/.exec(String(expr||'').trim());
+  var m=/^(\d+)\s*([smh])?$/.exec(String(expr||'').trim());
   if(m)return {n:parseInt(m[1],10)||30,unit:m[2]||'m'};
   return {n:30,unit:'m'};
 }
-/* A saved interval is in seconds ("1800"); the sheet's in minutes or
-   hours. */
+/* A saved interval is in seconds ("1800"); the sheet shows it in hours or
+   minutes when it is a whole number of them, else in seconds, so saved
+   unchanged it stays the same. */
 function savedInterval(expr){
   var e=String(expr||'').trim();
   if(!/^\d+$/.test(e))return parseInterval(e);
   var secs=parseInt(e,10)||0;
+  if(secs<=0)return {n:1,unit:'m'};
   if(secs>=3600&&secs%3600===0)return {n:secs/3600,unit:'h'};
-  return {n:Math.max(1,Math.round(secs/60)),unit:'m'};
+  if(secs%60===0)return {n:secs/60,unit:'m'};
+  return {n:secs,unit:'s'};
 }
 function currentTrigger(){
   var mode=scheduleCtx.mode;
@@ -2811,7 +2848,7 @@ function previewNext(tr){
   var now=new Date();
   if(tr.type==='interval'){
     var iv=parseInterval(tr.expression);
-    var secs=iv.n*(iv.unit==='h'?3600:60);
+    var secs=iv.n*(iv.unit==='h'?3600:iv.unit==='s'?1:60);
     return Math.floor(now.getTime()/1000)+secs;
   }
   if(tr.type==='daily'){

@@ -61,13 +61,17 @@
 // record vouches for the file and it can be a fire since this browser last
 // wrote there, else the one this browser wrote or fired at, or, for one
 // written since that is still to come (another browser's Snooze or Skip),
-// when this browser first read it (WorkflowRecord::LastFired(): a forged
-// earlier one forces no catch-up run, a later one forces none either and
-// holds a schedule back at most an interval). A read that finds a file
+// when this browser first read it, kept in the record across restarts
+// (WorkflowRecord::LastFired(): a forged earlier one forces no catch-up
+// run, a later one written once forces none either and holds a schedule
+// back at most an interval). A read that finds a file
 // unvouched looks again under the directory's lock, so a save in progress
 // in this browser is never taken for a change. Every write records what it
 // wrote (the bytes it writes, parsed as a reader parses them, its last fire
-// time included): Save(), SaveNew(), SaveChecked(), Update() (so
+// time included; SaveChecked() and Update() write the last fire believed
+// in place of an earlier nonzero one, which comes from a page opened
+// before a fire, this browser's or another's, and would run it again):
+// Save(), SaveNew(), SaveChecked(), Update() (so
 // SetTrustLevel()), each setting the entry before it renames the file into
 // place (put back as it was if the file can't be written); a move's renames
 // copy the entry to the new name first and forget the old one after, and

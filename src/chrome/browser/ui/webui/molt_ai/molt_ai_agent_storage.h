@@ -33,8 +33,8 @@
 // opened) is an edit of what is stored then, refused if it is gone; only a
 // save that names none is a new workflow (SaveRequest, KindOfSave()). An
 // interval schedule the studio writes without a last fire (saveSchedule,
-// confirmDraftSites) counts from then, and saveSchedule answers with the
-// trigger it saved.
+// confirmDraftSites) counts from then, and saveSchedule and
+// confirmDraftSites answer with the trigger they saved.
 //
 // Blocking (file I/O); base::Value and the storages only, so
 // molt_ai_unittests tests it on temporary directories.

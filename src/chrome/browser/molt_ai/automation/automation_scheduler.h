@@ -25,10 +25,12 @@
 // the file's own only when it can be a fire since the browser last wrote
 // the file, else the one the browser wrote or fired at, or, for one still
 // to come (another browser's Snooze or Skip), when the browser first read
-// it (automation_storage.h): a forged earlier one forces no catch-up run, a
-// later one forces none either and holds the schedule back at most an
-// interval. base only (the storage's sequences), so molt_ai_unittests
-// tests it.
+// it, across restarts too (automation_storage.h): a forged earlier one
+// forces no catch-up run, a later one written once forces none either and
+// holds the schedule back at most an interval from that read (so another
+// browser's Snooze longer than the interval holds it back only that long
+// here). base only (the storage's sequences), so molt_ai_unittests tests
+// it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_

@@ -906,8 +906,9 @@ TEST_F(AutomationStorageRecordTest,
 // browser's Snooze or Skip, or forged) isn't believed: it counts as a fire
 // when this browser first read it, so it forces no catch-up run of the
 // old fire and holds the schedule back at most an interval (it never
-// stalls it). A bookkeeping write (a run's stats) records nothing of it; a
-// Trust click writes the fire it read, in place of the one still to come.
+// stalls it), across a restart too. A bookkeeping write (a run's stats)
+// records no fire of it; a Trust click writes the fire it read, in place
+// of the one still to come.
 TEST_F(AutomationStorageRecordTest,
        AFutureLastFiredCountsAsAFireWhenFirstRead) {
   ASSERT_TRUE(storage().Save(Hourly("wf_1")));
@@ -930,8 +931,12 @@ TEST_F(AutomationStorageRecordTest,
   }));
   EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, kFarFuture);
   EXPECT_EQ(record->FiredFloor("wf_1.molt"), fired);
-  // Read again: the same fire.
+  // Read again: the same fire, after a restart too.
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
+  record = WorkflowRecord::For(dir_);
+  ASSERT_TRUE(record);
   // A Trust click writes what it read.
   ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::APPROVED));
   EXPECT_EQ(record->FiredFloor("wf_1.molt"), read);
@@ -996,6 +1001,58 @@ TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsTheLastFire) {
   EXPECT_EQ(loaded->trigger.last_fired_unix, now - 60);
   Restart(/*may_seed=*/false);
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now - 60);
+}
+
+// The same for another browser's run, which this browser believes: a
+// save from a page opened before it (an editor, a card) writes that run,
+// not the page's earlier last fire, which would be believed here and run
+// it again at the next listing.
+TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsAnotherBrowsersRun) {
+  base::test::TaskEnvironment task_environment(
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME);
+  task_environment.AdvanceClock(
+      base::Time::FromSecondsSinceUnixEpoch(1'800'000'000) - base::Time::Now());
+  const base::FilePath a = user_data_dir_;
+  const base::FilePath b = temp_.GetPath().AppendASCII("Other User Data");
+  ASSERT_TRUE(base::CreateDirectory(b));
+  const int64_t start = NowUnix();
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  ASSERT_TRUE(storage().RecordFire("wf_1", start));
+  // B's first start of this version seeds it.
+  Restart(/*may_seed=*/true, b);
+  ASSERT_FALSE(Load("wf_1")->security.changed_outside);
+  // Half an hour on, A's page opens it.
+  task_environment.AdvanceClock(base::Minutes(30));
+  Restart(/*may_seed=*/false, a);
+  std::optional<Script> page = Load("wf_1");
+  ASSERT_TRUE(page);
+  ASSERT_EQ(page->trigger.last_fired_unix, start);
+  // B runs it an hour after the first run.
+  task_environment.AdvanceClock(base::Minutes(30));
+  Restart(/*may_seed=*/true, b);
+  ASSERT_TRUE(storage().RecordFire("wf_1", start + 3600));
+  // Half an hour later, A's page saves its copy, renamed.
+  task_environment.AdvanceClock(base::Minutes(30));
+  Restart(/*may_seed=*/false, a);
+  ASSERT_EQ(Load("wf_1")->trigger.last_fired_unix, start + 3600);
+  page->name = "Prices, renamed";
+  ASSERT_TRUE(storage().SaveChecked(
+      std::move(*page),
+      [](const Script* stored, Script&) { return stored != nullptr; }));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->name, "Prices, renamed");
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, start + 3600);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, start + 3600);
+  // A change that writes a page's earlier one keeps it too.
+  ASSERT_TRUE(storage().Update("wf_1", [start](Script& script) {
+    script.trigger.last_fired_unix = start;
+    return true;
+  }));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, start + 3600);
+  Restart(/*may_seed=*/false, a);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, start + 3600);
 }
 
 // A fire recorded while the clock was ahead gives way to the next fire on

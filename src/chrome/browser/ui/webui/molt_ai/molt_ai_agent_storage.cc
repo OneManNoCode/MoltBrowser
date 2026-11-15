@@ -295,6 +295,7 @@ Answer OnFound(const WorkflowRequest& request,
       bool was_changed_outside = false;
       std::string sites;
       std::string trust;
+      automation::Trigger trigger;
       const bool saved = storage.Update(id, [&](Script& stored) {
         // Exactly what the user reviewed: a file changed since (outside
         // the browser, or saved again) isn't confirmed blindly.
@@ -320,6 +321,7 @@ Answer OnFound(const WorkflowRequest& request,
           sites += (sites.empty() ? "" : " ") + host;
         }
         trust = TrustLevelToString(stored.security.trust);
+        trigger = stored.trigger;
         return true;
       });
       if (changed_since_review) {
@@ -339,6 +341,10 @@ Answer OnFound(const WorkflowRequest& request,
       answer.routines_changed = routines != nullptr;
       answer.out.Set("ok", true);
       answer.out.Set("trust", trust);
+      // As saved (started over, for a file changed outside), for the
+      // editor's next save: the one it opened would write back the fire
+      // from before the change.
+      answer.out.Set("trigger", automation::TriggerToDict(trigger));
       return answer;
     }
   }

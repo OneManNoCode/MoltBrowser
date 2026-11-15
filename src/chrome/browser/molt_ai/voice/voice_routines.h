@@ -50,7 +50,10 @@
 //
 // ReadRoutine() reads a .molt as untrusted (it may have been imported or
 // edited): every step must be a known voice command with valid, capped
-// fields, or the routine isn't run by voice. Fuzzed by
+// fields, or the routine isn't run by voice. Nor is one whose file was
+// changed outside the browser (security.changed_outside, a routine from
+// before profiles claimed as a draft): its sites are confirmed only in the
+// Agent studio, once its steps were shown there. Fuzzed by
 // molt_voice_learning_fuzzer.
 //
 // base::Value and GURL only: unit-tested in molt_ai_unittests.
@@ -122,7 +125,9 @@ struct ReadRoutineResult {
   std::string why;
 };
 
-// The voice routine in |script|, read as untrusted.
+// The voice routine in |script|, read as untrusted. Not one changed
+// outside the browser (security.changed_outside): it is reviewed in the
+// Agent studio first.
 ReadRoutineResult ReadRoutine(const automation::Script& script);
 
 // Whether a routine's |sites| (AutomationSecurity::HostsReferencedBy())

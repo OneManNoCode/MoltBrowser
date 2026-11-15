@@ -10,8 +10,9 @@
 // time set by writes (never back below a past fire) and raised by fires (a
 // fire recorded on a clock that was ahead giving way), an entry restored
 // exactly, a file's last fire believed only since this browser's last
-// write (one still to come counting as a fire when it was first read), and
-// a session's writes before configuration kept.
+// write (one still to come counting as a fire when it was first read, kept
+// across restarts until this browser writes or fires there), and a
+// session's writes before configuration kept.
 
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
 
@@ -322,14 +323,21 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
         std::string("x/y.molt"), std::string(".hidden.molt"), long_name,
         std::string("short.molt"), std::string("upper.molt"),
         std::string("fired.molt"), std::string("written.molt"),
-        std::string("unwritten.molt"), std::string("notes.txt")}) {
+        std::string("unwritten.molt"), std::string("notes.txt"),
+        std::string("pending.molt")}) {
     present_.insert(name);
   }
   auto entry = [](const std::string& digest) {
     return base::DictValue().Set("digest", digest).Set("written", 1.0);
   };
   base::DictValue files;
-  files.Set("a.molt", entry(good).Set("fired", 1800000000.0));
+  files.Set("a.molt", entry(good)
+                          .Set("fired", 1800000000.0)
+                          .Set("pending", 4102444800.0)
+                          .Set("pending_seen", 1800000100.0));
+  // A malformed pending fire time: the entry without it.
+  files.Set("pending.molt",
+            entry(good).Set("pending", "x").Set("pending_seen", 1800000100.0));
   files.Set("b.molt.0123.taken", entry(good));
   files.Set("x/y.molt", entry(good));
   files.Set(".hidden.molt", entry(good));
@@ -355,6 +363,11 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
   EXPECT_EQ(loaded->origin(), Origin::kSeeded);
   EXPECT_TRUE(loaded->Vouches("a.molt", good));
   EXPECT_EQ(loaded->FiredFloor("a.molt"), 1800000000);
+  EXPECT_EQ(loaded->EntryOf("a.molt")->pending, 4102444800);
+  EXPECT_EQ(loaded->EntryOf("a.molt")->pending_seen, 1800000100);
+  EXPECT_TRUE(loaded->Vouches("pending.molt", good));
+  EXPECT_EQ(loaded->EntryOf("pending.molt")->pending, 0);
+  EXPECT_EQ(loaded->EntryOf("pending.molt")->pending_seen, 0);
   EXPECT_TRUE(loaded->Vouches("b.molt.0123.taken", good));
   for (const std::string& dropped :
        {std::string("x/y.molt"), std::string(".hidden.molt"), std::string(),
@@ -365,8 +378,8 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
   }
   EXPECT_FALSE(loaded->Vouches("short.molt", std::string(63, 'a')));
   EXPECT_FALSE(loaded->Vouches("upper.molt", std::string(64, 'A')));
-  EXPECT_EQ(RecordedNames(),
-            (std::set<std::string>{"a.molt", "b.molt.0123.taken"}));
+  EXPECT_EQ(RecordedNames(), (std::set<std::string>{"a.molt", "pending.molt",
+                                                    "b.molt.0123.taken"}));
 }
 
 TEST_F(WorkflowRecordTest, EntriesForFilesNoLongerThereAreDroppedAtLoad) {
@@ -551,7 +564,11 @@ TEST_F(WorkflowRecordTest, AnEarlierFireTimeWrittenKeepsAPastFire) {
 // comes, as a fire when this browser first read it: the same value read
 // later keeps that time (a schedule is held back at most an interval, not
 // stalled), another value is read afresh, and within the slack it is
-// believed. None of it is recorded; the next start reads it afresh.
+// believed. It is never recorded as a fire. When it was first read is kept
+// in the record, so the next start keeps it too (read afresh at each
+// start, a value written once would hold the schedule back again at each
+// one); this browser's own write or fire there drops it, so the same value
+// written there again since is read afresh.
 TEST_F(WorkflowRecordTest, AFireTimeStillToComeCountsAsAFireWhenFirstRead) {
   base::test::TaskEnvironment task_environment(
       base::test::TaskEnvironment::TimeSource::MOCK_TIME);
@@ -576,13 +593,28 @@ TEST_F(WorkflowRecordTest, AFireTimeStillToComeCountsAsAFireWhenFirstRead) {
   const int64_t later = NowUnix();
   record->Set("a.molt", Digest('a'), later + 3600);
   EXPECT_EQ(record->LastFired("a.molt", 4102444800), later + 3600);
-  // As at the next start: read afresh.
+  // A schedule saved afresh here a minute later: the same value written
+  // there again since is read afresh, never as of before that write.
+  task_environment.AdvanceClock(base::Minutes(1));
   record->Set("a.molt", Digest('a'), 0);
-  EXPECT_EQ(record->LastFired("a.molt", 4102444800), later);
+  task_environment.AdvanceClock(base::Minutes(1));
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), later + 120);
+  // As at the next start: when it was first read, kept.
   present_ = {"a.molt"};
   record = Start(/*may_seed=*/false);
+  task_environment.AdvanceClock(base::Hours(5));
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), later + 120);
+  EXPECT_EQ(record->FiredFloor("a.molt"), 0);
+  // A fire of this browser's drops it too.
+  const int64_t fired = NowUnix();
+  record->NoteFired("a.molt", fired);
   task_environment.AdvanceClock(base::Minutes(1));
-  EXPECT_EQ(record->LastFired("a.molt", 4102444800), later + 60);
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), fired + 60);
+  // Once the file says something else, it is dropped from the record.
+  EXPECT_EQ(record->LastFired("a.molt", fired - 7200), fired);
+  EXPECT_EQ(record->EntryOf("a.molt")->pending, 0);
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->EntryOf("a.molt")->pending, 0);
 }
 
 // A fire recorded while the clock was ahead is the last fire only until

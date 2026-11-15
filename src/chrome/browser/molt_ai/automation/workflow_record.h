@@ -17,7 +17,9 @@
 //      "created": "<ISO 8601>",
 //      "files": {"<file name>": {"digest": "<64 lowercase hex>",
 //                                "fired": <unix seconds>,
-//                                "written": <unix seconds>}}}
+//                                "written": <unix seconds>,
+//                                "pending": <unix seconds>,
+//                                "pending_seen": <unix seconds>}}}
 //   <user data dir>/Molt Workflow Record Started   ("1\n", never deleted)
 //
 // An entry, by the file's base name in the directory (<id>.molt, or a
@@ -35,10 +37,13 @@
 // earlier, nor later than now by kLastFiredSlackSeconds): LastFired(). One
 // written since that is still to come (another browser's Snooze or Skip,
 // or forged) counts, until it comes, as a fire when this browser first
-// read it (remembered in memory only). So an earlier one written there
-// forces no catch-up run, a later one forces none either and holds a
-// schedule back at most an interval, and no fire time read from a file is
-// ever recorded (but at seeding). A deleted file's entry is forgotten (put
+// read it: "pending" is that value and "pending_seen" when it was first
+// read, kept in the entry (so across restarts) until another value is
+// read or this browser writes or fires there. So an earlier one written
+// there forces no catch-up run, a later one written once forces none
+// either and holds a schedule back at most an interval, and no fire time
+// read from a file is ever recorded as "fired" (but at seeding). A
+// deleted file's entry is forgotten (put
 // back, it doesn't match), and an entry whose file is gone is dropped at
 // the next load,
 // unless the file is set aside now (<id>.molt while <id>.molt.*.taken is
@@ -65,11 +70,14 @@
 // under the
 // storage's change scope of |directory| (its lock, then its lock file), so
 // each is ordered with the file change it mirrors; their writes of the
-// record happen there too, one at a time. Vouches(), FiredFloor(),
-// LastFired(), EntryOf() and loaded() take only this record's own lock, the
-// innermost
-// of all (the registry's is another, never held with it). base only, so
-// molt_ai_unittests tests it on real files.
+// record happen there too. Vouches(), FiredFloor(), EntryOf() and loaded()
+// take only this record's own lock, the innermost of all (the registry's
+// is another, never held with it). LastFired() runs in readers too: it
+// takes that lock and, when it notes or drops a pending fire time, writes
+// the record. Every write of the record takes its write lock (taken before
+// the record's own lock), so the writes are one at a time, each of the
+// record as it is then: a reader's never lands after a later change's.
+// base only, so molt_ai_unittests tests it on real files.
 //
 // Tests: ScopedWorkflowRecordForTesting (workflow_record_test_util.h).
 
@@ -84,7 +92,6 @@
 #include <set>
 #include <string>
 #include <string_view>
-#include <utility>
 
 #include "base/files/file_path.h"
 #include "base/functional/function_ref.h"
@@ -123,6 +130,11 @@ class WorkflowRecord {
     int64_t fired = 0;
     // When this browser last wrote under the name (unix seconds).
     int64_t written = 0;
+    // A last fire time still to come that the file said since then
+    // (LastFired()), and when this browser first read it (unix seconds);
+    // 0 for none. A write or a fire of this browser's drops them.
+    int64_t pending = 0;
+    int64_t pending_seen = 0;
   };
   enum class Origin {
     kSeeded,
@@ -178,11 +190,12 @@ class WorkflowRecord {
   // can be a fire since this browser last wrote there (at least
   // Entry::written, at most now plus kLastFiredSlackSeconds); when it is
   // later than that, the time this browser first read that value there
-  // (remembered in memory until another value is read, or the record is
-  // configured again); FiredFloor() when it is earlier (a fire before that
-  // write is in what it wrote). With no entry for |name|, |file_fired| (at
-  // least 0).
-  int64_t LastFired(const std::string& name, int64_t file_fired) const;
+  // (Entry::pending_seen, kept in the record until another value is read
+  // or this browser writes or fires there); FiredFloor() when it is
+  // earlier (a fire before that write is in what it wrote). With no entry
+  // for |name|, |file_fired| (at least 0). Writes the record when it notes
+  // a value still to come, or drops one.
+  int64_t LastFired(const std::string& name, int64_t file_fired);
 
   // The entry recorded for |name| now, if any (for Restore()).
   std::optional<Entry> EntryOf(const std::string& name) const;
@@ -205,7 +218,7 @@ class WorkflowRecord {
   // clock, never a time read from a file: an entry's fire time rises to
   // it, or comes down to it from beyond it by kLastFiredSlackSeconds (a
   // fire recorded while the clock was ahead, which this fire shows wasn't
-  // one); no entry, nothing.
+  // one), and a pending fire time is dropped; no entry, nothing.
   void NoteFired(const std::string& name, int64_t fired);
   // Before |from| is renamed |to|: |from|'s entry, under |to| too (then
   // the rename, then Forget(|from|); Forget(|to|) if it failed). False,
@@ -224,11 +237,14 @@ class WorkflowRecord {
   // LoadLocked()'s end for a record that is session only, unless it was
   // reconfigured since |generation|.
   void FinishSessionOnly(uint64_t generation);
-  // Writes the record file (a snapshot taken under |lock_|, written after
-  // it is released, still under the storage's change scope). Nothing for
-  // a session-only record, nor one not loaded yet.
+  // Writes the record file: under |write_lock_|, a snapshot taken under
+  // |lock_|, written after it is released (under the storage's change
+  // scope for a change; a reader's for LastFired()). Nothing for a
+  // session-only record, nor one not loaded yet.
   void Persist();
 
+  // Held for each write of the record file, before |lock_|.
+  base::Lock write_lock_;
   mutable base::Lock lock_;
   Config config_ GUARDED_BY(lock_);
   // Bumped by each Reconfigure(): a load that started before one doesn't
@@ -240,10 +256,6 @@ class WorkflowRecord {
   // When the record file was first written (ISO 8601).
   std::string created_ GUARDED_BY(lock_);
   std::map<std::string, Entry> entries_ GUARDED_BY(lock_);
-  // LastFired()'s fire times still to come, by name: the value read and
-  // when it was first read (unix seconds). Never written to the record.
-  mutable std::map<std::string, std::pair<int64_t, int64_t>> future_reads_
-      GUARDED_BY(lock_);
 };
 
 }  // namespace automation

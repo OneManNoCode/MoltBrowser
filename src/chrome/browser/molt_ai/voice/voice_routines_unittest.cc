@@ -366,6 +366,28 @@ TEST(VoiceRoutinesTest, AnImportedRoutineRunsOnlyOnConfirmedSites) {
   EXPECT_FALSE(ReadRoutine(*built.script).needs_sites_confirmed);
 }
 
+// One whose file was changed outside the browser (a routine from before
+// profiles claimed as a draft) isn't run by voice, so its sites aren't
+// confirmed by voice either: its steps are reviewed in the Agent studio.
+TEST(VoiceRoutinesTest, ARoutineChangedOutsideIsReviewedInAgentModeFirst) {
+  const BuiltRoutine built = BuildRoutine("voice_7", "my news", MyNews(), kNow);
+  ASSERT_TRUE(built.script);
+  Script changed = *Script::FromJSONString(built.script->ToJSONString());
+  automation::AutomationSecurity::ClampUnvouched(changed);
+  ASSERT_TRUE(changed.security.changed_outside);
+  const ReadRoutineResult read = ReadRoutine(changed);
+  EXPECT_FALSE(read.ok);
+  EXPECT_TRUE(read.steps.empty());
+  EXPECT_EQ(read.why,
+            "This routine was changed outside MoltBrowser. Review it in Agent "
+            "mode first.");
+  // Confirmed in the Agent studio: it runs on its sites.
+  ASSERT_TRUE(automation::AutomationSecurity::ConfirmDraftSites(
+      changed,
+      automation::AutomationSecurity::HostsReferencedBy(changed.steps)));
+  EXPECT_TRUE(ReadRoutine(changed).ok);
+}
+
 TEST(VoiceRoutinesTest, SitesAreConfirmedByVoiceOnlyWhenAllAreSaid) {
   EXPECT_TRUE(RoutineSitesSayable({"www.youtube.com"}));
   EXPECT_TRUE(RoutineSitesSayable({"news.example", "shop.example"}));

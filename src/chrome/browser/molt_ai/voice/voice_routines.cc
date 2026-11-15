@@ -1149,6 +1149,15 @@ BuiltRoutine BuildRoutine(std::string_view id,
 
 ReadRoutineResult ReadRoutine(const automation::Script& script) {
   ReadRoutineResult result;
+  // Changed outside the browser (a routine from before profiles claimed as
+  // a draft): reviewed in the Agent studio first, where its steps are
+  // shown, never confirmed by voice on its sites alone.
+  if (script.security.changed_outside) {
+    result.why = SaidLater(
+        "This routine was changed outside MoltBrowser. Review it in Agent "
+        "mode first.");
+    return result;
+  }
   if (script.steps.empty()) {
     result.why = SaidLater("This routine has no steps.");
     return result;

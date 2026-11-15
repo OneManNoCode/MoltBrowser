@@ -225,6 +225,22 @@ std::string NameOf(const base::FilePath& path) {
   return path.BaseName().AsUTF8Unsafe();
 }
 
+// A save of |script| over a stored workflow whose last fire is believed to
+// be |believed| (Vetted(): this browser's, or another browser's run seen
+// since): an earlier nonzero last fire comes from a page opened before
+// that fire, which would run it again, so the believed one is written
+// instead. 0 (a schedule saved afresh) and a later one (a snooze) are kept,
+// and so is any one when the believed fire is still to come (a snooze, or
+// a clock that was ahead), as WorkflowRecord::Set() keeps them.
+void KeepBelievedFire(Script& script, int64_t believed) {
+  const int64_t now = static_cast<int64_t>(base::Time::Now().ToTimeT());
+  int64_t& fired = script.trigger.last_fired_unix;
+  if (fired > 0 && fired < believed &&
+      believed <= now + kLastFiredSlackSeconds) {
+    fired = believed;
+  }
+}
+
 }  // namespace
 
 class AutomationStorage::BlockingScope {
@@ -659,6 +675,8 @@ bool AutomationStorage::SaveChecked(Script script, SaveCheck check) {
              : std::nullopt;
     if (!check(stored ? &*stored : nullptr, script) || script.id != id)
       return false;
+    if (stored)
+      KeepBelievedFire(script, stored->trigger.last_fired_unix);
     saved = SaveLocked(script);
   }
   if (saved)
@@ -724,8 +742,10 @@ bool AutomationStorage::Update(const std::string& script_id,
              : std::nullopt;
     if (!script)
       return false;
+    const int64_t believed = script->trigger.last_fired_unix;
     if (!change(*script) || script->id != id)
       return false;
+    KeepBelievedFire(*script, believed);
     saved = SaveLocked(*script);
   }
   if (saved)
