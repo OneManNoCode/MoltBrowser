@@ -71,11 +71,12 @@ const agentTrustCalls = [];
 
 // A draft saved from an AI agent run (docs/design/AGENT_ACTIONS.md §2.9), as
 // getWorkflow returns it, and the confirmDraftSites calls (JSON of [id,
-// sites]).
+// sites, review token]).
 const DRAFT_WORKFLOW = {
   id: 'd1', name: 'Buy socks', variables: {pin: ''},
   security: {trust: 'casual', sites_unconfirmed: true},
   draftSites: ['shop.example', '<b>evil</b>.example', 7, ''],
+  reviewToken: 'a'.repeat(64),
   steps: [
     {type: 'navigate', target: 'https://shop.example/', description: 'Open shop.example'},
     {type: 'type', target: '#pin', value: '{{pin}}', description: 'Type your “PIN” (asked at each run)',
@@ -87,6 +88,16 @@ const DRAFT_WORKFLOW = {
   ],
 };
 const draftConfirmCalls = [];
+// A workflow whose file was changed outside MoltBrowser (§3.6): a draft
+// to review, with its schedule (the file's words, shown as text).
+const CHANGED_WORKFLOW = {
+  id: 'c1', name: 'Planted <b>x</b>', variables: {},
+  security: {trust: 'casual', sites_unconfirmed: true, changed_outside: true},
+  draftSites: ['evil.example'],
+  reviewToken: 'b'.repeat(64),
+  trigger: {type: 'cron', expression: '<b>* * * * *</b>'},
+  steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'}],
+};
 
 // The Agent studio's voice commands (#molt-voice-mode): what was typed.
 const voiceCommands = [];
@@ -1621,7 +1632,9 @@ const PAGES = [
        {id: 'v1', name: 'my <b>news</b>', stepCount: 3, trust: 'approved',
         voice: true, host: 'www.youtube.com', trigger: {type: 'manual'}},
        {id: 'v2', name: 'trains', stepCount: 1, trust: 'approved',
-        voice: true, nameClash: true, trigger: {type: 'manual'}}],
+        voice: true, nameClash: true, trigger: {type: 'manual'}},
+       {id: 'c1', name: 'Planted <b>x</b>', stepCount: 1, trust: 'casual', draft: true,
+        changedOutside: true, host: 'evil.example', trigger: {type: 'cron'}}],
        unclaimed: [{id: 'old1', name: 'old <b>news</b>', steps: 2},
                    {id: 'old2', name: 'mail', steps: 1}],
        unclaimedHidden: 1},
@@ -1650,7 +1663,8 @@ const PAGES = [
        frameToolForgets.push(JSON.stringify(args.slice(1)));
        return {ok: true};
      },
-     getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW : {
+     getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW :
+                            args[1] === 'c1' ? CHANGED_WORKFLOW : {
        id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
        steps: [{type: 'navigate', target: 'https://www.example.com/'},
                {type: 'click', target: '#buy', description: 'Click "Buy"',
@@ -1802,10 +1816,47 @@ const PAGES = [
      assert(!window.__sent.includes('saveSchedule'));
      doc.getElementById('draftConfirmBtn').click();
      assert.strictEqual(draftConfirmCalls.pop(),
-                        '["d1",["shop.example","<b>evil</b>.example"]]', 'sent from the click');
+                        '["d1",["shop.example","<b>evil</b>.example"],"' + 'a'.repeat(64) + '"]',
+                        'sent from the click, with the review token');
      await tick();
      assert(!/Draft from an AI agent run/.test(draftPanel.textContent), 'confirmed');
      assert(/Not trusted/.test(draftPanel.textContent), 'now an untrusted workflow');
+     // A workflow changed outside MoltBrowser: its badge, the library's
+     // banner, a review panel with its schedule as text; it never runs, and
+     // "Confirm" sends the sites and the token of what was shown.
+     window.showView('library');
+     await window.loadLibrary();
+     await tick();
+     const banner = doc.querySelector('#libCards .changed-banner');
+     assert(banner, 'the library says some changed outside');
+     assert.strictEqual(banner.textContent,
+         '1 workflow was changed outside MoltBrowser and needs your review.');
+     const changedCard = doc.querySelectorAll('#libList .card')[5];
+     assert(/changed outside · review it/.test(changedCard.querySelector('.csub').textContent),
+            'changed-outside badge');
+     assert.deepStrictEqual(
+         Array.from(changedCard.querySelectorAll('.card-actions button')).map((b) => b.textContent),
+         ['\u{1F50D} Review', '⋯'], 'a changed workflow is reviewed, not run');
+     assert.strictEqual(changedCard.querySelectorAll('b').length, 0);
+     window.openEditor('c1');
+     await tick();
+     const changedPanel = doc.getElementById('edTrust');
+     assert(/Changed outside MoltBrowser — review it/.test(changedPanel.textContent),
+            'the changed-outside review panel');
+     assert(changedPanel.textContent.includes('Schedule: runs by itself on “<b>* * * * *</b>”.'),
+            'its schedule, as text');
+     assert.strictEqual(changedPanel.querySelectorAll('b').length, 0);
+     const runsBeforeChanged = window.__sent.filter((m) => m === 'runWorkflow').length;
+     window.runWorkflowFlow('c1');
+     await tick();
+     assert.strictEqual(window.__sent.filter((m) => m === 'runWorkflow').length,
+                        runsBeforeChanged, 'a changed workflow never runs');
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(),
+                        '["c1",["evil.example"],"' + 'b'.repeat(64) + '"]',
+                        'confirmed with the token of what was shown');
+     await tick();
+     assert(!/Changed outside MoltBrowser/.test(changedPanel.textContent), 'confirmed');
      // The fallback locators: by kind only, as text; junk named generically.
      window.openEditor('w1');
      await tick();

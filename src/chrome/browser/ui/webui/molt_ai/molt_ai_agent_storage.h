@@ -23,6 +23,13 @@
 // each storage on its sequence. The page's messages and answers are the
 // same as when all this ran on the UI thread.
 //
+// A workflow whose file was changed outside the browser
+// (SecurityPolicy::changed_outside: the shared storage loads it as an
+// unconfirmed draft, automation_storage.h) is shown for review like a
+// draft from an agent run: it neither runs, nor is scheduled or trusted,
+// until confirmDraftSites, after a real click, with the review token of
+// exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6).
+//
 // Blocking (file I/O); base::Value and the storages only, so
 // molt_ai_unittests tests it on temporary directories.
 
@@ -82,7 +89,8 @@ struct WorkflowRequest {
     kCheckRun,      // runWorkflow: the workflow, if it may run here
     kSchedule,      // saveSchedule: |trigger|
     kTrust,         // promoteTrust: |level|, after a real click
-    kConfirmSites,  // confirmDraftSites: |sites|, after a real click
+    kConfirmSites,  // confirmDraftSites: |sites| and |review_token|, after
+                    // a real click
   };
 
   WorkflowRequest();
@@ -95,6 +103,9 @@ struct WorkflowRequest {
   std::string name;
   std::string level;
   std::vector<std::string> sites;
+  // confirmDraftSites: the reviewToken of what the page showed (getWorkflow
+  // or saveWorkflow): the draft is confirmed only while it is still that.
+  std::string review_token;
   automation::Trigger trigger;
 };
 
@@ -174,6 +185,12 @@ std::string UnusedWorkflowId(const StudioPlaces& places,
 // The sites an unconfirmed draft (agent_run_draft.h) asks the user to
 // confirm: the hosts its steps target, as the browser computes them.
 base::ListValue DraftSites(const automation::Script& script);
+
+// An unconfirmed draft's review token, which confirmDraftSites must bring
+// back: AutomationSecurity::SecurityDigest() of what the page was shown
+// (64 lowercase hex digits). A draft that changed since (its file edited
+// outside the browser, its steps saved) isn't confirmed with it.
+std::string ReviewToken(const automation::Script& script);
 
 // A new workflow's id: "wf_" and the time.
 std::string NewWorkflowId();

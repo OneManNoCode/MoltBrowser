@@ -5,7 +5,9 @@
 // files: each message finds its workflow where it is and answers as the
 // studio always did; saves go where they belong, with the same refusals;
 // the studio's and voice mode's changes to the profile's routines on one
-// sequence never interleave.
+// sequence never interleave; a workflow whose file was changed outside the
+// browser (workflow_record.h) is shown for review, neither runs nor is
+// scheduled or trusted, and is confirmed only as it was reviewed.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_storage.h"
 
@@ -15,6 +17,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
@@ -27,6 +30,8 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/automation/workflow_record.h"
+#include "chrome/browser/molt_ai/automation/workflow_record_test_util.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
 #include "chrome/browser/molt_ai/voice/voice_routines.h"
@@ -121,8 +126,29 @@ class AgentStudioStorageTest : public testing::Test {
     return answer ? std::move(*answer)
                   : AnswerInSharedStorage(places_, request);
   }
+  // The shared storage's workflow record, as the browser has one
+  // (workflow_record.h).
+  void UseRecord() {
+    record_.emplace(places_.shared_dir,
+                    temp_.GetPath().Append(automation::kWorkflowRecordFileName),
+                    /*may_seed=*/false);
+  }
+  // A file written into the shared storage by another program.
+  void Plant(const Script& script) {
+    ASSERT_TRUE(base::CreateDirectory(places_.shared_dir));
+    ASSERT_TRUE(
+        base::WriteFile(places_.shared_dir.AppendASCII(script.id + ".molt"),
+                        script.ToJSONString()));
+  }
+  std::string Bytes(const std::string& id) {
+    std::string bytes;
+    EXPECT_TRUE(base::ReadFileToString(
+        places_.shared_dir.AppendASCII(id + ".molt"), &bytes));
+    return bytes;
+  }
 
   base::ScopedTempDir temp_;
+  std::optional<automation::ScopedWorkflowRecordForTesting> record_;
   StudioPlaces places_;
   std::optional<AutomationStorage> shared_;
   std::optional<AutomationStorage> routines_;
@@ -290,6 +316,7 @@ TEST_F(AgentStudioStorageTest, ConfirmsADraftsSitesExactly) {
   ASSERT_TRUE(Shared().Save(draft));
   Answer get = Ask(Request(Kind::kGet, "wf_draft"));
   ASSERT_TRUE(get.out.FindList("draftSites"));
+  ASSERT_TRUE(get.out.FindString("reviewToken"));
   // Not trusted before its sites are confirmed, nor run.
   WorkflowRequest trust = Request(Kind::kTrust, "wf_draft");
   trust.level = "approved";
@@ -297,6 +324,7 @@ TEST_F(AgentStudioStorageTest, ConfirmsADraftsSitesExactly) {
   EXPECT_EQ(*Error(Ask(Request(Kind::kCheckRun, "wf_draft"))),
             automation::kDraftNeedsReviewMessage);
   WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_draft");
+  confirm.review_token = *get.out.FindString("reviewToken");
   confirm.sites = {"other.example"};
   EXPECT_EQ(*Error(Ask(confirm)),
             "The draft's steps changed. Save them, then confirm again.");
@@ -354,6 +382,193 @@ TEST_F(AgentStudioStorageTest, TheStudioAndVoiceModeShareOneSequence) {
   for (const std::string& name : names) {
     EXPECT_EQ(voice::MatchRoutineName(names, name).count, 1) << name;
   }
+}
+
+// ---- Workflows changed outside the browser (workflow_record.h) ----------
+
+// What a file planted in the shared storage might claim.
+Script Claiming(const std::string& id) {
+  Script script = Workflow(id, "Prices");
+  script.security.trust = TrustLevel::TRUSTED;
+  script.security.domain_whitelist = {"evil.example"};
+  script.trigger.type = automation::TriggerType::INTERVAL;
+  script.trigger.expression = "3600";
+  return script;
+}
+
+bool IsReviewToken(const std::string* token) {
+  if (!token || token->size() != 64) {
+    return false;
+  }
+  for (char c : *token) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+TEST_F(AgentStudioStorageTest, AWorkflowChangedOutsideIsShownForReview) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  const base::DictValue* security = get.out.FindDict("security");
+  ASSERT_TRUE(security);
+  EXPECT_EQ(security->FindBool("changed_outside"), true);
+  EXPECT_EQ(security->FindBool("sites_unconfirmed"), true);
+  EXPECT_EQ(*security->FindString("trust"), "casual");
+  const base::ListValue* sites = get.out.FindList("draftSites");
+  ASSERT_TRUE(sites);
+  ASSERT_EQ(sites->size(), 1u);
+  EXPECT_EQ((*sites)[0].GetString(), "news.example");
+  EXPECT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  // Its schedule is shown for review too.
+  ASSERT_TRUE(get.out.FindDict("trigger"));
+  EXPECT_EQ(*get.out.FindDict("trigger")->FindString("expression"), "3600");
+}
+
+TEST_F(AgentStudioStorageTest,
+       AWorkflowChangedOutsideNeitherRunsNorSchedulesNorIsTrusted) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  const std::string bytes = Bytes("wf_1");
+  Answer run = Ask(Request(Kind::kCheckRun, "wf_1"));
+  EXPECT_EQ(run.out.FindBool("ok"), false);
+  EXPECT_EQ(*Error(run), automation::kChangedOutsideMessage);
+  EXPECT_FALSE(run.script);
+  WorkflowRequest schedule = Request(Kind::kSchedule, "wf_1");
+  schedule.trigger.type = automation::TriggerType::INTERVAL;
+  schedule.trigger.expression = "60";
+  Answer scheduled = Ask(schedule);
+  EXPECT_EQ(scheduled.out.FindBool("ok"), false);
+  EXPECT_EQ(*Error(scheduled), automation::kChangedOutsideMessage);
+  EXPECT_FALSE(scheduled.trigger);
+  WorkflowRequest trust = Request(Kind::kTrust, "wf_1");
+  trust.level = "approved";
+  EXPECT_EQ(*Error(Ask(trust)),
+            "Review this workflow and confirm its sites first.");
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+}
+
+TEST_F(AgentStudioStorageTest, ConfirmingVouchesTheReviewedContentAtCasual) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.sites = {"news.example"};
+  confirm.review_token = *get.out.FindString("reviewToken");
+  Answer confirmed = Ask(confirm);
+  EXPECT_EQ(confirmed.out.FindBool("ok"), true);
+  EXPECT_EQ(*confirmed.out.FindString("trust"), "casual");
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_FALSE(stored->security.changed_outside);
+  EXPECT_FALSE(stored->security.sites_unconfirmed);
+  EXPECT_EQ(stored->security.trust, TrustLevel::CASUAL);
+  EXPECT_EQ(stored->security.domain_whitelist,
+            std::vector<std::string>{"news.example"});
+  // The schedule it was reviewed with.
+  EXPECT_EQ(stored->trigger.expression, "3600");
+  // Said so in the audit log.
+  bool logged = false;
+  for (const std::string& line : Shared().ReadAuditTail()) {
+    logged |= line.find("wf_1 | outside_change_confirmed | news.example") !=
+              std::string::npos;
+  }
+  EXPECT_TRUE(logged);
+  // Then trusted with its own click, and run.
+  WorkflowRequest trust = Request(Kind::kTrust, "wf_1");
+  trust.level = "approved";
+  EXPECT_EQ(Ask(trust).out.FindBool("ok"), true);
+  EXPECT_EQ(Shared().Load("wf_1")->security.trust, TrustLevel::APPROVED);
+  EXPECT_TRUE(Ask(Request(Kind::kCheckRun, "wf_1")).script);
+}
+
+TEST_F(AgentStudioStorageTest, ConfirmIsRefusedWhenTheFileChangedAfterReview) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  // Changed again before the click: the same site, another step.
+  Script changed = Claiming("wf_1");
+  Step another;
+  another.type = StepType::NAVIGATE;
+  another.target = "https://news.example/account/delete";
+  changed.steps.push_back(std::move(another));
+  Plant(changed);
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.sites = {"news.example"};
+  confirm.review_token = *get.out.FindString("reviewToken");
+  EXPECT_EQ(*Error(Ask(confirm)),
+            "This workflow changed since you reviewed it. Review it again.");
+  EXPECT_TRUE(Shared().Load("wf_1")->security.changed_outside);
+}
+
+TEST_F(AgentStudioStorageTest, ConfirmNeedsTheReviewToken) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  // An AI draft, saved by the browser, too.
+  Script draft = Workflow("wf_draft", "Draft");
+  draft.security.sites_unconfirmed = true;
+  ASSERT_TRUE(Shared().Save(draft));
+  for (const char* id : {"wf_1", "wf_draft"}) {
+    WorkflowRequest confirm = Request(Kind::kConfirmSites, id);
+    confirm.sites = {"news.example"};
+    EXPECT_EQ(*Error(Ask(confirm)),
+              "This workflow changed since you reviewed it. Review it again.")
+        << id;
+    confirm.review_token = std::string(64, 'a');
+    EXPECT_EQ(*Error(Ask(confirm)),
+              "This workflow changed since you reviewed it. Review it again.")
+        << id;
+    EXPECT_TRUE(Shared().Load(id)->security.sites_unconfirmed) << id;
+    confirm.review_token =
+        *Ask(Request(Kind::kGet, id)).out.FindString("reviewToken");
+    EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true) << id;
+  }
+}
+
+TEST_F(AgentStudioStorageTest, EditingAWorkflowChangedOutsideKeepsItADraft) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  Script edit = Workflow("wf_1", "Prices, edited");
+  edit.security.trust = TrustLevel::ADMIN;  // whatever the page sends
+  Answer saved =
+      SaveSharedWorkflow(places_, Save(std::move(edit)), Holds::kNothing);
+  EXPECT_EQ(*saved.out.FindString("trust"), "casual");
+  ASSERT_TRUE(saved.out.FindList("draftSites"));
+  ASSERT_TRUE(IsReviewToken(saved.out.FindString("reviewToken")));
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->name, "Prices, edited");
+  EXPECT_TRUE(stored->security.sites_unconfirmed);
+  EXPECT_TRUE(stored->security.changed_outside);
+  EXPECT_EQ(stored->security.trust, TrustLevel::CASUAL);
+  // The save's token is what is stored now: it confirms it.
+  EXPECT_EQ(*saved.out.FindString("reviewToken"),
+            *Ask(Request(Kind::kGet, "wf_1")).out.FindString("reviewToken"));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.sites = {"news.example"};
+  confirm.review_token = *saved.out.FindString("reviewToken");
+  EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true);
+}
+
+TEST_F(AgentStudioStorageTest, ADuplicateOfAWorkflowChangedOutsideIsADraft) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  WorkflowRequest copy = Request(Kind::kDuplicate, "wf_1");
+  copy.name = "Prices (copy)";
+  Answer copied = Ask(copy);
+  ASSERT_TRUE(copied.out.FindString("id"));
+  std::optional<Script> stored = Shared().Load(*copied.out.FindString("id"));
+  ASSERT_TRUE(stored);
+  EXPECT_TRUE(stored->security.sites_unconfirmed);
+  EXPECT_TRUE(stored->security.changed_outside);
+  EXPECT_EQ(stored->security.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(stored->security.domain_whitelist.empty());
+  EXPECT_EQ(*Error(Ask(Request(Kind::kCheckRun, *copied.out.FindString("id")))),
+            automation::kChangedOutsideMessage);
 }
 
 }  // namespace

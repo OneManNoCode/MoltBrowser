@@ -35,6 +35,10 @@ constexpr char kKeepsVoiceSteps[] =
 constexpr char kNoRoutinesHere[] =
     "Routines taught by voice can't be kept in this window.";
 constexpr char kNotFound[] = "Workflow not found";
+constexpr char kReviewChangedFirst[] =
+    "Review this workflow and confirm its sites first.";
+constexpr char kChangedSinceReview[] =
+    "This workflow changed since you reviewed it. Review it again.";
 
 // The profile's routines' store; null off the record.
 std::unique_ptr<VoiceRoutineStore> RoutinesStore(const StudioPlaces& places) {
@@ -114,9 +118,12 @@ base::DictValue SavedDict(const Script& script) {
   out.Set("name", script.name);
   out.Set("trust", TrustLevelToString(script.security.trust));
   // Still a draft (saving never confirms one): the sites its steps now
-  // target, for the review panel.
+  // target, for the review panel, and the token of what was saved (the
+  // stored file, as it will be read back).
   if (script.security.sites_unconfirmed) {
     out.Set("draftSites", DraftSites(script));
+    out.Set("reviewToken",
+            automation::AutomationSecurity::DigestAsStored(script));
   }
   return out;
 }
@@ -163,8 +170,12 @@ Answer OnFound(const WorkflowRequest& request,
               answer.out.FindDict("default_variables")) {
         answer.out.Set("variables", dv->Clone());
       }
+      // A draft (from an agent run, or a file changed outside the browser:
+      // security.changed_outside says which): the sites to confirm, and
+      // the token of what is shown.
       if (found.security.sites_unconfirmed) {
         answer.out.Set("draftSites", DraftSites(found));
+        answer.out.Set("reviewToken", ReviewToken(found));
       }
       return answer;
     }
@@ -206,7 +217,7 @@ Answer OnFound(const WorkflowRequest& request,
     case Kind::kCheckRun:
       // An unconfirmed draft doesn't run (the runner refuses it too).
       if (found.security.sites_unconfirmed) {
-        return NotOk(automation::kDraftNeedsReviewMessage);
+        return NotOk(AutomationSecurity::ReviewMessage(found));
       }
       // Nor here a routine taught by voice: voice mode runs it.
       if (HasVoiceSteps(found)) {
@@ -219,15 +230,15 @@ Answer OnFound(const WorkflowRequest& request,
       // An unconfirmed draft is never scheduled, nor a routine taught by
       // voice.
       if (found.security.sites_unconfirmed) {
-        return NotOk(automation::kDraftNeedsReviewMessage);
+        return NotOk(AutomationSecurity::ReviewMessage(found));
       }
       if (HasVoiceSteps(found)) {
         return NotOk(automation::kVoiceRoutineMessage);
       }
-      bool draft = false;
+      const char* draft = nullptr;
       const bool saved = storage.Update(id, [&](Script& stored) {
         if (stored.security.sites_unconfirmed) {
-          draft = true;
+          draft = AutomationSecurity::ReviewMessage(stored);
           return false;
         }
         if (HasVoiceSteps(stored)) {
@@ -239,7 +250,7 @@ Answer OnFound(const WorkflowRequest& request,
         return true;
       });
       if (draft) {
-        return NotOk(automation::kDraftNeedsReviewMessage);
+        return NotOk(draft);
       }
       answer.out.Set("ok", saved);
       if (saved) {
@@ -249,9 +260,12 @@ Answer OnFound(const WorkflowRequest& request,
     }
     case Kind::kTrust:
       if (found.security.sites_unconfirmed) {
-        // A draft from a web agent run is trusted only after its sites
-        // are confirmed (confirmDraftSites).
-        return NotOk("Confirm this draft's sites first.");
+        // A draft from a web agent run, or a file changed outside the
+        // browser, is trusted only after its sites are confirmed
+        // (confirmDraftSites).
+        return NotOk(found.security.changed_outside
+                         ? kReviewChangedFirst
+                         : "Confirm this draft's sites first.");
       }
       if ((request.level != "approved" && request.level != "casual") ||
           found.security.trust > TrustLevel::APPROVED) {
@@ -265,10 +279,20 @@ Answer OnFound(const WorkflowRequest& request,
       answer.out.Set("trust", request.level);
       return answer;
     case Kind::kConfirmSites: {
+      bool changed_since_review = false;
       bool steps_changed = false;
+      bool was_changed_outside = false;
       std::string sites;
       std::string trust;
       const bool saved = storage.Update(id, [&](Script& stored) {
+        // Exactly what the user reviewed: a file changed since (outside
+        // the browser, or saved again) isn't confirmed blindly.
+        if (request.review_token.empty() ||
+            ReviewToken(stored) != request.review_token) {
+          changed_since_review = true;
+          return false;
+        }
+        was_changed_outside = stored.security.changed_outside;
         if (!AutomationSecurity::ConfirmDraftSites(stored, request.sites)) {
           steps_changed = true;
           return false;
@@ -279,6 +303,9 @@ Answer OnFound(const WorkflowRequest& request,
         trust = TrustLevelToString(stored.security.trust);
         return true;
       });
+      if (changed_since_review) {
+        return NotOk(kChangedSinceReview);
+      }
       if (steps_changed) {
         return NotOk(
             "The draft's steps changed. Save them, then confirm again.");
@@ -286,7 +313,10 @@ Answer OnFound(const WorkflowRequest& request,
       if (!saved) {
         return NotOk();
       }
-      storage.AppendAudit(id, "draft_sites_confirmed", sites);
+      storage.AppendAudit(id,
+                          was_changed_outside ? "outside_change_confirmed"
+                                              : "draft_sites_confirmed",
+                          sites);
       answer.routines_changed = routines != nullptr;
       answer.out.Set("ok", true);
       answer.out.Set("trust", trust);
@@ -541,6 +571,10 @@ base::ListValue DraftSites(const Script& script) {
     sites.Append(std::move(host));
   }
   return sites;
+}
+
+std::string ReviewToken(const Script& script) {
+  return AutomationSecurity::SecurityDigest(script);
 }
 
 std::string NewWorkflowId() {

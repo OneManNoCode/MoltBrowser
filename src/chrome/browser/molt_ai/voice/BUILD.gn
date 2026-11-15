@@ -1107,8 +1107,11 @@ source_set("voice_loop_unit_tests") {
     ":voice_listening",
     "//chrome/browser/molt_ai/automation:automation_policy",
 
-    # The routine store's claims cut short (set-aside files on disk).
+    # The routine store's claims cut short (set-aside files on disk), and
+    # claims with the shared storage's workflow record.
     "//chrome/browser/molt_ai/automation:storage",
+    "//chrome/browser/molt_ai/automation:workflow_record",
+    "//chrome/browser/molt_ai/automation:workflow_record_test_support",
 
     # The stored pages, read from the source tree.
     "//base",

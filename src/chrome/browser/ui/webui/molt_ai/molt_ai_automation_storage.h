@@ -92,7 +92,9 @@ std::vector<std::string> AuditTail(int max_lines,
 
 // promoteTrust (after the user's click): {success, trust} or {success:
 // false, error}. Not for a routine taught by voice ("script not found") nor
-// an unconfirmed draft; the audit log says "trust_changed".
+// an unconfirmed draft (one from an agent run, or a workflow whose file was
+// changed outside the browser: reviewed in Agent mode first); the audit
+// log says "trust_changed".
 base::DictValue PromoteTrust(const std::string& id,
                              automation::TrustLevel level,
                              automation::AutomationStorage& storage);

@@ -110,6 +110,20 @@ using molt_ai::voice::VoiceLearning;
 // Ids the page sends for the routines from before profiles, at most.
 constexpr size_t kMaxRoutineIds = 200;
 
+// A review token from the page (molt_ai_agent_storage.h's ReviewToken()):
+// exactly 64 lowercase hex digits.
+bool IsReviewToken(const base::Value& value) {
+  if (!value.is_string() || value.GetString().size() != 64) {
+    return false;
+  }
+  for (char c : value.GetString()) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Friendly rendering helpers.
 // ---------------------------------------------------------------------------
@@ -195,6 +209,11 @@ base::DictValue WorkflowSummary(const Script& s) {
   // the card offers "Review" instead of Run, trust and schedule.
   if (s.security.sites_unconfirmed) {
     d.Set("draft", true);
+  }
+  // Its file was changed outside the browser (loaded as a draft): the card
+  // says so, and the library counts them.
+  if (s.security.changed_outside) {
+    d.Set("changedOutside", true);
   }
   // A routine taught by voice: voice mode runs it ("run" and its name).
   if (molt_ai::automation::HasVoiceSteps(s)) {
@@ -1115,13 +1134,16 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AnswerAbout(std::move(request), Resolver(args));
   }
 
-  // The draft review's "Confirm sites": [callback_id, id, [site, ...]], the
-  // sites the panel showed (from getWorkflow / saveWorkflow's draftSites).
+  // The draft review's "Confirm sites": [callback_id, id, [site, ...],
+  // review token], the sites the panel showed (from getWorkflow /
+  // saveWorkflow's draftSites) and the reviewToken of what it showed.
   // Like promoteTrust, honoured only with a fresh user activation (a real
-  // click), and only when the sites are exactly the ones the draft's steps
-  // target now (AutomationSecurity::ConfirmDraftSites). The draft then
-  // becomes an ordinary CASUAL workflow on those sites; trusting it is a
-  // separate click (the activation is consumed: ConsumeUserClick()).
+  // click), and only when the draft is still exactly what was shown (the
+  // token) and the sites are exactly the ones its steps target now
+  // (AutomationSecurity::ConfirmDraftSites). The draft (from an agent run,
+  // or a file changed outside the browser) then becomes an ordinary CASUAL
+  // workflow on those sites; trusting it is a separate click (the
+  // activation is consumed: ConsumeUserClick()).
   void HandleConfirmDraftSites(const base::ListValue& args) {
     AllowJavascript();
     base::DictValue out;
@@ -1133,6 +1155,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       return;
     }
     if (args.size() < 3 || !args[1].is_string() || !args[2].is_list()) {
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    // The review token: 64 lowercase hex digits, or the page reviews again.
+    if (args.size() < 4 || !IsReviewToken(args[3])) {
+      out.Set("error", "Review it again.");
       ResolveDict(args, std::move(out));
       return;
     }
@@ -1148,6 +1176,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     request.kind = WorkflowRequest::Kind::kConfirmSites;
     request.id = args[1].GetString();
     request.sites = std::move(shown);
+    request.review_token = args[3].GetString();
     AnswerAbout(std::move(request), Resolver(args));
   }
 
@@ -1334,6 +1363,29 @@ var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your save
    honoured only on a real click, for exactly the sites shown). It is then
    an ordinary untrusted workflow. */
 var DRAFT_EXPLAIN='Made by the AI agent, or brought in from elsewhere. Check its steps and confirm its sites before it can run.';
+/* ---- workflows changed outside MoltBrowser ----
+   The browser remembers exactly what it last saved for each workflow. A
+   file changed by anything else (another program, another copy of
+   MoltBrowser, a hand edit) opens as a draft: no trust, no runs, no
+   schedule, until the user reviews it and confirms it ('confirmDraftSites'
+   with the reviewToken of what the panel showed, on a real click). */
+var CHANGED_EXPLAIN='Its file was changed outside MoltBrowser. Check its steps, sites and schedule, and confirm them before it can run.';
+/* A review token from the browser: 64 lowercase hex digits, else none. */
+function cleanToken(t){return (typeof t==='string'&&/^[0-9a-f]{64}$/.test(t))?t:'';}
+/* What a workflow's schedule does, in words (the trigger is the file's:
+   shown as text). */
+function scheduleText(tr){
+  if(!tr||!tr.type||tr.type==='manual')return 'No schedule: it runs only when you press Run.';
+  var e=String(tr.expression||'');
+  if(tr.type==='interval'){
+    var n=parseInt(e,10)||0;
+    var every=(n>=3600&&n%3600===0)?(n/3600)+' h':(n>=60&&n%60===0)?(n/60)+' min':n+' s';
+    return 'Schedule: runs by itself every '+every+'.';
+  }
+  if(tr.type==='cron')return 'Schedule: runs by itself on “'+e+'”.';
+  if(tr.type==='at')return 'Schedule: runs by itself once, at '+e+'.';
+  return 'Schedule: runs by itself on '+e+'.';
+}
 var VOICE_EXPLAIN='Taught by voice in this profile. Voice mode runs it: say “run” and its name.';
 var CLASH_EXPLAIN='Another of your routines has this name, so voice mode runs neither. Rename one.';
 /* ---- a run's question (the runner waits for the user) ----
@@ -1686,6 +1738,13 @@ function renderLibrary(list){
   $('libSub').textContent = list.length
     ? (list.length+' workflow'+(list.length===1?'':'s')+' saved')
     : 'Teach the browser to do a task once — then let it repeat.';
+  var changed=list.filter(function(wf){return wf&&wf.changedOutside===true;}).length;
+  if(changed){
+    box.appendChild(h('div',{'class':'changed-banner',role:'status',title:CHANGED_EXPLAIN},
+      changed===1
+        ?'1 workflow was changed outside MoltBrowser and needs your review.'
+        :changed+' workflows were changed outside MoltBrowser and need your review.'));
+  }
   if(!list.length){
     box.appendChild(h('div',{'class':'empty'},[
       h('div',{'class':'ico','aria-hidden':'true'},'\u{1F916}'),
@@ -1720,7 +1779,9 @@ function buildCard(wf){
   var sub=h('div',{'class':'csub'});
   sub.appendChild(h('span',{},(wf.stepCount||0)+' step'+((wf.stepCount===1)?'':'s')));
   sub.appendChild(h('span',{'class':'dotsep'},'·'));
-  sub.appendChild(wf.draft
+  sub.appendChild(wf.changedOutside===true
+    ? h('span',{'class':'tbadge draft',title:CHANGED_EXPLAIN},'changed outside · review it')
+    : wf.draft
     ? h('span',{'class':'tbadge draft',title:DRAFT_EXPLAIN},'draft · review it')
     : isTrusted(wf.trust)
     ? h('span',{'class':'tbadge on',title:TRUST_EXPLAIN},'✓ trusted')
@@ -2024,7 +2085,9 @@ function openEditor(id){
       stats:wf.stats||null,
       trust:(wf.security&&wf.security.trust)||'casual',
       draft:!!(wf.security&&wf.security.sites_unconfirmed===true),
-      draftSites:wf.draftSites
+      changedOutside:!!(wf.security&&wf.security.changed_outside===true),
+      draftSites:wf.draftSites,
+      reviewToken:wf.reviewToken
     });
   }).catch(function(){toast('Couldn’t open workflow','err');});
 }
@@ -2043,7 +2106,9 @@ function openEditorDraft(wf){
     trust:wf.trust||null,
     recordedId:wf.recordedId||null,
     draft:!!wf.draft,
-    draftSites:cleanSites(wf.draftSites)
+    changedOutside:!!wf.changedOutside,
+    draftSites:cleanSites(wf.draftSites),
+    reviewToken:cleanToken(wf.reviewToken)
   };
   $('edName').value=editorState.name;
   renderEditorMeta();renderEditorSteps();
@@ -2115,7 +2180,11 @@ function renderDraftPanel(box){
     if(r==='value_withheld')withheld++;
     if(r==='secret_field')secret++;
   });
-  var kids=[
+  var kids=es.changedOutside?[
+    h('div',{'class':'tp-h'},['\u26A0 ','Changed outside MoltBrowser — review it']),
+    h('div',{'class':'tp-s'},'This workflow’s file was changed by another program, another copy of MoltBrowser, or by hand. Until you confirm it, it has no trust, doesn’t run, isn’t run on its schedule and can’t be run by another workflow. Check each step, the sites and the schedule below.'),
+    h('div',{'class':'tp-s'},scheduleText(es.trigger))
+  ]:[
     h('div',{'class':'tp-h'},['\u{1F50D} ','Draft from an AI agent run — review it']),
     h('div',{'class':'tp-s'},'The agent chose these steps from what the pages showed it. Check each one, edit or delete what you don’t want, and save. It can’t run until you confirm the sites it may use.')
   ];
@@ -2132,9 +2201,9 @@ function renderDraftPanel(box){
     kids.push(list);
     kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
       var shown=sites.slice();
-      sendWithPromise('confirmDraftSites',es.id,shown).then(function(r){
+      sendWithPromise('confirmDraftSites',es.id,shown,es.reviewToken||'').then(function(r){
         if(!r||!r.ok){toast((r&&r.error)||'Couldn’t confirm the sites','err');return;}
-        es.draft=false;es.draftSites=[];
+        es.draft=false;es.changedOutside=false;es.draftSites=[];es.reviewToken='';
         if(r.trust)es.trust=r.trust;
         toast('Sites confirmed — it can run now','ok');
         renderEditorMeta();renderEditorSteps();
@@ -2374,7 +2443,8 @@ $('edRunBtn').addEventListener('click',function(){
   saveEditor(true).then(function(id){if(id!=null)runWorkflowFlow(id);});
 });
 $('edSchedBtn').addEventListener('click',function(){
-  if(editorState&&editorState.draft){toast('Confirm this draft’s sites first','err');return;}
+  if(editorState&&editorState.draft){
+    toast(editorState.changedOutside?'Review this workflow first':'Confirm this draft’s sites first','err');return;}
   saveEditor(true).then(function(id){if(id!=null)openScheduleSheet(id,editorState.name,editorState.trigger);});
 });
 function collectWorkflow(){
@@ -2394,8 +2464,12 @@ function saveEditor(quiet){
       // A routine taught by voice may be renamed to keep its name its own.
       if(typeof r.name==='string')editorState.name=r.name;
       if(r.trust)editorState.trust=r.trust;
-      // Still a draft: the sites its saved steps target now.
-      if(editorState.draft)editorState.draftSites=cleanSites(r.draftSites);
+      // Still a draft: the sites its saved steps target now, and the token
+      // of what was saved (what a confirm now confirms).
+      if(editorState.draft){
+        editorState.draftSites=cleanSites(r.draftSites);
+        editorState.reviewToken=cleanToken(r.reviewToken);
+      }
       renderEditorMeta();
     }
     if(!quiet)toast('Saved','ok');
@@ -2407,8 +2481,9 @@ function saveEditor(quiet){
 function runWorkflowFlow(id){
   sendWithPromise('getWorkflow',id).then(function(wf){
     if(wf&&wf.security&&wf.security.sites_unconfirmed===true){
-      // A draft from an AI agent run: review it first.
-      toast('Confirm this draft’s sites first','err');
+      // A draft from an AI agent run, or a workflow changed outside
+      // MoltBrowser: review it first.
+      toast(wf.security.changed_outside===true?'Review this workflow first':'Confirm this draft’s sites first','err');
       if(view!=='editor'||!editorState||editorState.id!==id)openEditor(id);
       return;
     }
@@ -3139,6 +3214,9 @@ button,input,textarea,select{font-family:inherit}
   border:1px solid var(--border);color:var(--text);word-break:break-all}
 .review-note{margin:6px 2px 2px;padding:6px 9px;border-radius:9px;font-size:.71875rem;
   color:var(--text);background:var(--surface);border-left:2px solid var(--warn)}
+/* workflows changed outside MoltBrowser: the library's banner */
+.changed-banner{margin:2px 2px 10px;padding:8px 11px;border-radius:10px;font-size:.75rem;
+  color:var(--text);background:var(--surface);border-left:3px solid var(--warn)}
 
 /* empty state */
 .empty{text-align:center;padding:40px 22px;animation:rise .3s ease both}

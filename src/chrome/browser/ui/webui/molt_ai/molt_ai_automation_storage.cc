@@ -134,16 +134,19 @@ base::DictValue PromoteTrust(const std::string& id,
                              AutomationStorage& storage) {
   bool found = false;
   bool draft = false;
+  bool changed_outside = false;
   TrustLevel before = level;
   const bool saved = storage.Update(id, [&](Script& script) {
     if (HasVoiceSteps(script)) {
       return false;
     }
     found = true;
-    // A draft from a web agent run is trusted only after its sites are
-    // confirmed in the Agent studio.
+    // A draft from a web agent run, or a workflow whose file was changed
+    // outside the browser, is trusted only after its sites are confirmed in
+    // the Agent studio.
     if (script.security.sites_unconfirmed) {
       draft = true;
+      changed_outside = script.security.changed_outside;
       return false;
     }
     before = script.security.trust;
@@ -154,7 +157,10 @@ base::DictValue PromoteTrust(const std::string& id,
     return Failed("script not found");
   }
   if (draft) {
-    return Failed("Confirm this draft's sites in Agent mode first.");
+    return Failed(changed_outside
+                      ? "This workflow was changed outside MoltBrowser. "
+                        "Review it in Agent mode first."
+                      : "Confirm this draft's sites in Agent mode first.");
   }
   if (saved) {
     storage.AppendAudit(id, "trust_changed",
