@@ -12,7 +12,11 @@
 // keeps the file's own whitelist and approvals and never adds a templated
 // host; trust is never raised by loading or saving (a new script starts
 // CASUAL, promotion never reaches ADMIN); a step's AI_EXTRACT field list,
-// when accepted, gives a schema the inference service supports.
+// when accepted, gives a schema the inference service supports; the
+// security digest is empty or 64 lowercase hex digits, and the same once
+// the workflow is written and read back; a file the browser didn't write,
+// once clamped, may do nothing on its own (CASUAL, no sites, never fired
+// nor run by another workflow).
 
 #include <cstddef>
 #include <cstdint>
@@ -85,6 +89,28 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   std::optional<Script> loaded = Script::FromJSONString(saved);
   CHECK(loaded) << "a loaded workflow doesn't load after saving";
   CHECK(loaded->ToJSONString() == saved) << "save/load changed the workflow";
+
+  // The security digest (workflow_record.h): well formed, and what a
+  // reader of the saved file computes.
+  const std::string digest = AutomationSecurity::SecurityDigest(*script);
+  CHECK(digest.empty() || digest.size() == 64u);
+  for (char c : digest) {
+    CHECK((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
+  }
+  CHECK(AutomationSecurity::DigestAsStored(*script) ==
+        AutomationSecurity::SecurityDigest(*loaded))
+      << "the digest moves when the workflow is saved";
+
+  // A file the browser didn't write: an unconfirmed import.
+  {
+    Script clamped = std::move(*Script::FromJSONString(saved));
+    AutomationSecurity::ClampUnvouched(clamped);
+    const SecurityPolicy p = AutomationSecurity::EffectivePolicy(clamped);
+    CHECK(p.trust == TrustLevel::CASUAL);
+    CHECK(p.domain_whitelist.empty());
+    CHECK(!AutomationSecurity::MayFireUnattended(clamped));
+    CHECK(!AutomationSecurity::MayRunAsChild(clamped));
+  }
 
   // Trust: imports start CASUAL, saving keeps the stored level.
   Script incoming = std::move(*Script::FromJSONString(saved));

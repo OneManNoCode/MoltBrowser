@@ -3,10 +3,14 @@
 
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 
+#include <cstdint>
+#include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/json/json_writer.h"
 #include "base/values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -403,6 +407,297 @@ TEST(AutomationSecurityTest, ScrubLeavesOrdinaryScriptsAlone) {
   EXPECT_FALSE(AutomationSecurity::ScrubPlaintextSecrets(script));
   base::DictValue empty;
   EXPECT_FALSE(AutomationSecurity::ScrubPlaintextSecrets(empty));
+}
+
+// ---- Workflow files the browser didn't write (workflow_record.h) ---------
+
+// A workflow with something in every field the digest covers.
+Script RichScript() {
+  Script s;
+  s.id = "wf_rich";
+  s.name = "Prices";
+  s.version = 2;
+  s.created_at_unix = 1'800'000'000;
+  s.ai_model = "m";
+  s.enabled = true;
+  s.trigger.type = TriggerType::CRON;
+  s.trigger.expression = "0 9 * * *";
+  s.trigger.timezone = "Europe/Paris";
+  s.trigger.until_unix = 4'102'444'800;
+  s.trigger.last_fired_unix = 1'800'000'100;
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "https://shop.example/"));
+  Step click = MakeStep(StepType::CLICK, "#buy", "v");
+  click.selector_fallbacks = {"#b"};
+  click.store_as = "x";
+  click.transform = "t";
+  click.timeout_ms = 9000;
+  click.max_iterations = 7;
+  click.retries = 2;
+  click.description = "Buy";
+  base::DictValue extra;
+  extra.Set("host", "shop.example");
+  extra.Set("n", 0.5);
+  click.extra = base::Value(std::move(extra));
+  locators::StepLocators found;
+  found.origin = "https://shop.example";
+  found.element = {"button", "", "button"};
+  locators::Locator role;
+  role.by = locators::By::kRole;
+  role.role = "button";
+  role.value = "Buy";
+  locators::Locator text;
+  text.by = locators::By::kText;
+  text.value = "Buy";
+  found.list = {role, text};
+  click.locators = found;
+  s.steps.push_back(std::move(click));
+  s.steps.push_back(MakeStep(StepType::NOTIFY, "Done", "body"));
+  s.security.domain_whitelist = {"shop.example"};
+  s.security.require_approval_for = {"payment"};
+  s.security.max_runtime_seconds = 60;
+  s.security.max_navigations = 3;
+  s.security.max_network_bytes = 1000;
+  s.security.trust = TrustLevel::APPROVED;
+  s.stats.runs = 3;
+  s.stats.successes = 2;
+  s.default_variables["city"] = "Paris";
+  return s;
+}
+
+TEST(AutomationSecurityTest, SecurityDigestIgnoresOnlyBookkeeping) {
+  const Script rich = RichScript();
+  const std::string digest = AutomationSecurity::SecurityDigest(rich);
+  ASSERT_EQ(digest.size(), 64u);
+  for (char c : digest) {
+    EXPECT_TRUE((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) << digest;
+  }
+  // The same workflow, the same digest.
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(RichScript()), digest);
+  // Its id (its file's name), its history and its last fire: bookkeeping.
+  Script run = RichScript();
+  run.id = "wf_other";
+  run.stats.runs = 99;
+  run.stats.successes = 98;
+  run.stats.last_result = "Done";
+  run.stats.run_history.emplace_back();
+  run.trigger.last_fired_unix = 1;
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(run), digest);
+}
+
+TEST(AutomationSecurityTest, SecurityDigestCoversEveryOtherField) {
+  const std::string digest = AutomationSecurity::SecurityDigest(RichScript());
+  using Change = void (*)(Script&);
+  const std::pair<const char*, Change> kChanges[] = {
+      {"name", [](Script& s) { s.name += "!"; }},
+      {"version", [](Script& s) { s.version = 3; }},
+      {"created_at_unix", [](Script& s) { s.created_at_unix += 1; }},
+      {"ai_model", [](Script& s) { s.ai_model = "n"; }},
+      {"enabled", [](Script& s) { s.enabled = false; }},
+      {"a variable's value",
+       [](Script& s) { s.default_variables["city"] = "Rome"; }},
+      {"a variable added", [](Script& s) { s.default_variables["q"] = "x"; }},
+      {"trigger type",
+       [](Script& s) { s.trigger.type = TriggerType::INTERVAL; }},
+      {"trigger expression",
+       [](Script& s) { s.trigger.expression = "0 10 * * *"; }},
+      {"trigger timezone", [](Script& s) { s.trigger.timezone.clear(); }},
+      {"trigger until", [](Script& s) { s.trigger.until_unix += 1; }},
+      {"a step added",
+       [](Script& s) {
+         s.steps.push_back(MakeStep(StepType::NAVIGATE, "https://x.example/"));
+       }},
+      {"a step removed", [](Script& s) { s.steps.pop_back(); }},
+      {"steps reordered", [](Script& s) { std::swap(s.steps[0], s.steps[2]); }},
+      {"step type", [](Script& s) { s.steps[2].type = StepType::SCREENSHOT; }},
+      {"step target", [](Script& s) { s.steps[1].target = "#sell"; }},
+      {"step value", [](Script& s) { s.steps[1].value = "w"; }},
+      {"step selector_fallbacks",
+       [](Script& s) { s.steps[1].selector_fallbacks.push_back("#c"); }},
+      {"step locators",
+       [](Script& s) { s.steps[1].locators->list.pop_back(); }},
+      {"step locators removed", [](Script& s) { s.steps[1].locators.reset(); }},
+      {"step store_as", [](Script& s) { s.steps[1].store_as = "y"; }},
+      {"step transform", [](Script& s) { s.steps[1].transform = "u"; }},
+      {"step timeout_ms", [](Script& s) { s.steps[1].timeout_ms = 1000; }},
+      {"step max_iterations", [](Script& s) { s.steps[1].max_iterations = 8; }},
+      {"step retries", [](Script& s) { s.steps[1].retries = 0; }},
+      {"step extra",
+       [](Script& s) { s.steps[1].extra.GetDict().Set("n", 0.25); }},
+      {"step description", [](Script& s) { s.steps[1].description = "Sell"; }},
+      {"whitelist",
+       [](Script& s) {
+         s.security.domain_whitelist.push_back("evil.example");
+       }},
+      {"require_approval_for",
+       [](Script& s) { s.security.require_approval_for = {"login"}; }},
+      {"max_runtime_seconds",
+       [](Script& s) { s.security.max_runtime_seconds = 61; }},
+      {"max_navigations", [](Script& s) { s.security.max_navigations = 4; }},
+      {"max_network_bytes",
+       [](Script& s) { s.security.max_network_bytes = 1001; }},
+      {"trust", [](Script& s) { s.security.trust = TrustLevel::ADMIN; }},
+      {"sites_unconfirmed",
+       [](Script& s) { s.security.sites_unconfirmed = true; }},
+      {"changed_outside", [](Script& s) { s.security.changed_outside = true; }},
+  };
+  for (const auto& [what, change] : kChanges) {
+    Script changed = RichScript();
+    change(changed);
+    EXPECT_NE(AutomationSecurity::SecurityDigest(changed), digest) << what;
+  }
+  // An empty approval list isn't the default one written out (the
+  // effective policy treats them alike; the file doesn't say the same).
+  Script empty = RichScript();
+  empty.security.require_approval_for.clear();
+  Script defaults = RichScript();
+  defaults.security.require_approval_for = {"form_submit", "payment", "login"};
+  EXPECT_NE(AutomationSecurity::SecurityDigest(empty),
+            AutomationSecurity::SecurityDigest(defaults));
+}
+
+TEST(AutomationSecurityTest, SecurityDigestSurvivesTheFileRoundTrip) {
+  Script s = RichScript();
+  // Times past what a double holds exactly, doubles and nested values in a
+  // step's extra, invalid UTF-8 and U+2028 in strings.
+  s.created_at_unix = std::numeric_limits<int64_t>::max();
+  s.trigger.until_unix = (int64_t{1} << 53) + 1;
+  base::ListValue nested;
+  nested.Append(1.5);
+  nested.Append(base::DictValue().Set("k", "v"));
+  s.steps[1].extra.GetDict().Set("nested", std::move(nested));
+  s.name = "bad \xC3 UTF-8 and a \xE2\x80\xA8 line separator";
+  s.steps[2].value = "\xE2\x80\xA8";
+  // As AutomationStorage writes it, and as its readers parse it.
+  base::DictValue json = s.ToJSON();
+  AutomationSecurity::ScrubPlaintextSecrets(json);
+  std::string bytes;
+  ASSERT_TRUE(base::JSONWriter::WriteWithOptions(
+      json, base::JSONWriter::OPTIONS_PRETTY_PRINT, &bytes));
+  std::optional<Script> read = Script::FromJSONString(bytes);
+  ASSERT_TRUE(read);
+  const std::string digest = AutomationSecurity::SecurityDigest(*read);
+  ASSERT_EQ(digest.size(), 64u);
+  EXPECT_EQ(AutomationSecurity::DigestAsStored(s), digest);
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(s), digest);
+  // And again: written by the browser that read it, the same.
+  EXPECT_EQ(AutomationSecurity::DigestAsStored(*read), digest);
+}
+
+TEST(AutomationSecurityTest, SecurityDigestIsScrubInvariant) {
+  Script s = RichScript();
+  Step password =
+      MakeStep(StepType::TYPE, "[name=\"passwd\"]", std::string("s3cret!"));
+  password.description = "Type \"s3cret!\" in the field";
+  s.steps.push_back(std::move(password));
+  base::DictValue json = s.ToJSON();
+  ASSERT_TRUE(AutomationSecurity::ScrubPlaintextSecrets(json));
+  std::optional<Script> scrubbed = Script::FromJSON(json);
+  ASSERT_TRUE(scrubbed);
+  EXPECT_TRUE(scrubbed->steps.back().value.empty());
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(*scrubbed),
+            AutomationSecurity::SecurityDigest(s));
+}
+
+TEST(AutomationSecurityTest, ClampUnvouchedIsAnUnconfirmedImport) {
+  Script s = RichScript();
+  s.security.trust = TrustLevel::ADMIN;
+  s.security.require_approval_for = {"x"};
+  s.security.domain_whitelist = {"evil.example"};
+  s.security.max_runtime_seconds = 99999;
+  AutomationSecurity::ClampUnvouched(s);
+  // Nothing the file said about what it may do.
+  EXPECT_EQ(s.security.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(s.security.domain_whitelist.empty());
+  EXPECT_EQ(s.security.require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login"}));
+  const SecurityPolicy defaults{};
+  EXPECT_EQ(s.security.max_runtime_seconds, defaults.max_runtime_seconds);
+  EXPECT_EQ(s.security.max_navigations, defaults.max_navigations);
+  EXPECT_EQ(s.security.max_network_bytes, defaults.max_network_bytes);
+  EXPECT_TRUE(s.security.sites_unconfirmed);
+  EXPECT_TRUE(s.security.changed_outside);
+  // Nor its history.
+  EXPECT_EQ(s.stats.runs, 0);
+  EXPECT_EQ(s.stats.successes, 0);
+  EXPECT_TRUE(s.stats.run_history.empty());
+  // What the user reviews is kept.
+  EXPECT_EQ(s.steps.size(), 3u);
+  EXPECT_EQ(s.trigger.type, TriggerType::CRON);
+  EXPECT_EQ(s.trigger.expression, "0 9 * * *");
+  EXPECT_TRUE(s.enabled);
+  EXPECT_EQ(s.default_variables["city"], "Paris");
+  EXPECT_EQ(s.name, "Prices");
+  // It may do nothing on its own.
+  const SecurityPolicy p = AutomationSecurity::EffectivePolicy(s);
+  EXPECT_EQ(p.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(p.domain_whitelist.empty());
+  AutomationSecurity sec;
+  EXPECT_FALSE(sec.AllowSubmit(p));
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://shop.example/"));
+  EXPECT_FALSE(sec.AllowHeadless(p));
+}
+
+TEST(AutomationSecurityTest,
+     MayFireUnattendedRefusesDisabledDraftsChangedAndVoice) {
+  EXPECT_TRUE(AutomationSecurity::MayFireUnattended(RichScript()));
+  Script disabled = RichScript();
+  disabled.enabled = false;
+  EXPECT_FALSE(AutomationSecurity::MayFireUnattended(disabled));
+  Script draft = UnconfirmedDraft();
+  EXPECT_FALSE(AutomationSecurity::MayFireUnattended(draft));
+  Script changed = RichScript();
+  AutomationSecurity::ClampUnvouched(changed);
+  EXPECT_FALSE(AutomationSecurity::MayFireUnattended(changed));
+  EXPECT_FALSE(AutomationSecurity::MayFireUnattended(VoiceRoutine()));
+}
+
+TEST(AutomationSecurityTest, MayRunAsChildRefusesDraftsChangedAndVoice) {
+  EXPECT_TRUE(AutomationSecurity::MayRunAsChild(RichScript()));
+  // A workflow that isn't scheduled may still be run by another.
+  Script disabled = RichScript();
+  disabled.enabled = false;
+  EXPECT_TRUE(AutomationSecurity::MayRunAsChild(disabled));
+  EXPECT_FALSE(AutomationSecurity::MayRunAsChild(UnconfirmedDraft()));
+  Script changed = RichScript();
+  AutomationSecurity::ClampUnvouched(changed);
+  EXPECT_FALSE(AutomationSecurity::MayRunAsChild(changed));
+  EXPECT_FALSE(AutomationSecurity::MayRunAsChild(VoiceRoutine()));
+}
+
+TEST(AutomationSecurityTest, ConfirmDraftSitesClearsChangedOutside) {
+  Script changed = UnconfirmedDraft();
+  changed.security.changed_outside = true;
+  ASSERT_TRUE(AutomationSecurity::ConfirmDraftSites(
+      changed, {"shop.example", "pay.example"}));
+  EXPECT_FALSE(changed.security.sites_unconfirmed);
+  EXPECT_FALSE(changed.security.changed_outside);
+  EXPECT_EQ(changed.security.trust, TrustLevel::CASUAL);
+}
+
+TEST(AutomationSecurityTest, ClampTrustForSaveCarriesChangedOutside) {
+  Script existing = UnconfirmedDraft();
+  existing.security.changed_outside = true;
+  Script incoming = UnconfirmedDraft();
+  incoming.security.sites_unconfirmed = false;  // claimed by UI JSON
+  incoming.security.changed_outside = false;
+  AutomationSecurity::ClampTrustForSave(incoming, &existing);
+  EXPECT_TRUE(incoming.security.sites_unconfirmed);
+  EXPECT_TRUE(incoming.security.changed_outside);
+  // A draft from an agent run stays one, and says so.
+  existing.security.changed_outside = false;
+  incoming.security.changed_outside = true;
+  AutomationSecurity::ClampTrustForSave(incoming, &existing);
+  EXPECT_TRUE(incoming.security.sites_unconfirmed);
+  EXPECT_FALSE(incoming.security.changed_outside);
+}
+
+TEST(AutomationSecurityTest, ReviewMessageNamesTheReason) {
+  Script draft = UnconfirmedDraft();
+  EXPECT_STREQ(AutomationSecurity::ReviewMessage(draft),
+               kDraftNeedsReviewMessage);
+  draft.security.changed_outside = true;
+  EXPECT_STREQ(AutomationSecurity::ReviewMessage(draft),
+               kChangedOutsideMessage);
 }
 
 }  // namespace

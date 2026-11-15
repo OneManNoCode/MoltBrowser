@@ -193,8 +193,9 @@ source_set("ai_steps") {
 }
 
 # The .molt script model and the trust / whitelist policy. Pure logic (base +
-# url), split out so molt_ai_unittests can cover it without pulling in the
-# browser-side dependencies of :automation.
+# url, and crypto for the security digest), split out so molt_ai_unittests
+# can cover it without pulling in the browser-side dependencies of
+# :automation.
 source_set("automation_policy") {
   sources = [
     "automation_script.cc",
@@ -206,7 +207,11 @@ source_set("automation_policy") {
     "automation_voice_steps.h",
   ]
 
-  deps = [ "//url" ]
+  deps = [
+    # AutomationSecurity::SecurityDigest() (crypto::hash::Sha256).
+    "//crypto",
+    "//url",
+  ]
 
   public_deps = [
     # Step::locators.

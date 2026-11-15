@@ -273,6 +273,9 @@ base::DictValue SecurityToDict(const SecurityPolicy& p) {
   d.Set("trust", TrustLevelToString(p.trust));
   if (p.sites_unconfirmed)
     d.Set("sites_unconfirmed", true);
+  if (p.changed_outside) {
+    d.Set("changed_outside", true);
+  }
   return d;
 }
 
@@ -286,6 +289,7 @@ SecurityPolicy SecurityFromDict(const base::DictValue& d) {
                                   200LL * 1024 * 1024);
   p.trust = TrustLevelFromString(GetString(d, "trust", "casual"));
   p.sites_unconfirmed = GetBool(d, "sites_unconfirmed", false);
+  p.changed_outside = GetBool(d, "changed_outside", false);
   return p;
 }
 

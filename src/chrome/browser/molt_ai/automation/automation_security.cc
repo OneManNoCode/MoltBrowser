@@ -5,11 +5,16 @@
 
 #include <algorithm>
 #include <iterator>
+#include <optional>
 #include <string_view>
 #include <utility>
 
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "crypto/hash.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -212,8 +217,11 @@ void AutomationSecurity::ClampTrustForSave(Script& incoming,
                                            const Script* existing) {
   incoming.security.trust =
       existing ? existing->security.trust : TrustLevel::CASUAL;
-  if (existing && existing->security.sites_unconfirmed)
+  if (existing && existing->security.sites_unconfirmed) {
     incoming.security.sites_unconfirmed = true;
+    // A file changed outside the browser stays one until it is confirmed.
+    incoming.security.changed_outside = existing->security.changed_outside;
+  }
   // A routine taught by voice that this save brings in (a new workflow, or
   // one that had no voice steps: an import, a copy, an edit) is a draft:
   // voice mode, which runs it, acts on no site of it until the user has
@@ -242,7 +250,76 @@ bool AutomationSecurity::ConfirmDraftSites(
     return false;
   script.security.domain_whitelist = std::move(sites);
   script.security.sites_unconfirmed = false;
+  script.security.changed_outside = false;
   return true;
+}
+
+// static
+std::string AutomationSecurity::SecurityDigest(const Script& script) {
+  base::DictValue d = script.ToJSON();
+  // What a load's scrub would remove never counts (it is gone from what
+  // runs either way).
+  ScrubPlaintextSecrets(d);
+  // Run bookkeeping: the id is the file's name, the stats and the last
+  // fire time change with every run (here or in another browser).
+  d.Remove("id");
+  d.Remove("stats");
+  if (base::DictValue* trigger = d.FindDict("trigger")) {
+    trigger->Remove("last_fired_unix");
+  }
+  // A DictValue keeps its keys sorted: the same script, the same text.
+  std::string json;
+  if (!base::JSONWriter::Write(d, &json)) {
+    return std::string();
+  }
+  return base::HexEncodeLower(crypto::hash::Sha256(json));
+}
+
+// static
+std::string AutomationSecurity::DigestAsStored(const Script& script) {
+  // As AutomationStorage writes it, and as its readers parse it.
+  base::DictValue d = script.ToJSON();
+  ScrubPlaintextSecrets(d);
+  std::string bytes;
+  if (!base::JSONWriter::WriteWithOptions(
+          d, base::JSONWriter::OPTIONS_PRETTY_PRINT, &bytes)) {
+    return std::string();
+  }
+  std::optional<base::Value> parsed =
+      base::JSONReader::Read(bytes, base::JSON_ALLOW_TRAILING_COMMAS);
+  if (!parsed || !parsed->is_dict()) {
+    return std::string();
+  }
+  std::optional<Script> stored = Script::FromJSON(parsed->GetDict());
+  return stored ? SecurityDigest(*stored) : std::string();
+}
+
+// static
+void AutomationSecurity::ClampUnvouched(Script& script) {
+  // Nothing the file says about what it may do is believed.
+  script.security = SecurityPolicy();
+  script.security.require_approval_for.assign(std::begin(kDefaultApprovals),
+                                              std::end(kDefaultApprovals));
+  script.security.sites_unconfirmed = true;
+  script.security.changed_outside = true;
+  // Nor its history (it would suggest promotions it never earned here).
+  script.stats = Stats();
+}
+
+// static
+bool AutomationSecurity::MayFireUnattended(const Script& script) {
+  return script.enabled && MayRunAsChild(script);
+}
+
+// static
+bool AutomationSecurity::MayRunAsChild(const Script& script) {
+  return !script.security.sites_unconfirmed && !HasVoiceSteps(script);
+}
+
+// static
+const char* AutomationSecurity::ReviewMessage(const Script& script) {
+  return script.security.changed_outside ? kChangedOutsideMessage
+                                         : kDraftNeedsReviewMessage;
 }
 
 // static
