@@ -1,12 +1,12 @@
 {
- "resume_run": "43714601147",
+ "resume_run": "43723008086",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Seventy-fifth build (incremental on the seventy-fourth, run 43714601147, Chromium 156.0.8078.100): workflow files changed outside MoltBrowser need review (PR #134), with rounds nine and ten: a new routine saved under an id of its own (never taking another's policy), new workflow ids made unique, and the run window opening only the page the starting step expects, resolved and on the workflow's sites. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Seventy-sixth build (incremental on the seventy-fifth, run 43723008086, Chromium 156.0.8078.100): workflow gaps closed. The default approvals always hold below Approved, imports get the default limits and their schedules start off, a site entry never covers a public suffix or another site, the chat's page watcher starts Casual, intervals run at most once a minute and one saved in molt://ai-automation runs, a scheduled run never starts beside an open one, and wait steps wait the seconds they show. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
