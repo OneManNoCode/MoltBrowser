@@ -9,8 +9,9 @@ Windows is still at v0.2.1). Since then the October v0.3 work landed: the
 workstream merges and pull requests #2 to #55, including the rebase onto
 Chromium 152 (#11), and then the rebase onto Chromium 156.0.8078.48 (#64),
 when Chrome's Extended Stable channel moved to M156, and its security
-respins 156.0.8078.74 (round 31; "(from the .74 respin)" below) and
-156.0.8078.80 (round 39; "(from the .80 respin)").
+respins 156.0.8078.74 (round 31; "(from the .74 respin)" below),
+156.0.8078.80 (round 39; "(from the .80 respin)") and 156.0.8078.100
+("(from the .100 respin)").
 **None of it has been compiled against Chromium 156.**
 Each PR body and design doc lists what it still needs; this page collects
 those lists in the order you do them. (#31 changed only CI, and #42 is an
@@ -342,7 +343,7 @@ to §6 hold the detail (from build-readiness, round 44).
   ```bash
   ./scripts/setup.sh --resync --target-os mac,linux 2>&1 | tee ~/molt-v0.3.0/setup.log
   ```
-  *Expected:* `chromium/src @ 156.0.8078.80 (fb096c0011f9d50f0a264a9376420cdea9c421e3)`,
+  *Expected:* `chromium/src @ 156.0.8078.100 (46876a0c2df3492ed67a8846950ba6d37170b58c)`,
   then `gclient sync`, hooks and `Overlay applied.` It resets `chromium/src`
   (`reset --hard`, `clean -fd`; the gitignored `out/` survives), so the
   first run from an older pin means a full rebuild. A checkout already at
@@ -355,7 +356,11 @@ to §6 hold the detail (from build-readiness, round 44).
   76 Chromium files (Blink's events and DOM, storage and quota, the
   HTTP cache, Cache Storage, File System Access), and V8's and Skia's
   headers reach most targets, so expect most of the build to recompile
-  again. No Rust crate changed in it either.
+  again. No Rust crate changed in it either. A checkout already at
+  156.0.8078.80 needs it once more (from the .100 respin): it moves V8
+  (15.6.75.57), Skia, ANGLE, Dawn, ICU and devtools-frontend and about
+  390 Chromium files, so most of the build recompiles once more. No Rust
+  crate changed (the committed vendored tree stands).
 - [ ] The checkout is at the pin (from #11, `chromium_version.txt`):
   ```bash
   [ "$(git -C chromium/src rev-parse HEAD)" = "$(tools/chromium/pin.sh revision)" ] && echo pin-ok
@@ -2121,6 +2126,7 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `content_unittests` | `MoltNetCameraValuesTest.*:MoltNetCameraTest.*:UserMediaClientTest.*:VideoTrackAdapter*:MediaStreamVideoTrack*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaStreamVideoSource*:MediaDevicesTest.*:InputDeviceInfo*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:MoltNetSubnormalsTest.*:*IIRFilter*:*AudioContext*:*HTMLMediaElementAudioOutputDevice*:MediaStreamConstraintsUtilAudio*`; `*IIR*`; `MoltPortableMediaTest.*:ChannelMixer*:AudioProcessor*`; `RenderFrameAudioInputStreamFactory*:ForwardingAudioStreamFactory*:AudioInputStreamBroker*` (outside MoltNet cameras, channels, outputs, `IIRFilterNode`, a device's layout and a stream's processing are as before; the new cases are `MoltNetCameraTest.*`, `UserMediaClientTest.MoltNetCameraTrackReportsTheMenu`, `MoltNetApplyConstraintsKeepsTheCameraOpen` and `MoltNetChannelCountFollowsTheRequest`, `VideoTrackAdapterTest.MoltNetCameraDesiredSizeIsTheTarget`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesHaveTheTrackSize` and `MoltNetCameraDropsFramesItCannotRead` (since fp-camera2 `MoltNetCameraReadsBackFramesItCannotRead`), `MoltNetMediaDevicesTest.CommunicationsOutputIsRefused`, `MoltNetSubnormalsTest.MoltNetFloorsTheIirFiltersHistory` and `IirTailTimeKeepsItsValue`, `MoltPortableMediaTest.FlushTinyPortableSampleFloorsDoubles`, `PortableCaptureNeedsDownmix` and `DownmixGoldenDigests`) | fp-media4 |
 | `blink_unittests`, `media_unittests` | `MoltNetCameraTest.*:MoltNetCameraValuesTest.*:UserMediaClientTest.*:VideoTrackAdapter*:ImageCapture*:MoltNetImageCaptureTest.*:MediaStreamVideoTrack*:MediaStreamVideoSource*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaDevicesTest.*:InputDeviceInfo*`; `MoltPortableColorTest.*:MoltPortableMediaTest.*:VideoFrameConverter*` (outside MoltNet a camera's frames, timing, colour, `ImageCapture` and pan-tilt-zoom permission are as before; the new cases are `MoltNetCameraTest.NoPanTiltZoom`, `ImageCaptureTest.MoltNetCameraImageCaptureService` and `MoltNetCameraHasNoPanTiltZoomPermission`, `MoltNetImageCaptureTest.*`, `VideoTrackAdapterTest.MoltNetCameraFramesHaveOneColorSpace` and `MoltNetCameraFramesKeepOnlyTheMenusMetadata`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesReachTheGrid`, `MoltNetCameraRepeatsTheNewestFrame`, `MoltNetCameraLowerRateKeepsGridTicks`, `MoltNetCameraHidesTheCamerasDrops`, `MoltNetCameraGridTicksOnItsOwn`, `MoltNetCameraReadsBackFramesItCannotRead`, `MoltNetCameraReadsBackTheNewestFrame` and `MoltNetCameraTurnsBlackWhenItCannotRead`, `MoltPortableColorTest.*`, `MoltPortableMediaTest.PortableCameraEncoding` and `UsePortableCameraColor`; the earlier MoltNet camera cases now run on the grid's ticks, which the tests run by hand) | fp-camera2 |
 | `storage_unittests`, `blink_unittests` | `*QuotaDatabaseTest.*:StorageDirectoryTest.*`; `MouseEvent*:PointerEvent*:FocusEvent*:*BoundaryEvent*:MediaStreamVideoTrack*` (upstream's tests of the respin's changes in files that carry MoltBrowser hooks: the one-key bucket listing, MoltNet's `screenX`/`screenY`, a MoltNet camera's settings; outside MoltNet nothing differs from Chromium) | .80 respin |
+| `blink_unittests`, web tests | `SlotAssignment*:SVGImage*:ServiceWorkerInstalledScriptsManager*:LocalFrameView*:HTMLImageElement*:PaintLayerScrollableArea*:WebEmbeddedWorkerImpl*:*Letterbox*:*ShieldsDecision*:*SharedWorkerKey*`; `css/css-scroll-snap/snap-events/snap-events-with-{disposed,nested}-pseudo-target.tentative.html`, `shadow-dom/manual-slot-assignment-with-details.html` (upstream's tests of the respin's changes in the five merged files, with MoltNet's viewport, `srcset` and service-worker key tests) | .100 respin |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash

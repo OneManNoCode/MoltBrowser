@@ -313,6 +313,7 @@ def api_scan(chromium, base, new, kinds, results):
     results["api"] = {
         "headers_scanned": len(includers),
         "headers_changed": len(changed),
+        "changed_headers": {h: sorted(includers[h]) for h in changed},
         "headers_removed": removed_headers,
         "symbols_removed": len(removed_from),
         "findings": findings,
@@ -397,10 +398,22 @@ def write_report(out, meta, items, results):
         lines.append("Scanned %d upstream headers that first-party code "
                      "includes or that we patch; %d changed, %d were removed "
                      "or moved, %d identifiers disappeared from the changed "
-                     "ones." % (api["headers_scanned"], api["headers_changed"],
-                                len(api["headers_removed"]),
-                                api["symbols_removed"]))
+                     "ones. (Headers inside DEPS subprojects, such as V8's "
+                     "and Skia's, are not scanned: diff those by hand.)" % (
+                         api["headers_scanned"], api["headers_changed"],
+                         len(api["headers_removed"]),
+                         api["symbols_removed"]))
         lines.append("")
+        if api.get("changed_headers"):
+            lines.append("Changed headers (first-party includers; none for a "
+                         "header we patch):")
+            lines.append("")
+            for h, users in sorted(api["changed_headers"].items()):
+                lines.append("- `%s`%s" % (h, (" (%s)" % ", ".join(
+                    "`%s`" % u for u in users[:5]) + (
+                        " and %d more" % (len(users) - 5)
+                        if len(users) > 5 else "")) if users else ""))
+            lines.append("")
         if api["headers_removed"]:
             lines.append("Included headers that no longer exist at the new "
                          "tag:")

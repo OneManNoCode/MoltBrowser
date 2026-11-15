@@ -1,0 +1,66 @@
+MoltBrowser patch for chrome/browser/file_system_access/chrome_file_system_access_permission_context_unittest.cc
+Upstream base: chromium/src@46876a0c2df3492ed67a8846950ba6d37170b58c (156.0.8078.100)
+Generated from src/chrome/browser/file_system_access/chrome_file_system_access_permission_context_unittest.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permission_context_unittest.cc b/chrome/browser/file_system_access/chrome_file_system_access_permission_context_unittest.cc
+index 09556b599426aaf41a9f26c5331ab319822ad7b5..7ba5ab9a2c2d95118876e07d12b121c2add7e547 100644
+--- a/chrome/browser/file_system_access/chrome_file_system_access_permission_context_unittest.cc
++++ b/chrome/browser/file_system_access/chrome_file_system_access_permission_context_unittest.cc
+@@ -727,6 +727,47 @@ TEST_F(ChromeFileSystemAccessPermissionContextTest,
+         // BUILDFLAG(IS_ANDROID)
+ }
+ 
++// MoltBrowser's data folder, ~/.moltbrowser, holds its workflows (with their
++// trust and triggers) and settings: no site may open, save into or write it.
++TEST_F(ChromeFileSystemAccessPermissionContextTest,
++       ConfirmSensitiveEntryAccess_MoltBrowserDataFolderBlocked) {
++  base::FilePath home_dir = temp_dir_.GetPath().AppendASCII("home");
++  ScopedHomeDirOverride home_override = OverrideHomeDir(home_dir);
++  ResetBlockPath();
++
++  base::FilePath molt_dir = home_dir.AppendASCII(".moltbrowser");
++  base::FilePath automations = molt_dir.AppendASCII("automations");
++  EXPECT_EQ(ConfirmSensitiveEntryAccessSync(
++                permission_context(), PathInfo(molt_dir),
++                HandleType::kDirectory, AccessTrigger::kOpen),
++            SensitiveDirectoryResult::kAbort);
++  EXPECT_EQ(ConfirmSensitiveEntryAccessSync(
++                permission_context(), PathInfo(automations),
++                HandleType::kDirectory, AccessTrigger::kOpen),
++            SensitiveDirectoryResult::kAbort);
++  EXPECT_EQ(
++      ConfirmSensitiveEntryAccessSync(
++          permission_context(), PathInfo(automations.AppendASCII("a.molt")),
++          HandleType::kFile, AccessTrigger::kSave),
++      SensitiveDirectoryResult::kAbort);
++  EXPECT_EQ(
++      ConfirmSensitiveEntryAccessSync(
++          permission_context(), PathInfo(automations.AppendASCII("a.molt")),
++          HandleType::kFile, AccessTrigger::kProgrammaticWrite),
++      SensitiveDirectoryResult::kAbort);
++  EXPECT_EQ(
++      ConfirmSensitiveEntryAccessSync(
++          permission_context(), PathInfo(molt_dir.AppendASCII("settings.json")),
++          HandleType::kFile, AccessTrigger::kOpen),
++      SensitiveDirectoryResult::kAbort);
++  // The home folder's other children are still the user's to pick.
++  EXPECT_EQ(ConfirmSensitiveEntryAccessSync(
++                permission_context(),
++                PathInfo(home_dir.AppendASCII("moltbrowser-notes")),
++                HandleType::kDirectory, AccessTrigger::kOpen),
++            SensitiveDirectoryResult::kAllowed);
++}
++
+ // ~/.cache should be blocked on all platforms even when base::DIR_CACHE points
+ // elsewhere (macOS NSCachesDirectory, custom $XDG_CACHE_HOME on Linux/ChromeOS,
+ // Android app cache) or does not exist (Windows).
+@@ -2330,6 +2371,7 @@ TEST_F(ChromeFileSystemAccessPermissionContextTest,
+       {base::DIR_HOME, FILE_PATH_LITERAL(".gnupg"), true, false},
+       {base::DIR_HOME, FILE_PATH_LITERAL(".config"), true, false},
+       {base::DIR_HOME, FILE_PATH_LITERAL(".cache"), true, false},
++      {base::DIR_HOME, FILE_PATH_LITERAL(".moltbrowser"), true, false},
+       {base::DIR_HOME, FILE_PATH_LITERAL(".bash_profile"), true, false},
+       {base::DIR_HOME, FILE_PATH_LITERAL(".bash_login"), true, false},
+       {base::DIR_HOME, FILE_PATH_LITERAL(".bashrc"), true, false},

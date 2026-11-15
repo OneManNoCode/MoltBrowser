@@ -69,10 +69,15 @@ source_set("activation_guard") {
 # (chrome/test/data/molt_voice/activation.html): the web agent's click, voice
 # mode's, a person's, with a scripted model and a fake TTS platform. Picked
 # up by browser_tests through //chrome/browser/molt_ai/voice:browser_tests.
+# Also: no site may open or write MoltBrowser's data folder through the File
+# System Access API.
 source_set("browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-  sources = [ "activation_guard_browsertest.cc" ]
+  sources = [
+    "activation_guard_browsertest.cc",
+    "molt_data_folder_browsertest.cc",
+  ]
 
   deps = [
     ":activation_guard",
@@ -80,6 +85,7 @@ source_set("browser_tests") {
     "//base",
     "//base/test:test_support",
     "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/browser/file_system_access",
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/browser/molt_ai/agents:features",

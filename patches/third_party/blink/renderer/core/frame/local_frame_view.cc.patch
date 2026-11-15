@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/frame/local_frame_view.cc
-Upstream base: chromium/src@fb096c0011f9d50f0a264a9376420cdea9c421e3 (156.0.8078.80)
+Upstream base: chromium/src@46876a0c2df3492ed67a8846950ba6d37170b58c (156.0.8078.100)
 Generated from src/third_party/blink/renderer/core/frame/local_frame_view.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/frame/local_frame_view.cc b/third_party/blink/renderer/core/frame/local_frame_view.cc
-index 52c020a4544d3a180eaf04a046ae0917582462b1..5725ae8d69d08a37dfa48c6054e851bd149e276a 100644
+index dd84ddca8a1c968f1fc50c89ef56088767c0ad4a..6658c8f175ac417655c8dc34c1238e3daf7f71bf 100644
 --- a/third_party/blink/renderer/core/frame/local_frame_view.cc
 +++ b/third_party/blink/renderer/core/frame/local_frame_view.cc
-@@ -140,6 +140,7 @@
+@@ -141,6 +141,7 @@
  #include "third_party/blink/renderer/core/media_type_names.h"
  #include "third_party/blink/renderer/core/mobile_metrics/mobile_friendliness_checker.h"
  #include "third_party/blink/renderer/core/mobile_metrics/tap_friendliness_checker.h"
@@ -16,7 +16,7 @@ index 52c020a4544d3a180eaf04a046ae0917582462b1..5725ae8d69d08a37dfa48c6054e851bd
  #include "third_party/blink/renderer/core/page/autoscroll_controller.h"
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/focus_controller.h"
-@@ -971,7 +972,8 @@ gfx::SizeF LocalFrameView::SmallViewportSizeForViewportUnits() const {
+@@ -984,7 +985,8 @@ gfx::SizeF LocalFrameView::SmallViewportSizeForViewportUnits() const {
  
    gfx::SizeF layout_size(layout_view->GetLayoutSize(kIncludeScrollbars));
    layout_size.InvScale(zoom);
@@ -26,7 +26,7 @@ index 52c020a4544d3a180eaf04a046ae0917582462b1..5725ae8d69d08a37dfa48c6054e851bd
  }
  
  gfx::SizeF LocalFrameView::LargeViewportSizeForViewportUnits() const {
-@@ -1019,7 +1021,9 @@ gfx::SizeF LocalFrameView::ViewportSizeForMediaQueries() const {
+@@ -1032,7 +1034,9 @@ gfx::SizeF LocalFrameView::ViewportSizeForMediaQueries() const {
    if (!frame_->GetDocument()->Printing()) {
      viewport_size.Scale(1 / GetFrame().LayoutZoomFactor());
    }
