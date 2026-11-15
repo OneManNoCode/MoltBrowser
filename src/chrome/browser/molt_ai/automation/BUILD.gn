@@ -91,6 +91,39 @@ source_set("automation") {
   ]
 }
 
+# The Molt Workflow Record (workflow_record.h): what this browser last wrote
+# in the shared workflow directory, kept in its user data directory. base
+# only, so molt_ai_unittests tests it on real files.
+source_set("workflow_record") {
+  sources = [
+    "workflow_record.cc",
+    "workflow_record.h",
+  ]
+
+  deps = [
+    # A record inside ~/.moltbrowser is never used.
+    "//chrome/browser/molt_ai/common:molt_home_dir",
+
+    # The record and its marker read and written only as regular files.
+    "//chrome/browser/molt_ai/common:molt_regular_file",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# A workflow record for a test's directory (workflow_record_test_util.h).
+source_set("workflow_record_test_support") {
+  testonly = true
+  sources = [
+    "workflow_record_test_util.cc",
+    "workflow_record_test_util.h",
+  ]
+
+  deps = [ ":workflow_record" ]
+
+  public_deps = [ "//base" ]
+}
+
 # The shared storage's work posted from the UI thread to its sequences
 # (automation_shared_tasks.h). Header only.
 source_set("shared_tasks") {
@@ -254,6 +287,7 @@ source_set("unit_tests") {
     "automation_storage_unittest.cc",
     "automation_tool_steps_unittest.cc",
     "run_questions_unittest.cc",
+    "workflow_record_unittest.cc",
   ]
   deps = [
     ":agent_run_draft",
@@ -263,6 +297,8 @@ source_set("unit_tests") {
     ":run_questions",
     ":storage",
     ":tool_steps",
+    ":workflow_record",
+    ":workflow_record_test_support",
     "//base",
 
     # The storage's updates from two threads (TaskEnvironment).
@@ -270,6 +306,7 @@ source_set("unit_tests") {
 
     # The shared storage in a test's own ~/.moltbrowser.
     "//chrome/browser/molt_ai/common:molt_home_dir",
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
 
     # Every schema the runner builds must be accepted by the inference
     # service's converter; the tests run the real one (std-only).
