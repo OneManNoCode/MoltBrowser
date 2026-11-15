@@ -351,6 +351,26 @@ For longer narrative posts behind each entry see
   reaching the microphone the echo canceller then took those words with
   it ("open Wikipedia" heard as "open wikip").
 
+### Security
+
+- **Workflows changed outside MoltBrowser now need your review.**
+  MoltBrowser remembers, in its own profile folder, exactly what it last
+  saved for each workflow in `~/.moltbrowser/automations`. If a workflow
+  file is added or changed by anything else (another program, a file you
+  were tricked into saving there, a copy you made by hand, an older or
+  second copy of MoltBrowser), it opens as a draft. It has no trust,
+  doesn't run, isn't run on its schedule, and no other workflow can run it
+  until you open it in Agent mode, check its steps, sites and schedule, and
+  click **Confirm**. It then starts as Casual; trust it again with
+  **Trust** (or in molt://ai-automation for Trusted or Admin). Your
+  existing workflows are kept exactly as they are the first time you start
+  this version. Run history and the last time a schedule ran don't count
+  as changes. If you use two copies of MoltBrowser with different profile
+  folders, a change to a workflow's steps, sites, trust or schedule in one
+  needs one review in the other. If MoltBrowser's profile folder is reset
+  or replaced, every workflow needs one review. Design:
+  [docs/design/AGENT_ACTIONS.md §3.6](docs/design/AGENT_ACTIONS.md).
+
 ## 2026-11-06 — v0.3.0: Private by default
 
 The result of a full security and privacy audit (October 2026), on

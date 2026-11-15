@@ -19,7 +19,9 @@ A run that ended with DONE can be saved as a draft Agent-mode workflow,
 which can't run until the user has reviewed it and confirmed its sites
 (§2.9; threat model §5.4). Agent-mode steps keep fallback locators for
 their element (§3.4), and a recording keeps the site-tool calls the user
-allowed while recording as steps (§3.5). Outside MoltNet windows the web
+allowed while recording as steps (§3.5). A workflow file is trusted only as
+far as this browser recorded it: one changed outside the browser loads as a
+draft to review (§3.6). Outside MoltNet windows the web
 agent observes pages through the accessibility page map voice mode reads
 them through, with the map's numbers as its element ids, and acts through
 accessibility actions, which pages take as the user's own; the element
@@ -2234,6 +2236,341 @@ kept.
 The editor shows what the step gives the tool, its frame and how many
 values weren't saved, as text, with no field to type into.
 
+### 3.6 Workflow files the browser didn't write
+
+Status: implemented (November 2026), pending a compile and the browser
+tests on the build machine. A workflow in `~/.moltbrowser/automations/` is
+trusted only as far as this browser recorded it. A file added or changed by
+anything else loads as an unconfirmed import: no trust, no sites, no runs,
+no scheduled fires, and no other workflow can run it, until the user
+reviews it in the Agent studio and confirms it with a real click.
+
+**The threat.** The workflow folder is in the user's home directory, so
+anything that can write there can write a `.molt` file: another program, a
+file the user was tricked into saving there, a copy made by hand, an older
+or second copy of MoltBrowser. Until now the browser believed what such a
+file said about itself (its trust level, its sites, its schedule), so a
+workflow file changed outside the browser could run at the trust it claimed,
+on its schedule, without the user seeing it. The File System Access block on
+the folder (`chrome_file_system_access_permission_context.cc`) keeps sites
+out of it; this section is about everything else.
+
+| File | What |
+|---|---|
+| `automation/workflow_record.{h,cc}` (`:workflow_record`, base only) | the record: load, one-time seeding, checks, persistence |
+| `automation/automation_storage.{h,cc}` | every read checked (`Vetted()`), every write recorded, `PrepareRecord()`, `UpdateBookkeeping()`, `RecordFire()` |
+| `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()`, `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()` |
+| `automation/automation_script.*` | `SecurityPolicy::changed_outside` (wording only; stored only when true) |
+| `automation/automation_record_startup.{h,cc}` | configures the record when the first profile is created |
+| `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; `RecordFire()` |
+| `automation/automation_runner.cc` | a refused run keeps no stats; stats through `UpdateBookkeeping()`; `RUN_SCRIPT` refuses a child that needs review |
+| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel, the badge and banner |
+| `ui/webui/molt_ai/molt_ai_automation_storage.cc`, `molt_ai_automation_ui.cc` | trust refused with the reason, no promotion suggestion for a draft, the badge |
+
+#### 3.6.1 The record
+
+`<user data dir>/Molt Workflow Record`, and beside it `Molt Workflow Record
+Started` (`1\n`), which the browser never deletes. The user data directory
+is Chromium's own (it honours `--user-data-dir`, and File System Access
+already blocks it); nothing that can only write `~/.moltbrowser` can
+produce an entry.
+
+```json
+{"format": 1, "directory": "/Users/u/.moltbrowser/automations",
+ "origin": "seeded", "created": "2026-11-15T10:00:00Z",
+ "files": {"wf_1.molt": {"digest": "<64 lowercase hex>", "fired": 1763200000},
+           "news.molt.0123abcd.taken": {"digest": "<64 lowercase hex>"}}}
+```
+
+- An entry per file name in the shared directory (`<id>.molt`, or a script
+  a move set aside, `<id>.molt.<token>.taken`): the security digest of what
+  this browser **last** wrote under that name (one per name: an older
+  version doesn't match, so a rollback needs a review), and `fired`, the
+  highest fire time it wrote or saw there.
+- `directory` is the folder it covers; another one means "start empty".
+  `origin` (`seeded`, `fresh`, `after_loss`, `after_corrupt`,
+  `other_directory`) is informational.
+- Read with a 16 MiB cap, only as a regular file, never through a link
+  (`molt_regular_file.h`); written atomically (a 0600 temporary file, then
+  a rename), never over a link. Validation is linear (no `std::regex`):
+  format 1, at most 65,536 entries; a name of 1 to 200 bytes, without `/`,
+  `\`, `:` or NUL, not hidden, ending in `.molt` or `.taken`; a digest of
+  exactly 64 `[0-9a-f]`; `fired` a non-negative number. A bad entry is
+  dropped alone; a bad file is corrupt.
+- At each load, entries whose file is gone (deleted by another browser, by
+  hand) are dropped; `Delete()` forgets an entry at once, so a deleted file
+  put back needs a review.
+- Missing, corrupt or unusable:
+  - missing with the marker present: **lost**, starts empty, never seeds
+    (audit `record_reset | lost`);
+  - corrupt (bad JSON or format, over the cap): kept as `Molt Workflow
+    Record.bad` (one copy), starts empty, never seeds;
+  - a link, a directory, unreadable: never read through nor written over;
+    the record is **session only** for this run (it trusts only this
+    run's writes), and the next start tries again;
+  - inside `~/.moltbrowser` or the workflow folder: refused, session only;
+  - never configured (tests, a fixture's saves before the browser
+    started): the real shared folder gets a session-only record, whose
+    entries are kept when the record is configured later in the process.
+
+#### 3.6.2 The security digest
+
+`AutomationSecurity::SecurityDigest()`: lowercase hex SHA-256 of the
+**parsed** workflow, `Script::ToJSON()` with plaintext secrets scrubbed,
+without `id`, `stats` and `trigger.last_fired_unix` (run bookkeeping).
+Everything else counts: name, version, creation time, model, enabled flag,
+variables, the rest of the trigger, every field of every step in order
+(locators and `extra` included) and the whole security policy
+(`changed_outside` included). Being over the parsed script, formatting, key
+order and unknown keys don't matter, and it covers exactly what the runner
+executes. Being scrub-invariant, the plaintext-secret rewrite a load does
+never changes a verdict (a seeded file with an old plaintext password stays
+trusted; a planted one is scrubbed and stays a draft). `""` is never
+recorded nor matched.
+
+A write records the digest of **the bytes it wrote, parsed as a reader
+parses them** (`DigestAsStored()` is the same for callers), so the browser
+always verifies its own writes; the round-trip tests and the fuzzer guard
+that.
+
+#### 3.6.3 Reads and writes (`AutomationStorage`)
+
+- **Reads** (`Load()`, `ListAll()`, and the stored script `SaveChecked()`,
+  `Update()`, `Take()` and `ReadSetAside()` see) go through `Vetted()`: a
+  file the record doesn't vouch for is clamped by `ClampUnvouched()` (the
+  default policy: CASUAL, no sites, the default approvals and limits;
+  `sites_unconfirmed` and `changed_outside` set; its stats cleared; its
+  steps, trigger, enabled flag, variables and name kept for the review),
+  and `trigger.last_fired_unix` is never earlier than the record's `fired`
+  (so a forged earlier one forces no catch-up run). Every caller gets this
+  with no change of its own: the scheduler, the run window, `RUN_SCRIPT`,
+  the Agent studio, molt://ai-automation, voice mode's claims.
+- **A save in progress is never a change.** Reads take no lock; one that
+  finds a file unvouched reads it again under the directory's lock, after
+  any change of this browser's in progress (file renamed before the record
+  is set, or the reverse).
+- **Writes** (`Save()`, `SaveNew()`, `SaveChecked()`, `Update()`, so
+  `SetTrustLevel()`) record what they wrote. A move's rename carries the
+  entry (`Take()`, `ReturnTaken()`); finishing it forgets it. A write of
+  what an unvouched read gave is still an unconfirmed import:
+  `ClampTrustForSave()` and the studio's `KeepPolicy()` keep the policy as
+  read, so no write launders a file. `SetTrustLevel()` refuses a workflow
+  that needs a review (both UIs refuse it first).
+- **Bookkeeping** (stats, last fire) is written by `UpdateBookkeeping()`
+  (reads the file as it is, never clamped; writes only if the digest of the
+  bytes it writes is unchanged; leaves the record as it was) and
+  `RecordFire()` (raises the record's floor first, then that). Never
+  `Update()`: a run in one browser leaves another browser's record intact,
+  and a refused run writes nothing.
+- A storage of its own directory (a profile's voice routines) has no record
+  and loads its files as they are.
+
+#### 3.6.4 The first start of this version (seeding, once)
+
+`PrepareRecord()` loads the record before any other script read or write
+(the scheduler's service calls it first thing at startup, on the shared
+storage's change sequence). It seeds only when **all** of these hold:
+
+1. `Molt Workflow Record` is missing (not a link, not unreadable, not
+   corrupt);
+2. `Molt Workflow Record Started` is missing;
+3. the user data directory isn't new (`may_seed`: not Chrome's first run,
+   and Local State existed before this launch, so a new `--user-data-dir`
+   started with `--no-first-run` doesn't seed);
+4. the record's path is usable (known, not under `~/.moltbrowser`).
+
+Then it records every file there that is a regular file within the size
+cap, parses, and is named as a script or a set-aside script, as it is (its
+own trust, sites, schedule and steps: what the previous build ran, so
+scheduled workflows keep running). One audit line `record_seeded | N
+workflows`, and a log line with the names. No file is rewritten.
+
+The record is **always** written at its first load, empty included, and the
+marker is written before it on a new user data directory and after it when
+seeding: a start that writes nothing still leaves the record, so files
+planted before a later start are never taken for an upgrade's. A crash
+before the seeded record is written seeds again next time (the same rule);
+after, it is final.
+
+#### 3.6.5 Consumers
+
+- **Scheduler:** `MayFireUnattended()` (enabled, sites confirmed, not a voice
+  routine) at listing and again on the timer's reload; the service refuses
+  a fire otherwise (`scheduled_fire_refused` in the audit log) and records
+  one with `RecordFire()`. The scheduler is its own base-only target now
+  (`:scheduler`), unit tested.
+- **Runner:** refuses an unconfirmed workflow with `ReviewMessage()`
+  (`run_refused | changed_outside`), keeping no stats; writes stats with
+  `UpdateBookkeeping()`; a `RUN_SCRIPT` child must pass `MayRunAsChild()`,
+  else "RUN_SCRIPT: `<id>` needs review in Agent mode" (a TRUSTED parent
+  would otherwise inline a changed child's steps at its own trust; the
+  child's id can come from a variable).
+- **Agent studio:** the card says "changed outside · review it", the
+  library a banner ("N workflows were changed outside MoltBrowser and need
+  your review."). Run, Schedule and Trust are refused
+  (`kChangedOutsideMessage`, "Review this workflow and confirm its sites
+  first."). Edits and duplicates stay drafts.
+- **molt://ai-automation:** a badge ("Changed outside MoltBrowser — review
+  it in Agent mode"), trust refused with that reason, no promotion
+  suggestion for any draft (a file's history proves nothing).
+- **Voice mode:** nothing of its own: a routine from before profiles that
+  was changed outside is claimed as a draft; a claim of one cut short is
+  still recognised (clamped against clamped).
+
+#### 3.6.6 Re-approval
+
+1. The editor shows the clamped workflow: its steps, its schedule (as
+   text), the sites its steps target, and a **review token**:
+   `SecurityDigest()` of what is shown (`reviewToken`; a save of the draft
+   answers with the new one).
+2. "Confirm" is honoured only on a real, consumed click
+   (`ConsumeUserClick()`), with a token of exactly 64 lowercase hex digits;
+   under the directory's lock the token must still be the digest of the
+   stored workflow ("This workflow changed since you reviewed it. Review it
+   again." otherwise), and the sites must be exactly the ones its steps
+   target.
+3. It is then saved, and recorded, as a CASUAL workflow on those sites, not
+   a draft (`outside_change_confirmed` in the audit log). Trust is raised
+   again with separate clicks (the studio's Trust, or molt://ai-automation
+   for Trusted and Admin).
+
+The token is required for an AI draft's confirmation too.
+
+#### 3.6.7 Two browsers on one `~/.moltbrowser`
+
+Each user data directory (an installed and a portable browser, two
+channels) has its own record and seeds at its own first start of this
+version. Runs in one (stats, fire times) leave the other's record intact.
+A change to what a workflow does (steps, sites, trust, schedule, enabled
+flag, variables, name) needs one review in the other, which then stops
+firing it (no double firing). The confirmations converge: a confirm in
+each writes the same security content, so each still vouches for the
+other's. If a lock file wait times out, the last writer wins and the other
+browser sees a change (fails closed).
+
+#### 3.6.8 Threading
+
+`ConfigureWorkflowRecordOnce()` on the UI thread does path math and reads
+cached first-run and Local State state; no I/O. All record I/O happens in
+`AutomationStorage` calls on the sequences that already block (the shared
+storage's change and read sequences, a profile's routines sequence). Every
+change of the record (load, `Set`, `NoteFired`, `Move`, `Forget`, its
+write) runs under the directory's change scope (its lock, then its lock
+file), ordered with the file change it mirrors. Readers take only the
+record's own lock, the innermost (directory lock, then lock file, then the
+record's lock; the registry's lock is never held with it). A
+thread-local depth check forbids `PrepareRecord()` and a read's second look
+inside a change scope (the directory lock isn't recursive).
+
+#### 3.6.9 Rules for code that touches workflow files
+
+- Write workflows only through `AutomationStorage`, with the shared
+  directory exactly as `AutomationStorage::SharedDirectory()` gives it (the
+  record is kept by that path).
+- Bookkeeping goes through `UpdateBookkeeping()` and `RecordFire()`, never
+  `Update()`.
+- A `check` / `change` callback sees the workflow as checked against the
+  record and must not use a storage.
+- Tests of the shared storage use `ScopedWorkflowRecordForTesting`
+  (`workflow_record_test_util.h`); a browser test that writes `.molt` bytes
+  by hand into its `~/.moltbrowser` and expects them trusted must save
+  through `AutomationStorage` instead.
+
+#### 3.6.10 Tests
+
+All in `molt_ai_unittests` except the last item:
+
+- `automation/workflow_record_unittest.cc`: the record and marker in the
+  user data directory only (owner-only files); an upgrade seeds once; a new
+  user data directory never seeds, even at its next start; a lost record
+  never seeds again; a corrupt one is kept aside and never seeds; one that
+  isn't a regular file (link, directory) is left alone and retried; never
+  under `~/.moltbrowser`; another directory's vouches nothing; malformed
+  entries dropped one by one; entries of files gone dropped at load; moves
+  carried and forgets kept across a restart; the fire floor only rising;
+  writes before configuration kept.
+- `automation/automation_security_unittest.cc`: the digest ignores only
+  bookkeeping, covers every other field (table-driven), survives the file
+  round trip (large times, doubles and nested values, invalid UTF-8,
+  U+2028) and the scrub; the clamp is an unconfirmed import; the
+  predicates; `changed_outside` cleared by a confirm and carried by a save;
+  the review message.
+- `automation/automation_script_unittest.cc`: `changed_outside` stored only
+  when true; a stable round trip.
+- `automation/automation_storage_unittest.cc` (`AutomationStorageRecordTest`):
+  a planted file loads clamped through `Load()` and `ListAll()`, unchanged
+  on disk; every security field changed outside is caught; bookkeeping may
+  change outside; the fire floor; a hand copy, a rollback and a deleted file
+  put back aren't vouched for; every write path vouches; writes never
+  launder an unvouched read; `SetTrustLevel()` refuses a review;
+  `UpdateBookkeeping()` keeps the verdict and refuses security changes;
+  `RecordFire()` keeps the floor when the file can't be written; the scrub
+  rewrite keeps the verdict; moves carry it; finishing a move forgets it;
+  reads never see a save in progress as a change (two threads); two user
+  data dirs over one folder; seeding keeps every legacy workflow as it was
+  (and skips a link); a directory without a record is unchanged; the real
+  shared folder without configuration fails closed.
+- `automation/automation_scheduler_unittest.cc` (mock time): a vouched
+  catch-up fires once; a planted file never fires; a timer's reload that
+  finds a change doesn't fire (the next one still does); a forged earlier
+  last fire forces no catch-up.
+- `voice/voice_routine_store_unittest.cc`: a routine changed outside is
+  claimed as a draft; a vouched one as it was; a claim of a changed one cut
+  short is still recognised.
+- `ui/webui/molt_ai/molt_ai_agent_storage_unittest.cc`: shown for review
+  with a token; neither run, scheduled nor trusted; confirming vouches for
+  the reviewed content at CASUAL (then Trust works); refused when the file
+  changed after the review; the token is needed (an AI draft's too); edits
+  and duplicates stay drafts.
+- `ui/webui/molt_ai/molt_ai_automation_storage_unittest.cc`: trust refused
+  with the reason; a save keeps it a draft; an import is vouched for at
+  CASUAL.
+- `molt_automation_script_fuzzer`: the digest is empty or 64 hex digits and
+  what a reader of the saved file computes; a clamped workflow is CASUAL
+  with no sites and may neither fire nor run as a child.
+- `tools/webui_checks` smoke test: the badge, the banner, the review panel
+  (schedule as text), no run, and the token sent from the click.
+- Browser tests (build machine), `security/molt_data_folder_browsertest.cc`:
+  the record is in the user data directory, not the test's data folder; a
+  workflow planted after startup loads as a draft.
+
+#### 3.6.11 Not done
+
+- **Seeding trusts what is there at the first start of this version**, as
+  the previous build did. A one-time studio notice listing seeded
+  TRUSTED/ADMIN or scheduled workflows would be a follow-up.
+- **Stats stay outside the digest**: forged history on a vouched workflow
+  is display only (the promotion suggestion is hidden for drafts; promotion
+  and "Trust & re-run" still need clicks).
+- **A workflow whose steps name no static site** (only `{{url}}`) can't be
+  confirmed; the user re-imports it or adds a "Go to page" step. Follow-up:
+  confirm with no sites when `changed_outside` (CASUAL, empty whitelist).
+- **Same-user code that can write the user data directory** can edit the
+  record; it could already drive the browser.
+- **Existing gaps left as they are** (separate changes): imports keep the
+  file's `require_approval_for` and limits; imported scheduled workflows
+  fire at CASUAL right away; the chat's watcher is saved at APPROVED
+  without a click.
+
+#### 3.6.12 What users are told (release notes, ready to paste)
+
+> **Workflows changed outside MoltBrowser now need your review.**
+> MoltBrowser remembers, in its own profile folder, exactly what it last
+> saved for each workflow in `~/.moltbrowser/automations`. If a workflow
+> file is added or changed by anything else (another program, a file you
+> were tricked into saving there, a copy you made by hand, an older or
+> second copy of MoltBrowser), it opens as a draft. It has no trust, doesn't
+> run, isn't run on its schedule, and no other workflow can run it until you
+> open it in Agent mode, check its steps, sites and schedule, and click
+> **Confirm**. It then starts as Casual; trust it again with **Trust** (or
+> in molt://ai-automation for Trusted or Admin). Your existing workflows are
+> kept exactly as they are the first time you start this version. Run
+> history and the last time a schedule ran don't count as changes. If you
+> use two copies of MoltBrowser with different profile folders, a change to
+> a workflow's steps, sites, trust or schedule in one needs one review in
+> the other. If MoltBrowser's profile folder is reset or replaced, every
+> workflow needs one review.
+
 ## 4. The AI chat's page actions
 
 ### 4.1 Before
@@ -2941,10 +3278,12 @@ the draft is built to be harmless until a person has looked at it:
     tools well, need the build machine.
 - **The planner:** §2.8.9.
 - **Saved runs:** §2.9.9.
+- **Workflow files the browser didn't write:** §3.6.11.
 
 ## 7. Tests
 
-For the planner, see §2.8.7; for saved runs, §2.9.8.
+For the planner, see §2.8.7; for saved runs, §2.9.8; for workflow files the
+browser didn't write, §3.6.10.
 
 For fallback locators (§3.4), site-tool steps (§3.5) and frames of other
 sites (§2.7.14):
