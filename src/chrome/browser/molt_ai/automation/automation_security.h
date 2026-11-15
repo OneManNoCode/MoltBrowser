@@ -29,10 +29,11 @@
 //
 // A workflow file changed outside the browser (its SecurityDigest() isn't
 // the one the browser recorded for that file, workflow_record.h) starts
-// CASUAL and unconfirmed, whatever it says (ClampUnvouched()): it runs,
-// fires and is run by another workflow only once the user has reviewed it
-// and confirmed its sites in the Agent studio, and climbs the staircase
-// again from there (docs/design/AGENT_ACTIONS.md §3.6).
+// CASUAL and unconfirmed, whatever it says, with only what the Agent
+// studio's review shows (ClampUnvouched(), an allowlist): it runs, fires
+// and is run by another workflow only once the user has reviewed it and
+// confirmed its sites in the Agent studio, and climbs the staircase again
+// from there (docs/design/AGENT_ACTIONS.md §3.6).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
@@ -183,17 +184,35 @@ class AutomationSecurity {
   static std::string DigestAsStored(const Script& script);
 
   // A file the browser didn't write (or that changed since) loads as an
-  // unconfirmed import: the default policy (CASUAL, no sites, the default
-  // approvals and limits), sites_unconfirmed and changed_outside set, and
-  // its run history cleared. Its steps, trigger, enabled flag, variables
-  // and name are kept, for the user to review, but not what the review
-  // doesn't show and a run would act on: each step's description (the
-  // review's title for it; the runner's text anchor and recovery prompt
-  // too), selector_fallbacks, locators, and its extra "text" anchor and
-  // "ref_shot" picture (used when the target shown misses) are dropped, as
-  // are RUN_SCRIPT steps (which workflow they run, and that workflow's
-  // sites, aren't shown) and the variables' default values (their names
-  // stay). Clamping twice is clamping once.
+  // unconfirmed import, with only what the Agent studio's review shows, as
+  // the runner uses it (an allowlist; everything else is dropped, any key a
+  // later build adds included):
+  //   - the script: its id, name, creation time, the names of its variables
+  //     (their default values ""), and its schedule's kind and expression
+  //     (none when the file has it turned off or the expression holds a
+  //     character the review can't show; no time zone, no end); the default
+  //     policy (CASUAL, no sites, the default approvals and limits) with
+  //     sites_unconfirmed and changed_outside set; no run history;
+  //   - each step the review shows in full, with only the fields it shows:
+  //     NAVIGATE, CLICK, WAIT_FOR (target); TYPE, ASSERT (target, value);
+  //     SCROLL, KEYPRESS, WAIT, NOTIFY (value); EXTRACT (target, store_as);
+  //     CALL_TOOL (target). Its extra keeps only "host" (printable ASCII);
+  //     a TYPE step's "secret" as "vault" with its "secret_kind" as the
+  //     runner reads it (and no value); a CALL_TOOL step's "tool" with only
+  //     its "origin", "frame" ("origin", "path"), "args", "secret_args" and
+  //     "form" (when true). Every other field is its default (no
+  //     description, fallback selectors, locators, text anchor, picture,
+  //     timeout, retries, transform or review note);
+  //   - a step of a routine taught by voice (extra["voice"]): its type,
+  //     target and value, and extra "voice" and "host" only (never a
+  //     secret key); its claim keeps of extra["voice"] only what the review
+  //     describes (voice::DescribeRoutineStepsAsRun());
+  //   - every other step is dropped: IF, ELSE, END_IF, LOOP, END_LOOP,
+  //     SCREENSHOT, RUN_JS, RUN_SCRIPT, AI_DECIDE, AI_EXTRACT, UNKNOWN, and
+  //     a step whose shown target, value or store_as holds a control
+  //     character (a line break, a tab), DEL or a character that reorders,
+  //     hides or breaks text (agents/hidden_chars.h).
+  // Clamping twice is clamping once.
   static void ClampUnvouched(Script& script);
 
   // Whether the scheduler may fire |script| unattended: enabled, its sites

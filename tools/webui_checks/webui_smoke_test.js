@@ -105,7 +105,24 @@ const CHANGED_WORKFLOW = {
            extra: {host: 'evil.example', tool: {origin: 'https://evil.example',
              args: {note: CHANGED_TOOL_NOTE, big: 'x'.repeat(5000)}}}},
           {type: 'type', target: '#pw',
-           extra: {secret: 'vault', secret_kind: 'password', host: 'evil.example'}}],
+           extra: {secret: 'vault', secret_kind: 'password', host: 'evil.example'}},
+          // Notes a file names for steps that run: none shown (a literal
+          // typed, a tool given nothing withheld).
+          {type: 'type', target: '#notes', value: 'ship to 1 Evil St',
+           extra: {review: 'secret_field', host: 'evil.example'}},
+          // A voice step with a secret key voice mode never reads: titled as
+          // voice mode runs it, no saved password said.
+          {type: 'type', value: '', description: 'Type send 500 to X',
+           extra: {voice: {command: 'type', text: 'send 500 to X', planned: false},
+                   secret: 'vault', secret_kind: 'password'}},
+          // A site tool given a value with a bidi override, which a form
+          // tool sends: shown as it runs.
+          {type: 'call_tool', target: 'transfer',
+           extra: {host: 'evil.example', review: 'secret_argument', tool: {
+             origin: 'https://evil.example', form: true,
+             args: {account: '\u202E87654321\u202C', amount: 100}}}},
+          // An assert: its element shown.
+          {type: 'assert', target: '#status', value: 'Paid'}],
 };
 // Another, of two sites, with a last fire from before the change; saved
 // with a step deleted, it targets one, and a confirm answers with its
@@ -1901,6 +1918,28 @@ const PAGES = [
          'Fill your saved password', 'a saved-password step says so');
      assert(/fills in your saved password/.test(
          changedSteps[2].querySelector('.review-note').textContent));
+     // A note the file names for a step that runs isn't shown.
+     assert.strictEqual(changedSteps[3].querySelectorAll('.review-note').length, 0,
+                        'no "a run stops" note for a literal typed');
+     assert.strictEqual(changedSteps[3].querySelector('.etype small').textContent,
+                        'Type “ship to 1 Evil St”');
+     assert.strictEqual(changedSteps[4].querySelector('.etype small').textContent,
+                        'Type send 500 to X', 'a voice step titled as voice mode runs it');
+     assert.strictEqual(changedSteps[4].querySelectorAll('.review-note').length, 0,
+                        'no saved password for a voice step');
+     assert.strictEqual(changedSteps[5].querySelectorAll('.review-note').length, 0,
+                        'no "a run stops" note for a tool given nothing withheld');
+     const bidiArgs = changedSteps[5].querySelector('.tool-args');
+     assert.strictEqual(bidiArgs.textContent,
+                        'account = “\uFFFD87654321\uFFFD”; amount = 100',
+                        'a bidi override shown, as it runs');
+     assert.strictEqual(bidiArgs.querySelectorAll('bdi').length, 2,
+                        'each value isolated');
+     assert(/fills in and sends a form/.test(changedSteps[5].textContent));
+     const assertTarget = Array.from(changedSteps[6].querySelectorAll('input.inp'))
+         .map((i) => i.value);
+     assert.deepStrictEqual(assertTarget, ['Paid', '#status'],
+                            'an assert shows its element');
      const runsBeforeChanged = window.__sent.filter((m) => m === 'runWorkflow').length;
      window.runWorkflowFlow('c1');
      await tick();
@@ -1934,7 +1973,11 @@ const PAGES = [
      assert.strictEqual(toolCard.querySelector('.etype small').textContent,
          'Run the site’s tool “add_to_cart” on example.com (in its frame from https://<b>w</b>.example)');
      assert(/1 value not saved/.test(toolCard.textContent));
-     assert(/asked for it at each run/.test(toolCard.querySelector('.review-note').textContent));
+     const toolNotes = toolCard.querySelectorAll('.review-note');
+     assert.strictEqual(toolNotes.length, 2);
+     assert(/asked for it at each run/.test(toolNotes[0].textContent));
+     assert(/a run stops at this step/.test(toolNotes[1].textContent),
+            'a card or code it was given that wasn’t saved stops the run');
      assert.strictEqual(toolCard.querySelectorAll('img, b, input.inp').length, 0);
      assert(/Site tool/.test(toolCard.querySelector('.etype').textContent));
      // Saving keeps the withheld value's variable.
@@ -1962,6 +2005,7 @@ const PAGES = [
      await window.saveEditor(true);
      assert.strictEqual(saves()[saved].id, 'w1');
      assert(!('recordedId' in saves()[saved]));
+     assert(!('draft' in saves()[saved]), 'a workflow, not a draft');
      // One save at a time: a double click on a new workflow's Save saves it
      // once, then as an edit under the id it was given.
      window.openEditorDraft({name: 'Blank', steps: [], variables: {}});
@@ -2035,6 +2079,8 @@ const PAGES = [
      assert.strictEqual(draftConfirmCalls.length, confirmsBefore, 'not confirmed unsaved');
      assert.strictEqual(saves().length, saved + 1, 'saved first');
      assert.strictEqual(saves()[saved].steps.length, 1);
+     assert.strictEqual(saves()[saved].draft, true,
+                        'an edit of a draft says so (refused if it is no longer one)');
      await tick();
      assert.deepStrictEqual(
          Array.from(doc.querySelectorAll('#edTrust .draft-site')).map((e) => e.textContent),
@@ -2050,6 +2096,7 @@ const PAGES = [
      await window.saveEditor(true);
      assert.deepStrictEqual(saves()[saved].trigger, CONFIRMED_TRIGGER,
                             'no last fire from before the change written back');
+     assert(!('draft' in saves()[saved]), 'confirmed: no longer a draft');
      // A run's question: shown in the run's ticker as text; "Use it" and
      // "Stop the run" send the answer for that question from the click.
      window.showView('library');

@@ -272,6 +272,10 @@ source_set("automation_policy") {
   ]
 
   deps = [
+    # AutomationSecurity::ClampUnvouched(): a one-line field the review
+    # can't show as it runs.
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+
     # AutomationSecurity::SecurityDigest() (crypto::hash::Sha256).
     "//crypto",
     "//url",

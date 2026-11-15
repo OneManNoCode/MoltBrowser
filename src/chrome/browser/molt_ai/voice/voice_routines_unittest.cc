@@ -448,6 +448,97 @@ TEST(VoiceRoutinesTest, StepsDescribedAsRunShowWhatVoiceModeRuns) {
   EXPECT_EQ(changed.steps[5].description, "Scroll down");
 }
 
+// A routine changed outside the browser keeps, of each voice step, only
+// what its description says, as voice mode runs it (RoutineStepAsShown()):
+// a site named by what opens (a known site by its own name, an address or
+// a site voice mode doesn't know by itself), never by the file's words; no
+// whole query (searched for, on the page the user is on, instead of a site
+// voice mode doesn't know); no element roles; a number of scrolls only
+// where it is said; no secret key (voice mode never reads one), no field
+// of the file's but those voice mode reads. Twice is once.
+TEST(VoiceRoutinesTest, StepsDescribedAsRunKeepOnlyWhatIsDescribed) {
+  std::vector<RoutineStep> steps = MyNews();
+  steps.push_back(Said("scroll down"));
+  BuiltRoutine built = BuildRoutine("voice_11", "my news", steps, kNow);
+  ASSERT_TRUE(built.script) << built.refusal;
+  Script planted = Copy(*built.script);
+  ASSERT_EQ(planted.steps.size(), 4u);
+  VoiceOf(planted.steps[0]).Set("words", "my bank");
+  VoiceOf(planted.steps[2]).Set("roles", 4);
+  VoiceOf(planted.steps[3]).Set("count", 5);
+  // An address, which the file's words name otherwise.
+  automation::Step address;
+  address.type = StepType::NAVIGATE;
+  address.target = "https://evil.example/";
+  base::DictValue open;
+  open.Set("command", "open_site");
+  open.Set("site", "evil.example");
+  open.Set("address", true);
+  open.Set("words", "my bank");
+  open.Set("planned", false);
+  base::DictValue open_extra;
+  open_extra.Set(automation::kVoiceStepKey, std::move(open));
+  address.extra = base::Value(std::move(open_extra));
+  planted.steps.push_back(std::move(address));
+  // A search of a site voice mode doesn't know, with a whole query and a
+  // secret key, a value and a fallback selector of the file's.
+  automation::Step search;
+  search.type = StepType::TYPE;
+  search.value = "{{cats}}";
+  search.selector_fallbacks = {"#q"};
+  base::DictValue voice;
+  voice.Set("command", "search");
+  voice.Set("query", "cats");
+  voice.Set("scope", "named");
+  voice.Set("site", "zz");
+  voice.Set("address", false);
+  voice.Set("words", "my bank");
+  voice.Set("whole_query", "cancel my subscription");
+  voice.Set("planned", false);
+  base::DictValue extra;
+  extra.Set(automation::kVoiceStepKey, std::move(voice));
+  extra.Set(automation::kStepHostKey, "www.youtube.com");
+  extra.Set(automation::kSecretKey, automation::kSecretVault);
+  extra.Set(automation::kSecretKindKey, "password");
+  extra.Set("review", "secret_field");
+  search.extra = base::Value(std::move(extra));
+  planted.steps.push_back(std::move(search));
+
+  DescribeRoutineStepsAsRun(planted);
+  ASSERT_EQ(planted.steps.size(), 6u);
+  EXPECT_EQ(planted.steps[0].description, "Open YouTube");
+  ASSERT_TRUE(VoiceOf(planted.steps[0]).FindString("words"));
+  EXPECT_EQ(*VoiceOf(planted.steps[0]).FindString("words"), "YouTube");
+  EXPECT_FALSE(VoiceOf(planted.steps[2]).Find("roles"));
+  EXPECT_EQ(planted.steps[3].description, "Scroll down");
+  EXPECT_EQ(VoiceOf(planted.steps[3]).FindInt("count"), 1);
+  EXPECT_EQ(planted.steps[4].description, "Open evil.example");
+  EXPECT_FALSE(VoiceOf(planted.steps[4]).Find("words"));
+  EXPECT_EQ(planted.steps[4].target, "https://evil.example/");
+  const automation::Step& searched = planted.steps[5];
+  EXPECT_EQ(searched.description, "Search zz for cats");
+  EXPECT_FALSE(VoiceOf(planted.steps[5]).Find("whole_query"));
+  EXPECT_FALSE(VoiceOf(planted.steps[5]).Find("words"));
+  ASSERT_TRUE(searched.extra.is_dict());
+  EXPECT_EQ(searched.extra.GetDict().size(), 2u);
+  EXPECT_TRUE(searched.extra.GetDict().FindString(automation::kStepHostKey));
+  EXPECT_TRUE(searched.value.empty());
+  EXPECT_TRUE(searched.selector_fallbacks.empty());
+  EXPECT_EQ(automation::AutomationSecurity::SecretStepKind(searched),
+            agent_safety::FieldKind::kOrdinary);
+  // Twice is once.
+  const std::string once = planted.ToJSONString();
+  DescribeRoutineStepsAsRun(planted);
+  EXPECT_EQ(planted.ToJSONString(), once);
+  // What voice mode runs is what was described.
+  const ReadRoutineResult read = ReadRoutine(planted);
+  ASSERT_TRUE(read.ok) << read.why;
+  ASSERT_EQ(read.steps.size(), 6u);
+  EXPECT_TRUE(read.steps[5].command.whole_query.empty());
+  EXPECT_EQ(read.steps[5].command.site, "zz");
+  EXPECT_EQ(read.steps[3].command.count, 1);
+}
+
 TEST(VoiceRoutinesTest, SitesAreConfirmedByVoiceOnlyWhenAllAreSaid) {
   EXPECT_TRUE(RoutineSitesSayable({"www.youtube.com"}));
   EXPECT_TRUE(RoutineSitesSayable({"news.example", "shop.example"}));

@@ -13,6 +13,7 @@
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "crypto/hash.h"
 #include "url/gurl.h"
@@ -76,6 +77,176 @@ std::string SecretStepDescription(agent_safety::FieldKind kind) {
   return kind == agent_safety::FieldKind::kPassword
              ? "Fill your saved password"
              : "Enter the " + std::string(agent_safety::FieldKindLabel(kind));
+}
+
+// ---- What the Agent studio's review shows (ClampUnvouched()) ----
+
+// Which fields of a step of each type the studio's review shows, as the
+// runner uses them (molt_ai_agent_ui.cc's buildEditorStep()); nullopt for
+// a type it doesn't show in full.
+struct ShownFields {
+  bool target = false;
+  bool value = false;
+  bool store_as = false;
+};
+
+std::optional<ShownFields> ShownFieldsOf(StepType type) {
+  switch (type) {
+    case StepType::NAVIGATE:   // "Web address"
+    case StepType::CLICK:      // "What to click"
+    case StepType::WAIT_FOR:   // "Wait until this appears"
+    case StepType::CALL_TOOL:  // the tool's name (its title and its box)
+      return ShownFields{.target = true};
+    case StepType::TYPE:    // "Text to type", "On element"
+    case StepType::ASSERT:  // "Must be true", "On element"
+      return ShownFields{.target = true, .value = true};
+    case StepType::SCROLL:    // "How far"
+    case StepType::KEYPRESS:  // "Key"
+    case StepType::WAIT:      // "Seconds to wait" (its timeout isn't kept)
+    case StepType::NOTIFY:    // "Message"
+      return ShownFields{.value = true};
+    case StepType::EXTRACT:  // "What to grab", "Save answer as"
+      return ShownFields{.target = true, .store_as = true};
+    // Control flow (which steps run, how often), a page snapshot, code, the
+    // on-device model's prompt and schema, another workflow: not shown in
+    // full.
+    case StepType::IF:
+    case StepType::ELSE:
+    case StepType::END_IF:
+    case StepType::LOOP:
+    case StepType::END_LOOP:
+    case StepType::SCREENSHOT:
+    case StepType::RUN_JS:
+    case StepType::RUN_SCRIPT:
+    case StepType::AI_DECIDE:
+    case StepType::AI_EXTRACT:
+    case StepType::UNKNOWN:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+// Whether |text|, shown in a one-line field, would read otherwise than it
+// runs: a control character (an <input> drops a line break, a tab looks
+// like spaces), DEL, or a character that reorders, hides or breaks text
+// (agents/hidden_chars.h).
+bool HasUnshownChars(std::string_view text) {
+  for (size_t i = 0; i < text.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(text[i]);
+    if (c < 0x20 || c == 0x7F || hidden_chars::HiddenCharAt(text, i) > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// A page host as the browser records one (kStepHostKey): printable ASCII,
+// so the site the review lists is the site a run is allowed on.
+bool IsShownHost(std::string_view host) {
+  constexpr size_t kMaxHostBytes = 253;
+  if (host.empty() || host.size() > kMaxHostBytes) {
+    return false;
+  }
+  return std::all_of(host.begin(), host.end(),
+                     [](char c) { return c > 0x20 && c < 0x7F; });
+}
+
+// A site tool's step's extra key (automation_tool_steps.h's kToolKey).
+constexpr char kToolStepKey[] = "tool";
+
+// A site tool's extra["tool"] with only what the review shows of it
+// (automation_tool_steps.h's ParseToolStep() reads these keys): the page's
+// origin, the frame's origin and path, the values given and the names of
+// those not saved, and that it is a form tool.
+base::DictValue ShownTool(const base::DictValue& tool) {
+  base::DictValue out;
+  if (const std::string* origin = tool.FindString("origin")) {
+    out.Set("origin", *origin);
+  }
+  if (const base::DictValue* frame = tool.FindDict("frame")) {
+    base::DictValue shown;
+    if (const std::string* origin = frame->FindString("origin")) {
+      shown.Set("origin", *origin);
+    }
+    if (const std::string* path = frame->FindString("path")) {
+      shown.Set("path", *path);
+    }
+    out.Set("frame", std::move(shown));
+  }
+  if (const base::DictValue* args = tool.FindDict("args")) {
+    out.Set("args", args->Clone());
+  }
+  if (const base::ListValue* secret = tool.FindList("secret_args")) {
+    out.Set("secret_args", secret->Clone());
+  }
+  if (tool.FindBool("form").value_or(false)) {
+    out.Set("form", true);
+  }
+  return out;
+}
+
+// |step| with only what the review shows of it, or nullopt when the review
+// doesn't show it in full (ClampUnvouched()).
+std::optional<Step> ShownStep(const Step& step) {
+  const base::DictValue* extra = step.extra.GetIfDict();
+  base::DictValue shown_extra;
+  if (const std::string* host =
+          extra ? extra->FindString(kStepHostKey) : nullptr;
+      host && IsShownHost(*host)) {
+    shown_extra.Set(kStepHostKey, *host);
+  }
+  Step out;
+  out.type = step.type;
+  // A routine taught by voice: what voice mode runs is its extra["voice"],
+  // which a claim keeps only as the review describes it
+  // (voice::DescribeRoutineStepsAsRun()); nothing else, its secret keys
+  // included (voice mode never reads them).
+  if (const base::DictValue* voice =
+          extra ? extra->FindDict(kVoiceStepKey) : nullptr) {
+    out.target = step.target;
+    out.value = step.value;
+    shown_extra.Set(kVoiceStepKey, voice->Clone());
+    out.extra = base::Value(std::move(shown_extra));
+    return out;
+  }
+  std::optional<ShownFields> shown = ShownFieldsOf(step.type);
+  if (!shown) {
+    return std::nullopt;
+  }
+  // A saved secret, as the runner reads it (its kind), which titles the
+  // step; its value is never typed, nor kept.
+  const bool secret =
+      step.type == StepType::TYPE && extra && extra->FindString(kSecretKey);
+  if (secret) {
+    shown->value = false;
+    shown_extra.Set(kSecretKey, kSecretVault);
+    shown_extra.Set(kSecretKindKey,
+                    agent_safety::FieldKindToString(
+                        AutomationSecurity::SecretStepKind(step)));
+  }
+  if ((shown->target && HasUnshownChars(step.target)) ||
+      (shown->value && HasUnshownChars(step.value)) ||
+      (shown->store_as && HasUnshownChars(step.store_as))) {
+    return std::nullopt;
+  }
+  if (shown->target) {
+    out.target = step.target;
+  }
+  if (shown->value) {
+    out.value = step.value;
+  }
+  if (shown->store_as) {
+    out.store_as = step.store_as;
+  }
+  if (step.type == StepType::CALL_TOOL && extra) {
+    if (const base::DictValue* tool = extra->FindDict(kToolStepKey)) {
+      shown_extra.Set(kToolStepKey, ShownTool(*tool));
+    }
+  }
+  if (!shown_extra.empty()) {
+    out.extra = base::Value(std::move(shown_extra));
+  }
+  return out;
 }
 
 bool DomainMatchesWhitelist(const std::vector<std::string>& whitelist,
@@ -296,43 +467,53 @@ std::string AutomationSecurity::DigestAsStored(const Script& script) {
 
 // static
 void AutomationSecurity::ClampUnvouched(Script& script) {
-  // Nothing the file says about what it may do is believed.
-  script.security = SecurityPolicy();
-  script.security.require_approval_for.assign(std::begin(kDefaultApprovals),
-                                              std::end(kDefaultApprovals));
-  script.security.sites_unconfirmed = true;
-  script.security.changed_outside = true;
-  // Nor its history (it would suggest promotions it never earned here).
-  script.stats = Stats();
-  // Nor what the review doesn't show of a step, which the runner would use
-  // when the target shown misses: its fallback selectors and locators, its
-  // text anchor, its picture of the recorded target, and its description
-  // (shown as the step's title, and a text anchor and a recovery prompt
-  // too). The review token is of what is left, so a confirmed workflow
-  // acts only on the targets the user saw.
-  for (Step& step : script.steps) {
-    step.description.clear();
-    step.selector_fallbacks.clear();
-    step.locators.reset();
-    if (base::DictValue* extra = step.extra.GetIfDict()) {
-      extra->Remove(kStepTextAnchorKey);
-      extra->Remove(kStepRefShotKey);
+  // Only what the Agent studio's review shows, as the runner uses it (an
+  // allowlist: whatever else the file has, any key a later build adds
+  // included, is dropped), so the review token, and what a confirmation
+  // saves, are of what the user saw.
+  Script shown;
+  shown.id = script.id;
+  shown.name = script.name;
+  // Information only (no run reads it).
+  shown.created_at_unix = script.created_at_unix;
+  // The schedule, shown as its kind and expression: not a time zone or an
+  // end the review doesn't show (it runs in the browser's time zone, with
+  // no end), nor one the file has turned off (no schedule then), nor an
+  // expression that reads otherwise than it runs.
+  if (script.enabled && script.trigger.type != TriggerType::MANUAL &&
+      !HasUnshownChars(script.trigger.expression)) {
+    shown.trigger.type = script.trigger.type;
+    shown.trigger.expression = script.trigger.expression;
+  }
+  // Bookkeeping (outside the digest): the storage sets it from its record.
+  shown.trigger.last_fired_unix = script.trigger.last_fired_unix;
+  // Each step the review shows in full, with only the fields it shows
+  // (ShownStep()); every other step is dropped: control flow, page
+  // snapshots, code, the on-device model's steps, steps that run another
+  // workflow, and a step whose one-line field would read otherwise than it
+  // runs. What the runner would act on when the target shown misses (the
+  // fallback selectors and locators, the text anchor, the picture of the
+  // recorded target, the description) goes with the rest.
+  for (const Step& step : script.steps) {
+    if (std::optional<Step> kept = ShownStep(step)) {
+      shown.steps.push_back(std::move(*kept));
     }
   }
-  // Nor a step that runs another workflow: the review doesn't say which
-  // (its target, which a variable can give), nor the sites that workflow
-  // adds to the run. The studio makes none; a confirmed workflow runs no
-  // other.
-  std::erase_if(script.steps, [](const Step& step) {
-    return step.type == StepType::RUN_SCRIPT;
-  });
-  // Nor the default values of its variables, which a run uses wherever
-  // their {{name}} is (a scheduled one asks nobody): the review shows a
-  // variable's value only where it is a step's whole field. The names are
-  // kept; a run is given the values again, or uses none.
-  for (auto& [name, value] : script.default_variables) {
-    value.clear();
+  // The names of its variables, not their default values, which a run uses
+  // wherever their {{name}} is (a scheduled one asks nobody): the review
+  // shows a variable's value only where it is a step's whole field. A run
+  // is given the values again, or uses none.
+  for (const auto& [name, value] : script.default_variables) {
+    shown.default_variables[name] = std::string();
   }
+  // Nothing the file says about what it may do is believed: the default
+  // policy, an unconfirmed draft. Nor its history (it would suggest
+  // promotions it never earned here).
+  shown.security.require_approval_for.assign(std::begin(kDefaultApprovals),
+                                             std::end(kDefaultApprovals));
+  shown.security.sites_unconfirmed = true;
+  shown.security.changed_outside = true;
+  script = std::move(shown);
 }
 
 // static

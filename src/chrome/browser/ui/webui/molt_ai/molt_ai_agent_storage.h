@@ -30,8 +30,9 @@
 // until confirmDraftSites, after a real click, with the review token of
 // exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6), its
 // schedule starting over. A save that names a workflow (one the page
-// opened) is an edit of what is stored then, refused if it is gone; only a
-// save that names none is a new workflow (SaveRequest, KindOfSave()). An
+// opened) is an edit of what is stored then, refused if it is gone, or if
+// the page edited a draft that is no longer one; only a save that names
+// none is a new workflow (SaveRequest, KindOfSave()). An
 // interval schedule the studio writes without a last fire (saveSchedule,
 // confirmDraftSites) counts from then, and saveSchedule and
 // confirmDraftSites answer with the trigger they saved.
@@ -132,7 +133,11 @@ Answer AnswerInSharedStorage(const StudioPlaces& places,
 // file, its schedule starting over (no last fire, whatever the page sent; an
 // interval counted from then). An id the page sent is of a workflow it read: an
 // edit, refused when that workflow is gone or unreadable by the time it is
-// saved (never saved as a new one). KindOfSave() decides.
+// saved (never saved as a new one). KindOfSave() decides. |edited_draft|: the
+// page edited a draft (its editor showed one for review: an agent run's, or a
+// file changed outside the browser); refused when what is stored under its id
+// is no longer one (confirmed meanwhile, in another view, or replaced), so its
+// steps never become a confirmed workflow's without their review.
 struct SaveRequest {
   SaveRequest();
   ~SaveRequest();
@@ -142,6 +147,7 @@ struct SaveRequest {
   automation::Script script;
   bool recorded_here = false;
   bool new_workflow = false;
+  bool edited_draft = false;
 };
 
 // saveWorkflow's kind, from the page's message: its "id" (|sent_id|) is of

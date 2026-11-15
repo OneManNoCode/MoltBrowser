@@ -974,6 +974,33 @@ bool UnconfirmChangedRoutine(automation::Script& script) {
   return true;
 }
 
+namespace {
+
+// The workflow step for a voice command's |step| (not the planner's), as
+// voice mode saves it: its type, the page it opens, its variable, its
+// description, and extra "voice" and "host".
+Step CommandStep(const RoutineStep& step) {
+  const VoiceCommand& c = step.command;
+  Step st;
+  st.type = StepTypeFor(c.kind);
+  if (c.kind == K::kOpenSite) {
+    st.target = step.url;
+  }
+  if (!step.variable.empty()) {
+    st.value = "{{" + step.variable + "}}";
+  }
+  st.description = Capitalized(DescribeRoutineStep(step));
+  base::DictValue extra;
+  extra.Set(automation::kVoiceStepKey, VoiceCommandToDict(step));
+  if (!step.host.empty()) {
+    extra.Set(automation::kStepHostKey, step.host);
+  }
+  st.extra = base::Value(std::move(extra));
+  return st;
+}
+
+}  // namespace
+
 BuiltRoutine BuildRoutine(std::string_view id,
                           std::string_view name,
                           const std::vector<RoutineStep>& steps,
@@ -1106,29 +1133,15 @@ BuiltRoutine BuildRoutine(std::string_view id,
         return out;
       }
     }
-    base::DictValue voice = VoiceCommandToDict(step);
     // Everything stored must read back.
-    if (!VoiceCommandFromDict(voice)) {
+    if (!VoiceCommandFromDict(VoiceCommandToDict(step))) {
       out.refusal = SaidLater("One of the steps can't be kept.");
       return out;
     }
-    Step st;
-    st.type = StepTypeFor(c.kind);
-    if (c.kind == K::kOpenSite) {
-      st.target = step.url;
-    }
     if (!step.variable.empty()) {
-      st.value = "{{" + step.variable + "}}";
       script.default_variables[step.variable] = std::string();
     }
-    st.description = Capitalized(DescribeRoutineStep(step));
-    base::DictValue extra;
-    extra.Set(automation::kVoiceStepKey, std::move(voice));
-    if (!step.host.empty()) {
-      extra.Set(automation::kStepHostKey, step.host);
-    }
-    st.extra = base::Value(std::move(extra));
-    script.steps.push_back(std::move(st));
+    script.steps.push_back(CommandStep(step));
   }
   automation::SecurityPolicy& policy = script.security;
   policy.require_approval_for = {"form_submit", "payment", "login"};
@@ -1217,14 +1230,49 @@ ReadRoutineResult ReadRoutine(const automation::Script& script) {
 void DescribeRoutineStepsAsRun(automation::Script& script) {
   for (Step& st : script.steps) {
     const base::DictValue* extra = st.extra.GetIfDict();
-    if (!extra || !extra->FindDict(automation::kVoiceStepKey)) {
+    const base::DictValue* voice =
+        extra ? extra->FindDict(automation::kVoiceStepKey) : nullptr;
+    if (!voice) {
       continue;
     }
-    // Not one voice mode can do (it refuses the routine): no title of the
-    // file's own.
-    std::optional<RoutineStep> step = ReadRoutineStep(st);
-    st.description =
-        step ? Capitalized(DescribeRoutineStep(*step)) : std::string();
+    std::optional<RoutineStep> read = ReadRoutineStep(st);
+    if (!read) {
+      // Not one voice mode can do (it refuses the routine): no title, text
+      // or address of the file's own, nothing but its extra["voice"].
+      Step unread;
+      unread.type = st.type;
+      base::DictValue kept;
+      kept.Set(automation::kVoiceStepKey, voice->Clone());
+      unread.extra = base::Value(std::move(kept));
+      st = std::move(unread);
+      continue;
+    }
+    // Only what its description says, written as voice mode's own save
+    // writes it, titled by the browser from the step as it reads back.
+    const RoutineStep step = RoutineStepAsShown(*read);
+    Step shown =
+        IsAgentStep(step) ? PlannerStepToWorkflowStep(step) : CommandStep(step);
+    std::optional<RoutineStep> again = ReadRoutineStep(shown);
+    if (!again && !IsAgentStep(step)) {
+      // A site's own name that wouldn't read back: named by itself.
+      RoutineStep plain = step;
+      plain.command.site_words.clear();
+      shown = CommandStep(plain);
+      again = ReadRoutineStep(shown);
+    }
+    if (!again) {
+      // Never so (what voice mode reads writes back), but then: as one it
+      // can't do.
+      Step unread;
+      unread.type = st.type;
+      base::DictValue kept;
+      kept.Set(automation::kVoiceStepKey, voice->Clone());
+      unread.extra = base::Value(std::move(kept));
+      st = std::move(unread);
+      continue;
+    }
+    shown.description = Capitalized(DescribeRoutineStep(*again));
+    st = std::move(shown);
   }
 }
 

@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <optional>
@@ -13,6 +14,7 @@
 
 #include "base/json/json_writer.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace molt_ai {
@@ -641,6 +643,14 @@ TEST(AutomationSecurityTest, ClampUnvouchedIsAnUnconfirmedImport) {
   EXPECT_EQ(s.trigger.type, TriggerType::CRON);
   EXPECT_EQ(s.trigger.expression, "0 9 * * *");
   EXPECT_TRUE(s.enabled);
+  // Not what it doesn't show of the schedule (it runs in the browser's time
+  // zone, with no end), nor what no run reads.
+  EXPECT_TRUE(s.trigger.timezone.empty());
+  EXPECT_EQ(s.trigger.until_unix, 0);
+  EXPECT_EQ(s.version, Script().version);
+  EXPECT_EQ(s.ai_model, Script().ai_model);
+  EXPECT_EQ(s.id, "wf_rich");
+  EXPECT_EQ(s.created_at_unix, 1'800'000'000);
   // A variable's name, not its default value (§3.6.6).
   ASSERT_EQ(s.default_variables.count("city"), 1u);
   EXPECT_EQ(s.default_variables["city"], "");
@@ -693,10 +703,18 @@ TEST(AutomationSecurityTest, ClampUnvouchedDropsWhatTheReviewDoesntShow) {
   ASSERT_TRUE(click.extra.is_dict());
   EXPECT_FALSE(click.extra.GetDict().Find(kStepTextAnchorKey));
   EXPECT_FALSE(click.extra.GetDict().Find(kStepRefShotKey));
-  // What is shown, and the site it names, is kept.
+  // What is shown, and the site it names, is kept; nothing else (a click's
+  // value, store_as, transform, timeout, loop count and retries aren't
+  // shown, nor any other extra key).
   EXPECT_EQ(click.type, StepType::CLICK);
   EXPECT_EQ(click.target, "#buy");
-  EXPECT_EQ(click.value, "v");
+  EXPECT_TRUE(click.value.empty());
+  EXPECT_TRUE(click.store_as.empty());
+  EXPECT_TRUE(click.transform.empty());
+  EXPECT_EQ(click.timeout_ms, Step().timeout_ms);
+  EXPECT_EQ(click.max_iterations, Step().max_iterations);
+  EXPECT_EQ(click.retries, Step().retries);
+  EXPECT_EQ(click.extra.GetDict().size(), 1u);
   ASSERT_TRUE(click.extra.GetDict().FindString(kStepHostKey));
   EXPECT_EQ(*click.extra.GetDict().FindString(kStepHostKey), "shop.example");
   EXPECT_EQ(s.steps[0].target, "https://shop.example/");
@@ -706,6 +724,249 @@ TEST(AutomationSecurityTest, ClampUnvouchedDropsWhatTheReviewDoesntShow) {
   const std::string token = AutomationSecurity::SecurityDigest(s);
   AutomationSecurity::ClampUnvouched(s);
   EXPECT_EQ(AutomationSecurity::SecurityDigest(s), token);
+}
+
+// The clamp is an allowlist: only the step types the Agent studio's review
+// shows in full are kept, in order; control flow, page snapshots, code,
+// the on-device model's steps, another workflow and unknown steps are
+// dropped (§3.6.6).
+TEST(AutomationSecurityTest, ClampUnvouchedKeepsOnlyStepTypesTheReviewShows) {
+  constexpr StepType kKept[] = {
+      StepType::NAVIGATE, StepType::CLICK,    StepType::TYPE,
+      StepType::SCROLL,   StepType::KEYPRESS, StepType::WAIT,
+      StepType::WAIT_FOR, StepType::EXTRACT,  StepType::ASSERT,
+      StepType::NOTIFY,   StepType::CALL_TOOL};
+  constexpr StepType kDropped[] = {
+      StepType::IF,         StepType::ELSE,       StepType::END_IF,
+      StepType::LOOP,       StepType::END_LOOP,   StepType::SCREENSHOT,
+      StepType::RUN_JS,     StepType::RUN_SCRIPT, StepType::AI_DECIDE,
+      StepType::AI_EXTRACT, StepType::UNKNOWN};
+  Script s = RichScript();
+  s.steps.clear();
+  std::vector<StepType> expected;
+  for (size_t i = 0; i < std::size(kKept); ++i) {
+    s.steps.push_back(MakeStep(kDropped[i], "x", "document.body.remove()"));
+    s.steps.push_back(MakeStep(kKept[i], "#a", "b"));
+    expected.push_back(kKept[i]);
+  }
+  AutomationSecurity::ClampUnvouched(s);
+  std::vector<StepType> kept;
+  for (const Step& step : s.steps) {
+    kept.push_back(step.type);
+  }
+  EXPECT_EQ(kept, expected);
+  const std::string token = AutomationSecurity::SecurityDigest(s);
+  AutomationSecurity::ClampUnvouched(s);
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(s), token);
+}
+
+// Of each kept step, only the fields the review shows, as the runner uses
+// them; every other field its default.
+TEST(AutomationSecurityTest, ClampUnvouchedKeepsOnlyTheFieldsTheReviewShows) {
+  Script s = RichScript();
+  s.steps.clear();
+  for (StepType type :
+       {StepType::NAVIGATE, StepType::CLICK, StepType::TYPE, StepType::SCROLL,
+        StepType::KEYPRESS, StepType::WAIT, StepType::WAIT_FOR,
+        StepType::EXTRACT, StepType::ASSERT, StepType::NOTIFY}) {
+    Step step = MakeStep(type, "t", "v");
+    step.store_as = "s";
+    step.transform = "parseInt";
+    step.timeout_ms = 86'400'000;
+    step.max_iterations = 9;
+    step.retries = 5;
+    s.steps.push_back(std::move(step));
+  }
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_EQ(s.steps.size(), 10u);
+  for (const Step& step : s.steps) {
+    const StepType t = step.type;
+    const bool target = t == StepType::NAVIGATE || t == StepType::CLICK ||
+                        t == StepType::TYPE || t == StepType::WAIT_FOR ||
+                        t == StepType::EXTRACT || t == StepType::ASSERT;
+    const bool value = t == StepType::TYPE || t == StepType::SCROLL ||
+                       t == StepType::KEYPRESS || t == StepType::WAIT ||
+                       t == StepType::ASSERT || t == StepType::NOTIFY;
+    const std::string what = StepTypeToString(t);
+    EXPECT_EQ(step.target, target ? "t" : "") << what;
+    EXPECT_EQ(step.value, value ? "v" : "") << what;
+    EXPECT_EQ(step.store_as, t == StepType::EXTRACT ? "s" : "") << what;
+    EXPECT_TRUE(step.transform.empty()) << what;
+    EXPECT_EQ(step.timeout_ms, Step().timeout_ms) << what;
+    EXPECT_EQ(step.max_iterations, Step().max_iterations) << what;
+    EXPECT_EQ(step.retries, Step().retries) << what;
+    EXPECT_TRUE(step.extra.is_none()) << what;
+  }
+}
+
+// Of a step's extra, only "host", a saved secret as the runner reads it,
+// and a site tool's tool as the review shows it: review notes, the agent's
+// ask-before flag, a recorded host for the secret, and any key a later
+// build might add are gone; a host that isn't printable ASCII too.
+TEST(AutomationSecurityTest,
+     ClampUnvouchedKeepsOnlyTheExtraKeysTheReviewShows) {
+  Script s = RichScript();
+  s.steps.clear();
+  Step typed = MakeStep(StepType::TYPE, "#notes", "ship to 1 Evil St");
+  base::DictValue extra;
+  extra.Set(kStepHostKey, "shop.example");
+  extra.Set("review", "secret_field");
+  extra.Set("ask_before_sensitive", true);
+  extra.Set(kStepTextAnchorKey, "Notes");
+  extra.Set("future_key", "x");
+  typed.extra = base::Value(extra.Clone());
+  s.steps.push_back(std::move(typed));
+  // A secret step: "vault" and its kind as the runner reads it (one it
+  // doesn't know is a password), never a value.
+  Step secret = MakeStep(StepType::TYPE, "#pw", "hunter2");
+  base::DictValue secret_extra = extra.Clone();
+  secret_extra.Set(kSecretKey, "anything");
+  secret_extra.Set(kSecretKindKey, "weird");
+  secret_extra.Set(kSecretHostKey, "other.example");
+  secret.extra = base::Value(std::move(secret_extra));
+  s.steps.push_back(std::move(secret));
+  Step card = MakeStep(StepType::TYPE, "#cc");
+  base::DictValue card_extra;
+  card_extra.Set(kSecretKey, kSecretVault);
+  card_extra.Set(kSecretKindKey, "payment_card");
+  card.extra = base::Value(std::move(card_extra));
+  s.steps.push_back(std::move(card));
+  // A site tool: its origin, frame, values, the names not saved and that
+  // it is a form tool; not what it says it does.
+  Step tool = MakeStep(StepType::CALL_TOOL, "transfer");
+  base::DictValue tool_dict;
+  tool_dict.Set("origin", "https://shop.example");
+  base::DictValue frame;
+  frame.Set("origin", "https://w.example");
+  frame.Set("path", "/f");
+  frame.Set("number", 3);
+  tool_dict.Set("frame", std::move(frame));
+  base::DictValue args;
+  args.Set("to", "acct-1");
+  tool_dict.Set("args", std::move(args));
+  base::ListValue secret_args;
+  secret_args.Append("otp");
+  tool_dict.Set("secret_args", std::move(secret_args));
+  tool_dict.Set("read_only", true);
+  tool_dict.Set("form", true);
+  tool_dict.Set("future_key", 1);
+  base::DictValue tool_extra;
+  tool_extra.Set(kStepHostKey, "shop.example");
+  tool_extra.Set("review", "secret_argument");
+  tool_extra.Set("tool", std::move(tool_dict));
+  tool.extra = base::Value(std::move(tool_extra));
+  s.steps.push_back(std::move(tool));
+  // A host that would read otherwise than it is.
+  Step bidi = MakeStep(StepType::CLICK, "#ok");
+  base::DictValue bidi_extra;
+  bidi_extra.Set(kStepHostKey,
+                 "evil\xE2\x80\xAE"
+                 "elpmaxe.com");
+  bidi.extra = base::Value(std::move(bidi_extra));
+  s.steps.push_back(std::move(bidi));
+
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_EQ(s.steps.size(), 5u);
+  base::DictValue host_only;
+  host_only.Set(kStepHostKey, "shop.example");
+  EXPECT_EQ(s.steps[0].extra.GetDict(), host_only);
+  EXPECT_EQ(s.steps[0].value, "ship to 1 Evil St");
+  base::DictValue vault = host_only.Clone();
+  vault.Set(kSecretKey, kSecretVault);
+  vault.Set(kSecretKindKey, "password");
+  EXPECT_EQ(s.steps[1].extra.GetDict(), vault);
+  EXPECT_TRUE(s.steps[1].value.empty());
+  EXPECT_EQ(AutomationSecurity::SecretStepKind(s.steps[2]),
+            FieldKind::kPaymentCard);
+  const base::DictValue& kept_tool = s.steps[3].extra.GetDict();
+  EXPECT_EQ(kept_tool.size(), 2u);
+  EXPECT_EQ(*kept_tool.FindString(kStepHostKey), "shop.example");
+  const base::DictValue* shown_tool = kept_tool.FindDict("tool");
+  ASSERT_TRUE(shown_tool);
+  EXPECT_EQ(shown_tool->size(), 5u);
+  EXPECT_EQ(*shown_tool->FindString("origin"), "https://shop.example");
+  EXPECT_EQ(shown_tool->FindDict("frame")->size(), 2u);
+  EXPECT_EQ(*shown_tool->FindDict("frame")->FindString("path"), "/f");
+  EXPECT_EQ(*shown_tool->FindDict("args")->FindString("to"), "acct-1");
+  EXPECT_EQ(shown_tool->FindList("secret_args")->size(), 1u);
+  EXPECT_EQ(shown_tool->FindBool("form"), true);
+  EXPECT_FALSE(shown_tool->Find("read_only"));
+  EXPECT_TRUE(s.steps[4].extra.is_none());
+  const std::string token = AutomationSecurity::SecurityDigest(s);
+  AutomationSecurity::ClampUnvouched(s);
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(s), token);
+}
+
+// A step of a routine taught by voice keeps its type, target, value and
+// extra "voice" and "host" (its claim keeps of "voice" only what the review
+// describes, voice::DescribeRoutineStepsAsRun()); never a secret key, which
+// voice mode doesn't read, nor anything else.
+TEST(AutomationSecurityTest, ClampUnvouchedKeepsOnlyAVoiceStepsVoiceAndHost) {
+  Script s = VoiceRoutine();
+  ASSERT_FALSE(s.steps.empty());
+  Step& step = s.steps[0];
+  step.type = StepType::TYPE;
+  step.description = "Fill your saved password";
+  step.selector_fallbacks = {"#pw"};
+  step.timeout_ms = 1;
+  base::DictValue& extra = step.extra.GetDict();
+  extra.Set(kStepHostKey, "news.example");
+  extra.Set(kSecretKey, kSecretVault);
+  extra.Set(kSecretKindKey, "password");
+  extra.Set("review", "secret_field");
+  const base::DictValue voice = extra.FindDict(kVoiceStepKey)->Clone();
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_FALSE(s.steps.empty());
+  const Step& kept = s.steps[0];
+  EXPECT_EQ(kept.type, StepType::TYPE);
+  EXPECT_TRUE(kept.description.empty());
+  EXPECT_TRUE(kept.selector_fallbacks.empty());
+  EXPECT_EQ(kept.timeout_ms, Step().timeout_ms);
+  ASSERT_TRUE(kept.extra.is_dict());
+  EXPECT_EQ(kept.extra.GetDict().size(), 2u);
+  EXPECT_EQ(*kept.extra.GetDict().FindDict(kVoiceStepKey), voice);
+  EXPECT_EQ(*kept.extra.GetDict().FindString(kStepHostKey), "news.example");
+  EXPECT_EQ(AutomationSecurity::SecretStepKind(kept), FieldKind::kOrdinary);
+}
+
+// A one-line field the review shows in an <input> must read as it runs: a
+// step whose target, value or store_as holds a line break (an <input>
+// drops it: "div\na" would read "diva"), a tab, another control character,
+// DEL or a character that reorders, hides or breaks text is dropped. So is
+// the schedule of an expression that holds one, or of a workflow the file
+// has turned off.
+TEST(AutomationSecurityTest, ClampUnvouchedDropsAStepThatReadsOtherwise) {
+  Script s = RichScript();
+  s.steps.clear();
+  s.steps.push_back(MakeStep(StepType::CLICK, "div\na"));
+  s.steps.push_back(MakeStep(StepType::TYPE, "#q", "a\r\nb"));
+  s.steps.push_back(MakeStep(StepType::NAVIGATE,
+                             "https://shop.example/\xE2\x80\xAE"
+                             "evil"));
+  Step extract = MakeStep(StepType::EXTRACT, "#price");
+  extract.store_as = "price\t";
+  s.steps.push_back(std::move(extract));
+  s.steps.push_back(MakeStep(StepType::NOTIFY, "", "Done\xE2\x80\x8B"));
+  s.steps.push_back(MakeStep(StepType::KEYPRESS, "", "Enter\x7F"));
+  s.steps.push_back(MakeStep(StepType::CLICK, "#ok"));
+  s.steps.push_back(MakeStep(StepType::TYPE, "#q", "caf\xC3\xA9 \xE6\x97\xA5"));
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_EQ(s.steps.size(), 2u);
+  EXPECT_EQ(s.steps[0].target, "#ok");
+  EXPECT_EQ(s.steps[1].value, "caf\xC3\xA9 \xE6\x97\xA5");
+  EXPECT_EQ(s.trigger.type, TriggerType::CRON);
+
+  Script newline = RichScript();
+  newline.trigger.expression = "0 9 * * *\n";
+  AutomationSecurity::ClampUnvouched(newline);
+  EXPECT_EQ(newline.trigger.type, TriggerType::MANUAL);
+  EXPECT_TRUE(newline.trigger.expression.empty());
+  Script off = RichScript();
+  off.enabled = false;
+  AutomationSecurity::ClampUnvouched(off);
+  EXPECT_EQ(off.trigger.type, TriggerType::MANUAL);
+  EXPECT_TRUE(off.enabled);
+  EXPECT_FALSE(AutomationSecurity::MayFireUnattended(off));
 }
 
 TEST(AutomationSecurityTest,

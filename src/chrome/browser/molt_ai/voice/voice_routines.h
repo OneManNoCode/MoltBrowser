@@ -130,13 +130,20 @@ struct ReadRoutineResult {
 // Agent studio first.
 ReadRoutineResult ReadRoutine(const automation::Script& script);
 
-// Each voice step of |script| (extra["voice"]) described by the browser:
-// its description, which the Agent studio shows as the step's title, is
-// Capitalized(DescribeRoutineStep()) of the step as ReadRoutine() reads it
-// (the command voice mode runs, its text, words and site), or empty for a
-// step voice mode can't do. For a routine changed outside the browser,
-// claimed as a draft (VoiceRoutineStore::Claim()): its review shows what
-// voice mode would run, never the file's own words for it.
+// Each voice step of |script| (extra["voice"]) kept as the browser
+// describes it: the step as ReadRoutine() reads it, with only what its
+// description says (RoutineStepAsShown(): no whole query, no words for a
+// site but a known site's own name, the page voice mode opens, no element
+// roles...), written as voice
+// mode's own save writes it (its type, the page it opens, its variable as
+// the value, extra "voice" and "host" only: never a secret key), its
+// description, which the Agent studio shows as the step's title,
+// Capitalized(DescribeRoutineStep()) of it. A step voice mode can't do (it
+// refuses the routine) keeps its type and extra["voice"] only, with no
+// description. Other steps are left alone. For a routine changed outside
+// the browser, claimed as a draft (VoiceRoutineStore::Claim()): its review
+// shows what voice mode would run, and voice mode runs only that, never
+// the file's own words for it.
 void DescribeRoutineStepsAsRun(automation::Script& script);
 
 // Whether a routine's |sites| (AutomationSecurity::HostsReferencedBy())

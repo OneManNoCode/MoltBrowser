@@ -363,18 +363,21 @@ For longer narrative posts behind each entry see
   open it in Agent mode, check its steps, sites and schedule, and click
   **Confirm**. It then starts as Casual; trust it again with **Trust** (or
   in molt://ai-automation for Trusted or Admin). Confirming keeps only what
-  the review shows of each step: other ways the file gave of finding an
-  element on the page are dropped, so a step may need recording again if its
-  page has changed; a step that runs another workflow is removed, and the
-  default values of its variables are cleared. Your existing workflows are
-  kept exactly as they are the first time you start this version. Run
-  history and the last time a schedule ran don't count as changes, and an
-  imported workflow's schedule starts afresh from the import. If you use two
-  copies of MoltBrowser with different profile folders, each runs scheduled
-  workflows on its own schedule, so a scheduled workflow can run in both,
-  and snoozing or skipping a run in one doesn't change the other; a change
-  to a workflow's steps, sites, trust or schedule in one needs one review in
-  the other. If MoltBrowser's profile folder is reset or replaced, every
+  the review shows: other ways the file gave of finding an element on the
+  page are dropped, so a step may need recording again if its page has
+  changed; steps the review can't show in full (conditions and loops, page
+  snapshots, scripts, AI decisions and extractions, a step that runs another
+  workflow, a step whose text holds a line break or a hidden character) are
+  removed; the default values of its variables, and its schedule's time zone
+  and end date, are cleared. Your existing workflows are kept exactly as
+  they are the first time you start this version. Run history and the last
+  time a schedule ran don't count as changes, and an imported workflow's
+  schedule starts afresh from the import. If you use two copies of
+  MoltBrowser with different profile folders, each runs scheduled workflows
+  on its own schedule, so a scheduled workflow can run in both, and snoozing
+  or skipping a run in one doesn't change the other; a change to a
+  workflow's steps, sites, trust or schedule in one needs one review in the
+  other. If MoltBrowser's profile folder is reset or replaced, every
   workflow needs one review. Design:
   [docs/design/AGENT_ACTIONS.md §3.6](docs/design/AGENT_ACTIONS.md).
 

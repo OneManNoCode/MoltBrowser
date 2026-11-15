@@ -43,6 +43,9 @@ constexpr char kChangedSinceReview[] =
 constexpr char kGoneSinceOpened[] =
     "This workflow was deleted or changed since you opened it. Open it "
     "again.";
+constexpr char kNoLongerADraft[] =
+    "This workflow was confirmed or changed since you opened it. Open it "
+    "again.";
 
 // The profile's routines' store; null off the record.
 std::unique_ptr<VoiceRoutineStore> RoutinesStore(const StudioPlaces& places) {
@@ -462,6 +465,13 @@ Answer SaveRoutine(const StudioPlaces& places,
   if (!existing && in_shared_storage == Holds::kOrdinary) {
     return Refused(kVoiceStepsNotHere);
   }
+  // The page edited a draft that isn't one any more (its sites confirmed
+  // meanwhile, by voice or in another view): saved under that confirmation,
+  // steps it never covered would run.
+  if (request.edited_draft && existing &&
+      !existing->security.sites_unconfirmed) {
+    return Refused(kNoLongerADraft);
+  }
   KeepPolicy(script, existing ? &*existing : nullptr,
              /*recorded_here=*/false);
   // A routine's name, made its own beside the profile's others ("my news
@@ -539,7 +549,13 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
   // then (deleted, or changed outside the browser), it is refused: saved as
   // a new workflow, what the page was shown of a draft (a file changed
   // outside) would no longer be one.
+  // Nor is the edit of a draft saved over a workflow that is no longer one
+  // (confirmed meanwhile, in another view, or a file put there since): it
+  // would take on that confirmation, its sites and its trust, for steps
+  // and a schedule it never covered.
+  const bool edited_draft = request.edited_draft;
   bool gone = false;
+  bool no_longer_a_draft = false;
   bool now_a_routine = false;
   base::DictValue saved;
   if (!shared->SaveChecked(std::move(script),
@@ -552,6 +568,11 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
                                now_a_routine = true;
                                return false;
                              }
+                             if (edited_draft &&
+                                 !stored->security.sites_unconfirmed) {
+                               no_longer_a_draft = true;
+                               return false;
+                             }
                              KeepPolicy(edit, stored,
                                         /*recorded_here=*/false);
                              saved = SavedDict(edit);
@@ -559,6 +580,9 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
                            })) {
     if (gone) {
       return Refused(kGoneSinceOpened);
+    }
+    if (no_longer_a_draft) {
+      return Refused(kNoLongerADraft);
     }
     return now_a_routine ? Refused(kMadeBeforeProfiles) : Answer();
   }

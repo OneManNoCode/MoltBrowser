@@ -2259,14 +2259,14 @@ out of it; this section is about everything else.
 |---|---|
 | `automation/workflow_record.{h,cc}` (`:workflow_record`, base only) | the record: load, one-time seeding, checks, persistence |
 | `automation/automation_storage.{h,cc}` | every read checked (`Vetted()`), every write recorded, `PrepareRecord()`, `UpdateBookkeeping()`, `RecordFire()`, `ClaimFire()`, `RecordPassed()` |
-| `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()` (also drops what the review doesn't show of a step), `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()` |
+| `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()` (an allowlist of what the review shows, §3.6.6), `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()` |
 | `automation/automation_script.*` | `SecurityPolicy::changed_outside` (wording only; stored only when true); `CountIntervalFromNow()` |
 | `automation/automation_record_startup.{h,cc}` | configures the record, and posts its first load, when the first profile is created |
 | `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; each fire claimed in the record before it runs (`ClaimFire()`); times passed while held for review not caught up (`RecordPassed()`) |
 | `automation/automation_runner.cc` | a refused run keeps no stats; stats through `UpdateBookkeeping()`; `RUN_SCRIPT` refuses a child that needs review |
-| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel, the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over) |
+| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel (notes from what runs, hidden characters shown), the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over); an editor's save of a draft refused once it is no longer one |
 | `ui/webui/molt_ai/molt_ai_automation_storage.cc`, `molt_ai_automation_ui.cc` | trust refused with the reason, no promotion suggestion for a draft, the badge; an import's schedule starts over |
-| `voice/voice_routines.cc`, `voice/voice_routine_store.cc` | a routine changed outside is neither run nor confirmed by voice, and is claimed with its steps described by the browser (`DescribeRoutineStepsAsRun()`) |
+| `voice/voice_routines.cc`, `voice/voice_routines_logic.cc`, `voice/voice_routine_store.cc` | a routine changed outside is neither run nor confirmed by voice, and is claimed with its steps kept as the browser describes them (`DescribeRoutineStepsAsRun()`, `RoutineStepAsShown()`) |
 
 #### 3.6.1 The record
 
@@ -2370,9 +2370,9 @@ that.
   `Update()`, `Take()` and `ReadSetAside()` see) go through `Vetted()`: a
   file the record doesn't vouch for is clamped by `ClampUnvouched()` (the
   default policy: CASUAL, no sites, the default approvals and limits;
-  `sites_unconfirmed` and `changed_outside` set; its stats cleared; its
-  steps, trigger, enabled flag, variables and name kept for the review,
-  less what the review doesn't show of a step, §3.6.6).
+  `sites_unconfirmed` and `changed_outside` set; its stats cleared; of the
+  rest, only what the review shows, as the runner uses it: §3.6.6's
+  allowlist).
   `trigger.last_fired_unix` (bookkeeping, outside the digest) is this
   browser's own: the record's `fired` (`WorkflowRecord::LastFired()`),
   whether or not the record vouches for the file (a clamped one doesn't
@@ -2522,9 +2522,18 @@ next time (the same rule); after, it is final.
   yet saved (the id is predictable: a file put under it since is changed
   outside like any other, and saving or renaming it after opening it keeps
   it a draft). A recording whose first save fails keeps its id for the next
-  try. The editor saves one at a time: a second save (a double click, Save
-  then Run) waits for the first and is an edit under the id it was given,
-  never a second new workflow. A new workflow's schedule starts over:
+  try. An editor that shows a draft for review says so when it saves
+  (`draft: true`, `SaveRequest::edited_draft`): if what is stored under its
+  id is no longer a draft by then (confirmed meanwhile in another view or
+  tab, a routine's sites confirmed by voice, or a file put there since that
+  this browser vouches for), the save is refused ("This workflow was
+  confirmed or changed since you opened it. Open it again."), as for one
+  gone; saved, the steps and schedule that editor shows (a step deleted in
+  the view that confirmed, on a site nobody confirmed) would take on that
+  confirmation, its sites and trust, and run and fire unreviewed. Run and
+  Confirm save first, so neither goes on. The editor saves one at a time: a
+  second save (a double click, Save then Run) waits for the first and is an
+  edit under the id it was given, never a second new workflow. A new workflow's schedule starts over:
   whatever last fire the page sent (an import's, from its file: long past,
   it would run at once; far ahead, never) is dropped, and an interval
   counts from the save. The schedule sheet's save answers with the
@@ -2557,48 +2566,118 @@ next time (the same rule); after, it is final.
   voice mode runs of a step is its `extra["voice"]` (the text it types,
   the words it chooses, what and where it searches), which the studio
   doesn't show; it shows the step's description. So the claim describes
-  each voice step itself, `DescribeRoutineStepsAsRun()`:
-  `Capitalized(DescribeRoutineStep())` of the step as `ReadRoutine()`
-  reads it (empty for one voice mode can't do), never the file's words;
-  the token is then of a title that says what voice mode would do. The
-  recovery of a claim cut short describes the set-aside file the same way
-  before it compares.
+  each voice step itself, and keeps of it only what that says
+  (`DescribeRoutineStepsAsRun()`): the step as `ReadRoutine()` reads it,
+  less what its title doesn't say (`RoutineStepAsShown()`): a site opened
+  or searched is named by what opens (a known site by its own name, an
+  address or a site voice mode doesn't know by itself), never by the
+  file's words for it (`words`, which also chose a link of that name on
+  the page), and an open step's page is the one voice mode opens (the
+  known site's home page, the address; none for a site it doesn't know);
+  no `whole_query` (searched for, on the page the user is on, off the
+  routine's sites, in place of a site voice mode doesn't know); no element
+  `roles`; a number of scrolls only where it is said (pages); an ordinal
+  of a described choice only where it is said. It is written back
+  as voice mode's own save writes a step (its type, the page it opens, its
+  variable as the value, `extra` `voice` and `host` only: never a secret
+  key, which voice mode never reads), and titled
+  `Capitalized(DescribeRoutineStep())` of it as it reads back. A step
+  voice mode can't do keeps only its type and `extra.voice`, with no title
+  (voice mode refuses the routine). The planner's steps keep the
+  element's kind, which their reader needs and which only narrows what the
+  label names. The token is then of titles that say what voice mode does,
+  and it does only that. The recovery of a claim cut short describes the
+  set-aside file the same way before it compares.
 
 #### 3.6.6 Re-approval
 
 1. The editor shows the clamped workflow: its steps, its schedule (as text),
    the sites its steps target, and a **review token**: `SecurityDigest()` of
    what is shown (`reviewToken`; a save of the draft answers with the new
-   one). What the editor doesn't show of a step, and the runner acts on when
-   the target shown misses, isn't kept by the clamp (`ClampUnvouched()`):
-   its `selector_fallbacks` and `locators` (the editor names a locator's
-   kind, not its value), its `extra.text` anchor, its `extra.ref_shot`
-   picture (shown as the recorded target) and its description (the editor's
-   title for the step; the runner's text anchor and recovery prompt too).
-   Nor a step that runs another workflow (`RUN_SCRIPT`: the editor doesn't
-   say which, its target can come from a variable, and that workflow's sites
-   are added to the run's at run time; the studio makes none), nor the
-   default values of its variables (a run uses them wherever their
-   `{{name}}` is, a scheduled one asking nobody, and the editor shows a
-   value only where a variable is a step's whole field): the names stay, and
-   a run is given the values again, or uses none. So the token, and what a
-   confirmation saves, are of what is shown: a confirmed workflow acts only
-   on the targets the user saw (an element that moved since needs the step
-   recorded again). A voice routine's steps are titled by the browser at its
-   claim (§3.6.5). What the runner acts on that a description used to name
-   is shown from the step itself, in fixed words: a site tool's step is
-   titled by the tool it runs ("Run the site's tool “name” on host", and its
-   frame), and shows the tool's site, its frame's origin and path, and what
-   it is given in full (more values, or longer ones, than a step that runs
-   can hold are marked cut); a step that fills a saved secret is titled from
-   its `extra.secret` and `secret_kind`, as the runner reads them ("Fill
-   your saved password", with a note that a trusted workflow's runs fill it
-   in). The token is of what is stored, so the page confirms only while the
-   editor shows what is saved: with edits not saved yet (a step deleted, a
-   field changed), "Confirm" saves them first, then shows the sites the
-   saved steps target, with the new token, for a click of its own. Otherwise
-   it would confirm the stored version (steps the user deleted, a site no
-   step targets any more) while showing the edited one.
+   one). The clamp (`ClampUnvouched()`) is an **allowlist** of what the
+   editor shows, as the runner uses it: everything else the file has is
+   dropped, any key a later build adds included.
+   - **The workflow:** its id, name and creation time (information only);
+     the names of its variables, with no default value (a run uses one
+     wherever its `{{name}}` is, a scheduled one asking nobody, and the
+     editor shows a value only where a variable is a step's whole field: a
+     run is given the values again, or uses none); its schedule's kind and
+     expression, shown as text, with no time zone or end (it runs in the
+     browser's time zone, with no end), and no schedule at all when the
+     file has the workflow turned off or the expression holds a character
+     that reads otherwise (below); the default policy (CASUAL, no sites,
+     the default approvals and limits), as an unconfirmed draft
+     (`sites_unconfirmed`, `changed_outside`); no run history; the default
+     model and format version.
+   - **Each step of a type the editor shows in full, with only the fields
+     it shows:** `navigate`, `click`, `wait_for` (target); `type`, `assert`
+     (target and value; the editor shows an assert's element too);
+     `scroll`, `keypress`, `wait`, `notify` (value); `extract` (target and
+     `store_as`); `call_tool` (target: the tool's name). Of its `extra`:
+     `host` (printable ASCII: the site the review lists is the site a run
+     is allowed on); a `type` step's saved secret as the runner reads it
+     (`secret: "vault"` and its `secret_kind`, one the runner doesn't know
+     a password, and no value), which titles it; a `call_tool` step's
+     `tool` with only its `origin`, `frame` (`origin`, `path`), `args`,
+     `secret_args` and `form` (when true: the editor says it fills in and
+     sends a form). Every other field is its default: no description (the
+     editor's title for a step; the runner's text anchor and recovery
+     prompt too), fallback selectors or locators (the editor names a
+     locator's kind, not its value), `extra.text` anchor or `ref_shot`
+     picture (what the runner acts on when the target shown misses),
+     timeout (a wait's run time; existing gap, §3.6.11), retries, loop
+     count, transform, review note (`extra.review`: named by the file, it
+     would say a run stops at a step, or asks for a value, that it doesn't),
+     the agent's ask-before flag, a secret's recorded host, a site tool's
+     read-only mark.
+   - **Every other step is dropped:** control flow (`if`, `else`,
+     `end_if`, `loop`, `end_loop`: the editor lists the steps flat, each
+     one run, never which are skipped or how often one repeats; so every
+     kept step runs, in order); `screenshot`; `run_js` (code, in a one-line
+     field that drops its line breaks); `run_script` (the editor doesn't
+     say which workflow, its target can come from a variable, and that
+     workflow's sites are added to the run's at run time); `ai_decide` and
+     `ai_extract` (the editor showed neither the prompt, in a field left
+     blank, nor the schema); `unknown`; and a step whose target, value or
+     `store_as` (each shown in a one-line `<input>`) holds a control
+     character (a line break the field drops, so `div\na` read `diva`; a
+     tab), DEL, or a character that reorders, hides or breaks text
+     (`agents/hidden_chars.h`). The studio makes none of those types.
+   - **A step of a routine taught by voice** (`extra.voice`) keeps its
+     type, target and value and `extra` `voice` and `host` only (never a
+     secret key: voice mode reads none); its claim keeps of `extra.voice`
+     only what its title says (§3.6.5).
+
+   So the token, and what a confirmation saves, are of what is shown: a
+   confirmed workflow acts only on the targets the user saw (an element
+   that moved since needs the step recorded again), and only as shown.
+   What the editor shows of a step it shows as it runs, in fixed words. A
+   step's note is said only where the runner does it (a card or code
+   step, or a site tool given a card or code that wasn't saved, stops the
+   run there; a value the agent withheld is asked at each run, where the
+   field or a value given the tool is a whole `{{variable}}`), never
+   because the step names one. A site tool's step is titled by the tool it
+   runs ("Run the site's tool “name” on host", and its frame), and shows
+   the tool's site, its frame's origin and path, whether it sends a form,
+   and what it is given in full, each value on its own, isolated
+   (`<bdi>`), its line breaks shown (more values, or longer ones, than a
+   step that runs can hold are marked cut). Titles, sites, the schedule's
+   expression and a site tool's values show each character that reorders,
+   hides or breaks text as U+FFFD, as `agents/hidden_chars.h` shows them
+   (a one-line field never holds one: such a step is dropped). A step
+   that fills a saved secret is titled from its `extra.secret` and
+   `secret_kind`, as the runner reads them ("Fill your saved password",
+   with a note that a trusted workflow's runs fill it in); never a voice
+   step, which voice mode runs as its `extra.voice` says (it is titled by
+   that). A voice routine's steps are titled by the browser at its claim
+   (§3.6.5). The token is of what is stored, so the page confirms only
+   while the editor shows what is saved: with edits not saved yet (a step
+   deleted, a field changed), "Confirm" saves them first, then shows the
+   sites the saved steps target, with the new token, for a click of its
+   own. Otherwise it would confirm the stored version (steps the user
+   deleted, a site no step targets any more) while showing the edited
+   one. An editor's save of a draft that is no longer one is refused
+   (§3.6.5).
 2. "Confirm" is honoured only on a real, consumed click
    (`ConsumeUserClick()`), with a token of exactly 64 lowercase hex digits;
    under the directory's lock the token must still be the digest of the
@@ -2700,10 +2779,15 @@ All in `molt_ai_unittests` except the last item:
   bookkeeping, covers every other field (table-driven), survives the file
   round trip (large times, doubles and nested values, U+2028; a file with
   invalid UTF-8 doesn't parse) and the scrub; the clamp is an unconfirmed
-  import, and drops what the review doesn't show of a step (fallback
-  selectors, locators, text anchor, picture, description), its
-  `RUN_SCRIPT` steps and its variables' default values (twice is once);
-  the predicates; `changed_outside` cleared by a confirm and carried by a
+  import and an allowlist: only the step types the review shows in full
+  (each other type dropped), only the fields of each it shows, only the
+  `extra` keys it shows (a saved secret as the runner reads it, a site
+  tool's tool as shown; review notes, the ask-before flag and unknown keys
+  gone, a host that isn't printable ASCII too), a voice step's `voice` and
+  `host` only (no secret key), a step whose one-line field holds a line
+  break, a control or a hidden character dropped, a schedule's time zone
+  and end gone (none when turned off), no variable's default value (twice
+  is once); the predicates; `changed_outside` cleared by a confirm and carried by a
   save; the review message.
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
@@ -2763,12 +2847,17 @@ All in `molt_ai_unittests` except the last item:
   catch-up during it).
 - `voice/voice_routine_store_unittest.cc`: a routine changed outside is
   claimed as a draft, which voice mode neither runs nor confirms, its
-  steps described by the browser (not the file's words), a claim of it cut
-  short still recognised; a vouched one as it was.
+  steps described by the browser (not the file's words), with no whole
+  query nor secret key, a claim of it cut short still recognised; a
+  vouched one as it was.
   `voice/voice_routines_unittest.cc`: `ReadRoutine()` refuses a routine
   changed outside until it is confirmed; `DescribeRoutineStepsAsRun()`
   titles each voice step (the planner's included) as voice mode runs it,
-  leaves other steps alone and clears one voice mode can't do.
+  leaves other steps alone and clears one voice mode can't do; it keeps
+  only what the title says (a known site by its own name, an address and
+  an unknown site by themselves, no whole query, roles, unsaid scroll
+  count, secret key, value or selector of the file's), twice is once, and
+  voice mode reads back what was described.
 - `ui/webui/molt_ai/molt_ai_agent_storage_unittest.cc`: shown for review
   with a token; neither run, scheduled nor trusted; confirming vouches for
   the reviewed content at CASUAL (then Trust works); refused when the file
@@ -2782,24 +2871,36 @@ All in `molt_ai_unittests` except the last item:
   keeps it; a confirmed change starts its schedule over (cron and interval)
   and is answered with that trigger, which an edit then keeps; a confirmed
   change runs only on the targets shown (no fallback selectors, text anchor,
-  picture or description of the file's, no other workflow run, no variable's
-  default value, in the page or the saved file); a new workflow starts its
-  schedule over (a cron import's long-past last fire, an interval's in
-  2100); an editor opened before a Snooze keeps it.
+  picture, description or review note of the file's, no other workflow run,
+  no code or model step, no variable's default value, in the page or the
+  saved file); a stale editor's save of a draft confirmed meanwhile in
+  another view is refused, the confirmed workflow left as it was (a
+  routine's too), while an edit of it as confirmed saves; a new workflow
+  starts its schedule over (a cron import's long-past last fire, an
+  interval's in 2100); an editor opened before a Snooze keeps it.
 - `ui/webui/molt_ai/molt_ai_automation_storage_unittest.cc`: trust refused
   with the reason; a save keeps it a draft; an import is vouched for at
   CASUAL, and starts its schedule over (no last fire from the JSON, an
   interval counted from the import).
 - `molt_automation_script_fuzzer`: the digest is empty or 64 hex digits and
   what a reader of the saved file computes; a clamped workflow is CASUAL
-  with no sites, may neither fire nor run as a child, runs no other
-  workflow, keeps no default value, and clamped again is the same; an
-  unconfirmed draft's effective trust is CASUAL (seed
+  with no sites, may neither fire nor run as a child, holds only the
+  allowlist (step types, fields, `extra` keys and a site tool's keys; a
+  voice step's `voice` and `host`; no control character in a one-line
+  field; no default value, time zone, end or history), clamped again is
+  the same, and its digest is what a reader of its saved file computes,
+  before and after; an unconfirmed draft's effective trust is CASUAL (seed
   `regress_unconfirmed_trust.molt`).
 - `tools/webui_checks` smoke test: the badge, the banner, the review panel
   (schedule as text), a site tool's step titled by its tool with its site
-  and its values in full (a cut said), a saved-password step said, no run,
-  and the token sent from the click; a recorded site tool's frame path; a
+  and its values in full (a cut said), each isolated, a bidi override
+  shown as U+FFFD, a form tool said, a saved-password step said, no run,
+  and the token sent from the click; no note a file names for a step that
+  runs (a literal typed, a tool given nothing withheld), notes from what
+  runs (a withheld value, a card or code given a tool); a voice step with
+  a secret key titled as voice mode runs it, no saved password said; an
+  assert's element shown; an edit of a draft says so, a confirmed one
+  doesn't; a recorded site tool's frame path; a
   recording's first save sends `recordedId` and no `id`, an opened
   workflow's its `id`; a second save waits for the first, and is dropped
   (nothing run) when another editor was opened meanwhile; the editor
@@ -2843,13 +2944,25 @@ All in `molt_ai_unittests` except the last item:
   molt://ai-automation's Snooze and Skip don't hold back a cron schedule's
   timer in any browser; the studio's schedule sheet saves an interval of at
   least a minute, so one under a minute (molt://ai-automation allows 10
-  seconds) saved there becomes a minute.
-- **A confirmed change keeps only what the review showed** of each step:
-  the file's fallback selectors and locators, text anchor and description
-  are gone, so a step whose element moved since needs recording again;
-  so are its steps that run another workflow, and its variables' default
-  values (a scheduled run uses none until they are set again). Showing
-  them for review instead would keep them.
+  seconds) saved there becomes a minute; a `wait` step's run waits its
+  timeout, not the seconds the editor shows (for every workflow).
+- **A confirmed change keeps only what the review showed** (§3.6.6's
+  allowlist): the file's fallback selectors and locators, text anchor and
+  description are gone, so a step whose element moved since needs
+  recording again; so are its steps of a type the editor doesn't show in
+  full (control flow, so every kept step runs, in order; page snapshots;
+  code; the on-device model's decisions and extractions; steps that run
+  another workflow), a step whose one-line field holds a line break, a
+  tab, another control or a hidden character (text typed on two lines
+  included), its variables' default values (a scheduled run uses none
+  until they are set again), its schedule's time zone and end (and its
+  schedule, if the file had it turned off), its steps' timeouts, retries
+  and review notes, the agent's ask-before flag (a run's other checks
+  still hold), and a site tool's read-only mark (a tool's own reading
+  decides); a routine's voice step keeps only what its title says (a site
+  voice mode doesn't know is searched for on the web by its name, never by
+  the file's whole query or words). Showing them for review instead would
+  keep them.
 - **A workflow put back just before its time**, with no listing between
   (the heartbeat lists every minute), is taken for one held across that
   time, which is then skipped, not run. So is a time that passed while
@@ -2871,24 +2984,27 @@ All in `molt_ai_unittests` except the last item:
 > saved for each workflow in `~/.moltbrowser/automations`. If a workflow
 > file is added or changed by anything else (another program, a file you
 > were tricked into saving there, a copy you made by hand, an older or
-> second copy of MoltBrowser), it opens as a draft. It has no trust, doesn't
-> run, isn't run on its schedule, and no other workflow can run it until you
-> open it in Agent mode, check its steps, sites and schedule, and click
-> **Confirm**. It then starts as Casual; trust it again with **Trust** (or
-> in molt://ai-automation for Trusted or Admin). Confirming keeps only what
-> the review shows of each step: other ways the file gave of finding an
-> element on the page are dropped, so a step may need recording again if its
-> page has changed; a step that runs another workflow is removed, and the
-> default values of its variables are cleared. Your existing workflows are
-> kept exactly as they are the first time you start this version. Run
-> history and the last time a schedule ran don't count as changes, and an
-> imported workflow's schedule starts afresh from the import. If you use two
-> copies of MoltBrowser with different profile folders, each runs scheduled
-> workflows on its own schedule, so a scheduled workflow can run in both,
-> and snoozing or skipping a run in one doesn't change the other; a change
-> to a workflow's steps, sites, trust or schedule in one needs one review in
-> the other. If MoltBrowser's profile folder is reset or replaced, every
-> workflow needs one review.
+> second copy of MoltBrowser), it opens as a draft. It has no trust,
+> doesn't run, isn't run on its schedule, and no other workflow can run it
+> until you open it in Agent mode, check its steps, sites and schedule,
+> and click **Confirm**. It then starts as Casual; trust it again with
+> **Trust** (or in molt://ai-automation for Trusted or Admin). Confirming
+> keeps only what the review shows: other ways the file gave of finding an
+> element on the page are dropped, so a step may need recording again if
+> its page has changed; steps the review can't show in full (conditions
+> and loops, page snapshots, scripts, AI decisions and extractions, a step
+> that runs another workflow, a step whose text holds a line break or a
+> hidden character) are removed; the default values of its variables, and
+> its schedule's time zone and end date, are cleared. Your existing
+> workflows are kept exactly as they are the first time you start this
+> version. Run history and the last time a schedule ran don't count as
+> changes, and an imported workflow's schedule starts afresh from the
+> import. If you use two copies of MoltBrowser with different profile
+> folders, each runs scheduled workflows on its own schedule, so a
+> scheduled workflow can run in both, and snoozing or skipping a run in
+> one doesn't change the other; a change to a workflow's steps, sites,
+> trust or schedule in one needs one review in the other. If MoltBrowser's
+> profile folder is reset or replaced, every workflow needs one review.
 
 ## 4. The AI chat's page actions
 

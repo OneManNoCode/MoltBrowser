@@ -697,6 +697,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
             sent_id ? *sent_id : std::string(),
             recorded_id ? *recorded_id : std::string(), recorded_ids_);
     in.Remove("recordedId");
+    // The editor showed a draft for review (molt_ai_agent_storage.h's
+    // SaveRequest::edited_draft): refused if it isn't one any more.
+    const bool edited_draft = in.FindBool("draft").value_or(false);
+    in.Remove("draft");
     in.Set("id",
            kind.id.empty() ? molt_ai::agent_studio::NewWorkflowId() : kind.id);
     std::optional<Script> s = Script::FromJSON(in);
@@ -718,6 +722,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     // A new workflow only when the page named none; any id it sends is of
     // a workflow it read (an edit, refused if that is gone).
     request.new_workflow = kind.new_workflow;
+    request.edited_draft = edited_draft && !kind.new_workflow;
     // Routines taught by voice are kept in the profile (an edit, a rename,
     // an import of one), workflows in the shared storage: a look at the
     // other storage on its sequence, then the save on its own.
@@ -1401,11 +1406,19 @@ var DRAFT_EXPLAIN='Made by the AI agent, or brought in from elsewhere. Check its
 var CHANGED_EXPLAIN='Its file was changed outside MoltBrowser. Check its steps, sites and schedule, and confirm them before it can run.';
 /* A review token from the browser: 64 lowercase hex digits, else none. */
 function cleanToken(t){return (typeof t==='string'&&/^[0-9a-f]{64}$/.test(t))?t:'';}
+/* Text shown for review as it runs: each character that would reorder,
+   hide or break it (control characters but a line break or a tab, C1
+   controls, bidi marks, embeddings, overrides and isolates, zero-width and
+   invisible characters, line and paragraph separators, variation
+   selectors, tag characters: the browser's agents/hidden_chars.h) shown
+   as U+FFFD, one for one. */
+var HIDDEN_RE=/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\u3164\uFE00-\uFE0F\uFEFF\uFFA0]|\uDB40[\uDC00-\uDC7F\uDD00-\uDDEF]/g;
+function visible(v){return String(v).replace(HIDDEN_RE,'\uFFFD');}
 /* What a workflow's schedule does, in words (the trigger is the file's:
    shown as text). */
 function scheduleText(tr){
   if(!tr||!tr.type||tr.type==='manual')return 'No schedule: it runs only when you press Run.';
-  var e=String(tr.expression||'');
+  var e=visible(tr.expression||'');
   if(tr.type==='interval'){
     var n=parseInt(e,10)||0;
     var every=(n>=3600&&n%3600===0)?(n/3600)+' h':(n>=60&&n%60===0)?(n/60)+' min':n+' s';
@@ -1464,6 +1477,11 @@ function locatorSummary(s){
   });
   return words.length?('If the page changes, it also looks for it by its '+words.join(', ')+'.'):'';
 }
+/* What a step needs of the user, in fixed words, said only where the
+   runner does it: a card or code step, or a site tool given a card or code
+   that wasn't saved, stops the run there; a value the agent withheld is
+   asked at each run (a whole {{variable}}). A note the file names for a
+   step that runs isn't shown. */
 var REVIEW_NOTES={
   value_withheld:'The agent typed something here that looked private (a password, code, key or card number). It wasn’t saved: you’re asked for it at each run.',
   secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.',
@@ -1476,26 +1494,31 @@ var REVIEW_NOTES={
    characters each, lists of 16), the cut is said. */
 var TOOL_SHOWN_ARGS=8, TOOL_SHOWN_CHARS=4000;
 function toolText(v){
-  var t=String(v);
+  var t=visible(v);
   return t.length>TOOL_SHOWN_CHARS?(t.slice(0,TOOL_SHOWN_CHARS)+'… (cut: too long to run)'):t;
 }
 function toolStep(s){return (s.extra&&typeof s.extra.tool==='object'&&s.extra.tool)||{};}
 function toolArgsNode(s){
   var t=toolStep(s);
   var args=(t.args&&typeof t.args==='object'&&!Array.isArray(t.args))?t.args:{};
-  var keys=Object.keys(args), parts=[];
-  keys.slice(0,TOOL_SHOWN_ARGS).forEach(function(k){
+  // Each value on its own, isolated (one can't reorder the others), its
+  // line breaks shown.
+  var keys=Object.keys(args), list=h('div',{'class':'tool-args'});
+  keys.slice(0,TOOL_SHOWN_ARGS).forEach(function(k,i){
     var v=args[k];
-    parts.push(toolText(k)+' = '+toolText(typeof v==='string'?('“'+v+'”'):JSON.stringify(v)));
+    if(i)list.appendChild(document.createTextNode('; '));
+    list.appendChild(h('bdi',{},toolText(k)+' = '+toolText(typeof v==='string'?('“'+v+'”'):JSON.stringify(v))));
   });
   if(keys.length>TOOL_SHOWN_ARGS){
-    parts.push('and '+(keys.length-TOOL_SHOWN_ARGS)+' more (too many to run)');
+    list.appendChild(document.createTextNode('; and '+(keys.length-TOOL_SHOWN_ARGS)+' more (too many to run)'));
   }
+  if(!keys.length)list.appendChild(document.createTextNode('nothing'));
   var kids=[h('div',{'class':'lbl'},'The site’s tool'),
             h('div',{'class':'tool-name'},'“'+toolText(s.target||'')+'” of '+
               (typeof t.origin==='string'?toolText(t.origin):'no site')),
             h('div',{'class':'lbl'},'What it gives the tool'),
-            h('div',{'class':'tool-args'},parts.length?parts.join('; '):'nothing')];
+            list];
+  if(t.form===true){kids.push(h('div',{'class':'loc-note'},'It fills in and sends a form on the page'));}
   if(t.frame&&typeof t.frame.origin==='string'){
     kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+toolText(t.frame.origin)+
       (typeof t.frame.path==='string'?(' (frame '+toolText(t.frame.path)+')'):'')));
@@ -1506,9 +1529,11 @@ function toolArgsNode(s){
 }
 /* A TYPE step that fills a saved secret ("secret" in its extra, as the
    runner reads it: a card or a code by its kind, anything else a password),
-   or ''. */
+   or ''. Never a routine taught by voice's step (extra.voice): voice mode
+   runs what that says, and never reads "secret". */
 function secretKindOf(s){
   if(!s||s.type!=='type'||!s.extra||typeof s.extra.secret!=='string')return '';
+  if(s.extra.voice&&typeof s.extra.voice==='object')return '';
   var k=s.extra.secret_kind;
   return (k==='payment_card'||k==='one_time_code')?k:'password';
 }
@@ -1516,6 +1541,27 @@ var SECRET_TITLE={password:'Fill your saved password',
   payment_card:'Enter the payment card yourself (not saved)',
   one_time_code:'Enter the one-time code yourself (not saved)'};
 var SECRET_PASSWORD_NOTE='At each run of a trusted workflow, this fills in your saved password for the site the page is on, from the MoltBrowser vault.';
+/* Whether a run asks for a value of |s|: its field, or a value it gives a
+   site's tool, is a whole {{variable}}. */
+function asksAtRun(s){
+  if(s.type==='call_tool'){
+    var a=toolStep(s).args;
+    return !!a&&typeof a==='object'&&Object.keys(a).some(function(k){
+      return typeof a[k]==='string'&&wholeVar(a[k])!=null;});
+  }
+  return wholeVar(s[primaryOf(s.type)])!=null;
+}
+/* The REVIEW_NOTES keys that hold for |s|, from what runs. */
+function reviewNotesOf(s){
+  var out=[];
+  if(!s)return out;
+  if(s.extra&&s.extra.review==='value_withheld'&&asksAtRun(s))out.push('value_withheld');
+  var sk=secretKindOf(s);
+  if(sk==='payment_card'||sk==='one_time_code')out.push('secret_field');
+  var sa=s.type==='call_tool'?toolStep(s).secret_args:null;
+  if(Array.isArray(sa)&&sa.length)out.push('secret_argument');
+  return out;
+}
 function isTrusted(level){return !!level&&level!=='casual';}
 function siteOfSteps(steps){
   for(var i=0;i<(steps||[]).length;i++){
@@ -1587,7 +1633,8 @@ function hasStore(t){return t==='extract'||t==='ai_extract'||t==='ai_decide';}
 /* Friendly one-line title for a step. A site's tool and a saved secret
    are titled from what runs, in the browser's words, never the step's
    description (a file changed outside has none). */
-function stepTitle(s){
+function stepTitle(s){return visible(stepTitleText(s));}
+function stepTitleText(s){
   if(s.type==='call_tool'){
     var tool=toolStep(s), host=(s.extra&&typeof s.extra.host==='string')?s.extra.host:'';
     var title='Run the site’s tool “'+toolText(s.target||'')+'” on '+(host?toolText(host):'no site');
@@ -2253,9 +2300,9 @@ function renderDraftPanel(box){
   var es=editorState, sites=es.draftSites||[];
   var withheld=0, secret=0;
   es.steps.forEach(function(s){
-    var r=s&&s.extra&&s.extra.review;
-    if(r==='value_withheld')withheld++;
-    if(r==='secret_field')secret++;
+    var r=reviewNotesOf(s);
+    if(r.indexOf('value_withheld')>=0)withheld++;
+    if(r.indexOf('secret_field')>=0)secret++;
   });
   var kids=es.changedOutside?[
     h('div',{'class':'tp-h'},['\u26A0 ','Changed outside MoltBrowser — review it']),
@@ -2274,7 +2321,7 @@ function renderDraftPanel(box){
     kids.push(h('div',{'class':'tp-s'},'It has no site to confirm. Add a “Go to page” step and save.'));
   }else{
     var list=h('div',{'class':'draft-sites'});
-    sites.forEach(function(site){list.appendChild(h('span',{'class':'draft-site'},site));});
+    sites.forEach(function(site){list.appendChild(h('span',{'class':'draft-site'},visible(site)));});
     kids.push(list);
     kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
       // The browser confirms what is saved (the token is of that): edits
@@ -2335,12 +2382,10 @@ function buildEditorStep(s,i){
     ctrls
   ]));
 
-  // A step of a draft from an agent run that needs the user (fixed text).
-  var review=s.extra&&typeof s.extra.review==='string'&&REVIEW_NOTES.hasOwnProperty(s.extra.review)
-    ? REVIEW_NOTES[s.extra.review] : null;
-  if(review){
-    card.appendChild(h('div',{'class':'review-note'},['⚠ ',review]));
-  }
+  // What the step needs of the user (fixed text, from what runs).
+  reviewNotesOf(s).forEach(function(k){
+    card.appendChild(h('div',{'class':'review-note'},['⚠ ',REVIEW_NOTES[k]]));
+  });
   // A step that fills the saved password (fixed text, from what runs).
   if(secretKindOf(s)==='password'){
     card.appendChild(h('div',{'class':'review-note'},['\u{1F511} ',SECRET_PASSWORD_NOTE]));
@@ -2373,6 +2418,8 @@ function buildEditorStep(s,i){
     var inp=h(isMulti?'textarea':'input',{'class':'inp'+(s.type==='click'||s.type==='wait_for'||s.type==='extract'?' mono':''),
       value:pval,placeholder:fieldPlaceholder(s.type),spellcheck:'false',
       onInput:function(){s[pf]=this.value;updateHeadTitle(card,s);}});
+    // A textarea shows its text as its value, not its attribute.
+    if(isMulti)inp.value=pval;
     if(s.type==='wait'){inp.setAttribute('type','number');inp.setAttribute('min','0');}
     var fld=h('div',{'class':'efield'},[fieldLabelFor(fieldLabel(s.type),inp),inp]);
     card.appendChild(fld);
@@ -2403,7 +2450,7 @@ function buildEditorStep(s,i){
   }
 
   // secondary context: selector target when the primary field is the value
-  if(pf==='value'&&(s.type==='click'||s.type==='type'||s.type==='extract')&&s.target){
+  if(pf==='value'&&(s.type==='type'||s.type==='assert')&&s.target){
     var onEl=h('input',{'class':'inp mono',value:s.target,spellcheck:'false',onInput:function(){s.target=this.value;}});
     card.appendChild(h('div',{'class':'efield'},[fieldLabelFor('On element (advanced)',onEl),onEl]));
   }
@@ -2549,7 +2596,12 @@ function collectWorkflow(){
   syncVariables();
   var w={name:(editorState.name||'Untitled workflow'),steps:editorState.steps,
     variables:editorState.variables,trigger:editorState.trigger||{type:'manual',expression:''}};
-  if(editorState.id!=null)w.id=editorState.id;
+  if(editorState.id!=null){
+    w.id=editorState.id;
+    // A draft shown for review: refused if it isn't one any more (confirmed
+    // in another view meanwhile), never saved under that confirmation.
+    if(editorState.draft)w.draft=true;
+  }
   else if(editorState.recordedId)w.recordedId=editorState.recordedId;
   return w;
 }
@@ -3330,6 +3382,8 @@ button,input,textarea,select{font-family:inherit}
 .frame-tools .ft-pair{flex:1;min-width:0;word-break:break-all}
 .frame-tools .ft-when{font-size:.6875rem;color:var(--muted)}
 .frame-tools .ft-forget{font-size:.6875rem;padding:4px 9px}
+.tool-args{white-space:pre-wrap}
+.tool-args bdi{unicode-bidi:isolate}
 .tool-args,.tool-name{font-size:.75rem;word-break:break-word;padding:6px 9px;border-radius:9px;
   border:1px solid var(--border);background:rgba(255,255,255,0.03)}
 .trust-act .btn{flex:1;font-size:.75rem;padding:8px 10px}

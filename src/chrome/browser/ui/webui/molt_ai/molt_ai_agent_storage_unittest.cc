@@ -8,10 +8,11 @@
 // sequence never interleave; a workflow whose file was changed outside the
 // browser (workflow_record.h) is shown for review, neither runs nor is
 // scheduled or trusted, and is confirmed only as it was reviewed; an edit
-// of a workflow gone since it was opened is refused, an id sent is always
-// an edit, a new one never goes over another file, an interval schedule
-// counts from when it is written, a schedule is answered as saved, and a
-// confirmed change starts its schedule over.
+// of a workflow gone since it was opened is refused, as is the edit of a
+// draft that is no longer one, an id sent is always an edit, a new one
+// never goes over another file, an interval schedule counts from when it
+// is written, a schedule is answered as saved, and a confirmed change
+// starts its schedule over and keeps only what its review showed.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_storage.h"
 
@@ -881,6 +882,18 @@ TEST_F(AgentStudioStorageTest, AConfirmedChangeRunsOnlyOnTheTargetsShown) {
   child.target = "{{next}}";
   planted.steps.push_back(std::move(child));
   planted.default_variables["next"] = "pay_rent";
+  // Code, a model's prompt and a note of the file's: not shown in full, or
+  // not what runs.
+  Step code;
+  code.type = StepType::RUN_JS;
+  code.value = "document.querySelector('#delete').click()";
+  planted.steps.push_back(std::move(code));
+  Step decide;
+  decide.type = StepType::AI_DECIDE;
+  decide.value = "Is it cheap?";
+  decide.store_as = "cheap";
+  planted.steps.push_back(std::move(decide));
+  planted.steps[1].extra.GetDict().Set("review", "secret_field");
   Plant(planted);
   Answer get = Ask(Request(Kind::kGet, "wf_1"));
   ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
@@ -916,7 +929,91 @@ TEST_F(AgentStudioStorageTest, AConfirmedChangeRunsOnlyOnTheTargetsShown) {
   EXPECT_EQ(Bytes("wf_1").find("Delete account"), std::string::npos);
   EXPECT_EQ(Bytes("wf_1").find("pay_rent"), std::string::npos);
   EXPECT_EQ(Bytes("wf_1").find("run_script"), std::string::npos);
+  EXPECT_EQ(Bytes("wf_1").find("run_js"), std::string::npos);
+  EXPECT_EQ(Bytes("wf_1").find("ai_decide"), std::string::npos);
+  EXPECT_EQ(Bytes("wf_1").find("secret_field"), std::string::npos);
   EXPECT_FALSE(Shared().Load("wf_1")->security.changed_outside);
+}
+
+// An editor showed a draft for review (view B); meanwhile it was confirmed
+// in another view (A) with a step deleted. B's save of what it shows (the
+// deleted step, on a site nobody confirmed, and the schedule) is refused:
+// saved under A's confirmation, that step would run, and fire, without a
+// review. The confirmed workflow is left as it was. An edit of a workflow
+// the editor didn't show as a draft saves as before.
+TEST_F(AgentStudioStorageTest, AStaleDraftEditorsSaveIsRefusedOnceConfirmed) {
+  UseRecord();
+  Script planted = Claiming("wf_1");
+  Step evil;
+  evil.type = StepType::NAVIGATE;
+  evil.target = "https://evil.example/forward";
+  planted.steps.push_back(std::move(evil));
+  Plant(planted);
+  // B opens it: both steps, both sites.
+  Answer in_b = Ask(Request(Kind::kGet, "wf_1"));
+  ASSERT_EQ(in_b.out.FindList("draftSites")->size(), 2u);
+  // A saves it with the second step deleted, and confirms its one site.
+  SaveRequest edit_a = Save(Workflow("wf_1", "Prices"));
+  edit_a.script.trigger = planted.trigger;
+  edit_a.edited_draft = true;
+  Answer saved_a =
+      SaveSharedWorkflow(places_, std::move(edit_a), Holds::kNothing);
+  ASSERT_TRUE(IsReviewToken(saved_a.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.sites = {"news.example"};
+  confirm.review_token = *saved_a.out.FindString("reviewToken");
+  ASSERT_EQ(Ask(confirm).out.FindBool("ok"), true);
+  const std::string confirmed = Bytes("wf_1");
+  // B saves what it shows.
+  std::optional<Script> shown = Script::FromJSON(in_b.out);
+  ASSERT_TRUE(shown);
+  SaveRequest edit_b = Save(std::move(*shown));
+  edit_b.edited_draft = true;
+  Answer saved_b =
+      SaveSharedWorkflow(places_, std::move(edit_b), Holds::kNothing);
+  ASSERT_TRUE(Error(saved_b));
+  EXPECT_EQ(*Error(saved_b),
+            "This workflow was confirmed or changed since you opened it. "
+            "Open it again.");
+  EXPECT_FALSE(saved_b.out.FindString("id"));
+  EXPECT_EQ(Bytes("wf_1"), confirmed);
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->steps.size(), 1u);
+  EXPECT_EQ(stored->security.domain_whitelist,
+            std::vector<std::string>{"news.example"});
+  // An edit of the workflow as confirmed (not shown as a draft) saves.
+  Answer renamed = SaveSharedWorkflow(
+      places_, Save(Workflow("wf_1", "Prices, renamed")), Holds::kNothing);
+  EXPECT_FALSE(Error(renamed));
+  EXPECT_EQ(Shared().Load("wf_1")->name, "Prices, renamed");
+}
+
+// The same for a routine of the profile's: an editor that showed it as a
+// draft doesn't save over it once its sites are confirmed (by voice, or in
+// another view).
+TEST_F(AgentStudioStorageTest, AStaleDraftEditorsSaveOfARoutineIsRefused) {
+  Script routine = Routine("voice_1", "my news");
+  ASSERT_FALSE(routine.security.sites_unconfirmed);
+  ASSERT_TRUE(Routines().Save(routine));
+  SaveRequest stale = Save(Routine("voice_1", "my news"));
+  stale.edited_draft = true;
+  Answer refused = SaveRoutine(places_, std::move(stale), Holds::kNothing);
+  ASSERT_TRUE(Error(refused));
+  EXPECT_EQ(*Error(refused),
+            "This workflow was confirmed or changed since you opened it. "
+            "Open it again.");
+  EXPECT_FALSE(Routines().Load("voice_1")->security.sites_unconfirmed);
+  // Still a draft: saved, and still one.
+  Script draft = Routine("voice_2", "trains");
+  draft.security.sites_unconfirmed = true;
+  draft.security.domain_whitelist.clear();
+  ASSERT_TRUE(Routines().Save(draft));
+  SaveRequest edit = Save(Routine("voice_2", "trains"));
+  edit.edited_draft = true;
+  Answer saved = SaveRoutine(places_, std::move(edit), Holds::kNothing);
+  EXPECT_FALSE(Error(saved));
+  EXPECT_TRUE(Routines().Load("voice_2")->security.sites_unconfirmed);
 }
 
 // A new workflow (an import, a blank one, a recording) has never fired

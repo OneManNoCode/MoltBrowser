@@ -55,7 +55,8 @@
 // Update(), Take() and ReadSetAside() see) parses the file and checks it
 // against the record: a file the record doesn't vouch for loads as an
 // unconfirmed import (AutomationSecurity::ClampUnvouched(): CASUAL, no
-// sites, its history cleared, SecurityPolicy::changed_outside set), which
+// sites, its history cleared, SecurityPolicy::changed_outside set, and
+// only what the Agent studio's review shows of it), which
 // doesn't run, fire or get trusted until the user confirms it in the Agent
 // studio; and trigger.last_fired_unix, for scheduling, is only this
 // browser's own: the one it wrote there or fired at, as the record has it

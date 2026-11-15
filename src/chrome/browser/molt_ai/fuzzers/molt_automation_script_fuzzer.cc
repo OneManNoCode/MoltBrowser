@@ -16,15 +16,20 @@
 // security digest is empty or 64 lowercase hex digits, and the same once
 // the workflow is written and read back; a file the browser didn't write,
 // once clamped, may do nothing on its own (CASUAL, no sites, never fired
-// nor run by another workflow), runs no other workflow, keeps no default
-// value, and clamped again is the same; an unconfirmed draft's effective
-// trust is CASUAL, whatever its file says.
+// nor run by another workflow), keeps only what the Agent studio's review
+// shows (the allowlist: step types, fields, extra keys, no default value),
+// clamped again is the same, and its digest is what a reader of its saved
+// file computes; an unconfirmed draft's effective trust is CASUAL, whatever
+// its file says.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
-#include <utility>
 #include <string>
+#include <string_view>
+#include <utility>
 
 #include "base/check.h"
 #include "base/json/json_reader.h"
@@ -32,6 +37,7 @@
 #include "chrome/browser/molt_ai/automation/automation_ai_steps.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
+#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
 
@@ -112,17 +118,95 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     CHECK(p.domain_whitelist.empty());
     CHECK(!AutomationSecurity::MayFireUnattended(clamped));
     CHECK(!AutomationSecurity::MayRunAsChild(clamped));
-    // Nothing the review doesn't show: no other workflow run, no default
-    // value; and clamping twice is clamping once (the review token holds).
-    for (const Step& step : clamped.steps) {
-      CHECK(step.type != StepType::RUN_SCRIPT);
-    }
+    // Nothing the review doesn't show (§3.6.6's allowlist): no default
+    // value, no policy or history of the file's, and each step of a type
+    // the review shows in full, with only its fields and extra keys.
     for (const auto& [name, value] : clamped.default_variables) {
       CHECK(value.empty());
     }
+    CHECK(clamped.stats.runs == 0 && clamped.stats.run_history.empty());
+    CHECK(clamped.security.changed_outside &&
+          clamped.security.sites_unconfirmed);
+    CHECK(clamped.trigger.timezone.empty() && clamped.trigger.until_unix == 0);
+    CHECK(clamped.enabled);
+    for (const Step& step : clamped.steps) {
+      const Step defaults;
+      CHECK(step.description.empty());
+      CHECK(step.selector_fallbacks.empty());
+      CHECK(!step.locators);
+      CHECK(step.transform.empty());
+      CHECK(step.timeout_ms == defaults.timeout_ms);
+      CHECK(step.max_iterations == defaults.max_iterations);
+      CHECK(step.retries == defaults.retries);
+      const base::DictValue* extra = step.extra.GetIfDict();
+      CHECK(extra || step.extra.is_none());
+      if (extra && extra->FindDict(kVoiceStepKey)) {
+        // A routine's step: its voice dict and host only, never a secret.
+        for (const auto [key, value] : *extra) {
+          CHECK(key == kVoiceStepKey || key == kStepHostKey) << key;
+        }
+        continue;
+      }
+      const StepType t = step.type;
+      CHECK(t == StepType::NAVIGATE || t == StepType::CLICK ||
+            t == StepType::TYPE || t == StepType::SCROLL ||
+            t == StepType::KEYPRESS || t == StepType::WAIT ||
+            t == StepType::WAIT_FOR || t == StepType::EXTRACT ||
+            t == StepType::ASSERT || t == StepType::NOTIFY ||
+            t == StepType::CALL_TOOL)
+          << StepTypeToString(t);
+      if (t == StepType::SCROLL || t == StepType::KEYPRESS ||
+          t == StepType::WAIT || t == StepType::NOTIFY) {
+        CHECK(step.target.empty());
+      }
+      if (t == StepType::NAVIGATE || t == StepType::CLICK ||
+          t == StepType::WAIT_FOR || t == StepType::EXTRACT ||
+          t == StepType::CALL_TOOL) {
+        CHECK(step.value.empty());
+      }
+      if (t != StepType::EXTRACT) {
+        CHECK(step.store_as.empty());
+      }
+      for (const std::string* field :
+           {&step.target, &step.value, &step.store_as}) {
+        for (char ch : *field) {
+          const unsigned char c = static_cast<unsigned char>(ch);
+          CHECK(c >= 0x20 && c != 0x7F) << "a control character shown";
+        }
+      }
+      if (!extra) {
+        continue;
+      }
+      for (const auto [key, value] : *extra) {
+        const bool allowed = key == kStepHostKey ||
+                             (t == StepType::TYPE &&
+                              (key == kSecretKey || key == kSecretKindKey)) ||
+                             (t == StepType::CALL_TOOL && key == "tool");
+        CHECK(allowed) << key;
+      }
+      if (const base::DictValue* tool = extra->FindDict("tool")) {
+        constexpr std::string_view kToolKeys[] = {"origin", "frame", "args",
+                                                  "secret_args", "form"};
+        for (const auto [key, value] : *tool) {
+          CHECK(std::find(std::begin(kToolKeys), std::end(kToolKeys), key) !=
+                std::end(kToolKeys))
+              << key;
+        }
+      }
+    }
+    // Clamping twice is clamping once (the review token holds), and the
+    // digest is what a reader of its saved file computes (the token a save
+    // of it answers with).
     const std::string token = AutomationSecurity::SecurityDigest(clamped);
+    std::optional<Script> clamped_read =
+        Script::FromJSONString(clamped.ToJSONString());
+    CHECK(clamped_read);
+    CHECK(AutomationSecurity::DigestAsStored(clamped) ==
+          AutomationSecurity::SecurityDigest(*clamped_read));
     AutomationSecurity::ClampUnvouched(clamped);
     CHECK(AutomationSecurity::SecurityDigest(clamped) == token);
+    CHECK(AutomationSecurity::DigestAsStored(clamped) ==
+          AutomationSecurity::SecurityDigest(*clamped_read));
   }
 
   // Trust: imports start CASUAL, saving keeps the stored level.

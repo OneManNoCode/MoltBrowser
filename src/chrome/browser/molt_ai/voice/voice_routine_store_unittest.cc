@@ -34,6 +34,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
@@ -729,6 +730,12 @@ TEST_F(VoiceRoutineStoreRecordTest, AChangedRoutinesStepsAreDescribedAsRun) {
   for (automation::Step& step : built.script->steps) {
     step.description = "Type \xE2\x80\x9Cweather\xE2\x80\x9D";
   }
+  // What voice mode would search for of a site it doesn't know, and a
+  // secret key it never reads: neither kept.
+  base::DictValue& search = built.script->steps[1].extra.GetDict();
+  search.FindDict(automation::kVoiceStepKey)
+      ->Set("whole_query", "cancel my subscription");
+  search.Set(automation::kSecretKey, automation::kSecretVault);
   const std::string contents = built.script->ToJSONString();
   ASSERT_TRUE(base::CreateDirectory(SharedDir()));
   ASSERT_TRUE(
@@ -741,6 +748,10 @@ TEST_F(VoiceRoutineStoreRecordTest, AChangedRoutinesStepsAreDescribedAsRun) {
   ASSERT_EQ(moved->steps.size(), 2u);
   EXPECT_EQ(moved->steps[0].description, "Open YouTube");
   EXPECT_EQ(moved->steps[1].description, "Search for news");
+  const base::DictValue& kept = moved->steps[1].extra.GetDict();
+  EXPECT_FALSE(kept.Find(automation::kSecretKey));
+  ASSERT_TRUE(kept.FindDict(automation::kVoiceStepKey));
+  EXPECT_FALSE(kept.FindDict(automation::kVoiceStepKey)->Find("whole_query"));
   // Cut short after the profile's save: the set-aside file, read as a
   // draft and described as the claim describes it, is the same routine.
   const base::FilePath taken =
