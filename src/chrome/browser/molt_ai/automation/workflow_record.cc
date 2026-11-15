@@ -580,6 +580,22 @@ void WorkflowRecord::NoteFired(const std::string& name, int64_t fired) {
   }
 }
 
+bool WorkflowRecord::ClaimFired(const std::string& name,
+                                int64_t expected,
+                                int64_t fired) {
+  {
+    base::AutoLock hold(lock_);
+    auto it = entries_.find(name);
+    if (it == entries_.end() || it->second.fired != expected ||
+        fired == expected) {
+      return false;
+    }
+    it->second.fired = fired;
+  }
+  Persist();
+  return true;
+}
+
 bool WorkflowRecord::NotePassed(const std::string& name, int64_t passed) {
   {
     base::AutoLock hold(lock_);

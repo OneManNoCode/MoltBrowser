@@ -27,8 +27,9 @@
 // schedule saved afresh writes 0; an earlier one, from a page opened
 // before a fire, leaves a past fire it recorded as it is), or a fire its
 // scheduler recorded since (one recorded while the clock was ahead gives
-// way to the next), or a later time that passed while the file was held
-// for review (NotePassed()). "fired" is the only last fire the storage uses for
+// way to the next; a claimed fire, ClaimFired(), is recorded exactly), or
+// a later time that passed while the file was held for review
+// (NotePassed()). "fired" is the only last fire the storage uses for
 // scheduling (LastFired()): the file's own trigger.last_fired_unix, which
 // anything can write, is never believed, and no fire time read from a
 // file is recorded (but at seeding). So a fire time written into a file
@@ -58,14 +59,13 @@
 // written only as regular files (molt_regular_file.h), atomically.
 //
 // Threads. Configure() and For() run anywhere (no I/O). LoadLocked() and
-// every change (Set(), NoteFired(), NotePassed(), Copy(), Forget(),
-// Restore()) run only under the storage's change scope of |directory| (its
-// lock, then its lock file), so each is ordered with the file change it
-// mirrors, and their writes of the record happen there too, one at a
-// time. Vouches(),
-// LastFired(), EntryOf() and loaded() only read, under this record's own
-// lock, the innermost of all (the registry's is another, never held with
-// it).
+// every change (Set(), NoteFired(), ClaimFired(), NotePassed(), Copy(),
+// Forget(), Restore()) run only under the storage's change scope of
+// |directory| (its lock, then its lock file), so each is ordered with the
+// file change it mirrors, and their writes of the record happen there too,
+// one at a time. Vouches(), LastFired(), EntryOf() and loaded() only read,
+// under this record's own lock, the innermost of all (the registry's is
+// another, never held with it).
 // base only, so molt_ai_unittests tests it on real files.
 //
 // Tests: ScopedWorkflowRecordForTesting (workflow_record_test_util.h).
@@ -194,6 +194,14 @@ class WorkflowRecord {
   // fire recorded while the clock was ahead, which this fire shows wasn't
   // one); no entry, nothing.
   void NoteFired(const std::string& name, int64_t fired);
+  // The scheduler's claim of a fire of |name| at |fired| (its own clock),
+  // made when it read |expected| as the last fire: only while the entry's
+  // fire time is still |expected|, and never a second fire in that second
+  // (|fired| == |expected|). The fire time is then |fired| exactly (down
+  // from one still in the future: a snooze, a Skip or a clock that was
+  // ahead, which the fire, due now, has overtaken), so a claim always moves
+  // it and a second one of the same read fails. Whether it was claimed.
+  bool ClaimFired(const std::string& name, int64_t expected, int64_t fired);
   // Due times of |name| up to |passed| went by while its file was held for
   // review (changed outside this browser; the scheduler's clock, never a
   // time read from a file), and it is this browser's again: its fire time

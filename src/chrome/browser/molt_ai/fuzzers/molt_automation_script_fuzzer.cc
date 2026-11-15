@@ -16,7 +16,9 @@
 // security digest is empty or 64 lowercase hex digits, and the same once
 // the workflow is written and read back; a file the browser didn't write,
 // once clamped, may do nothing on its own (CASUAL, no sites, never fired
-// nor run by another workflow).
+// nor run by another workflow), runs no other workflow, keeps no default
+// value, and clamped again is the same; an unconfirmed draft's effective
+// trust is CASUAL, whatever its file says.
 
 #include <cstddef>
 #include <cstdint>
@@ -110,6 +112,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     CHECK(p.domain_whitelist.empty());
     CHECK(!AutomationSecurity::MayFireUnattended(clamped));
     CHECK(!AutomationSecurity::MayRunAsChild(clamped));
+    // Nothing the review doesn't show: no other workflow run, no default
+    // value; and clamping twice is clamping once (the review token holds).
+    for (const Step& step : clamped.steps) {
+      CHECK(step.type != StepType::RUN_SCRIPT);
+    }
+    for (const auto& [name, value] : clamped.default_variables) {
+      CHECK(value.empty());
+    }
+    const std::string token = AutomationSecurity::SecurityDigest(clamped);
+    AutomationSecurity::ClampUnvouched(clamped);
+    CHECK(AutomationSecurity::SecurityDigest(clamped) == token);
   }
 
   // Trust: imports start CASUAL, saving keeps the stored level.
@@ -122,7 +135,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   AutomationSecurity security;
   const SecurityPolicy policy = AutomationSecurity::EffectivePolicy(*script);
   CHECK(!policy.require_approval_for.empty());
-  CHECK(policy.trust == script->security.trust);
+  // An unconfirmed draft is CASUAL whatever its file says.
+  CHECK(policy.trust == (script->security.sites_unconfirmed
+                             ? TrustLevel::CASUAL
+                             : script->security.trust));
   for (const std::string& host : script->security.domain_whitelist) {
     if (host.empty()) continue;
     bool kept = false;

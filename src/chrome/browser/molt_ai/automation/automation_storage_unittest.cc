@@ -1092,7 +1092,8 @@ TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsASnooze) {
 // The scheduler claims a fire before it runs it, only while the last fire
 // it read is still the record's: of two profiles' schedulers that read it
 // due, one runs it; nor is one snoozed since it was read, or one without
-// an entry, claimed.
+// an entry, claimed. A claim always moves the record's last fire, from one
+// just ahead too (a Skip, a short Snooze), so the second fails there too.
 TEST_F(AutomationStorageRecordTest, AFireIsClaimedOnce) {
   ASSERT_TRUE(storage().Save(Hourly("wf_1")));
   const int64_t now = NowUnix();
@@ -1114,6 +1115,24 @@ TEST_F(AutomationStorageRecordTest, AFireIsClaimedOnce) {
   Plant("wf_2", Hourly("wf_2"));
   EXPECT_FALSE(storage().ClaimFire("wf_2", now, 0));
   EXPECT_EQ(Raw("wf_2")->trigger.last_fired_unix, 0);
+  // A cron workflow skipped (its last fire the next time and a second) or
+  // snoozed to just after that time: its timer fires it anyway (a last
+  // fire still to come is no fire here), once. The claim records the fire
+  // exactly, so a second claim of what was read fails.
+  for (const int64_t ahead : {int64_t{1}, int64_t{120}}) {
+    Script skipped = Hourly("wf_3");
+    skipped.trigger.type = TriggerType::CRON;
+    skipped.trigger.expression = "0 * * * *";
+    skipped.trigger.last_fired_unix = now + ahead;
+    ASSERT_TRUE(storage().Save(skipped));
+    const int64_t read_ahead = Load("wf_3")->trigger.last_fired_unix;
+    ASSERT_EQ(read_ahead, now + ahead);
+    EXPECT_TRUE(storage().ClaimFire("wf_3", now, read_ahead)) << ahead;
+    EXPECT_FALSE(storage().ClaimFire("wf_3", now, read_ahead)) << ahead;
+    EXPECT_EQ(Load("wf_3")->trigger.last_fired_unix, now) << ahead;
+  }
+  // Nor twice in one second.
+  EXPECT_FALSE(storage().ClaimFire("wf_3", now, now));
 }
 
 // A time that passed while a workflow was held for review is recorded as

@@ -319,6 +319,20 @@ void AutomationSecurity::ClampUnvouched(Script& script) {
       extra->Remove(kStepRefShotKey);
     }
   }
+  // Nor a step that runs another workflow: the review doesn't say which
+  // (its target, which a variable can give), nor the sites that workflow
+  // adds to the run. The studio makes none; a confirmed workflow runs no
+  // other.
+  std::erase_if(script.steps, [](const Step& step) {
+    return step.type == StepType::RUN_SCRIPT;
+  });
+  // Nor the default values of its variables, which a run uses wherever
+  // their {{name}} is (a scheduled one asks nobody): the review shows a
+  // variable's value only where it is a step's whole field. The names are
+  // kept; a run is given the values again, or uses none.
+  for (auto& [name, value] : script.default_variables) {
+    value.clear();
+  }
 }
 
 // static

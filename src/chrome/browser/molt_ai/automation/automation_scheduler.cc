@@ -73,9 +73,6 @@ ExplodedLocal Explode(const std::tm& tm) {
           tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday};
 }
 
-// A timer may come this much before its fire time by the wall clock.
-constexpr base::TimeDelta kDueSlack = base::Seconds(1);
-
 // Whether |script|, read again when its timer comes, is due at |now|: a
 // cron or interval workflow whose last fire is known only once the next
 // fire after that one has come (else this browser fired it, or it was
@@ -96,7 +93,7 @@ bool IsDue(const Script& script, base::Time now) {
   }
   const base::Time next =
       AutomationScheduler::NextFireTime(trigger, last_fired);
-  return !next.is_null() && next <= now + kDueSlack;
+  return !next.is_null() && next <= now;
 }
 
 int64_t UnixOf(base::Time time) {
@@ -284,11 +281,14 @@ void AutomationScheduler::OnListed(base::Time now,
   }
   base::Time soonest;
   std::string soonest_script_id;
-  // The workflows this listing finds held for review.
+  // The workflows this listing finds held for review, and every one it
+  // finds.
   std::set<std::string> held;
+  std::set<std::string> listed;
 
   for (Script& s : scripts) {
     const std::string id = s.id;
+    listed.insert(id);
     // Only an enabled workflow whose sites are confirmed: never a draft
     // nobody has reviewed (from a web agent run, or a file changed outside
     // the browser: the runner would refuse it anyway), nor a routine taught
@@ -300,9 +300,11 @@ void AutomationScheduler::OnListed(base::Time now,
       continue;
     }
     // Held for review when last listed (or when its timer's reload came),
-    // and the browser's own again now: its file was put back as the
+    // or missing then (its file moved away, unreadable, or not a workflow
+    // file), and the browser's own now: its file was put back as the
     // browser last wrote it.
-    const bool was_held = held_.count(id) > 0;
+    const bool was_held =
+        held_.count(id) > 0 || (listed_ && listed_->count(id) == 0);
 
     // Catch-up: cron triggers that should have fired during shutdown.
     base::Time next = NextFireTime(s.trigger, now);
@@ -364,6 +366,7 @@ void AutomationScheduler::OnListed(base::Time now,
     }
   }
   held_ = std::move(held);
+  listed_ = std::move(listed);
 
   if (soonest.is_null()) {
     next_timer_.Stop();
@@ -382,9 +385,17 @@ void AutomationScheduler::OnListed(base::Time now,
       FROM_HERE, delay,
       base::BindOnce(
           [](base::WeakPtr<AutomationScheduler> self,
-             const std::string& script_id) {
+             const std::string& script_id, base::Time due) {
             if (!self || self->storage_dir_.empty())
               return;
+            // Come before its time by the wall clock (set back, or slowed,
+            // since the timer was armed): armed again. Fired now, the fire
+            // recorded would be before that time, which would then still be
+            // due, and fire again.
+            if (base::Time::Now() < due) {
+              self->Tick();
+              return;
+            }
             // Re-load the script from disk so we get the freshest copy.
             // (Script is move-only because Step contains base::Value.)
             PostSharedRead(
@@ -394,24 +405,29 @@ void AutomationScheduler::OnListed(base::Time now,
                       return storage.Load(id);
                     },
                     script_id),
-                base::BindOnce(&AutomationScheduler::OnTimerScriptLoaded,
-                               self));
+                base::BindOnce(&AutomationScheduler::OnTimerScriptLoaded, self,
+                               script_id));
           },
-          weak_factory_.GetWeakPtr(), soonest_script_id));
+          weak_factory_.GetWeakPtr(), soonest_script_id, soonest));
 }
 
-void AutomationScheduler::OnTimerScriptLoaded(std::optional<Script> script) {
+void AutomationScheduler::OnTimerScriptLoaded(const std::string& id,
+                                              std::optional<Script> script) {
   if (!started_)
     return;
   // As read now: a workflow changed (outside the browser, or into a draft)
   // since it was listed doesn't fire (and is held for review, as a listing
-  // finds it), nor one fired since (IsDue()).
+  // finds it), nor one fired since (IsDue()). One that doesn't load (its
+  // file moved away, unreadable, or not a workflow file) is held too: put
+  // back later, its time now isn't caught up then.
   const base::Time now = base::Time::Now();
-  if (script && !AutomationSecurity::MayFireUnattended(*script)) {
+  if (!script) {
+    held_.insert(id);
+  } else if (!AutomationSecurity::MayFireUnattended(*script)) {
     if (script->security.changed_outside) {
-      held_.insert(script->id);
+      held_.insert(id);
     }
-  } else if (script && fire_cb_ && IsDue(*script, now)) {
+  } else if (fire_cb_ && IsDue(*script, now)) {
     Claim(std::move(*script), now);
   }
   Tick();

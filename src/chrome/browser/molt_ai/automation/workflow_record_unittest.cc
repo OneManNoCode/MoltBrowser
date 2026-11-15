@@ -532,6 +532,33 @@ TEST_F(WorkflowRecordTest, AFireRecordedWhileTheClockWasAheadGivesWay) {
   EXPECT_FALSE(record->EntryOf("none.molt"));
 }
 
+// A claimed fire is recorded exactly, only while the fire time is still
+// the one read and never twice in one second: from a past one, and down
+// from one just ahead (a Skip, a short Snooze), so a second claim of the
+// same read always fails; no entry, no claim.
+TEST_F(WorkflowRecordTest, AClaimedFireIsRecordedExactlyOnce) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  record->Set("a.molt", Digest('a'), now - 3600);
+  EXPECT_TRUE(record->ClaimFired("a.molt", now - 3600, now));
+  EXPECT_EQ(record->LastFired("a.molt"), now);
+  EXPECT_FALSE(record->ClaimFired("a.molt", now - 3600, now + 1));
+  EXPECT_FALSE(record->ClaimFired("a.molt", now, now));
+  EXPECT_EQ(record->LastFired("a.molt"), now);
+  for (const int64_t ahead : {int64_t{1}, int64_t{120}}) {
+    record->Set("a.molt", Digest('a'), now + ahead);
+    ASSERT_EQ(record->LastFired("a.molt"), now + ahead);
+    EXPECT_TRUE(record->ClaimFired("a.molt", now + ahead, now)) << ahead;
+    EXPECT_FALSE(record->ClaimFired("a.molt", now + ahead, now)) << ahead;
+    EXPECT_EQ(record->LastFired("a.molt"), now) << ahead;
+  }
+  EXPECT_FALSE(record->ClaimFired("none.molt", 0, now));
+  EXPECT_FALSE(record->EntryOf("none.molt"));
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->LastFired("a.molt"), now);
+}
+
 // A write whose file couldn't be written puts the entry back exactly as it
 // was, in the record file too; none before, none after.
 TEST_F(WorkflowRecordTest, RestorePutsAnEntryBackExactly) {

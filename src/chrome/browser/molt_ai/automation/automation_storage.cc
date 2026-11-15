@@ -790,17 +790,15 @@ bool AutomationStorage::ClaimFire(const std::string& id,
     return false;
   PrepareRecord();
   ChangeScope locked(*this);
-  if (WorkflowRecord* record = Record()) {
-    const std::string name = id + kScriptExt;
-    // Fired since it was read (by another profile's scheduler: each
-    // profile's lists this directory), snoozed, saved afresh or deleted:
-    // not this fire's to run.
-    if (!record->EntryOf(name) || record->LastFired(name) != last_fired_read) {
-      return false;
-    }
-    // First: a file that can't be written now still never fires again for
-    // this time.
-    record->NoteFired(name, fired_unix);
+  // Fired since it was read (by another profile's scheduler: each
+  // profile's lists this directory), snoozed, saved afresh or deleted: not
+  // this fire's to run. Claimed, the record's fire time is this fire's,
+  // first: a file that can't be written now still never fires again for
+  // this time, and a second claim of what was read fails.
+  if (WorkflowRecord* record = Record();
+      record &&
+      !record->ClaimFired(id + kScriptExt, last_fired_read, fired_unix)) {
+    return false;
   }
   // Claimed, whether or not the file's own copy can be written.
   UpdateBookkeepingLocked(id, [fired_unix](Script& script) {

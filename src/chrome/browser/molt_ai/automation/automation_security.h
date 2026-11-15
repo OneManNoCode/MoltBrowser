@@ -187,11 +187,13 @@ class AutomationSecurity {
   // approvals and limits), sites_unconfirmed and changed_outside set, and
   // its run history cleared. Its steps, trigger, enabled flag, variables
   // and name are kept, for the user to review, but not what the review
-  // doesn't show of a step and the runner would act on when the target
-  // shown misses: each step's description (the review's title for it; the
-  // runner's text anchor and recovery prompt too), selector_fallbacks,
-  // locators, and its extra "text" anchor and "ref_shot" picture are
-  // dropped. Clamping twice is clamping once.
+  // doesn't show and a run would act on: each step's description (the
+  // review's title for it; the runner's text anchor and recovery prompt
+  // too), selector_fallbacks, locators, and its extra "text" anchor and
+  // "ref_shot" picture (used when the target shown misses) are dropped, as
+  // are RUN_SCRIPT steps (which workflow they run, and that workflow's
+  // sites, aren't shown) and the variables' default values (their names
+  // stay). Clamping twice is clamping once.
   static void ClampUnvouched(Script& script);
 
   // Whether the scheduler may fire |script| unattended: enabled, its sites

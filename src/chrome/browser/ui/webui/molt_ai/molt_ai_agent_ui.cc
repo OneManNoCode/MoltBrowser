@@ -1469,26 +1469,53 @@ var REVIEW_NOTES={
   secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.',
   secret_argument:'This gives the site’s tool a card number or one-time code. MoltBrowser never saves those, so a run stops at this step: remove it, or do it yourself and run the rest.'
 };
-/* A recorded site-tool step: what it gives the tool (the values the user
-   approved when recording; withheld ones are asked at each run), as text. */
+/* A recorded site-tool step: which tool of which site (and frame) it runs,
+   and what it gives the tool (the values the user approved when recording;
+   withheld ones are asked at each run), as text, in full: what is shown is
+   what runs. Beyond what a step that runs can hold (8 values, 500
+   characters each, lists of 16), the cut is said. */
+var TOOL_SHOWN_ARGS=8, TOOL_SHOWN_CHARS=4000;
+function toolText(v){
+  var t=String(v);
+  return t.length>TOOL_SHOWN_CHARS?(t.slice(0,TOOL_SHOWN_CHARS)+'… (cut: too long to run)'):t;
+}
+function toolStep(s){return (s.extra&&typeof s.extra.tool==='object'&&s.extra.tool)||{};}
 function toolArgsNode(s){
-  var t=(s.extra&&typeof s.extra.tool==='object'&&s.extra.tool)||{};
+  var t=toolStep(s);
   var args=(t.args&&typeof t.args==='object'&&!Array.isArray(t.args))?t.args:{};
-  var parts=[];
-  Object.keys(args).slice(0,8).forEach(function(k){
+  var keys=Object.keys(args), parts=[];
+  keys.slice(0,TOOL_SHOWN_ARGS).forEach(function(k){
     var v=args[k];
-    var shown=typeof v==='string'?('“'+v.slice(0,120)+'”'):JSON.stringify(v);
-    parts.push(String(k).slice(0,64)+' = '+String(shown).slice(0,160));
+    parts.push(toolText(k)+' = '+toolText(typeof v==='string'?('“'+v+'”'):JSON.stringify(v)));
   });
-  var kids=[h('div',{'class':'lbl'},'What it gives the tool'),
+  if(keys.length>TOOL_SHOWN_ARGS){
+    parts.push('and '+(keys.length-TOOL_SHOWN_ARGS)+' more (too many to run)');
+  }
+  var kids=[h('div',{'class':'lbl'},'The site’s tool'),
+            h('div',{'class':'tool-name'},'“'+toolText(s.target||'')+'” of '+
+              (typeof t.origin==='string'?toolText(t.origin):'no site')),
+            h('div',{'class':'lbl'},'What it gives the tool'),
             h('div',{'class':'tool-args'},parts.length?parts.join('; '):'nothing')];
   if(t.frame&&typeof t.frame.origin==='string'){
-    kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+t.frame.origin.slice(0,120)));
+    kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+toolText(t.frame.origin)+
+      (typeof t.frame.path==='string'?(' (frame '+toolText(t.frame.path)+')'):'')));
   }
   var secret=Array.isArray(t.secret_args)?t.secret_args.length:0;
   if(secret){kids.push(h('div',{'class':'loc-note'},secret+' value'+(secret===1?'':'s')+' not saved'));}
   return h('div',{'class':'efield'},kids);
 }
+/* A TYPE step that fills a saved secret ("secret" in its extra, as the
+   runner reads it: a card or a code by its kind, anything else a password),
+   or ''. */
+function secretKindOf(s){
+  if(!s||s.type!=='type'||!s.extra||typeof s.extra.secret!=='string')return '';
+  var k=s.extra.secret_kind;
+  return (k==='payment_card'||k==='one_time_code')?k:'password';
+}
+var SECRET_TITLE={password:'Fill your saved password',
+  payment_card:'Enter the payment card yourself (not saved)',
+  one_time_code:'Enter the one-time code yourself (not saved)'};
+var SECRET_PASSWORD_NOTE='At each run of a trusted workflow, this fills in your saved password for the site the page is on, from the MoltBrowser vault.';
 function isTrusted(level){return !!level&&level!=='casual';}
 function siteOfSteps(steps){
   for(var i=0;i<(steps||[]).length;i++){
@@ -1557,8 +1584,20 @@ function fieldPlaceholder(t){
 }
 function hasStore(t){return t==='extract'||t==='ai_extract'||t==='ai_decide';}
 
-/* Friendly one-line title for a step. */
+/* Friendly one-line title for a step. A site's tool and a saved secret
+   are titled from what runs, in the browser's words, never the step's
+   description (a file changed outside has none). */
 function stepTitle(s){
+  if(s.type==='call_tool'){
+    var tool=toolStep(s), host=(s.extra&&typeof s.extra.host==='string')?s.extra.host:'';
+    var title='Run the site’s tool “'+toolText(s.target||'')+'” on '+(host?toolText(host):'no site');
+    if(tool.frame&&typeof tool.frame.origin==='string'&&tool.frame.origin!==tool.origin){
+      title+=' (in its frame from '+toolText(tool.frame.origin)+')';
+    }
+    return title;
+  }
+  var sk=secretKindOf(s);
+  if(sk)return SECRET_TITLE[sk];
   if(s.description)return s.description;
   var v=s.value||'', t=s.target||'';
   switch(s.type){
@@ -2301,6 +2340,10 @@ function buildEditorStep(s,i){
     ? REVIEW_NOTES[s.extra.review] : null;
   if(review){
     card.appendChild(h('div',{'class':'review-note'},['⚠ ',review]));
+  }
+  // A step that fills the saved password (fixed text, from what runs).
+  if(secretKindOf(s)==='password'){
+    card.appendChild(h('div',{'class':'review-note'},['\u{1F511} ',SECRET_PASSWORD_NOTE]));
   }
 
   // A site's tool: what it gives the tool, nothing to type here.
@@ -3287,7 +3330,7 @@ button,input,textarea,select{font-family:inherit}
 .frame-tools .ft-pair{flex:1;min-width:0;word-break:break-all}
 .frame-tools .ft-when{font-size:.6875rem;color:var(--muted)}
 .frame-tools .ft-forget{font-size:.6875rem;padding:4px 9px}
-.tool-args{font-size:.75rem;word-break:break-word;padding:6px 9px;border-radius:9px;
+.tool-args,.tool-name{font-size:.75rem;word-break:break-word;padding:6px 9px;border-radius:9px;
   border:1px solid var(--border);background:rgba(255,255,255,0.03)}
 .trust-act .btn{flex:1;font-size:.75rem;padding:8px 10px}
 /* drafts saved from an AI agent run: badge, review panel, step notes */

@@ -857,8 +857,9 @@ TEST_F(AgentStudioStorageTest, AnIntervalScheduleCountsFromWhenItIsWritten) {
 // The review of a file changed outside shows each step's type, target and
 // value, not the file's fallback selectors, locators, text anchor, picture
 // or description, which the runner would act on when the target shown
-// misses: the page gets none of them, and the workflow confirmed with the
-// token of what it showed has none.
+// misses, nor which workflow a RUN_SCRIPT step runs, nor a variable's
+// default value: the page gets none of them, and the workflow confirmed
+// with the token of what it showed has none.
 TEST_F(AgentStudioStorageTest, AConfirmedChangeRunsOnlyOnTheTargetsShown) {
   UseRecord();
   Script planted = Claiming("wf_1");
@@ -873,12 +874,24 @@ TEST_F(AgentStudioStorageTest, AConfirmedChangeRunsOnlyOnTheTargetsShown) {
   extra.Set(automation::kStepRefShotKey, "data:image/png;base64,AAAA");
   click.extra = base::Value(std::move(extra));
   planted.steps.push_back(std::move(click));
+  // Another workflow, named by a variable whose default the review
+  // wouldn't show.
+  Step child;
+  child.type = StepType::RUN_SCRIPT;
+  child.target = "{{next}}";
+  planted.steps.push_back(std::move(child));
+  planted.default_variables["next"] = "pay_rent";
   Plant(planted);
   Answer get = Ask(Request(Kind::kGet, "wf_1"));
   ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
   std::optional<Script> shown = Script::FromJSON(get.out);
   ASSERT_TRUE(shown);
   ASSERT_EQ(shown->steps.size(), 2u);
+  EXPECT_EQ(shown->steps[0].type, StepType::NAVIGATE);
+  EXPECT_EQ(shown->steps[1].type, StepType::CLICK);
+  ASSERT_TRUE(get.out.FindDict("variables"));
+  ASSERT_TRUE(get.out.FindDict("variables")->FindString("next"));
+  EXPECT_EQ(*get.out.FindDict("variables")->FindString("next"), "");
   EXPECT_EQ(shown->steps[1].target, "#search_btn");
   EXPECT_TRUE(shown->steps[1].selector_fallbacks.empty());
   EXPECT_TRUE(shown->steps[1].description.empty());
@@ -899,7 +912,10 @@ TEST_F(AgentStudioStorageTest, AConfirmedChangeRunsOnlyOnTheTargetsShown) {
   EXPECT_TRUE(stored->steps[1].selector_fallbacks.empty());
   EXPECT_FALSE(stored->steps[1].locators);
   EXPECT_TRUE(stored->steps[1].description.empty());
+  EXPECT_EQ(stored->default_variables.at("next"), "");
   EXPECT_EQ(Bytes("wf_1").find("Delete account"), std::string::npos);
+  EXPECT_EQ(Bytes("wf_1").find("pay_rent"), std::string::npos);
+  EXPECT_EQ(Bytes("wf_1").find("run_script"), std::string::npos);
   EXPECT_FALSE(Shared().Load("wf_1")->security.changed_outside);
 }
 

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -640,7 +641,9 @@ TEST(AutomationSecurityTest, ClampUnvouchedIsAnUnconfirmedImport) {
   EXPECT_EQ(s.trigger.type, TriggerType::CRON);
   EXPECT_EQ(s.trigger.expression, "0 9 * * *");
   EXPECT_TRUE(s.enabled);
-  EXPECT_EQ(s.default_variables["city"], "Paris");
+  // A variable's name, not its default value (§3.6.6).
+  ASSERT_EQ(s.default_variables.count("city"), 1u);
+  EXPECT_EQ(s.default_variables["city"], "");
   EXPECT_EQ(s.name, "Prices");
   // It may do nothing on its own.
   const SecurityPolicy p = AutomationSecurity::EffectivePolicy(s);
@@ -654,16 +657,33 @@ TEST(AutomationSecurityTest, ClampUnvouchedIsAnUnconfirmedImport) {
 
 // The review shows each step's type, target and value, its site and the
 // schedule; not its fallback selectors, locators, text anchor, picture or
-// description, which the runner acts on when the target shown misses. The
-// clamp drops those, so the review token is of what is shown.
+// description, which the runner acts on when the target shown misses, nor
+// which workflow a RUN_SCRIPT step runs (and so that workflow's sites),
+// nor the default value of a variable a field only partly is. The clamp
+// drops those, so the review token is of what is shown.
 TEST(AutomationSecurityTest, ClampUnvouchedDropsWhatTheReviewDoesntShow) {
   Script s = RichScript();
   s.steps[0].description = "Go to the shop";
   base::DictValue& extra = s.steps[1].extra.GetDict();
   extra.Set(kStepTextAnchorKey, "Delete account");
   extra.Set(kStepRefShotKey, "data:image/png;base64,AAAA");
+  // Another workflow run inside this one, one by a variable's default.
+  s.steps.insert(s.steps.begin() + 1, MakeStep(StepType::RUN_SCRIPT, "pay"));
+  s.steps.push_back(MakeStep(StepType::RUN_SCRIPT, "{{next}}"));
+  s.default_variables["next"] = "pay";
+  s.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://shop.example/{{path}}"));
+  s.default_variables["path"] = "settings/forwarding?add=x@evil.example";
   AutomationSecurity::ClampUnvouched(s);
-  ASSERT_EQ(s.steps.size(), 3u);
+  ASSERT_EQ(s.steps.size(), 4u);
+  for (const Step& step : s.steps) {
+    EXPECT_NE(step.type, StepType::RUN_SCRIPT);
+  }
+  // The variables are still named, with no value.
+  EXPECT_EQ(s.default_variables,
+            (std::map<std::string, std::string>{
+                {"city", ""}, {"next", ""}, {"path", ""}}));
+  EXPECT_EQ(s.steps[3].target, "https://shop.example/{{path}}");
   for (const Step& step : s.steps) {
     EXPECT_TRUE(step.description.empty());
     EXPECT_TRUE(step.selector_fallbacks.empty());

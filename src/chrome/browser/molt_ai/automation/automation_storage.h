@@ -241,15 +241,18 @@ class AutomationStorage {
   // for it first (WorkflowRecord::NoteFired(); kept even if the file can't
   // be written), then UpdateBookkeeping() of trigger.last_fired_unix.
   bool RecordFire(const std::string& id, int64_t fired_unix);
-  // The scheduler's fire, claimed before it runs: RecordFire() only while
-  // the record's last fire of |id| is still |last_fired_read| (the one the
-  // scheduler read when it found it due), and true then (written to the
-  // file or not). False, and nothing recorded, when that has moved since
-  // (another profile's scheduler fired it: each regular profile's lists
-  // the directory, and they share its record; or it was snoozed, or its
+  // The scheduler's fire, claimed before it runs: only while the record's
+  // last fire of |id| is still |last_fired_read| (the one the scheduler
+  // read when it found it due), and not in that same second, the record's
+  // last fire is set to |fired_unix| exactly (WorkflowRecord::ClaimFired():
+  // a claim always moves it, from one still in the future too), then
+  // written to the file as UpdateBookkeeping() does, and true (written or
+  // not). False, and nothing recorded, when that has moved since (another
+  // profile's scheduler fired it: each regular profile's lists the
+  // directory, and they share its record; or it was snoozed, or its
   // schedule saved afresh) or the record has no entry for it (deleted). So
-  // of this browser's schedulers, one runs a due workflow. A storage
-  // without a record (its own directory): RecordFire(), and true.
+  // of this browser's schedulers, one runs a due workflow, once. A storage
+  // without a record (its own directory): the file written, and true.
   bool ClaimFire(const std::string& id,
                  int64_t fired_unix,
                  int64_t last_fired_read);

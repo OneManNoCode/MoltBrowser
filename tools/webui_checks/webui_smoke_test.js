@@ -89,14 +89,23 @@ const DRAFT_WORKFLOW = {
 };
 const draftConfirmCalls = [];
 // A workflow whose file was changed outside MoltBrowser (§3.6): a draft
-// to review, with its schedule (the file's words, shown as text).
+// to review, with its schedule (the file's words, shown as text). Its
+// site-tool step and saved-password step have no description (the clamp
+// drops it): the review names the tool, shows what it is given in full,
+// and says the password is filled.
+const CHANGED_TOOL_NOTE = 'a'.repeat(120) + ' then <b>the rest</b> ' + 'z'.repeat(300);
 const CHANGED_WORKFLOW = {
   id: 'c1', name: 'Planted <b>x</b>', variables: {},
   security: {trust: 'casual', sites_unconfirmed: true, changed_outside: true},
   draftSites: ['evil.example'],
   reviewToken: 'b'.repeat(64),
   trigger: {type: 'cron', expression: '<b>* * * * *</b>'},
-  steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'}],
+  steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'},
+          {type: 'call_tool', target: 'delete_<b>account</b>',
+           extra: {host: 'evil.example', tool: {origin: 'https://evil.example',
+             args: {note: CHANGED_TOOL_NOTE, big: 'x'.repeat(5000)}}}},
+          {type: 'type', target: '#pw',
+           extra: {secret: 'vault', secret_kind: 'password', host: 'evil.example'}}],
 };
 // Another, of two sites, with a last fire from before the change; saved
 // with a step deleted, it targets one, and a confirm answers with its
@@ -1877,6 +1886,21 @@ const PAGES = [
      assert(changedPanel.textContent.includes('Schedule: runs by itself on “<b>* * * * *</b>”.'),
             'its schedule, as text');
      assert.strictEqual(changedPanel.querySelectorAll('b').length, 0);
+     const changedSteps = doc.querySelectorAll('#edSteps .estep');
+     assert.strictEqual(changedSteps[1].querySelector('.etype small').textContent,
+         'Run the site’s tool “delete_<b>account</b>” on evil.example',
+         'a site tool titled by the tool it runs');
+     assert.strictEqual(changedSteps[1].querySelector('.tool-name').textContent,
+         '“delete_<b>account</b>” of https://evil.example');
+     const changedArgs = changedSteps[1].querySelector('.tool-args').textContent;
+     assert(changedArgs.startsWith('note = “' + CHANGED_TOOL_NOTE + '”; big = “xxx'),
+            'a value in full: ' + changedArgs.slice(0, 80));
+     assert(changedArgs.endsWith('x… (cut: too long to run)'), 'a cut is said');
+     assert.strictEqual(changedSteps[1].querySelectorAll('b').length, 0);
+     assert.strictEqual(changedSteps[2].querySelector('.etype small').textContent,
+         'Fill your saved password', 'a saved-password step says so');
+     assert(/fills in your saved password/.test(
+         changedSteps[2].querySelector('.review-note').textContent));
      const runsBeforeChanged = window.__sent.filter((m) => m === 'runWorkflow').length;
      window.runWorkflowFlow('c1');
      await tick();
@@ -1904,7 +1928,11 @@ const PAGES = [
      assert(toolCard, 'a site-tool step');
      assert.strictEqual(toolCard.querySelector('.tool-args').textContent,
          'id = “<img src=x onerror=alert(1)>”; qty = 2; note = “{{tool_note}}”');
-     assert(/In the page’s frame from https:\/\/<b>w<\/b>\.example/.test(toolCard.textContent));
+     assert(/In the page’s frame from https:\/\/<b>w<\/b>\.example \(frame \/c\)/.test(toolCard.textContent));
+     assert.strictEqual(toolCard.querySelector('.tool-name').textContent,
+         '“add_to_cart” of https://www.example.com');
+     assert.strictEqual(toolCard.querySelector('.etype small').textContent,
+         'Run the site’s tool “add_to_cart” on example.com (in its frame from https://<b>w</b>.example)');
      assert(/1 value not saved/.test(toolCard.textContent));
      assert(/asked for it at each run/.test(toolCard.querySelector('.review-note').textContent));
      assert.strictEqual(toolCard.querySelectorAll('img, b, input.inp').length, 0);

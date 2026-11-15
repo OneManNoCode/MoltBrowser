@@ -12,9 +12,12 @@
 // later) changes nothing, a Snooze saved here holds (a stale page's save
 // doesn't end it), a restart keeps the recorded fire, and a schedule saved
 // afresh starts over. Each fire is claimed in the record before it runs,
-// so two profiles' schedulers over the folder run a due workflow once; and
-// a workflow held for review across its time, then put back as it was,
-// isn't caught up at that moment but runs at its next time.
+// so two profiles' schedulers over the folder run a due workflow once; a
+// workflow held for review, or missing (moved away, set aside across a
+// restart, not parsing, gone at its timer's reload), across its time, then
+// put back as it was, isn't caught up at that moment but runs at its next
+// time; and a timer early by the wall clock is armed again, so its
+// workflow runs once, on time.
 
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 
@@ -446,6 +449,157 @@ TEST_F(AutomationSchedulerTest, AWorkflowPutBackAfterItsTimeRunsAtItsNextTime) {
   EXPECT_TRUE(fired_.empty());
   task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// A workflow whose file is moved away across its time (no listing finds it
+// held: none finds it at all), then put back exactly as the browser wrote
+// it, at a moment the writer chose: not caught up then, but run at its
+// next time, its interval's phase kept.
+TEST_F(AutomationSchedulerTest, AWorkflowMovedAwayAcrossItsTimeRunsAtItsNext) {
+  const int64_t start = Unix(base::Time::Now());
+  // Every hour, last fired here half an hour ago: due at 30 min, 1h30, ...
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", start - 1800));
+  const base::FilePath file = dir_.AppendASCII("wf_1.molt");
+  const base::FilePath away = temp_.GetPath().AppendASCII("wf_1.bak");
+  scheduler_.Start();
+  Tick();
+  // Moved away at 20 min, past its time.
+  task_environment_.FastForwardBy(base::Minutes(20));
+  ASSERT_TRUE(base::ReplaceFile(file, away, nullptr));
+  task_environment_.FastForwardBy(base::Hours(1));
+  EXPECT_TRUE(fired_.empty());
+  // Put back at 1h20: the browser's own again, its last fire here 1h50 ago.
+  ASSERT_TRUE(base::ReplaceFile(away, file, nullptr));
+  std::optional<Script> back = storage_->Load("wf_1");
+  ASSERT_TRUE(back);
+  ASSERT_FALSE(back->security.changed_outside);
+  ASSERT_EQ(back->trigger.last_fired_unix, start - 1800);
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+  // Its time that passed is recorded as passed (at 30 min), and it runs at
+  // its next one, at 1h30.
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, start + 1800);
+  task_environment_.FastForwardBy(base::Minutes(9));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// Held for review first (changed outside), then not a workflow file for the
+// listings across its time (bytes that don't parse), then put back exactly:
+// the listing that didn't find it doesn't end the hold.
+TEST_F(AutomationSchedulerTest, AHeldWorkflowUnreadableForAWhileIsStillHeld) {
+  const int64_t start = Unix(base::Time::Now());
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", start - 1800));
+  const base::FilePath file = dir_.AppendASCII("wf_1.molt");
+  std::string bytes;
+  ASSERT_TRUE(base::ReadFileToString(file, &bytes));
+  scheduler_.Start();
+  Tick();
+  // Changed at 20 min (held at the heartbeat's listing), unparsable from
+  // 21 min, past its time.
+  task_environment_.FastForwardBy(base::Minutes(20));
+  ChangeOutside("wf_1");
+  task_environment_.FastForwardBy(base::Minutes(1));
+  ASSERT_TRUE(base::WriteFile(file, "{"));
+  task_environment_.FastForwardBy(base::Hours(1));
+  EXPECT_TRUE(fired_.empty());
+  // Put back at 1h21: not caught up; it runs at 1h30.
+  ASSERT_TRUE(base::WriteFile(file, bytes));
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, start + 1800);
+  task_environment_.FastForwardBy(base::Minutes(8));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// Missing only when its timer's reload comes (moved away after the last
+// listing, put back before the next): held, so the listing that finds it
+// again doesn't catch it up; it runs at its next time.
+TEST_F(AutomationSchedulerTest, AWorkflowMissingAtItsTimersReloadIsHeld) {
+  const int64_t now = Unix(base::Time::Now());
+  // Every 90 s, due in 70 s.
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 90, now - 20)));
+  const base::FilePath file = dir_.AppendASCII("wf_1.molt");
+  const base::FilePath away = temp_.GetPath().AppendASCII("wf_1.bak");
+  scheduler_.Start();
+  Tick();
+  // After the heartbeat's listing at 60 s, before the timer at 70 s.
+  task_environment_.FastForwardBy(base::Seconds(65));
+  ASSERT_TRUE(base::ReplaceFile(file, away, nullptr));
+  task_environment_.FastForwardBy(base::Seconds(10));
+  EXPECT_TRUE(fired_.empty());
+  // Back at 75 s, and listed: its time at 70 s is recorded as passed; it
+  // runs at 160 s.
+  ASSERT_TRUE(base::ReplaceFile(away, file, nullptr));
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(84));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// Set aside under a moved file's name across a restart (the record keeps
+// its entry while that name is there), then put back after its time: the
+// first listing after the restart didn't find it, so it isn't caught up.
+TEST_F(AutomationSchedulerTest, AWorkflowSetAsideAcrossARestartIsHeld) {
+  const int64_t start = Unix(base::Time::Now());
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", start - 1800));
+  const base::FilePath file = dir_.AppendASCII("wf_1.molt");
+  const base::FilePath aside = dir_.AppendASCII("wf_1.molt.0123abcd.taken");
+  ASSERT_TRUE(base::ReplaceFile(file, aside, nullptr));
+  Restart();
+  task_environment_.FastForwardBy(base::Hours(1));
+  EXPECT_TRUE(fired_.empty());
+  // Put back at 1h: vouched for, its last fire here 1h30 ago.
+  ASSERT_TRUE(base::ReplaceFile(aside, file, nullptr));
+  std::optional<Script> back = storage_->Load("wf_1");
+  ASSERT_TRUE(back);
+  ASSERT_FALSE(back->security.changed_outside);
+  ASSERT_EQ(back->trigger.last_fired_unix, start - 1800);
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, start + 1800);
+  task_environment_.FastForwardBy(base::Minutes(29));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+}
+
+// A timer that comes before its time by the wall clock (the clock set back
+// a little since it was armed) is armed again, not fired: the cron
+// workflow runs once, at its time, not also just before it (whose fire,
+// recorded before that time, would leave it due).
+TEST_F(AutomationSchedulerTest, ATimerEarlyByTheWallClockFiresOnceOnTime) {
+  // Every five minutes (in any time zone), last fired here at the start.
+  Script cron = Interval("wf_1", 3600, 0);
+  cron.trigger.type = TriggerType::CRON;
+  cron.trigger.expression = "*/5 * * * *";
+  ASSERT_TRUE(storage_->Save(cron));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", kStart));
+  // Started half a minute in, so no heartbeat lists at 5 min.
+  task_environment_.FastForwardBy(base::Seconds(30));
+  scheduler_.Start();
+  Tick();
+  // At 4:40, after the heartbeat's listing at 4:30, a listing whose clock
+  // reads 300 ms ahead of the timer's: its timer comes at 4:59.7.
+  task_environment_.FastForwardBy(base::Seconds(250));
+  scheduler_.TickForTesting(base::Time::Now() + base::Milliseconds(300));
+  task_environment_.RunUntilIdle();
+  task_environment_.FastForwardBy(base::Milliseconds(19800));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(5));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, kStart + 300);
+  // The next, at 10 min.
+  task_environment_.FastForwardBy(base::Minutes(5));
+  EXPECT_EQ(fired_.size(), 2u);
 }
 
 // A save from a page opened before a Snooze (an editor, a second
