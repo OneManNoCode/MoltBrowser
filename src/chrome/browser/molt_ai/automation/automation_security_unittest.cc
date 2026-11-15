@@ -1089,6 +1089,73 @@ TEST(AutomationSecurityTest, ReviewMessageNamesTheReason) {
                kChangedOutsideMessage);
 }
 
+// A change confirmed on the one site its review listed (a page host),
+// its first step opening |first|.
+Script ConfirmedOnItsListedSite(const std::string& first) {
+  Script confirmed;
+  confirmed.id = "wf_1";
+  confirmed.security.sites_unconfirmed = true;
+  confirmed.security.changed_outside = true;
+  confirmed.steps.push_back(MakeStep(StepType::NAVIGATE, first));
+  Step wait = MakeStep(StepType::WAIT, "", "1");
+  base::DictValue extra;
+  extra.Set("host", "news.example");
+  wait.extra = base::Value(std::move(extra));
+  confirmed.steps.push_back(std::move(wait));
+  std::vector<std::string> sites =
+      AutomationSecurity::HostsReferencedBy(confirmed.steps);
+  EXPECT_TRUE(AutomationSecurity::ConfirmDraftSites(confirmed, sites));
+  return confirmed;
+}
+
+// The page a run window opens before its runner's checks, in the user's
+// profile: only the first NAVIGATE step's URL when it is static, http(s)
+// and one of the workflow's sites. A {{variable}} URL's site is none the
+// review listed (HostsReferencedBy() skips it): the runner opens that step
+// itself, resolved and checked.
+TEST(AutomationSecurityTest, ARunWindowOpensOnlyAStaticPageOfItsSites) {
+  // A {{variable}} URL's site, which the review didn't list.
+  Script unlisted =
+      ConfirmedOnItsListedSite("http://192.168.1.1/reboot?x={{t}}");
+  ASSERT_FALSE(unlisted.security.sites_unconfirmed);
+  EXPECT_EQ(unlisted.security.domain_whitelist,
+            std::vector<std::string>{"news.example"});
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted), "");
+  // Nor a later step's page, before the first's.
+  unlisted.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://news.example/today"));
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted), "");
+  // A {{variable}} URL on one of its sites, at any trust: not the page the
+  // step opens.
+  Script templated = ConfirmedOnItsListedSite("https://news.example/?q={{q}}");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(templated), "");
+  templated.security.trust = TrustLevel::TRUSTED;
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(templated), "");
+  // A static page of its sites.
+  Script fixed = ConfirmedOnItsListedSite("https://news.example/today");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(fixed),
+            "https://news.example/today");
+  // Never a page that isn't http(s).
+  for (const char* code : {"javascript:alert(1)", "file:///etc/passwd"}) {
+    EXPECT_EQ(
+        AutomationSecurity::RunWindowStartURL(ConfirmedOnItsListedSite(code)),
+        "")
+        << code;
+  }
+  // No page to open.
+  fixed.steps.erase(fixed.steps.begin());
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(fixed), "");
+  // An unconfirmed draft, a change not confirmed yet and a routine taught
+  // by voice open nothing.
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(UnconfirmedDraft()), "");
+  Script changed = RichScript();
+  ASSERT_EQ(AutomationSecurity::RunWindowStartURL(changed),
+            "https://shop.example/");
+  AutomationSecurity::ClampUnvouched(changed);
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(changed), "");
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(VoiceRoutine()), "");
+}
+
 }  // namespace
 }  // namespace automation
 }  // namespace molt_ai

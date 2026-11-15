@@ -2259,12 +2259,13 @@ out of it; this section is about everything else.
 |---|---|
 | `automation/workflow_record.{h,cc}` (`:workflow_record`, base only) | the record: load, one-time seeding, checks, persistence |
 | `automation/automation_storage.{h,cc}` | every read checked (`Vetted()`), every write recorded, `PrepareRecord()`, `UpdateBookkeeping()`, `RecordFire()`, `ClaimFire()`, `RecordPassed()` |
-| `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()` (an allowlist of what the review shows, §3.6.6), `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()` |
+| `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()` (an allowlist of what the review shows, §3.6.6), `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()`, `RunWindowStartURL()` |
 | `automation/automation_script.*` | `SecurityPolicy::changed_outside` (wording only; stored only when true); `CountIntervalFromNow()` |
 | `automation/automation_record_startup.{h,cc}` | configures the record, and posts its first load, when the first profile is created |
 | `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; each fire claimed in the record before it runs (`ClaimFire()`); times passed while held for review not caught up (`RecordPassed()`) |
 | `automation/automation_runner.cc` | a refused run keeps no stats; stats through `UpdateBookkeeping()`; `RUN_SCRIPT` refuses a child that needs review |
-| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel (notes from what runs, hidden characters shown), the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over); an editor's save of a draft refused once it is no longer one, and of a routine gone since it was opened; each site-tool value in a box of its own |
+| `automation/automation_background_browser.cc` | the run window opens, before the runner's checks, only a static page of the workflow's sites (`RunWindowStartURL()`) |
+| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel (notes from what runs, hidden characters shown), the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over; a new routine under an id neither storage has; `NewWorkflowId()` with a random part); an editor's save of a draft refused once it is no longer one, and of a routine gone since it was opened; each site-tool value in a box of its own |
 | `ui/webui/molt_ai/molt_ai_automation_storage.cc`, `molt_ai_automation_ui.cc` | trust refused with the reason, no promotion suggestion for a draft, the badge; an import's schedule starts over |
 | `voice/voice_routines.cc`, `voice/voice_routines_logic.cc`, `voice/voice_routine_store.cc` | a routine changed outside is neither run nor confirmed by voice, and is claimed with its steps kept as the browser describes them (`DescribeRoutineStepsAsRun()`, `RoutineStepAsShown()`) |
 
@@ -2502,6 +2503,17 @@ next time (the same rule); after, it is final.
   child's id can come from a variable). A parent changed outside has no
   `RUN_SCRIPT` step once confirmed: the clamp drops them (§3.6.6), so it
   never runs the user's own workflows, or adds their sites, unshown.
+- **Run window** (`automation_background_browser.cc`, for the scheduler's
+  fires and the studio's and molt://ai-automation's runs): it opens a page
+  in the user's profile before the runner starts, so before any of its
+  checks. That page is the first `navigate` step's only when it is static,
+  http(s) and one of the workflow's sites (`RunWindowStartURL()`:
+  `EffectivePolicy()`, as the runner checks it), never a draft's or a
+  routine's; otherwise about:blank, and the runner opens the step itself,
+  its variables resolved, and checked. A `{{variable}}` URL is never opened
+  first: unresolved, it isn't the page the step opens, and its site is none
+  the review listed (`HostsReferencedBy()` skips it), so the user never
+  confirmed it.
 - **Agent studio:** the card says "changed outside · review it", the
   library a banner ("N workflows were changed outside MoltBrowser and need
   your review."). Run, Schedule and Trust are refused
@@ -2520,7 +2532,17 @@ next time (the same rule); after, it is final.
   that names no workflow is new (`KindOfSave()`,
   `SaveRequest::new_workflow`: a blank or imported workflow, or a
   recording); it is saved under a free id (`SaveNew()`), never over a file
-  there. A recording's first save names
+  there. A new routine (one with voice steps, for the profile's routines)
+  takes nothing from what either storage holds under the id made for it:
+  it is saved under that id, or it with `_` added, that neither the
+  profile's routines nor the shared storage have (the studio looks in the
+  profile's routines first, so one under a shared workflow's id would hide
+  it), with the default policy (a draft), and answered with the id used;
+  never over the profile's routine of that id (whose confirmation it would
+  take), nor refused for the shared storage's workflow of it. The id made
+  for a new workflow (`NewWorkflowId()`) is the time and a random part, so
+  two made in one second (two views, a clock set back) differ. A
+  recording's first save names
   the id `stopRecording` made for it as `recordedId`, with no `id`; an `id`
   the page sends is always an edit, even one a recording was given and not
   yet saved (the id is predictable: a file put under it since is changed
@@ -2808,7 +2830,10 @@ All in `molt_ai_unittests` except the last item:
   as it runs), a schedule's time zone
   and end gone (none when turned off), no variable's default value (twice
   is once); the predicates; `changed_outside` cleared by a confirm and carried by a
-  save; the review message.
+  save; the review message; the run window's first page only a static
+  http(s) page of the workflow's sites (never a `{{variable}}` URL, at any
+  trust, nor a later step's page, nor a draft's, an unconfirmed change's or
+  a routine's).
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
   when it is written (`CountIntervalFromNow()`).
@@ -2888,7 +2913,10 @@ All in `molt_ai_unittests` except the last item:
   and duplicates stay drafts; a save of a workflow deleted, unreadable or
   over the cap since it was opened is refused, never saved as new, and of
   a routine deleted since (one changed outside included), while a routine
-  brought in is saved, a draft; an id
+  brought in is saved, a draft, under an id neither storage has (never
+  over the profile's routine of the id made for it, which keeps its
+  confirmation, nor refused for the shared storage's workflow or routine
+  of it), and ids made in one go differ; an id
   sent is an edit even when a recording was given it (a file planted there,
   opened and saved, stays a draft); a new workflow never goes over another
   file; an interval schedule counts from when it is written (Schedule,
@@ -2941,8 +2969,9 @@ All in `molt_ai_unittests` except the last item:
   the record is in the user data directory, not the test's data folder; a
   workflow planted after startup loads as a draft;
   `ui/webui/molt_ai/molt_ai_agent_storage_browsertest.cc`: a routine
-  brought in with no id is saved as a new one, and an edit of one that
-  isn't there is refused;
+  brought in with no id is saved as a new one (under an id of its own,
+  whatever was saved in the same second), and an edit of one that isn't
+  there is refused;
   `ui/webui/molt_ai/molt_ai_automation_storage_browsertest.cc`: the chat's
   page watcher is saved with its interval counted from then.
 

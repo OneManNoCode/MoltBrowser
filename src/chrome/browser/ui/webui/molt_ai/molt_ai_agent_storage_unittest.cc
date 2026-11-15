@@ -1048,6 +1048,84 @@ TEST_F(AgentStudioStorageTest, ASaveOfARoutineGoneSinceItWasOpenedIsRefused) {
   EXPECT_TRUE(Routines().Load("voice_2")->security.sites_unconfirmed);
 }
 
+// A new routine (an import, its id made for it) takes nothing from what
+// either storage holds under that id: it is saved under an id neither
+// has, a draft with the default policy, never over the profile's routine
+// of that id (whose confirmation it would take, and which would be lost)
+// and never refused for the shared storage's workflow of that id.
+TEST_F(AgentStudioStorageTest, ANewRoutineIsSavedUnderAnIdOfItsOwn) {
+  Script confirmed = Routine("wf_1", "my news");
+  confirmed.security.trust = TrustLevel::APPROVED;
+  ASSERT_FALSE(confirmed.security.sites_unconfirmed);
+  ASSERT_FALSE(confirmed.security.domain_whitelist.empty());
+  ASSERT_TRUE(Routines().Save(confirmed));
+  ASSERT_TRUE(Shared().Save(Workflow("wf_2", "Prices")));
+  ASSERT_TRUE(Shared().Save(Routine("wf_3", "old news")));
+  ASSERT_TRUE(Routines().Save(Routine("wf_4", "mail")));
+  ASSERT_TRUE(Shared().Save(Workflow("wf_4_", "Prices 2")));
+
+  // The profile's routine of that id.
+  Answer over_routine =
+      SaveRoutine(places_, New(Routine("wf_1", "trains")), Holds::kNothing);
+  ASSERT_FALSE(Error(over_routine));
+  ASSERT_TRUE(over_routine.out.FindString("id"));
+  EXPECT_EQ(*over_routine.out.FindString("id"), "wf_1_");
+  EXPECT_EQ(*over_routine.out.FindString("name"), "trains");
+  EXPECT_TRUE(over_routine.routines_changed);
+  std::optional<Script> kept = Routines().Load("wf_1");
+  ASSERT_TRUE(kept);
+  EXPECT_EQ(kept->name, "my news");
+  EXPECT_EQ(kept->security.trust, TrustLevel::APPROVED);
+  EXPECT_FALSE(kept->security.sites_unconfirmed);
+  std::optional<Script> brought = Routines().Load("wf_1_");
+  ASSERT_TRUE(brought);
+  EXPECT_EQ(brought->name, "trains");
+  EXPECT_EQ(brought->security.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(brought->security.sites_unconfirmed);
+  EXPECT_TRUE(brought->security.domain_whitelist.empty());
+
+  // The shared storage's workflow, or routine from before profiles, of
+  // that id: saved beside it, under an id it doesn't have.
+  struct Beside {
+    std::string id;
+    std::string name;
+    Holds holds;
+  };
+  for (const Beside& held : {Beside{"wf_2", "weather", Holds::kOrdinary},
+                             Beside{"wf_3", "radio", Holds::kRoutine}}) {
+    const std::string& id = held.id;
+    Answer beside =
+        SaveRoutine(places_, New(Routine(id, held.name)), held.holds);
+    EXPECT_FALSE(Error(beside)) << id;
+    ASSERT_TRUE(beside.out.FindString("id")) << id;
+    EXPECT_EQ(*beside.out.FindString("id"), id + "_");
+    EXPECT_TRUE(Routines().Load(id + "_")) << id;
+    EXPECT_FALSE(Routines().Load(id)) << id;
+    EXPECT_FALSE(Shared().Load(id + "_")) << id;
+    EXPECT_TRUE(Shared().Load(id)) << id;
+  }
+
+  // An id the profile's routines have, and it with "_" the shared storage.
+  Answer free_in_both =
+      SaveRoutine(places_, New(Routine("wf_4", "podcasts")), Holds::kNothing);
+  EXPECT_FALSE(Error(free_in_both));
+  ASSERT_TRUE(free_in_both.out.FindString("id"));
+  EXPECT_EQ(*free_in_both.out.FindString("id"), "wf_4__");
+  EXPECT_EQ(Routines().Load("wf_4")->name, "mail");
+  EXPECT_FALSE(Routines().Load("wf_4_"));
+  EXPECT_EQ(Shared().Load("wf_4_")->name, "Prices 2");
+}
+
+// Two new workflows' ids made in one go (one second) aren't alike.
+TEST_F(AgentStudioStorageTest, NewWorkflowIdsAreNeverAlike) {
+  std::set<std::string> ids;
+  for (int i = 0; i < 100; ++i) {
+    const std::string id = NewWorkflowId();
+    EXPECT_EQ(id.rfind("wf_", 0), 0u) << id;
+    EXPECT_TRUE(ids.insert(id).second) << id;
+  }
+}
+
 // A new workflow (an import, a blank one, a recording) has never fired
 // here: its schedule starts over, whatever last fire the page sent (an
 // import's, from its file: long past, it would run at once; in 2100, it

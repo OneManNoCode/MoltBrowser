@@ -20,11 +20,10 @@
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
-#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
-#include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
@@ -144,24 +143,16 @@ void StartBackgroundRun(base::WeakPtr<Profile> weak_profile,
     return;
   }
 
-  // Pick the start URL from the first NAVIGATE step, fallback to
-  // about:blank so we always have something to attach a runner to. This
-  // load happens before the runner's policy checks, so it gets the same
-  // http(s)-only rule (a .molt file must not open javascript:/file: URLs).
-  GURL start_url("about:blank");
-  // An unconfirmed draft (a web agent run, agent_run_draft.h) opens nothing:
-  // the runner refuses it on about:blank, and the studio hears why.
-  for (const auto& step : fresh->steps) {
-    if (fresh->security.sites_unconfirmed || HasVoiceSteps(*fresh))
-      break;
-    if (step.type == StepType::NAVIGATE && !step.target.empty()) {
-      GURL g(step.target);
-      if (agent_safety::IsAllowedNavigationURL(g)) {
-        start_url = g;
-      }
-      break;
-    }
-  }
+  // The start page: the first NAVIGATE step's URL, else about:blank, so we
+  // always have something to attach a runner to. This load happens before
+  // the runner's policy checks, so it opens only a static http(s) URL on
+  // one of the workflow's sites (never a {{variable}} URL, whose site the
+  // review never listed): AutomationSecurity::RunWindowStartURL(). An
+  // unconfirmed draft (a web agent run, agent_run_draft.h; a file changed
+  // outside the browser) opens nothing: the runner refuses it on
+  // about:blank, and the studio hears why.
+  const std::string start = AutomationSecurity::RunWindowStartURL(*fresh);
+  const GURL start_url(start.empty() ? std::string("about:blank") : start);
 
   BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_POPUP, profile,
                                    /*from_user_gesture=*/true);

@@ -182,7 +182,13 @@ Holds RoutinesHold(const StudioPlaces& places, const std::string& id);
 Holds SharedStorageHolds(const StudioPlaces& places, const std::string& id);
 // Step 2, on the sequence of the storage it goes to: a routine taught by
 // voice (it has voice steps) to the profile's routines, an ordinary
-// workflow to the shared storage. Refusals are the page's "error".
+// workflow to the shared storage. Refusals are the page's "error". A new
+// routine (SaveRequest::new_workflow) takes nothing from what either
+// storage holds under the id made for it (|in_shared_storage| isn't
+// consulted): it is saved under that id, or it with "_" added, that
+// neither the profile's routines nor the shared storage have (read there,
+// as voice mode's claims read it), never over a file, with the default
+// policy (a draft), and answered with the id used.
 Answer SaveRoutine(const StudioPlaces& places,
                    SaveRequest request,
                    Holds in_shared_storage);
@@ -228,7 +234,8 @@ base::ListValue DraftSites(const automation::Script& script);
 // outside the browser, its steps saved) isn't confirmed with it.
 std::string ReviewToken(const automation::Script& script);
 
-// A new workflow's id: "wf_" and the time.
+// A new workflow's id: "wf_", the time and a random part (two made in one
+// second are never alike).
 std::string NewWorkflowId();
 
 }  // namespace agent_studio

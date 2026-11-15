@@ -398,6 +398,27 @@ SecurityPolicy AutomationSecurity::EffectivePolicy(const Script& script) {
 }
 
 // static
+std::string AutomationSecurity::RunWindowStartURL(const Script& script) {
+  if (script.security.sites_unconfirmed || HasVoiceSteps(script)) {
+    return std::string();
+  }
+  for (const Step& step : script.steps) {
+    if (step.type != StepType::NAVIGATE || step.target.empty()) {
+      continue;
+    }
+    const GURL url(step.target);
+    if (step.target.find("{{") != std::string::npos ||
+        !agent_safety::IsAllowedNavigationURL(url) ||
+        !AutomationSecurity().AllowNavigation(EffectivePolicy(script),
+                                              url.spec())) {
+      return std::string();
+    }
+    return url.spec();
+  }
+  return std::string();
+}
+
+// static
 std::vector<std::string> AutomationSecurity::HostsReferencedBy(
     const std::vector<Step>& steps) {
   std::vector<std::string> hosts;

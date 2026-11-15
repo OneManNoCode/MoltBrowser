@@ -3,11 +3,15 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_storage.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <ctime>
 #include <memory>
+#include <set>
 #include <utility>
+#include <vector>
 
+#include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
@@ -46,6 +50,9 @@ constexpr char kGoneSinceOpened[] =
 constexpr char kNoLongerADraft[] =
     "This workflow was confirmed or changed since you opened it. Open it "
     "again.";
+
+// The longest id a workflow's file can have (AutomationStorage).
+constexpr size_t kMaxIdBytes = 128;
 
 // The profile's routines' store; null off the record.
 std::unique_ptr<VoiceRoutineStore> RoutinesStore(const StudioPlaces& places) {
@@ -377,6 +384,48 @@ Answer NotFound(const WorkflowRequest& request) {
   return Answer();
 }
 
+// A new routine (brought in: an import, a blank one), its id made for it:
+// whatever either storage holds under that id is another workflow, never
+// this one's policy nor written over. It is saved under the id, or it with
+// "_" added, that neither the profile's routines nor the shared storage
+// have (the studio looks in the profile's routines first, so a routine of
+// a shared workflow's id would hide it), with SaveNew() (never over a
+// file), and with the default policy: a draft (ClampTrustForSave()).
+Answer SaveNewRoutine(const StudioPlaces& places,
+                      VoiceRoutineStore& routines,
+                      Script script) {
+  std::optional<AutomationStorage> shared;
+  if (!places.shared_dir.empty()) {
+    shared.emplace(places.shared_dir);
+  }
+  const std::vector<std::string> listed = routines.storage().ListIds();
+  const std::set<std::string> mine(listed.begin(), listed.end());
+  while (mine.count(script.id) || (shared && shared->Load(script.id))) {
+    if (script.id.size() >= kMaxIdBytes) {
+      return Answer();
+    }
+    script.id += "_";
+  }
+  KeepPolicy(script, /*existing=*/nullptr, /*recorded_here=*/false);
+  // Its name, made its own beside every routine of the profile (none has
+  // its id).
+  script.name = routines.NameFor(script);
+  if (script.name.empty()) {
+    return Refused("Too many routines have that name. Choose another.");
+  }
+  base::DictValue saved = SavedDict(script);
+  const std::optional<std::string> id =
+      routines.storage().SaveNew(std::move(script));
+  if (!id) {
+    return Answer();
+  }
+  saved.Set("id", *id);
+  Answer answer;
+  answer.out = std::move(saved);
+  answer.routines_changed = true;
+  return answer;
+}
+
 }  // namespace
 
 Answer::Answer() = default;
@@ -455,6 +504,9 @@ Answer SaveRoutine(const StudioPlaces& places,
     return Refused(kNoRoutinesHere);
   }
   Script& script = request.script;
+  if (request.new_workflow) {
+    return SaveNewRoutine(places, *routines, std::move(script));
+  }
   std::optional<Script> existing = routines->storage().Load(script.id);
   if (existing && !HasVoiceSteps(*existing)) {
     existing.reset();
@@ -469,18 +521,16 @@ Answer SaveRoutine(const StudioPlaces& places,
   // (deleted in another view or by voice): saved as a new routine, a draft
   // the page was shown (one changed outside the browser, which voice mode
   // never confirms on its sites alone) would no longer be one.
-  if (!request.new_workflow && !existing) {
+  if (!existing) {
     return Refused(kGoneSinceOpened);
   }
   // The page edited a draft that isn't one any more (its sites confirmed
   // meanwhile, by voice or in another view): saved under that confirmation,
   // steps it never covered would run.
-  if (request.edited_draft && existing &&
-      !existing->security.sites_unconfirmed) {
+  if (request.edited_draft && !existing->security.sites_unconfirmed) {
     return Refused(kNoLongerADraft);
   }
-  KeepPolicy(script, existing ? &*existing : nullptr,
-             /*recorded_here=*/false);
+  KeepPolicy(script, &*existing, /*recorded_here=*/false);
   // A routine's name, made its own beside the profile's others ("my news
   // (2)"): voice mode runs exactly one by each name. On this sequence, so
   // voice mode can't save one of that name in between.
@@ -675,7 +725,17 @@ std::string ReviewToken(const Script& script) {
 }
 
 std::string NewWorkflowId() {
-  return "wf_" + base::NumberToString(static_cast<int64_t>(std::time(nullptr)));
+  // The time, and a random part: two made in one second (two views, two
+  // saves; a clock set back) are never alike.
+  uint64_t bits = base::RandUint64();
+  std::string random;
+  for (int i = 0; i < 8; ++i) {
+    random += "0123456789abcdef"[bits & 0xf];
+    bits >>= 4;
+  }
+  return "wf_" +
+         base::NumberToString(static_cast<int64_t>(std::time(nullptr))) + "_" +
+         random;
 }
 
 }  // namespace agent_studio

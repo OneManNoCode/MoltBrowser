@@ -143,6 +143,16 @@ class AutomationSecurity {
   static std::vector<std::string> HostsReferencedBy(
       const std::vector<Step>& steps);
 
+  // The page a run window opens before its runner starts (and so before
+  // any of the runner's checks: automation_background_browser.cc), in the
+  // user's profile: the first NAVIGATE step's URL, only when it is static
+  // (no {{variable}}: unresolved, it isn't the page the step opens, and its
+  // site is none the review listed), http(s), and allowed by
+  // EffectivePolicy(script). "" (about:blank) otherwise, and for an
+  // unconfirmed draft or a routine taught by voice: the runner then opens
+  // the step itself, resolved and checked (PreflightStepPolicy()).
+  static std::string RunWindowStartURL(const Script& script);
+
   // Saving must never raise trust: |incoming| (a script about to be saved
   // from UI-supplied JSON) keeps |existing|'s trust if the script is
   // already on disk, else starts CASUAL. Only promoteTrust changes trust.
