@@ -225,6 +225,23 @@ std::string NameOf(const base::FilePath& path) {
   return path.BaseName().AsUTF8Unsafe();
 }
 
+// SaveChecked(): a save that keeps |stored|'s schedule (its type,
+// expression, time zone and end) never moves its last fire back. An
+// earlier nonzero one comes from a page opened before that last fire,
+// Snooze or Skip (the Agent studio's editor, a molt://ai-automation card
+// never refreshed): the stored one is kept, so the save neither forces a
+// catch-up run nor ends a snooze. A later one (molt://ai-automation's
+// Snooze and Skip), 0 and a schedule of its own are written as they are.
+void KeepStoredLastFire(const Trigger& stored, Trigger& written) {
+  if (written.last_fired_unix > 0 &&
+      written.last_fired_unix < stored.last_fired_unix &&
+      written.type == stored.type && written.expression == stored.expression &&
+      written.timezone == stored.timezone &&
+      written.until_unix == stored.until_unix) {
+    written.last_fired_unix = stored.last_fired_unix;
+  }
+}
+
 }  // namespace
 
 class AutomationStorage::BlockingScope {
@@ -658,6 +675,9 @@ bool AutomationStorage::SaveChecked(Script script, SaveCheck check) {
              : std::nullopt;
     if (!check(stored ? &*stored : nullptr, script) || script.id != id)
       return false;
+    if (stored) {
+      KeepStoredLastFire(stored->trigger, script.trigger);
+    }
     saved = SaveLocked(script);
   }
   if (saved)
@@ -760,6 +780,45 @@ bool AutomationStorage::RecordFire(const std::string& id, int64_t fired_unix) {
     script.trigger.last_fired_unix = fired_unix;
     return true;
   });
+}
+
+bool AutomationStorage::ClaimFire(const std::string& id,
+                                  int64_t fired_unix,
+                                  int64_t last_fired_read) {
+  BlockingScope blocking(*this);
+  if (!IsValidScriptId(id))
+    return false;
+  PrepareRecord();
+  ChangeScope locked(*this);
+  if (WorkflowRecord* record = Record()) {
+    const std::string name = id + kScriptExt;
+    // Fired since it was read (by another profile's scheduler: each
+    // profile's lists this directory), snoozed, saved afresh or deleted:
+    // not this fire's to run.
+    if (!record->EntryOf(name) || record->LastFired(name) != last_fired_read) {
+      return false;
+    }
+    // First: a file that can't be written now still never fires again for
+    // this time.
+    record->NoteFired(name, fired_unix);
+  }
+  // Claimed, whether or not the file's own copy can be written.
+  UpdateBookkeepingLocked(id, [fired_unix](Script& script) {
+    script.trigger.last_fired_unix = fired_unix;
+    return true;
+  });
+  return true;
+}
+
+bool AutomationStorage::RecordPassed(const std::string& id,
+                                     int64_t passed_unix) {
+  BlockingScope blocking(*this);
+  if (!IsValidScriptId(id))
+    return false;
+  PrepareRecord();
+  ChangeScope locked(*this);
+  WorkflowRecord* record = Record();
+  return record && record->NotePassed(id + kScriptExt, passed_unix);
 }
 
 bool AutomationStorage::UpdateBookkeepingLocked(const std::string& id,

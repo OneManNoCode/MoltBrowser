@@ -580,6 +580,20 @@ void WorkflowRecord::NoteFired(const std::string& name, int64_t fired) {
   }
 }
 
+bool WorkflowRecord::NotePassed(const std::string& name, int64_t passed) {
+  {
+    base::AutoLock hold(lock_);
+    auto it = entries_.find(name);
+    // Only ever later: never a fire time brought down, nor a snooze ended.
+    if (it == entries_.end() || passed <= it->second.fired) {
+      return false;
+    }
+    it->second.fired = passed;
+  }
+  Persist();
+  return true;
+}
+
 bool WorkflowRecord::Copy(const std::string& from, const std::string& to) {
   {
     base::AutoLock hold(lock_);

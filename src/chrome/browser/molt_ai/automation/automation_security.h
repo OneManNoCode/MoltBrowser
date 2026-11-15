@@ -58,12 +58,17 @@ namespace automation {
 //                              holds no cards or one-time codes
 //   "secret_host": host the field was recorded on (informational)
 // "host" (any recorded step) is the page host the user acted on; it feeds
-// AutomationSecurity::HostsReferencedBy.
+// AutomationSecurity::HostsReferencedBy. "text" (a recorded CLICK / TYPE)
+// is the element's visible text, which the runner checks a selector
+// against and looks for when every selector misses; "ref_shot" a picture
+// of the element when it was recorded (shown in the editor).
 inline constexpr char kSecretKey[] = "secret";
 inline constexpr char kSecretVault[] = "vault";
 inline constexpr char kSecretKindKey[] = "secret_kind";
 inline constexpr char kSecretHostKey[] = "secret_host";
 inline constexpr char kStepHostKey[] = "host";
+inline constexpr char kStepTextAnchorKey[] = "text";
+inline constexpr char kStepRefShotKey[] = "ref_shot";
 
 // Why a draft from a web agent run (SecurityPolicy::sites_unconfirmed)
 // doesn't run: the runner stops on it, the studio shows it.
@@ -181,7 +186,12 @@ class AutomationSecurity {
   // unconfirmed import: the default policy (CASUAL, no sites, the default
   // approvals and limits), sites_unconfirmed and changed_outside set, and
   // its run history cleared. Its steps, trigger, enabled flag, variables
-  // and name are kept, for the user to review.
+  // and name are kept, for the user to review, but not what the review
+  // doesn't show of a step and the runner would act on when the target
+  // shown misses: each step's description (the review's title for it; the
+  // runner's text anchor and recovery prompt too), selector_fallbacks,
+  // locators, and its extra "text" anchor and "ref_shot" picture are
+  // dropped. Clamping twice is clamping once.
   static void ClampUnvouched(Script& script);
 
   // Whether the scheduler may fire |script| unattended: enabled, its sites

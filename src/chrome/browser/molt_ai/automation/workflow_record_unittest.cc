@@ -9,8 +9,9 @@
 // gone dropped at load (not while set aside), moves copied first, the fire
 // time taken from the files only at seeding, set by writes (never back
 // below a past fire) and raised by fires (a fire recorded on a clock that
-// was ahead giving way), an entry restored exactly, and a session's writes
-// before configuration kept.
+// was ahead giving way) and by times passed while held for review, an
+// entry restored exactly, and a session's writes before configuration
+// kept.
 
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
 
@@ -464,7 +465,9 @@ TEST_F(WorkflowRecordTest, AFireRaisesTheFireTimeAndAWriteSetsIt) {
 // An earlier fire time written than the one recorded comes from a page
 // opened before that fire: the past fire is kept (else the next listing
 // would run it again). One recorded in the future (a snooze, a clock that
-// was ahead) gives way to it.
+// was ahead) gives way to it: a schedule saved afresh, counted from now (a
+// page's save that keeps the schedule never writes an earlier one:
+// AutomationStorage::SaveChecked()).
 TEST_F(WorkflowRecordTest, AnEarlierFireTimeWrittenKeepsAPastFire) {
   WorkflowRecord* record = Start(/*may_seed=*/false);
   const int64_t now = NowUnix();
@@ -474,7 +477,7 @@ TEST_F(WorkflowRecordTest, AnEarlierFireTimeWrittenKeepsAPastFire) {
   record->Set("a.molt", Digest('b'), now - 86400);
   EXPECT_TRUE(record->Vouches("a.molt", Digest('b')));
   EXPECT_EQ(record->LastFired("a.molt"), now - 60);
-  // A snooze, then a write from before it.
+  // A snooze, then an interval schedule saved afresh, counted from now.
   record->Set("a.molt", Digest('b'), now + 3600);
   EXPECT_EQ(record->LastFired("a.molt"), now + 3600);
   record->Set("a.molt", Digest('b'), now - 60);
@@ -483,6 +486,28 @@ TEST_F(WorkflowRecordTest, AnEarlierFireTimeWrittenKeepsAPastFire) {
   present_ = {"a.molt"};
   record = Start(/*may_seed=*/false);
   EXPECT_EQ(record->LastFired("a.molt"), now - 60);
+}
+
+// A time that passed while the file was held for review only raises the
+// fire time (it never ends a snooze, nor brings a fire down), and only of
+// an entry.
+TEST_F(WorkflowRecordTest, ATimePassedOnlyRaisesTheFireTime) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  record->Set("a.molt", Digest('a'), now - 7200);
+  EXPECT_TRUE(record->NotePassed("a.molt", now - 1800));
+  EXPECT_EQ(record->LastFired("a.molt"), now - 1800);
+  EXPECT_FALSE(record->NotePassed("a.molt", now - 3600));
+  EXPECT_EQ(record->LastFired("a.molt"), now - 1800);
+  record->Set("a.molt", Digest('a'), now + 3600);
+  EXPECT_FALSE(record->NotePassed("a.molt", now));
+  EXPECT_EQ(record->LastFired("a.molt"), now + 3600);
+  EXPECT_FALSE(record->NotePassed("none.molt", now));
+  EXPECT_EQ(record->LastFired("none.molt"), 0);
+  EXPECT_FALSE(record->Vouches("none.molt", Digest('a')));
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->LastFired("a.molt"), now + 3600);
 }
 
 // A fire recorded while the clock was ahead is the last fire only until

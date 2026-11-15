@@ -81,7 +81,8 @@ std::string SaveBlank(automation::Script script,
 // importScript: {success, script_id}. Never over a stored workflow: one of
 // its id is imported as "<id>-imported-<now_unix>" (or the first free id
 // after that); its stats start afresh, its trust CASUAL whatever it says,
-// and the audit log says "imported".
+// its schedule starts over (no last fire; an interval counted from
+// |now_unix|), and the audit log says "imported".
 base::DictValue ImportWorkflow(automation::Script script,
                                int64_t now_unix,
                                automation::AutomationStorage& storage);

@@ -514,6 +514,12 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
   Answer answer;
   if (request.new_workflow) {
     KeepPolicy(script, nullptr, request.recorded_here);
+    // Never fired here: its schedule starts over, whatever last fire the
+    // page sent (an import's, from its file: an earlier one would run it at
+    // once, a later one hold it back), an interval counted from now.
+    script.trigger.last_fired_unix = 0;
+    automation::CountIntervalFromNow(script.trigger,
+                                     base::Time::Now().ToTimeT());
     base::DictValue saved = SavedDict(script);
     // Never over another file, whatever is there by now.
     const std::optional<std::string> id = shared->SaveNew(std::move(script));

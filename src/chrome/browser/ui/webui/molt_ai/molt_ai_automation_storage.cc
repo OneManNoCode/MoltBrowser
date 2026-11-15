@@ -115,6 +115,11 @@ base::DictValue ImportWorkflow(Script script,
   // the JSON claims, CASUAL.
   script.stats = automation::Stats();
   AutomationSecurity::ClampTrustForSave(script, /*existing=*/nullptr);
+  // Nor has it fired here: its schedule starts over, whatever last fire the
+  // JSON gives (an earlier one would run it at once, a later one hold it
+  // back), an interval counted from the import.
+  script.trigger.last_fired_unix = 0;
+  automation::CountIntervalFromNow(script.trigger, now_unix);
   const std::optional<std::string> id = storage.SaveNew(std::move(script));
   if (id) {
     storage.AppendAudit(*id, "imported", "from_ui");

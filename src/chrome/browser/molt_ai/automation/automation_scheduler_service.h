@@ -9,8 +9,10 @@
 // The storage is read and changed on its sequences
 // (automation_shared_tasks.h), never on the UI thread. It loads the
 // workflow record (automation_storage.h) before anything else reads the
-// storage, fires only what may run unattended, and keeps each fire in the
-// record before the file (AutomationStorage::RecordFire()).
+// storage, and runs only what may run unattended, once its scheduler has
+// claimed the fire in the record, before the file (AutomationStorage::
+// ClaimFire()): each regular profile has one of these over the same
+// folder, and of them one runs a due workflow, in its own profile.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_SERVICE_H_
@@ -51,7 +53,8 @@ class AutomationSchedulerService : public KeyedService {
   // finishes on the storage's sequence. Wires the scheduler and starts it.
   void FinishStartOnUI(bool directory_ready);
 
-  // Default fire callback: route to background-or-foreground runner.
+  // Default fire callback, for a fire the scheduler claimed (recorded):
+  // route to background-or-foreground runner.
   void OnTriggerFired(const Script& script, base::Time fired_at);
 
   raw_ptr<Profile> profile_;

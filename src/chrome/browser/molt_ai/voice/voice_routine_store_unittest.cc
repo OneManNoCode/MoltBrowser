@@ -9,7 +9,8 @@
 // another profile's change nothing; a claim cut short at any point is
 // settled without giving anything to a profile (round 44); with the shared
 // storage's workflow record, a routine changed outside the browser is
-// claimed as a draft (workflow_record.h).
+// claimed as a draft (workflow_record.h), its steps described by the
+// browser as voice mode runs them.
 
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
 
@@ -717,6 +718,36 @@ TEST_F(VoiceRoutineStoreRecordTest,
   ASSERT_EQ(store.Summaries().size(), 1u);
   EXPECT_TRUE(store.Summaries()[0].needs_sites_confirmed);
   EXPECT_EQ(store.RecoverInterruptedClaims(), 0);
+}
+
+// Its steps are described by the browser, as voice mode runs them (their
+// extra["voice"]), so its review in the Agent studio shows that, never the
+// file's own words for them; a claim of it cut short is still recognised.
+TEST_F(VoiceRoutineStoreRecordTest, AChangedRoutinesStepsAreDescribedAsRun) {
+  BuiltRoutine built = BuildRoutine("voice_3", "my news", MyNews(), kNow);
+  ASSERT_TRUE(built.script);
+  for (automation::Step& step : built.script->steps) {
+    step.description = "Type \xE2\x80\x9Cweather\xE2\x80\x9D";
+  }
+  const std::string contents = built.script->ToJSONString();
+  ASSERT_TRUE(base::CreateDirectory(SharedDir()));
+  ASSERT_TRUE(
+      base::WriteFile(SharedDir().AppendASCII("voice_3.molt"), contents));
+  VoiceRoutineStore store = Profile1();
+  ASSERT_EQ(store.Claim({"voice_3"}).kept.size(), 1u);
+  std::optional<Script> moved = store.storage().Load("voice_3");
+  ASSERT_TRUE(moved);
+  EXPECT_TRUE(moved->security.changed_outside);
+  ASSERT_EQ(moved->steps.size(), 2u);
+  EXPECT_EQ(moved->steps[0].description, "Open YouTube");
+  EXPECT_EQ(moved->steps[1].description, "Search for news");
+  // Cut short after the profile's save: the set-aside file, read as a
+  // draft and described as the claim describes it, is the same routine.
+  const base::FilePath taken =
+      LeaveSetAside(SharedDir(), "voice_3", contents, base::Minutes(5));
+  EXPECT_TRUE(store.Unclaimed().empty());
+  EXPECT_FALSE(base::PathExists(taken));
+  EXPECT_EQ(store.Summaries().size(), 1u);
 }
 
 }  // namespace

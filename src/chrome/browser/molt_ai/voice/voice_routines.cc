@@ -1147,6 +1147,37 @@ BuiltRoutine BuildRoutine(std::string_view id,
   return out;
 }
 
+namespace {
+
+// |st|, a step of a routine, as voice mode runs it (ReadRoutine()):
+// nullopt when it isn't one voice mode can do.
+std::optional<RoutineStep> ReadRoutineStep(const Step& st) {
+  const base::DictValue* extra = st.extra.GetIfDict();
+  const base::DictValue* voice =
+      extra ? extra->FindDict(automation::kVoiceStepKey) : nullptr;
+  // The planner's step, as the web agent carried it out.
+  if (voice && voice->Find(kAgent)) {
+    return PlannerStepFromWorkflowStep(st);
+  }
+  std::optional<RoutineStep> step =
+      voice ? VoiceCommandFromDict(*voice) : std::nullopt;
+  if (!step || StepTypeFor(step->command.kind) != st.type) {
+    return std::nullopt;
+  }
+  if (step->command.kind == K::kOpenSite && !st.target.empty()) {
+    if (!ValidRoutineUrl(st.target)) {
+      return std::nullopt;
+    }
+    step->url = st.target;
+  }
+  if (const std::string* host = extra->FindString(automation::kStepHostKey)) {
+    step->host = HintHost(*host);
+  }
+  return step;
+}
+
+}  // namespace
+
 ReadRoutineResult ReadRoutine(const automation::Script& script) {
   ReadRoutineResult result;
   // Changed outside the browser (a routine from before profiles claimed as
@@ -1167,43 +1198,13 @@ ReadRoutineResult ReadRoutine(const automation::Script& script) {
     return result;
   }
   for (size_t i = 0; i < script.steps.size(); ++i) {
-    const Step& st = script.steps[i];
-    const std::string why =
-        Said(Language::kEnglish,
-             "Step {0} of this routine isn't one I can do by voice.",
-             {std::to_string(i + 1)});
-    const base::DictValue* extra = st.extra.GetIfDict();
-    const base::DictValue* voice =
-        extra ? extra->FindDict(automation::kVoiceStepKey) : nullptr;
-    // The planner's step, as the web agent carried it out.
-    if (voice && voice->Find(kAgent)) {
-      std::optional<RoutineStep> agent = PlannerStepFromWorkflowStep(st);
-      if (!agent) {
-        result.steps.clear();
-        result.why = why;
-        return result;
-      }
-      result.steps.push_back(std::move(*agent));
-      continue;
-    }
-    std::optional<RoutineStep> step =
-        voice ? VoiceCommandFromDict(*voice) : std::nullopt;
-    if (!step || StepTypeFor(step->command.kind) != st.type) {
+    std::optional<RoutineStep> step = ReadRoutineStep(script.steps[i]);
+    if (!step) {
       result.steps.clear();
-      result.why = why;
+      result.why = Said(Language::kEnglish,
+                        "Step {0} of this routine isn't one I can do by voice.",
+                        {std::to_string(i + 1)});
       return result;
-    }
-    if (step->command.kind == K::kOpenSite && !st.target.empty()) {
-      if (!ValidRoutineUrl(st.target)) {
-        result.steps.clear();
-        result.why = why;
-        return result;
-      }
-      step->url = st.target;
-    }
-    if (const std::string* host =
-            extra->FindString(automation::kStepHostKey)) {
-      step->host = HintHost(*host);
     }
     result.steps.push_back(std::move(*step));
   }
@@ -1211,6 +1212,20 @@ ReadRoutineResult ReadRoutine(const automation::Script& script) {
   result.needs_sites_confirmed = !RoutineSitesConfirmed(script);
   result.ok = true;
   return result;
+}
+
+void DescribeRoutineStepsAsRun(automation::Script& script) {
+  for (Step& st : script.steps) {
+    const base::DictValue* extra = st.extra.GetIfDict();
+    if (!extra || !extra->FindDict(automation::kVoiceStepKey)) {
+      continue;
+    }
+    // Not one voice mode can do (it refuses the routine): no title of the
+    // file's own.
+    std::optional<RoutineStep> step = ReadRoutineStep(st);
+    st.description =
+        step ? Capitalized(DescribeRoutineStep(*step)) : std::string();
+  }
 }
 
 bool RoutineSitesSayable(const std::vector<std::string>& sites) {

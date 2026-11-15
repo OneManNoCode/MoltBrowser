@@ -124,14 +124,15 @@ std::optional<Answer> AnswerInRoutines(const StudioPlaces& places,
 Answer AnswerInSharedStorage(const StudioPlaces& places,
                              const WorkflowRequest& request);
 
-// saveWorkflow: |script| from the page (its id given or made, its creation
-// time set). |recorded_here|: its id was made by stopRecording in this
-// panel and this is its first save (UI state, used up by the caller).
-// |new_workflow|: the page sent no id (a blank or imported workflow, or a
-// recording), so it is saved under the id made for it or a free one made
-// from it, never over another file. An id the page sent is of a workflow
-// it read: an edit, refused when that workflow is gone or unreadable by
-// the time it is saved (never saved as a new one). KindOfSave() decides.
+// saveWorkflow: |script| from the page (its id given or made, its creation time
+// set). |recorded_here|: its id was made by stopRecording in this panel and
+// this is its first save (UI state, used up by the caller). |new_workflow|: the
+// page sent no id (a blank or imported workflow, or a recording), so it is
+// saved under the id made for it or a free one made from it, never over another
+// file, its schedule starting over (no last fire, whatever the page sent; an
+// interval counted from then). An id the page sent is of a workflow it read: an
+// edit, refused when that workflow is gone or unreadable by the time it is
+// saved (never saved as a new one). KindOfSave() decides.
 struct SaveRequest {
   SaveRequest();
   ~SaveRequest();

@@ -304,6 +304,21 @@ void AutomationSecurity::ClampUnvouched(Script& script) {
   script.security.changed_outside = true;
   // Nor its history (it would suggest promotions it never earned here).
   script.stats = Stats();
+  // Nor what the review doesn't show of a step, which the runner would use
+  // when the target shown misses: its fallback selectors and locators, its
+  // text anchor, its picture of the recorded target, and its description
+  // (shown as the step's title, and a text anchor and a recovery prompt
+  // too). The review token is of what is left, so a confirmed workflow
+  // acts only on the targets the user saw.
+  for (Step& step : script.steps) {
+    step.description.clear();
+    step.selector_fallbacks.clear();
+    step.locators.reset();
+    if (base::DictValue* extra = step.extra.GetIfDict()) {
+      extra->Remove(kStepTextAnchorKey);
+      extra->Remove(kStepRefShotKey);
+    }
+  }
 }
 
 // static

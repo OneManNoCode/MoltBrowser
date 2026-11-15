@@ -9,7 +9,10 @@
 // round 45, a fresh id when every simple one is taken; and the workflow
 // record (workflow_record.h): a file is trusted only as far as this browser
 // wrote it, on every read and write path, with its last fire this
-// browser's own (never the file's), moves cut short, a browser ending
+// browser's own (never the file's; a stale page's save never moving it
+// back; a fire claimed once; a time passed while held recorded, not
+// written), what a review doesn't show of a changed file's steps dropped,
+// moves cut short, a browser ending
 // between a record change and its file change, the one-time seeding (a new
 // user data directory recorded at startup) and two browsers over one
 // directory.
@@ -790,6 +793,65 @@ TEST_F(AutomationStorageRecordTest,
   EXPECT_EQ(Bytes("wf_1"), bytes);
 }
 
+// What the review doesn't show of a step, which the runner acts on when
+// the target shown misses (its fallback selectors and locators, its text
+// anchor, its picture and its description), isn't loaded from a file
+// changed outside: what is reviewed, and confirmed, is what runs. A file
+// this browser wrote keeps them.
+TEST_F(AutomationStorageRecordTest, AChangedFilesHiddenStepFieldsAreDropped) {
+  Script script = Named("wf_1", "Prices");
+  Step click;
+  click.type = StepType::CLICK;
+  click.target = "#search_btn";
+  click.selector_fallbacks = {"#account button.danger"};
+  click.description = "Click \xE2\x80\x9CSearch\xE2\x80\x9D";
+  locators::StepLocators found;
+  found.origin = "https://news.example";
+  found.element = {"button", "", "button"};
+  locators::Locator role;
+  role.by = locators::By::kRole;
+  role.role = "button";
+  role.value = "Delete account";
+  found.list = {role};
+  click.locators = found;
+  base::DictValue extra;
+  extra.Set(kStepHostKey, "news.example");
+  extra.Set(kStepTextAnchorKey, "Delete account");
+  extra.Set(kStepRefShotKey, "data:image/png;base64,AAAA");
+  click.extra = base::Value(std::move(extra));
+  script.steps.push_back(std::move(click));
+  ASSERT_TRUE(storage().Save(script));
+  std::optional<Script> vouched = Load("wf_1");
+  ASSERT_TRUE(vouched);
+  ASSERT_FALSE(vouched->security.changed_outside);
+  ASSERT_EQ(vouched->steps.size(), 2u);
+  EXPECT_EQ(vouched->steps[1].selector_fallbacks.size(), 1u);
+  EXPECT_TRUE(vouched->steps[1].locators);
+  EXPECT_FALSE(vouched->steps[1].description.empty());
+
+  // Renamed by another program: changed outside.
+  EditRaw("wf_1", [](base::DictValue& d) { d.Set("name", "Prices, changed"); });
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(IsClamped(*loaded));
+  ASSERT_EQ(loaded->steps.size(), 2u);
+  const Step& shown = loaded->steps[1];
+  EXPECT_EQ(shown.target, "#search_btn");
+  EXPECT_TRUE(shown.selector_fallbacks.empty());
+  EXPECT_FALSE(shown.locators);
+  EXPECT_TRUE(shown.description.empty());
+  ASSERT_TRUE(shown.extra.is_dict());
+  EXPECT_FALSE(shown.extra.GetDict().Find(kStepTextAnchorKey));
+  EXPECT_FALSE(shown.extra.GetDict().Find(kStepRefShotKey));
+  EXPECT_EQ(*shown.extra.GetDict().FindString(kStepHostKey), "news.example");
+  // A listing the same; the file as it was.
+  std::vector<Script> all = storage().ListAll();
+  ASSERT_EQ(all.size(), 1u);
+  ASSERT_EQ(all[0].steps.size(), 2u);
+  EXPECT_TRUE(all[0].steps[1].selector_fallbacks.empty());
+  EXPECT_EQ(Raw("wf_1")->steps[1].selector_fallbacks.size(), 1u);
+}
+
 TEST_F(AutomationStorageRecordTest, EverySecurityFieldChangedOutsideIsCaught) {
   using Edit = void (*)(base::DictValue&);
   const std::pair<const char*, Edit> kEdits[] = {
@@ -985,6 +1047,91 @@ TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsTheLastFire) {
   EXPECT_EQ(loaded->trigger.last_fired_unix, now - 60);
   Restart(/*may_seed=*/false);
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now - 60);
+}
+
+// A page's save that keeps the schedule never moves its last fire back:
+// opened before a Snooze, its earlier last fire doesn't end the snooze. A
+// later one (a Snooze, a Skip) is written as it is, and so is the last
+// fire of a schedule of its own.
+TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsASnooze) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 600));
+  std::optional<Script> page = Load("wf_1");
+  ASSERT_TRUE(page);
+  ASSERT_EQ(page->trigger.last_fired_unix, now - 600);
+  // molt://ai-automation's Snooze.
+  ASSERT_TRUE(storage().Update("wf_1", [now](Script& script) {
+    script.trigger.last_fired_unix = now + 3600;
+    return true;
+  }));
+  auto any = [](const Script* stored, Script&) { return stored != nullptr; };
+  page->name = "Prices, renamed";
+  ASSERT_TRUE(storage().SaveChecked(std::move(*page), any));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->name, "Prices, renamed");
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, now + 3600);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, now + 3600);
+  // A later one: as it is.
+  loaded->trigger.last_fired_unix = now + 7200;
+  ASSERT_TRUE(storage().SaveChecked(std::move(*loaded), any));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now + 7200);
+  // A schedule of its own (every half hour, from now): as it is.
+  std::optional<Script> rescheduled = Load("wf_1");
+  ASSERT_TRUE(rescheduled);
+  rescheduled->trigger.expression = "1800";
+  rescheduled->trigger.last_fired_unix = now;
+  ASSERT_TRUE(storage().SaveChecked(std::move(*rescheduled), any));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now);
+}
+
+// The scheduler claims a fire before it runs it, only while the last fire
+// it read is still the record's: of two profiles' schedulers that read it
+// due, one runs it; nor is one snoozed since it was read, or one without
+// an entry, claimed.
+TEST_F(AutomationStorageRecordTest, AFireIsClaimedOnce) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 7200));
+  const int64_t read = Load("wf_1")->trigger.last_fired_unix;
+  ASSERT_EQ(read, now - 7200);
+  EXPECT_TRUE(storage().ClaimFire("wf_1", now, read));
+  EXPECT_FALSE(storage().ClaimFire("wf_1", now + 1, read));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, now);
+  // Snoozed since it was read.
+  ASSERT_TRUE(storage().Update("wf_1", [now](Script& script) {
+    script.trigger.last_fired_unix = now + 3600;
+    return true;
+  }));
+  EXPECT_FALSE(storage().ClaimFire("wf_1", now + 60, now));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now + 3600);
+  // Planted: no entry, never claimed.
+  Plant("wf_2", Hourly("wf_2"));
+  EXPECT_FALSE(storage().ClaimFire("wf_2", now, 0));
+  EXPECT_EQ(Raw("wf_2")->trigger.last_fired_unix, 0);
+}
+
+// A time that passed while a workflow was held for review is recorded as
+// passed: the record's last fire only ever rises, across a restart too,
+// and the file isn't written (it didn't run).
+TEST_F(AutomationStorageRecordTest, ATimePassedWhileHeldIsRecordedNotWritten) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 7200));
+  EXPECT_TRUE(storage().RecordPassed("wf_1", now - 1800));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now - 1800);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, now - 7200);
+  EXPECT_FALSE(storage().RecordPassed("wf_1", now - 3600));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now - 1800);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now - 1800);
+  Plant("wf_2", Hourly("wf_2"));
+  EXPECT_FALSE(storage().RecordPassed("wf_2", now));
 }
 
 // Two user data dirs over one folder each keep their own last fire: one's

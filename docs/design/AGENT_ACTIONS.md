@@ -2258,15 +2258,15 @@ out of it; this section is about everything else.
 | File | What |
 |---|---|
 | `automation/workflow_record.{h,cc}` (`:workflow_record`, base only) | the record: load, one-time seeding, checks, persistence |
-| `automation/automation_storage.{h,cc}` | every read checked (`Vetted()`), every write recorded, `PrepareRecord()`, `UpdateBookkeeping()`, `RecordFire()` |
-| `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()`, `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()` |
+| `automation/automation_storage.{h,cc}` | every read checked (`Vetted()`), every write recorded, `PrepareRecord()`, `UpdateBookkeeping()`, `RecordFire()`, `ClaimFire()`, `RecordPassed()` |
+| `automation/automation_security.{h,cc}` | `SecurityDigest()`, `DigestAsStored()`, `ClampUnvouched()` (also drops what the review doesn't show of a step), `MayFireUnattended()`, `MayRunAsChild()`, `ReviewMessage()` |
 | `automation/automation_script.*` | `SecurityPolicy::changed_outside` (wording only; stored only when true); `CountIntervalFromNow()` |
 | `automation/automation_record_startup.{h,cc}` | configures the record, and posts its first load, when the first profile is created |
-| `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; `RecordFire()` |
+| `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; each fire claimed in the record before it runs (`ClaimFire()`); times passed while held for review not caught up (`RecordPassed()`) |
 | `automation/automation_runner.cc` | a refused run keeps no stats; stats through `UpdateBookkeeping()`; `RUN_SCRIPT` refuses a child that needs review |
-| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel, the badge and banner; which saves are new (`KindOfSave()`) |
-| `ui/webui/molt_ai/molt_ai_automation_storage.cc`, `molt_ai_automation_ui.cc` | trust refused with the reason, no promotion suggestion for a draft, the badge |
-| `voice/voice_routines.cc`, `voice/voice_routine_store.cc` | a routine changed outside is neither run nor confirmed by voice |
+| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel, the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over) |
+| `ui/webui/molt_ai/molt_ai_automation_storage.cc`, `molt_ai_automation_ui.cc` | trust refused with the reason, no promotion suggestion for a draft, the badge; an import's schedule starts over |
+| `voice/voice_routines.cc`, `voice/voice_routine_store.cc` | a routine changed outside is neither run nor confirmed by voice, and is claimed with its steps described by the browser (`DescribeRoutineStepsAsRun()`) |
 
 #### 3.6.1 The record
 
@@ -2290,15 +2290,19 @@ produce an entry.
   version doesn't match, so a rollback needs a review); and `fired` (left
   out when 0), the `trigger.last_fired_unix` it wrote there (a cron
   schedule saved afresh writes 0, so it starts over; an interval one the
-  studio writes counts from then, §3.6.5) or a later fire its scheduler
-  recorded (`RecordFire()`, on its own clock). `fired` is the **only**
-  last fire this browser schedules by (§3.6.3); no fire time read from a
-  file is ever recorded, except at seeding (§3.6.4). A write of an earlier
-  nonzero fire time than a past one recorded (a page opened before that
-  fire) leaves that fire as it is; only one still in the future (a snooze,
-  a clock that was ahead) gives way to it. A fire recorded more than 5
-  minutes after the one the scheduler makes now (on a clock that was
-  ahead) comes down to it (`NoteFired()`).
+  studio writes counts from then, §3.6.5; a new workflow, an import
+  included, starts over) or a later fire its scheduler recorded
+  (`ClaimFire()`/`RecordFire()`, on its own clock), or a later time that
+  passed while the file was held for review (`NotePassed()`, §3.6.5).
+  `fired` is the **only** last fire this browser schedules by (§3.6.3);
+  no fire time read from a file is ever recorded, except at seeding
+  (§3.6.4). A write of an earlier nonzero fire time than a past one
+  recorded (a page opened before that fire) leaves that fire as it is;
+  only one still in the future (a snooze, a clock that was ahead) gives
+  way to it (a schedule saved afresh, counted from now: a page's save
+  that keeps the schedule never writes an earlier one, §3.6.3). A fire
+  recorded more than 5 minutes after the one the scheduler makes now (on
+  a clock that was ahead) comes down to it (`NoteFired()`).
 - `directory` is the folder it covers; another one means "start empty".
   `origin` (`seeded`, `fresh`, `after_loss`, `after_corrupt`,
   `other_directory`) is informational.
@@ -2365,7 +2369,8 @@ that.
   file the record doesn't vouch for is clamped by `ClampUnvouched()` (the
   default policy: CASUAL, no sites, the default approvals and limits;
   `sites_unconfirmed` and `changed_outside` set; its stats cleared; its
-  steps, trigger, enabled flag, variables and name kept for the review).
+  steps, trigger, enabled flag, variables and name kept for the review,
+  less what the review doesn't show of a step, §3.6.6).
   `trigger.last_fired_unix` (bookkeeping, outside the digest) is this
   browser's own: the record's `fired` (`WorkflowRecord::LastFired()`),
   whether or not the record vouches for the file (a clamped one doesn't
@@ -2378,12 +2383,17 @@ that.
   browser-made write sets `fired` to what it wrote when that is later, or
   0: molt://ai-automation's Snooze and Skip (a fire time in the future)
   hold, and a schedule saved afresh starts over with no catch-up run (this
-  also clears a fire time recorded on a clock that was ahead). An earlier
-  nonzero one comes from a page opened before the last fire (a card never
-  refreshed, an editor): the past fire is kept, so that save forces no
-  second run; it replaces only a fire time still in the future. The next
-  fire after one recorded on a clock that was ahead brings it down, so
-  catch-up runs resume. Every caller gets this with no change of its own:
+  also clears a fire time recorded on a clock that was ahead). A page's
+  save that keeps the stored schedule (`SaveChecked()`: the Agent
+  studio's editor, molt://ai-automation; same type, expression, time zone
+  and end) never moves the last fire back: an earlier nonzero one there
+  comes from a page opened before the last fire, Snooze or Skip (a card
+  never refreshed, an editor, a second tab), and the stored one is
+  written instead, so that save forces no second run and ends no snooze.
+  Any other earlier nonzero write (a schedule saved afresh, counted from
+  now) keeps a past fire, and replaces only one still in the future. The
+  next fire after one recorded on a clock that was ahead brings it down,
+  so catch-up runs resume. Every caller gets this with no change of its own:
   the scheduler, the run window, `RUN_SCRIPT`, the Agent studio,
   molt://ai-automation, voice mode's claims.
 - **A save in progress is never a change.** Reads take no lock; one that
@@ -2402,8 +2412,12 @@ that.
   (reads the file as it is, never clamped; writes only if the digest of the
   bytes it writes is unchanged; leaves the record as it was) and
   `RecordFire()` (raises the record's `fired` to the scheduler's own fire
-  time first, then that). Never `Update()`: a run in one browser leaves
-  another browser's record intact, and a refused run writes nothing.
+  time first, then that); the scheduler's fires go through `ClaimFire()`
+  (`RecordFire()` only while the record's `fired` is still the last fire
+  the scheduler read, §3.6.5), and a time that passed while the file was
+  held for review through `RecordPassed()` (the record only: it didn't
+  run). Never `Update()`: a run in one browser leaves another browser's
+  record intact, and a refused run writes nothing.
 - A storage of its own directory (a profile's voice routines) has no record
   and loads its files as they are, their last fire times included.
 
@@ -2443,16 +2457,28 @@ next time (the same rule); after, it is final.
 
 - **Scheduler:** `MayFireUnattended()` (enabled, sites confirmed, not a voice
   routine) at listing and again on the timer's reload; the service refuses
-  a fire otherwise (`scheduled_fire_refused` in the audit log) and records
-  one with `RecordFire()`. A catch-up's next fire counts from the catch-up
-  (from the stale last fire, an interval's would be overdue and its timer
-  would fire it again), and a timer's reload fires a cron or interval
-  workflow only while it is still due after its last fire as read then
-  (not fired or snoozed here since it was listed: by a catch-up, a
-  Snooze), so an overdue workflow runs once. A cron workflow whose last fire is still
-  in the future (a clock that was ahead) still fires on its timer, which
-  records the real time. The scheduler is its own base-only target now
-  (`:scheduler`), unit tested.
+  a fire otherwise (`scheduled_fire_refused` in the audit log). A fire is
+  claimed before it runs: `ClaimFire()`, on the change sequence, records
+  it (`RecordFire()`) only while the record's `fired` is still the last
+  fire the scheduler read when it found it due, and the run starts only
+  then. Each regular profile has a scheduler over the one folder and
+  record, so of this browser's profiles one runs a due workflow, in its
+  own profile; the others find it fired. A catch-up's next fire counts
+  from the catch-up (from the stale last fire, an interval's would be
+  overdue and its timer would fire it again), and a timer's reload fires
+  a cron or interval workflow only while it is still due after its last
+  fire as read then (not fired or snoozed here since it was listed: by a
+  catch-up, a Snooze), so an overdue workflow runs once. A cron workflow
+  whose last fire is still in the future (a clock that was ahead) still
+  fires on its timer, which records the real time. **Held, then put
+  back:** a workflow a listing (or its timer's reload) found held for
+  review that a later listing finds the browser's own again had its file
+  put back exactly as the browser last wrote it, at a moment whatever put
+  it back chose. A time of its that passed meanwhile isn't caught up
+  (that would run it at that moment): it is recorded as passed
+  (`RecordPassed()`: an interval's last time due, its phase kept; a
+  cron's, now), and it fires at its next time. The scheduler is its own
+  base-only target now (`:scheduler`), unit tested.
 - **Runner:** refuses an unconfirmed workflow with `ReviewMessage()`
   (`run_refused | changed_outside`), keeping no stats; writes stats with
   `UpdateBookkeeping()`; a `RUN_SCRIPT` child must pass `MayRunAsChild()`,
@@ -2481,7 +2507,10 @@ next time (the same rule); after, it is final.
   it a draft). A recording whose first save fails keeps its id for the next
   try. The editor saves one at a time: a second save (a double click, Save
   then Run) waits for the first and is an edit under the id it was given,
-  never a second new workflow. The schedule sheet's save answers with the
+  never a second new workflow. A new workflow's schedule starts over:
+  whatever last fire the page sent (an import's, from its file: long past,
+  it would run at once; far ahead, never) is dropped, and an interval
+  counts from the save. The schedule sheet's save answers with the
   trigger as saved, which the editor keeps for its next save (the sheet's
   own "daily" and "30m" aren't triggers: saved from the editor, they
   dropped or broke the schedule). A saved interval is shown in hours or
@@ -2497,7 +2526,9 @@ next time (the same rule); after, it is final.
   counts an interval with none from each listing, so it would never fire.
 - **molt://ai-automation:** a badge ("Changed outside MoltBrowser — review
   it in Agent mode"), trust refused with that reason, no promotion
-  suggestion for any draft (a file's history proves nothing).
+  suggestion for any draft (a file's history proves nothing). An import
+  starts its schedule over (no last fire from the JSON; an interval
+  counted from the import), as in the studio.
 - **Voice mode:** a routine from before profiles that was changed outside
   is claimed as a draft (its file in the profile keeps `changed_outside`);
   a claim of one cut short is still recognised (clamped against clamped).
@@ -2505,14 +2536,33 @@ next time (the same rule); after, it is final.
   `VoiceRoutineStore::ConfirmSites()`): "This routine was changed outside
   MoltBrowser. Review it in Agent mode first." Its voice confirmation
   speaks the sites only, so the steps would never have been shown; the
-  Agent studio confirms it with the review token, as any other.
+  Agent studio confirms it with the review token, as any other. What
+  voice mode runs of a step is its `extra["voice"]` (the text it types,
+  the words it chooses, what and where it searches), which the studio
+  doesn't show; it shows the step's description. So the claim describes
+  each voice step itself, `DescribeRoutineStepsAsRun()`:
+  `Capitalized(DescribeRoutineStep())` of the step as `ReadRoutine()`
+  reads it (empty for one voice mode can't do), never the file's words;
+  the token is then of a title that says what voice mode would do. The
+  recovery of a claim cut short describes the set-aside file the same way
+  before it compares.
 
 #### 3.6.6 Re-approval
 
 1. The editor shows the clamped workflow: its steps, its schedule (as
    text), the sites its steps target, and a **review token**:
    `SecurityDigest()` of what is shown (`reviewToken`; a save of the draft
-   answers with the new one). The token is of what is stored, so the page
+   answers with the new one). What the editor doesn't show of a step, and
+   the runner acts on when the target shown misses, isn't kept by the
+   clamp (`ClampUnvouched()`): its `selector_fallbacks` and `locators`
+   (the editor names a locator's kind, not its value), its `extra.text`
+   anchor, its `extra.ref_shot` picture (shown as the recorded target) and
+   its description (the editor's title for the step; the runner's text
+   anchor and recovery prompt too). So the token, and what a confirmation
+   saves, are of what is shown: a confirmed workflow acts only on the
+   targets the user saw (an element that moved since needs the step
+   recorded again). A voice routine's steps are titled by the browser at
+   its claim (§3.6.5). The token is of what is stored, so the page
    confirms only while the editor shows what is saved: with edits not
    saved yet (a step deleted, a field changed), "Confirm" saves them
    first, then shows the sites the saved steps target, with the new
@@ -2543,6 +2593,8 @@ The token is required for an AI draft's confirmation too.
 Each user data directory (an installed and a portable browser, two
 channels) has its own record and seeds at its own first start of this
 version. Runs in one (stats, fire times) leave the other's record intact.
+(The profiles of one browser share its record: a fire is claimed in it,
+so one of their schedulers runs it, §3.6.5.)
 
 **Each runs its own schedules.** A browser's last fire of a workflow is
 its own (§3.6.3): a run, Snooze or Skip in one is written into the file,
@@ -2566,11 +2618,11 @@ cached first-run and Local State state; no I/O there: it posts the
 record's first load to the shared storage's change sequence
 (BLOCK_SHUTDOWN). All record I/O happens in `AutomationStorage` calls on
 the sequences that already block (the shared storage's change and read
-sequences, a profile's routines sequence). Every
-change of the record (load, `Set`, `NoteFired`, `Copy`, `Forget`,
-`Restore`, its write) runs under the directory's change scope (its lock,
-then its lock file), ordered before the file change it mirrors (§3.6.1),
-so the record's writes are one at a time, in the order of the changes.
+sequences, a profile's routines sequence). Every change of the record
+(load, `Set`, `NoteFired`, `NotePassed`, `Copy`, `Forget`, `Restore`, its
+write) runs under the directory's change scope (its lock, then its lock
+file), ordered before the file change it mirrors (§3.6.1), so the
+record's writes are one at a time, in the order of the changes.
 Readers (`Vouches()`, `LastFired()`, `EntryOf()`) only read, under the
 record's own lock, the innermost (directory lock, then lock file, then the
 record's lock; the registry's lock is never held with it), and never
@@ -2583,8 +2635,9 @@ directory lock isn't recursive).
 - Write workflows only through `AutomationStorage`, with the shared
   directory exactly as `AutomationStorage::SharedDirectory()` gives it (the
   record is kept by that path).
-- Bookkeeping goes through `UpdateBookkeeping()` and `RecordFire()`, never
-  `Update()`.
+- Bookkeeping goes through `UpdateBookkeeping()` and `RecordFire()` (the
+  scheduler's fires through `ClaimFire()`, and a time passed while held
+  for review through `RecordPassed()`), never `Update()`.
 - A `check` / `change` callback sees the workflow as checked against the
   record and must not use a storage.
 - Tests of the shared storage use `ScopedWorkflowRecordForTesting`
@@ -2608,42 +2661,49 @@ All in `molt_ai_unittests` except the last item:
   seeded entry's fire time the file's at the upgrade, never a later one; a
   fire raising `fired` and a write setting it; an earlier fire time
   written keeping a past fire (one in the future gives way); a fire
-  recorded while the clock was ahead giving way to the next; an entry
+  recorded while the clock was ahead giving way to the next; a time
+  passed while held for review only raising the fire time; an entry
   restored exactly; writes before configuration kept.
 - `automation/automation_security_unittest.cc`: the digest ignores only
   bookkeeping, covers every other field (table-driven), survives the file
   round trip (large times, doubles and nested values, U+2028; a file with
   invalid UTF-8 doesn't parse) and the scrub; the clamp is an unconfirmed
-  import; the predicates; `changed_outside` cleared by a confirm and
-  carried by a save; the review message.
+  import, and drops what the review doesn't show of a step (fallback
+  selectors, locators, text anchor, picture, description; twice is once);
+  the predicates; `changed_outside` cleared by a confirm and carried by a
+  save; the review message.
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
   when it is written (`CountIntervalFromNow()`).
-- `automation/automation_storage_unittest.cc` (`AutomationStorageRecordTest`):
-  a planted file loads clamped through `Load()` and `ListAll()`, unchanged
-  on disk; every security field changed outside is caught; bookkeeping may
-  change outside, a last fire written there included, which isn't this
-  browser's; an earlier last fire written outside never believed (fired
-  here or not, seeded or saved), nor a later one (kept in the file by
-  bookkeeping, never recorded, across a restart too); a schedule saved
-  afresh starting over; a stale page's save keeping the last fire; each
-  user data directory keeping its own last fire (the other's run and save
-  move nothing); a fire on a clock that was ahead giving way to the next;
-  a hand copy, a rollback and a deleted file put back aren't vouched for,
-  nor the old file after a browser ends between the record change and the
-  file change (a write, a deletion); a failed write leaves the record as it was; every
-  write path vouches; writes never launder an unvouched read;
-  `SetTrustLevel()` refuses a review;
+- `automation/automation_storage_unittest.cc`
+  (`AutomationStorageRecordTest`): a planted file loads clamped through
+  `Load()` and `ListAll()`, unchanged on disk; a changed file's hidden step
+  fields aren't loaded (a vouched one keeps them); every security field
+  changed outside is caught; bookkeeping may change outside, a last fire
+  written there included, which isn't this browser's; an earlier last fire
+  written outside never believed (fired here or not, seeded or saved), nor a
+  later one (kept in the file by bookkeeping, never recorded, across a
+  restart too); a schedule saved afresh starting over; a stale page's save
+  keeping the last fire, and a Snooze (a later write, or a schedule of its
+  own, written as it is); a fire claimed once (not once fired, snoozed
+  since, or without an entry); a time passed while held recorded, not
+  written, only ever later; each user data directory keeping its own last
+  fire (the other's run and save move nothing); a fire on a clock that was
+  ahead giving way to the next; a hand copy, a rollback and a deleted file
+  put back aren't vouched for, nor the old file after a browser ends between
+  the record change and the file change (a write, a deletion); a failed
+  write leaves the record as it was; every write path vouches; writes never
+  launder an unvouched read; `SetTrustLevel()` refuses a review;
   `UpdateBookkeeping()` keeps the verdict and refuses security changes;
   `RecordFire()` keeps the floor when the file can't be written; the scrub
-  rewrite keeps the verdict; moves carry it; a move cut short on either
-  side of its rename is vouched for once put back; finishing a move
-  forgets it; reads never see a save in progress as a change (two
-  threads); two user data dirs over one folder; seeding keeps every legacy
-  workflow as it was (and skips a link); a new user data directory is
-  recorded at startup even when nothing is read, so a later start doesn't
-  seed; a directory without a record is unchanged; the real shared folder
-  without configuration fails closed.
+  rewrite keeps the verdict; moves carry it; a move cut short on either side
+  of its rename is vouched for once put back; finishing a move forgets it;
+  reads never see a save in progress as a change (two threads); two user
+  data dirs over one folder; seeding keeps every legacy workflow as it was
+  (and skips a link); a new user data directory is recorded at startup even
+  when nothing is read, so a later start doesn't seed; a directory without a
+  record is unchanged; the real shared folder without configuration fails
+  closed.
 - `automation/automation_scheduler_unittest.cc` (mock time, set to a fixed
   wall time first: mock time starts at the epoch plus the host's uptime, so
   a time hours back would be negative on a host just booted): a vouched
@@ -2658,12 +2718,20 @@ All in `molt_ai_unittests` except the last item:
   own last fire calls for runs); a Snooze saved here holds for the whole
   snooze; a restart keeps the recorded fire (a daily workflow of a browser
   restarted every eight hours runs a day after its own last fire); a
-  schedule saved afresh forces no catch-up and fires an interval later.
+  schedule saved afresh forces no catch-up and fires an interval later;
+  two profiles' schedulers over one folder run a due workflow once (a
+  catch-up, then a timer); a workflow held for review across five of its
+  times and put back exactly isn't caught up then, and runs at its next
+  time, its phase kept; a stale page's save keeps a Snooze (no catch-up
+  during it).
 - `voice/voice_routine_store_unittest.cc`: a routine changed outside is
-  claimed as a draft, which voice mode neither runs nor confirms; a
-  vouched one as it was; a claim of a changed one cut short is still
-  recognised. `voice/voice_routines_unittest.cc`: `ReadRoutine()` refuses
-  a routine changed outside until it is confirmed.
+  claimed as a draft, which voice mode neither runs nor confirms, its
+  steps described by the browser (not the file's words), a claim of it cut
+  short still recognised; a vouched one as it was.
+  `voice/voice_routines_unittest.cc`: `ReadRoutine()` refuses a routine
+  changed outside until it is confirmed; `DescribeRoutineStepsAsRun()`
+  titles each voice step (the planner's included) as voice mode runs it,
+  leaves other steps alone and clears one voice mode can't do.
 - `ui/webui/molt_ai/molt_ai_agent_storage_unittest.cc`: shown for review
   with a token; neither run, scheduled nor trusted; confirming vouches for
   the reviewed content at CASUAL (then Trust works); refused when the file
@@ -2675,10 +2743,16 @@ All in `molt_ai_unittests` except the last item:
   file; an interval schedule counts from when it is written (Schedule,
   Confirm); a schedule is answered as saved, and an edit with that trigger
   keeps it; a confirmed change starts its schedule over (cron and
-  interval) and is answered with that trigger, which an edit then keeps.
+  interval) and is answered with that trigger, which an edit then keeps;
+  a confirmed change runs only on the targets shown (no fallback
+  selectors, text anchor, picture or description of the file's, in the
+  page or the saved file); a new workflow starts its schedule over (a cron
+  import's long-past last fire, an interval's in 2100); an editor opened
+  before a Snooze keeps it.
 - `ui/webui/molt_ai/molt_ai_automation_storage_unittest.cc`: trust refused
   with the reason; a save keeps it a draft; an import is vouched for at
-  CASUAL.
+  CASUAL, and starts its schedule over (no last fire from the JSON, an
+  interval counted from the import).
 - `molt_automation_script_fuzzer`: the digest is empty or 64 hex digits and
   what a reader of the saved file computes; a clamped workflow is CASUAL
   with no sites and may neither fire nor run as a child.
@@ -2719,14 +2793,22 @@ All in `molt_ai_unittests` except the last item:
   record; it could already drive the browser.
 - **Existing gaps left as they are** (separate changes): imports keep the
   file's `require_approval_for` and limits; imported scheduled workflows
-  fire at CASUAL right away; the chat's watcher is saved at APPROVED
-  without a click; an interval schedule molt://ai-automation saves with no
-  last fire still never fires (the scheduler counts it from each listing;
-  the studio's and the chat's page watcher's now count from when they are
-  written); molt://ai-automation's Snooze and Skip don't hold back a cron
-  schedule's timer in any browser; the studio's schedule sheet saves an
-  interval of at least a minute, so one under a minute (molt://ai-automation
-  allows 10 seconds) saved there becomes a minute.
+  fire at CASUAL, from their next time (an import's schedule starts over);
+  the chat's watcher is saved at APPROVED without a click; an interval
+  schedule molt://ai-automation saves with no last fire still never fires
+  (the scheduler counts it from each listing; the studio's and the chat's
+  page watcher's now count from when they are written);
+  molt://ai-automation's Snooze and Skip don't hold back a cron schedule's
+  timer in any browser; the studio's schedule sheet saves an interval of at
+  least a minute, so one under a minute (molt://ai-automation allows 10
+  seconds) saved there becomes a minute.
+- **A confirmed change keeps only what the review showed** of each step:
+  the file's fallback selectors and locators, text anchor and description
+  are gone, so a step whose element moved since needs recording again.
+  Showing them for review instead would keep them.
+- **A workflow put back just before its time**, with no listing between
+  (the heartbeat lists every minute), is taken for one held across that
+  time, which is then skipped, not run.
 - **A scheduled workflow runs in each browser that vouches for it** when
   two user data directories share the folder (§3.6.7): each keeps its own
   last fire. Running it in one only would need a fire time both can trust,
@@ -2746,15 +2828,19 @@ All in `molt_ai_unittests` except the last item:
 > run, isn't run on its schedule, and no other workflow can run it until you
 > open it in Agent mode, check its steps, sites and schedule, and click
 > **Confirm**. It then starts as Casual; trust it again with **Trust** (or
-> in molt://ai-automation for Trusted or Admin). Your existing workflows are
-> kept exactly as they are the first time you start this version. Run
-> history and the last time a schedule ran don't count as changes. If you
-> use two copies of MoltBrowser with different profile folders, each runs
-> scheduled workflows on its own schedule, so a scheduled workflow can run
-> in both, and snoozing or skipping a run in one doesn't change the other;
-> a change to a workflow's steps, sites, trust or schedule in one needs one
-> review in the other. If MoltBrowser's profile folder is reset or
-> replaced, every workflow needs one review.
+> in molt://ai-automation for Trusted or Admin). Confirming keeps only what
+> the review shows of each step: other ways the file gave of finding an
+> element on the page are dropped, so a step may need recording again if its
+> page has changed. Your existing workflows are kept exactly as they are the
+> first time you start this version. Run history and the last time a
+> schedule ran don't count as changes, and an imported workflow's schedule
+> starts afresh from the import. If you use two copies of MoltBrowser with
+> different profile folders, each runs scheduled workflows on its own
+> schedule, so a scheduled workflow can run in both, and snoozing or
+> skipping a run in one doesn't change the other; a change to a workflow's
+> steps, sites, trust or schedule in one needs one review in the other. If
+> MoltBrowser's profile folder is reset or replaced, every workflow needs
+> one review.
 
 ## 4. The AI chat's page actions
 

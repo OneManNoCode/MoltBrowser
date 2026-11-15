@@ -854,6 +854,114 @@ TEST_F(AgentStudioStorageTest, AnIntervalScheduleCountsFromWhenItIsWritten) {
   EXPECT_GE(stored->trigger.last_fired_unix, before);
 }
 
+// The review of a file changed outside shows each step's type, target and
+// value, not the file's fallback selectors, locators, text anchor, picture
+// or description, which the runner would act on when the target shown
+// misses: the page gets none of them, and the workflow confirmed with the
+// token of what it showed has none.
+TEST_F(AgentStudioStorageTest, AConfirmedChangeRunsOnlyOnTheTargetsShown) {
+  UseRecord();
+  Script planted = Claiming("wf_1");
+  Step click;
+  click.type = StepType::CLICK;
+  click.target = "#search_btn";
+  click.selector_fallbacks = {"#account button.danger"};
+  click.description = "Click \xE2\x80\x9CSearch\xE2\x80\x9D";
+  base::DictValue extra;
+  extra.Set(automation::kStepHostKey, "news.example");
+  extra.Set(automation::kStepTextAnchorKey, "Delete account");
+  extra.Set(automation::kStepRefShotKey, "data:image/png;base64,AAAA");
+  click.extra = base::Value(std::move(extra));
+  planted.steps.push_back(std::move(click));
+  Plant(planted);
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  std::optional<Script> shown = Script::FromJSON(get.out);
+  ASSERT_TRUE(shown);
+  ASSERT_EQ(shown->steps.size(), 2u);
+  EXPECT_EQ(shown->steps[1].target, "#search_btn");
+  EXPECT_TRUE(shown->steps[1].selector_fallbacks.empty());
+  EXPECT_TRUE(shown->steps[1].description.empty());
+  ASSERT_TRUE(shown->steps[1].extra.is_dict());
+  EXPECT_FALSE(
+      shown->steps[1].extra.GetDict().Find(automation::kStepTextAnchorKey));
+  EXPECT_FALSE(
+      shown->steps[1].extra.GetDict().Find(automation::kStepRefShotKey));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.sites = {"news.example"};
+  confirm.review_token = *get.out.FindString("reviewToken");
+  ASSERT_EQ(Ask(confirm).out.FindBool("ok"), true);
+  // What is stored, and runs.
+  std::optional<Script> stored = Script::FromJSONString(Bytes("wf_1"));
+  ASSERT_TRUE(stored);
+  ASSERT_EQ(stored->steps.size(), 2u);
+  EXPECT_EQ(stored->steps[1].target, "#search_btn");
+  EXPECT_TRUE(stored->steps[1].selector_fallbacks.empty());
+  EXPECT_FALSE(stored->steps[1].locators);
+  EXPECT_TRUE(stored->steps[1].description.empty());
+  EXPECT_EQ(Bytes("wf_1").find("Delete account"), std::string::npos);
+  EXPECT_FALSE(Shared().Load("wf_1")->security.changed_outside);
+}
+
+// A new workflow (an import, a blank one, a recording) has never fired
+// here: its schedule starts over, whatever last fire the page sent (an
+// import's, from its file: long past, it would run at once; in 2100, it
+// would never run). An interval counts from the save.
+TEST_F(AgentStudioStorageTest, ANewWorkflowStartsItsScheduleOver) {
+  UseRecord();
+  Script weekly = Workflow("wf_weekly", "Weekly");
+  weekly.trigger.type = automation::TriggerType::CRON;
+  weekly.trigger.expression = "0 9 * * 1";
+  weekly.trigger.last_fired_unix = 1;
+  Script hourly = Workflow("wf_hourly", "Hourly");
+  hourly.trigger.type = automation::TriggerType::INTERVAL;
+  hourly.trigger.expression = "3600";
+  hourly.trigger.last_fired_unix = 4'102'444'800;
+  const int64_t before = base::Time::Now().ToTimeT();
+  Answer cron =
+      SaveSharedWorkflow(places_, New(std::move(weekly)), Holds::kNothing);
+  Answer interval =
+      SaveSharedWorkflow(places_, New(std::move(hourly)), Holds::kNothing);
+  ASSERT_TRUE(cron.out.FindString("id"));
+  ASSERT_TRUE(interval.out.FindString("id"));
+  std::optional<Script> stored = Shared().Load(*cron.out.FindString("id"));
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->trigger.expression, "0 9 * * 1");
+  EXPECT_EQ(stored->trigger.last_fired_unix, 0);
+  stored = Shared().Load(*interval.out.FindString("id"));
+  ASSERT_TRUE(stored);
+  EXPECT_GE(stored->trigger.last_fired_unix, before);
+  EXPECT_LE(stored->trigger.last_fired_unix, base::Time::Now().ToTimeT());
+}
+
+// molt://ai-automation's Snooze (a last fire still to come), then a save
+// from an editor opened before it (the last fire it was shown, earlier):
+// the snooze holds, so the workflow doesn't run during it.
+TEST_F(AgentStudioStorageTest, AnEditorOpenedBeforeASnoozeKeepsIt) {
+  UseRecord();
+  Script interval = Workflow("wf_1", "Prices");
+  interval.trigger.type = automation::TriggerType::INTERVAL;
+  interval.trigger.expression = "900";
+  ASSERT_TRUE(Shared().Save(interval));
+  const int64_t now = base::Time::Now().ToTimeT();
+  ASSERT_TRUE(Shared().RecordFire("wf_1", now - 600));
+  std::optional<Script> editor = Shared().Load("wf_1");
+  ASSERT_TRUE(editor);
+  ASSERT_EQ(editor->trigger.last_fired_unix, now - 600);
+  ASSERT_TRUE(Shared().Update("wf_1", [now](Script& script) {
+    script.trigger.last_fired_unix = now + 3600;
+    return true;
+  }));
+  editor->steps[0].description = "Open the news";
+  Answer saved =
+      SaveSharedWorkflow(places_, Save(std::move(*editor)), Holds::kNothing);
+  EXPECT_EQ(*saved.out.FindString("id"), "wf_1");
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->steps[0].description, "Open the news");
+  EXPECT_EQ(stored->trigger.last_fired_unix, now + 3600);
+}
+
 }  // namespace
 }  // namespace agent_studio
 }  // namespace molt_ai

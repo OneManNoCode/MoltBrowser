@@ -76,7 +76,7 @@ void AutomationSchedulerService::Shutdown() {
 }
 
 void AutomationSchedulerService::OnTriggerFired(const Script& script,
-                                                base::Time fired_at) {
+                                                base::Time /*fired_at*/) {
   // Whoever fires it: only what may run unattended (never a workflow whose
   // file was changed outside the browser, nor a draft or a routine taught
   // by voice), whatever the scheduler read.
@@ -95,23 +95,13 @@ void AutomationSchedulerService::OnTriggerFired(const Script& script,
   ShowAutomationNotification(profile_, script.id, script.name,
                              "Scheduled run starting…");
 
-  // MoltBrowser: persist the fire time BEFORE the run so restart catch-up and
-  // interval phase-tracking work across restarts (the scheduler reads
-  // trigger.last_fired_unix). Written to disk here because the run reloads a
-  // fresh copy (posted after this change, so it sees it); its later
-  // stats write preserves this field. Bookkeeping only (RecordFire(): the
-  // browser's record of the fire first, then the file, never its security
-  // content), one read-modify-write under the storage directory's lock (the
-  // Agent studio changes it on the same sequence).
-  PostSharedChange(
-      storage_dir_,
-      base::BindOnce(
-          [](const std::string& id, int64_t fired_unix,
-             AutomationStorage& storage) {
-            storage.RecordFire(id, fired_unix);
-          },
-          script.id,
-          static_cast<int64_t>(fired_at.InSecondsFSinceUnixEpoch())));
+  // The fire time is already persisted, BEFORE the run: the scheduler
+  // claimed this fire (AutomationStorage::ClaimFire(): the browser's record
+  // of the fire first, then the file's trigger.last_fired_unix, never its
+  // security content), so restart catch-up and interval phase-tracking
+  // work across restarts, and no other profile's scheduler runs it too.
+  // The run reloads a fresh copy (posted after that change, so it sees
+  // it); its later stats write preserves this field.
 
   // Headless if TRUSTED+, otherwise foreground tab so user sees activity.
   bool headless = script.security.trust >= TrustLevel::TRUSTED;

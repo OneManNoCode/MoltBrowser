@@ -99,6 +99,26 @@ bool IsDue(const Script& script, base::Time now) {
   return !next.is_null() && next <= now + kDueSlack;
 }
 
+int64_t UnixOf(base::Time time) {
+  return static_cast<int64_t>(time.InSecondsFSinceUnixEpoch());
+}
+
+// The last time |trigger| was due at or before |now|, counted from its last
+// fire: an interval's keeps its phase (its last fire and whole intervals
+// after it); anything else's is |now| (a cron's next time after either is
+// the same).
+int64_t PassedUntil(const Trigger& trigger, base::Time now) {
+  const int64_t now_unix = UnixOf(now);
+  int seconds = 0;
+  if (trigger.type == TriggerType::INTERVAL && trigger.last_fired_unix > 0 &&
+      trigger.last_fired_unix < now_unix &&
+      base::StringToInt(trigger.expression, &seconds) && seconds > 0) {
+    return trigger.last_fired_unix +
+           (now_unix - trigger.last_fired_unix) / seconds * seconds;
+  }
+  return now_unix;
+}
+
 }  // namespace
 
 base::Time NextCronFire(const std::string& expression,
@@ -264,15 +284,25 @@ void AutomationScheduler::OnListed(base::Time now,
   }
   base::Time soonest;
   std::string soonest_script_id;
+  // The workflows this listing finds held for review.
+  std::set<std::string> held;
 
-  for (const auto& s : scripts) {
+  for (Script& s : scripts) {
+    const std::string id = s.id;
     // Only an enabled workflow whose sites are confirmed: never a draft
     // nobody has reviewed (from a web agent run, or a file changed outside
     // the browser: the runner would refuse it anyway), nor a routine taught
     // by voice (voice mode runs those).
     if (!AutomationSecurity::MayFireUnattended(s)) {
+      if (s.security.changed_outside) {
+        held.insert(id);
+      }
       continue;
     }
+    // Held for review when last listed (or when its timer's reload came),
+    // and the browser's own again now: its file was put back as the
+    // browser last wrote it.
+    const bool was_held = held_.count(id) > 0;
 
     // Catch-up: cron triggers that should have fired during shutdown.
     base::Time next = NextFireTime(s.trigger, now);
@@ -296,23 +326,44 @@ void AutomationScheduler::OnListed(base::Time now,
       }
     }
 
+    if (catchup && was_held) {
+      // Its missed time came while it was held for review, and whoever put
+      // its file back chose when that was: caught up now, it would run at
+      // that moment. The times passed are recorded as passed (the file
+      // isn't written: it didn't run), and it fires at its next time.
+      const int64_t passed = PassedUntil(s.trigger, now);
+      PostSharedChange(storage_dir_,
+                       base::BindOnce(
+                           [](const std::string& script_id, int64_t until,
+                              AutomationStorage& storage) {
+                             storage.RecordPassed(script_id, until);
+                           },
+                           id, passed));
+      Trigger skipped = s.trigger;
+      skipped.last_fired_unix = passed;
+      next = NextFireTime(skipped, now);
+      catchup = false;
+    }
+
     if (catchup) {
-      if (fire_cb_) fire_cb_.Run(s, now);
       // The next one after this fire: counted from the stale last fire, an
       // interval's would be overdue, and its timer would fire it again.
       Trigger fired = s.trigger;
-      fired.last_fired_unix =
-          static_cast<int64_t>(now.InSecondsFSinceUnixEpoch());
+      fired.last_fired_unix = UnixOf(now);
       next = NextFireTime(fired, now);
+      if (fire_cb_) {
+        Claim(std::move(s), now);
+      }
     }
 
     if (next.is_null()) continue;
 
     if (soonest.is_null() || next < soonest) {
       soonest = next;
-      soonest_script_id = s.id;
+      soonest_script_id = id;
     }
   }
+  held_ = std::move(held);
 
   if (soonest.is_null()) {
     next_timer_.Stop();
@@ -353,13 +404,43 @@ void AutomationScheduler::OnTimerScriptLoaded(std::optional<Script> script) {
   if (!started_)
     return;
   // As read now: a workflow changed (outside the browser, or into a draft)
-  // since it was listed doesn't fire, nor one fired since (IsDue()).
+  // since it was listed doesn't fire (and is held for review, as a listing
+  // finds it), nor one fired since (IsDue()).
   const base::Time now = base::Time::Now();
-  if (script && fire_cb_ && AutomationSecurity::MayFireUnattended(*script) &&
-      IsDue(*script, now)) {
-    fire_cb_.Run(*script, now);
+  if (script && !AutomationSecurity::MayFireUnattended(*script)) {
+    if (script->security.changed_outside) {
+      held_.insert(script->id);
+    }
+  } else if (script && fire_cb_ && IsDue(*script, now)) {
+    Claim(std::move(*script), now);
   }
   Tick();
+}
+
+void AutomationScheduler::Claim(Script script, base::Time now) {
+  const std::string id = script.id;
+  const int64_t last_fired_read = script.trigger.last_fired_unix;
+  PostSharedChange(
+      storage_dir_,
+      base::BindOnce(
+          [](const std::string& script_id, int64_t fired, int64_t read,
+             AutomationStorage& storage) {
+            return storage.ClaimFire(script_id, fired, read);
+          },
+          id, UnixOf(now), last_fired_read),
+      base::BindOnce(&AutomationScheduler::OnFireClaimed,
+                     weak_factory_.GetWeakPtr(), std::move(script), now));
+}
+
+void AutomationScheduler::OnFireClaimed(Script script,
+                                        base::Time fired_at,
+                                        bool claimed) {
+  // Not claimed: fired since it was read (by another profile's scheduler),
+  // snoozed, saved afresh or deleted.
+  if (!claimed || !started_ || !fire_cb_) {
+    return;
+  }
+  fire_cb_.Run(script, fired_at);
 }
 
 }  // namespace automation

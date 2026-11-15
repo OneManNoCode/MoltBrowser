@@ -165,6 +165,10 @@ int VoiceRoutineStore::RecoverInterruptedClaims() {
   for (const AutomationStorage::SetAside& set_aside : interrupted) {
     std::optional<Script> script = shared_.ReadSetAside(set_aside);
     const Script* copy = nullptr;
+    if (script && script->security.changed_outside) {
+      // As the claim saved it.
+      DescribeRoutineStepsAsRun(*script);
+    }
     if (script) {
       for (const Script& routine : routines) {
         if (IsClaimedCopy(routine, *script)) {
@@ -334,7 +338,12 @@ ClaimResult VoiceRoutineStore::Claim(const std::vector<std::string>& ids) {
     Script script = std::move(*taken);
     // Kept as it was: its steps, trust and sites (claiming changes none).
     // Only its name, beside this profile's, and its id if this profile has
-    // one of it.
+    // one of it. One changed outside the browser (a draft, reviewed in the
+    // Agent studio) has its steps described by the browser, as voice mode
+    // runs them: its review shows that, never the file's words.
+    if (script.security.changed_outside) {
+      DescribeRoutineStepsAsRun(script);
+    }
     ClaimedRoutine kept;
     const std::string name = UniqueRoutineName(names, script.name);
     while (taken_ids.count(script.id) && script.id.size() < kMaxIdBytes) {

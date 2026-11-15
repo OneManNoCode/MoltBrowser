@@ -652,6 +652,42 @@ TEST(AutomationSecurityTest, ClampUnvouchedIsAnUnconfirmedImport) {
   EXPECT_FALSE(sec.AllowHeadless(p));
 }
 
+// The review shows each step's type, target and value, its site and the
+// schedule; not its fallback selectors, locators, text anchor, picture or
+// description, which the runner acts on when the target shown misses. The
+// clamp drops those, so the review token is of what is shown.
+TEST(AutomationSecurityTest, ClampUnvouchedDropsWhatTheReviewDoesntShow) {
+  Script s = RichScript();
+  s.steps[0].description = "Go to the shop";
+  base::DictValue& extra = s.steps[1].extra.GetDict();
+  extra.Set(kStepTextAnchorKey, "Delete account");
+  extra.Set(kStepRefShotKey, "data:image/png;base64,AAAA");
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_EQ(s.steps.size(), 3u);
+  for (const Step& step : s.steps) {
+    EXPECT_TRUE(step.description.empty());
+    EXPECT_TRUE(step.selector_fallbacks.empty());
+    EXPECT_FALSE(step.locators);
+  }
+  const Step& click = s.steps[1];
+  ASSERT_TRUE(click.extra.is_dict());
+  EXPECT_FALSE(click.extra.GetDict().Find(kStepTextAnchorKey));
+  EXPECT_FALSE(click.extra.GetDict().Find(kStepRefShotKey));
+  // What is shown, and the site it names, is kept.
+  EXPECT_EQ(click.type, StepType::CLICK);
+  EXPECT_EQ(click.target, "#buy");
+  EXPECT_EQ(click.value, "v");
+  ASSERT_TRUE(click.extra.GetDict().FindString(kStepHostKey));
+  EXPECT_EQ(*click.extra.GetDict().FindString(kStepHostKey), "shop.example");
+  EXPECT_EQ(s.steps[0].target, "https://shop.example/");
+  EXPECT_EQ(AutomationSecurity::HostsReferencedBy(s.steps),
+            AutomationSecurity::HostsReferencedBy(RichScript().steps));
+  // Clamping twice is clamping once: the review token doesn't move.
+  const std::string token = AutomationSecurity::SecurityDigest(s);
+  AutomationSecurity::ClampUnvouched(s);
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(s), token);
+}
+
 TEST(AutomationSecurityTest,
      MayFireUnattendedRefusesDisabledDraftsChangedAndVoice) {
   EXPECT_TRUE(AutomationSecurity::MayFireUnattended(RichScript()));

@@ -3,8 +3,17 @@
 //
 // AutomationScheduler — fires scripts based on Trigger configuration.
 // Survives browser restarts: on startup it reads Trigger.last_fired_unix
-// from each script and runs missed cron triggers (catch-up). Per user
-// spec, runs always use the user's main profile so cookies persist.
+// from each script and runs missed cron triggers (catch-up). Each regular
+// profile has one (AutomationSchedulerService), over the one shared
+// folder and its workflow record; a fire runs in the profile whose
+// scheduler claimed it.
+//
+// A fire is claimed before it runs: AutomationStorage::ClaimFire(), on
+// the storage's change sequence, records it only while the record's last
+// fire of the workflow is still the one the scheduler read when it found
+// it due, and the fire callback runs only then. So of the schedulers of
+// this browser's profiles, one runs a due workflow, once (the others find
+// it fired); one snoozed or saved afresh since it was read doesn't fire.
 //
 // Threading: lives on the UI thread; uses base::OneShotTimer to wake up
 // at the next scheduled time. macOS sleep wake-ups deliver the timer
@@ -21,6 +30,11 @@
 // counted from the catch-up itself, and a timer's reload fires a cron or
 // interval workflow only if it is still due after its last fire (not
 // fired or snoozed since it was listed), so an overdue workflow runs once.
+// One held for review that is the browser's again (its file put back as
+// the browser last wrote it) isn't caught up for the times that passed
+// while it was held: they are recorded as passed (AutomationStorage::
+// RecordPassed()), and it fires at its next time, never at the moment
+// whatever put the file back chose.
 // Its last fire time is this browser's own, as its workflow record has it
 // (the one it saved, or a fire it recorded: automation_storage.h), never
 // the file's: a fire time written into the file outside this browser
@@ -35,6 +49,7 @@
 
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -49,7 +64,8 @@
 namespace molt_ai {
 namespace automation {
 
-// Callback invoked when a scheduled trigger fires. The scheduler does
+// Callback invoked when a scheduled trigger fires, once the fire is
+// claimed (recorded: AutomationStorage::ClaimFire()). The scheduler does
 // NOT itself run the script — it delegates to this callback so the
 // owning service can spin up a background browser, attach an
 // AutomationRunner, etc.
@@ -95,8 +111,18 @@ class AutomationScheduler {
   void OnListed(base::Time now, std::vector<Script> scripts);
   // The next timer's workflow, read again, fired.
   void OnTimerScriptLoaded(std::optional<Script> script);
+  // A fire of |script| at |now|: claimed on the storage's change sequence
+  // (AutomationStorage::ClaimFire(), against the last fire it was read
+  // with), then, if it was, the fire callback.
+  void Claim(Script script, base::Time now);
+  void OnFireClaimed(Script script, base::Time fired_at, bool claimed);
 
   base::FilePath storage_dir_;
+  // The workflows the last listing (or a timer's reload since) found held
+  // for review (changed outside the browser): one listed as the browser's
+  // again has had its file put back as the browser last wrote it, and a
+  // due time that passed while it was held isn't caught up.
+  std::set<std::string> held_;
   // A listing is on its way; another was asked for meanwhile (it follows,
   // so a catch-up fired by the first is seen fired).
   bool listing_ = false;

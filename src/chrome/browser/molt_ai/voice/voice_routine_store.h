@@ -195,7 +195,10 @@ class VoiceRoutineStore {
 
   // Keeps the routines |ids| from before routines belonged to a profile in
   // this profile (see the file comment), in order (claims cut short
-  // settled first).
+  // settled first). One changed outside the browser (the shared storage
+  // reads it as a draft, security.changed_outside) is kept as that draft,
+  // its voice steps described by the browser as voice mode runs them
+  // (DescribeRoutineStepsAsRun()), for its review in the Agent studio.
   ClaimResult Claim(const std::vector<std::string>& ids);
 
   // The name |script| (a routine the Agent studio brings in or edits: an

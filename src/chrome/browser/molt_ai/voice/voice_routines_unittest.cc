@@ -388,6 +388,66 @@ TEST(VoiceRoutinesTest, ARoutineChangedOutsideIsReviewedInAgentModeFirst) {
   EXPECT_TRUE(ReadRoutine(changed).ok);
 }
 
+// A routine changed outside the browser (claimed as a draft) is reviewed
+// with each voice step described by the browser as voice mode runs it, its
+// extra["voice"], never in the file's own words: a step whose file says
+// "weather" while voice mode would type something else is shown as that.
+TEST(VoiceRoutinesTest, StepsDescribedAsRunShowWhatVoiceModeRuns) {
+  std::vector<RoutineStep> steps = MyNews();
+  steps.push_back(Said("type delete everything"));
+  BuiltRoutine built = BuildRoutine("voice_9", "my news", steps, kNow);
+  ASSERT_TRUE(built.script) << built.refusal;
+  ASSERT_EQ(built.script->steps.size(), 4u);
+  Script planted = Copy(*built.script);
+  for (automation::Step& step : planted.steps) {
+    step.description = "Search for weather";
+  }
+  // A step of the file's that isn't a voice step: left as it is.
+  automation::Step plain;
+  plain.type = StepType::CLICK;
+  plain.target = "#ok";
+  plain.description = "Click OK";
+  planted.steps.push_back(std::move(plain));
+  // A voice step voice mode can't do: no title of the file's own.
+  automation::Step unknown;
+  unknown.type = StepType::TYPE;
+  unknown.description = "Type \xE2\x80\x9Cweather\xE2\x80\x9D";
+  base::DictValue command;
+  command.Set("command", "no such command");
+  base::DictValue extra;
+  extra.Set(automation::kVoiceStepKey, std::move(command));
+  unknown.extra = base::Value(std::move(extra));
+  planted.steps.push_back(std::move(unknown));
+
+  DescribeRoutineStepsAsRun(planted);
+  ASSERT_EQ(planted.steps.size(), 6u);
+  EXPECT_EQ(planted.steps[0].description, "Open YouTube");
+  EXPECT_EQ(planted.steps[1].description, "Search for news");
+  EXPECT_EQ(planted.steps[2].description, "Play the first one");
+  EXPECT_EQ(planted.steps[3].description, built.script->steps[3].description);
+  EXPECT_NE(planted.steps[3].description.find("delete everything"),
+            std::string::npos);
+  EXPECT_EQ(planted.steps[4].description, "Click OK");
+  EXPECT_TRUE(planted.steps[5].description.empty());
+
+  // The planner's steps: what the web agent would do, the text it types
+  // included.
+  BuiltRoutine trains = BuildRoutine("voice_10", "trains", Trains(), kNow);
+  ASSERT_TRUE(trains.script) << trains.refusal;
+  Script changed = Copy(*trains.script);
+  for (automation::Step& step : changed.steps) {
+    step.description = "Scroll down";
+  }
+  DescribeRoutineStepsAsRun(changed);
+  ASSERT_EQ(changed.steps.size(), 6u);
+  EXPECT_EQ(changed.steps[0].description, "Search the web for trains to lyon");
+  EXPECT_EQ(changed.steps[1].description, "Open trains.example");
+  EXPECT_EQ(changed.steps[2].description, "Type Lyon in To");
+  EXPECT_EQ(changed.steps[3].description, "Choose First class in Class");
+  EXPECT_EQ(changed.steps[4].description, "Click Search");
+  EXPECT_EQ(changed.steps[5].description, "Scroll down");
+}
+
 TEST(VoiceRoutinesTest, SitesAreConfirmedByVoiceOnlyWhenAllAreSaid) {
   EXPECT_TRUE(RoutineSitesSayable({"www.youtube.com"}));
   EXPECT_TRUE(RoutineSitesSayable({"news.example", "shop.example"}));

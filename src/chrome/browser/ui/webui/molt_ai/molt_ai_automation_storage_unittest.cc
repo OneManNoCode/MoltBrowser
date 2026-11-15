@@ -272,6 +272,40 @@ TEST_F(AutomationPageStorageTest, AnImportIsVouchedAtCasual) {
       true);
 }
 
+// An import starts its schedule over: a last fire its JSON gives (an
+// exported workflow's, long past; one in 2100) was never this browser's, so
+// it neither forces a catch-up run nor holds the schedule back. An
+// interval counts from the import.
+TEST_F(AutomationPageStorageTest, AnImportStartsItsScheduleOver) {
+  UseRecord();
+  constexpr int64_t kImportedAt = 1'800'000'000;
+  Script weekly = Workflow("wf_weekly", "Weekly");
+  weekly.trigger.type = automation::TriggerType::CRON;
+  weekly.trigger.expression = "0 9 * * 1";
+  weekly.trigger.last_fired_unix = 1;
+  Script hourly = Workflow("wf_hourly", "Hourly");
+  hourly.trigger.type = automation::TriggerType::INTERVAL;
+  hourly.trigger.expression = "3600";
+  hourly.trigger.last_fired_unix = 4'102'444'800;
+  base::DictValue cron_result =
+      ImportWorkflow(std::move(weekly), kImportedAt, storage());
+  base::DictValue interval_result =
+      ImportWorkflow(std::move(hourly), kImportedAt, storage());
+  ASSERT_EQ(cron_result.FindBool("success"), true);
+  ASSERT_EQ(interval_result.FindBool("success"), true);
+  std::optional<Script> cron =
+      storage().Load(*cron_result.FindString("script_id"));
+  std::optional<Script> interval =
+      storage().Load(*interval_result.FindString("script_id"));
+  ASSERT_TRUE(cron);
+  ASSERT_TRUE(interval);
+  EXPECT_FALSE(cron->security.changed_outside);
+  EXPECT_EQ(cron->trigger.expression, "0 9 * * 1");
+  EXPECT_EQ(cron->trigger.last_fired_unix, 0);
+  EXPECT_FALSE(interval->security.changed_outside);
+  EXPECT_EQ(interval->trigger.last_fired_unix, kImportedAt);
+}
+
 }  // namespace
 }  // namespace automation_page
 }  // namespace molt_ai

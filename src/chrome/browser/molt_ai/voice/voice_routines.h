@@ -130,6 +130,15 @@ struct ReadRoutineResult {
 // Agent studio first.
 ReadRoutineResult ReadRoutine(const automation::Script& script);
 
+// Each voice step of |script| (extra["voice"]) described by the browser:
+// its description, which the Agent studio shows as the step's title, is
+// Capitalized(DescribeRoutineStep()) of the step as ReadRoutine() reads it
+// (the command voice mode runs, its text, words and site), or empty for a
+// step voice mode can't do. For a routine changed outside the browser,
+// claimed as a draft (VoiceRoutineStore::Claim()): its review shows what
+// voice mode would run, never the file's own words for it.
+void DescribeRoutineStepsAsRun(automation::Script& script);
+
 // Whether a routine's |sites| (AutomationSecurity::HostsReferencedBy())
 // can be confirmed by voice: the prompt that asks (the voice gesture's,
 // VoiceBrowserPrompts::ConfirmDraftSites()) says every one of them, each

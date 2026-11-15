@@ -27,7 +27,8 @@
 // schedule saved afresh writes 0; an earlier one, from a page opened
 // before a fire, leaves a past fire it recorded as it is), or a fire its
 // scheduler recorded since (one recorded while the clock was ahead gives
-// way to the next). "fired" is the only last fire the storage uses for
+// way to the next), or a later time that passed while the file was held
+// for review (NotePassed()). "fired" is the only last fire the storage uses for
 // scheduling (LastFired()): the file's own trigger.last_fired_unix, which
 // anything can write, is never believed, and no fire time read from a
 // file is recorded (but at seeding). So a fire time written into a file
@@ -57,10 +58,11 @@
 // written only as regular files (molt_regular_file.h), atomically.
 //
 // Threads. Configure() and For() run anywhere (no I/O). LoadLocked() and
-// every change (Set(), NoteFired(), Copy(), Forget(), Restore()) run only
-// under the storage's change scope of |directory| (its lock, then its lock
-// file), so each is ordered with the file change it mirrors, and their
-// writes of the record happen there too, one at a time. Vouches(),
+// every change (Set(), NoteFired(), NotePassed(), Copy(), Forget(),
+// Restore()) run only under the storage's change scope of |directory| (its
+// lock, then its lock file), so each is ordered with the file change it
+// mirrors, and their writes of the record happen there too, one at a
+// time. Vouches(),
 // LastFired(), EntryOf() and loaded() only read, under this record's own
 // lock, the innermost of all (the registry's is another, never held with
 // it).
@@ -176,8 +178,10 @@ class WorkflowRecord {
   // into place): this browser writes |digest| under |name| ("" forgets it)
   // now, with |fired| as its last fire time. 0 and a later one are the
   // entry's as they are (a schedule saved afresh starts over; a snooze). An
-  // earlier one is a page's opened before a fire: the past fire recorded is
-  // kept, and only one still in the future (beyond now by
+  // earlier one is a page's opened before a fire (a page's save that keeps
+  // the schedule writes the stored one instead: AutomationStorage::
+  // SaveChecked()), or a schedule saved afresh counted from now: the past
+  // fire recorded is kept, and only one still in the future (beyond now by
   // kLastFiredSlackSeconds: a snooze, or a clock that was ahead) gives way
   // to it.
   void Set(const std::string& name, std::string digest, int64_t fired);
@@ -190,6 +194,12 @@ class WorkflowRecord {
   // fire recorded while the clock was ahead, which this fire shows wasn't
   // one); no entry, nothing.
   void NoteFired(const std::string& name, int64_t fired);
+  // Due times of |name| up to |passed| went by while its file was held for
+  // review (changed outside this browser; the scheduler's clock, never a
+  // time read from a file), and it is this browser's again: its fire time
+  // rises to |passed|, so they aren't caught up (run at the moment the file
+  // was put back). Only ever later; no entry, nothing. Whether it changed.
+  bool NotePassed(const std::string& name, int64_t passed);
   // Before |from| is renamed |to|: |from|'s entry, under |to| too (then
   // the rename, then Forget(|from|); Forget(|to|) if it failed). False,
   // and nothing changed, with no entry for |from| (|to|'s, if any, stays).
