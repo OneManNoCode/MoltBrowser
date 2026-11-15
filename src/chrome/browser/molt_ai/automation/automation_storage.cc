@@ -14,6 +14,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/check_op.h"
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
@@ -33,6 +34,7 @@
 #include "base/threading/scoped_blocking_call.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
+#include "chrome/browser/molt_ai/automation/workflow_record.h"
 #include "chrome/browser/molt_ai/common/molt_home_dir.h"
 #include "chrome/browser/molt_ai/common/molt_regular_file.h"
 
@@ -68,6 +70,11 @@ base::LazyThreadPoolSequencedTaskRunner g_shared_read_sequence =
         base::TaskTraits(base::MayBlock(),
                          base::TaskPriority::USER_VISIBLE,
                          base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN));
+
+// How many change scopes this thread is in: PrepareRecord() and a read's
+// second look take the directory's lock, which isn't recursive, so neither
+// may run inside one.
+constinit thread_local int g_change_scope_depth = 0;
 
 // Every change to a directory's scripts holds its lock (one per directory,
 // for the browser's lifetime: the shared storage and each profile's).
@@ -200,6 +207,22 @@ bool MayStillBeMoving(base::Time set_aside, base::Time now) {
   return !age.is_negative() && age < kTakenGracePeriod;
 }
 
+// A script file's contents as its readers parse them; nullopt when they
+// don't parse as a script.
+std::optional<Script> ParseScriptBytes(const std::string& bytes) {
+  std::optional<base::Value> parsed =
+      base::JSONReader::Read(bytes, base::JSON_ALLOW_TRAILING_COMMAS);
+  if (!parsed || !parsed->is_dict()) {
+    return std::nullopt;
+  }
+  return Script::FromJSON(parsed->GetDict());
+}
+
+// A file's name in the directory, as the record keeps it.
+std::string NameOf(const base::FilePath& path) {
+  return path.BaseName().AsUTF8Unsafe();
+}
+
 }  // namespace
 
 class AutomationStorage::BlockingScope {
@@ -223,9 +246,12 @@ class AutomationStorage::ChangeScope {
       : hold_(DirectoryLock(storage.GetAutomationsDir())),
         file_(storage.GetAutomationsDir().Append(
                   base::FilePath::FromUTF8Unsafe(kLockFileName)),
-              kStorageLockWait) {}
+              kStorageLockWait) {
+    ++g_change_scope_depth;
+  }
   ChangeScope(const ChangeScope&) = delete;
   ChangeScope& operator=(const ChangeScope&) = delete;
+  ~ChangeScope() { --g_change_scope_depth; }
 
  private:
   // This browser's changes, then the other browsers'.
@@ -357,6 +383,7 @@ std::vector<std::string> AutomationStorage::ListIds() {
 }
 
 std::vector<Script> AutomationStorage::ListAll() {
+  PrepareRecord();
   std::vector<Script> out;
   for (const auto& id : ListIds()) {
     if (auto s = Load(id))
@@ -398,6 +425,7 @@ std::optional<Script> AutomationStorage::Load(const std::string& id) {
   BlockingScope blocking(*this);
   if (!IsValidScriptId(id))
     return std::nullopt;
+  PrepareRecord();
   const base::FilePath path = GetScriptPath(id);
   std::optional<base::DictValue> dict = ReadScriptDict(path);
   if (!dict)
@@ -405,7 +433,9 @@ std::optional<Script> AutomationStorage::Load(const std::string& id) {
   // Migration: recordings made before secret steps stored password values
   // in plaintext. Scrub them and rewrite this same file so the plaintext
   // does not linger on disk (read again under the lock: the file as it is
-  // now).
+  // now). The record is left as it was: the security digest is the same
+  // scrubbed or not, so a file it vouched for still is, and one it didn't
+  // (a planted file with a password in it) still isn't.
   if (AutomationSecurity::ScrubPlaintextSecrets(*dict)) {
     ChangeScope locked(*this);
     std::optional<base::DictValue> now = ReadScriptDict(path);
@@ -417,22 +447,134 @@ std::optional<Script> AutomationStorage::Load(const std::string& id) {
                    << id << kScriptExt;
       AppendAudit(id, "secrets_scrubbed", "");
     }
-    dict = std::move(now);
+    return Vetted(std::move(*now), id, path, Held::kChangeScope);
   }
-  std::optional<Script> script = Script::FromJSON(*dict);
+  return Vetted(std::move(*dict), id, path, Held::kNothing);
+}
+
+std::optional<Script> AutomationStorage::Vetted(base::DictValue dict,
+                                                const std::string& id,
+                                                const base::FilePath& path,
+                                                Held held) {
+  std::optional<Script> script = Script::FromJSON(dict);
+  if (!script) {
+    return std::nullopt;
+  }
   // Known by its file's name, whatever the file says (one put back beside
   // another of its id, one copied by hand): never two listed under one id,
   // nor a save of one written over the other.
-  if (script) {
-    script->id = id;
+  script->id = id;
+  WorkflowRecord* record = Record();
+  if (!record) {
+    return script;
   }
+  const std::string name = NameOf(path);
+  if (!record->Vouches(name, AutomationSecurity::SecurityDigest(*script))) {
+    if (held == Held::kNothing) {
+      // A change of this browser's in progress (the file renamed, the
+      // record not set yet, or the reverse) ends before this second look.
+      DCHECK_EQ(g_change_scope_depth, 0);
+      base::AutoLock hold(DirectoryLock(GetAutomationsDir()));
+      std::optional<base::DictValue> again = ReadScriptDict(path);
+      if (!again) {
+        return std::nullopt;
+      }
+      AutomationSecurity::ScrubPlaintextSecrets(*again);
+      return Vetted(std::move(*again), id, path, Held::kChangeScope);
+    }
+    // Changed outside this browser: an unconfirmed import.
+    AutomationSecurity::ClampUnvouched(*script);
+  }
+  // Never an earlier last fire than this browser wrote or saw: a forged one
+  // would force catch-up runs.
+  script->trigger.last_fired_unix =
+      std::max(script->trigger.last_fired_unix, record->FiredFloor(name));
   return script;
+}
+
+WorkflowRecord* AutomationStorage::Record() const {
+  const base::FilePath dir = GetAutomationsDir();
+  if (WorkflowRecord* record = WorkflowRecord::For(dir)) {
+    return record;
+  }
+  // The shared directory without a configured record (tests, a fixture's
+  // saves before the browser started): this session's writes only.
+  if (dir == SharedDirectory()) {
+    return WorkflowRecord::SessionOnlyFor(dir);
+  }
+  // A storage of its own directory (a profile's routines, a test's): as
+  // the files are.
+  return nullptr;
+}
+
+void AutomationStorage::PrepareRecord() {
+  DCHECK_EQ(g_change_scope_depth, 0);
+  WorkflowRecord* record = Record();
+  if (!record || record->loaded()) {
+    return;
+  }
+  BlockingScope blocking(*this);
+  ChangeScope locked(*this);
+  if (record->loaded()) {
+    return;
+  }
+  const base::FilePath dir = GetAutomationsDir();
+  record->LoadLocked(
+      [this] { return PresentNamesLocked(); },
+      [this,
+       &dir](const std::string& name) -> std::optional<WorkflowRecord::Entry> {
+        std::optional<base::DictValue> dict =
+            ReadScriptDict(dir.Append(base::FilePath::FromUTF8Unsafe(name)));
+        if (!dict) {
+          return std::nullopt;
+        }
+        AutomationSecurity::ScrubPlaintextSecrets(*dict);
+        std::optional<Script> script = Script::FromJSON(*dict);
+        if (!script) {
+          return std::nullopt;
+        }
+        WorkflowRecord::Entry entry;
+        entry.digest = AutomationSecurity::SecurityDigest(*script);
+        entry.fired = std::max<int64_t>(0, script->trigger.last_fired_unix);
+        if (entry.digest.empty()) {
+          return std::nullopt;
+        }
+        return entry;
+      },
+      [this](const std::string& event, const std::string& extra) {
+        AppendAudit("-", event, extra);
+      });
+}
+
+std::set<std::string> AutomationStorage::PresentNamesLocked() const {
+  std::set<std::string> names;
+  base::FileEnumerator e(GetAutomationsDir(), /*recursive=*/false,
+                         base::FileEnumerator::FILES);
+  const std::string_view ext(kScriptExt);
+  for (base::FilePath path = e.Next(); !path.empty(); path = e.Next()) {
+    const std::string name = NameOf(path);
+    const bool script =
+        name.size() > ext.size() &&
+        std::string_view(name).substr(name.size() - ext.size()) == ext &&
+        IsValidScriptId(name.substr(0, name.size() - ext.size()));
+    if (!script && !SetAsideIdOf(name)) {
+      continue;
+    }
+    // Never a link, a FIFO or a device.
+    if (MoltFileKindAt(path, MoltFileLinks::kNotFollowed) !=
+        MoltFileKind::kRegular) {
+      continue;
+    }
+    names.insert(name);
+  }
+  return names;
 }
 
 bool AutomationStorage::Save(const Script& script) {
   BlockingScope blocking(*this);
   if (!IsValidScriptId(script.id))
     return false;
+  PrepareRecord();
   if (!EnsureDirectory())
     return false;
   bool saved = false;
@@ -447,7 +589,10 @@ bool AutomationStorage::Save(const Script& script) {
 
 std::optional<std::string> AutomationStorage::SaveNew(Script script) {
   BlockingScope blocking(*this);
-  if (!IsValidScriptId(script.id) || !EnsureDirectory())
+  if (!IsValidScriptId(script.id))
+    return std::nullopt;
+  PrepareRecord();
+  if (!EnsureDirectory())
     return std::nullopt;
   bool saved = false;
   {
@@ -467,19 +612,22 @@ std::optional<std::string> AutomationStorage::SaveNew(Script script) {
 
 bool AutomationStorage::SaveChecked(Script script, SaveCheck check) {
   BlockingScope blocking(*this);
-  if (!IsValidScriptId(script.id) || !EnsureDirectory())
+  if (!IsValidScriptId(script.id))
+    return false;
+  PrepareRecord();
+  if (!EnsureDirectory())
     return false;
   const std::string id = script.id;
   bool saved = false;
   {
     ChangeScope locked(*this);
-    std::optional<base::DictValue> dict = ReadScriptDict(GetScriptPath(id));
+    const base::FilePath path = GetScriptPath(id);
+    std::optional<base::DictValue> dict = ReadScriptDict(path);
+    // Known by its file's name, whatever the file says; checked against
+    // the record (an unvouched one is an unconfirmed import).
     std::optional<Script> stored =
-        dict ? Script::FromJSON(*dict) : std::nullopt;
-    if (stored) {
-      // Known by its file's name, whatever the file says.
-      stored->id = id;
-    }
+        dict ? Vetted(std::move(*dict), id, path, Held::kChangeScope)
+             : std::nullopt;
     if (!check(stored ? &*stored : nullptr, script) || script.id != id)
       return false;
     saved = SaveLocked(script);
@@ -495,7 +643,20 @@ bool AutomationStorage::SaveLocked(const Script& script) {
   base::DictValue json = script.ToJSON();
   if (AutomationSecurity::ScrubPlaintextSecrets(json))
     LOG(WARNING) << "[Automation] dropped secret value(s) before saving";
-  return WriteScriptJsonLocked(GetScriptPath(script.id), json);
+  const base::FilePath path = GetScriptPath(script.id);
+  const std::string bytes = SerializeScript(json);
+  if (!WriteScriptBytesLocked(path, bytes)) {
+    return false;
+  }
+  // What this browser wrote, as a reader will parse it.
+  if (WorkflowRecord* record = Record()) {
+    std::optional<Script> written = ParseScriptBytes(bytes);
+    record->Set(
+        NameOf(path),
+        written ? AutomationSecurity::SecurityDigest(*written) : std::string(),
+        written ? written->trigger.last_fired_unix : 0);
+  }
+  return true;
 }
 
 bool AutomationStorage::Update(const std::string& script_id,
@@ -505,16 +666,19 @@ bool AutomationStorage::Update(const std::string& script_id,
   const std::string id = script_id;
   if (!IsValidScriptId(id))
     return false;
+  PrepareRecord();
   bool saved = false;
   {
     ChangeScope locked(*this);
-    std::optional<base::DictValue> dict = ReadScriptDict(GetScriptPath(id));
+    const base::FilePath path = GetScriptPath(id);
+    std::optional<base::DictValue> dict = ReadScriptDict(path);
+    // Known by its file's name, whatever the file says; checked against
+    // the record (an unvouched one is an unconfirmed import).
     std::optional<Script> script =
-        dict ? Script::FromJSON(*dict) : std::nullopt;
+        dict ? Vetted(std::move(*dict), id, path, Held::kChangeScope)
+             : std::nullopt;
     if (!script)
       return false;
-    // Known by its file's name, whatever the file says.
-    script->id = id;
     if (!change(*script) || script->id != id)
       return false;
     saved = SaveLocked(*script);
@@ -524,12 +688,84 @@ bool AutomationStorage::Update(const std::string& script_id,
   return saved;
 }
 
-bool AutomationStorage::WriteScriptJsonLocked(
-    const base::FilePath& final_path,
+bool AutomationStorage::UpdateBookkeeping(const std::string& script_id,
+                                          ScriptChange change) {
+  BlockingScope blocking(*this);
+  // A copy: |script_id| may be a field of what |change| changes.
+  const std::string id = script_id;
+  if (!IsValidScriptId(id))
+    return false;
+  PrepareRecord();
+  ChangeScope locked(*this);
+  return UpdateBookkeepingLocked(id, change);
+}
+
+bool AutomationStorage::RecordFire(const std::string& id, int64_t fired_unix) {
+  BlockingScope blocking(*this);
+  if (!IsValidScriptId(id))
+    return false;
+  PrepareRecord();
+  ChangeScope locked(*this);
+  // First: a file that can't be written now still never fires again for
+  // this time.
+  if (WorkflowRecord* record = Record()) {
+    record->NoteFired(id + kScriptExt, fired_unix);
+  }
+  return UpdateBookkeepingLocked(id, [fired_unix](Script& script) {
+    script.trigger.last_fired_unix = fired_unix;
+    return true;
+  });
+}
+
+bool AutomationStorage::UpdateBookkeepingLocked(const std::string& id,
+                                                ScriptChange change) {
+  const base::FilePath path = GetScriptPath(id);
+  std::optional<base::DictValue> dict = ReadScriptDict(path);
+  // As the file is: never clamped, so what is written back is the file's
+  // own security content.
+  std::optional<Script> script = dict ? Script::FromJSON(*dict) : std::nullopt;
+  if (!script)
+    return false;
+  script->id = id;
+  const std::string before = AutomationSecurity::SecurityDigest(*script);
+  if (before.empty() || !change(*script) || script->id != id)
+    return false;
+  base::DictValue json = script->ToJSON();
+  AutomationSecurity::ScrubPlaintextSecrets(json);
+  const std::string bytes = SerializeScript(json);
+  // Exactly what a reader will parse: written only if its security content
+  // is what it was (else this would vouch, or unvouch, by accident).
+  std::optional<Script> written = ParseScriptBytes(bytes);
+  if (!written || AutomationSecurity::SecurityDigest(*written) != before) {
+    LOG(ERROR) << "[Automation] " << id << kScriptExt
+               << " not saved: bookkeeping may not change the workflow";
+    return false;
+  }
+  if (!WriteScriptBytesLocked(path, bytes))
+    return false;
+  if (WorkflowRecord* record = Record()) {
+    record->NoteFired(NameOf(path), written->trigger.last_fired_unix);
+  }
+  return true;
+}
+
+// static
+std::string AutomationStorage::SerializeScript(
     const base::DictValue& script_json) {
   std::string json;
   base::JSONWriter::WriteWithOptions(
       script_json, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
+  return json;
+}
+
+bool AutomationStorage::WriteScriptJsonLocked(
+    const base::FilePath& final_path,
+    const base::DictValue& script_json) {
+  return WriteScriptBytesLocked(final_path, SerializeScript(script_json));
+}
+
+bool AutomationStorage::WriteScriptBytesLocked(const base::FilePath& final_path,
+                                               const std::string& json) {
   // Never a file the readers would skip.
   if (json.size() > kMaxScriptFileBytes) {
     LOG(ERROR) << "[Automation] not saved: over " << kMaxScriptFileBytes
@@ -557,10 +793,15 @@ bool AutomationStorage::Delete(const std::string& id) {
   BlockingScope blocking(*this);
   if (!IsValidScriptId(id))
     return false;
+  PrepareRecord();
   bool deleted_script = false;
   {
     ChangeScope locked(*this);
     deleted_script = base::DeleteFile(GetScriptPath(id));
+    // Forgotten even if it wasn't deleted: put back, it needs a review.
+    if (WorkflowRecord* record = Record()) {
+      record->Forget(id + kScriptExt);
+    }
   }
   base::DeletePathRecursively(ArtifactsDir(id));
   AppendAudit(id, "deleted", "");
@@ -571,6 +812,7 @@ std::optional<Script> AutomationStorage::Take(const std::string& id) {
   BlockingScope blocking(*this);
   if (!IsValidScriptId(id) || taken_.count(id))
     return std::nullopt;
+  PrepareRecord();
   // A name of this Take()'s own: never over another set-aside file (of a
   // move another browser is making, or one cut short).
   const SetAside set_aside{id, NewSetAsidePath(id)};
@@ -592,6 +834,10 @@ std::optional<Script> AutomationStorage::Take(const std::string& id) {
     Taking::Get().Stop(set_aside.file);
     return std::nullopt;
   }
+  // Its record goes with it.
+  if (WorkflowRecord* record = Record()) {
+    record->Move(id + kScriptExt, NameOf(set_aside.file));
+  }
   // Set aside now: InterruptedTakes() leaves it to its taker for a while.
   const base::Time now = base::Time::Now();
   base::TouchFile(set_aside.file, now, now);
@@ -599,15 +845,15 @@ std::optional<Script> AutomationStorage::Take(const std::string& id) {
   std::optional<Script> script;
   if (parsed) {
     AutomationSecurity::ScrubPlaintextSecrets(*parsed);
-    script = Script::FromJSON(*parsed);
+    // Known by its file's name, whatever the file says; checked against
+    // the record.
+    script = Vetted(std::move(*parsed), id, set_aside.file, Held::kChangeScope);
   }
   if (!script) {
     ReturnSetAsideLocked(set_aside);
     return std::nullopt;
   }
   taken_[id] = set_aside.file;
-  // Known by its file's name, whatever the file says.
-  script->id = id;
   return script;
 }
 
@@ -633,11 +879,15 @@ void AutomationStorage::FinishSetAside(const SetAside& set_aside) {
   BlockingScope blocking(*this);
   if (!IsSetAsideHere(set_aside))
     return;
+  PrepareRecord();
   {
     ChangeScope locked(*this);
     if (MoltFileKindAt(set_aside.file, MoltFileLinks::kNotFollowed) ==
         MoltFileKind::kRegular) {
       base::DeleteFile(set_aside.file);
+    }
+    if (WorkflowRecord* record = Record()) {
+      record->Forget(NameOf(set_aside.file));
     }
   }
   Taking::Get().Stop(set_aside.file);
@@ -648,6 +898,7 @@ bool AutomationStorage::ReturnSetAside(const SetAside& set_aside) {
   BlockingScope blocking(*this);
   if (!IsSetAsideHere(set_aside))
     return false;
+  PrepareRecord();
   ChangeScope locked(*this);
   return ReturnSetAsideLocked(set_aside);
 }
@@ -663,6 +914,14 @@ bool AutomationStorage::ReturnSetAsideLocked(const SetAside& set_aside) {
     if (back) {
       returned =
           base::ReplaceFile(set_aside.file, GetScriptPath(*back), nullptr);
+      // Its record with it. A set-aside file the record has nothing for
+      // (unvouched, or a move cut short before its record moved) leaves
+      // the record of <back>.molt as it was.
+      if (returned) {
+        if (WorkflowRecord* record = Record()) {
+          record->Move(NameOf(set_aside.file), *back + kScriptExt);
+        }
+      }
       if (returned && *back != id) {
         LOG(WARNING) << "[Automation] "
                      << set_aside.file.BaseName().AsUTF8Unsafe()
@@ -732,20 +991,24 @@ std::optional<Script> AutomationStorage::ReadSetAside(
   BlockingScope blocking(*this);
   if (!IsSetAsideHere(set_aside))
     return std::nullopt;
+  PrepareRecord();
   std::optional<base::DictValue> parsed = ReadScriptDict(set_aside.file);
   if (!parsed)
     return std::nullopt;
   AutomationSecurity::ScrubPlaintextSecrets(*parsed);
-  std::optional<Script> script = Script::FromJSON(*parsed);
-  if (script)
-    script->id = set_aside.id;
-  return script;
+  return Vetted(std::move(*parsed), set_aside.id, set_aside.file,
+                Held::kNothing);
 }
 
 bool AutomationStorage::SetTrustLevel(const std::string& id,
                                       TrustLevel level) {
   TrustLevel before = level;
   if (!Update(id, [&](Script& script) {
+        // Never a workflow that needs a review first (an unconfirmed draft,
+        // one changed outside the browser): both UIs refuse it too.
+        if (script.security.sites_unconfirmed) {
+          return false;
+        }
         before = script.security.trust;
         script.security.trust = level;
         return true;

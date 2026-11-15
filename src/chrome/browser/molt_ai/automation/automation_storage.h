@@ -44,14 +44,48 @@
 // that hangs holding it, a file system without locks) a change goes ahead
 // as before, each file written atomically, and Take()'s rename still keeps
 // a claim once.
+//
+// Trust only what this browser wrote. Anything that can write the user's
+// home directory can write a .molt file there (a .molt the user was
+// tricked into saving, another program, a copy made by hand). The shared
+// storage therefore keeps, in the browser's own user data directory, the
+// Molt Workflow Record (workflow_record.h): for each file name, the
+// AutomationSecurity::SecurityDigest() of what this browser last wrote
+// there. Every read (Load(), ListAll(), and the stored script SaveChecked(),
+// Update(), Take() and ReadSetAside() see) parses the file and checks it
+// against the record: a file the record doesn't vouch for loads as an
+// unconfirmed import (AutomationSecurity::ClampUnvouched(): CASUAL, no
+// sites, its history cleared, SecurityPolicy::changed_outside set), which
+// doesn't run, fire or get trusted until the user confirms it in the Agent
+// studio; and trigger.last_fired_unix is never earlier than the record's
+// fire time for it. A read that finds a file unvouched looks again under
+// the directory's lock, so a save in progress in this browser is never
+// taken for a change. Every write records what it wrote (the bytes it
+// writes, parsed as a reader parses them): Save(), SaveNew(),
+// SaveChecked(), Update() (so SetTrustLevel()), and a move's renames and
+// deletions carry or forget the entry. What a write was given from an
+// unvouched read stays an unconfirmed import (ClampTrustForSave() and the
+// studio's KeepPolicy() keep the policy as read), so no write launders a
+// file. Run bookkeeping (stats, trigger.last_fired_unix) is outside the
+// digest and is written by UpdateBookkeeping() and RecordFire(), never
+// Update(): a run in one browser leaves another browser's record of the
+// file intact. The record is loaded (and, on the first start of this
+// version, seeded once from the files there) by PrepareRecord(), which
+// every script read and write calls first, outside the directory's lock.
+// A storage of its own directory (a profile's voice routines) has no
+// record, and loads files as they are; the shared directory without a
+// configured record (tests) gets a session-only one that trusts only
+// this process's writes (docs/design/AGENT_ACTIONS.md §3.6).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_STORAGE_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -67,6 +101,8 @@ class SequencedTaskRunner;
 
 namespace molt_ai {
 namespace automation {
+
+class WorkflowRecord;
 
 // A .molt is at most this big: a bigger one isn't read, nor written.
 inline constexpr size_t kMaxScriptFileBytes = 8 * 1024 * 1024;
@@ -155,9 +191,30 @@ class AutomationStorage {
   // its file's name), changed by |change|, and saved as Save() saves it,
   // all under the directory's lock (above). False, and nothing written,
   // when it is missing or unreadable, |change| returns false, or the save
-  // fails. |change| must not use a storage.
+  // fails. |change| must not use a storage. |change| sees the script as a
+  // read checked against the record gives it (above): what it saves of an
+  // unvouched one stays an unconfirmed import.
   using ScriptChange = base::FunctionRef<bool(Script& script)>;
   bool Update(const std::string& id, ScriptChange change);
+
+  // A read-modify-write of run bookkeeping only (the stats,
+  // trigger.last_fired_unix): |change| sees the script as the file holds
+  // it (never clamped), and it is written back only if its
+  // SecurityDigest(), read back as a reader will, is unchanged; the record
+  // is left as it was (vouched stays vouched, here and in another browser;
+  // unvouched stays unvouched). False, and nothing written, otherwise.
+  bool UpdateBookkeeping(const std::string& id, ScriptChange change);
+  // The scheduler's fire of |id| at |fired_unix|: the record's fire time
+  // for it rises first (kept even if the file can't be written), then
+  // UpdateBookkeeping() of trigger.last_fired_unix.
+  bool RecordFire(const std::string& id, int64_t fired_unix);
+
+  // Loads the workflow record (workflow_record.h), and on the first start
+  // of this version seeds it, once; nothing once loaded, or for a storage
+  // without one. Every script read and write above calls it first; the
+  // scheduler's service calls it at startup. Never under the directory's
+  // lock.
+  void PrepareRecord();
 
   // Delete a script + its artifacts directory.
   bool Delete(const std::string& id);
@@ -203,7 +260,8 @@ class AutomationStorage {
   // click (molt://ai-automation's trust panel, the Agent studio's Trust
   // button); saving / importing never changes trust (see
   // AutomationSecurity::ClampTrustForSave). Returns false if the script is
-  // missing or could not be saved.
+  // missing, needs a review (an unconfirmed draft, or one changed outside
+  // the browser), or could not be saved.
   bool SetTrustLevel(const std::string& id, TrustLevel level);
 
   // -------- Audit log --------
@@ -231,6 +289,28 @@ class AutomationStorage {
   // A change: the directory's lock and its lock file (above).
   class ChangeScope;
 
+  // What a read holds when it checks a script against the record: nothing
+  // (a read that finds it unvouched looks again under the directory's
+  // lock), or the directory's lock already (no second look).
+  enum class Held { kNothing, kChangeScope };
+
+  // The record of this storage's directory: the configured one, a
+  // session-only one for the shared directory without one, else null (a
+  // storage of its own directory).
+  WorkflowRecord* Record() const;
+  // The one parse-and-verify step: |dict| (read from |path|) as a script
+  // known by |id|, clamped unless the record vouches for it, its last
+  // fire time at least the record's.
+  std::optional<Script> Vetted(base::DictValue dict,
+                               const std::string& id,
+                               const base::FilePath& path,
+                               Held held);
+  // Under the directory's lock: UpdateBookkeeping()'s read-modify-write.
+  bool UpdateBookkeepingLocked(const std::string& id, ScriptChange change);
+  // Under the directory's lock: the names of the script files and
+  // set-aside files in the directory that are regular files.
+  std::set<std::string> PresentNamesLocked() const;
+
   base::FilePath GetRoot() const;
   base::FilePath GetAutomationsDir() const;
   base::FilePath GetScriptPath(const std::string& id) const;
@@ -247,6 +327,12 @@ class AutomationStorage {
   // there or it is over the cap.
   bool WriteScriptJsonLocked(const base::FilePath& path,
                              const base::DictValue& script_json);
+  // A script's file contents: |script_json| pretty-printed.
+  static std::string SerializeScript(const base::DictValue& script_json);
+  // Under the directory's lock: atomically writes |bytes| to |path|, as
+  // WriteScriptJsonLocked() does.
+  bool WriteScriptBytesLocked(const base::FilePath& path,
+                              const std::string& bytes);
   // Under the directory's lock: Save()'s write.
   bool SaveLocked(const Script& script);
   // Under the directory's lock: ReturnTaken()'s rename.

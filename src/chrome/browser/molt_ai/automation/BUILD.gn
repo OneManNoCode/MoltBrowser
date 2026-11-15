@@ -146,6 +146,9 @@ source_set("storage") {
   ]
 
   deps = [
+    # Every read checked against what this browser wrote.
+    ":workflow_record",
+
     # The shared storage is in ~/.moltbrowser, or a test's directory.
     "//chrome/browser/molt_ai/common:molt_home_dir",
 

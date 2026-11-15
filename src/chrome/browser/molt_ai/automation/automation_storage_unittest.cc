@@ -6,13 +6,19 @@
 // that aren't regular or are too big skipped and never written over, the
 // audit log created and read from its end, Update() as one
 // read-modify-write whichever thread, and moves cut short reported; since
-// round 45, a fresh id when every simple one is taken.
+// round 45, a fresh id when every simple one is taken; and the workflow
+// record (workflow_record.h): a file is trusted only as far as this browser
+// wrote it, on every read and write path, with the fire floor, the
+// one-time seeding and two browsers over one directory.
 
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/files/file.h"
@@ -21,17 +27,26 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/functional/function_ref.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
+#include "chrome/browser/molt_ai/automation/workflow_record.h"
+#include "chrome/browser/molt_ai/automation/workflow_record_test_util.h"
 #include "chrome/browser/molt_ai/common/molt_home_dir.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_POSIX)
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 #endif
 
 namespace molt_ai {
@@ -600,6 +615,660 @@ TEST(AutomationStorageTest, TheSharedStorageIsInMoltHomeDir) {
   SetMoltHomeDirForTesting(base::FilePath());
   EXPECT_NE(AutomationStorage::SharedDirectory(),
             temp.GetPath().AppendASCII("automations"));
+}
+
+// ---------------------------------------------------------------------------
+// The workflow record (workflow_record.h): a file is trusted only as far as
+// this browser wrote it; anything else loads as an unconfirmed import.
+// ---------------------------------------------------------------------------
+
+constexpr int64_t kFired = 1'800'000'000;
+
+// What a planted file might claim: TRUSTED, scheduled, a site of its own,
+// no approvals, a history.
+Script Claiming(const std::string& id) {
+  Script script = Named(id, "Prices");
+  script.security.trust = TrustLevel::TRUSTED;
+  script.security.domain_whitelist = {"evil.example"};
+  script.security.require_approval_for = {"x"};
+  script.trigger.type = TriggerType::CRON;
+  script.trigger.expression = "0 9 * * *";
+  script.stats.runs = 7;
+  script.stats.successes = 7;
+  return script;
+}
+
+// Loaded as an unconfirmed import (AutomationSecurity::ClampUnvouched()).
+bool IsClamped(const Script& script) {
+  return script.security.changed_outside && script.security.sites_unconfirmed &&
+         script.security.trust == TrustLevel::CASUAL &&
+         script.security.domain_whitelist.empty() && script.stats.runs == 0;
+}
+
+class AutomationStorageRecordTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    ASSERT_TRUE(temp_.CreateUniqueTempDir());
+    dir_ = temp_.GetPath().AppendASCII("automations");
+    user_data_dir_ = temp_.GetPath().AppendASCII("User Data");
+    ASSERT_TRUE(base::CreateDirectory(user_data_dir_));
+    Restart(/*may_seed=*/false);
+    storage_.emplace(dir_);
+  }
+
+  // A browser start with |user_data_dir| (this test's by default): its
+  // record is loaded at the storage's next use.
+  void Restart(bool may_seed,
+               const base::FilePath& user_data_dir = base::FilePath()) {
+    record_.reset();
+    record_.emplace(dir_,
+                    (user_data_dir.empty() ? user_data_dir_ : user_data_dir)
+                        .Append(kWorkflowRecordFileName),
+                    may_seed);
+  }
+
+  AutomationStorage& storage() { return *storage_; }
+  std::optional<Script> Load(const std::string& id) {
+    return storage().Load(id);
+  }
+  base::FilePath File(const std::string& id) {
+    return dir_.AppendASCII(id + ".molt");
+  }
+  // A file written by another program.
+  void Plant(const std::string& id, const Script& script) {
+    ASSERT_TRUE(base::CreateDirectory(dir_));
+    ASSERT_TRUE(base::WriteFile(File(id), script.ToJSONString()));
+  }
+  std::string Bytes(const std::string& id) {
+    std::string bytes;
+    EXPECT_TRUE(base::ReadFileToString(File(id), &bytes));
+    return bytes;
+  }
+  // What the file holds, as it is (not as the storage loads it).
+  std::optional<Script> Raw(const std::string& id) {
+    return Script::FromJSONString(Bytes(id));
+  }
+  // The file's JSON edited by another program.
+  void EditRaw(const std::string& id,
+               base::FunctionRef<void(base::DictValue&)> edit) {
+    std::optional<base::Value> value = base::JSONReader::Read(Bytes(id));
+    ASSERT_TRUE(value && value->is_dict());
+    edit(value->GetDict());
+    std::string out;
+    ASSERT_TRUE(base::JSONWriter::WriteWithOptions(
+        *value, base::JSONWriter::OPTIONS_PRETTY_PRINT, &out));
+    ASSERT_TRUE(base::WriteFile(File(id), out));
+  }
+  // Whether the record vouches for the file |name| as it is now.
+  bool Vouched(const std::string& name) {
+    std::string bytes;
+    if (!base::ReadFileToString(dir_.AppendASCII(name), &bytes)) {
+      return false;
+    }
+    std::optional<Script> script = Script::FromJSONString(bytes);
+    WorkflowRecord* record = WorkflowRecord::For(dir_);
+    return script && record &&
+           record->Vouches(name, AutomationSecurity::SecurityDigest(*script));
+  }
+  // The names the record file of |user_data_dir| lists.
+  std::set<std::string> RecordedNames(
+      const base::FilePath& user_data_dir = base::FilePath()) {
+    std::set<std::string> names;
+    std::string contents;
+    if (!base::ReadFileToString(
+            (user_data_dir.empty() ? user_data_dir_ : user_data_dir)
+                .Append(kWorkflowRecordFileName),
+            &contents)) {
+      return names;
+    }
+    std::optional<base::Value> value = base::JSONReader::Read(contents);
+    if (value && value->is_dict()) {
+      if (const base::DictValue* files = value->GetDict().FindDict("files")) {
+        for (const auto item : *files) {
+          names.insert(item.first);
+        }
+      }
+    }
+    return names;
+  }
+
+  base::ScopedTempDir temp_;
+  base::FilePath dir_;
+  base::FilePath user_data_dir_;
+  std::optional<ScopedWorkflowRecordForTesting> record_;
+  std::optional<AutomationStorage> storage_;
+};
+
+TEST_F(AutomationStorageRecordTest,
+       AFileWrittenOutsideLoadsAsAnUnconfirmedImport) {
+  Plant("wf_1", Claiming("wf_1"));
+  const std::string bytes = Bytes("wf_1");
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(IsClamped(*loaded));
+  EXPECT_EQ(loaded->security.require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login"}));
+  AutomationSecurity security;
+  EXPECT_FALSE(
+      security.AllowSubmit(AutomationSecurity::EffectivePolicy(*loaded)));
+  // What the user reviews is kept.
+  EXPECT_EQ(loaded->trigger.type, TriggerType::CRON);
+  EXPECT_EQ(loaded->trigger.expression, "0 9 * * *");
+  EXPECT_EQ(loaded->steps.size(), 1u);
+  EXPECT_EQ(loaded->name, "Prices");
+  // A listing the same, and the file as it was.
+  std::vector<Script> all = storage().ListAll();
+  ASSERT_EQ(all.size(), 1u);
+  EXPECT_TRUE(IsClamped(all[0]));
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+}
+
+TEST_F(AutomationStorageRecordTest, EverySecurityFieldChangedOutsideIsCaught) {
+  using Edit = void (*)(base::DictValue&);
+  const std::pair<const char*, Edit> kEdits[] = {
+      {"a step",
+       [](base::DictValue& d) {
+         (*d.FindList("steps"))[0].GetDict().Set("target",
+                                                 "https://evil.example/");
+       }},
+      {"trust",
+       [](base::DictValue& d) {
+         d.FindDict("security")->Set("trust", "admin");
+       }},
+      {"whitelist",
+       [](base::DictValue& d) {
+         base::ListValue sites;
+         sites.Append("evil.example");
+         d.FindDict("security")->Set("domain_whitelist", std::move(sites));
+       }},
+      {"trigger",
+       [](base::DictValue& d) {
+         d.FindDict("trigger")->Set("expression", "* * * * *");
+       }},
+      {"enabled", [](base::DictValue& d) { d.Set("enabled", false); }},
+      {"variables",
+       [](base::DictValue& d) {
+         d.FindDict("default_variables")->Set("to", "someone@evil.example");
+       }},
+      {"name", [](base::DictValue& d) { d.Set("name", "Renamed"); }},
+  };
+  for (const auto& [what, edit] : kEdits) {
+    Script saved = Named("wf_1", "Prices");
+    saved.trigger.type = TriggerType::CRON;
+    saved.trigger.expression = "0 9 * * *";
+    saved.security.trust = TrustLevel::APPROVED;
+    ASSERT_TRUE(storage().Save(saved));
+    std::optional<Script> before = Load("wf_1");
+    ASSERT_TRUE(before);
+    EXPECT_FALSE(before->security.changed_outside) << what;
+    EXPECT_EQ(before->security.trust, TrustLevel::APPROVED) << what;
+    EditRaw("wf_1", edit);
+    std::optional<Script> after = Load("wf_1");
+    ASSERT_TRUE(after);
+    EXPECT_TRUE(IsClamped(*after)) << what;
+  }
+}
+
+TEST_F(AutomationStorageRecordTest, RunBookkeepingMayChangeOutside) {
+  ASSERT_TRUE(storage().Save(Named("wf_1", "Prices")));
+  EditRaw("wf_1",
+          [](base::DictValue& d) { d.FindDict("stats")->Set("runs", 99); });
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->stats.runs, 99);
+  // A later last fire (another browser's run) too.
+  EditRaw("wf_1", [](base::DictValue& d) {
+    d.FindDict("trigger")->Set("last_fired_unix", static_cast<double>(kFired));
+  });
+  loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, kFired);
+  EXPECT_TRUE(Vouched("wf_1.molt"));
+}
+
+TEST_F(AutomationStorageRecordTest,
+       AnEarlierLastFiredNeverMovesTheScheduleBack) {
+  Script interval = Named("wf_1", "Prices");
+  interval.trigger.type = TriggerType::INTERVAL;
+  interval.trigger.expression = "3600";
+  ASSERT_TRUE(storage().Save(interval));
+  ASSERT_TRUE(storage().RecordFire("wf_1", kFired));
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, kFired);
+  EditRaw("wf_1", [](base::DictValue& d) {
+    d.FindDict("trigger")->Set("last_fired_unix", 1.0);
+  });
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, kFired);
+}
+
+TEST_F(AutomationStorageRecordTest, AHandCopyUnderAnotherIdIsNotVouched) {
+  Script original = Named("a", "Prices");
+  original.security.trust = TrustLevel::APPROVED;
+  ASSERT_TRUE(storage().Save(original));
+  ASSERT_TRUE(base::CopyFile(File("a"), File("b")));
+  EXPECT_TRUE(IsClamped(*Load("b")));
+  EXPECT_FALSE(Load("a")->security.changed_outside);
+  EXPECT_EQ(Load("a")->security.trust, TrustLevel::APPROVED);
+}
+
+TEST_F(AutomationStorageRecordTest, ARolledBackFileIsNotVouched) {
+  Script v1 = Named("wf_1", "Prices");
+  v1.security.trust = TrustLevel::TRUSTED;
+  ASSERT_TRUE(storage().Save(v1));
+  const std::string v1_bytes = Bytes("wf_1");
+  ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::CASUAL));
+  ASSERT_TRUE(base::WriteFile(File("wf_1"), v1_bytes));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->security.trust, TrustLevel::CASUAL);
+}
+
+TEST_F(AutomationStorageRecordTest, ADeletedWorkflowPutBackIsNotVouched) {
+  Script script = Named("wf_1", "Prices");
+  script.security.trust = TrustLevel::APPROVED;
+  ASSERT_TRUE(storage().Save(script));
+  const std::string bytes = Bytes("wf_1");
+  ASSERT_TRUE(storage().Delete("wf_1"));
+  ASSERT_TRUE(base::WriteFile(File("wf_1"), bytes));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->security.trust, TrustLevel::CASUAL);
+}
+
+TEST_F(AutomationStorageRecordTest, EveryWritePathVouches) {
+  auto vouched = [this](const std::string& id) {
+    std::optional<Script> script = Load(id);
+    return script && !script->security.changed_outside && Vouched(id + ".molt");
+  };
+  ASSERT_TRUE(storage().Save(Named("a", "A")));
+  EXPECT_TRUE(vouched("a"));
+  // Under the first free id.
+  std::optional<std::string> fresh = storage().SaveNew(Named("a", "A again"));
+  ASSERT_EQ(fresh, "a_");
+  EXPECT_TRUE(vouched("a_"));
+  EXPECT_TRUE(storage().SaveChecked(
+      Named("c", "C"), [](const Script*, Script&) { return true; }));
+  EXPECT_TRUE(vouched("c"));
+  EXPECT_TRUE(storage().Update("c", [](Script& script) {
+    script.name = "C2";
+    return true;
+  }));
+  EXPECT_TRUE(vouched("c"));
+  EXPECT_TRUE(storage().SetTrustLevel("c", TrustLevel::APPROVED));
+  EXPECT_TRUE(vouched("c"));
+  EXPECT_EQ(Load("c")->security.trust, TrustLevel::APPROVED);
+  // A move put back under its id, and under a fresh one when a workflow of
+  // its id was saved meanwhile.
+  ASSERT_TRUE(storage().Save(Named("d", "D")));
+  ASSERT_TRUE(storage().Take("d"));
+  ASSERT_TRUE(storage().ReturnTaken("d"));
+  EXPECT_TRUE(vouched("d"));
+  ASSERT_TRUE(storage().Take("d"));
+  ASSERT_TRUE(storage().Save(Named("d", "D saved since")));
+  ASSERT_TRUE(storage().ReturnTaken("d"));
+  EXPECT_TRUE(vouched("d"));
+  EXPECT_EQ(Load("d")->name, "D saved since");
+  EXPECT_TRUE(vouched("d_"));
+  EXPECT_EQ(Load("d_")->name, "D");
+}
+
+TEST_F(AutomationStorageRecordTest, WritesNeverVouchForWhatTheyReadUnvouched) {
+  // Vouched for as written, but written as the unconfirmed import it read.
+  auto expect_import = [this](const std::string& id, const char* what) {
+    EXPECT_TRUE(Vouched(id + ".molt")) << what;
+    std::optional<Script> script = Load(id);
+    ASSERT_TRUE(script) << what;
+    EXPECT_EQ(script->security.trust, TrustLevel::CASUAL) << what;
+    EXPECT_TRUE(script->security.sites_unconfirmed) << what;
+    EXPECT_TRUE(script->security.changed_outside) << what;
+    EXPECT_TRUE(script->security.domain_whitelist.empty()) << what;
+  };
+  Plant("wf_1", Claiming("wf_1"));
+  EXPECT_TRUE(storage().Update("wf_1", [](Script& script) {
+    script.name = "Mine now";
+    return true;
+  }));
+  expect_import("wf_1", "Update");
+
+  Plant("wf_2", Claiming("wf_2"));
+  std::optional<Script> shown = Load("wf_2");
+  ASSERT_TRUE(shown);
+  shown->name = "Edited";
+  EXPECT_TRUE(storage().SaveChecked(
+      std::move(*shown), [](const Script* stored, Script& script) {
+        AutomationSecurity::ClampTrustForSave(script, stored);
+        return true;
+      }));
+  expect_import("wf_2", "SaveChecked");
+
+  Plant("wf_3", Claiming("wf_3"));
+  std::optional<Script> loaded = Load("wf_3");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(storage().Save(*loaded));
+  expect_import("wf_3", "Save");
+}
+
+TEST_F(AutomationStorageRecordTest,
+       SetTrustLevelRefusesAWorkflowNeedingReview) {
+  Plant("wf_1", Claiming("wf_1"));
+  const std::string bytes = Bytes("wf_1");
+  EXPECT_FALSE(storage().SetTrustLevel("wf_1", TrustLevel::APPROVED));
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+  // Nor a draft from an agent run.
+  Script draft = Named("wf_2", "Draft");
+  draft.security.sites_unconfirmed = true;
+  ASSERT_TRUE(storage().Save(draft));
+  const std::string draft_bytes = Bytes("wf_2");
+  EXPECT_FALSE(storage().SetTrustLevel("wf_2", TrustLevel::APPROVED));
+  EXPECT_EQ(Bytes("wf_2"), draft_bytes);
+}
+
+TEST_F(AutomationStorageRecordTest,
+       UpdateBookkeepingKeepsTheVerdictAndRefusesSecurityChanges) {
+  ASSERT_TRUE(storage().Save(Named("a", "A")));
+  EXPECT_TRUE(storage().UpdateBookkeeping("a", [](Script& script) {
+    script.stats.runs = 3;
+    return true;
+  }));
+  EXPECT_TRUE(Vouched("a.molt"));
+  EXPECT_EQ(Load("a")->stats.runs, 3);
+
+  // A file changed outside: still changed, its security content as it was
+  // (another browser's history isn't lost, nor its claims laundered).
+  Plant("b", Claiming("b"));
+  const base::DictValue security =
+      Raw("b")->ToJSON().FindDict("security")->Clone();
+  EXPECT_TRUE(storage().UpdateBookkeeping("b", [](Script& script) {
+    script.stats.runs = 5;
+    return true;
+  }));
+  EXPECT_FALSE(Vouched("b.molt"));
+  std::optional<Script> raw = Raw("b");
+  ASSERT_TRUE(raw);
+  EXPECT_EQ(raw->stats.runs, 5);
+  EXPECT_EQ(*raw->ToJSON().FindDict("security"), security);
+  EXPECT_TRUE(IsClamped(*Load("b")));
+
+  // Anything else: refused, nothing written.
+  const std::string bytes = Bytes("a");
+  EXPECT_FALSE(storage().UpdateBookkeeping("a", [](Script& script) {
+    script.security.trust = TrustLevel::ADMIN;
+    return true;
+  }));
+  EXPECT_FALSE(storage().UpdateBookkeeping("a", [](Script& script) {
+    script.steps.clear();
+    return true;
+  }));
+  EXPECT_EQ(Bytes("a"), bytes);
+  EXPECT_FALSE(
+      storage().UpdateBookkeeping("gone", [](Script&) { return true; }));
+}
+
+#if BUILDFLAG(IS_POSIX)
+TEST_F(AutomationStorageRecordTest,
+       RecordFireKeepsTheFloorWhenTheFileIsNotWritten) {
+  if (geteuid() == 0) {
+    GTEST_SKIP() << "root writes into a read-only directory";
+  }
+  Script interval = Named("wf_1", "Prices");
+  interval.trigger.type = TriggerType::INTERVAL;
+  interval.trigger.expression = "3600";
+  ASSERT_TRUE(storage().Save(interval));
+  ASSERT_TRUE(base::SetPosixFilePermissions(dir_, 0500));
+  EXPECT_FALSE(storage().RecordFire("wf_1", kFired));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(base::SetPosixFilePermissions(dir_, 0700));
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, kFired);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, 0);
+}
+#endif  // BUILDFLAG(IS_POSIX)
+
+TEST_F(AutomationStorageRecordTest, TheSecretScrubRewriteKeepsTheVerdict) {
+  // A workflow from before secret steps, with a plaintext password in it,
+  // there at the upgrade.
+  Script legacy = Named("legacy", "Sign in");
+  legacy.security.trust = TrustLevel::TRUSTED;
+  Step password;
+  password.type = StepType::TYPE;
+  password.target = "[name=\"passwd\"]";
+  password.value = "s3cret!";
+  legacy.steps.push_back(std::move(password));
+  Plant("legacy", legacy);
+  ASSERT_NE(Bytes("legacy").find("s3cret!"), std::string::npos);
+  Restart(/*may_seed=*/true);
+  std::optional<Script> loaded = Load("legacy");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->security.trust, TrustLevel::TRUSTED);
+  EXPECT_EQ(Bytes("legacy").find("s3cret!"), std::string::npos);
+  EXPECT_FALSE(Load("legacy")->security.changed_outside);
+  // Planted afterwards: scrubbed as well, but never vouched for.
+  legacy.id = "planted";
+  Plant("planted", legacy);
+  loaded = Load("planted");
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(IsClamped(*loaded));
+  EXPECT_EQ(Bytes("planted").find("s3cret!"), std::string::npos);
+  EXPECT_TRUE(IsClamped(*Load("planted")));
+}
+
+TEST_F(AutomationStorageRecordTest, TakeAndReturnCarryTheVerdict) {
+  Script script = Named("a", "A");
+  script.security.trust = TrustLevel::APPROVED;
+  ASSERT_TRUE(storage().Save(script));
+  std::optional<Script> taken = storage().Take("a");
+  ASSERT_TRUE(taken);
+  EXPECT_FALSE(taken->security.changed_outside);
+  EXPECT_EQ(taken->security.trust, TrustLevel::APPROVED);
+  ASSERT_TRUE(storage().ReturnTaken("a"));
+  EXPECT_FALSE(Load("a")->security.changed_outside);
+  EXPECT_EQ(Load("a")->security.trust, TrustLevel::APPROVED);
+  // Returned as a_, since a was saved meanwhile.
+  ASSERT_TRUE(storage().Take("a"));
+  ASSERT_TRUE(storage().Save(Named("a", "saved since")));
+  ASSERT_TRUE(storage().ReturnTaken("a"));
+  std::optional<Script> back = Load("a_");
+  ASSERT_TRUE(back);
+  EXPECT_FALSE(back->security.changed_outside);
+  EXPECT_EQ(back->security.trust, TrustLevel::APPROVED);
+  // A changed one stays changed, taken and put back.
+  Plant("b", Claiming("b"));
+  taken = storage().Take("b");
+  ASSERT_TRUE(taken);
+  EXPECT_TRUE(IsClamped(*taken));
+  ASSERT_TRUE(storage().ReturnTaken("b"));
+  EXPECT_TRUE(IsClamped(*Load("b")));
+}
+
+TEST_F(AutomationStorageRecordTest, FinishTakeForgetsTheSetAsideFile) {
+  ASSERT_TRUE(storage().Save(Named("a", "A")));
+  ASSERT_TRUE(storage().Take("a"));
+  const std::vector<base::FilePath> set_aside = SetAsideFiles(dir_, "a");
+  ASSERT_EQ(set_aside.size(), 1u);
+  const std::string name = set_aside[0].BaseName().AsUTF8Unsafe();
+  EXPECT_EQ(RecordedNames(), std::set<std::string>{name});
+  storage().FinishTake("a");
+  EXPECT_FALSE(base::PathExists(set_aside[0]));
+  EXPECT_TRUE(RecordedNames().empty());
+}
+
+// A read never takes a save of this browser's in progress for a change:
+// the file renamed before the record is set, or the reverse (shaped like
+// UpdatesNeverInterleave).
+TEST_F(AutomationStorageRecordTest,
+       ReadsNeverSeeASaveInProgressAsChangedOutside) {
+  base::test::TaskEnvironment task_environment;
+  ASSERT_TRUE(storage().Save(Named("wf_1", "Prices")));
+  constexpr int kRounds = 40;
+  base::ThreadPool::PostTask(
+      FROM_HERE, {base::MayBlock()},
+      base::BindOnce(
+          [](base::FilePath dir) {
+            AutomationStorage studio(dir);
+            for (int i = 0; i < kRounds; ++i) {
+              EXPECT_TRUE(studio.Update("wf_1", [i](Script& script) {
+                script.steps[0].target =
+                    "https://news.example/" + base::NumberToString(i);
+                return true;
+              }));
+            }
+          },
+          dir_));
+  base::ThreadPool::PostTask(
+      FROM_HERE, {base::MayBlock()},
+      base::BindOnce(
+          [](base::FilePath dir) {
+            AutomationStorage reader(dir);
+            for (int i = 0; i < 2 * kRounds; ++i) {
+              std::optional<Script> script = reader.Load("wf_1");
+              ASSERT_TRUE(script);
+              EXPECT_FALSE(script->security.changed_outside) << i;
+            }
+          },
+          dir_));
+  task_environment.RunUntilIdle();
+  EXPECT_FALSE(Load("wf_1")->security.changed_outside);
+}
+
+// Two user data dirs (an installed and a portable browser) over one
+// ~/.moltbrowser: runs in one leave the other's record intact; a change to
+// what a workflow does needs a review in the other; reviews converge.
+TEST_F(AutomationStorageRecordTest, TwoUserDataDirsOverOneDirectory) {
+  const base::FilePath a = user_data_dir_;
+  const base::FilePath b = temp_.GetPath().AppendASCII("Other User Data");
+  ASSERT_TRUE(base::CreateDirectory(b));
+  // A, a new user data dir, saves a workflow.
+  Script workflow = Named("wf_1", "Prices");
+  workflow.security.trust = TrustLevel::APPROVED;
+  ASSERT_TRUE(storage().Save(workflow));
+  // B's first start of this version seeds it.
+  Restart(/*may_seed=*/true, b);
+  EXPECT_FALSE(Load("wf_1")->security.changed_outside);
+  // B runs it: bookkeeping only.
+  ASSERT_TRUE(storage().UpdateBookkeeping("wf_1", [](Script& script) {
+    script.stats.runs = 1;
+    return true;
+  }));
+  ASSERT_TRUE(storage().RecordFire("wf_1", kFired));
+  Restart(/*may_seed=*/false, a);
+  std::optional<Script> in_a = Load("wf_1");
+  ASSERT_TRUE(in_a);
+  EXPECT_FALSE(in_a->security.changed_outside);
+  EXPECT_EQ(in_a->stats.runs, 1);
+  // B changes what it is: A sees it changed.
+  Restart(/*may_seed=*/true, b);
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    script.name = "Prices (B)";
+    return true;
+  }));
+  Restart(/*may_seed=*/false, a);
+  in_a = Load("wf_1");
+  ASSERT_TRUE(in_a);
+  EXPECT_TRUE(IsClamped(*in_a));
+  EXPECT_EQ(in_a->name, "Prices (B)");
+  // A confirms it: CASUAL on its site.
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    return AutomationSecurity::ConfirmDraftSites(script, {"news.example"});
+  }));
+  in_a = Load("wf_1");
+  EXPECT_FALSE(in_a->security.changed_outside);
+  EXPECT_EQ(in_a->security.trust, TrustLevel::CASUAL);
+  // B sees A's write changed; its confirm writes the same content, which
+  // A still vouches for.
+  Restart(/*may_seed=*/true, b);
+  EXPECT_TRUE(IsClamped(*Load("wf_1")));
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    return AutomationSecurity::ConfirmDraftSites(script, {"news.example"});
+  }));
+  EXPECT_FALSE(Load("wf_1")->security.changed_outside);
+  Restart(/*may_seed=*/false, a);
+  EXPECT_FALSE(Load("wf_1")->security.changed_outside);
+  EXPECT_EQ(RecordedNames(a), std::set<std::string>{"wf_1.molt"});
+  EXPECT_EQ(RecordedNames(b), std::set<std::string>{"wf_1.molt"});
+}
+
+TEST_F(AutomationStorageRecordTest, SeedingKeepsEveryLegacyWorkflowAsItWas) {
+  // What the previous build ran: a TRUSTED scheduled workflow, a move cut
+  // short, and (POSIX) a link, which is never a workflow.
+  Plant("legacy", Claiming("legacy"));
+  Script old = Named("old", "Old");
+  old.security.trust = TrustLevel::APPROVED;
+  const base::FilePath old_file = dir_.AppendASCII("old.molt.0123abcd.taken");
+  ASSERT_TRUE(base::WriteFile(old_file, old.ToJSONString()));
+#if BUILDFLAG(IS_POSIX)
+  const base::FilePath target = temp_.GetPath().AppendASCII("target.json");
+  ASSERT_TRUE(base::WriteFile(target, Claiming("link").ToJSONString()));
+  ASSERT_TRUE(base::CreateSymbolicLink(target, File("link")));
+#endif
+  Restart(/*may_seed=*/true);
+  std::optional<Script> legacy = Load("legacy");
+  ASSERT_TRUE(legacy);
+  EXPECT_FALSE(legacy->security.changed_outside);
+  EXPECT_EQ(legacy->security.trust, TrustLevel::TRUSTED);
+  EXPECT_EQ(legacy->security.domain_whitelist,
+            std::vector<std::string>{"evil.example"});
+  EXPECT_EQ(legacy->stats.runs, 7);
+  EXPECT_TRUE(AutomationSecurity::MayFireUnattended(*legacy));
+  std::optional<Script> set_aside = storage().ReadSetAside({"old", old_file});
+  ASSERT_TRUE(set_aside);
+  EXPECT_FALSE(set_aside->security.changed_outside);
+  EXPECT_EQ(set_aside->security.trust, TrustLevel::APPROVED);
+  EXPECT_EQ(RecordedNames(),
+            (std::set<std::string>{"legacy.molt", "old.molt.0123abcd.taken"}));
+  bool seeded = false;
+  for (const std::string& line : storage().ReadAuditTail()) {
+    seeded |= line.find("record_seeded | 2 workflows") != std::string::npos;
+  }
+  EXPECT_TRUE(seeded);
+  // A file added afterwards needs a review.
+  Plant("later", Claiming("later"));
+  EXPECT_TRUE(IsClamped(*Load("later")));
+}
+
+TEST_F(AutomationStorageRecordTest, ADirectoryWithoutARecordIsUnchanged) {
+  // A profile's voice routines, a test's directory: files as they are.
+  const base::FilePath own = temp_.GetPath().AppendASCII("Profile 1");
+  ASSERT_TRUE(base::CreateDirectory(own));
+  ASSERT_TRUE(base::WriteFile(own.AppendASCII("wf_1.molt"),
+                              Claiming("wf_1").ToJSONString()));
+  AutomationStorage mine(own);
+  std::optional<Script> loaded = mine.Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(loaded->security.trust, TrustLevel::TRUSTED);
+}
+
+TEST_F(AutomationStorageRecordTest,
+       TheRealSharedDirectoryWithoutConfigurationFailsClosed) {
+  WorkflowRecord::ResetForTesting();
+  SetMoltHomeDirForTesting(temp_.GetPath().AppendASCII("home"));
+  const base::FilePath shared_dir = AutomationStorage::SharedDirectory();
+  ASSERT_TRUE(base::CreateDirectory(shared_dir));
+  ASSERT_TRUE(base::WriteFile(shared_dir.AppendASCII("planted.molt"),
+                              Claiming("planted").ToJSONString()));
+  {
+    AutomationStorage shared;
+    EXPECT_TRUE(IsClamped(*shared.Load("planted")));
+    // This session's own writes only.
+    ASSERT_TRUE(shared.Save(Named("mine", "Mine")));
+    EXPECT_FALSE(shared.Load("mine")->security.changed_outside);
+  }
+  // Another process: nothing was kept.
+  WorkflowRecord::ResetForTesting();
+  {
+    AutomationStorage shared;
+    EXPECT_TRUE(shared.Load("mine")->security.changed_outside);
+  }
+  WorkflowRecord::ResetForTesting();
+  SetMoltHomeDirForTesting(base::FilePath());
 }
 
 }  // namespace
