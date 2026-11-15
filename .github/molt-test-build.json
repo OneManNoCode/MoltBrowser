@@ -1,12 +1,12 @@
 {
- "resume_run": "43682351241",
+ "resume_run": "43696915109",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Seventy-third build (incremental on the seventy-second, run 43682351241, Chromium 156.0.8078.100): workflow files changed outside MoltBrowser need review before they run (PR #134): the Molt Workflow Record in the profile, the security digest and the clamp, every read vetted and every write recorded, review and re-approval in the Agent studio, molt://ai-automation and voice mode, and schedules counted from this browser's own last fire. First run of its new unit and browser tests. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Seventy-fourth build (incremental on the seventy-third, run 43696915109, Chromium 156.0.8078.100): workflow files changed outside MoltBrowser need review (PR #134), now with rounds six to eight: a confirmed change keeps only what the Agent studio's review showed (an allowlist of steps, fields and extra keys), routine claims run what their titles say, site-tool values shown each in its own box, a stale editor's save refused, schedules counted from this browser's record only. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
