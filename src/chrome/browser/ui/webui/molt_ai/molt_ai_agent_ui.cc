@@ -687,12 +687,18 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         in.Set("default_variables", vars->Clone());
       }
     }
-    // Assign an id for brand-new (recorded / blank) workflows.
-    const std::string* existing = in.FindString("id");
-    const bool id_made_here = !existing || existing->empty();
-    if (id_made_here) {
-      in.Set("id", molt_ai::agent_studio::NewWorkflowId());
-    }
+    // An "id" is of a workflow the page read (an edit); none, a new one:
+    // a recording's first save under the "recordedId" stopRecording made
+    // here, else under an id made now (KindOfSave()).
+    const std::string* sent_id = in.FindString("id");
+    const std::string* recorded_id = in.FindString("recordedId");
+    const molt_ai::agent_studio::SaveKind kind =
+        molt_ai::agent_studio::KindOfSave(
+            sent_id ? *sent_id : std::string(),
+            recorded_id ? *recorded_id : std::string(), recorded_ids_);
+    in.Remove("recordedId");
+    in.Set("id",
+           kind.id.empty() ? molt_ai::agent_studio::NewWorkflowId() : kind.id);
     std::optional<Script> s = Script::FromJSON(in);
     if (!s) {
       ResolveDict(args, base::DictValue());
@@ -707,10 +713,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     const bool voice_steps = molt_ai::automation::HasVoiceSteps(request.script);
     // First save of a draft that stopRecording produced in this panel (the
     // id was minted here and is used once).
-    request.recorded_here = !voice_steps && recorded_ids_.erase(id) > 0;
-    // A new workflow only under an id made here; any other id the page
-    // sends is of a workflow it read (an edit, refused if that is gone).
-    request.new_workflow = id_made_here || request.recorded_here;
+    request.recorded_here =
+        kind.recorded_here && !voice_steps && recorded_ids_.erase(id) > 0;
+    // A new workflow only when the page named none; any id it sends is of
+    // a workflow it read (an edit, refused if that is gone).
+    request.new_workflow = kind.new_workflow;
     // Routines taught by voice are kept in the profile (an edit, a rename,
     // an import of one), workflows in the shared storage: a look at the
     // other storage on its sequence, then the save on its own.
@@ -1023,9 +1030,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       ResolveDict(args, base::DictValue());
       return;
     }
-    // Mint the id now and remember it: the first saveWorkflow with this
-    // id is a recording the user made here (see HandleSaveWorkflow). One
-    // the shared storage doesn't have, looked up on its sequence.
+    // Mint the id now and remember it: the first saveWorkflow that sends
+    // it as its "recordedId" (and no "id") is a recording the user made
+    // here (see HandleSaveWorkflow). One the shared storage doesn't have,
+    // looked up on its sequence.
     AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
         FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::UnusedWorkflowId, Places(),
@@ -1250,7 +1258,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   }
 
   // Draft ids minted by stopRecording in this panel and not yet saved (see
-  // HandleSaveWorkflow: their first save starts APPROVED).
+  // HandleSaveWorkflow: the save that sends one as its "recordedId", with
+  // no "id", starts APPROVED).
   std::set<std::string> recorded_ids_;
 
   // The last question shown for each workflow's run (PollRunResult).
@@ -1309,7 +1318,8 @@ scoped_refptr<base::RefCountedMemory> ReadFileBytes(const base::FilePath& path) 
   return base::MakeRefCounted<base::RefCountedString>(std::move(read.contents));
 }
 
-constexpr char kAgentPageJs[] = R"JS(/* Agent studio page script, served as /app.js under the strict molt
+constexpr char kAgentPageJs[] =
+    R"JS(/* Agent studio page script, served as /app.js under the strict molt
    WebUI CSP (molt_webui_csp.h). The page builds all markup with DOM
    APIs (h() below) and never assigns HTML strings, so Trusted Types
    allow no policies at all. */
@@ -2462,17 +2472,26 @@ $('edSchedBtn').addEventListener('click',function(){
     toast(editorState.changedOutside?'Review this workflow first':'Confirm this draft’s sites first','err');return;}
   saveEditor(true).then(function(id){if(id!=null)openScheduleSheet(id,editorState.name,editorState.trigger);});
 });
+/* A workflow opened here is saved under its id (an edit of what is
+   stored); a new one with no id, and a recording's first save with the id
+   the browser made for it as recordedId. */
 function collectWorkflow(){
   syncVariables();
   var w={name:(editorState.name||'Untitled workflow'),steps:editorState.steps,
     variables:editorState.variables,trigger:editorState.trigger||{type:'manual',expression:''}};
   if(editorState.id!=null)w.id=editorState.id;
-  else if(editorState.recordedId)w.id=editorState.recordedId;
+  else if(editorState.recordedId)w.recordedId=editorState.recordedId;
   return w;
 }
+/* One save at a time: a second one (a double click, Save then Run) waits
+   for the first, so it is saved under the id the first was given, not as
+   a second new workflow. */
+var editorSaving=null;
 function saveEditor(quiet){
+  if(editorSaving)return editorSaving.then(function(){return saveEditor(quiet);});
+  if(!editorState)return Promise.resolve(null);
   var w=collectWorkflow();
-  return sendWithPromise('saveWorkflow',w).then(function(r){
+  editorSaving=sendWithPromise('saveWorkflow',w).then(function(r){
     if(r&&typeof r.error==='string'){toast(r.error,'err');return null;}
     if(r&&r.id!=null){
       editorState.id=r.id;
@@ -2489,7 +2508,9 @@ function saveEditor(quiet){
     }
     if(!quiet)toast('Saved','ok');
     return editorState.id;
-  }).catch(function(){toast('Couldn’t save','err');return null;});
+  }).catch(function(){toast('Couldn’t save','err');return null;})
+    .then(function(id){editorSaving=null;return id;});
+  return editorSaving;
 }
 
 /* ============================== RUN ============================== */
@@ -2705,7 +2726,7 @@ function openScheduleSheet(id,name,trigger){
   $('schedSubT').textContent=(name?('“'+name+'”'):'This workflow')+' — run it automatically.';
   var tr=trigger||{type:'manual',expression:''};
   scheduleCtx.mode=tr.type||'manual';
-  var iv=parseInterval(tr.type==='interval'?tr.expression:'');
+  var iv=tr.type==='interval'?savedInterval(tr.expression):parseInterval('');
   var daily=(tr.type==='daily'&&tr.expression)?tr.expression:'09:00';
   var cron=(tr.type==='cron'&&tr.expression)?tr.expression:'0 9 * * *';
 
@@ -2766,6 +2787,15 @@ function parseInterval(expr){
   if(m)return {n:parseInt(m[1],10)||30,unit:m[2]||'m'};
   return {n:30,unit:'m'};
 }
+/* A saved interval is in seconds ("1800"); the sheet's in minutes or
+   hours. */
+function savedInterval(expr){
+  var e=String(expr||'').trim();
+  if(!/^\d+$/.test(e))return parseInterval(e);
+  var secs=parseInt(e,10)||0;
+  if(secs>=3600&&secs%3600===0)return {n:secs/3600,unit:'h'};
+  return {n:Math.max(1,Math.round(secs/60)),unit:'m'};
+}
 function currentTrigger(){
   var mode=scheduleCtx.mode;
   if(mode==='interval'){
@@ -2811,7 +2841,10 @@ $('schedSave').addEventListener('click',function(){
   var tr=currentTrigger();var btn=$('schedSave');btn.disabled=true;btn.textContent='Saving…';
   sendWithPromise('saveSchedule',scheduleCtx.id,tr).then(function(r){
     if(r&&r.ok===false&&typeof r.error==='string'&&r.error){toast(r.error,'err');return;}
-    if(editorState&&editorState.id===scheduleCtx.id)editorState.trigger=tr;
+    // The trigger as the browser saved it (the sheet's own shape, 'daily'
+    // or '30m', isn't one): the editor's next save keeps the schedule.
+    if(editorState&&editorState.id===scheduleCtx.id&&r&&r.trigger&&typeof r.trigger.type==='string')
+      editorState.trigger=r.trigger;
     closeScrim('schedScrim');
     toast(tr.type==='manual'?'Schedule cleared':('Scheduled — next '+(r&&r.nextFire?formatNext(r.nextFire):'soon')),'ok');
     loadLibrary();

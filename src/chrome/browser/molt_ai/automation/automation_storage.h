@@ -59,9 +59,11 @@
 // doesn't run, fire or get trusted until the user confirms it in the Agent
 // studio; and trigger.last_fired_unix is the file's own only when the
 // record vouches for the file and it can be a fire since this browser last
-// wrote there, else the one this browser wrote or fired at
-// (WorkflowRecord::LastFired(): a forged earlier one forces no catch-up
-// run, a forged later one stalls no schedule). A read that finds a file
+// wrote there, else the one this browser wrote or fired at, or, for one
+// written since that is still to come (another browser's Snooze or Skip),
+// when this browser first read it (WorkflowRecord::LastFired(): a forged
+// earlier one forces no catch-up run, a later one forces none either and
+// holds a schedule back at most an interval). A read that finds a file
 // unvouched looks again under the directory's lock, so a save in progress
 // in this browser is never taken for a change. Every write records what it
 // wrote (the bytes it writes, parsed as a reader parses them, its last fire

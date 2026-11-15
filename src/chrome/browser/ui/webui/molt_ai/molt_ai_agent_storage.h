@@ -28,11 +28,13 @@
 // unconfirmed draft, automation_storage.h) is shown for review like a
 // draft from an agent run: it neither runs, nor is scheduled or trusted,
 // until confirmDraftSites, after a real click, with the review token of
-// exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6). A
-// save of a workflow the page opened is an edit of what is stored then,
-// refused if it is gone (SaveRequest). An interval schedule the studio
-// writes without a last fire (saveSchedule, confirmDraftSites) counts from
-// then.
+// exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6), its
+// schedule starting over. A save that names a workflow (one the page
+// opened) is an edit of what is stored then, refused if it is gone; only a
+// save that names none is a new workflow (SaveRequest, KindOfSave()). An
+// interval schedule the studio writes without a last fire (saveSchedule,
+// confirmDraftSites) counts from then, and saveSchedule answers with the
+// trigger it saved.
 //
 // Blocking (file I/O); base::Value and the storages only, so
 // molt_ai_unittests tests it on temporary directories.
@@ -125,11 +127,11 @@ Answer AnswerInSharedStorage(const StudioPlaces& places,
 // saveWorkflow: |script| from the page (its id given or made, its creation
 // time set). |recorded_here|: its id was made by stopRecording in this
 // panel and this is its first save (UI state, used up by the caller).
-// |new_workflow|: its id was made for it (the page sent none, or
-// |recorded_here|), so it is saved under that id or a free one made from
-// it, never over another file. Any other id is of a workflow the page
-// read: an edit, refused when that workflow is gone or unreadable by the
-// time it is saved (never saved as a new one).
+// |new_workflow|: the page sent no id (a blank or imported workflow, or a
+// recording), so it is saved under the id made for it or a free one made
+// from it, never over another file. An id the page sent is of a workflow
+// it read: an edit, refused when that workflow is gone or unreadable by
+// the time it is saved (never saved as a new one). KindOfSave() decides.
 struct SaveRequest {
   SaveRequest();
   ~SaveRequest();
@@ -140,6 +142,23 @@ struct SaveRequest {
   bool recorded_here = false;
   bool new_workflow = false;
 };
+
+// saveWorkflow's kind, from the page's message: its "id" (|sent_id|) is of
+// a workflow it read, so an edit, even when it is one of |minted| (the ids
+// stopRecording made in this panel, not saved yet: a file put there since
+// by anything else is changed outside like any other). With none, a new
+// workflow: a recording's first save when its "recordedId"
+// (|recorded_id|) is one of |minted| (the caller uses it up), else under
+// an id the caller makes.
+struct SaveKind {
+  // The id to save under; empty: one the caller makes.
+  std::string id;
+  bool new_workflow = false;
+  bool recorded_here = false;
+};
+SaveKind KindOfSave(const std::string& sent_id,
+                    const std::string& recorded_id,
+                    const std::set<std::string>& minted);
 
 // What a storage holds under an id, for a save to the other one.
 enum class Holds {

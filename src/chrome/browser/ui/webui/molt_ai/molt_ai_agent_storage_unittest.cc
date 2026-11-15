@@ -8,14 +8,16 @@
 // sequence never interleave; a workflow whose file was changed outside the
 // browser (workflow_record.h) is shown for review, neither runs nor is
 // scheduled or trusted, and is confirmed only as it was reviewed; an edit
-// of a workflow gone since it was opened is refused, a new one never goes
-// over another file, and an interval schedule counts from when it is
-// written.
+// of a workflow gone since it was opened is refused, an id sent is always
+// an edit, a new one never goes over another file, an interval schedule
+// counts from when it is written, a schedule is answered as saved, and a
+// confirmed change starts its schedule over.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_storage.h"
 
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -655,6 +657,137 @@ TEST_F(AgentStudioStorageTest, ANewWorkflowIsNeverSavedOverAnother) {
   EXPECT_FALSE(mine->security.changed_outside);
   EXPECT_EQ(mine->security.trust, TrustLevel::APPROVED);
   EXPECT_TRUE(Shared().Load("wf_1")->security.changed_outside);
+}
+
+// Only a save that names no workflow is a new one. An id the page sends is
+// an edit even when it is one stopRecording made in this panel and not yet
+// saved (it is predictable): a file put under it by another program, then
+// opened and saved (or renamed) in the editor, stays a draft, and no new
+// workflow is vouched for. A recording's own first save sends that id as
+// its recordedId, and no id.
+TEST_F(AgentStudioStorageTest, AnIdSentIsAnEditEvenOneARecordingWasGiven) {
+  UseRecord();
+  const std::set<std::string> minted = {"wf_1_rec"};
+  for (const char* recorded : {"", "wf_1_rec"}) {
+    const SaveKind edit = KindOfSave("wf_1_rec", recorded, minted);
+    EXPECT_EQ(edit.id, "wf_1_rec") << recorded;
+    EXPECT_FALSE(edit.new_workflow) << recorded;
+    EXPECT_FALSE(edit.recorded_here) << recorded;
+  }
+  const SaveKind first = KindOfSave("", "wf_1_rec", minted);
+  EXPECT_EQ(first.id, "wf_1_rec");
+  EXPECT_TRUE(first.new_workflow);
+  EXPECT_TRUE(first.recorded_here);
+  for (const char* recorded : {"", "wf_2_rec"}) {
+    const SaveKind blank = KindOfSave("", recorded, minted);
+    EXPECT_EQ(blank.id, "") << recorded;
+    EXPECT_TRUE(blank.new_workflow) << recorded;
+    EXPECT_FALSE(blank.recorded_here) << recorded;
+  }
+  // Planted under the id, then opened and saved as the editor shows it.
+  Plant(Claiming("wf_1_rec"));
+  Script shown = Workflow("wf_1_rec", "Prices");
+  shown.trigger = Claiming("wf_1_rec").trigger;
+  const SaveKind kind = KindOfSave("wf_1_rec", "", minted);
+  SaveRequest request = Save(std::move(shown));
+  request.new_workflow = kind.new_workflow;
+  request.recorded_here = kind.recorded_here;
+  Answer saved =
+      SaveSharedWorkflow(places_, std::move(request), Holds::kNothing);
+  ASSERT_TRUE(saved.out.FindString("id"));
+  EXPECT_EQ(*saved.out.FindString("id"), "wf_1_rec");
+  EXPECT_EQ(*saved.out.FindString("trust"), "casual");
+  std::optional<Script> stored = Shared().Load("wf_1_rec");
+  ASSERT_TRUE(stored);
+  EXPECT_TRUE(stored->security.changed_outside);
+  EXPECT_TRUE(stored->security.sites_unconfirmed);
+  EXPECT_EQ(Shared().ListIds(), std::vector<std::string>{"wf_1_rec"});
+  EXPECT_EQ(*Error(Ask(Request(Kind::kCheckRun, "wf_1_rec"))),
+            automation::kChangedOutsideMessage);
+}
+
+// saveSchedule answers with the trigger it saved, as the file holds it (an
+// interval in seconds, its count started): the editor keeps it, so its
+// next save keeps the schedule (the sheet's own "daily" or "30m" isn't a
+// trigger: saved as it is, the schedule would be lost).
+TEST_F(AgentStudioStorageTest, AScheduleIsAnsweredAsSaved) {
+  UseRecord();
+  ASSERT_TRUE(Shared().Save(Workflow("wf_1", "Prices")));
+  const int64_t before = base::Time::Now().ToTimeT();
+  WorkflowRequest schedule = Request(Kind::kSchedule, "wf_1");
+  schedule.trigger.type = automation::TriggerType::INTERVAL;
+  schedule.trigger.expression = "1800";
+  Answer scheduled = Ask(schedule);
+  const base::DictValue* trigger = scheduled.out.FindDict("trigger");
+  ASSERT_TRUE(trigger);
+  EXPECT_EQ(*trigger->FindString("type"), "interval");
+  EXPECT_EQ(*trigger->FindString("expression"), "1800");
+  ASSERT_TRUE(trigger->FindDouble("last_fired_unix"));
+  EXPECT_GE(*trigger->FindDouble("last_fired_unix"),
+            static_cast<double>(before));
+  // The editor's next save, with that trigger: the schedule is kept.
+  base::DictValue page = Workflow("wf_1", "Prices, renamed").ToJSON();
+  page.Set("trigger", trigger->Clone());
+  std::optional<Script> edit = Script::FromJSON(page);
+  ASSERT_TRUE(edit);
+  Answer edited =
+      SaveSharedWorkflow(places_, Save(std::move(*edit)), Holds::kNothing);
+  EXPECT_FALSE(Error(edited));
+  EXPECT_TRUE(edited.out.FindString("id"));
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->name, "Prices, renamed");
+  EXPECT_EQ(stored->trigger.type, automation::TriggerType::INTERVAL);
+  EXPECT_EQ(stored->trigger.expression, "1800");
+  EXPECT_GE(stored->trigger.last_fired_unix, before);
+  // A cron one, as the handler makes it of "daily at 09:00".
+  schedule.trigger.type = automation::TriggerType::CRON;
+  schedule.trigger.expression = "00 09 * * *";
+  scheduled = Ask(schedule);
+  trigger = scheduled.out.FindDict("trigger");
+  ASSERT_TRUE(trigger);
+  EXPECT_EQ(*trigger->FindString("type"), "cron");
+  EXPECT_EQ(*trigger->FindString("expression"), "00 09 * * *");
+  EXPECT_FALSE(trigger->FindDouble("last_fired_unix"));
+}
+
+// A workflow this browser fired, changed outside (its schedule too), then
+// reviewed and confirmed: its schedule starts over, as one saved afresh.
+// Counted from the fire recorded before the change, a daily schedule's
+// next time after it would be past, so it would run at once.
+TEST_F(AgentStudioStorageTest,
+       ConfirmingAChangedWorkflowStartsItsScheduleOver) {
+  UseRecord();
+  const int64_t two_days_ago = base::Time::Now().ToTimeT() - 2 * 86400;
+  for (const bool interval : {false, true}) {
+    const std::string id = interval ? "wf_interval" : "wf_cron";
+    Script weekly = Workflow(id, "Prices");
+    weekly.trigger.type = automation::TriggerType::CRON;
+    weekly.trigger.expression = "0 9 * * 1";
+    ASSERT_TRUE(Shared().Save(weekly));
+    ASSERT_TRUE(Shared().RecordFire(id, two_days_ago));
+    // Changed outside: every day, or every hour.
+    Script changed = Workflow(id, "Prices");
+    changed.trigger.type = interval ? automation::TriggerType::INTERVAL
+                                    : automation::TriggerType::CRON;
+    changed.trigger.expression = interval ? "3600" : "0 8 * * *";
+    Plant(changed);
+    Answer get = Ask(Request(Kind::kGet, id));
+    ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken"))) << id;
+    const int64_t before = base::Time::Now().ToTimeT();
+    WorkflowRequest confirm = Request(Kind::kConfirmSites, id);
+    confirm.sites = {"news.example"};
+    confirm.review_token = *get.out.FindString("reviewToken");
+    ASSERT_EQ(Ask(confirm).out.FindBool("ok"), true) << id;
+    std::optional<Script> stored = Shared().Load(id);
+    ASSERT_TRUE(stored) << id;
+    EXPECT_FALSE(stored->security.changed_outside) << id;
+    if (interval) {
+      EXPECT_GE(stored->trigger.last_fired_unix, before) << id;
+    } else {
+      EXPECT_EQ(stored->trigger.last_fired_unix, 0) << id;
+    }
+  }
 }
 
 // An interval schedule the studio writes with no last fire counts from

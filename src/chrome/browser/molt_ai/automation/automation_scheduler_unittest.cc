@@ -7,9 +7,10 @@
 // fire an interval later; never one whose file was changed outside the
 // browser, whether that is found when it is listed or when its timer's
 // reload comes, nor one its timer's reload finds fired since; a forged
-// earlier last fire forces no catch-up run (fired here or not), a forged
-// later one doesn't stall the schedule, and a schedule saved afresh starts
-// over.
+// earlier last fire forces no catch-up run (fired here or not), a later
+// one still to come (another browser's Snooze, or forged) forces none
+// either and holds the schedule back at most an interval, and a schedule
+// saved afresh starts over.
 
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 
@@ -57,9 +58,17 @@ Script Interval(const std::string& id, int seconds, int64_t last_fired) {
   return script;
 }
 
+// The mock clock's wall time when each test starts. Mock time starts at
+// the Unix epoch plus the host's uptime, so times hours back would be
+// negative on a host booted less than that ago (a fresh CI runner).
+constexpr int64_t kStart = 1'800'000'000;
+
 class AutomationSchedulerTest : public testing::Test {
  protected:
   void SetUp() override {
+    task_environment_.AdvanceClock(
+        base::Time::FromSecondsSinceUnixEpoch(kStart) - base::Time::Now());
+    ASSERT_EQ(Unix(base::Time::Now()), kStart);
     ASSERT_TRUE(temp_.CreateUniqueTempDir());
     dir_ = temp_.GetPath().AppendASCII("automations");
     record_.emplace(dir_, temp_.GetPath().Append(kWorkflowRecordFileName),
@@ -230,8 +239,10 @@ TEST_F(AutomationSchedulerTest,
   EXPECT_TRUE(fired_.empty());
 }
 
-// A last fire in the future written outside can't stall the schedule: an
-// overdue workflow still fires.
+// A last fire far in the future written outside counts as a fire when it
+// was first read: no catch-up run of the overdue workflow, which fires an
+// interval later (the heartbeat's listings don't push it back), not when
+// that time comes; its fire replaces it.
 TEST_F(AutomationSchedulerTest, AForgedLaterLastFiredDoesNotStallTheSchedule) {
   const int64_t now = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
@@ -239,6 +250,38 @@ TEST_F(AutomationSchedulerTest, AForgedLaterLastFiredDoesNotStallTheSchedule) {
   SetLastFiredOutside("wf_1", 4102444800);
   scheduler_.Start();
   Tick();
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(59));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  task_environment_.FastForwardBy(base::Hours(1));
+  EXPECT_EQ(fired_.size(), 2u);
+}
+
+// Another browser on the same folder ran the workflow (seen here), then
+// the user snoozed it there (its last fire an hour ahead): this browser
+// runs no catch-up from its own old fire, nothing while the snooze lasts,
+// and runs it an interval after the snoozed time, as the other browser
+// does.
+TEST_F(AutomationSchedulerTest, AnotherBrowsersSnoozeHoldsTheScheduleHere) {
+  const int64_t saved = Unix(base::Time::Now());
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", saved));
+  // Three hours on, the other browser's run half an hour ago.
+  task_environment_.FastForwardBy(base::Hours(3));
+  const int64_t now = Unix(base::Time::Now());
+  SetLastFiredOutside("wf_1", now - 1800);
+  scheduler_.Start();
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+  // Snoozed there for an hour.
+  SetLastFiredOutside("wf_1", now + 3600);
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(119));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
 }
 

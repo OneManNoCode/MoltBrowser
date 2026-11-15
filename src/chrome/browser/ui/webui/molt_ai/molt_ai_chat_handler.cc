@@ -3570,6 +3570,10 @@ void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
   s.created_at_unix = static_cast<int64_t>(time(nullptr));
   s.trigger.type = molt_ai::automation::TriggerType::INTERVAL;
   s.trigger.expression = base::NumberToString(seconds);
+  // Its first check an interval from now (with no last fire it would never
+  // come); made again, it starts over.
+  molt_ai::automation::CountIntervalFromNow(s.trigger,
+                                            base::Time::Now().ToTimeT());
   s.security.trust = molt_ai::automation::TrustLevel::APPROVED;
   s.security.max_runtime_seconds = 120;
   s.security.domain_whitelist.push_back(std::string(gurl.host()));

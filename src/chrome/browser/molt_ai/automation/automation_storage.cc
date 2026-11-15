@@ -513,8 +513,9 @@ std::optional<Script> AutomationStorage::Vetted(base::DictValue dict,
   // Its last fire time (bookkeeping, outside the digest): the file's own
   // only when the record vouches for the file and it can be a fire since
   // this browser last wrote there, else what this browser wrote or fired
-  // there (WorkflowRecord::LastFired()). A forged earlier one would force a
-  // catch-up run; a forged later one would stall the schedule.
+  // there, or, still to come, when this browser first read it
+  // (WorkflowRecord::LastFired()). A forged earlier one would force a
+  // catch-up run; a later one believed would stall the schedule.
   script->trigger.last_fired_unix =
       record->LastFired(name, vouched ? script->trigger.last_fired_unix : 0);
   return script;

@@ -295,6 +295,16 @@ StepType StepTypeFromString(const std::string& s);
 std::string TriggerTypeToString(TriggerType t);
 TriggerType TriggerTypeFromString(const std::string& s);
 
+// A trigger as a script's JSON holds it (its "trigger").
+base::DictValue TriggerToDict(const Trigger& t);
+
+// An interval schedule the browser writes with no last fire (a schedule
+// saved afresh, a page watcher, one confirmed after a review) counts from
+// |now_unix|: its first fire is an interval later. The scheduler counts an
+// interval with none from each listing, so it would never fire. Any other
+// trigger is left as it is.
+void CountIntervalFromNow(Trigger& trigger, int64_t now_unix);
+
 std::string TrustLevelToString(TrustLevel t);
 TrustLevel TrustLevelFromString(const std::string& s);
 

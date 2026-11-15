@@ -23,10 +23,12 @@
 // fired since it was listed), so an overdue workflow runs once. Its last
 // fire time is
 // the file's own only when it can be a fire since the browser last wrote
-// the file, else the one the browser wrote or fired at
-// (automation_storage.h): a forged earlier one forces no catch-up run, a
-// forged later one stalls no schedule. base only (the storage's
-// sequences), so molt_ai_unittests tests it.
+// the file, else the one the browser wrote or fired at, or, for one still
+// to come (another browser's Snooze or Skip), when the browser first read
+// it (automation_storage.h): a forged earlier one forces no catch-up run, a
+// later one forces none either and holds the schedule back at most an
+// interval. base only (the storage's sequences), so molt_ai_unittests
+// tests it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_

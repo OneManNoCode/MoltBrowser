@@ -32,11 +32,15 @@
 // seeded). The file's own
 // last fire time (bookkeeping, outside the digest: other browsers' runs
 // change it) is believed only when it can be a fire since that write (no
-// earlier, nor later than now by kLastFiredSlackSeconds): LastFired(). So
-// an earlier one written there forces no catch-up run, a later one stalls
-// no schedule, and no fire time read from a file is ever recorded (but at
-// seeding). A deleted file's entry is forgotten (put back, it doesn't
-// match), and an entry whose file is gone is dropped at the next load,
+// earlier, nor later than now by kLastFiredSlackSeconds): LastFired(). One
+// written since that is still to come (another browser's Snooze or Skip,
+// or forged) counts, until it comes, as a fire when this browser first
+// read it (remembered in memory only). So an earlier one written there
+// forces no catch-up run, a later one forces none either and holds a
+// schedule back at most an interval, and no fire time read from a file is
+// ever recorded (but at seeding). A deleted file's entry is forgotten (put
+// back, it doesn't match), and an entry whose file is gone is dropped at
+// the next load,
 // unless the file is set aside now (<id>.molt while <id>.molt.*.taken is
 // there: another browser's move, or one cut short), so it is vouched for
 // again once it is put back. A move copies the entry to the new name
@@ -80,6 +84,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "base/files/file_path.h"
 #include "base/functional/function_ref.h"
@@ -169,11 +174,14 @@ class WorkflowRecord {
   // The fire time recorded for |name| (Entry::fired); 0 when none.
   int64_t FiredFloor(const std::string& name) const;
   // The last fire time to believe for |name|, whose file says |file_fired|
-  // (unix seconds): |file_fired| when it can be a fire since this browser
-  // last wrote there (at least Entry::written, at most now plus
-  // kLastFiredSlackSeconds), never earlier than FiredFloor(); otherwise
-  // FiredFloor() (a fire before that write is in what it wrote). With no
-  // entry for |name|, |file_fired| (at least 0).
+  // (unix seconds), never earlier than FiredFloor(): |file_fired| when it
+  // can be a fire since this browser last wrote there (at least
+  // Entry::written, at most now plus kLastFiredSlackSeconds); when it is
+  // later than that, the time this browser first read that value there
+  // (remembered in memory until another value is read, or the record is
+  // configured again); FiredFloor() when it is earlier (a fire before that
+  // write is in what it wrote). With no entry for |name|, |file_fired| (at
+  // least 0).
   int64_t LastFired(const std::string& name, int64_t file_fired) const;
 
   // The entry recorded for |name| now, if any (for Restore()).
@@ -232,6 +240,10 @@ class WorkflowRecord {
   // When the record file was first written (ISO 8601).
   std::string created_ GUARDED_BY(lock_);
   std::map<std::string, Entry> entries_ GUARDED_BY(lock_);
+  // LastFired()'s fire times still to come, by name: the value read and
+  // when it was first read (unix seconds). Never written to the record.
+  mutable std::map<std::string, std::pair<int64_t, int64_t>> future_reads_
+      GUARDED_BY(lock_);
 };
 
 }  // namespace automation

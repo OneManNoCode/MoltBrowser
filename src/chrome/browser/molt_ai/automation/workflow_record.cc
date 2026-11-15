@@ -321,6 +321,7 @@ void WorkflowRecord::Reconfigure(const Config& config) {
   ++generation_;
   needs_load_ = true;
   session_only_ = false;
+  future_reads_.clear();
 }
 
 bool WorkflowRecord::loaded() const {
@@ -533,13 +534,28 @@ int64_t WorkflowRecord::LastFired(const std::string& name,
     return std::max<int64_t>(0, file_fired);
   }
   const Entry& entry = it->second;
-  // Another browser's run since this one last wrote the file. Anything
-  // earlier was in what this one wrote (or is forged: it would force a
-  // catch-up run), anything in the future is no fire (it would stall the
-  // schedule).
-  const bool since_written =
-      file_fired >= entry.written && file_fired <= now + kLastFiredSlackSeconds;
-  return since_written ? std::max(entry.fired, file_fired) : entry.fired;
+  if (file_fired < entry.written) {
+    // In what this browser wrote there, or forged (it would force a
+    // catch-up run).
+    future_reads_.erase(name);
+    return entry.fired;
+  }
+  if (file_fired > now + kLastFiredSlackSeconds) {
+    // Written since, and still to come: another browser's Snooze or Skip,
+    // or forged. Until it comes, a fire when this browser first read it:
+    // no catch-up run of what was due before (this browser's own last fire
+    // may be long past, the other browser's run since unseen), and no
+    // schedule held back more than an interval (believed, a forged one
+    // would stall it).
+    auto [seen, first] = future_reads_.try_emplace(name, file_fired, now);
+    if (!first && seen->second.first != file_fired) {
+      seen->second = {file_fired, now};
+    }
+    return std::max(entry.fired, seen->second.second);
+  }
+  // Another browser's run since this one last wrote the file.
+  future_reads_.erase(name);
+  return std::max(entry.fired, file_fired);
 }
 
 void WorkflowRecord::Set(const std::string& name,

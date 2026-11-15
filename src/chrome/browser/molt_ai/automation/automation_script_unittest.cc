@@ -107,6 +107,30 @@ TEST(AutomationScriptTest, ARoundTripIsStable) {
   EXPECT_EQ(text->ToJSON(), once);
 }
 
+// An interval schedule written with no last fire (the Agent studio's
+// Schedule and Confirm, the chat's page watcher) counts from then: the
+// scheduler counts an interval with none from each listing, so it would
+// never fire. One with a last fire, and any other schedule, are left as
+// they are. The trigger's JSON is the one the file holds.
+TEST(AutomationScriptTest, AnIntervalWithNoLastFireCountsFromNow) {
+  Trigger interval;
+  interval.type = TriggerType::INTERVAL;
+  interval.expression = "900";
+  CountIntervalFromNow(interval, 1'800'000'000);
+  EXPECT_EQ(interval.last_fired_unix, 1'800'000'000);
+  CountIntervalFromNow(interval, 1'800'000'500);
+  EXPECT_EQ(interval.last_fired_unix, 1'800'000'000);
+  Trigger cron;
+  cron.type = TriggerType::CRON;
+  cron.expression = "0 9 * * *";
+  CountIntervalFromNow(cron, 1'800'000'000);
+  EXPECT_EQ(cron.last_fired_unix, 0);
+  Script script;
+  script.id = "x";
+  script.trigger = interval;
+  EXPECT_EQ(TriggerToDict(interval), *script.ToJSON().FindDict("trigger"));
+}
+
 }  // namespace
 }  // namespace automation
 }  // namespace molt_ai

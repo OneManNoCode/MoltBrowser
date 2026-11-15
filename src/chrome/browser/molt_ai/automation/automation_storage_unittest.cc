@@ -902,19 +902,25 @@ TEST_F(AutomationStorageRecordTest,
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, 0);
 }
 
-// A later last fire written outside that can't be a fire (in the future)
-// isn't believed, and no write records a fire time read from the file (a
-// run's stats, a Trust click): it never stalls the schedule.
+// A later last fire written outside that is still to come (another
+// browser's Snooze or Skip, or forged) isn't believed: it counts as a fire
+// when this browser first read it, so it forces no catch-up run of the
+// old fire and holds the schedule back at most an interval (it never
+// stalls it). A bookkeeping write (a run's stats) records nothing of it; a
+// Trust click writes the fire it read, in place of the one still to come.
 TEST_F(AutomationStorageRecordTest,
-       AFutureLastFiredIsNeitherBelievedNorRecorded) {
+       AFutureLastFiredCountsAsAFireWhenFirstRead) {
   ASSERT_TRUE(storage().Save(Hourly("wf_1")));
   const int64_t fired = NowUnix() - 7200;
   ASSERT_TRUE(storage().RecordFire("wf_1", fired));
   SetLastFiredOutside("wf_1", kFarFuture);
+  const int64_t before = NowUnix();
   std::optional<Script> loaded = Load("wf_1");
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->security.changed_outside);
-  EXPECT_EQ(loaded->trigger.last_fired_unix, fired);
+  const int64_t read = loaded->trigger.last_fired_unix;
+  EXPECT_GE(read, before);
+  EXPECT_LE(read, NowUnix());
   WorkflowRecord* record = WorkflowRecord::For(dir_);
   ASSERT_TRUE(record);
   // A run's stats: the file's own last fire written back, not recorded.
@@ -924,13 +930,14 @@ TEST_F(AutomationStorageRecordTest,
   }));
   EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, kFarFuture);
   EXPECT_EQ(record->FiredFloor("wf_1.molt"), fired);
-  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, fired);
+  // Read again: the same fire.
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
   // A Trust click writes what it read.
   ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::APPROVED));
-  EXPECT_EQ(record->FiredFloor("wf_1.molt"), fired);
-  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, fired);
+  EXPECT_EQ(record->FiredFloor("wf_1.molt"), read);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, read);
   Restart(/*may_seed=*/false);
-  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, fired);
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
 }
 
 // A schedule saved afresh (the Agent studio's Schedule: a new trigger,

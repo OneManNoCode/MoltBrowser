@@ -221,8 +221,6 @@ Step StepFromDict(const base::DictValue& d) {
 // Trigger <-> JSON
 // -----------------------------------------------------------------------------
 
-namespace {
-
 base::DictValue TriggerToDict(const Trigger& t) {
   base::DictValue d;
   d.Set("type", TriggerTypeToString(t.type));
@@ -236,6 +234,14 @@ base::DictValue TriggerToDict(const Trigger& t) {
     d.Set("last_fired_unix", static_cast<double>(t.last_fired_unix));
   return d;
 }
+
+void CountIntervalFromNow(Trigger& trigger, int64_t now_unix) {
+  if (trigger.type == TriggerType::INTERVAL && trigger.last_fired_unix <= 0) {
+    trigger.last_fired_unix = now_unix;
+  }
+}
+
+namespace {
 
 Trigger TriggerFromDict(const base::DictValue& d) {
   Trigger t;

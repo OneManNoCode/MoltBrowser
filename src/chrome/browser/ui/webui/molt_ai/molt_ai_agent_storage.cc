@@ -155,17 +155,6 @@ void KeepPolicy(Script& script, const Script* existing, bool recorded_here) {
   }
 }
 
-// An interval schedule the browser writes with no last fire (saved afresh,
-// or confirmed with none recorded) counts from now: its first fire is an
-// interval later. The scheduler would count it from each listing, so it
-// would never come.
-void CountIntervalFromNow(automation::Trigger& trigger) {
-  if (trigger.type == automation::TriggerType::INTERVAL &&
-      trigger.last_fired_unix <= 0) {
-    trigger.last_fired_unix = base::Time::Now().ToTimeT();
-  }
-}
-
 // |request| on its workflow |found|, in |storage| (the profile's routines'
 // when |routines|).
 Answer OnFound(const WorkflowRequest& request,
@@ -261,7 +250,8 @@ Answer OnFound(const WorkflowRequest& request,
           return false;
         }
         stored.trigger = request.trigger;
-        CountIntervalFromNow(stored.trigger);
+        automation::CountIntervalFromNow(stored.trigger,
+                                         base::Time::Now().ToTimeT());
         stored.enabled =
             request.trigger.type != automation::TriggerType::MANUAL;
         trigger = stored.trigger;
@@ -272,6 +262,9 @@ Answer OnFound(const WorkflowRequest& request,
       }
       answer.out.Set("ok", saved);
       if (saved) {
+        // As saved (an interval's count started), for the editor's next
+        // save: the page's own shape of it isn't a trigger.
+        answer.out.Set("trigger", automation::TriggerToDict(trigger));
         answer.trigger = trigger;
       }
       return answer;
@@ -315,8 +308,14 @@ Answer OnFound(const WorkflowRequest& request,
           steps_changed = true;
           return false;
         }
-        // A file changed outside has no last fire this browser believes.
-        CountIntervalFromNow(stored.trigger);
+        // A file changed outside starts its schedule over, as one saved
+        // afresh: counted from the fire this browser recorded before the
+        // change, its next time may be long past (a run at once).
+        if (was_changed_outside) {
+          stored.trigger.last_fired_unix = 0;
+        }
+        automation::CountIntervalFromNow(stored.trigger,
+                                         base::Time::Now().ToTimeT());
         for (const std::string& host : stored.security.domain_whitelist) {
           sites += (sites.empty() ? "" : " ") + host;
         }
@@ -588,6 +587,22 @@ std::optional<Script> LoadSharedWorkflow(const StudioPlaces& places,
   }
   AutomationStorage shared(places.shared_dir);
   return shared.Load(id);
+}
+
+SaveKind KindOfSave(const std::string& sent_id,
+                    const std::string& recorded_id,
+                    const std::set<std::string>& minted) {
+  SaveKind kind;
+  if (!sent_id.empty()) {
+    kind.id = sent_id;
+    return kind;
+  }
+  kind.new_workflow = true;
+  if (!recorded_id.empty() && minted.count(recorded_id)) {
+    kind.id = recorded_id;
+    kind.recorded_here = true;
+  }
+  return kind;
 }
 
 std::string UnusedWorkflowId(const StudioPlaces& places,

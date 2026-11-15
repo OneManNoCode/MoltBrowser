@@ -99,6 +99,11 @@ const CHANGED_WORKFLOW = {
   steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'}],
 };
 
+// The Agent studio's saves: a saved workflow's id is the one it sent, the
+// recording's it named, or a new one; a schedule is answered with the
+// trigger as saved (the sheet's "daily at 09:00" as cron).
+const SAVED_TRIGGER = {type: 'cron', expression: '00 09 * * *'};
+
 // The Agent studio's voice commands (#molt-voice-mode): what was typed.
 const voiceCommands = [];
 
@@ -1682,6 +1687,11 @@ const PAGES = [
                   args: {id: '<img src=x onerror=alert(1)>', qty: 2, note: '{{tool_note}}'},
                   secret_args: ['otp']}}}]},
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
+     saveWorkflow: (args) => {
+       const w = args[1] || {};
+       return {id: w.id || w.recordedId || 'wf_new', name: w.name, trust: 'casual'};
+     },
+     saveSchedule: {ok: true, nextFire: 0, trigger: SAVED_TRIGGER},
      confirmDraftSites: (args) => {
        draftConfirmCalls.push(JSON.stringify(args.slice(1)));
        return {ok: true, trust: 'casual'};
@@ -1882,6 +1892,57 @@ const PAGES = [
      window.syncVariables();
      assert(Object.prototype.hasOwnProperty.call(window.editorState.variables, 'tool_note'),
             'a tool argument\'s variable is kept');
+     // Saves: a workflow opened here is saved under its id (an edit of what
+     // is stored); a recording's first save names the id the browser made
+     // for it as recordedId, and no id.
+     const saves = () => window.__sendArgs.filter(([m]) => m === 'saveWorkflow')
+         .map(([, a]) => a[1]);
+     window.openEditorDraft({name: 'Rec', steps: [], variables: {},
+                             trigger: {type: 'manual', expression: ''},
+                             recordedId: 'wf_1_rec'});
+     let saved = saves().length;
+     await window.saveEditor(true);
+     assert.strictEqual(saves()[saved].recordedId, 'wf_1_rec');
+     assert(!('id' in saves()[saved]), 'a recording’s first save names no workflow');
+     await window.saveEditor(true);
+     assert.strictEqual(saves()[saved + 1].id, 'wf_1_rec', 'then it is an edit');
+     assert(!('recordedId' in saves()[saved + 1]));
+     window.openEditor('w1');
+     await tick();
+     saved = saves().length;
+     await window.saveEditor(true);
+     assert.strictEqual(saves()[saved].id, 'w1');
+     assert(!('recordedId' in saves()[saved]));
+     // One save at a time: a double click on a new workflow's Save saves it
+     // once, then as an edit under the id it was given.
+     window.openEditorDraft({name: 'Blank', steps: [], variables: {}});
+     saved = saves().length;
+     const one = window.saveEditor(true);
+     const two = window.saveEditor(true);
+     assert.strictEqual(saves().length, saved + 1, 'the second save waits');
+     assert.deepStrictEqual([await one, await two], ['wf_new', 'wf_new']);
+     assert.strictEqual(saves().length, saved + 2);
+     assert(!('id' in saves()[saved]));
+     assert.strictEqual(saves()[saved + 1].id, 'wf_new');
+     // The schedule sheet: the editor keeps the trigger as the browser saved
+     // it, never the sheet's own shape, so its next save keeps the schedule.
+     window.openEditor('w1');
+     await tick();
+     window.openScheduleSheet('w1', 'W', window.editorState.trigger);
+     window.pickMode('daily');
+     doc.getElementById('schedSave').click();
+     await tick();
+     assert.deepStrictEqual(window.editorState.trigger, SAVED_TRIGGER);
+     saved = saves().length;
+     await window.saveEditor(true);
+     assert.deepStrictEqual(saves()[saved].trigger, SAVED_TRIGGER);
+     // A saved interval (seconds) is shown in minutes or hours.
+     for (const [secs, num, unit] of [['1800', '30', 'm'], ['7200', '2', 'h']]) {
+       window.openScheduleSheet('w1', 'W', {type: 'interval', expression: secs});
+       assert.strictEqual(doc.getElementById('ivNum').value, num, secs);
+       assert.strictEqual(doc.getElementById('ivUnit').value, unit, secs);
+       window.closeScrim('schedScrim');
+     }
      // A run's question: shown in the run's ticker as text; "Use it" and
      // "Stop the run" send the answer for that question from the click.
      window.showView('library');

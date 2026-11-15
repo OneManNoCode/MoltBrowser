@@ -10,7 +10,8 @@
 // time set by writes (never back below a past fire) and raised by fires (a
 // fire recorded on a clock that was ahead giving way), an entry restored
 // exactly, a file's last fire believed only since this browser's last
-// write, and a session's writes before configuration kept.
+// write (one still to come counting as a fire when it was first read), and
+// a session's writes before configuration kept.
 
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
 
@@ -26,6 +27,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -171,7 +173,8 @@ TEST_F(WorkflowRecordTest, AnUpgradeSeedsWhatIsThereOnce) {
 
 // A seeded workflow's last fire is the one its file had at the upgrade: a
 // file claiming an earlier one later (one that never fired: 0) is not
-// believed, nor one in the future; another browser's run since is.
+// believed, nor one still to come (a fire when it was read); another
+// browser's run since is.
 TEST_F(WorkflowRecordTest, ASeededEntryBelievesOnlyAFireSinceTheSeeding) {
   Have("fired.molt", Digest('a'), 1800000000);
   Have("never.molt", Digest('b'));
@@ -182,7 +185,8 @@ TEST_F(WorkflowRecordTest, ASeededEntryBelievesOnlyAFireSinceTheSeeding) {
   EXPECT_EQ(record->FiredFloor("never.molt"), 0);
   EXPECT_EQ(record->LastFired("never.molt", 1), 0);
   EXPECT_EQ(record->LastFired("never.molt", before - 3600), 0);
-  EXPECT_EQ(record->LastFired("never.molt", 4102444800), 0);
+  EXPECT_GE(record->LastFired("never.molt", 4102444800), before);
+  EXPECT_LE(record->LastFired("never.molt", 4102444800), NowUnix());
   EXPECT_EQ(record->LastFired("never.molt", before + 60), before + 60);
   // As at the next start.
   record = Start(/*may_seed=*/true);
@@ -482,7 +486,8 @@ TEST_F(WorkflowRecordTest, AFireRaisesTheFireTimeAndAWriteSetsIt) {
 // The file's own last fire is believed only when it can be a fire since
 // this browser last wrote there (another browser's run), and never below
 // what this browser wrote or fired: an earlier one would force a catch-up
-// run, one in the future would stall the schedule.
+// run, one still to come would stall the schedule (it counts as a fire
+// when it was read: AFireTimeStillToComeCountsAsAFireWhenFirstRead).
 TEST_F(WorkflowRecordTest, AFilesLastFireIsBelievedOnlySinceTheLastWrite) {
   WorkflowRecord* record = Start(/*may_seed=*/false);
   const int64_t before = NowUnix();
@@ -492,7 +497,8 @@ TEST_F(WorkflowRecordTest, AFilesLastFireIsBelievedOnlySinceTheLastWrite) {
   EXPECT_EQ(record->LastFired("a.molt", 1), 0);
   EXPECT_EQ(record->LastFired("a.molt", before - 3600), 0);
   EXPECT_EQ(record->LastFired("a.molt", before + 60), before + 60);
-  EXPECT_EQ(record->LastFired("a.molt", 4102444800), 0);
+  EXPECT_GE(record->LastFired("a.molt", 4102444800), before);
+  EXPECT_LE(record->LastFired("a.molt", 4102444800), NowUnix());
   // Fired here: never below that.
   record->NoteFired("a.molt", before + 10);
   EXPECT_EQ(record->LastFired("a.molt", 1), before + 10);
@@ -538,6 +544,45 @@ TEST_F(WorkflowRecordTest, AnEarlierFireTimeWrittenKeepsAPastFire) {
   present_ = {"a.molt"};
   record = Start(/*may_seed=*/false);
   EXPECT_EQ(record->FiredFloor("a.molt"), now - 60);
+}
+
+// A fire time written there since this browser's last write that is still
+// to come (another browser's Snooze or Skip, or forged) counts, until it
+// comes, as a fire when this browser first read it: the same value read
+// later keeps that time (a schedule is held back at most an interval, not
+// stalled), another value is read afresh, and within the slack it is
+// believed. None of it is recorded; the next start reads it afresh.
+TEST_F(WorkflowRecordTest, AFireTimeStillToComeCountsAsAFireWhenFirstRead) {
+  base::test::TaskEnvironment task_environment(
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME);
+  task_environment.AdvanceClock(
+      base::Time::FromSecondsSinceUnixEpoch(1'800'000'000) - base::Time::Now());
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  record->Set("a.molt", Digest('a'), 0);
+  record->NoteFired("a.molt", now - 86400);
+  // Snoozed in another browser: an hour ahead.
+  EXPECT_EQ(record->LastFired("a.molt", now + 3600), now);
+  task_environment.AdvanceClock(base::Minutes(30));
+  EXPECT_EQ(record->LastFired("a.molt", now + 3600), now);
+  // Snoozed again there.
+  EXPECT_EQ(record->LastFired("a.molt", now + 7200), now + 1800);
+  // Within the slack of it.
+  task_environment.AdvanceClock(base::Minutes(86));
+  EXPECT_EQ(record->LastFired("a.molt", now + 7200), now + 7200);
+  // None of it recorded.
+  EXPECT_EQ(record->FiredFloor("a.molt"), now - 86400);
+  // Never below what this browser wrote (its own snooze).
+  const int64_t later = NowUnix();
+  record->Set("a.molt", Digest('a'), later + 3600);
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), later + 3600);
+  // As at the next start: read afresh.
+  record->Set("a.molt", Digest('a'), 0);
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), later);
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  task_environment.AdvanceClock(base::Minutes(1));
+  EXPECT_EQ(record->LastFired("a.molt", 4102444800), later + 60);
 }
 
 // A fire recorded while the clock was ahead is the last fire only until
