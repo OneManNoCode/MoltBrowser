@@ -28,8 +28,11 @@ For longer narrative posts behind each entry see
   turns it into one every 150 days (the page showed its seconds with
   "hours" selected); an interval now shows in its largest whole unit, and
   one under a minute is refused. Agent mode's Schedule sheet keeps a
-  one-time ("once at") schedule it is opened on.
-- **The chat's `/wait-for` works as written.** It was read as `/wait`.
+  one-time ("once at") schedule still to come that it is opened on, and
+  molt://ai-automation no longer moves a one-time schedule by your time
+  zone's offset when it is saved again.
+- **The chat's `/wait-for` works as written.** It was read as `/wait`,
+  and the timeout you give it (1 to 30000 ms) is now used.
 
 - **Voice mode's own reading, heard back as one word, no longer chooses
   from it.** On speakers, while voice mode read the search results, its

@@ -610,6 +610,16 @@ function dotClass(s) {
   return '';
 }
 
+// |expr| (an ISO time) as a datetime-local value in local time; as it is,
+// cut to the minute, when it doesn't parse.
+function localDateTimeValue(expr) {
+  var d = new Date(expr);
+  if (isNaN(d.getTime())) return String(expr || '').slice(0, 16);
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+         'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
 // An interval's seconds in its largest whole unit: {n, unit} with unit
 // 3600 (hours), 60 (minutes) or 1 (seconds). A new one is an hour.
 function intervalParts(secs) {
@@ -756,7 +766,10 @@ function buildScheduleHTML(s) {
 
   // The saved seconds in their largest whole unit, that unit selected
   // (3600 shows as 1 hours, 90 as 90 seconds); a new interval is an hour.
-  var iv = intervalParts(t==='interval' ? parseInt(expr,10) : 0);
+  // One under a minute (an earlier version allowed 10 s) as the minute it
+  // runs at, so it can be saved (paused, say) as it is.
+  var ivSecs = t==='interval' ? parseInt(expr,10) : 0;
+  var iv = intervalParts(ivSecs > 0 ? Math.max(ivSecs, 60) : 0);
   function unitOpt(v, label) {
     return '<option value="' + v + '"' + (v===iv.unit?' selected':'') + '>' +
            label + '</option>';
@@ -774,8 +787,10 @@ function buildScheduleHTML(s) {
     '<div class="sched-help">At most once a minute.</div>' +
     '</div>';
 
-  // For "at": split ISO into datetime-local format.
-  var atVal = (t==='at') ? expr.replace('Z','').slice(0,16) : '';
+  // For "at": the stored moment in local time, as datetime-local shows it
+  // and saveSchedule reads it back (its UTC digits read as local time
+  // would move it by the time zone's offset).
+  var atVal = (t==='at') ? localDateTimeValue(expr) : '';
   var atBlock = '<div data-sched-pane="at"' +
       (t==='at'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +

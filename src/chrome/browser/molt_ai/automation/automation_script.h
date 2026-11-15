@@ -307,8 +307,9 @@ bool FiresByItself(const Trigger& trigger);
 // The shortest interval any schedule runs at, whatever its expression
 // says: each fire opens a run window and shows a notification, and the
 // scheduler, cron and both pages' "next run" work in whole minutes. The
-// scheduler counts a shorter one as this (AutomationScheduler); the pages
-// refuse one.
+// scheduler counts a shorter one as this (AutomationScheduler);
+// molt://ai-automation refuses one, and Agent mode's Schedule sheet and the
+// chat's /watch raise it to this.
 inline constexpr int kMinIntervalSeconds = 60;
 
 // A WAIT step pauses for the seconds its value says: what the Agent

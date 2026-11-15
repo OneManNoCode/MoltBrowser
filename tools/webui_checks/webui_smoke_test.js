@@ -2101,9 +2101,14 @@ const PAGES = [
      assert.strictEqual(JSON.stringify(atSaves[atSaves.length - 1][1]),
                         JSON.stringify({type: 'at', expression: '2099-01-01T09:00:00Z'}));
      await tick();
-     // Opened on anything else, it offers no one-time run.
+     // Opened on anything else, or on one that has passed (it would never
+     // run), it offers no one-time run.
      window.openScheduleSheet('w1', 'W', {type: 'manual'});
      assert(!doc.getElementById('schedOpt-at'), 'no one-time option');
+     doc.getElementById('schedCancel').click();
+     window.openScheduleSheet('p1', 'Imported', {type: 'at', expression: '2001-01-01T09:00:00Z'});
+     assert(!doc.getElementById('schedOpt-at'), 'no one-time option for a past run');
+     assert(doc.getElementById('schedOpt-manual').checked, 'manual is chosen instead');
      doc.getElementById('schedCancel').click();
      // A save waiting for another is of the editor it was asked in: dropped
      // when another editor was opened meanwhile (never that one's content

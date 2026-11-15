@@ -2971,7 +2971,12 @@ All in `molt_ai_unittests` except the last item:
   (nothing run) when another editor was opened meanwhile; the editor
   keeps the schedule as the browser saved it, and as a confirm saved it;
   a saved interval is shown in hours, minutes or seconds and saved
-  unchanged as it was; a changed workflow edited and not saved yet is
+  unchanged as it was (one under a minute as a minute); a paused schedule
+  and an interval never started say so on their cards, with no next run;
+  the sheet keeps a one-time run still to come that it is opened on, and
+  offers none otherwise; molt://ai-automation's paused card refuses 10 s
+  and saves 90 s turned on, and an interval never started says so; the
+  chat's `/wait-for` is a wait-for; a changed workflow edited and not saved yet is
   saved before it is confirmed, then confirmed with the token of what was
   saved, on the sites its saved steps use.
 - Browser tests (build machine), `security/molt_data_folder_browsertest.cc`:

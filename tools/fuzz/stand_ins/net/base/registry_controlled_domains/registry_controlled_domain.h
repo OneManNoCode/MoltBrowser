@@ -61,6 +61,13 @@ inline std::string GetDomainAndRegistry(std::string_view host,
       host.find_first_not_of("0123456789.") == std::string_view::npos) {
     return std::string();
   }
+  static constexpr std::string_view kListed[] = {
+      "com", "net", "org", "io", "uk", "co.uk", "github.io",
+      "s3.amazonaws.com"};
+  for (std::string_view r : kListed) {
+    // A host that is itself a registry has no registrable domain.
+    if (host == r) return std::string();
+  }
   const std::string_view registry = internal::RegistryOf(host, filter);
   if (registry.empty() || host.size() <= registry.size() + 1) {
     return std::string();

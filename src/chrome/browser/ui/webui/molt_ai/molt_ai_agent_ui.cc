@@ -1129,10 +1129,20 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     } else if (type && *type == "cron") {
       trig.type = TriggerType::CRON;
       trig.expression = expr ? *expr : "";
-    } else if (base::Time at; type && *type == "at" && expr &&
-                              base::Time::FromString(expr->c_str(), &at)) {
+    } else if (type && *type == "at") {
       // A one-time run the sheet was opened on (an import's), kept as it
-      // is: the scheduler reads it the same way.
+      // is while it is still to come: the scheduler reads it the same way,
+      // and never runs one that has passed.
+      base::Time at;
+      if (!expr || !base::Time::FromString(expr->c_str(), &at) ||
+          at <= base::Time::Now()) {
+        base::DictValue out;
+        out.Set("ok", false);
+        out.Set("error",
+                "That one-time run has passed. Choose another schedule.");
+        ResolveDict(args, std::move(out));
+        return;
+      }
       trig.type = TriggerType::AT;
       trig.expression = *expr;
     } else {
@@ -2909,9 +2919,12 @@ function openScheduleSheet(id,name,trigger){
   var iv=tr.type==='interval'?savedInterval(tr.expression):parseInterval('');
   var daily=(tr.type==='daily'&&tr.expression)?tr.expression:'09:00';
   var cron=(tr.type==='cron'&&tr.expression)?tr.expression:'0 9 * * *';
-  // A one-time run (an import's, or one set in molt://ai-automation): kept
-  // as it is, so the sheet can turn it on.
-  if(tr.type==='at'&&typeof tr.expression==='string'&&tr.expression)scheduleCtx.at=tr.expression;
+  // A one-time run still to come (an import's, or one set in
+  // molt://ai-automation): kept as it is, so the sheet can turn it on. One
+  // that has passed never runs, so it isn't offered.
+  if(tr.type==='at'&&typeof tr.expression==='string'&&tr.expression&&
+     previewNext({type:'at',expression:tr.expression}))scheduleCtx.at=tr.expression;
+  if(scheduleCtx.mode==='at'&&!scheduleCtx.at)scheduleCtx.mode='manual';
 
   var body=$('schedBody');clear(body);
 
@@ -3042,7 +3055,10 @@ $('schedSave').addEventListener('click',function(){
     if(editorState&&editorState.id===scheduleCtx.id&&r&&r.trigger&&typeof r.trigger.type==='string')
       editorState.trigger=r.trigger;
     closeScrim('schedScrim');
-    toast(tr.type==='manual'?'Schedule cleared':('Scheduled — next '+(r&&r.nextFire?formatNext(r.nextFire):'soon')),'ok');
+    // As the browser saved it, not as the sheet sent it.
+    var savedType=(r&&r.trigger&&typeof r.trigger.type==='string')?r.trigger.type:tr.type;
+    toast(savedType==='manual'?'Schedule cleared':
+          (r&&r.nextFire?'Scheduled — next '+formatNext(r.nextFire):'Saved — it has no upcoming run'),'ok');
     loadLibrary();
   }).catch(function(){toast('Couldn’t save schedule','err');})
     .then(function(){btn.disabled=false;btn.textContent='Save schedule';});
