@@ -351,6 +351,37 @@ For longer narrative posts behind each entry see
   reaching the microphone the echo canceller then took those words with
   it ("open Wikipedia" heard as "open wikip").
 
+### Security
+
+- **Workflows changed outside MoltBrowser now need your review.**
+  MoltBrowser remembers, in its own profile folder, exactly what it last
+  saved for each workflow in `~/.moltbrowser/automations`. If a workflow
+  file is added or changed by anything else (another program, a file you
+  were tricked into saving there, a copy you made by hand, an older or
+  second copy of MoltBrowser), it opens as a draft. It has no trust, doesn't
+  run, isn't run on its schedule, and no other workflow can run it until you
+  open it in Agent mode, check its steps, sites and schedule, and click
+  **Confirm**. It then starts as Casual; trust it again with **Trust** (or
+  in molt://ai-automation for Trusted or Admin). Confirming keeps only what
+  the review shows: other ways the file gave of finding an element on the
+  page are dropped, so a step may need recording again if its page has
+  changed; steps the review can't show in full (conditions and loops, page
+  snapshots, scripts, AI decisions and extractions, a step that runs another
+  workflow, a step whose text holds a line break or a hidden character, or
+  that gives a site's tool a value with a line break) are removed; the
+  default values of its variables, and its schedule's time zone and end
+  date, are cleared. Your existing workflows are kept exactly as
+  they are the first time you start this version. Run history and the last
+  time a schedule ran don't count as changes, and an imported workflow's
+  schedule starts afresh from the import. If you use two copies of
+  MoltBrowser with different profile folders, each runs scheduled workflows
+  on its own schedule, so a scheduled workflow can run in both, and snoozing
+  or skipping a run in one doesn't change the other; a change to a
+  workflow's steps, sites, trust or schedule in one needs one review in the
+  other. If MoltBrowser's profile folder is reset or replaced, every
+  workflow needs one review. Design:
+  [docs/design/AGENT_ACTIONS.md §3.6](docs/design/AGENT_ACTIONS.md).
+
 ## 2026-11-06 — v0.3.0: Private by default
 
 The result of a full security and privacy audit (October 2026), on

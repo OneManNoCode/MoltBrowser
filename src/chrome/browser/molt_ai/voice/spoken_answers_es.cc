@@ -729,6 +729,10 @@ constexpr SpokenAnswer kAnswers[] = {
     {"This routine has no steps.", "Esta rutina no tiene pasos."},
     {"This routine is too long to run by voice.",
      "Esta rutina es demasiado larga para ejecutarla por voz."},
+    {"This routine was changed outside MoltBrowser. Review it in Agent mode "
+     "first.",
+     "Esta rutina se cambió fuera de MoltBrowser. Revísala primero en el "
+     "modo agente."},
     {"Step {0} of this routine isn't one I can do by voice.",
      "El paso {0} de esta rutina no es uno que pueda hacer por voz."},
     {"I couldn't save it.", "No he podido guardarla."},
@@ -1322,8 +1326,7 @@ constexpr SpokenAnswer kAnswers[] = {
      "escribir en un campo de código de un solo uso en {0}"},
     {"type into a form field on {0}",
      "escribir en un campo de formulario en {0}"},
-    {"fill a password field on {0}",
-     "rellenar un campo de contraseña en {0}"},
+    {"fill a password field on {0}", "rellenar un campo de contraseña en {0}"},
     {"fill a payment card field on {0}",
      "rellenar un campo de tarjeta de pago en {0}"},
     {"fill a one-time code field on {0}",

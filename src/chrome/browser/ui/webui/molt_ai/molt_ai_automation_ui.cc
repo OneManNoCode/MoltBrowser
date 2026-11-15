@@ -158,10 +158,12 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
             static_cast<int>(next.InSecondsFSinceUnixEpoch()));
     }
 
-    // Day 5: trust promotion suggestion.
+    // Day 5: trust promotion suggestion. Never for a draft (from an agent
+    // run, or a file changed outside the browser): it is reviewed in Agent
+    // mode first, and a file's history proves nothing.
     TrustLevel suggested =
         security_.ConsiderPromotion(s.security.trust, s.stats);
-    if (suggested != s.security.trust) {
+    if (suggested != s.security.trust && !s.security.sites_unconfirmed) {
       d.Set("suggested_trust", TrustLevelToString(suggested));
     }
     return d;
@@ -1042,7 +1044,11 @@ function renderScripts(scripts) {
             ' aria-expanded="' + (isOpen ? 'true' : 'false') + '"' +
             ' aria-controls="' + detailId + '">' + esc(s.name) + '</button>' +
             ' <span class="trust-badge trust-' + esc(trust) + '">' +
-            esc(trust) + '</span></h3>' +
+            esc(trust) + '</span>' +
+            (s.security && s.security.changed_outside === true
+              ? ' <span class="trust-badge changed-badge">Changed outside ' +
+                'MoltBrowser &mdash; review it in Agent mode</span>'
+              : '') + '</h3>' +
           '<div class="meta">' + esc(triggerLabel(s)) +
           ' &middot; ' + (s.steps ? s.steps.length : 0) + ' steps' +
           ' &middot; last run: ' + esc(lastRun) +
@@ -1666,6 +1672,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .trust-approved{background:#3a3a1a;color:#fbbf24;}
 .trust-trusted{background:#1a3a2a;color:#4ade80;}
 .trust-admin{background:#2a2a3a;color:#a78bfa;}
+.changed-badge{background:#3a2a1a;color:#fbbf24;text-transform:none;}
 .promote-banner{background:linear-gradient(90deg,#15803d,#166534);
   color:#fff;padding:10px 14px;border-radius:8px;font-size:.8125rem;
   margin-top:12px;display:flex;align-items:center;gap:12px;

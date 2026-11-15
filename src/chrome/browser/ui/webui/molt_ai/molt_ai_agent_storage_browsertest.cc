@@ -17,11 +17,13 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/location.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
@@ -189,20 +191,42 @@ IN_PROC_BROWSER_TEST_F(AgentStudioStorageBrowserTest,
   EXPECT_NE(Ask("listWorkflows").find("\"voice\":true"), std::string::npos);
   const std::string routine = Ask("getWorkflow", "'voice_1'");
   ASSERT_NE(routine.find("\"name\":\"my news\""), std::string::npos) << routine;
+  // Brought in with no id (a new routine, under an id made for it).
   const std::string imported =
-      Ask("saveWorkflow",
-          "Object.assign(" + routine + ", {id: 'wf_import', name: 'my news'})");
+      Ask("saveWorkflow", "(() => { const w = " + routine +
+                              "; delete w.id; w.name = 'my news'; "
+                              "return w; })()");
   EXPECT_NE(imported.find("\"name\":\"my news (2)\""), std::string::npos)
       << imported;
+  const std::optional<base::Value> answer =
+      base::JSONReader::Read(imported, base::JSON_PARSE_RFC);
+  const std::string* imported_id = answer && answer->is_dict()
+                                       ? answer->GetDict().FindString("id")
+                                       : nullptr;
+  ASSERT_TRUE(imported_id) << imported;
+  const std::string id = *imported_id;
   {
     base::ScopedAllowBlockingForTesting allow_blocking;
     AutomationStorage mine(learning()->routines_dir());
-    EXPECT_TRUE(mine.Load("wf_import"));
+    EXPECT_TRUE(mine.Load(id));
     AutomationStorage shared(
         SharedDir());
-    EXPECT_FALSE(shared.Load("wf_import"));
+    EXPECT_FALSE(shared.Load(id));
   }
-  EXPECT_EQ(Ask("deleteWorkflow", "'wf_import'"), "{\"ok\":true}");
+  // An id is an edit: of a routine that isn't there, refused, not saved as
+  // a new one.
+  const std::string gone =
+      Ask("saveWorkflow",
+          "Object.assign(" + routine + ", {id: 'wf_gone', name: 'my news'})");
+  EXPECT_NE(gone.find("deleted or changed since you opened it"),
+            std::string::npos)
+      << gone;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    AutomationStorage mine(learning()->routines_dir());
+    EXPECT_FALSE(mine.Load("wf_gone"));
+  }
+  EXPECT_EQ(Ask("deleteWorkflow", "'" + id + "'"), "{\"ok\":true}");
 }
 
 // A message is answered on the sequence of the storage it reads: not while

@@ -20,11 +20,10 @@
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
-#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
-#include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
@@ -144,24 +143,26 @@ void StartBackgroundRun(base::WeakPtr<Profile> weak_profile,
     return;
   }
 
-  // Pick the start URL from the first NAVIGATE step, fallback to
-  // about:blank so we always have something to attach a runner to. This
-  // load happens before the runner's policy checks, so it gets the same
-  // http(s)-only rule (a .molt file must not open javascript:/file: URLs).
-  GURL start_url("about:blank");
-  // An unconfirmed draft (a web agent run, agent_run_draft.h) opens nothing:
-  // the runner refuses it on about:blank, and the studio hears why.
-  for (const auto& step : fresh->steps) {
-    if (fresh->security.sites_unconfirmed || HasVoiceSteps(*fresh))
-      break;
-    if (step.type == StepType::NAVIGATE && !step.target.empty()) {
-      GURL g(step.target);
-      if (agent_safety::IsAllowedNavigationURL(g)) {
-        start_url = g;
-      }
-      break;
-    }
+  // MoltBrowser: apply one-off run-time variable overrides ("Run with these
+  // values" from the studio) ON TOP of the saved defaults, after the reload so
+  // they are not lost. The saved workflow on disk is untouched; only this run
+  // sees them. The scheduler passes no overrides → uses the saved defaults.
+  for (const auto& kv : variable_overrides) {
+    fresh->default_variables[kv.first] = kv.second;
   }
+
+  // The start page: the page the step at |start_index| expects (the last
+  // NAVIGATE step before it, else the first one), else about:blank, so we
+  // always have something to attach a runner to. This load happens before
+  // the runner's policy checks, so it opens only that step's URL with this
+  // run's {{variable}} values, when it is http(s) and the runner's check of
+  // that step would allow it: AutomationSecurity::RunWindowStartURL(). An
+  // unconfirmed draft (a web agent run, agent_run_draft.h; a file changed
+  // outside the browser) opens nothing: the runner refuses it on
+  // about:blank, and the studio hears why.
+  const std::string start =
+      AutomationSecurity::RunWindowStartURL(*fresh, start_index);
+  const GURL start_url(start.empty() ? std::string("about:blank") : start);
 
   BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_POPUP, profile,
                                    /*from_user_gesture=*/true);
@@ -204,14 +205,6 @@ void StartBackgroundRun(base::WeakPtr<Profile> weak_profile,
   // per-run instance, which could be freed under an in-flight background task.
   molt_ai::BrowserAIRuntime* ai_runtime = &molt_ai::BrowserAIRuntime::GetInstance();
   ai_runtime->Initialize();
-
-  // MoltBrowser: apply one-off run-time variable overrides ("Run with these
-  // values" from the studio) ON TOP of the saved defaults, after the reload so
-  // they are not lost. The saved workflow on disk is untouched; only this run
-  // sees them. The scheduler passes no overrides → uses the saved defaults.
-  for (const auto& kv : variable_overrides) {
-    fresh->default_variables[kv.first] = kv.second;
-  }
 
   // The holder self-destructs when the run finishes.
   auto* holder =

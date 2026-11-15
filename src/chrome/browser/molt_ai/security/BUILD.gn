@@ -70,7 +70,8 @@ source_set("activation_guard") {
 # mode's, a person's, with a scripted model and a fake TTS platform. Picked
 # up by browser_tests through //chrome/browser/molt_ai/voice:browser_tests.
 # Also: no site may open or write MoltBrowser's data folder through the File
-# System Access API.
+# System Access API, and the workflow record is kept in the user data
+# directory, outside it.
 source_set("browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
@@ -89,6 +90,13 @@ source_set("browser_tests") {
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/browser/molt_ai/agents:features",
+
+    # The workflow record (molt_data_folder_browsertest.cc).
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/automation:shared_tasks",
+    "//chrome/browser/molt_ai/automation:storage",
+    "//chrome/browser/molt_ai/automation:workflow_record",
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
     "//chrome/browser/molt_ai/voice:features",
     "//chrome/browser/molt_ai/voice:page_map",
     "//chrome/browser/molt_ai/voice:voice_controller",
@@ -99,6 +107,9 @@ source_set("browser_tests") {
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/test:test_support",
     "//chrome/test:test_support_ui",
+
+    # chrome::DIR_USER_DATA.
+    "//chrome/common:constants",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
     "//components/download/public/common:public",

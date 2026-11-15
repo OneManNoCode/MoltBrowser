@@ -195,6 +195,22 @@ std::optional<ChoiceRef> RoutineChoice(const ChoiceRef& said,
 // The command to run for |step|, with |value| for its variable.
 VoiceCommand CommandForStep(const RoutineStep& step, std::string_view value);
 
+// |step| with only what DescribeRoutineStep() says of it, as voice mode
+// runs it (a routine changed outside the browser is claimed so, for its
+// review: voice_routines.h's DescribeRoutineStepsAsRun()). A site opened
+// or searched is named by what opens, never by the words the file gives:
+// the known site's own name (no words for an address or a site voice mode
+// doesn't know, which is then named by itself); the page an open step
+// opens is the one voice mode opens (the known site's home page, the
+// address; none for a site it doesn't know); no whole query (searched for
+// instead of a site voice mode doesn't know); no element roles; a number
+// of scrolls only where it is said (pages); an ordinal of a described
+// choice only where it is said. The words it types, searches for or acts
+// on (the planner's text, query, element name and option too) as the
+// description says them: line breaks, tabs and runs of spaces as one
+// space, no hidden character.
+RoutineStep RoutineStepAsShown(const RoutineStep& step);
+
 // The step as the browser says it: "open YouTube", "search for news",
 // "play the first one", "play the live one by queen", "go back". Words the
 // user said, cleaned. The planner's: "open trains.example", "search the web

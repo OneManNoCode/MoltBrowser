@@ -7,7 +7,10 @@
 // from before profiles are kept by one profile at most, as they were,
 // renamed beside the profile's own; files whose contents say they are
 // another profile's change nothing; a claim cut short at any point is
-// settled without giving anything to a profile (round 44).
+// settled without giving anything to a profile (round 44); with the shared
+// storage's workflow record, a routine changed outside the browser is
+// claimed as a draft (workflow_record.h), its steps described by the
+// browser as voice mode runs them.
 
 #include "chrome/browser/molt_ai/voice/voice_routine_store.h"
 
@@ -31,8 +34,11 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/automation/workflow_record.h"
+#include "chrome/browser/molt_ai/automation/workflow_record_test_util.h"
 #include "chrome/browser/molt_ai/voice/voice_command.h"
 #include "chrome/browser/molt_ai/voice/voice_routines.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -615,6 +621,144 @@ TEST_F(VoiceRoutineStoreTest, TwoWritersOnTheProfilesSequence) {
   for (const std::string& name : names) {
     EXPECT_EQ(MatchRoutineName(names, name).count, 1) << name;
   }
+}
+
+// ---- The shared storage's workflow record (workflow_record.h) ----------
+// A routine from before profiles whose file was changed outside the browser
+// is claimed as a draft, which voice mode neither runs nor confirms (only
+// the Agent studio does, after its review); one the browser wrote, as it
+// was; a claim of a changed one cut short is still recognised.
+
+class VoiceRoutineStoreRecordTest : public VoiceRoutineStoreTest {
+ protected:
+  void SetUp() override {
+    VoiceRoutineStoreTest::SetUp();
+    record_.emplace(SharedDir(),
+                    temp_.GetPath().Append(automation::kWorkflowRecordFileName),
+                    /*may_seed=*/false);
+  }
+  void TearDown() override { record_.reset(); }
+
+  base::FilePath SharedDir() { return shared_root_.AppendASCII("automations"); }
+  // A routine written into the shared storage by another program; its
+  // contents.
+  std::string PlantOld(const std::string& id, const std::string& name) {
+    BuiltRoutine built = BuildRoutine(id, name, MyNews(), kNow);
+    EXPECT_TRUE(built.script);
+    const std::string contents = built.script->ToJSONString();
+    EXPECT_TRUE(base::CreateDirectory(SharedDir()));
+    EXPECT_TRUE(
+        base::WriteFile(SharedDir().AppendASCII(id + ".molt"), contents));
+    return contents;
+  }
+
+  std::optional<automation::ScopedWorkflowRecordForTesting> record_;
+};
+
+TEST_F(VoiceRoutineStoreRecordTest,
+       AnOldRoutineChangedOutsideIsClaimedAsADraft) {
+  PlantOld("voice_1", "my news");
+  VoiceRoutineStore store = Profile1();
+  EXPECT_EQ(Names(store.Unclaimed()), std::vector<std::string>{"my news"});
+  ClaimResult kept = store.Claim({"voice_1"});
+  ASSERT_EQ(kept.kept.size(), 1u);
+  std::optional<Script> moved = store.storage().Load("voice_1");
+  ASSERT_TRUE(moved);
+  EXPECT_EQ(moved->security.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(moved->security.sites_unconfirmed);
+  EXPECT_TRUE(moved->security.changed_outside);
+  EXPECT_TRUE(moved->security.domain_whitelist.empty());
+  ASSERT_EQ(store.Summaries().size(), 1u);
+  EXPECT_TRUE(store.Summaries()[0].needs_sites_confirmed);
+  // Not run nor confirmed by voice on its sites alone: its steps are
+  // reviewed in the Agent studio first.
+  std::optional<RoutineToRun> run = store.Load("my news", "");
+  ASSERT_TRUE(run);
+  EXPECT_FALSE(run->ok);
+  EXPECT_TRUE(run->steps.empty());
+  EXPECT_EQ(run->why,
+            "This routine was changed outside MoltBrowser. Review it in Agent "
+            "mode first.");
+  EXPECT_FALSE(store.ConfirmSites(moved->id, run->sites));
+  moved = store.storage().Load("voice_1");
+  ASSERT_TRUE(moved);
+  EXPECT_TRUE(moved->security.sites_unconfirmed);
+  EXPECT_TRUE(moved->security.changed_outside);
+  EXPECT_TRUE(moved->security.domain_whitelist.empty());
+}
+
+TEST_F(VoiceRoutineStoreRecordTest, AVouchedOldRoutineIsClaimedAsItWas) {
+  SaveOld("voice_1", "my news");
+  VoiceRoutineStore store = Profile1();
+  ClaimResult kept = store.Claim({"voice_1"});
+  ASSERT_EQ(kept.kept.size(), 1u);
+  std::optional<Script> moved = store.storage().Load("voice_1");
+  ASSERT_TRUE(moved);
+  EXPECT_EQ(moved->security.trust, TrustLevel::APPROVED);
+  EXPECT_FALSE(moved->security.sites_unconfirmed);
+  EXPECT_FALSE(moved->security.changed_outside);
+  ASSERT_EQ(store.Summaries().size(), 1u);
+  EXPECT_FALSE(store.Summaries()[0].needs_sites_confirmed);
+}
+
+// Cut short after the profile's save, of a routine changed outside: the
+// profile's copy (a draft) and the set-aside file (read as a draft again)
+// are the same routine, so the claim is finished, never offered twice.
+TEST_F(VoiceRoutineStoreRecordTest,
+       AClaimCutShortOfAChangedRoutineIsStillRecognised) {
+  const std::string original = PlantOld("voice_2", "trains");
+  VoiceRoutineStore store = Profile1();
+  ASSERT_EQ(store.Claim({"voice_2"}).kept.size(), 1u);
+  EXPECT_EQ(SetAsideCount(SharedDir()), 0);
+  // As the browser would have left it had it ended before the set-aside
+  // file was deleted.
+  const base::FilePath taken =
+      LeaveSetAside(SharedDir(), "voice_2", original, base::Minutes(5));
+  EXPECT_TRUE(store.Unclaimed().empty());
+  EXPECT_FALSE(base::PathExists(taken));
+  ASSERT_EQ(store.Summaries().size(), 1u);
+  EXPECT_TRUE(store.Summaries()[0].needs_sites_confirmed);
+  EXPECT_EQ(store.RecoverInterruptedClaims(), 0);
+}
+
+// Its steps are described by the browser, as voice mode runs them (their
+// extra["voice"]), so its review in the Agent studio shows that, never the
+// file's own words for them; a claim of it cut short is still recognised.
+TEST_F(VoiceRoutineStoreRecordTest, AChangedRoutinesStepsAreDescribedAsRun) {
+  BuiltRoutine built = BuildRoutine("voice_3", "my news", MyNews(), kNow);
+  ASSERT_TRUE(built.script);
+  for (automation::Step& step : built.script->steps) {
+    step.description = "Type \xE2\x80\x9Cweather\xE2\x80\x9D";
+  }
+  // What voice mode would search for of a site it doesn't know, and a
+  // secret key it never reads: neither kept.
+  base::DictValue& search = built.script->steps[1].extra.GetDict();
+  search.FindDict(automation::kVoiceStepKey)
+      ->Set("whole_query", "cancel my subscription");
+  search.Set(automation::kSecretKey, automation::kSecretVault);
+  const std::string contents = built.script->ToJSONString();
+  ASSERT_TRUE(base::CreateDirectory(SharedDir()));
+  ASSERT_TRUE(
+      base::WriteFile(SharedDir().AppendASCII("voice_3.molt"), contents));
+  VoiceRoutineStore store = Profile1();
+  ASSERT_EQ(store.Claim({"voice_3"}).kept.size(), 1u);
+  std::optional<Script> moved = store.storage().Load("voice_3");
+  ASSERT_TRUE(moved);
+  EXPECT_TRUE(moved->security.changed_outside);
+  ASSERT_EQ(moved->steps.size(), 2u);
+  EXPECT_EQ(moved->steps[0].description, "Open YouTube");
+  EXPECT_EQ(moved->steps[1].description, "Search for news");
+  const base::DictValue& kept = moved->steps[1].extra.GetDict();
+  EXPECT_FALSE(kept.Find(automation::kSecretKey));
+  ASSERT_TRUE(kept.FindDict(automation::kVoiceStepKey));
+  EXPECT_FALSE(kept.FindDict(automation::kVoiceStepKey)->Find("whole_query"));
+  // Cut short after the profile's save: the set-aside file, read as a
+  // draft and described as the claim describes it, is the same routine.
+  const base::FilePath taken =
+      LeaveSetAside(SharedDir(), "voice_3", contents, base::Minutes(5));
+  EXPECT_TRUE(store.Unclaimed().empty());
+  EXPECT_FALSE(base::PathExists(taken));
+  EXPECT_EQ(store.Summaries().size(), 1u);
 }
 
 }  // namespace

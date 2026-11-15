@@ -15,14 +15,16 @@ source_set("automation") {
     "automation_background_browser.h",
     "automation_notification.cc",
     "automation_notification.h",
+
+    # Configures the workflow record at startup (workflow_record.h).
+    "automation_record_startup.cc",
+    "automation_record_startup.h",
     "automation_recorder.cc",
     "automation_recorder.h",
     "automation_recorder_tab_helper.cc",
     "automation_recorder_tab_helper.h",
     "automation_runner.cc",
     "automation_runner.h",
-    "automation_scheduler.cc",
-    "automation_scheduler.h",
     "automation_scheduler_factory.cc",
     "automation_scheduler_factory.h",
     "automation_scheduler_service.cc",
@@ -36,8 +38,14 @@ source_set("automation") {
   # are now unused.
 
   deps = [
+    ":workflow_record",
     "//base",
     "//chrome/browser:browser_public_dependencies",
+
+    # The workflow record's startup: g_browser_process->local_state(),
+    # first_run::IsChromeFirstRun(), chrome::DIR_USER_DATA.
+    "//chrome/browser:browser_process",
+    "//chrome/browser/first_run",
 
     # Site-tool steps: the runner lists and calls a page's tools with the
     # web agent's SiteToolHost, while #molt-agent-site-tools is on.
@@ -63,8 +71,10 @@ source_set("automation") {
     "//chrome/browser/ui/browser_window:create_browser_window",
     "//chrome/browser/ui/navigator",
     "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/common:constants",
     "//components/keyed_service/content",
     "//components/keyed_service/core",
+    "//components/prefs",
     "//components/viz/common",
     "//content/public/browser",
     "//mojo/public/cpp/bindings",
@@ -84,11 +94,62 @@ source_set("automation") {
     ":ai_steps",
     ":automation_policy",
     ":run_questions",
+    ":scheduler",
     ":shared_tasks",
     ":storage",
     ":tool_steps",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
+}
+
+# AutomationScheduler (automation_scheduler.h): fires what may run
+# unattended, on the shared storage's sequences. base only, so
+# molt_ai_unittests tests it.
+source_set("scheduler") {
+  sources = [
+    "automation_scheduler.cc",
+    "automation_scheduler.h",
+  ]
+
+  public_deps = [
+    ":automation_policy",
+    ":shared_tasks",
+    ":storage",
+    "//base",
+  ]
+}
+
+# The Molt Workflow Record (workflow_record.h): what this browser last wrote
+# in the shared workflow directory, kept in its user data directory. base
+# only, so molt_ai_unittests tests it on real files.
+source_set("workflow_record") {
+  sources = [
+    "workflow_record.cc",
+    "workflow_record.h",
+  ]
+
+  deps = [
+    # A record inside ~/.moltbrowser is never used.
+    "//chrome/browser/molt_ai/common:molt_home_dir",
+
+    # The record and its marker read and written only as regular files.
+    "//chrome/browser/molt_ai/common:molt_regular_file",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# A workflow record for a test's directory (workflow_record_test_util.h).
+source_set("workflow_record_test_support") {
+  testonly = true
+  sources = [
+    "workflow_record_test_util.cc",
+    "workflow_record_test_util.h",
+  ]
+
+  deps = [ ":workflow_record" ]
+
+  public_deps = [ "//base" ]
 }
 
 # The shared storage's work posted from the UI thread to its sequences
@@ -113,6 +174,9 @@ source_set("storage") {
   ]
 
   deps = [
+    # Every read checked against what this browser wrote.
+    ":workflow_record",
+
     # The shared storage is in ~/.moltbrowser, or a test's directory.
     "//chrome/browser/molt_ai/common:molt_home_dir",
 
@@ -193,8 +257,9 @@ source_set("ai_steps") {
 }
 
 # The .molt script model and the trust / whitelist policy. Pure logic (base +
-# url), split out so molt_ai_unittests can cover it without pulling in the
-# browser-side dependencies of :automation.
+# url, and crypto for the security digest), split out so molt_ai_unittests
+# can cover it without pulling in the browser-side dependencies of
+# :automation.
 source_set("automation_policy") {
   sources = [
     "automation_script.cc",
@@ -206,7 +271,15 @@ source_set("automation_policy") {
     "automation_voice_steps.h",
   ]
 
-  deps = [ "//url" ]
+  deps = [
+    # AutomationSecurity::ClampUnvouched(): a one-line field the review
+    # can't show as it runs.
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+
+    # AutomationSecurity::SecurityDigest() (crypto::hash::Sha256).
+    "//crypto",
+    "//url",
+  ]
 
   public_deps = [
     # Step::locators.
@@ -244,11 +317,13 @@ source_set("unit_tests") {
     "agent_run_draft_unittest.cc",
     "automation_ai_steps_unittest.cc",
     "automation_locators_unittest.cc",
+    "automation_scheduler_unittest.cc",
     "automation_script_unittest.cc",
     "automation_security_unittest.cc",
     "automation_storage_unittest.cc",
     "automation_tool_steps_unittest.cc",
     "run_questions_unittest.cc",
+    "workflow_record_unittest.cc",
   ]
   deps = [
     ":agent_run_draft",
@@ -256,8 +331,11 @@ source_set("unit_tests") {
     ":automation_policy",
     ":locators",
     ":run_questions",
+    ":scheduler",
     ":storage",
     ":tool_steps",
+    ":workflow_record",
+    ":workflow_record_test_support",
     "//base",
 
     # The storage's updates from two threads (TaskEnvironment).
@@ -265,6 +343,7 @@ source_set("unit_tests") {
 
     # The shared storage in a test's own ~/.moltbrowser.
     "//chrome/browser/molt_ai/common:molt_home_dir",
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
 
     # Every schema the runner builds must be accepted by the inference
     # service's converter; the tests run the real one (std-only).

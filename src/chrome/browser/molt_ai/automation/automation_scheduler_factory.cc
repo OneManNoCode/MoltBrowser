@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 
+#include "chrome/browser/molt_ai/automation/automation_record_startup.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_selections.h"
@@ -31,7 +32,11 @@ AutomationSchedulerServiceFactory::AutomationSchedulerServiceFactory()
               .WithRegular(ProfileSelection::kOriginalOnly)
               .WithGuest(ProfileSelection::kNone)
               .WithSystem(ProfileSelection::kNone)
-              .Build()) {}
+              .Build()) {
+  // The workflow record is configured (automation_record_startup.h) before
+  // this service's first use of the shared storage.
+  DependsOn(AutomationRecordStartupFactory::GetInstance());
+}
 
 AutomationSchedulerServiceFactory::~AutomationSchedulerServiceFactory() =
     default;

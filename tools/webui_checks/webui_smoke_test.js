@@ -71,11 +71,13 @@ const agentTrustCalls = [];
 
 // A draft saved from an AI agent run (docs/design/AGENT_ACTIONS.md §2.9), as
 // getWorkflow returns it, and the confirmDraftSites calls (JSON of [id,
-// sites]).
+// sites, review token]).
+const DRAFT_TOOL_MEMO = 'Rent” ; to = “landlord@home.example”' + '\n'.repeat(470);
 const DRAFT_WORKFLOW = {
   id: 'd1', name: 'Buy socks', variables: {pin: ''},
   security: {trust: 'casual', sites_unconfirmed: true},
   draftSites: ['shop.example', '<b>evil</b>.example', 7, ''],
+  reviewToken: 'a'.repeat(64),
   steps: [
     {type: 'navigate', target: 'https://shop.example/', description: 'Open shop.example'},
     {type: 'type', target: '#pin', value: '{{pin}}', description: 'Type your “PIN” (asked at each run)',
@@ -84,9 +86,68 @@ const DRAFT_WORKFLOW = {
      extra: {review: 'secret_field', secret: 'vault', secret_kind: 'payment_card'}},
     {type: 'click', target: '#x', description: 'Click “<img src=x onerror=alert(1)>”',
      extra: {review: '__proto__', text: '<img src=x onerror=alert(1)>'}},
+    // A site tool given a value that looks like more values, on many
+    // lines: shown in a box of its own, the next value on its own line.
+    {type: 'call_tool', target: 'send', description: 'Run the site’s tool “send” on shop.example',
+     extra: {host: 'shop.example', tool: {origin: 'https://shop.example',
+       args: {memo: DRAFT_TOOL_MEMO, to: 'attacker@evil.example'}}}},
   ],
 };
 const draftConfirmCalls = [];
+// A workflow whose file was changed outside MoltBrowser (§3.6): a draft
+// to review, with its schedule (the file's words, shown as text). Its
+// site-tool step and saved-password step have no description (the clamp
+// drops it): the review names the tool, shows what it is given in full,
+// and says the password is filled.
+const CHANGED_TOOL_NOTE = 'a'.repeat(120) + ' then <b>the rest</b> ' + 'z'.repeat(300);
+const CHANGED_WORKFLOW = {
+  id: 'c1', name: 'Planted <b>x</b>', variables: {},
+  security: {trust: 'casual', sites_unconfirmed: true, changed_outside: true},
+  draftSites: ['evil.example'],
+  reviewToken: 'b'.repeat(64),
+  trigger: {type: 'cron', expression: '<b>* * * * *</b>'},
+  steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'},
+          {type: 'call_tool', target: 'delete_<b>account</b>',
+           extra: {host: 'evil.example', tool: {origin: 'https://evil.example',
+             args: {note: CHANGED_TOOL_NOTE, big: 'x'.repeat(5000)}}}},
+          {type: 'type', target: '#pw',
+           extra: {secret: 'vault', secret_kind: 'password', host: 'evil.example'}},
+          // Notes a file names for steps that run: none shown (a literal
+          // typed, a tool given nothing withheld).
+          {type: 'type', target: '#notes', value: 'ship to 1 Evil St',
+           extra: {review: 'secret_field', host: 'evil.example'}},
+          // A voice step with a secret key voice mode never reads: titled as
+          // voice mode runs it, no saved password said.
+          {type: 'type', value: '', description: 'Type send 500 to X',
+           extra: {voice: {command: 'type', text: 'send 500 to X', planned: false},
+                   secret: 'vault', secret_kind: 'password'}},
+          // A site tool given a value with a bidi override, which a form
+          // tool sends: shown as it runs.
+          {type: 'call_tool', target: 'transfer',
+           extra: {host: 'evil.example', review: 'secret_argument', tool: {
+             origin: 'https://evil.example', form: true,
+             args: {account: '\u202E87654321\u202C', amount: 100}}}},
+          // An assert: its element shown.
+          {type: 'assert', target: '#status', value: 'Paid'}],
+};
+// Another, of two sites, with a last fire from before the change; saved
+// with a step deleted, it targets one, and a confirm answers with its
+// schedule started over.
+const CHANGED_TWO_SITES = {
+  id: 'c2', name: 'Mail', variables: {},
+  security: {trust: 'casual', sites_unconfirmed: true, changed_outside: true},
+  draftSites: ['evil.example', 'mail.example'],
+  reviewToken: 'c'.repeat(64),
+  trigger: {type: 'cron', expression: '0 8 * * *', last_fired_unix: 1700000000},
+  steps: [{type: 'navigate', target: 'https://evil.example/', description: 'Open evil.example'},
+          {type: 'navigate', target: 'https://mail.example/', description: 'Open mail.example'}],
+};
+const CONFIRMED_TRIGGER = {type: 'cron', expression: '0 8 * * *'};
+
+// The Agent studio's saves: a saved workflow's id is the one it sent, the
+// recording's it named, or a new one; a schedule is answered with the
+// trigger as saved (the sheet's "daily at 09:00" as cron).
+const SAVED_TRIGGER = {type: 'cron', expression: '00 09 * * *'};
 
 // The Agent studio's voice commands (#molt-voice-mode): what was typed.
 const voiceCommands = [];
@@ -1612,7 +1673,7 @@ const PAGES = [
      listWorkflows: {workflows: [
        {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
         host: 'example.com', trigger: {type: 'manual'}},
-       {id: 'd1', name: 'Buy socks', stepCount: 4, trust: 'casual', draft: true,
+       {id: 'd1', name: 'Buy socks', stepCount: 5, trust: 'casual', draft: true,
         host: 'shop.example', trigger: {type: 'manual'}},
        {id: 'q1', name: 'Waiting', stepCount: 2, trust: 'approved',
         host: 'shop.example', trigger: {type: 'manual'},
@@ -1621,7 +1682,9 @@ const PAGES = [
        {id: 'v1', name: 'my <b>news</b>', stepCount: 3, trust: 'approved',
         voice: true, host: 'www.youtube.com', trigger: {type: 'manual'}},
        {id: 'v2', name: 'trains', stepCount: 1, trust: 'approved',
-        voice: true, nameClash: true, trigger: {type: 'manual'}}],
+        voice: true, nameClash: true, trigger: {type: 'manual'}},
+       {id: 'c1', name: 'Planted <b>x</b>', stepCount: 1, trust: 'casual', draft: true,
+        changedOutside: true, host: 'evil.example', trigger: {type: 'cron'}}],
        unclaimed: [{id: 'old1', name: 'old <b>news</b>', steps: 2},
                    {id: 'old2', name: 'mail', steps: 1}],
        unclaimedHidden: 1},
@@ -1650,7 +1713,9 @@ const PAGES = [
        frameToolForgets.push(JSON.stringify(args.slice(1)));
        return {ok: true};
      },
-     getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW : {
+     getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW :
+                            args[1] === 'c1' ? CHANGED_WORKFLOW :
+                            args[1] === 'c2' ? CHANGED_TWO_SITES : {
        id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
        steps: [{type: 'navigate', target: 'https://www.example.com/'},
                {type: 'click', target: '#buy', description: 'Click "Buy"',
@@ -1668,9 +1733,21 @@ const PAGES = [
                   args: {id: '<img src=x onerror=alert(1)>', qty: 2, note: '{{tool_note}}'},
                   secret_args: ['otp']}}}]},
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
+     saveWorkflow: (args) => {
+       const w = args[1] || {};
+       // A draft saved: the sites its saved steps target, and the token of
+       // what was saved.
+       if (w.id === 'c2') {
+         return {id: 'c2', name: w.name, trust: 'casual',
+                 draftSites: ['evil.example'], reviewToken: 'd'.repeat(64)};
+       }
+       return {id: w.id || w.recordedId || 'wf_new', name: w.name, trust: 'casual'};
+     },
+     saveSchedule: {ok: true, nextFire: 0, trigger: SAVED_TRIGGER},
      confirmDraftSites: (args) => {
        draftConfirmCalls.push(JSON.stringify(args.slice(1)));
-       return {ok: true, trust: 'casual'};
+       return args[1] === 'c2' ? {ok: true, trust: 'casual', trigger: CONFIRMED_TRIGGER}
+                               : {ok: true, trust: 'casual'};
      },
      voiceStatus: {enabled: true, moltnet: false},
      voiceCommand: (args) => {
@@ -1794,6 +1871,20 @@ const PAGES = [
      assert(/asked for it at each run/.test(notes[0].textContent));
      assert(/never saves those/.test(notes[1].textContent));
      assert.strictEqual(doc.querySelectorAll('#edSteps img[onerror]').length, 0);
+     // A value that looks like more values, on many lines: in a box of its
+     // own (which scrolls), isolated, the next value on its own line.
+     const draftToolRows = Array.from(
+         doc.querySelectorAll('#edSteps .estep')[4].querySelectorAll('.tool-arg'));
+     assert.deepStrictEqual(
+         draftToolRows.map((r) => [r.querySelector('.ta-k').textContent,
+                                   r.querySelector('.ta-v').textContent]),
+         [['memo', '“' + DRAFT_TOOL_MEMO + '”'], ['to', '“attacker@evil.example”']],
+         'a row and a box for each value');
+     assert(draftToolRows.every((r) => r.querySelector('.ta-v').tagName === 'BDI'),
+            'each value isolated');
+     const valueStyle = window.getComputedStyle(draftToolRows[0].querySelector('.ta-v'));
+     assert.strictEqual(valueStyle.maxHeight, '8em', 'a long value scrolls in its box');
+     assert.strictEqual(valueStyle.overflow, 'auto');
      const runsBefore = window.__sent.filter((m) => m === 'runWorkflow').length;
      window.runWorkflowFlow('d1');
      await tick();
@@ -1802,10 +1893,88 @@ const PAGES = [
      assert(!window.__sent.includes('saveSchedule'));
      doc.getElementById('draftConfirmBtn').click();
      assert.strictEqual(draftConfirmCalls.pop(),
-                        '["d1",["shop.example","<b>evil</b>.example"]]', 'sent from the click');
+                        '["d1",["shop.example","<b>evil</b>.example"],"' + 'a'.repeat(64) + '"]',
+                        'sent from the click, with the review token');
      await tick();
      assert(!/Draft from an AI agent run/.test(draftPanel.textContent), 'confirmed');
      assert(/Not trusted/.test(draftPanel.textContent), 'now an untrusted workflow');
+     // A workflow changed outside MoltBrowser: its badge, the library's
+     // banner, a review panel with its schedule as text; it never runs, and
+     // "Confirm" sends the sites and the token of what was shown.
+     window.showView('library');
+     await window.loadLibrary();
+     await tick();
+     const banner = doc.querySelector('#libCards .changed-banner');
+     assert(banner, 'the library says some changed outside');
+     assert.strictEqual(banner.textContent,
+         '1 workflow was changed outside MoltBrowser and needs your review.');
+     const changedCard = doc.querySelectorAll('#libList .card')[5];
+     assert(/changed outside · review it/.test(changedCard.querySelector('.csub').textContent),
+            'changed-outside badge');
+     assert.deepStrictEqual(
+         Array.from(changedCard.querySelectorAll('.card-actions button')).map((b) => b.textContent),
+         ['\u{1F50D} Review', '⋯'], 'a changed workflow is reviewed, not run');
+     assert.strictEqual(changedCard.querySelectorAll('b').length, 0);
+     window.openEditor('c1');
+     await tick();
+     const changedPanel = doc.getElementById('edTrust');
+     assert(/Changed outside MoltBrowser — review it/.test(changedPanel.textContent),
+            'the changed-outside review panel');
+     assert(changedPanel.textContent.includes('Schedule: runs by itself on “<b>* * * * *</b>”.'),
+            'its schedule, as text');
+     assert.strictEqual(changedPanel.querySelectorAll('b').length, 0);
+     const changedSteps = doc.querySelectorAll('#edSteps .estep');
+     assert.strictEqual(changedSteps[1].querySelector('.etype small').textContent,
+         'Run the site’s tool “delete_<b>account</b>” on evil.example',
+         'a site tool titled by the tool it runs');
+     assert.strictEqual(changedSteps[1].querySelector('.tool-name').textContent,
+         '“delete_<b>account</b>” of https://evil.example');
+     const changedArgs = Array.from(changedSteps[1].querySelectorAll('.tool-arg'))
+         .map((r) => r.textContent);
+     assert.strictEqual(changedArgs.length, 2, 'a row for each value');
+     assert.strictEqual(changedArgs[0], 'note = “' + CHANGED_TOOL_NOTE + '”',
+                        'a value in full: ' + changedArgs[0].slice(0, 80));
+     assert(changedArgs[1].startsWith('big = “xxx'), 'its own row');
+     assert(changedArgs[1].endsWith('x… (cut: too long to run)'), 'a cut is said');
+     assert.strictEqual(changedSteps[1].querySelectorAll('b').length, 0);
+     assert.strictEqual(changedSteps[2].querySelector('.etype small').textContent,
+         'Fill your saved password', 'a saved-password step says so');
+     assert(/fills in your saved password/.test(
+         changedSteps[2].querySelector('.review-note').textContent));
+     // A note the file names for a step that runs isn't shown.
+     assert.strictEqual(changedSteps[3].querySelectorAll('.review-note').length, 0,
+                        'no "a run stops" note for a literal typed');
+     assert.strictEqual(changedSteps[3].querySelector('.etype small').textContent,
+                        'Type “ship to 1 Evil St”');
+     assert.strictEqual(changedSteps[4].querySelector('.etype small').textContent,
+                        'Type send 500 to X', 'a voice step titled as voice mode runs it');
+     assert.strictEqual(changedSteps[4].querySelectorAll('.review-note').length, 0,
+                        'no saved password for a voice step');
+     assert.strictEqual(changedSteps[5].querySelectorAll('.review-note').length, 0,
+                        'no "a run stops" note for a tool given nothing withheld');
+     const bidiArgs = changedSteps[5].querySelector('.tool-args');
+     assert.deepStrictEqual(
+         Array.from(bidiArgs.querySelectorAll('.tool-arg')).map((r) => r.textContent),
+         ['account = “\uFFFD87654321\uFFFD”', 'amount = 100'],
+         'a bidi override shown, as it runs');
+     assert.strictEqual(bidiArgs.querySelectorAll('bdi.ta-v').length, 2,
+                        'each value isolated');
+     assert(/fills in and sends a form/.test(changedSteps[5].textContent));
+     const assertTarget = Array.from(changedSteps[6].querySelectorAll('input.inp'))
+         .map((i) => i.value);
+     assert.deepStrictEqual(assertTarget, ['Paid', '#status'],
+                            'an assert shows its element');
+     const runsBeforeChanged = window.__sent.filter((m) => m === 'runWorkflow').length;
+     window.runWorkflowFlow('c1');
+     await tick();
+     assert.strictEqual(window.__sent.filter((m) => m === 'runWorkflow').length,
+                        runsBeforeChanged, 'a changed workflow never runs');
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(),
+                        '["c1",["evil.example"],"' + 'b'.repeat(64) + '"]',
+                        'confirmed with the token of what was shown');
+     await tick();
+     assert(!/Changed outside MoltBrowser/.test(changedPanel.textContent), 'confirmed');
      // The fallback locators: by kind only, as text; junk named generically.
      window.openEditor('w1');
      await tick();
@@ -1820,17 +1989,139 @@ const PAGES = [
      const toolCard = Array.from(doc.querySelectorAll('#edSteps .estep')).find(
          (c) => c.querySelector('.tool-args'));
      assert(toolCard, 'a site-tool step');
-     assert.strictEqual(toolCard.querySelector('.tool-args').textContent,
-         'id = “<img src=x onerror=alert(1)>”; qty = 2; note = “{{tool_note}}”');
-     assert(/In the page’s frame from https:\/\/<b>w<\/b>\.example/.test(toolCard.textContent));
+     assert.deepStrictEqual(
+         Array.from(toolCard.querySelectorAll('.tool-arg')).map((r) => r.textContent),
+         ['id = “<img src=x onerror=alert(1)>”', 'qty = 2', 'note = “{{tool_note}}”']);
+     assert(/In the page’s frame from https:\/\/<b>w<\/b>\.example \(frame \/c\)/.test(toolCard.textContent));
+     assert.strictEqual(toolCard.querySelector('.tool-name').textContent,
+         '“add_to_cart” of https://www.example.com');
+     assert.strictEqual(toolCard.querySelector('.etype small').textContent,
+         'Run the site’s tool “add_to_cart” on example.com (in its frame from https://<b>w</b>.example)');
      assert(/1 value not saved/.test(toolCard.textContent));
-     assert(/asked for it at each run/.test(toolCard.querySelector('.review-note').textContent));
+     const toolNotes = toolCard.querySelectorAll('.review-note');
+     assert.strictEqual(toolNotes.length, 2);
+     assert(/asked for it at each run/.test(toolNotes[0].textContent));
+     assert(/a run stops at this step/.test(toolNotes[1].textContent),
+            'a card or code it was given that wasn’t saved stops the run');
      assert.strictEqual(toolCard.querySelectorAll('img, b, input.inp').length, 0);
      assert(/Site tool/.test(toolCard.querySelector('.etype').textContent));
      // Saving keeps the withheld value's variable.
      window.syncVariables();
      assert(Object.prototype.hasOwnProperty.call(window.editorState.variables, 'tool_note'),
             'a tool argument\'s variable is kept');
+     // Saves: a workflow opened here is saved under its id (an edit of what
+     // is stored); a recording's first save names the id the browser made
+     // for it as recordedId, and no id.
+     const saves = () => window.__sendArgs.filter(([m]) => m === 'saveWorkflow')
+         .map(([, a]) => a[1]);
+     window.openEditorDraft({name: 'Rec', steps: [], variables: {},
+                             trigger: {type: 'manual', expression: ''},
+                             recordedId: 'wf_1_rec'});
+     let saved = saves().length;
+     await window.saveEditor(true);
+     assert.strictEqual(saves()[saved].recordedId, 'wf_1_rec');
+     assert(!('id' in saves()[saved]), 'a recording’s first save names no workflow');
+     await window.saveEditor(true);
+     assert.strictEqual(saves()[saved + 1].id, 'wf_1_rec', 'then it is an edit');
+     assert(!('recordedId' in saves()[saved + 1]));
+     window.openEditor('w1');
+     await tick();
+     saved = saves().length;
+     await window.saveEditor(true);
+     assert.strictEqual(saves()[saved].id, 'w1');
+     assert(!('recordedId' in saves()[saved]));
+     assert(!('draft' in saves()[saved]), 'a workflow, not a draft');
+     // One save at a time: a double click on a new workflow's Save saves it
+     // once, then as an edit under the id it was given.
+     window.openEditorDraft({name: 'Blank', steps: [], variables: {}});
+     saved = saves().length;
+     const one = window.saveEditor(true);
+     const two = window.saveEditor(true);
+     assert.strictEqual(saves().length, saved + 1, 'the second save waits');
+     assert.deepStrictEqual([await one, await two], ['wf_new', 'wf_new']);
+     assert.strictEqual(saves().length, saved + 2);
+     assert(!('id' in saves()[saved]));
+     assert.strictEqual(saves()[saved + 1].id, 'wf_new');
+     // The schedule sheet: the editor keeps the trigger as the browser saved
+     // it, never the sheet's own shape, so its next save keeps the schedule.
+     window.openEditor('w1');
+     await tick();
+     window.openScheduleSheet('w1', 'W', window.editorState.trigger);
+     window.pickMode('daily');
+     doc.getElementById('schedSave').click();
+     await tick();
+     assert.deepStrictEqual(window.editorState.trigger, SAVED_TRIGGER);
+     saved = saves().length;
+     await window.saveEditor(true);
+     assert.deepStrictEqual(saves()[saved].trigger, SAVED_TRIGGER);
+     // A saved interval (seconds) is shown in hours or minutes when it is a
+     // whole number of them, else in seconds: saved unchanged, it is the
+     // same.
+     for (const [secs, num, unit, sent] of [['1800', '30', 'm', '30m'],
+                                            ['7200', '2', 'h', '2h'],
+                                            ['90', '90', 's', '90s'],
+                                            ['150', '150', 's', '150s']]) {
+       window.openScheduleSheet('w1', 'W', {type: 'interval', expression: secs});
+       assert.strictEqual(doc.getElementById('ivNum').value, num, secs);
+       assert.strictEqual(doc.getElementById('ivUnit').value, unit, secs);
+       doc.getElementById('schedSave').click();
+       const scheduled = argsOf(window, 'saveSchedule');
+       assert.strictEqual(JSON.stringify(scheduled[scheduled.length - 1][1]),
+                          JSON.stringify({type: 'interval', expression: sent}), secs);
+       await tick();
+     }
+     // A save waiting for another is of the editor it was asked in: dropped
+     // when another editor was opened meanwhile (never that one's content
+     // saved under the first's id), and Run doesn't run it.
+     window.openEditor('w1');
+     await tick();
+     saved = saves().length;
+     const getsBefore = argsOf(window, 'getWorkflow').length;
+     const first = window.saveEditor(true);
+     const waiting = window.saveEditor(true);
+     doc.getElementById('edRunBtn').click();
+     window.openEditorDraft({name: 'Blank', steps: [], variables: {}});
+     assert.deepStrictEqual([await first, await waiting], ['w1', null]);
+     await tick();
+     assert.strictEqual(saves().length, saved + 1, 'only the first editor saved');
+     assert.strictEqual(window.editorState.id, null, 'the new editor keeps no id');
+     assert.strictEqual(window.editorState.name, 'Blank');
+     assert.strictEqual(argsOf(window, 'getWorkflow').length, getsBefore, 'nothing run');
+     // A changed workflow edited and not saved yet: Confirm saves it first
+     // (no confirm of the stored file with the token of what was opened),
+     // shows the sites its saved steps use, and a click of its own confirms
+     // them with the token of what was saved. The schedule is then the one
+     // confirmed, which the next save keeps.
+     window.openEditor('c2');
+     await tick();
+     assert.deepStrictEqual(
+         Array.from(doc.querySelectorAll('#edTrust .draft-site')).map((e) => e.textContent),
+         ['evil.example', 'mail.example']);
+     window.deleteStep(1);
+     saved = saves().length;
+     const confirmsBefore = draftConfirmCalls.length;
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.length, confirmsBefore, 'not confirmed unsaved');
+     assert.strictEqual(saves().length, saved + 1, 'saved first');
+     assert.strictEqual(saves()[saved].steps.length, 1);
+     assert.strictEqual(saves()[saved].draft, true,
+                        'an edit of a draft says so (refused if it is no longer one)');
+     await tick();
+     assert.deepStrictEqual(
+         Array.from(doc.querySelectorAll('#edTrust .draft-site')).map((e) => e.textContent),
+         ['evil.example'], 'the sites of the saved steps');
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(),
+                        '["c2",["evil.example"],"' + 'd'.repeat(64) + '"]',
+                        'confirmed with the token of what was saved');
+     await tick();
+     assert(!/Changed outside MoltBrowser/.test(doc.getElementById('edTrust').textContent));
+     assert.deepStrictEqual(window.editorState.trigger, CONFIRMED_TRIGGER);
+     saved = saves().length;
+     await window.saveEditor(true);
+     assert.deepStrictEqual(saves()[saved].trigger, CONFIRMED_TRIGGER,
+                            'no last fire from before the change written back');
+     assert(!('draft' in saves()[saved]), 'confirmed: no longer a draft');
      // A run's question: shown in the run's ticker as text; "Use it" and
      // "Stop the run" send the answer for that question from the click.
      window.showView('library');

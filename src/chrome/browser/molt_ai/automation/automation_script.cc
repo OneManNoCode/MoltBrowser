@@ -221,8 +221,6 @@ Step StepFromDict(const base::DictValue& d) {
 // Trigger <-> JSON
 // -----------------------------------------------------------------------------
 
-namespace {
-
 base::DictValue TriggerToDict(const Trigger& t) {
   base::DictValue d;
   d.Set("type", TriggerTypeToString(t.type));
@@ -236,6 +234,14 @@ base::DictValue TriggerToDict(const Trigger& t) {
     d.Set("last_fired_unix", static_cast<double>(t.last_fired_unix));
   return d;
 }
+
+void CountIntervalFromNow(Trigger& trigger, int64_t now_unix) {
+  if (trigger.type == TriggerType::INTERVAL && trigger.last_fired_unix <= 0) {
+    trigger.last_fired_unix = now_unix;
+  }
+}
+
+namespace {
 
 Trigger TriggerFromDict(const base::DictValue& d) {
   Trigger t;
@@ -273,6 +279,9 @@ base::DictValue SecurityToDict(const SecurityPolicy& p) {
   d.Set("trust", TrustLevelToString(p.trust));
   if (p.sites_unconfirmed)
     d.Set("sites_unconfirmed", true);
+  if (p.changed_outside) {
+    d.Set("changed_outside", true);
+  }
   return d;
 }
 
@@ -286,6 +295,7 @@ SecurityPolicy SecurityFromDict(const base::DictValue& d) {
                                   200LL * 1024 * 1024);
   p.trust = TrustLevelFromString(GetString(d, "trust", "casual"));
   p.sites_unconfirmed = GetBool(d, "sites_unconfirmed", false);
+  p.changed_outside = GetBool(d, "changed_outside", false);
   return p;
 }
 

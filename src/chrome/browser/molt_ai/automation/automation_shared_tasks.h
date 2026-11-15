@@ -7,7 +7,9 @@
 // written on the UI thread. Each posts its blocking part, run with an
 // AutomationStorage of |dir| (the shared storage's directory,
 // AutomationStorage::SharedDirectory() or the profile's automation
-// service's, taken on the calling sequence: no I/O):
+// service's, taken on the calling sequence: no I/O; pass exactly that
+// path: the workflow record every read is checked against,
+// workflow_record.h, is kept by it):
 //   - a change (a save, an update, a delete, an audit line) to
 //     AutomationStorage::SharedSequence(), in the order posted, which holds
 //     shutdown until it is written;

@@ -3,12 +3,17 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_storage.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <ctime>
 #include <memory>
+#include <set>
 #include <utility>
+#include <vector>
 
+#include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
@@ -35,6 +40,19 @@ constexpr char kKeepsVoiceSteps[] =
 constexpr char kNoRoutinesHere[] =
     "Routines taught by voice can't be kept in this window.";
 constexpr char kNotFound[] = "Workflow not found";
+constexpr char kReviewChangedFirst[] =
+    "Review this workflow and confirm its sites first.";
+constexpr char kChangedSinceReview[] =
+    "This workflow changed since you reviewed it. Review it again.";
+constexpr char kGoneSinceOpened[] =
+    "This workflow was deleted or changed since you opened it. Open it "
+    "again.";
+constexpr char kNoLongerADraft[] =
+    "This workflow was confirmed or changed since you opened it. Open it "
+    "again.";
+
+// The longest id a workflow's file can have (AutomationStorage).
+constexpr size_t kMaxIdBytes = 128;
 
 // The profile's routines' store; null off the record.
 std::unique_ptr<VoiceRoutineStore> RoutinesStore(const StudioPlaces& places) {
@@ -114,9 +132,12 @@ base::DictValue SavedDict(const Script& script) {
   out.Set("name", script.name);
   out.Set("trust", TrustLevelToString(script.security.trust));
   // Still a draft (saving never confirms one): the sites its steps now
-  // target, for the review panel.
+  // target, for the review panel, and the token of what was saved (the
+  // stored file, as it will be read back).
   if (script.security.sites_unconfirmed) {
     out.Set("draftSites", DraftSites(script));
+    out.Set("reviewToken",
+            automation::AutomationSecurity::DigestAsStored(script));
   }
   return out;
 }
@@ -163,8 +184,12 @@ Answer OnFound(const WorkflowRequest& request,
               answer.out.FindDict("default_variables")) {
         answer.out.Set("variables", dv->Clone());
       }
+      // A draft (from an agent run, or a file changed outside the browser:
+      // security.changed_outside says which): the sites to confirm, and
+      // the token of what is shown.
       if (found.security.sites_unconfirmed) {
         answer.out.Set("draftSites", DraftSites(found));
+        answer.out.Set("reviewToken", ReviewToken(found));
       }
       return answer;
     }
@@ -206,7 +231,7 @@ Answer OnFound(const WorkflowRequest& request,
     case Kind::kCheckRun:
       // An unconfirmed draft doesn't run (the runner refuses it too).
       if (found.security.sites_unconfirmed) {
-        return NotOk(automation::kDraftNeedsReviewMessage);
+        return NotOk(AutomationSecurity::ReviewMessage(found));
       }
       // Nor here a routine taught by voice: voice mode runs it.
       if (HasVoiceSteps(found)) {
@@ -219,39 +244,49 @@ Answer OnFound(const WorkflowRequest& request,
       // An unconfirmed draft is never scheduled, nor a routine taught by
       // voice.
       if (found.security.sites_unconfirmed) {
-        return NotOk(automation::kDraftNeedsReviewMessage);
+        return NotOk(AutomationSecurity::ReviewMessage(found));
       }
       if (HasVoiceSteps(found)) {
         return NotOk(automation::kVoiceRoutineMessage);
       }
-      bool draft = false;
+      const char* draft = nullptr;
+      automation::Trigger trigger;
       const bool saved = storage.Update(id, [&](Script& stored) {
         if (stored.security.sites_unconfirmed) {
-          draft = true;
+          draft = AutomationSecurity::ReviewMessage(stored);
           return false;
         }
         if (HasVoiceSteps(stored)) {
           return false;
         }
         stored.trigger = request.trigger;
+        automation::CountIntervalFromNow(stored.trigger,
+                                         base::Time::Now().ToTimeT());
         stored.enabled =
             request.trigger.type != automation::TriggerType::MANUAL;
+        trigger = stored.trigger;
         return true;
       });
       if (draft) {
-        return NotOk(automation::kDraftNeedsReviewMessage);
+        return NotOk(draft);
       }
       answer.out.Set("ok", saved);
       if (saved) {
-        answer.trigger = request.trigger;
+        // As saved (an interval's count started), for the editor's next
+        // save: the page's own shape of it isn't a trigger.
+        answer.out.Set("trigger", automation::TriggerToDict(trigger));
+        answer.trigger = trigger;
       }
       return answer;
     }
     case Kind::kTrust:
       if (found.security.sites_unconfirmed) {
-        // A draft from a web agent run is trusted only after its sites
-        // are confirmed (confirmDraftSites).
-        return NotOk("Confirm this draft's sites first.");
+        // A draft from a web agent run, or a file changed outside the
+        // browser, is trusted only after its sites are confirmed
+        // (confirmDraftSites).
+        return NotOk(found.security.changed_outside
+                         ? kReviewChangedFirst
+                         : "Confirm this draft's sites first.");
       }
       if ((request.level != "approved" && request.level != "casual") ||
           found.security.trust > TrustLevel::APPROVED) {
@@ -265,20 +300,43 @@ Answer OnFound(const WorkflowRequest& request,
       answer.out.Set("trust", request.level);
       return answer;
     case Kind::kConfirmSites: {
+      bool changed_since_review = false;
       bool steps_changed = false;
+      bool was_changed_outside = false;
       std::string sites;
       std::string trust;
+      automation::Trigger trigger;
       const bool saved = storage.Update(id, [&](Script& stored) {
+        // Exactly what the user reviewed: a file changed since (outside
+        // the browser, or saved again) isn't confirmed blindly.
+        if (request.review_token.empty() ||
+            ReviewToken(stored) != request.review_token) {
+          changed_since_review = true;
+          return false;
+        }
+        was_changed_outside = stored.security.changed_outside;
         if (!AutomationSecurity::ConfirmDraftSites(stored, request.sites)) {
           steps_changed = true;
           return false;
         }
+        // A file changed outside starts its schedule over, as one saved
+        // afresh: counted from the fire this browser recorded before the
+        // change, its next time may be long past (a run at once).
+        if (was_changed_outside) {
+          stored.trigger.last_fired_unix = 0;
+        }
+        automation::CountIntervalFromNow(stored.trigger,
+                                         base::Time::Now().ToTimeT());
         for (const std::string& host : stored.security.domain_whitelist) {
           sites += (sites.empty() ? "" : " ") + host;
         }
         trust = TrustLevelToString(stored.security.trust);
+        trigger = stored.trigger;
         return true;
       });
+      if (changed_since_review) {
+        return NotOk(kChangedSinceReview);
+      }
       if (steps_changed) {
         return NotOk(
             "The draft's steps changed. Save them, then confirm again.");
@@ -286,10 +344,17 @@ Answer OnFound(const WorkflowRequest& request,
       if (!saved) {
         return NotOk();
       }
-      storage.AppendAudit(id, "draft_sites_confirmed", sites);
+      storage.AppendAudit(id,
+                          was_changed_outside ? "outside_change_confirmed"
+                                              : "draft_sites_confirmed",
+                          sites);
       answer.routines_changed = routines != nullptr;
       answer.out.Set("ok", true);
       answer.out.Set("trust", trust);
+      // As saved (started over, for a file changed outside), for the
+      // editor's next save: the one it opened would write back the fire
+      // from before the change.
+      answer.out.Set("trigger", automation::TriggerToDict(trigger));
       return answer;
     }
   }
@@ -317,6 +382,48 @@ Answer NotFound(const WorkflowRequest& request) {
       return NotOk(kNotFound);
   }
   return Answer();
+}
+
+// A new routine (brought in: an import, a blank one), its id made for it:
+// whatever either storage holds under that id is another workflow, never
+// this one's policy nor written over. It is saved under the id, or it with
+// "_" added, that neither the profile's routines nor the shared storage
+// have (the studio looks in the profile's routines first, so a routine of
+// a shared workflow's id would hide it), with SaveNew() (never over a
+// file), and with the default policy: a draft (ClampTrustForSave()).
+Answer SaveNewRoutine(const StudioPlaces& places,
+                      VoiceRoutineStore& routines,
+                      Script script) {
+  std::optional<AutomationStorage> shared;
+  if (!places.shared_dir.empty()) {
+    shared.emplace(places.shared_dir);
+  }
+  const std::vector<std::string> listed = routines.storage().ListIds();
+  const std::set<std::string> mine(listed.begin(), listed.end());
+  while (mine.count(script.id) || (shared && shared->Load(script.id))) {
+    if (script.id.size() >= kMaxIdBytes) {
+      return Answer();
+    }
+    script.id += "_";
+  }
+  KeepPolicy(script, /*existing=*/nullptr, /*recorded_here=*/false);
+  // Its name, made its own beside every routine of the profile (none has
+  // its id).
+  script.name = routines.NameFor(script);
+  if (script.name.empty()) {
+    return Refused("Too many routines have that name. Choose another.");
+  }
+  base::DictValue saved = SavedDict(script);
+  const std::optional<std::string> id =
+      routines.storage().SaveNew(std::move(script));
+  if (!id) {
+    return Answer();
+  }
+  saved.Set("id", *id);
+  Answer answer;
+  answer.out = std::move(saved);
+  answer.routines_changed = true;
+  return answer;
 }
 
 }  // namespace
@@ -397,6 +504,9 @@ Answer SaveRoutine(const StudioPlaces& places,
     return Refused(kNoRoutinesHere);
   }
   Script& script = request.script;
+  if (request.new_workflow) {
+    return SaveNewRoutine(places, *routines, std::move(script));
+  }
   std::optional<Script> existing = routines->storage().Load(script.id);
   if (existing && !HasVoiceSteps(*existing)) {
     existing.reset();
@@ -407,8 +517,20 @@ Answer SaveRoutine(const StudioPlaces& places,
   if (!existing && in_shared_storage == Holds::kOrdinary) {
     return Refused(kVoiceStepsNotHere);
   }
-  KeepPolicy(script, existing ? &*existing : nullptr,
-             /*recorded_here=*/false);
+  // An edit of a routine gone or unreadable since the page read it
+  // (deleted in another view or by voice): saved as a new routine, a draft
+  // the page was shown (one changed outside the browser, which voice mode
+  // never confirms on its sites alone) would no longer be one.
+  if (!existing) {
+    return Refused(kGoneSinceOpened);
+  }
+  // The page edited a draft that isn't one any more (its sites confirmed
+  // meanwhile, by voice or in another view): saved under that confirmation,
+  // steps it never covered would run.
+  if (request.edited_draft && !existing->security.sites_unconfirmed) {
+    return Refused(kNoLongerADraft);
+  }
+  KeepPolicy(script, &*existing, /*recorded_here=*/false);
   // A routine's name, made its own beside the profile's others ("my news
   // (2)"): voice mode runs exactly one by each name. On this sequence, so
   // voice mode can't save one of that name in between.
@@ -439,7 +561,11 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
   std::optional<Script> existing;
   if (!places.shared_dir.empty()) {
     shared.emplace(places.shared_dir);
-    existing = shared->Load(script.id);
+    // A new workflow's id was made for it: whatever is stored under it is
+    // another workflow (its save picks a free id).
+    if (!request.new_workflow) {
+      existing = shared->Load(script.id);
+    }
   }
   if (existing && HasVoiceSteps(*existing)) {
     return Refused(kMadeBeforeProfiles);
@@ -453,33 +579,68 @@ Answer SaveSharedWorkflow(const StudioPlaces& places,
     return Answer();
   }
   Answer answer;
-  if (!existing) {
+  if (request.new_workflow) {
     KeepPolicy(script, nullptr, request.recorded_here);
-    if (shared->Save(script)) {
+    // Never fired here: its schedule starts over, whatever last fire the
+    // page sent (an import's, from its file: an earlier one would run it at
+    // once, a later one hold it back), an interval counted from now.
+    script.trigger.last_fired_unix = 0;
+    automation::CountIntervalFromNow(script.trigger,
+                                     base::Time::Now().ToTimeT());
+    base::DictValue saved = SavedDict(script);
+    // Never over another file, whatever is there by now.
+    const std::optional<std::string> id = shared->SaveNew(std::move(script));
+    if (id) {
       if (request.recorded_here) {
-        shared->AppendAudit(script.id, "trust_changed",
+        shared->AppendAudit(*id, "trust_changed",
                             "casual -> approved (recorded in Agent studio)");
       }
-      answer.out = SavedDict(script);
+      saved.Set("id", *id);
+      answer.out = std::move(saved);
     }
     return answer;
   }
-  // An edit: the policy as stored when it is written (under the directory's
-  // lock: the runner and molt://ai-automation change it on the UI thread).
+  // An edit of a workflow the page read: the policy as stored when it is
+  // written, decided under the directory's lock (the runner and
+  // molt://ai-automation change it on the UI thread). Gone or unreadable by
+  // then (deleted, or changed outside the browser), it is refused: saved as
+  // a new workflow, what the page was shown of a draft (a file changed
+  // outside) would no longer be one.
+  // Nor is the edit of a draft saved over a workflow that is no longer one
+  // (confirmed meanwhile, in another view, or a file put there since): it
+  // would take on that confirmation, its sites and its trust, for steps
+  // and a schedule it never covered.
+  const bool edited_draft = request.edited_draft;
+  bool gone = false;
+  bool no_longer_a_draft = false;
   bool now_a_routine = false;
   base::DictValue saved;
-  // A copy: |script| is moved into the stored one below.
-  const std::string id = script.id;
-  if (!shared->Update(id, [&](Script& stored) {
-        if (HasVoiceSteps(stored)) {
-          now_a_routine = true;
-          return false;
-        }
-        KeepPolicy(script, &stored, /*recorded_here=*/false);
-        saved = SavedDict(script);
-        stored = std::move(script);
-        return true;
-      })) {
+  if (!shared->SaveChecked(std::move(script),
+                           [&](const Script* stored, Script& edit) {
+                             if (!stored) {
+                               gone = true;
+                               return false;
+                             }
+                             if (HasVoiceSteps(*stored)) {
+                               now_a_routine = true;
+                               return false;
+                             }
+                             if (edited_draft &&
+                                 !stored->security.sites_unconfirmed) {
+                               no_longer_a_draft = true;
+                               return false;
+                             }
+                             KeepPolicy(edit, stored,
+                                        /*recorded_here=*/false);
+                             saved = SavedDict(edit);
+                             return true;
+                           })) {
+    if (gone) {
+      return Refused(kGoneSinceOpened);
+    }
+    if (no_longer_a_draft) {
+      return Refused(kNoLongerADraft);
+    }
     return now_a_routine ? Refused(kMadeBeforeProfiles) : Answer();
   }
   answer.out = std::move(saved);
@@ -521,6 +682,22 @@ std::optional<Script> LoadSharedWorkflow(const StudioPlaces& places,
   return shared.Load(id);
 }
 
+SaveKind KindOfSave(const std::string& sent_id,
+                    const std::string& recorded_id,
+                    const std::set<std::string>& minted) {
+  SaveKind kind;
+  if (!sent_id.empty()) {
+    kind.id = sent_id;
+    return kind;
+  }
+  kind.new_workflow = true;
+  if (!recorded_id.empty() && minted.count(recorded_id)) {
+    kind.id = recorded_id;
+    kind.recorded_here = true;
+  }
+  return kind;
+}
+
 std::string UnusedWorkflowId(const StudioPlaces& places,
                              std::string id,
                              const std::set<std::string>& minted) {
@@ -543,8 +720,22 @@ base::ListValue DraftSites(const Script& script) {
   return sites;
 }
 
+std::string ReviewToken(const Script& script) {
+  return AutomationSecurity::SecurityDigest(script);
+}
+
 std::string NewWorkflowId() {
-  return "wf_" + base::NumberToString(static_cast<int64_t>(std::time(nullptr)));
+  // The time, and a random part: two made in one second (two views, two
+  // saves; a clock set back) are never alike.
+  uint64_t bits = base::RandUint64();
+  std::string random;
+  for (int i = 0; i < 8; ++i) {
+    random += "0123456789abcdef"[bits & 0xf];
+    bits >>= 4;
+  }
+  return "wf_" +
+         base::NumberToString(static_cast<int64_t>(std::time(nullptr))) + "_" +
+         random;
 }
 
 }  // namespace agent_studio

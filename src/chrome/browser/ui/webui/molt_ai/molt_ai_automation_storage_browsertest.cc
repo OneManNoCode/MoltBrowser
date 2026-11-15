@@ -198,6 +198,19 @@ IN_PROC_BROWSER_TEST_F(AutomationPageStorageBrowserTest,
   base::ScopedAllowBlockingForTesting allow_blocking;
   AutomationStorage shared;
   EXPECT_EQ(shared.ListIds().size(), 4u);  // voice_1, two plans, a watcher
+  // The watcher's first check is an interval from when it was made (with
+  // no last fire, the scheduler would count it from each listing).
+  bool found = false;
+  for (const std::string& id : shared.ListIds()) {
+    if (id.starts_with("watcher-")) {
+      std::optional<Script> stored = shared.Load(id);
+      ASSERT_TRUE(stored);
+      EXPECT_EQ(stored->trigger.type, automation::TriggerType::INTERVAL);
+      EXPECT_GT(stored->trigger.last_fired_unix, 0);
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found);
 }
 
 }  // namespace

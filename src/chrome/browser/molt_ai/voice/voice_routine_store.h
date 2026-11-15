@@ -185,7 +185,9 @@ class VoiceRoutineStore {
   // Deletes the routine called |name| (exactly one), or with id |id| when
   // |name| is empty.
   bool Delete(const std::string& name, const std::string& id);
-  // AutomationSecurity::ConfirmDraftSites() on exactly |sites|, then saved.
+  // AutomationSecurity::ConfirmDraftSites() on exactly |sites|, then saved;
+  // never for a routine changed outside the browser (security.
+  // changed_outside: confirmed in the Agent studio, after its review).
   bool ConfirmSites(const std::string& id,
                     const std::vector<std::string>& sites);
   // Every routine of the profile.
@@ -193,7 +195,10 @@ class VoiceRoutineStore {
 
   // Keeps the routines |ids| from before routines belonged to a profile in
   // this profile (see the file comment), in order (claims cut short
-  // settled first).
+  // settled first). One changed outside the browser (the shared storage
+  // reads it as a draft, security.changed_outside) is kept as that draft,
+  // its voice steps kept as the browser describes them, and voice mode runs
+  // them (DescribeRoutineStepsAsRun()), for its review in the Agent studio.
   ClaimResult Claim(const std::vector<std::string>& ids);
 
   // The name |script| (a routine the Agent studio brings in or edits: an

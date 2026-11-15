@@ -3,7 +3,9 @@
 //
 // molt://ai-automation's storage steps (molt_ai_automation_storage.h) on a
 // temporary directory: what each message reads and changes, as it did on
-// the UI thread, now as one step on the storage's sequence.
+// the UI thread, now as one step on the storage's sequence; with a workflow
+// record (workflow_record.h), a workflow changed outside the browser is
+// neither trusted nor laundered here.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_storage.h"
 
@@ -12,11 +14,14 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
+#include "chrome/browser/molt_ai/automation/workflow_record.h"
+#include "chrome/browser/molt_ai/automation/workflow_record_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace molt_ai {
@@ -55,14 +60,45 @@ class AutomationPageStorageTest : public testing::Test {
  protected:
   void SetUp() override {
     ASSERT_TRUE(temp_.CreateUniqueTempDir());
-    storage_.emplace(temp_.GetPath().AppendASCII("automations"));
+    storage_.emplace(Dir());
   }
 
   AutomationStorage& storage() { return *storage_; }
+  base::FilePath Dir() { return temp_.GetPath().AppendASCII("automations"); }
+  // The directory's workflow record, as the browser has one for the shared
+  // storage (workflow_record.h).
+  void UseRecord() {
+    record_.emplace(Dir(),
+                    temp_.GetPath().Append(automation::kWorkflowRecordFileName),
+                    /*may_seed=*/false);
+  }
+  // A file written by another program.
+  void Plant(const Script& script) {
+    ASSERT_TRUE(base::CreateDirectory(Dir()));
+    ASSERT_TRUE(base::WriteFile(Dir().AppendASCII(script.id + ".molt"),
+                                script.ToJSONString()));
+  }
+  std::string Bytes(const std::string& id) {
+    std::string bytes;
+    EXPECT_TRUE(
+        base::ReadFileToString(Dir().AppendASCII(id + ".molt"), &bytes));
+    return bytes;
+  }
 
   base::ScopedTempDir temp_;
+  std::optional<automation::ScopedWorkflowRecordForTesting> record_;
   std::optional<AutomationStorage> storage_;
 };
+
+// What a file written outside the browser might claim.
+Script Claiming(const std::string& id) {
+  Script script = Workflow(id, "Prices");
+  script.security.trust = TrustLevel::TRUSTED;
+  script.security.domain_whitelist = {"evil.example"};
+  script.stats.runs = 9;
+  script.stats.successes = 9;
+  return script;
+}
 
 TEST_F(AutomationPageStorageTest,
        RoutinesTaughtByVoiceAreNeitherListedNorChanged) {
@@ -180,6 +216,94 @@ TEST_F(AutomationPageStorageTest, ARunAskedForIsLogged) {
     }
   }
   EXPECT_EQ(asked, (std::vector<std::string>{"from_ui", "from_step=1"}));
+}
+
+// A workflow whose file was changed outside the browser is trusted only
+// once it is reviewed in Agent mode.
+TEST_F(AutomationPageStorageTest, PromoteTrustRefusesAWorkflowChangedOutside) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  const std::string bytes = Bytes("wf_1");
+  base::DictValue trust = PromoteTrust("wf_1", TrustLevel::ADMIN, storage());
+  EXPECT_EQ(trust.FindBool("success"), false);
+  EXPECT_EQ(*trust.FindString("error"),
+            "This workflow was changed outside MoltBrowser. Review it in "
+            "Agent mode first.");
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+}
+
+// Saving it here keeps it a draft (it isn't refused: the page's edits are
+// kept, and the review is still to do).
+TEST_F(AutomationPageStorageTest, ASaveKeepsAWorkflowChangedOutsideADraft) {
+  UseRecord();
+  Plant(Claiming("wf_1"));
+  std::optional<Script> shown = LoadWorkflow("wf_1", storage());
+  ASSERT_TRUE(shown);
+  EXPECT_TRUE(shown->security.changed_outside);
+  shown->name = "Prices, edited";
+  EXPECT_EQ(SaveWorkflow(std::move(*shown), storage()).FindBool("success"),
+            true);
+  std::optional<Script> saved = storage().Load("wf_1");
+  ASSERT_TRUE(saved);
+  EXPECT_EQ(saved->name, "Prices, edited");
+  EXPECT_EQ(saved->security.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(saved->security.sites_unconfirmed);
+  EXPECT_TRUE(saved->security.changed_outside);
+  EXPECT_TRUE(saved->security.domain_whitelist.empty());
+}
+
+// An import is the browser's own write: vouched for, at CASUAL, its history
+// cleared.
+TEST_F(AutomationPageStorageTest, AnImportIsVouchedAtCasual) {
+  UseRecord();
+  base::DictValue result =
+      ImportWorkflow(Claiming("wf_9"), 1'800'000'000, storage());
+  ASSERT_EQ(result.FindBool("success"), true);
+  std::optional<Script> imported =
+      storage().Load(*result.FindString("script_id"));
+  ASSERT_TRUE(imported);
+  EXPECT_FALSE(imported->security.changed_outside);
+  EXPECT_FALSE(imported->security.sites_unconfirmed);
+  EXPECT_EQ(imported->security.trust, TrustLevel::CASUAL);
+  EXPECT_EQ(imported->stats.runs, 0);
+  // Trusted with a click, as ever.
+  EXPECT_EQ(
+      PromoteTrust("wf_9", TrustLevel::APPROVED, storage()).FindBool("success"),
+      true);
+}
+
+// An import starts its schedule over: a last fire its JSON gives (an
+// exported workflow's, long past; one in 2100) was never this browser's, so
+// it neither forces a catch-up run nor holds the schedule back. An
+// interval counts from the import.
+TEST_F(AutomationPageStorageTest, AnImportStartsItsScheduleOver) {
+  UseRecord();
+  constexpr int64_t kImportedAt = 1'800'000'000;
+  Script weekly = Workflow("wf_weekly", "Weekly");
+  weekly.trigger.type = automation::TriggerType::CRON;
+  weekly.trigger.expression = "0 9 * * 1";
+  weekly.trigger.last_fired_unix = 1;
+  Script hourly = Workflow("wf_hourly", "Hourly");
+  hourly.trigger.type = automation::TriggerType::INTERVAL;
+  hourly.trigger.expression = "3600";
+  hourly.trigger.last_fired_unix = 4'102'444'800;
+  base::DictValue cron_result =
+      ImportWorkflow(std::move(weekly), kImportedAt, storage());
+  base::DictValue interval_result =
+      ImportWorkflow(std::move(hourly), kImportedAt, storage());
+  ASSERT_EQ(cron_result.FindBool("success"), true);
+  ASSERT_EQ(interval_result.FindBool("success"), true);
+  std::optional<Script> cron =
+      storage().Load(*cron_result.FindString("script_id"));
+  std::optional<Script> interval =
+      storage().Load(*interval_result.FindString("script_id"));
+  ASSERT_TRUE(cron);
+  ASSERT_TRUE(interval);
+  EXPECT_FALSE(cron->security.changed_outside);
+  EXPECT_EQ(cron->trigger.expression, "0 9 * * 1");
+  EXPECT_EQ(cron->trigger.last_fired_unix, 0);
+  EXPECT_FALSE(interval->security.changed_outside);
+  EXPECT_EQ(interval->trigger.last_fired_unix, kImportedAt);
 }
 
 }  // namespace

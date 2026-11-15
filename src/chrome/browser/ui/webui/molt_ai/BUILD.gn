@@ -244,6 +244,10 @@ source_set("unit_tests") {
 
     # The routines the studio's tests save (voice_routines.h, the grammar).
     "//chrome/browser/molt_ai/automation:storage",
+
+    # Workflows changed outside the browser (the shared storage's record).
+    "//chrome/browser/molt_ai/automation:workflow_record",
+    "//chrome/browser/molt_ai/automation:workflow_record_test_support",
     "//chrome/browser/molt_ai/voice:voice_learning_store",
     "//chrome/browser/molt_ai/voice:voice_loop",
 

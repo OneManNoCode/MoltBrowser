@@ -81,7 +81,8 @@ std::string SaveBlank(automation::Script script,
 // importScript: {success, script_id}. Never over a stored workflow: one of
 // its id is imported as "<id>-imported-<now_unix>" (or the first free id
 // after that); its stats start afresh, its trust CASUAL whatever it says,
-// and the audit log says "imported".
+// its schedule starts over (no last fire; an interval counted from
+// |now_unix|), and the audit log says "imported".
 base::DictValue ImportWorkflow(automation::Script script,
                                int64_t now_unix,
                                automation::AutomationStorage& storage);
@@ -92,7 +93,9 @@ std::vector<std::string> AuditTail(int max_lines,
 
 // promoteTrust (after the user's click): {success, trust} or {success:
 // false, error}. Not for a routine taught by voice ("script not found") nor
-// an unconfirmed draft; the audit log says "trust_changed".
+// an unconfirmed draft (one from an agent run, or a workflow whose file was
+// changed outside the browser: reviewed in Agent mode first); the audit
+// log says "trust_changed".
 base::DictValue PromoteTrust(const std::string& id,
                              automation::TrustLevel level,
                              automation::AutomationStorage& storage);

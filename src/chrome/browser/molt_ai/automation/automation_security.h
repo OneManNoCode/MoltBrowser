@@ -26,6 +26,14 @@
 // site-tool call the policy doesn't let run unasked
 // (docs/design/AGENT_ACTIONS.md §3.4, §3.5). Saving or importing a script
 // never raises trust (ClampTrustForSave).
+//
+// A workflow file changed outside the browser (its SecurityDigest() isn't
+// the one the browser recorded for that file, workflow_record.h) starts
+// CASUAL and unconfirmed, whatever it says, with only what the Agent
+// studio's review shows (ClampUnvouched(), an allowlist): it runs, fires
+// and is run by another workflow only once the user has reviewed it and
+// confirmed its sites in the Agent studio, and climbs the staircase again
+// from there (docs/design/AGENT_ACTIONS.md §3.6).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
@@ -51,18 +59,29 @@ namespace automation {
 //                              holds no cards or one-time codes
 //   "secret_host": host the field was recorded on (informational)
 // "host" (any recorded step) is the page host the user acted on; it feeds
-// AutomationSecurity::HostsReferencedBy.
+// AutomationSecurity::HostsReferencedBy. "text" (a recorded CLICK / TYPE)
+// is the element's visible text, which the runner checks a selector
+// against and looks for when every selector misses; "ref_shot" a picture
+// of the element when it was recorded (shown in the editor).
 inline constexpr char kSecretKey[] = "secret";
 inline constexpr char kSecretVault[] = "vault";
 inline constexpr char kSecretKindKey[] = "secret_kind";
 inline constexpr char kSecretHostKey[] = "secret_host";
 inline constexpr char kStepHostKey[] = "host";
+inline constexpr char kStepTextAnchorKey[] = "text";
+inline constexpr char kStepRefShotKey[] = "ref_shot";
 
 // Why a draft from a web agent run (SecurityPolicy::sites_unconfirmed)
 // doesn't run: the runner stops on it, the studio shows it.
 inline constexpr char kDraftNeedsReviewMessage[] =
     "This draft was made by the AI agent from your run. Review its steps "
     "and confirm its sites in Agent mode before it can run.";
+
+// Why a workflow whose file was changed outside the browser
+// (SecurityPolicy::changed_outside) doesn't run, fire or get trusted.
+inline constexpr char kChangedOutsideMessage[] =
+    "This workflow's file was changed outside MoltBrowser. Review its steps, "
+    "sites and schedule and confirm them in Agent mode before it can run.";
 
 class AutomationSecurity {
  public:
@@ -124,11 +143,27 @@ class AutomationSecurity {
   static std::vector<std::string> HostsReferencedBy(
       const std::vector<Step>& steps);
 
+  // The page a run window opens before its runner starts at |start_index|
+  // (and so before any of the runner's checks:
+  // automation_background_browser.cc), in the user's profile: the URL of
+  // the last NAVIGATE step before |start_index| (with none before it, of
+  // the first NAVIGATE step), its {{variables}} replaced by
+  // |script|.default_variables (the run's values: the caller puts its
+  // one-off values in them first) as the runner replaces them, only when
+  // none is left unresolved, it is http(s), and EffectivePolicy(script)
+  // allows it, as the runner checks that step (PreflightStepPolicy()). ""
+  // (about:blank) otherwise, and for an unconfirmed draft or a routine
+  // taught by voice: the runner then opens a NAVIGATE step itself when it
+  // reaches one, resolved and checked.
+  static std::string RunWindowStartURL(const Script& script,
+                                       size_t start_index);
+
   // Saving must never raise trust: |incoming| (a script about to be saved
   // from UI-supplied JSON) keeps |existing|'s trust if the script is
   // already on disk, else starts CASUAL. Only promoteTrust changes trust.
   // Nor does saving confirm a draft's sites: if |existing| is an
-  // unconfirmed draft, so is |incoming| (only ConfirmDraftSites clears it).
+  // unconfirmed draft, so is |incoming| (only ConfirmDraftSites clears it),
+  // with |existing|'s changed_outside.
   // And a routine taught by voice that a save brings in (|incoming| has
   // voice steps, |existing| is null or had none: an import, a copy) is
   // saved as an unconfirmed draft, with no sites.
@@ -138,10 +173,75 @@ class AutomationSecurity {
   // the Agent studio). |shown|, the sites the studio showed them, must be
   // exactly HostsReferencedBy(script.steps) (in any order) and not empty,
   // so steps changed in between aren't confirmed blindly. The whitelist
-  // becomes those sites and the draft mark is cleared; trust is unchanged.
-  // Returns false, changing nothing, otherwise. The caller saves.
+  // becomes those sites and the draft mark (and changed_outside) is
+  // cleared; trust is unchanged. Returns false, changing nothing,
+  // otherwise. The caller saves.
   static bool ConfirmDraftSites(Script& script,
                                 const std::vector<std::string>& shown);
+
+  // ---- Workflow files the browser didn't write (workflow_record.h) ----
+
+  // Lowercase hex SHA-256 of the parsed workflow without its run
+  // bookkeeping: Script::ToJSON(), plaintext secrets scrubbed (so the
+  // scrub a load does never changes it), then "id", "stats" and
+  // "trigger.last_fired_unix" left out. Everything else counts: the name,
+  // version, creation time, model, enabled flag, variables, the rest of
+  // the trigger, every field of every step (in order) and the whole
+  // security policy (changed_outside included). Taken over the parsed
+  // script, so the file's formatting, key order and unknown keys don't
+  // matter, and it covers exactly what the runner executes. "" if it can't
+  // be computed; "" is never recorded nor matched.
+  static std::string SecurityDigest(const Script& script);
+
+  // The SecurityDigest() a reader computes from the file a save of
+  // |script| writes: serialized as AutomationStorage writes it (scrubbed,
+  // pretty-printed), read back and parsed. "" if that fails.
+  static std::string DigestAsStored(const Script& script);
+
+  // A file the browser didn't write (or that changed since) loads as an
+  // unconfirmed import, with only what the Agent studio's review shows, as
+  // the runner uses it (an allowlist; everything else is dropped, any key a
+  // later build adds included):
+  //   - the script: its id, name, creation time, the names of its variables
+  //     (their default values ""), and its schedule's kind and expression
+  //     (none when the file has it turned off or the expression holds a
+  //     character the review can't show; no time zone, no end); the default
+  //     policy (CASUAL, no sites, the default approvals and limits) with
+  //     sites_unconfirmed and changed_outside set; no run history;
+  //   - each step the review shows in full, with only the fields it shows:
+  //     NAVIGATE, CLICK, WAIT_FOR (target); TYPE, ASSERT (target, value);
+  //     SCROLL, KEYPRESS, WAIT, NOTIFY (value); EXTRACT (target, store_as);
+  //     CALL_TOOL (target). Its extra keeps only "host" (printable ASCII);
+  //     a TYPE step's "secret" as "vault" with its "secret_kind" as the
+  //     runner reads it (and no value); a CALL_TOOL step's "tool" with only
+  //     its "origin", "frame" ("origin", "path"), "args", "secret_args" and
+  //     "form" (when true). Every other field is its default (no
+  //     description, fallback selectors, locators, text anchor, picture,
+  //     timeout, retries, transform or review note);
+  //   - a step of a routine taught by voice (extra["voice"]): its type,
+  //     target and value, and extra "voice" and "host" only (never a
+  //     secret key); its claim keeps of extra["voice"] only what the review
+  //     describes (voice::DescribeRoutineStepsAsRun());
+  //   - every other step is dropped: IF, ELSE, END_IF, LOOP, END_LOOP,
+  //     SCREENSHOT, RUN_JS, RUN_SCRIPT, AI_DECIDE, AI_EXTRACT, UNKNOWN, and
+  //     a step whose shown target, value or store_as holds a control
+  //     character (a line break, a tab), DEL or a character that reorders,
+  //     hides or breaks text (agents/hidden_chars.h), and a CALL_TOOL step
+  //     whose "args" hold a name or string (in a list too) with a control
+  //     character or DEL.
+  // Clamping twice is clamping once.
+  static void ClampUnvouched(Script& script);
+
+  // Whether the scheduler may fire |script| unattended: enabled, its sites
+  // confirmed, and not a routine taught by voice (voice mode runs those).
+  static bool MayFireUnattended(const Script& script);
+  // Whether a RUN_SCRIPT step may run |script|'s steps inside another
+  // workflow's run (at that run's trust): its sites confirmed, and not a
+  // routine taught by voice.
+  static bool MayRunAsChild(const Script& script);
+  // What the user is told about an unconfirmed |script|:
+  // kChangedOutsideMessage or kDraftNeedsReviewMessage.
+  static const char* ReviewMessage(const Script& script);
 
   // ---- Secret TYPE steps (see kSecretKey) ----
 

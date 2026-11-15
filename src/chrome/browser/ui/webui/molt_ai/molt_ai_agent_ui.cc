@@ -110,6 +110,20 @@ using molt_ai::voice::VoiceLearning;
 // Ids the page sends for the routines from before profiles, at most.
 constexpr size_t kMaxRoutineIds = 200;
 
+// A review token from the page (molt_ai_agent_storage.h's ReviewToken()):
+// exactly 64 lowercase hex digits.
+bool IsReviewToken(const base::Value& value) {
+  if (!value.is_string() || value.GetString().size() != 64) {
+    return false;
+  }
+  for (char c : value.GetString()) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Friendly rendering helpers.
 // ---------------------------------------------------------------------------
@@ -195,6 +209,11 @@ base::DictValue WorkflowSummary(const Script& s) {
   // the card offers "Review" instead of Run, trust and schedule.
   if (s.security.sites_unconfirmed) {
     d.Set("draft", true);
+  }
+  // Its file was changed outside the browser (loaded as a draft): the card
+  // says so, and the library counts them.
+  if (s.security.changed_outside) {
+    d.Set("changedOutside", true);
   }
   // A routine taught by voice: voice mode runs it ("run" and its name).
   if (molt_ai::automation::HasVoiceSteps(s)) {
@@ -668,11 +687,22 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         in.Set("default_variables", vars->Clone());
       }
     }
-    // Assign an id for brand-new (recorded / blank) workflows.
-    const std::string* existing = in.FindString("id");
-    if (!existing || existing->empty()) {
-      in.Set("id", molt_ai::agent_studio::NewWorkflowId());
-    }
+    // An "id" is of a workflow the page read (an edit); none, a new one:
+    // a recording's first save under the "recordedId" stopRecording made
+    // here, else under an id made now (KindOfSave()).
+    const std::string* sent_id = in.FindString("id");
+    const std::string* recorded_id = in.FindString("recordedId");
+    const molt_ai::agent_studio::SaveKind kind =
+        molt_ai::agent_studio::KindOfSave(
+            sent_id ? *sent_id : std::string(),
+            recorded_id ? *recorded_id : std::string(), recorded_ids_);
+    in.Remove("recordedId");
+    // The editor showed a draft for review (molt_ai_agent_storage.h's
+    // SaveRequest::edited_draft): refused if it isn't one any more.
+    const bool edited_draft = in.FindBool("draft").value_or(false);
+    in.Remove("draft");
+    in.Set("id",
+           kind.id.empty() ? molt_ai::agent_studio::NewWorkflowId() : kind.id);
     std::optional<Script> s = Script::FromJSON(in);
     if (!s) {
       ResolveDict(args, base::DictValue());
@@ -687,7 +717,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     const bool voice_steps = molt_ai::automation::HasVoiceSteps(request.script);
     // First save of a draft that stopRecording produced in this panel (the
     // id was minted here and is used once).
-    request.recorded_here = !voice_steps && recorded_ids_.erase(id) > 0;
+    request.recorded_here =
+        kind.recorded_here && !voice_steps && recorded_ids_.erase(id) > 0;
+    // A new workflow only when the page named none; any id it sends is of
+    // a workflow it read (an edit, refused if that is gone).
+    request.new_workflow = kind.new_workflow;
+    request.edited_draft = edited_draft && !kind.new_workflow;
     // Routines taught by voice are kept in the profile (an edit, a rename,
     // an import of one), workflows in the shared storage: a look at the
     // other storage on its sequence, then the save on its own.
@@ -738,12 +773,23 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
                     SaveRequest request,
                     AnswerCallback done,
                     Holds in_routines) {
+    const std::string recorded_id =
+        request.recorded_here ? request.script.id : std::string();
     AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
         FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::SaveSharedWorkflow,
                        std::move(places), std::move(request), in_routines),
-        base::BindOnce(&AgentStudioHandler::Finish, weak_factory_.GetWeakPtr(),
+        base::BindOnce(&AgentStudioHandler::FinishSave,
+                       weak_factory_.GetWeakPtr(), recorded_id,
                        std::move(done)));
+  }
+  // A recording's first save that didn't save it: its id is this panel's
+  // again, so the next try is still that first save.
+  void FinishSave(std::string recorded_id, AnswerCallback done, Answer answer) {
+    if (!recorded_id.empty() && !answer.out.FindString("id")) {
+      recorded_ids_.insert(std::move(recorded_id));
+    }
+    Finish(std::move(done), std::move(answer));
   }
 
   // The frames of other sites the user let offer their tools to the
@@ -989,9 +1035,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       ResolveDict(args, base::DictValue());
       return;
     }
-    // Mint the id now and remember it: the first saveWorkflow with this
-    // id is a recording the user made here (see HandleSaveWorkflow). One
-    // the shared storage doesn't have, looked up on its sequence.
+    // Mint the id now and remember it: the first saveWorkflow that sends
+    // it as its "recordedId" (and no "id") is a recording the user made
+    // here (see HandleSaveWorkflow). One the shared storage doesn't have,
+    // looked up on its sequence.
     AutomationStorage::SharedSequence()->PostTaskAndReplyWithResult(
         FROM_HERE,
         base::BindOnce(&molt_ai::agent_studio::UnusedWorkflowId, Places(),
@@ -1034,14 +1081,15 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     Trigger trig;
     if (type && *type == "interval") {
       trig.type = TriggerType::INTERVAL;
-      // UI sends "<n>m" / "<n>h"; the engine wants seconds.
+      // UI sends "<n>s" / "<n>m" / "<n>h"; the engine wants seconds.
       int secs = 3600;
       std::string e = expr ? *expr : "60m";
-      if (!e.empty() && (e.back() == 'm' || e.back() == 'h')) {
+      if (!e.empty() &&
+          (e.back() == 's' || e.back() == 'm' || e.back() == 'h')) {
         char unit = e.back();
         int n = 0;
         base::StringToInt(e.substr(0, e.size() - 1), &n);
-        secs = (unit == 'h') ? n * 3600 : n * 60;
+        secs = (unit == 'h') ? n * 3600 : (unit == 'm') ? n * 60 : n;
       } else {
         base::StringToInt(e, &secs);
       }
@@ -1115,13 +1163,19 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AnswerAbout(std::move(request), Resolver(args));
   }
 
-  // The draft review's "Confirm sites": [callback_id, id, [site, ...]], the
-  // sites the panel showed (from getWorkflow / saveWorkflow's draftSites).
+  // The draft review's "Confirm sites": [callback_id, id, [site, ...],
+  // review token], the sites the panel showed (from getWorkflow /
+  // saveWorkflow's draftSites) and the reviewToken of what it showed.
   // Like promoteTrust, honoured only with a fresh user activation (a real
-  // click), and only when the sites are exactly the ones the draft's steps
-  // target now (AutomationSecurity::ConfirmDraftSites). The draft then
-  // becomes an ordinary CASUAL workflow on those sites; trusting it is a
-  // separate click (the activation is consumed: ConsumeUserClick()).
+  // click), and only when the draft is still exactly what was shown (the
+  // token) and the sites are exactly the ones its steps target now
+  // (AutomationSecurity::ConfirmDraftSites). The draft (from an agent run,
+  // or a file changed outside the browser) then becomes an ordinary CASUAL
+  // workflow on those sites; trusting it is a separate click (the
+  // activation is consumed: ConsumeUserClick()). The page sends it only
+  // when the editor shows what is saved (edits not saved yet are saved
+  // first, and the sites they use shown for another click), and keeps the
+  // trigger it is answered with for its next save.
   void HandleConfirmDraftSites(const base::ListValue& args) {
     AllowJavascript();
     base::DictValue out;
@@ -1133,6 +1187,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       return;
     }
     if (args.size() < 3 || !args[1].is_string() || !args[2].is_list()) {
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    // The review token: 64 lowercase hex digits, or the page reviews again.
+    if (args.size() < 4 || !IsReviewToken(args[3])) {
+      out.Set("error", "Review it again.");
       ResolveDict(args, std::move(out));
       return;
     }
@@ -1148,6 +1208,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     request.kind = WorkflowRequest::Kind::kConfirmSites;
     request.id = args[1].GetString();
     request.sites = std::move(shown);
+    request.review_token = args[3].GetString();
     AnswerAbout(std::move(request), Resolver(args));
   }
 
@@ -1206,7 +1267,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   }
 
   // Draft ids minted by stopRecording in this panel and not yet saved (see
-  // HandleSaveWorkflow: their first save starts APPROVED).
+  // HandleSaveWorkflow: the save that sends one as its "recordedId", with
+  // no "id", starts APPROVED).
   std::set<std::string> recorded_ids_;
 
   // The last question shown for each workflow's run (PollRunResult).
@@ -1265,7 +1327,8 @@ scoped_refptr<base::RefCountedMemory> ReadFileBytes(const base::FilePath& path) 
   return base::MakeRefCounted<base::RefCountedString>(std::move(read.contents));
 }
 
-constexpr char kAgentPageJs[] = R"JS(/* Agent studio page script, served as /app.js under the strict molt
+constexpr char kAgentPageJs[] =
+    R"JS(/* Agent studio page script, served as /app.js under the strict molt
    WebUI CSP (molt_webui_csp.h). The page builds all markup with DOM
    APIs (h() below) and never assigns HTML strings, so Trusted Types
    allow no policies at all. */
@@ -1334,6 +1397,37 @@ var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your save
    honoured only on a real click, for exactly the sites shown). It is then
    an ordinary untrusted workflow. */
 var DRAFT_EXPLAIN='Made by the AI agent, or brought in from elsewhere. Check its steps and confirm its sites before it can run.';
+/* ---- workflows changed outside MoltBrowser ----
+   The browser remembers exactly what it last saved for each workflow. A
+   file changed by anything else (another program, another copy of
+   MoltBrowser, a hand edit) opens as a draft: no trust, no runs, no
+   schedule, until the user reviews it and confirms it ('confirmDraftSites'
+   with the reviewToken of what the panel showed, on a real click). */
+var CHANGED_EXPLAIN='Its file was changed outside MoltBrowser. Check its steps, sites and schedule, and confirm them before it can run.';
+/* A review token from the browser: 64 lowercase hex digits, else none. */
+function cleanToken(t){return (typeof t==='string'&&/^[0-9a-f]{64}$/.test(t))?t:'';}
+/* Text shown for review as it runs: each character that would reorder,
+   hide or break it (control characters but a line break or a tab, C1
+   controls, bidi marks, embeddings, overrides and isolates, zero-width and
+   invisible characters, line and paragraph separators, variation
+   selectors, tag characters: the browser's agents/hidden_chars.h) shown
+   as U+FFFD, one for one. */
+var HIDDEN_RE=/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\u3164\uFE00-\uFE0F\uFEFF\uFFA0]|\uDB40[\uDC00-\uDC7F\uDD00-\uDDEF]/g;
+function visible(v){return String(v).replace(HIDDEN_RE,'\uFFFD');}
+/* What a workflow's schedule does, in words (the trigger is the file's:
+   shown as text). */
+function scheduleText(tr){
+  if(!tr||!tr.type||tr.type==='manual')return 'No schedule: it runs only when you press Run.';
+  var e=visible(tr.expression||'');
+  if(tr.type==='interval'){
+    var n=parseInt(e,10)||0;
+    var every=(n>=3600&&n%3600===0)?(n/3600)+' h':(n>=60&&n%60===0)?(n/60)+' min':n+' s';
+    return 'Schedule: runs by itself every '+every+'.';
+  }
+  if(tr.type==='cron')return 'Schedule: runs by itself on “'+e+'”.';
+  if(tr.type==='at')return 'Schedule: runs by itself once, at '+e+'.';
+  return 'Schedule: runs by itself on '+e+'.';
+}
 var VOICE_EXPLAIN='Taught by voice in this profile. Voice mode runs it: say “run” and its name.';
 var CLASH_EXPLAIN='Another of your routines has this name, so voice mode runs neither. Rename one.';
 /* ---- a run's question (the runner waits for the user) ----
@@ -1383,30 +1477,92 @@ function locatorSummary(s){
   });
   return words.length?('If the page changes, it also looks for it by its '+words.join(', ')+'.'):'';
 }
+/* What a step needs of the user, in fixed words, said only where the
+   runner does it: a card or code step, or a site tool given a card or code
+   that wasn't saved, stops the run there; a value the agent withheld is
+   asked at each run (a whole {{variable}}). A note the file names for a
+   step that runs isn't shown. */
 var REVIEW_NOTES={
   value_withheld:'The agent typed something here that looked private (a password, code, key or card number). It wasn’t saved: you’re asked for it at each run.',
   secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.',
   secret_argument:'This gives the site’s tool a card number or one-time code. MoltBrowser never saves those, so a run stops at this step: remove it, or do it yourself and run the rest.'
 };
-/* A recorded site-tool step: what it gives the tool (the values the user
-   approved when recording; withheld ones are asked at each run), as text. */
+/* A recorded site-tool step: which tool of which site (and frame) it runs,
+   and what it gives the tool (the values the user approved when recording;
+   withheld ones are asked at each run), as text, in full: what is shown is
+   what runs. Beyond what a step that runs can hold (8 values, 500
+   characters each, lists of 16), the cut is said. */
+var TOOL_SHOWN_ARGS=8, TOOL_SHOWN_CHARS=4000;
+function toolText(v){
+  var t=visible(v);
+  return t.length>TOOL_SHOWN_CHARS?(t.slice(0,TOOL_SHOWN_CHARS)+'… (cut: too long to run)'):t;
+}
+function toolStep(s){return (s.extra&&typeof s.extra.tool==='object'&&s.extra.tool)||{};}
 function toolArgsNode(s){
-  var t=(s.extra&&typeof s.extra.tool==='object'&&s.extra.tool)||{};
+  var t=toolStep(s);
   var args=(t.args&&typeof t.args==='object'&&!Array.isArray(t.args))?t.args:{};
-  var parts=[];
-  Object.keys(args).slice(0,8).forEach(function(k){
+  // Each value on its own line, in a box of its own, isolated: one can't
+  // reorder, pass for or push out of view the others (a long one scrolls
+  // in its box). Its line breaks are shown.
+  var keys=Object.keys(args), list=h('div',{'class':'tool-args'});
+  keys.slice(0,TOOL_SHOWN_ARGS).forEach(function(k){
     var v=args[k];
-    var shown=typeof v==='string'?('“'+v.slice(0,120)+'”'):JSON.stringify(v);
-    parts.push(String(k).slice(0,64)+' = '+String(shown).slice(0,160));
+    list.appendChild(h('div',{'class':'tool-arg'},[
+      h('bdi',{'class':'ta-k'},toolText(k)),' = ',
+      h('bdi',{'class':'ta-v'},toolText(typeof v==='string'?('“'+v+'”'):JSON.stringify(v)))]));
   });
-  var kids=[h('div',{'class':'lbl'},'What it gives the tool'),
-            h('div',{'class':'tool-args'},parts.length?parts.join('; '):'nothing')];
+  if(keys.length>TOOL_SHOWN_ARGS){
+    list.appendChild(h('div',{'class':'tool-arg'},'and '+(keys.length-TOOL_SHOWN_ARGS)+' more (too many to run)'));
+  }
+  if(!keys.length)list.appendChild(document.createTextNode('nothing'));
+  var kids=[h('div',{'class':'lbl'},'The site’s tool'),
+            h('div',{'class':'tool-name'},'“'+toolText(s.target||'')+'” of '+
+              (typeof t.origin==='string'?toolText(t.origin):'no site')),
+            h('div',{'class':'lbl'},'What it gives the tool'),
+            list];
+  if(t.form===true){kids.push(h('div',{'class':'loc-note'},'It fills in and sends a form on the page'));}
   if(t.frame&&typeof t.frame.origin==='string'){
-    kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+t.frame.origin.slice(0,120)));
+    kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+toolText(t.frame.origin)+
+      (typeof t.frame.path==='string'?(' (frame '+toolText(t.frame.path)+')'):'')));
   }
   var secret=Array.isArray(t.secret_args)?t.secret_args.length:0;
   if(secret){kids.push(h('div',{'class':'loc-note'},secret+' value'+(secret===1?'':'s')+' not saved'));}
   return h('div',{'class':'efield'},kids);
+}
+/* A TYPE step that fills a saved secret ("secret" in its extra, as the
+   runner reads it: a card or a code by its kind, anything else a password),
+   or ''. Never a routine taught by voice's step (extra.voice): voice mode
+   runs what that says, and never reads "secret". */
+function secretKindOf(s){
+  if(!s||s.type!=='type'||!s.extra||typeof s.extra.secret!=='string')return '';
+  if(s.extra.voice&&typeof s.extra.voice==='object')return '';
+  var k=s.extra.secret_kind;
+  return (k==='payment_card'||k==='one_time_code')?k:'password';
+}
+var SECRET_TITLE={password:'Fill your saved password',
+  payment_card:'Enter the payment card yourself (not saved)',
+  one_time_code:'Enter the one-time code yourself (not saved)'};
+var SECRET_PASSWORD_NOTE='At each run of a trusted workflow, this fills in your saved password for the site the page is on, from the MoltBrowser vault.';
+/* Whether a run asks for a value of |s|: its field, or a value it gives a
+   site's tool, is a whole {{variable}}. */
+function asksAtRun(s){
+  if(s.type==='call_tool'){
+    var a=toolStep(s).args;
+    return !!a&&typeof a==='object'&&Object.keys(a).some(function(k){
+      return typeof a[k]==='string'&&wholeVar(a[k])!=null;});
+  }
+  return wholeVar(s[primaryOf(s.type)])!=null;
+}
+/* The REVIEW_NOTES keys that hold for |s|, from what runs. */
+function reviewNotesOf(s){
+  var out=[];
+  if(!s)return out;
+  if(s.extra&&s.extra.review==='value_withheld'&&asksAtRun(s))out.push('value_withheld');
+  var sk=secretKindOf(s);
+  if(sk==='payment_card'||sk==='one_time_code')out.push('secret_field');
+  var sa=s.type==='call_tool'?toolStep(s).secret_args:null;
+  if(Array.isArray(sa)&&sa.length)out.push('secret_argument');
+  return out;
 }
 function isTrusted(level){return !!level&&level!=='casual';}
 function siteOfSteps(steps){
@@ -1476,8 +1632,21 @@ function fieldPlaceholder(t){
 }
 function hasStore(t){return t==='extract'||t==='ai_extract'||t==='ai_decide';}
 
-/* Friendly one-line title for a step. */
-function stepTitle(s){
+/* Friendly one-line title for a step. A site's tool and a saved secret
+   are titled from what runs, in the browser's words, never the step's
+   description (a file changed outside has none). */
+function stepTitle(s){return visible(stepTitleText(s));}
+function stepTitleText(s){
+  if(s.type==='call_tool'){
+    var tool=toolStep(s), host=(s.extra&&typeof s.extra.host==='string')?s.extra.host:'';
+    var title='Run the site’s tool “'+toolText(s.target||'')+'” on '+(host?toolText(host):'no site');
+    if(tool.frame&&typeof tool.frame.origin==='string'&&tool.frame.origin!==tool.origin){
+      title+=' (in its frame from '+toolText(tool.frame.origin)+')';
+    }
+    return title;
+  }
+  var sk=secretKindOf(s);
+  if(sk)return SECRET_TITLE[sk];
   if(s.description)return s.description;
   var v=s.value||'', t=s.target||'';
   switch(s.type){
@@ -1686,6 +1855,13 @@ function renderLibrary(list){
   $('libSub').textContent = list.length
     ? (list.length+' workflow'+(list.length===1?'':'s')+' saved')
     : 'Teach the browser to do a task once — then let it repeat.';
+  var changed=list.filter(function(wf){return wf&&wf.changedOutside===true;}).length;
+  if(changed){
+    box.appendChild(h('div',{'class':'changed-banner',role:'status',title:CHANGED_EXPLAIN},
+      changed===1
+        ?'1 workflow was changed outside MoltBrowser and needs your review.'
+        :changed+' workflows were changed outside MoltBrowser and need your review.'));
+  }
   if(!list.length){
     box.appendChild(h('div',{'class':'empty'},[
       h('div',{'class':'ico','aria-hidden':'true'},'\u{1F916}'),
@@ -1720,7 +1896,9 @@ function buildCard(wf){
   var sub=h('div',{'class':'csub'});
   sub.appendChild(h('span',{},(wf.stepCount||0)+' step'+((wf.stepCount===1)?'':'s')));
   sub.appendChild(h('span',{'class':'dotsep'},'·'));
-  sub.appendChild(wf.draft
+  sub.appendChild(wf.changedOutside===true
+    ? h('span',{'class':'tbadge draft',title:CHANGED_EXPLAIN},'changed outside · review it')
+    : wf.draft
     ? h('span',{'class':'tbadge draft',title:DRAFT_EXPLAIN},'draft · review it')
     : isTrusted(wf.trust)
     ? h('span',{'class':'tbadge on',title:TRUST_EXPLAIN},'✓ trusted')
@@ -2024,7 +2202,9 @@ function openEditor(id){
       stats:wf.stats||null,
       trust:(wf.security&&wf.security.trust)||'casual',
       draft:!!(wf.security&&wf.security.sites_unconfirmed===true),
-      draftSites:wf.draftSites
+      changedOutside:!!(wf.security&&wf.security.changed_outside===true),
+      draftSites:wf.draftSites,
+      reviewToken:wf.reviewToken
     });
   }).catch(function(){toast('Couldn’t open workflow','err');});
 }
@@ -2043,14 +2223,25 @@ function openEditorDraft(wf){
     trust:wf.trust||null,
     recordedId:wf.recordedId||null,
     draft:!!wf.draft,
-    draftSites:cleanSites(wf.draftSites)
+    changedOutside:!!wf.changedOutside,
+    draftSites:cleanSites(wf.draftSites),
+    reviewToken:cleanToken(wf.reviewToken)
   };
+  editorState.savedName=editorState.name;
+  editorState.savedBody=editorBody(editorState);
   $('edName').value=editorState.name;
   renderEditorMeta();renderEditorSteps();
   showView('editor');
   $('edSteps').parentNode.scrollTop=0;
 }
 $('edName').addEventListener('input',function(){editorState.name=this.value;});
+/* Whether the editor |es| shows what was opened or last saved (its name,
+   steps and variables), or changes not saved yet. */
+function editorBody(es){return JSON.stringify([es.steps,es.variables]);}
+function editorChanged(es){
+  return (es.name||'Untitled workflow')!==(es.savedName||'Untitled workflow')||
+         editorBody(es)!==es.savedBody;
+}
 
 function renderEditorMeta(){
   var m=$('edMeta');clear(m);
@@ -2111,11 +2302,15 @@ function renderDraftPanel(box){
   var es=editorState, sites=es.draftSites||[];
   var withheld=0, secret=0;
   es.steps.forEach(function(s){
-    var r=s&&s.extra&&s.extra.review;
-    if(r==='value_withheld')withheld++;
-    if(r==='secret_field')secret++;
+    var r=reviewNotesOf(s);
+    if(r.indexOf('value_withheld')>=0)withheld++;
+    if(r.indexOf('secret_field')>=0)secret++;
   });
-  var kids=[
+  var kids=es.changedOutside?[
+    h('div',{'class':'tp-h'},['\u26A0 ','Changed outside MoltBrowser — review it']),
+    h('div',{'class':'tp-s'},'This workflow’s file was changed by another program, another copy of MoltBrowser, or by hand. Until you confirm it, it has no trust, doesn’t run, isn’t run on its schedule and can’t be run by another workflow. Check each step, the sites and the schedule below.'),
+    h('div',{'class':'tp-s'},scheduleText(es.trigger))
+  ]:[
     h('div',{'class':'tp-h'},['\u{1F50D} ','Draft from an AI agent run — review it']),
     h('div',{'class':'tp-s'},'The agent chose these steps from what the pages showed it. Check each one, edit or delete what you don’t want, and save. It can’t run until you confirm the sites it may use.')
   ];
@@ -2128,14 +2323,26 @@ function renderDraftPanel(box){
     kids.push(h('div',{'class':'tp-s'},'It has no site to confirm. Add a “Go to page” step and save.'));
   }else{
     var list=h('div',{'class':'draft-sites'});
-    sites.forEach(function(site){list.appendChild(h('span',{'class':'draft-site'},site));});
+    sites.forEach(function(site){list.appendChild(h('span',{'class':'draft-site'},visible(site)));});
     kids.push(list);
     kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
+      // The browser confirms what is saved (the token is of that): edits
+      // not saved yet are saved first, and the sites they use now shown
+      // for a click of their own.
+      if(editorChanged(es)){
+        saveEditor(true).then(function(id){
+          if(id!=null&&editorState===es)toast('Saved — check the sites, then confirm','ok');
+        });
+        return;
+      }
       var shown=sites.slice();
-      sendWithPromise('confirmDraftSites',es.id,shown).then(function(r){
+      sendWithPromise('confirmDraftSites',es.id,shown,es.reviewToken||'').then(function(r){
         if(!r||!r.ok){toast((r&&r.error)||'Couldn’t confirm the sites','err');return;}
-        es.draft=false;es.draftSites=[];
+        es.draft=false;es.changedOutside=false;es.draftSites=[];es.reviewToken='';
         if(r.trust)es.trust=r.trust;
+        // The schedule as confirmed (started over): the one opened would
+        // write back the last fire from before the change.
+        if(r.trigger&&typeof r.trigger.type==='string')es.trigger=r.trigger;
         toast('Sites confirmed — it can run now','ok');
         renderEditorMeta();renderEditorSteps();
       }).catch(function(){toast('Couldn’t confirm the sites','err');});
@@ -2177,11 +2384,13 @@ function buildEditorStep(s,i){
     ctrls
   ]));
 
-  // A step of a draft from an agent run that needs the user (fixed text).
-  var review=s.extra&&typeof s.extra.review==='string'&&REVIEW_NOTES.hasOwnProperty(s.extra.review)
-    ? REVIEW_NOTES[s.extra.review] : null;
-  if(review){
-    card.appendChild(h('div',{'class':'review-note'},['⚠ ',review]));
+  // What the step needs of the user (fixed text, from what runs).
+  reviewNotesOf(s).forEach(function(k){
+    card.appendChild(h('div',{'class':'review-note'},['⚠ ',REVIEW_NOTES[k]]));
+  });
+  // A step that fills the saved password (fixed text, from what runs).
+  if(secretKindOf(s)==='password'){
+    card.appendChild(h('div',{'class':'review-note'},['\u{1F511} ',SECRET_PASSWORD_NOTE]));
   }
 
   // A site's tool: what it gives the tool, nothing to type here.
@@ -2211,6 +2420,8 @@ function buildEditorStep(s,i){
     var inp=h(isMulti?'textarea':'input',{'class':'inp'+(s.type==='click'||s.type==='wait_for'||s.type==='extract'?' mono':''),
       value:pval,placeholder:fieldPlaceholder(s.type),spellcheck:'false',
       onInput:function(){s[pf]=this.value;updateHeadTitle(card,s);}});
+    // A textarea shows its text as its value, not its attribute.
+    if(isMulti)inp.value=pval;
     if(s.type==='wait'){inp.setAttribute('type','number');inp.setAttribute('min','0');}
     var fld=h('div',{'class':'efield'},[fieldLabelFor(fieldLabel(s.type),inp),inp]);
     card.appendChild(fld);
@@ -2241,7 +2452,7 @@ function buildEditorStep(s,i){
   }
 
   // secondary context: selector target when the primary field is the value
-  if(pf==='value'&&(s.type==='click'||s.type==='type'||s.type==='extract')&&s.target){
+  if(pf==='value'&&(s.type==='type'||s.type==='assert')&&s.target){
     var onEl=h('input',{'class':'inp mono',value:s.target,spellcheck:'false',onInput:function(){s.target=this.value;}});
     card.appendChild(h('div',{'class':'efield'},[fieldLabelFor('On element (advanced)',onEl),onEl]));
   }
@@ -2371,44 +2582,75 @@ $('edSaveBtn').addEventListener('click',function(){
   });
 });
 $('edRunBtn').addEventListener('click',function(){
-  saveEditor(true).then(function(id){if(id!=null)runWorkflowFlow(id);});
+  var es=editorState;
+  saveEditor(true).then(function(id){if(id!=null&&editorState===es)runWorkflowFlow(id);});
 });
 $('edSchedBtn').addEventListener('click',function(){
-  if(editorState&&editorState.draft){toast('Confirm this draft’s sites first','err');return;}
-  saveEditor(true).then(function(id){if(id!=null)openScheduleSheet(id,editorState.name,editorState.trigger);});
+  var es=editorState;
+  if(es&&es.draft){
+    toast(es.changedOutside?'Review this workflow first':'Confirm this draft’s sites first','err');return;}
+  saveEditor(true).then(function(id){if(id!=null&&editorState===es)openScheduleSheet(id,es.name,es.trigger);});
 });
+/* A workflow opened here is saved under its id (an edit of what is
+   stored); a new one with no id, and a recording's first save with the id
+   the browser made for it as recordedId. */
 function collectWorkflow(){
   syncVariables();
   var w={name:(editorState.name||'Untitled workflow'),steps:editorState.steps,
     variables:editorState.variables,trigger:editorState.trigger||{type:'manual',expression:''}};
-  if(editorState.id!=null)w.id=editorState.id;
-  else if(editorState.recordedId)w.id=editorState.recordedId;
+  if(editorState.id!=null){
+    w.id=editorState.id;
+    // A draft shown for review: refused if it isn't one any more (confirmed
+    // in another view meanwhile), never saved under that confirmation.
+    if(editorState.draft)w.draft=true;
+  }
+  else if(editorState.recordedId)w.recordedId=editorState.recordedId;
   return w;
 }
+/* One save at a time: a second one (a double click, Save then Run) waits
+   for the first, so it is saved under the id the first was given, not as
+   a second new workflow. Each save is of the editor it was asked in: one
+   that waited is dropped if another editor was opened meanwhile, and an
+   answer changes only its own editor. */
+var editorSaving=null;
 function saveEditor(quiet){
+  var es=editorState;
+  if(!es)return Promise.resolve(null);
+  if(editorSaving)return editorSaving.then(function(){
+    return editorState===es?saveEditor(quiet):null;});
   var w=collectWorkflow();
-  return sendWithPromise('saveWorkflow',w).then(function(r){
+  var body=editorBody(es);
+  editorSaving=sendWithPromise('saveWorkflow',w).then(function(r){
     if(r&&typeof r.error==='string'){toast(r.error,'err');return null;}
     if(r&&r.id!=null){
-      editorState.id=r.id;
+      es.id=r.id;
       // A routine taught by voice may be renamed to keep its name its own.
-      if(typeof r.name==='string')editorState.name=r.name;
-      if(r.trust)editorState.trust=r.trust;
-      // Still a draft: the sites its saved steps target now.
-      if(editorState.draft)editorState.draftSites=cleanSites(r.draftSites);
-      renderEditorMeta();
+      if(typeof r.name==='string')es.name=r.name;
+      if(r.trust)es.trust=r.trust;
+      es.savedName=typeof r.name==='string'?r.name:w.name;
+      es.savedBody=body;
+      // Still a draft: the sites its saved steps target now, and the token
+      // of what was saved (what a confirm now confirms).
+      if(es.draft){
+        es.draftSites=cleanSites(r.draftSites);
+        es.reviewToken=cleanToken(r.reviewToken);
+      }
+      if(editorState===es)renderEditorMeta();
     }
     if(!quiet)toast('Saved','ok');
-    return editorState.id;
-  }).catch(function(){toast('Couldn’t save','err');return null;});
+    return es.id;
+  }).catch(function(){toast('Couldn’t save','err');return null;})
+    .then(function(id){editorSaving=null;return id;});
+  return editorSaving;
 }
 
 /* ============================== RUN ============================== */
 function runWorkflowFlow(id){
   sendWithPromise('getWorkflow',id).then(function(wf){
     if(wf&&wf.security&&wf.security.sites_unconfirmed===true){
-      // A draft from an AI agent run: review it first.
-      toast('Confirm this draft’s sites first','err');
+      // A draft from an AI agent run, or a workflow changed outside
+      // MoltBrowser: review it first.
+      toast(wf.security.changed_outside===true?'Review this workflow first':'Confirm this draft’s sites first','err');
       if(view!=='editor'||!editorState||editorState.id!==id)openEditor(id);
       return;
     }
@@ -2615,7 +2857,7 @@ function openScheduleSheet(id,name,trigger){
   $('schedSubT').textContent=(name?('“'+name+'”'):'This workflow')+' — run it automatically.';
   var tr=trigger||{type:'manual',expression:''};
   scheduleCtx.mode=tr.type||'manual';
-  var iv=parseInterval(tr.type==='interval'?tr.expression:'');
+  var iv=tr.type==='interval'?savedInterval(tr.expression):parseInterval('');
   var daily=(tr.type==='daily'&&tr.expression)?tr.expression:'09:00';
   var cron=(tr.type==='cron'&&tr.expression)?tr.expression:'0 9 * * *';
 
@@ -2641,8 +2883,8 @@ function openScheduleSheet(id,name,trigger){
   body.appendChild(opt('manual','Manual only','Runs only when you press Run.'));
 
   var numI=h('input',{'class':'inp num',id:'ivNum',type:'number',min:'1',value:iv.n,'aria-label':'Every how many',onInput:updateNext,onFocus:function(){pickMode('interval');}});
-  var unitI=h('select',{'class':'inp',id:'ivUnit','aria-label':'Minutes or hours',onChange:updateNext,onFocus:function(){pickMode('interval');}},[
-    h('option',{value:'m'},'minutes'),h('option',{value:'h'},'hours')
+  var unitI=h('select',{'class':'inp',id:'ivUnit','aria-label':'Seconds, minutes or hours',onChange:updateNext,onFocus:function(){pickMode('interval');}},[
+    h('option',{value:'s'},'seconds'),h('option',{value:'m'},'minutes'),h('option',{value:'h'},'hours')
   ]);
   unitI.value=iv.unit;
   body.appendChild(opt('interval','Every so often','Repeat on a fixed timer.',
@@ -2672,9 +2914,21 @@ function pickMode(mode){
   updateNext();
 }
 function parseInterval(expr){
-  var m=/^(\d+)\s*([mh])?$/.exec(String(expr||'').trim());
+  var m=/^(\d+)\s*([smh])?$/.exec(String(expr||'').trim());
   if(m)return {n:parseInt(m[1],10)||30,unit:m[2]||'m'};
   return {n:30,unit:'m'};
+}
+/* A saved interval is in seconds ("1800"); the sheet shows it in hours or
+   minutes when it is a whole number of them, else in seconds, so saved
+   unchanged it stays the same. */
+function savedInterval(expr){
+  var e=String(expr||'').trim();
+  if(!/^\d+$/.test(e))return parseInterval(e);
+  var secs=parseInt(e,10)||0;
+  if(secs<=0)return {n:1,unit:'m'};
+  if(secs>=3600&&secs%3600===0)return {n:secs/3600,unit:'h'};
+  if(secs%60===0)return {n:secs/60,unit:'m'};
+  return {n:secs,unit:'s'};
 }
 function currentTrigger(){
   var mode=scheduleCtx.mode;
@@ -2691,7 +2945,7 @@ function previewNext(tr){
   var now=new Date();
   if(tr.type==='interval'){
     var iv=parseInterval(tr.expression);
-    var secs=iv.n*(iv.unit==='h'?3600:60);
+    var secs=iv.n*(iv.unit==='h'?3600:iv.unit==='s'?1:60);
     return Math.floor(now.getTime()/1000)+secs;
   }
   if(tr.type==='daily'){
@@ -2721,7 +2975,10 @@ $('schedSave').addEventListener('click',function(){
   var tr=currentTrigger();var btn=$('schedSave');btn.disabled=true;btn.textContent='Saving…';
   sendWithPromise('saveSchedule',scheduleCtx.id,tr).then(function(r){
     if(r&&r.ok===false&&typeof r.error==='string'&&r.error){toast(r.error,'err');return;}
-    if(editorState&&editorState.id===scheduleCtx.id)editorState.trigger=tr;
+    // The trigger as the browser saved it (the sheet's own shape, 'daily'
+    // or '30m', isn't one): the editor's next save keeps the schedule.
+    if(editorState&&editorState.id===scheduleCtx.id&&r&&r.trigger&&typeof r.trigger.type==='string')
+      editorState.trigger=r.trigger;
     closeScrim('schedScrim');
     toast(tr.type==='manual'?'Schedule cleared':('Scheduled — next '+(r&&r.nextFire?formatNext(r.nextFire):'soon')),'ok');
     loadLibrary();
@@ -3127,7 +3384,12 @@ button,input,textarea,select{font-family:inherit}
 .frame-tools .ft-pair{flex:1;min-width:0;word-break:break-all}
 .frame-tools .ft-when{font-size:.6875rem;color:var(--muted)}
 .frame-tools .ft-forget{font-size:.6875rem;padding:4px 9px}
-.tool-args{font-size:.75rem;word-break:break-word;padding:6px 9px;border-radius:9px;
+.tool-args bdi{unicode-bidi:isolate}
+.tool-arg+.tool-arg{margin-top:6px}
+.tool-arg .ta-k{font-family:var(--mono);font-weight:600}
+.tool-arg .ta-v{display:block;margin-top:3px;padding:3px 7px;border-radius:6px;border:1px solid var(--border);
+  white-space:pre-wrap;max-height:8em;overflow:auto}
+.tool-args,.tool-name{font-size:.75rem;word-break:break-word;padding:6px 9px;border-radius:9px;
   border:1px solid var(--border);background:rgba(255,255,255,0.03)}
 .trust-act .btn{flex:1;font-size:.75rem;padding:8px 10px}
 /* drafts saved from an AI agent run: badge, review panel, step notes */
@@ -3139,6 +3401,9 @@ button,input,textarea,select{font-family:inherit}
   border:1px solid var(--border);color:var(--text);word-break:break-all}
 .review-note{margin:6px 2px 2px;padding:6px 9px;border-radius:9px;font-size:.71875rem;
   color:var(--text);background:var(--surface);border-left:2px solid var(--warn)}
+/* workflows changed outside MoltBrowser: the library's banner */
+.changed-banner{margin:2px 2px 10px;padding:8px 11px;border-radius:10px;font-size:.75rem;
+  color:var(--text);background:var(--surface);border-left:3px solid var(--warn)}
 
 /* empty state */
 .empty{text-align:center;padding:40px 22px;animation:rise .3s ease both}

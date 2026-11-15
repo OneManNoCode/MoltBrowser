@@ -13,6 +13,7 @@
 #include "chrome/browser/molt_ai/voice/spoken_numbers.h"
 #include "chrome/browser/molt_ai/voice/spoken_phrases.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"
+#include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
 
 namespace molt_ai {
@@ -422,6 +423,67 @@ std::optional<RoutineStep> RoutineStepFor(const VoiceCommand& command,
       break;
   }
   return step;
+}
+
+RoutineStep RoutineStepAsShown(const RoutineStep& step) {
+  RoutineStep shown = step;
+  // The words it types, searches for or acts on as the description says
+  // them (UserWords()): line breaks, tabs and runs of spaces as one space,
+  // no hidden character. What doesn't read back so is a step voice mode
+  // can't do.
+  if (IsAgentStep(step)) {
+    PlannerStep& a = shown.agent;
+    for (std::string* words : {&a.query, &a.label, &a.option, &a.text}) {
+      *words = UserWords(*words);
+    }
+    return shown;
+  }
+  VoiceCommand& c = shown.command;
+  if (shown.variable.empty()) {
+    c.text = UserWords(c.text);
+  }
+  // What opens: a known site by its own name; an address, or a site voice
+  // mode doesn't know (searched for on the web), by itself.
+  const auto site_name = [](const VoiceCommand& command) {
+    const KnownSite* known =
+        command.site_is_address ? nullptr : FindKnownSite(command.site);
+    return known ? std::string(known->name) : std::string();
+  };
+  switch (c.kind) {
+    case K::kOpenSite: {
+      c.site_words = site_name(c);
+      // The page it opens is the one voice mode opens: none for a site it
+      // doesn't know.
+      const SiteTarget target =
+          ResolveSpokenSite(c.site, c.site_is_address, std::string_view());
+      shown.url = target.kind == SiteTarget::Kind::kUnknown ? std::string()
+                                                            : target.url;
+      break;
+    }
+    case K::kSearch:
+      c.site_words =
+          c.scope == SearchScope::kNamedSite ? site_name(c) : std::string();
+      c.whole_query.clear();
+      break;
+    case K::kChoose:
+      c.choice.roles = 0;
+      if (c.choice.kind == ChoiceRef::Kind::kDescription &&
+          OrdinalText(c.choice.ordinal, Language::kEnglish).empty()) {
+        c.choice.ordinal = 0;
+      }
+      break;
+    case K::kScrollDown:
+    case K::kScrollUp:
+    case K::kScrollLeft:
+    case K::kScrollRight:
+      if (c.scroll != ScrollAmount::kPage) {
+        c.count = 1;
+      }
+      break;
+    default:
+      break;
+  }
+  return shown;
 }
 
 VoiceCommand CommandForStep(const RoutineStep& step, std::string_view value) {

@@ -465,6 +465,7 @@ void AutomationRunner::Run(Script script,
   script_ = std::move(script);
   policy_ = AutomationSecurity::EffectivePolicy(script_);
   blocked_needs_trust_ = false;
+  persist_stats_ = true;
   // Day 6: support resume-at-step. Clamp to a valid index — out-of-range
   // start values fall back to 0 to preserve the existing behavior.
   current_index_ = (start_index < script_.steps.size()) ? start_index : 0;
@@ -493,12 +494,18 @@ void AutomationRunner::Run(Script script,
   on_step_ = std::move(on_step);
   on_complete_ = std::move(on_complete);
 
-  // A draft made from a web agent run runs only once the user has reviewed
-  // it and confirmed its sites in the Agent studio
-  // (AutomationSecurity::ConfirmDraftSites): its steps are the model's.
+  // A draft made from a web agent run, or a workflow whose file was changed
+  // outside the browser, runs only once the user has reviewed it and
+  // confirmed its sites in the Agent studio
+  // (AutomationSecurity::ConfirmDraftSites): its steps aren't the user's.
+  // A refused run keeps no stats: it must not write over the history
+  // another browser keeps in the file.
   if (script_.security.sites_unconfirmed) {
-    Audit("run_refused", "draft_unconfirmed");
-    Finish(false, kDraftNeedsReviewMessage);
+    Audit("run_refused", script_.security.changed_outside
+                             ? "changed_outside"
+                             : "draft_unconfirmed");
+    persist_stats_ = false;
+    Finish(false, AutomationSecurity::ReviewMessage(script_));
     return;
   }
   // A routine taught by voice runs in voice mode, through its own loop
@@ -1030,24 +1037,27 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
                                      std::move(rec));
   if (script_.stats.run_history.size() > kRunHistoryCap)
     script_.stats.run_history.resize(kRunHistoryCap);
-  if (!storage_dir_.empty()) {
+  if (!storage_dir_.empty() && persist_stats_) {
     // Only the run's stats go back to disk, onto the workflow as stored
     // now. script_ also holds this run's variable values, which the user
     // may have typed at the start of the run because they are private (a
     // draft's withheld values, agent_run_draft.h): they must never be
     // saved as the workflow's defaults. (And RUN_SCRIPT inlined another
     // workflow's steps into script_.steps.) A workflow deleted meanwhile
-    // stays deleted. One read-modify-write under the storage directory's
+    // stays deleted. Bookkeeping only (UpdateBookkeeping(): never the
+    // workflow's security content, so the browser's record of it is left
+    // as it was), one read-modify-write under the storage directory's
     // lock, on its sequence (the Agent studio's and molt://ai-automation's
     // changes run there too).
     PostSharedChange(storage_dir_,
                      base::BindOnce(
                          [](const std::string& id, const Stats& stats,
                             AutomationStorage& storage) {
-                           storage.Update(id, [&stats](Script& stored) {
-                             stored.stats = stats;
-                             return true;
-                           });
+                           storage.UpdateBookkeeping(id,
+                                                     [&stats](Script& stored) {
+                                                       stored.stats = stats;
+                                                       return true;
+                                                     });
                          },
                          script_.id, script_.stats));
     Audit(success ? "run_succeeded" : "run_failed", message);
@@ -2503,6 +2513,14 @@ void AutomationRunner::OnChildLoaded(std::string child_id,
   }
   if (child->steps.empty()) {
     OnStepFinished(true, "RUN_SCRIPT: " + child_id + " (empty, skipped)");
+    return;
+  }
+  // Never a workflow that needs a review (an unconfirmed draft, a file
+  // changed outside the browser) nor a routine taught by voice: its steps
+  // would run here at this run's trust. (Its id may come from a variable.)
+  if (!AutomationSecurity::MayRunAsChild(*child)) {
+    OnStepFinished(false,
+                   "RUN_SCRIPT: " + child_id + " needs review in Agent mode");
     return;
   }
   // The child runs under this run's trust level, but its own sites (its

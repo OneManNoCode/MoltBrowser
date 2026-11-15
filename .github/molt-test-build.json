@@ -1,12 +1,12 @@
 {
- "resume_run": "43647740855",
+ "resume_run": "43714601147",
  "run_tests": true,
  "e2e_only": false,
- "e2e_runs": "",
+ "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Seventy-second build (incremental on the seventy-first, run 43647740855, Chromium 156.0.8078.100, whose 3065 unit and 122 browser tests passed): MoltBrowser's data folder on the File System Access sensitive-path list (chrome_file_system_access_permission_context.cc, now an overlay file) and molt_data_folder_browsertest.cc, with its profile taken through BrowserWindowInterface::GetProfile(). Runs the unit and browser tests; no spoken suite.",
+ "request": "Seventy-fifth build (incremental on the seventy-fourth, run 43714601147, Chromium 156.0.8078.100): workflow files changed outside MoltBrowser need review (PR #134), with rounds nine and ten: a new routine saved under an id of its own (never taking another's policy), new workflow ids made unique, and the run window opening only the page the starting step expects, resolved and on the workflow's sites. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
