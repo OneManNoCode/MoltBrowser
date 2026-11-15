@@ -7,7 +7,10 @@
 // the manager UI. Fires open a hidden background browser window when
 // trust >= TRUSTED, otherwise a foreground tab so the user can watch.
 // The storage is read and changed on its sequences
-// (automation_shared_tasks.h), never on the UI thread.
+// (automation_shared_tasks.h), never on the UI thread. It loads the
+// workflow record (automation_storage.h) before anything else reads the
+// storage, fires only what may run unattended, and keeps each fire in the
+// record before the file (AutomationStorage::RecordFire()).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_SERVICE_H_

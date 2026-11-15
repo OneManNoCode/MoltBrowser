@@ -381,6 +381,9 @@ class AutomationRunner {
   SecurityPolicy policy_;
   // The run was stopped by a block that trusting the workflow would lift.
   bool blocked_needs_trust_ = false;
+  // The run's stats are written back when it ends (not for a run refused
+  // before its first step because the workflow needs a review).
+  bool persist_stats_ = true;
   size_t current_index_ = 0;
   bool is_running_ = false;
   bool cancel_requested_ = false;

@@ -15,8 +15,8 @@
 #include "base/strings/string_split.h"
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
-#include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 
 namespace molt_ai {
 namespace automation {
@@ -239,12 +239,13 @@ void AutomationScheduler::OnListed(base::Time now,
   std::string soonest_script_id;
 
   for (const auto& s : scripts) {
-    if (!s.enabled) continue;
-    // A draft from a web agent run nobody has reviewed is never fired (the
-    // runner would refuse it anyway).
-    if (s.security.sites_unconfirmed) continue;
-    // Nor a routine taught by voice: voice mode runs those.
-    if (HasVoiceSteps(s)) continue;
+    // Only an enabled workflow whose sites are confirmed: never a draft
+    // nobody has reviewed (from a web agent run, or a file changed outside
+    // the browser: the runner would refuse it anyway), nor a routine taught
+    // by voice (voice mode runs those).
+    if (!AutomationSecurity::MayFireUnattended(s)) {
+      continue;
+    }
 
     // Catch-up: cron triggers that should have fired during shutdown.
     base::Time next = NextFireTime(s.trigger, now);
@@ -320,8 +321,11 @@ void AutomationScheduler::OnListed(base::Time now,
 void AutomationScheduler::OnTimerScriptLoaded(std::optional<Script> script) {
   if (!started_)
     return;
-  if (script && fire_cb_)
+  // As read now: a workflow changed (outside the browser, or into a draft)
+  // since it was listed doesn't fire.
+  if (script && fire_cb_ && AutomationSecurity::MayFireUnattended(*script)) {
     fire_cb_.Run(*script, base::Time::Now());
+  }
   Tick();
 }
 

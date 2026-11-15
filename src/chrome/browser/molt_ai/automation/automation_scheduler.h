@@ -13,6 +13,14 @@
 // storage's read sequence (automation_shared_tasks.h), after the changes
 // posted before (a fire's last_fired_unix among them), one listing at a
 // time: never on the UI thread.
+//
+// Only what may run unattended fires (AutomationSecurity::
+// MayFireUnattended()): never a workflow whose file was changed outside the
+// browser (the storage loads it as an unconfirmed draft), checked when it is
+// listed and again when its timer's reload comes. Its last fire time is
+// never earlier than the one the browser recorded (automation_storage.h),
+// so a forged earlier one forces no catch-up run. base only (the storage's
+// sequences), so molt_ai_unittests tests it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
