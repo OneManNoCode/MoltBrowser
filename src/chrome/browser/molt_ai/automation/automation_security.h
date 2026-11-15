@@ -211,7 +211,9 @@ class AutomationSecurity {
   //     SCREENSHOT, RUN_JS, RUN_SCRIPT, AI_DECIDE, AI_EXTRACT, UNKNOWN, and
   //     a step whose shown target, value or store_as holds a control
   //     character (a line break, a tab), DEL or a character that reorders,
-  //     hides or breaks text (agents/hidden_chars.h).
+  //     hides or breaks text (agents/hidden_chars.h), and a CALL_TOOL step
+  //     whose "args" hold a name or string (in a list too) with a control
+  //     character or DEL.
   // Clamping twice is clamping once.
   static void ClampUnvouched(Script& script);
 

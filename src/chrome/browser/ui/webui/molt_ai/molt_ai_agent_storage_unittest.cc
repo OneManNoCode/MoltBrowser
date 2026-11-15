@@ -248,7 +248,7 @@ TEST_F(AgentStudioStorageTest, SavesWhereItBelongsWithTheSameRefusals) {
 
   // A routine: the profile's, its name made its own.
   Answer routine =
-      SaveRoutine(places_, Save(Routine("wf_4", "Mail")), Holds::kNothing);
+      SaveRoutine(places_, New(Routine("wf_4", "Mail")), Holds::kNothing);
   EXPECT_EQ(*routine.out.FindString("name"), "Mail (2)");
   EXPECT_TRUE(routine.routines_changed);
   EXPECT_TRUE(Routines().Load("wf_4"));
@@ -381,7 +381,7 @@ TEST_F(AgentStudioStorageTest, TheStudioAndVoiceModeShareOneSequence) {
             [](StudioPlaces places, int i) {
               SaveRoutine(
                   places,
-                  Save(Routine("wf_" + base::NumberToString(i), "my news")),
+                  New(Routine("wf_" + base::NumberToString(i), "my news")),
                   Holds::kNothing);
             },
             places_, i));
@@ -1013,6 +1013,38 @@ TEST_F(AgentStudioStorageTest, AStaleDraftEditorsSaveOfARoutineIsRefused) {
   edit.edited_draft = true;
   Answer saved = SaveRoutine(places_, std::move(edit), Holds::kNothing);
   EXPECT_FALSE(Error(saved));
+  EXPECT_TRUE(Routines().Load("voice_2")->security.sites_unconfirmed);
+}
+
+// An editor's save of a routine deleted since it was opened (in another
+// view, or by voice) is refused, never saved as a new routine: one changed
+// outside the browser, claimed as a draft that voice mode never confirms
+// on its sites alone, would come back without that mark, and voice mode
+// would then confirm it, and run its steps, on its sites alone.
+TEST_F(AgentStudioStorageTest, ASaveOfARoutineGoneSinceItWasOpenedIsRefused) {
+  Script claimed = Routine("voice_1", "my news");
+  claimed.security.sites_unconfirmed = true;
+  claimed.security.changed_outside = true;
+  claimed.security.domain_whitelist.clear();
+  ASSERT_TRUE(Routines().Save(claimed));
+  ASSERT_TRUE(Routines().Delete("voice_1"));
+  for (const bool edited_draft : {true, false}) {
+    SaveRequest stale = Save(Routine("voice_1", "my news"));
+    stale.edited_draft = edited_draft;
+    Answer refused = SaveRoutine(places_, std::move(stale), Holds::kNothing);
+    ASSERT_TRUE(Error(refused)) << edited_draft;
+    EXPECT_EQ(*Error(refused),
+              "This workflow was deleted or changed since you opened it. "
+              "Open it again.")
+        << edited_draft;
+    EXPECT_FALSE(refused.routines_changed) << edited_draft;
+    EXPECT_FALSE(Routines().Load("voice_1")) << edited_draft;
+  }
+  // A new routine (brought in, its id made for it) is saved, a draft.
+  Answer brought =
+      SaveRoutine(places_, New(Routine("voice_2", "trains")), Holds::kNothing);
+  EXPECT_FALSE(Error(brought));
+  ASSERT_TRUE(Routines().Load("voice_2"));
   EXPECT_TRUE(Routines().Load("voice_2")->security.sites_unconfirmed);
 }
 

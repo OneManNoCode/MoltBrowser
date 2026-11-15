@@ -956,6 +956,63 @@ TEST(AutomationSecurityTest, ClampUnvouchedDropsAStepThatReadsOtherwise) {
   EXPECT_EQ(s.steps[1].value, "caf\xC3\xA9 \xE6\x97\xA5");
   EXPECT_EQ(s.trigger.type, TriggerType::CRON);
 
+  // A site tool given a value the review would lay out as lines or space
+  // (a line break, a carriage return, a tab: in a list too), or one named
+  // so, is dropped: a value could push those after it out of view. A
+  // character that reorders, hides or breaks text in a value is shown as
+  // it runs (U+FFFD, each value isolated): kept.
+  const auto tool_step = [](base::DictValue args) {
+    Step tool = MakeStep(StepType::CALL_TOOL, "send");
+    base::DictValue tool_dict;
+    tool_dict.Set("origin", "https://shop.example");
+    tool_dict.Set("args", std::move(args));
+    base::DictValue tool_extra;
+    tool_extra.Set(kStepHostKey, "shop.example");
+    tool_extra.Set("tool", std::move(tool_dict));
+    tool.extra = base::Value(std::move(tool_extra));
+    return tool;
+  };
+  Script tools = RichScript();
+  tools.steps.clear();
+  base::DictValue lines;
+  lines.Set("memo", "Rent" + std::string(470, '\n'));
+  lines.Set("to", "acct-1");
+  tools.steps.push_back(tool_step(std::move(lines)));
+  base::DictValue returned;
+  returned.Set("memo", "Rent\r");
+  tools.steps.push_back(tool_step(std::move(returned)));
+  base::DictValue tab;
+  base::ListValue items;
+  items.Append("a");
+  items.Append("b\tc");
+  tab.Set("items", std::move(items));
+  tools.steps.push_back(tool_step(std::move(tab)));
+  base::DictValue named;
+  named.Set("to\n", "acct-1");
+  tools.steps.push_back(tool_step(std::move(named)));
+  base::DictValue shown;
+  shown.Set("account",
+            "\xE2\x80\xAE"
+            "87654321");
+  shown.Set("amount", 100);
+  base::ListValue tags;
+  tags.Append("x y");
+  tags.Append(2);
+  shown.Set("tags", std::move(tags));
+  tools.steps.push_back(tool_step(std::move(shown)));
+  AutomationSecurity::ClampUnvouched(tools);
+  ASSERT_EQ(tools.steps.size(), 1u);
+  ASSERT_TRUE(tools.steps[0].extra.is_dict());
+  const base::DictValue* kept_tool =
+      tools.steps[0].extra.GetDict().FindDict("tool");
+  ASSERT_TRUE(kept_tool);
+  const base::DictValue* kept_args = kept_tool->FindDict("args");
+  ASSERT_TRUE(kept_args);
+  EXPECT_EQ(kept_args->size(), 3u);
+  EXPECT_EQ(*kept_args->FindString("account"),
+            "\xE2\x80\xAE"
+            "87654321");
+
   Script newline = RichScript();
   newline.trigger.expression = "0 9 * * *\n";
   AutomationSecurity::ClampUnvouched(newline);

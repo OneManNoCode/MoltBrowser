@@ -205,7 +205,10 @@ VoiceCommand CommandForStep(const RoutineStep& step, std::string_view value);
 // address; none for a site it doesn't know); no whole query (searched for
 // instead of a site voice mode doesn't know); no element roles; a number
 // of scrolls only where it is said (pages); an ordinal of a described
-// choice only where it is said. The planner's steps as they are.
+// choice only where it is said. The words it types, searches for or acts
+// on (the planner's text, query, element name and option too) as the
+// description says them: line breaks, tabs and runs of spaces as one
+// space, no hidden character.
 RoutineStep RoutineStepAsShown(const RoutineStep& step);
 
 // The step as the browser says it: "open YouTube", "search for news",

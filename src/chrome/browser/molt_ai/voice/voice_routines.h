@@ -134,7 +134,8 @@ ReadRoutineResult ReadRoutine(const automation::Script& script);
 // describes it: the step as ReadRoutine() reads it, with only what its
 // description says (RoutineStepAsShown(): no whole query, no words for a
 // site but a known site's own name, the page voice mode opens, no element
-// roles...), written as voice
+// roles, the words it types or acts on as the description says them: no
+// line break, tab or hidden character...), written as voice
 // mode's own save writes it (its type, the page it opens, its variable as
 // the value, extra "voice" and "host" only: never a secret key), its
 // description, which the Agent studio shows as the step's title,

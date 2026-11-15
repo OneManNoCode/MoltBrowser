@@ -426,11 +426,22 @@ std::optional<RoutineStep> RoutineStepFor(const VoiceCommand& command,
 }
 
 RoutineStep RoutineStepAsShown(const RoutineStep& step) {
-  if (IsAgentStep(step)) {
-    return step;
-  }
   RoutineStep shown = step;
+  // The words it types, searches for or acts on as the description says
+  // them (UserWords()): line breaks, tabs and runs of spaces as one space,
+  // no hidden character. What doesn't read back so is a step voice mode
+  // can't do.
+  if (IsAgentStep(step)) {
+    PlannerStep& a = shown.agent;
+    for (std::string* words : {&a.query, &a.label, &a.option, &a.text}) {
+      *words = UserWords(*words);
+    }
+    return shown;
+  }
   VoiceCommand& c = shown.command;
+  if (shown.variable.empty()) {
+    c.text = UserWords(c.text);
+  }
   // What opens: a known site by its own name; an address, or a site voice
   // mode doesn't know (searched for on the web), by itself.
   const auto site_name = [](const VoiceCommand& command) {

@@ -140,6 +140,36 @@ bool HasUnshownChars(std::string_view text) {
   return false;
 }
 
+// Whether |text| holds a control character (a line break, a tab) or DEL.
+bool HasControlChars(std::string_view text) {
+  return std::any_of(text.begin(), text.end(), [](char ch) {
+    const unsigned char c = static_cast<unsigned char>(ch);
+    return c < 0x20 || c == 0x7F;
+  });
+}
+
+// Whether a site tool's values (extra["tool"]["args"]) would read otherwise
+// than they run: a name, or a string given (in a list too), that holds a
+// control character. The review shows each value on its own, but a line
+// break or a tab lays it out as lines and space, which could push the
+// values after it out of view; one that would is dropped, as a one-line
+// field's is (HasUnshownChars()).
+bool ToolArgsHaveControlChars(const base::DictValue& args) {
+  const auto has = [](const base::Value& value) {
+    return value.is_string() && HasControlChars(value.GetString());
+  };
+  for (const auto [name, value] : args) {
+    if (HasControlChars(name) || has(value)) {
+      return true;
+    }
+    if (value.is_list() &&
+        std::any_of(value.GetList().begin(), value.GetList().end(), has)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // A page host as the browser records one (kStepHostKey): printable ASCII,
 // so the site the review lists is the site a run is allowed on.
 bool IsShownHost(std::string_view host) {
@@ -240,6 +270,10 @@ std::optional<Step> ShownStep(const Step& step) {
   }
   if (step.type == StepType::CALL_TOOL && extra) {
     if (const base::DictValue* tool = extra->FindDict(kToolStepKey)) {
+      const base::DictValue* args = tool->FindDict("args");
+      if (args && ToolArgsHaveControlChars(*args)) {
+        return std::nullopt;
+      }
       shown_extra.Set(kToolStepKey, ShownTool(*tool));
     }
   }
@@ -490,10 +524,11 @@ void AutomationSecurity::ClampUnvouched(Script& script) {
   // Each step the review shows in full, with only the fields it shows
   // (ShownStep()); every other step is dropped: control flow, page
   // snapshots, code, the on-device model's steps, steps that run another
-  // workflow, and a step whose one-line field would read otherwise than it
-  // runs. What the runner would act on when the target shown misses (the
-  // fallback selectors and locators, the text anchor, the picture of the
-  // recorded target, the description) goes with the rest.
+  // workflow, and a step whose one-line field, or a site tool's value,
+  // would read otherwise than it runs. What the runner would act on when
+  // the target shown misses (the fallback selectors and locators, the text
+  // anchor, the picture of the recorded target, the description) goes with
+  // the rest.
   for (const Step& step : script.steps) {
     if (std::optional<Step> kept = ShownStep(step)) {
       shown.steps.push_back(std::move(*kept));

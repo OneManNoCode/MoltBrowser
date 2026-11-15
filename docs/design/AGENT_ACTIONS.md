@@ -2264,7 +2264,7 @@ out of it; this section is about everything else.
 | `automation/automation_record_startup.{h,cc}` | configures the record, and posts its first load, when the first profile is created |
 | `automation/automation_scheduler.*` (now `:scheduler`, base only), `automation_scheduler_service.cc` | fire only what may run unattended, at listing and at the timer's reload; each fire claimed in the record before it runs (`ClaimFire()`); times passed while held for review not caught up (`RecordPassed()`) |
 | `automation/automation_runner.cc` | a refused run keeps no stats; stats through `UpdateBookkeeping()`; `RUN_SCRIPT` refuses a child that needs review |
-| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel (notes from what runs, hidden characters shown), the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over); an editor's save of a draft refused once it is no longer one |
+| `ui/webui/molt_ai/molt_ai_agent_storage.*`, `molt_ai_agent_ui.cc` | the review token, the review panel (notes from what runs, hidden characters shown), the badge and banner; which saves are new (`KindOfSave()`; a new one's schedule starts over); an editor's save of a draft refused once it is no longer one, and of a routine gone since it was opened; each site-tool value in a box of its own |
 | `ui/webui/molt_ai/molt_ai_automation_storage.cc`, `molt_ai_automation_ui.cc` | trust refused with the reason, no promotion suggestion for a draft, the badge; an import's schedule starts over |
 | `voice/voice_routines.cc`, `voice/voice_routines_logic.cc`, `voice/voice_routine_store.cc` | a routine changed outside is neither run nor confirmed by voice, and is claimed with its steps kept as the browser describes them (`DescribeRoutineStepsAsRun()`, `RoutineStepAsShown()`) |
 
@@ -2513,7 +2513,11 @@ next time (the same rule); after, it is final.
   save is refused ("This workflow was deleted or changed since you opened
   it. Open it again."), never written as a new workflow, which would make
   the draft the page was shown (its steps and schedule) one the browser
-  vouches for. Only a save that names no workflow is new (`KindOfSave()`,
+  vouches for. So is the save of a routine of the profile's gone since it
+  was opened (deleted in another view or by voice): saved as a new routine,
+  one changed outside would come back without that mark, and voice mode
+  would confirm it, and run its steps, on its sites alone. Only a save
+  that names no workflow is new (`KindOfSave()`,
   `SaveRequest::new_workflow`: a blank or imported workflow, or a
   recording); it is saved under a free id (`SaveNew()`), never over a file
   there. A recording's first save names
@@ -2577,7 +2581,13 @@ next time (the same rule); after, it is final.
   no `whole_query` (searched for, on the page the user is on, off the
   routine's sites, in place of a site voice mode doesn't know); no element
   `roles`; a number of scrolls only where it is said (pages); an ordinal
-  of a described choice only where it is said. It is written back
+  of a described choice only where it is said; the words it types,
+  searches for or acts on (the planner's text, query, element name and
+  option included) as the title says them: a line break, a tab or a run
+  of spaces as one space, no hidden character (kept as the file has it,
+  text on several lines would be typed so under a title on one line; a
+  step whose words don't read back so is one voice mode can't do). It is
+  written back
   as voice mode's own save writes a step (its type, the page it opens, its
   variable as the value, `extra` `voice` and `host` only: never a secret
   key, which voice mode never reads), and titled
@@ -2642,7 +2652,11 @@ next time (the same rule); after, it is final.
      `store_as` (each shown in a one-line `<input>`) holds a control
      character (a line break the field drops, so `div\na` read `diva`; a
      tab), DEL, or a character that reorders, hides or breaks text
-     (`agents/hidden_chars.h`). The studio makes none of those types.
+     (`agents/hidden_chars.h`); and a `call_tool` step whose values (an
+     argument's name, or a string it is given, in a list too) hold a
+     control character or DEL (a line break or a tab would lay a value
+     out as lines and space, which could push the values after it out of
+     view). The studio makes none of those types.
    - **A step of a routine taught by voice** (`extra.voice`) keeps its
      type, target and value and `extra` `voice` and `host` only (never a
      secret key: voice mode reads none); its claim keeps of `extra.voice`
@@ -2659,9 +2673,12 @@ next time (the same rule); after, it is final.
    because the step names one. A site tool's step is titled by the tool it
    runs ("Run the site's tool “name” on host", and its frame), and shows
    the tool's site, its frame's origin and path, whether it sends a form,
-   and what it is given in full, each value on its own, isolated
-   (`<bdi>`), its line breaks shown (more values, or longer ones, than a
-   step that runs can hold are marked cut). Titles, sites, the schedule's
+   and what it is given in full, each value on its own line, in a box of
+   its own, isolated (`<bdi>`), so that none can pass for, reorder or push
+   out of view another (a long one scrolls in its box), its line breaks
+   shown (a workflow the browser wrote; a changed one with any is dropped)
+   (more values, or longer ones, than a step that runs can hold are marked
+   cut). Titles, sites, the schedule's
    expression and a site tool's values show each character that reorders,
    hides or breaks text as U+FFFD, as `agents/hidden_chars.h` shows them
    (a one-line field never holds one: such a step is dropped). A step
@@ -2785,7 +2802,10 @@ All in `molt_ai_unittests` except the last item:
   tool's tool as shown; review notes, the ask-before flag and unknown keys
   gone, a host that isn't printable ASCII too), a voice step's `voice` and
   `host` only (no secret key), a step whose one-line field holds a line
-  break, a control or a hidden character dropped, a schedule's time zone
+  break, a control or a hidden character dropped, a site tool given a
+  value with a line break, a carriage return or a tab (in a list too), or
+  an argument so named, dropped (a hidden character in a value kept, shown
+  as it runs), a schedule's time zone
   and end gone (none when turned off), no variable's default value (twice
   is once); the predicates; `changed_outside` cleared by a confirm and carried by a
   save; the review message.
@@ -2856,14 +2876,19 @@ All in `molt_ai_unittests` except the last item:
   leaves other steps alone and clears one voice mode can't do; it keeps
   only what the title says (a known site by its own name, an address and
   an unknown site by themselves, no whole query, roles, unsaid scroll
-  count, secret key, value or selector of the file's), twice is once, and
-  voice mode reads back what was described.
+  count, secret key, value or selector of the file's), the planner's
+  words as the title says them (no line break, tab, run of spaces or
+  hidden character in what is typed, searched for, clicked or chosen; a
+  step whose words don't read back so can't be done, and the routine is
+  refused), twice is once, and voice mode reads back what was described.
 - `ui/webui/molt_ai/molt_ai_agent_storage_unittest.cc`: shown for review
   with a token; neither run, scheduled nor trusted; confirming vouches for
   the reviewed content at CASUAL (then Trust works); refused when the file
   changed after the review; the token is needed (an AI draft's too); edits
   and duplicates stay drafts; a save of a workflow deleted, unreadable or
-  over the cap since it was opened is refused, never saved as new; an id
+  over the cap since it was opened is refused, never saved as new, and of
+  a routine deleted since (one changed outside included), while a routine
+  brought in is saved, a draft; an id
   sent is an edit even when a recording was given it (a file planted there,
   opened and saved, stays a draft); a new workflow never goes over another
   file; an interval schedule counts from when it is written (Schedule,
@@ -2887,13 +2912,16 @@ All in `molt_ai_unittests` except the last item:
   with no sites, may neither fire nor run as a child, holds only the
   allowlist (step types, fields, `extra` keys and a site tool's keys; a
   voice step's `voice` and `host`; no control character in a one-line
-  field; no default value, time zone, end or history), clamped again is
+  field, nor in a site tool's values; no default value, time zone, end or
+  history), clamped again is
   the same, and its digest is what a reader of its saved file computes,
   before and after; an unconfirmed draft's effective trust is CASUAL (seed
   `regress_unconfirmed_trust.molt`).
 - `tools/webui_checks` smoke test: the badge, the banner, the review panel
   (schedule as text), a site tool's step titled by its tool with its site
-  and its values in full (a cut said), each isolated, a bidi override
+  and its values in full (a cut said), each isolated, on its own row and
+  in a box of its own that scrolls (one that looks like more values, on
+  many lines, too), a bidi override
   shown as U+FFFD, a form tool said, a saved-password step said, no run,
   and the token sent from the click; no note a file names for a step that
   runs (a literal typed, a tool given nothing withheld), notes from what
@@ -2912,6 +2940,9 @@ All in `molt_ai_unittests` except the last item:
 - Browser tests (build machine), `security/molt_data_folder_browsertest.cc`:
   the record is in the user data directory, not the test's data folder; a
   workflow planted after startup loads as a draft;
+  `ui/webui/molt_ai/molt_ai_agent_storage_browsertest.cc`: a routine
+  brought in with no id is saved as a new one, and an edit of one that
+  isn't there is refused;
   `ui/webui/molt_ai/molt_ai_automation_storage_browsertest.cc`: the chat's
   page watcher is saved with its interval counted from then.
 
@@ -2954,15 +2985,17 @@ All in `molt_ai_unittests` except the last item:
   code; the on-device model's decisions and extractions; steps that run
   another workflow), a step whose one-line field holds a line break, a
   tab, another control or a hidden character (text typed on two lines
-  included), its variables' default values (a scheduled run uses none
+  included), a site tool step given a value with a line break or a tab,
+  its variables' default values (a scheduled run uses none
   until they are set again), its schedule's time zone and end (and its
   schedule, if the file had it turned off), its steps' timeouts, retries
   and review notes, the agent's ask-before flag (a run's other checks
   still hold), and a site tool's read-only mark (a tool's own reading
   decides); a routine's voice step keeps only what its title says (a site
   voice mode doesn't know is searched for on the web by its name, never by
-  the file's whole query or words). Showing them for review instead would
-  keep them.
+  the file's whole query or words; text the planner typed on several lines
+  is typed on one, as its title says it). Showing them for review instead
+  would keep them.
 - **A workflow put back just before its time**, with no listing between
   (the heartbeat lists every minute), is taken for one held across that
   time, which is then skipped, not run. So is a time that passed while
@@ -2994,7 +3027,8 @@ All in `molt_ai_unittests` except the last item:
 > its page has changed; steps the review can't show in full (conditions
 > and loops, page snapshots, scripts, AI decisions and extractions, a step
 > that runs another workflow, a step whose text holds a line break or a
-> hidden character) are removed; the default values of its variables, and
+> hidden character, or that gives a site's tool a value with a line break)
+> are removed; the default values of its variables, and
 > its schedule's time zone and end date, are cleared. Your existing
 > workflows are kept exactly as they are the first time you start this
 > version. Run history and the last time a schedule ran don't count as

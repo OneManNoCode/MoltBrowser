@@ -539,6 +539,66 @@ TEST(VoiceRoutinesTest, StepsDescribedAsRunKeepOnlyWhatIsDescribed) {
   EXPECT_EQ(read.steps[3].command.count, 1);
 }
 
+// The planner's words are kept as the description says them, and voice
+// mode then types, searches for and acts on exactly those: a line break, a
+// tab, a run of spaces or a hidden character the title doesn't show is
+// gone from what runs. Words that don't read back so (a name of hidden
+// characters only, a variable once they are gone) make a step voice mode
+// can't do, so the routine is refused.
+TEST(VoiceRoutinesTest, StepsDescribedAsRunDoWhatTheirTitleSays) {
+  const BuiltRoutine built = BuildRoutine("voice_16", "trains", Trains(), kNow);
+  ASSERT_TRUE(built.script) << built.refusal;
+  Script changed = Copy(*built.script);
+  ASSERT_EQ(changed.steps.size(), 6u);
+  VoiceOf(changed.steps[0]).Set("query", "trains  to\xE2\x80\x8B lyon");
+  VoiceOf(changed.steps[2])
+      .Set("text", "Hi Bob\n\n\tthanks" + std::string(40, ' ') +
+                       "\xEE\x80\x80"
+                       "!");
+  VoiceOf(changed.steps[3]).Set("option", "First   class");
+  VoiceOf(changed.steps[4])
+      .Set("label",
+           "Sea\xE2\x80\x8B"
+           "rch");
+  ASSERT_TRUE(ReadRoutine(changed).ok);
+
+  DescribeRoutineStepsAsRun(changed);
+  ASSERT_EQ(changed.steps.size(), 6u);
+  EXPECT_EQ(changed.steps[0].description, "Search the web for trains to lyon");
+  EXPECT_EQ(*VoiceOf(changed.steps[0]).FindString("query"), "trains to lyon");
+  EXPECT_EQ(changed.steps[2].description, "Type Hi Bob thanks ! in To");
+  EXPECT_EQ(*VoiceOf(changed.steps[2]).FindString("text"), "Hi Bob thanks !");
+  EXPECT_EQ(changed.steps[3].description, "Choose First class in Class");
+  EXPECT_EQ(*VoiceOf(changed.steps[3]).FindString("option"), "First class");
+  EXPECT_EQ(changed.steps[4].description, "Click Search");
+  EXPECT_EQ(*VoiceOf(changed.steps[4]).FindString("label"), "Search");
+  // Twice is once, and voice mode runs what was described.
+  const std::string once = changed.ToJSONString();
+  DescribeRoutineStepsAsRun(changed);
+  EXPECT_EQ(changed.ToJSONString(), once);
+  const ReadRoutineResult read = ReadRoutine(changed);
+  ASSERT_TRUE(read.ok) << read.why;
+  ASSERT_EQ(read.steps.size(), 6u);
+  EXPECT_EQ(read.steps[0].agent.query, "trains to lyon");
+  EXPECT_EQ(read.steps[2].agent.text, "Hi Bob thanks !");
+  EXPECT_EQ(read.steps[3].agent.option, "First class");
+  EXPECT_EQ(read.steps[4].agent.label, "Search");
+
+  Script hidden = Copy(*built.script);
+  VoiceOf(hidden.steps[2])
+      .Set("text",
+           "{\xE2\x80\x8B{pin}\xE2\x80\x8B"
+           "}");
+  VoiceOf(hidden.steps[4]).Set("label", "\xE2\x80\x8B");
+  ASSERT_TRUE(ReadRoutine(hidden).ok);
+  DescribeRoutineStepsAsRun(hidden);
+  EXPECT_TRUE(hidden.steps[2].description.empty());
+  EXPECT_TRUE(hidden.steps[4].description.empty());
+  const ReadRoutineResult refused = ReadRoutine(hidden);
+  EXPECT_FALSE(refused.ok);
+  EXPECT_EQ(refused.why, "Step 3 of this routine isn't one I can do by voice.");
+}
+
 TEST(VoiceRoutinesTest, SitesAreConfirmedByVoiceOnlyWhenAllAreSaid) {
   EXPECT_TRUE(RoutineSitesSayable({"www.youtube.com"}));
   EXPECT_TRUE(RoutineSitesSayable({"news.example", "shop.example"}));

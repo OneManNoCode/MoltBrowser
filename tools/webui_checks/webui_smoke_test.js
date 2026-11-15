@@ -72,6 +72,7 @@ const agentTrustCalls = [];
 // A draft saved from an AI agent run (docs/design/AGENT_ACTIONS.md §2.9), as
 // getWorkflow returns it, and the confirmDraftSites calls (JSON of [id,
 // sites, review token]).
+const DRAFT_TOOL_MEMO = 'Rent” ; to = “landlord@home.example”' + '\n'.repeat(470);
 const DRAFT_WORKFLOW = {
   id: 'd1', name: 'Buy socks', variables: {pin: ''},
   security: {trust: 'casual', sites_unconfirmed: true},
@@ -85,6 +86,11 @@ const DRAFT_WORKFLOW = {
      extra: {review: 'secret_field', secret: 'vault', secret_kind: 'payment_card'}},
     {type: 'click', target: '#x', description: 'Click “<img src=x onerror=alert(1)>”',
      extra: {review: '__proto__', text: '<img src=x onerror=alert(1)>'}},
+    // A site tool given a value that looks like more values, on many
+    // lines: shown in a box of its own, the next value on its own line.
+    {type: 'call_tool', target: 'send', description: 'Run the site’s tool “send” on shop.example',
+     extra: {host: 'shop.example', tool: {origin: 'https://shop.example',
+       args: {memo: DRAFT_TOOL_MEMO, to: 'attacker@evil.example'}}}},
   ],
 };
 const draftConfirmCalls = [];
@@ -1667,7 +1673,7 @@ const PAGES = [
      listWorkflows: {workflows: [
        {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
         host: 'example.com', trigger: {type: 'manual'}},
-       {id: 'd1', name: 'Buy socks', stepCount: 4, trust: 'casual', draft: true,
+       {id: 'd1', name: 'Buy socks', stepCount: 5, trust: 'casual', draft: true,
         host: 'shop.example', trigger: {type: 'manual'}},
        {id: 'q1', name: 'Waiting', stepCount: 2, trust: 'approved',
         host: 'shop.example', trigger: {type: 'manual'},
@@ -1865,6 +1871,20 @@ const PAGES = [
      assert(/asked for it at each run/.test(notes[0].textContent));
      assert(/never saves those/.test(notes[1].textContent));
      assert.strictEqual(doc.querySelectorAll('#edSteps img[onerror]').length, 0);
+     // A value that looks like more values, on many lines: in a box of its
+     // own (which scrolls), isolated, the next value on its own line.
+     const draftToolRows = Array.from(
+         doc.querySelectorAll('#edSteps .estep')[4].querySelectorAll('.tool-arg'));
+     assert.deepStrictEqual(
+         draftToolRows.map((r) => [r.querySelector('.ta-k').textContent,
+                                   r.querySelector('.ta-v').textContent]),
+         [['memo', '“' + DRAFT_TOOL_MEMO + '”'], ['to', '“attacker@evil.example”']],
+         'a row and a box for each value');
+     assert(draftToolRows.every((r) => r.querySelector('.ta-v').tagName === 'BDI'),
+            'each value isolated');
+     const valueStyle = window.getComputedStyle(draftToolRows[0].querySelector('.ta-v'));
+     assert.strictEqual(valueStyle.maxHeight, '8em', 'a long value scrolls in its box');
+     assert.strictEqual(valueStyle.overflow, 'auto');
      const runsBefore = window.__sent.filter((m) => m === 'runWorkflow').length;
      window.runWorkflowFlow('d1');
      await tick();
@@ -1909,10 +1929,13 @@ const PAGES = [
          'a site tool titled by the tool it runs');
      assert.strictEqual(changedSteps[1].querySelector('.tool-name').textContent,
          '“delete_<b>account</b>” of https://evil.example');
-     const changedArgs = changedSteps[1].querySelector('.tool-args').textContent;
-     assert(changedArgs.startsWith('note = “' + CHANGED_TOOL_NOTE + '”; big = “xxx'),
-            'a value in full: ' + changedArgs.slice(0, 80));
-     assert(changedArgs.endsWith('x… (cut: too long to run)'), 'a cut is said');
+     const changedArgs = Array.from(changedSteps[1].querySelectorAll('.tool-arg'))
+         .map((r) => r.textContent);
+     assert.strictEqual(changedArgs.length, 2, 'a row for each value');
+     assert.strictEqual(changedArgs[0], 'note = “' + CHANGED_TOOL_NOTE + '”',
+                        'a value in full: ' + changedArgs[0].slice(0, 80));
+     assert(changedArgs[1].startsWith('big = “xxx'), 'its own row');
+     assert(changedArgs[1].endsWith('x… (cut: too long to run)'), 'a cut is said');
      assert.strictEqual(changedSteps[1].querySelectorAll('b').length, 0);
      assert.strictEqual(changedSteps[2].querySelector('.etype small').textContent,
          'Fill your saved password', 'a saved-password step says so');
@@ -1930,10 +1953,11 @@ const PAGES = [
      assert.strictEqual(changedSteps[5].querySelectorAll('.review-note').length, 0,
                         'no "a run stops" note for a tool given nothing withheld');
      const bidiArgs = changedSteps[5].querySelector('.tool-args');
-     assert.strictEqual(bidiArgs.textContent,
-                        'account = “\uFFFD87654321\uFFFD”; amount = 100',
-                        'a bidi override shown, as it runs');
-     assert.strictEqual(bidiArgs.querySelectorAll('bdi').length, 2,
+     assert.deepStrictEqual(
+         Array.from(bidiArgs.querySelectorAll('.tool-arg')).map((r) => r.textContent),
+         ['account = “\uFFFD87654321\uFFFD”', 'amount = 100'],
+         'a bidi override shown, as it runs');
+     assert.strictEqual(bidiArgs.querySelectorAll('bdi.ta-v').length, 2,
                         'each value isolated');
      assert(/fills in and sends a form/.test(changedSteps[5].textContent));
      const assertTarget = Array.from(changedSteps[6].querySelectorAll('input.inp'))
@@ -1965,8 +1989,9 @@ const PAGES = [
      const toolCard = Array.from(doc.querySelectorAll('#edSteps .estep')).find(
          (c) => c.querySelector('.tool-args'));
      assert(toolCard, 'a site-tool step');
-     assert.strictEqual(toolCard.querySelector('.tool-args').textContent,
-         'id = “<img src=x onerror=alert(1)>”; qty = 2; note = “{{tool_note}}”');
+     assert.deepStrictEqual(
+         Array.from(toolCard.querySelectorAll('.tool-arg')).map((r) => r.textContent),
+         ['id = “<img src=x onerror=alert(1)>”', 'qty = 2', 'note = “{{tool_note}}”']);
      assert(/In the page’s frame from https:\/\/<b>w<\/b>\.example \(frame \/c\)/.test(toolCard.textContent));
      assert.strictEqual(toolCard.querySelector('.tool-name').textContent,
          '“add_to_cart” of https://www.example.com');

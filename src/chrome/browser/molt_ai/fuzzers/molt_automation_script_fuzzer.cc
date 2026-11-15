@@ -17,7 +17,8 @@
 // the workflow is written and read back; a file the browser didn't write,
 // once clamped, may do nothing on its own (CASUAL, no sites, never fired
 // nor run by another workflow), keeps only what the Agent studio's review
-// shows (the allowlist: step types, fields, extra keys, no default value),
+// shows (the allowlist: step types, fields, extra keys, no control
+// character in a one-line field or a site tool's value, no default value),
 // clamped again is the same, and its digest is what a reader of its saved
 // file computes; an unconfirmed draft's effective trust is CASUAL, whatever
 // its file says.
@@ -191,6 +192,28 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           CHECK(std::find(std::begin(kToolKeys), std::end(kToolKeys), key) !=
                 std::end(kToolKeys))
               << key;
+        }
+        // No value the review would lay out as lines or space.
+        const auto shown = [](std::string_view text) {
+          for (char ch : text) {
+            const unsigned char c = static_cast<unsigned char>(ch);
+            CHECK(c >= 0x20 && c != 0x7F) << "a tool value laid out";
+          }
+        };
+        if (const base::DictValue* args = tool->FindDict("args")) {
+          for (const auto [name, value] : *args) {
+            shown(name);
+            if (value.is_string()) {
+              shown(value.GetString());
+            }
+            if (value.is_list()) {
+              for (const base::Value& item : value.GetList()) {
+                if (item.is_string()) {
+                  shown(item.GetString());
+                }
+              }
+            }
+          }
         }
       }
     }

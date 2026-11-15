@@ -1501,16 +1501,18 @@ function toolStep(s){return (s.extra&&typeof s.extra.tool==='object'&&s.extra.to
 function toolArgsNode(s){
   var t=toolStep(s);
   var args=(t.args&&typeof t.args==='object'&&!Array.isArray(t.args))?t.args:{};
-  // Each value on its own, isolated (one can't reorder the others), its
-  // line breaks shown.
+  // Each value on its own line, in a box of its own, isolated: one can't
+  // reorder, pass for or push out of view the others (a long one scrolls
+  // in its box). Its line breaks are shown.
   var keys=Object.keys(args), list=h('div',{'class':'tool-args'});
-  keys.slice(0,TOOL_SHOWN_ARGS).forEach(function(k,i){
+  keys.slice(0,TOOL_SHOWN_ARGS).forEach(function(k){
     var v=args[k];
-    if(i)list.appendChild(document.createTextNode('; '));
-    list.appendChild(h('bdi',{},toolText(k)+' = '+toolText(typeof v==='string'?('“'+v+'”'):JSON.stringify(v))));
+    list.appendChild(h('div',{'class':'tool-arg'},[
+      h('bdi',{'class':'ta-k'},toolText(k)),' = ',
+      h('bdi',{'class':'ta-v'},toolText(typeof v==='string'?('“'+v+'”'):JSON.stringify(v)))]));
   });
   if(keys.length>TOOL_SHOWN_ARGS){
-    list.appendChild(document.createTextNode('; and '+(keys.length-TOOL_SHOWN_ARGS)+' more (too many to run)'));
+    list.appendChild(h('div',{'class':'tool-arg'},'and '+(keys.length-TOOL_SHOWN_ARGS)+' more (too many to run)'));
   }
   if(!keys.length)list.appendChild(document.createTextNode('nothing'));
   var kids=[h('div',{'class':'lbl'},'The site’s tool'),
@@ -3382,8 +3384,11 @@ button,input,textarea,select{font-family:inherit}
 .frame-tools .ft-pair{flex:1;min-width:0;word-break:break-all}
 .frame-tools .ft-when{font-size:.6875rem;color:var(--muted)}
 .frame-tools .ft-forget{font-size:.6875rem;padding:4px 9px}
-.tool-args{white-space:pre-wrap}
 .tool-args bdi{unicode-bidi:isolate}
+.tool-arg+.tool-arg{margin-top:6px}
+.tool-arg .ta-k{font-family:var(--mono);font-weight:600}
+.tool-arg .ta-v{display:block;margin-top:3px;padding:3px 7px;border-radius:6px;border:1px solid var(--border);
+  white-space:pre-wrap;max-height:8em;overflow:auto}
 .tool-args,.tool-name{font-size:.75rem;word-break:break-word;padding:6px 9px;border-radius:9px;
   border:1px solid var(--border);background:rgba(255,255,255,0.03)}
 .trust-act .btn{flex:1;font-size:.75rem;padding:8px 10px}

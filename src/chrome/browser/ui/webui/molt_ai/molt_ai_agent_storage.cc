@@ -465,6 +465,13 @@ Answer SaveRoutine(const StudioPlaces& places,
   if (!existing && in_shared_storage == Holds::kOrdinary) {
     return Refused(kVoiceStepsNotHere);
   }
+  // An edit of a routine gone or unreadable since the page read it
+  // (deleted in another view or by voice): saved as a new routine, a draft
+  // the page was shown (one changed outside the browser, which voice mode
+  // never confirms on its sites alone) would no longer be one.
+  if (!request.new_workflow && !existing) {
+    return Refused(kGoneSinceOpened);
+  }
   // The page edited a draft that isn't one any more (its sites confirmed
   // meanwhile, by voice or in another view): saved under that confirmation,
   // steps it never covered would run.

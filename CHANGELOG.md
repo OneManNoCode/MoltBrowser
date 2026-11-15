@@ -367,9 +367,10 @@ For longer narrative posts behind each entry see
   page are dropped, so a step may need recording again if its page has
   changed; steps the review can't show in full (conditions and loops, page
   snapshots, scripts, AI decisions and extractions, a step that runs another
-  workflow, a step whose text holds a line break or a hidden character) are
-  removed; the default values of its variables, and its schedule's time zone
-  and end date, are cleared. Your existing workflows are kept exactly as
+  workflow, a step whose text holds a line break or a hidden character, or
+  that gives a site's tool a value with a line break) are removed; the
+  default values of its variables, and its schedule's time zone and end
+  date, are cleared. Your existing workflows are kept exactly as
   they are the first time you start this version. Run history and the last
   time a schedule ran don't count as changes, and an imported workflow's
   schedule starts afresh from the import. If you use two copies of
