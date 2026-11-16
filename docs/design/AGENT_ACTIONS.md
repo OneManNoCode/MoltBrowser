@@ -2899,8 +2899,8 @@ All in `molt_ai_unittests` except the last item:
   whatever the file says, a shorter one kept, TRUSTED's own, a
   non-positive TRUSTED one none); below TRUSTED each run limit within its
   default (a lower one kept, TRUSTED's own kept, a draft's bounded); a
-  run stops one page or one byte past a limit at CASUAL and APPROVED,
-  never at TRUSTED or ADMIN; a lower limit in its own words; a policy that
+  run stops one page or one byte past a limit at CASUAL, never at
+  APPROVED, TRUSTED or ADMIN; a lower limit in its own words; a policy that
   isn't a run's held to the defaults.
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
@@ -3264,15 +3264,17 @@ All in `molt_ai_unittests` except the last item:
     with its sites (`VoiceRoutineStore::ConfirmSites()` refuses any changed
     routine anyway).
 - **Closed since** (the workflow-gaps-c change):
-  - below TRUSTED a run is held to its policy's `max_navigations` (default
+  - a CASUAL run (a workflow nobody has vouched for: an import, a
+    confirmed change) is held to its policy's `max_navigations` (default
     20) and `max_network_bytes` (default 200 MB). `EffectivePolicy()`
-    keeps each within (0, default], as it does the run time: a lower
-    stored one is kept, anything else is the default. TRUSTED and ADMIN
-    keep their stored values and are held to neither: no page sets them,
-    and a long Trusted workflow (a loop over many pages) must not start
-    failing; they keep their run time. The runner's `RunLimitObserver`, a
+    keeps each within (0, default] below TRUSTED, as it does the run time:
+    a lower stored one is kept, anything else is the default. APPROVED
+    (the user recorded or approved it), TRUSTED and ADMIN are held to
+    neither (`RunLimitMessage()`): no page sets them, and a long workflow
+    the user made (a loop over many pages) must not start failing; they
+    keep their run time. The runner's `RunLimitObserver`, a
     `content::WebContentsObserver` on the run's tab, is made in `Run()`
-    after the refusals for any run below TRUSTED (in practice the run
+    after the refusals for a CASUAL run (in practice the run
     window's runs; the chat's one-step actions run at TRUSTED and are
     never counted). From the run's start it counts:
     - each document the tab's primary main frame commits by a navigation
@@ -3530,14 +3532,14 @@ All in `molt_ai_unittests` except the last item:
 > them, so a card left open no longer undoes a schedule changed in Agent
 > mode or another tab.
 >
-> **A workflow below Trusted stops after 20 pages or 200 MB in one run.**
-> A workflow that isn't set to Trusted now stops, on the step it is at,
+> **A Casual workflow stops after 20 pages or 200 MB in one run.**
+> A workflow nobody has vouched for yet now stops, on the step it is at,
 > once a run has opened more than 20 pages (each page opened, reloaded, or
 > reached by a link or a redirect; not a change within the same page, nor
 > the run window's first page) or its pages have loaded more than 200 MB.
-> Its result says which. A lower limit in its file is kept. Approving a
-> workflow doesn't lift these limits; only Trusted (in
-> molt://ai-automation) does. The limits don't count downloads, other
+> Its result says which. A lower limit in its file is kept. It applies to
+> a Casual workflow (an import, a confirmed change): approving it, or
+> recording it yourself, lifts both limits. The limits don't count downloads, other
 > windows a page opens, live connections, or a load in progress or cut
 > off.
 >

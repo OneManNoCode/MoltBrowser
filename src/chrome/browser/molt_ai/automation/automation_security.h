@@ -170,11 +170,11 @@ class AutomationSecurity {
   // Why a run under |policy| (its EffectivePolicy()) must stop, having used
   // |usage|: it opened more than max_navigations pages, or its pages loaded
   // more than max_network_bytes from the network (pages first). "" while it
-  // is within both, and always at TRUSTED and above: no page sets these
-  // limits, so a Trusted workflow that opens many pages keeps running, held
-  // only to its run time. A limit outside (0, default] is the default.
-  // Trusting a workflow (Approved) doesn't lift it, so the runner's stop
-  // isn't a needs-trust block.
+  // is within both, and always at APPROVED and above: the limits bound a
+  // workflow nobody has vouched for (an import, a confirmed change), and no
+  // page sets them, so a workflow the user recorded or approved that opens
+  // many pages keeps running, held only to its run time. A limit outside
+  // (0, default] is the default.
   static std::string RunLimitMessage(const SecurityPolicy& policy,
                                      const RunUsage& usage);
 

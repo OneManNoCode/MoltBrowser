@@ -307,31 +307,34 @@ TEST(AutomationSecurityTest, EffectivePolicyBoundsTheRunLimitsBelowTrusted) {
   EXPECT_EQ(p.max_network_bytes, defaults.max_network_bytes);
 }
 
-// Below TRUSTED a run stops one page or one byte past a limit, Approved too
-// (trusting a workflow doesn't lift one); at its limits it goes on. TRUSTED
-// and ADMIN are held to neither.
+// A Casual run stops one page or one byte past a limit; at its limits it
+// goes on. A workflow the user recorded or approved (APPROVED and above)
+// is held to neither.
 TEST(AutomationSecurityTest, RunLimitMessageStopsARunPastItsLimits) {
   const SecurityPolicy defaults;
   const uint64_t max_bytes = static_cast<uint64_t>(defaults.max_network_bytes);
-  for (TrustLevel trust : {TrustLevel::CASUAL, TrustLevel::APPROVED}) {
+  for (TrustLevel trust : {TrustLevel::CASUAL}) {
     Script script;
     script.security.trust = trust;
     const SecurityPolicy p = AutomationSecurity::EffectivePolicy(script);
     EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {20, max_bytes}), "");
     EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {21, 0}),
               "Stopped: this run opened more than 20 pages, the most this "
-              "workflow may open in one run. Only workflows set to Trusted "
-              "in molt://ai-automation have no such limit.");
+              "workflow may open in one run. Approve the workflow (Trust) if "
+              "you made it or checked it: an approved workflow has no such "
+              "limit.");
     EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {0, max_bytes + 1}),
               "Stopped: this run's pages loaded more than 200 MB, the most "
-              "this workflow may load in one run. Only workflows set to "
-              "Trusted in molt://ai-automation have no such limit.");
+              "this workflow may load in one run. Approve the workflow "
+              "(Trust) if you made it or checked it: an approved workflow "
+              "has no such limit.");
     // Past both: the pages are named.
     EXPECT_NE(AutomationSecurity::RunLimitMessage(p, {21, max_bytes + 1})
                   .find("more than 20 pages,"),
               std::string::npos);
   }
-  for (TrustLevel trust : {TrustLevel::TRUSTED, TrustLevel::ADMIN}) {
+  for (TrustLevel trust :
+       {TrustLevel::APPROVED, TrustLevel::TRUSTED, TrustLevel::ADMIN}) {
     SecurityPolicy p;
     p.trust = trust;
     EXPECT_EQ(AutomationSecurity::RunLimitMessage(

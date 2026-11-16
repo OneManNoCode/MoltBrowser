@@ -140,8 +140,8 @@ T WithinLimit(T value, T limit) {
 
 // Ends RunLimitMessage()'s words: only TRUSTED lifts a run's limits.
 constexpr char kRunLimitAdvice[] =
-    " Only workflows set to Trusted in molt://ai-automation have no such "
-    "limit.";
+    " Approve the workflow (Trust) if you made it or checked it: an "
+    "approved workflow has no such limit.";
 
 // A positive byte limit as the user reads it: in whole MB from 1 MB (the
 // default is 200 MB), else in bytes.
@@ -531,7 +531,7 @@ base::TimeDelta AutomationSecurity::RunTimeLimit(const SecurityPolicy& policy) {
 // static
 std::string AutomationSecurity::RunLimitMessage(const SecurityPolicy& policy,
                                                 const RunUsage& usage) {
-  if (policy.trust >= TrustLevel::TRUSTED) {
+  if (policy.trust >= TrustLevel::APPROVED) {
     return std::string();
   }
   // EffectivePolicy() already keeps both within (0, default] below TRUSTED;

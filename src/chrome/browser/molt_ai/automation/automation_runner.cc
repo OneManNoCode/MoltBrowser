@@ -616,13 +616,14 @@ void AutomationRunner::Run(Script script,
   run_deadline_timer_.Start(FROM_HERE, limit, this,
                             &AutomationRunner::OnRunDeadline);
 
-  // Below TRUSTED the run's tab may open at most policy_.max_navigations
-  // pages and load at most policy_.max_network_bytes
+  // At CASUAL (nobody has vouched for the workflow: an import, a confirmed
+  // change) the run's tab may open at most policy_.max_navigations pages
+  // and load at most policy_.max_network_bytes
   // (AutomationSecurity::RunLimitMessage()), counted from here: the run
   // window's first page, already loading, isn't a page the run opened, but
   // what it loads counts. Unretained: |run_limits_| is a member, and runs
   // the callback only while it lives.
-  if (target_contents_ && policy_.trust < TrustLevel::TRUSTED) {
+  if (target_contents_ && policy_.trust == TrustLevel::CASUAL) {
     run_limits_ = std::make_unique<RunLimitObserver>(
         target_contents_.get(), policy_,
         base::BindOnce(&AutomationRunner::OnRunLimitExceeded,

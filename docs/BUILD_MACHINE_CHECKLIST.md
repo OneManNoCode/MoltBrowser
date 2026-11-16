@@ -2892,10 +2892,10 @@ WEB_AI_APIS.md §12):
     window's first page doesn't count), with "Stopped: this run opened
     more than 20 pages, …"; the studio says "Failed at step 2" with no
     Trust & re-run button, and the Audit log lists `step_blocked` and
-    `run_failed` with that text. Set it Approved: it still stops. Set it
-    Trusted: it runs the full 60 s;
-  - an Approved workflow on a page whose script `fetch()`es a 250 MB file
-    from the same server, then waits: it stops once that load finishes,
+    `run_failed` with that text. Approve it (Trust): it runs the full
+    60 s;
+  - a Casual (imported) workflow on a page whose script `fetch()`es a
+    250 MB file from the same server, then waits: it stops once that load finishes,
     with "Stopped: this run's pages loaded more than 200 MB, …";
   - the same reload workflow imported with `"max_navigations": 3` (an
     import keeps a lower one) stops at "more than 3 pages";
@@ -2907,8 +2907,8 @@ WEB_AI_APIS.md §12):
     self-reloading page still offers Trust & re-run with its own message,
     not the page limit's;
   - the chat's `/navigate` and `/click` in your own tab are never stopped
-    by either limit (they run at Trusted); a Trusted scheduled workflow
-    with a loop over 30 pages still completes;
+    by either limit (they run at Trusted); a workflow you recorded
+    (Approved) with a loop over 30 pages still completes;
   - time limit: write a `.molt` with `"max_runtime_seconds": 20`, a
     `navigate` to a real https page and a `wait_for` `#never` with
     `"timeout_ms": 600000`. Import it in molt://ai-automation and run it
