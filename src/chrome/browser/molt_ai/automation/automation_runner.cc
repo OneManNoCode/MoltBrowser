@@ -2097,46 +2097,36 @@ void AutomationRunner::DoWaitFor(const Step& s) {
     OnStepFinished(false, "Empty selector");
     return;
   }
-  // Capture deadline by reference via copy into the lambda.
-  auto deadline = base::TimeTicks::Now() + base::Milliseconds(s.timeout_ms);
-  auto poll = std::make_shared<base::OnceClosure>();
-  *poll = base::BindOnce(
-      [](base::WeakPtr<AutomationRunner> self, std::string sel,
-         base::TimeTicks deadline,
-         std::shared_ptr<base::OnceClosure> poll_holder) {
-        if (!self) return;
-        std::string js = base::StringPrintf(
-            kHasSelectorJSTemplate, JSQuote(sel).c_str());
-        self->EvalJS(js, base::BindOnce(
-            [](base::WeakPtr<AutomationRunner> self, std::string sel,
-               base::TimeTicks deadline,
-               std::shared_ptr<base::OnceClosure> poll_holder,
-               base::Value v) {
-              if (!self) return;
-              bool matched = v.is_bool() && v.GetBool();
-              if (matched) {
-                self->OnStepFinished(true, "Selector appeared");
-                return;
-              }
-              if (base::TimeTicks::Now() >= deadline) {
-                self->OnStepFinished(false, "Timed out waiting for selector");
-                return;
-              }
-              // Re-arm.
-              base::SequencedTaskRunner::GetCurrentDefault()
-                  ->PostDelayedTask(
-                      FROM_HERE,
-                      base::BindOnce(
-                          [](std::shared_ptr<base::OnceClosure> p) {
-                            if (p && *p) std::move(*p).Run();
-                          },
-                          poll_holder),
-                      base::Milliseconds(250));
-            },
-            self, sel, deadline, poll_holder));
-      },
-      weak_factory_.GetWeakPtr(), sel, deadline, poll);
-  std::move(*poll).Run();
+  PollWaitFor(std::move(sel),
+              base::TimeTicks::Now() + base::Milliseconds(s.timeout_ms));
+}
+
+void AutomationRunner::PollWaitFor(std::string sel, base::TimeTicks deadline) {
+  const std::string js =
+      base::StringPrintf(kHasSelectorJSTemplate, JSQuote(sel).c_str());
+  EvalJS(js,
+         base::BindOnce(&AutomationRunner::OnWaitForPolled,
+                        weak_factory_.GetWeakPtr(), std::move(sel), deadline));
+}
+
+void AutomationRunner::OnWaitForPolled(std::string sel,
+                                       base::TimeTicks deadline,
+                                       base::Value matched) {
+  if (matched.is_bool() && matched.GetBool()) {
+    OnStepFinished(true, "Selector appeared");
+    return;
+  }
+  if (base::TimeTicks::Now() >= deadline) {
+    OnStepFinished(false, "Timed out waiting for selector");
+    return;
+  }
+  // Check again in 250 ms. Bound to this step's weak pointer: a step that
+  // ended (timed out, the run stopped) drops the next check.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&AutomationRunner::PollWaitFor, weak_factory_.GetWeakPtr(),
+                     std::move(sel), deadline),
+      base::Milliseconds(250));
 }
 
 void AutomationRunner::DoExtract(const Step& s) {

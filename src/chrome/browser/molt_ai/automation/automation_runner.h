@@ -179,6 +179,11 @@ class AutomationRunner {
   void DoKeypress(const Step& s);
   void DoWait(const Step& s);
   void DoWaitFor(const Step& s);
+  // A wait-for's checks for its selector, every 250 ms until |deadline|.
+  void PollWaitFor(std::string sel, base::TimeTicks deadline);
+  void OnWaitForPolled(std::string sel,
+                       base::TimeTicks deadline,
+                       base::Value matched);
   void DoExtract(const Step& s);
   void DoAIDecide(const Step& s);
   void DoAIExtract(const Step& s);

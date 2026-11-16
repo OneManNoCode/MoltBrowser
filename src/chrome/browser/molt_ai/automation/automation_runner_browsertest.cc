@@ -42,6 +42,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
 #include "net/http/http_status_code.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -159,6 +160,27 @@ IN_PROC_BROWSER_TEST_F(AutomationRunnerDeadlineBrowserTest,
   EXPECT_TRUE(freed);
 }
 
+// A wait-for checks for its selector every 250 ms: one that appears a
+// second in is found then, not only once its timeout has passed and the
+// step is tried again.
+IN_PROC_BROWSER_TEST_F(AutomationRunnerDeadlineBrowserTest,
+                       AWaitForFindsALateElementWhenItAppears) {
+  ASSERT_TRUE(content::ExecJs(
+      web_contents(),
+      "setTimeout(() => { const d = document.createElement('div');"
+      " d.id = 'late'; document.body.appendChild(d); }, 1000);"));
+  Step wait_for = MakeStep(StepType::WAIT_FOR, "#late");
+  wait_for.timeout_ms = 8000;
+  std::unique_ptr<AutomationRunner> runner = MakeRunner();
+  std::optional<RunResult> result;
+  runner->Run(
+      OneStep(std::move(wait_for), TrustLevel::TRUSTED, 30), base::DoNothing(),
+      base::BindLambdaForTesting([&](RunResult r) { result = std::move(r); }));
+  ASSERT_TRUE(base::test::RunUntil([&] { return result.has_value(); }));
+  EXPECT_TRUE(result->success) << result->message;
+  EXPECT_LT(result->duration_ms, 6000);
+}
+
 // A 30 s wait ends at a one-second limit (below TRUSTED, a shorter limit
 // is kept), its runner deleted inside its own completion callback, as the
 // run window's holder deletes it.
@@ -259,7 +281,7 @@ IN_PROC_BROWSER_TEST_F(AutomationRunnerDeadlineBrowserTest,
   const size_t windows = GetAllBrowserWindowInterfaces().size();
   const base::TimeTicks start = base::TimeTicks::Now();
   // It runs the workflow as stored, read again by its id.
-  RunScriptInBackgroundBrowser(browser()->profile(), BackgroundScript(),
+  RunScriptInBackgroundBrowser(GetProfile(), BackgroundScript(),
                                /*minimize=*/true);
   ASSERT_TRUE(base::test::RunUntil(
       [&] { return AgentInboxRegistry::Get()->IsRunning(kBackgroundId); }));

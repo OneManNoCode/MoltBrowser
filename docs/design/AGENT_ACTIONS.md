@@ -3345,7 +3345,7 @@ All in `molt_ai_unittests` except the last item:
     that may be empty). A registry written as the host (`https://com/…`)
     matches only itself (`DomainMatchesWhitelist()`). Every consumer reads
     it with no change of its own: `EffectivePolicy()`, the review
-    (`DraftSites`, the review token), `ConfirmDraftSites()`,
+    (`SetDraftSites()`, the review token), `ConfirmDraftSites()`,
     `MayConfirmWithoutSites()` (such a change now has a site, so it is
     confirmed with it, never with none), `RunWindowStartURL()`,
     `RUN_SCRIPT` and voice. A workflow imported with only such addresses
