@@ -1772,6 +1772,10 @@ const PAGES = [
          return {id: 'c3', name: w.name, trust: 'casual', draftSites: [],
                  confirmWithoutSites: true, reviewToken: 'f'.repeat(64)};
        }
+       if (w.id === 'c4') {
+         return {id: 'c4', name: w.name, trust: 'casual', draftSites: [],
+                 draftSiteCount: 201, reviewToken: '9'.repeat(64)};
+       }
        return {id: w.id || w.recordedId || 'wf_new', name: w.name, trust: 'casual'};
      },
      saveSchedule: {ok: true, nextFire: 0, trigger: SAVED_TRIGGER},
@@ -2237,6 +2241,59 @@ const PAGES = [
          confirmWithoutSites: flag, reviewToken: 'e'.repeat(64)});
        assert(/It has no site to confirm\. Add a “Go to page” step and save\./.test(
            noSitePanel().textContent), what);
+       assert(!doc.getElementById('draftConfirmBtn'), what);
+     }
+     // As many sites as a review lists (kMaxReviewSites, 200; it listed 20
+     // before): every one shown, none in a box that hides some, before its
+     // button, and the confirm sends exactly them.
+     const reviewSites = Array.from({length: 200}, (_, i) => 'site' + i + '.example');
+     const manySitesDraft = () => window.openEditorDraft({
+       id: 'c4', name: 'Many sites', variables: {},
+       steps: [{type: 'navigate', target: 'https://site0.example/'}],
+       draft: true, changedOutside: true, draftSites: reviewSites, draftSiteCount: 200,
+       reviewToken: 'a'.repeat(64)});
+     manySitesDraft();
+     const sitesPanel = doc.getElementById('edTrust');
+     assert.deepStrictEqual(
+         Array.from(sitesPanel.querySelectorAll('.draft-site')).map((e) => e.textContent),
+         reviewSites, 'every site listed');
+     const manyBtn = doc.getElementById('draftConfirmBtn');
+     assert.strictEqual(manyBtn.textContent, 'Confirm these 200 sites');
+     assert(sitesPanel.querySelector('.draft-sites').compareDocumentPosition(manyBtn) &
+            window.Node.DOCUMENT_POSITION_FOLLOWING, 'the button after the last site');
+     manyBtn.click();
+     assert.strictEqual(draftConfirmCalls.pop(),
+                        JSON.stringify(['c4', reviewSites, 'a'.repeat(64)]),
+                        'exactly the sites shown, with the token');
+     await tick();
+     assert.strictEqual(sitesPanel.querySelectorAll('.draft-site').length, 0, 'confirmed');
+     // Edited, and saved first: its saved steps target more than a review
+     // lists, so it says how many and offers no confirm.
+     manySitesDraft();
+     window.editorState.steps.push({type: 'navigate', target: 'https://site200.example/'});
+     const tooManyConfirmsBefore = draftConfirmCalls.length;
+     doc.getElementById('draftConfirmBtn').click();
+     await tick();
+     assert.strictEqual(draftConfirmCalls.length, tooManyConfirmsBefore, 'saved, not confirmed');
+     assert(sitesPanel.textContent.includes(
+         'Its steps open 201 sites, more than the 200 a review can list, so it can’t ' +
+         'be confirmed here.'), 'says how many, after a save');
+     assert(!doc.getElementById('draftConfirmBtn'), 'no confirm after the save');
+     // More than a review lists: the browser's count, or a longer list
+     // whatever count comes with it. No site listed, no button.
+     const overSites = Array.from({length: 201}, (_, i) => 'site' + i + '.example');
+     for (const [sites, count, said] of [[[], 201, 201], [[], 5000, 5000],
+                                         [overSites, undefined, 201], [overSites, 3, 201]]) {
+       const what = JSON.stringify([sites.length, count]);
+       window.openEditorDraft({
+         id: 'c5', name: 'Too many', variables: {},
+         steps: [{type: 'navigate', target: 'https://site0.example/'}],
+         draft: true, changedOutside: true, draftSites: sites, draftSiteCount: count,
+         reviewToken: 'a'.repeat(64)});
+       const panel = doc.getElementById('edTrust');
+       assert(panel.textContent.includes('Its steps open ' + said +
+                                         ' sites, more than the 200 a review can list'), what);
+       assert.strictEqual(panel.querySelectorAll('.draft-site').length, 0, what);
        assert(!doc.getElementById('draftConfirmBtn'), what);
      }
      // A run's question: shown in the run's ticker as text; "Use it" and

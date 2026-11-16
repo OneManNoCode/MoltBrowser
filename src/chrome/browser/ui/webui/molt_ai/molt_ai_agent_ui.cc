@@ -85,6 +85,7 @@ namespace {
 
 using molt_ai::agent_studio::Answer;
 using molt_ai::agent_studio::Holds;
+using molt_ai::agent_studio::kMaxReviewSites;
 using molt_ai::agent_studio::RoutinesListing;
 using molt_ai::agent_studio::SaveRequest;
 using molt_ai::agent_studio::StudioPlaces;
@@ -1204,7 +1205,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
 
   // The draft review's "Confirm sites": [callback_id, id, [site, ...],
   // review token], the sites the panel showed (from getWorkflow /
-  // saveWorkflow's draftSites) and the reviewToken of what it showed.
+  // saveWorkflow's draftSites: at most kMaxReviewSites, every one its
+  // steps target) and the reviewToken of what it showed.
   // Like promoteTrust, honoured only with a fresh user activation (a real
   // click), and only when the draft is still exactly what was shown (the
   // token) and the sites are exactly the ones its steps target now
@@ -1230,7 +1232,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       ResolveDict(args, std::move(out));
       return;
     }
-    if (args.size() < 3 || !args[1].is_string() || !args[2].is_list()) {
+    if (args.size() < 3 || !args[1].is_string() || !args[2].is_list() ||
+        args[2].GetList().size() > kMaxReviewSites) {
       ResolveDict(args, std::move(out));
       return;
     }
@@ -1242,7 +1245,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     }
     std::vector<std::string> shown;
     for (const base::Value& v : args[2].GetList()) {
-      if (!v.is_string() || shown.size() >= 64) {
+      if (!v.is_string()) {
         ResolveDict(args, std::move(out));
         return;
       }
@@ -2268,15 +2271,27 @@ function openEditor(id){
       draft:!!(wf.security&&wf.security.sites_unconfirmed===true),
       changedOutside:!!(wf.security&&wf.security.changed_outside===true),
       draftSites:wf.draftSites,
+      draftSiteCount:wf.draftSiteCount,
       confirmWithoutSites:wf.confirmWithoutSites===true,
       reviewToken:wf.reviewToken
     });
   }).catch(function(){toast('Couldn’t open workflow','err');});
 }
-/* The sites a draft asks to confirm: strings from the browser, at most 20. */
+/* The most sites a review lists: the browser's kMaxReviewSites
+   (molt_ai_agent_storage.h), the most confirmDraftSites takes. */
+var MAX_REVIEW_SITES=200;
+/* The sites a draft asks to confirm: strings from the browser, every one
+   of them (it sends none when its steps target more than a review lists). */
 function cleanSites(list){
   if(!Array.isArray(list))return [];
-  return list.filter(function(s){return typeof s==='string'&&s.length>0&&s.length<=253;}).slice(0,20);
+  return list.filter(function(s){return typeof s==='string'&&s.length>0&&s.length<=253;}).slice(0,MAX_REVIEW_SITES);
+}
+/* How many sites a draft's steps target (|r|: getWorkflow's or a save's
+   answer): the browser's count, or as many as it listed when that is
+   more. Over MAX_REVIEW_SITES it isn't confirmed here. */
+function siteCountOf(r){
+  var n=Number.isSafeInteger(r.draftSiteCount)&&r.draftSiteCount>0?r.draftSiteCount:0;
+  return Math.max(n,Array.isArray(r.draftSites)?r.draftSites.length:0);
 }
 function openEditorDraft(wf){
   editorState={
@@ -2290,6 +2305,7 @@ function openEditorDraft(wf){
     draft:!!wf.draft,
     changedOutside:!!wf.changedOutside,
     draftSites:cleanSites(wf.draftSites),
+    draftSiteCount:siteCountOf(wf),
     // The browser says a change whose steps target no site may be
     // confirmed with none (only a real true counts).
     confirmWithoutSites:wf.confirmWithoutSites===true,
@@ -2378,7 +2394,7 @@ function confirmDraft(es,shown){
   var sent=shown.slice();
   sendWithPromise('confirmDraftSites',es.id,sent,es.reviewToken||'').then(function(r){
     if(!r||!r.ok){toast((r&&r.error)||'Couldn’t confirm the sites','err');return;}
-    es.draft=false;es.changedOutside=false;es.draftSites=[];es.reviewToken='';
+    es.draft=false;es.changedOutside=false;es.draftSites=[];es.draftSiteCount=0;es.reviewToken='';
     es.confirmWithoutSites=false;
     if(r.trust)es.trust=r.trust;
     // The schedule as confirmed (started over): the one opened would
@@ -2416,7 +2432,11 @@ function renderDraftPanel(box){
       (withheld?(': '+withheld+' value'+(withheld===1?'':'s')+' asked at each run'):'')+
       (secret?((withheld?', ':': ')+secret+' card or code field'+(secret===1?'':'s')+' you enter yourself'):'')+'.'));
   }
-  if(!sites.length&&es.confirmWithoutSites===true){
+  if(es.draftSiteCount>MAX_REVIEW_SITES){
+    // More than a review lists (the browser sends none of them, and
+    // confirmDraftSites takes no more): never confirmed here.
+    kids.push(h('div',{'class':'tp-s'},'Its steps open '+es.draftSiteCount+' sites, more than the '+MAX_REVIEW_SITES+' a review can list, so it can’t be confirmed here. Delete the steps you don’t want and save, or delete this workflow.'));
+  }else if(!sites.length&&es.confirmWithoutSites===true){
     // A change whose every address is a value's (the browser's
     // MayConfirmWithoutSites(): a fixed host before a value is a site it
     // lists, and none comes after a value):
@@ -2723,6 +2743,7 @@ function saveEditor(quiet){
       // confirm now confirms).
       if(es.draft){
         es.draftSites=cleanSites(r.draftSites);
+        es.draftSiteCount=siteCountOf(r);
         es.confirmWithoutSites=r.confirmWithoutSites===true;
         es.reviewToken=cleanToken(r.reviewToken);
       }

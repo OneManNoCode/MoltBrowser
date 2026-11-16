@@ -2955,7 +2955,15 @@ WEB_AI_APIS.md §12):
     stays on, the card says "Held until …" before its next fire, and
     nothing runs during the hour;
   - *Save schedule* on a card left open does change it (expected: the last
-    Save schedule wins); saved with a different schedule, it ends the hold.
+    Save schedule wins); saved with a different schedule, it ends the hold;
+  - the review's sites: write a `.molt` by hand with 25 "Go to page" steps
+    on 25 sites (`https://s1.example/` to `https://s25.example/`): Agent
+    mode's review lists all 25 before *Confirm these 25 sites*, and Confirm
+    makes it Casual, and molt://ai-automation's Audit log shows
+    `outside_change_confirmed` with all 25 hosts; with 201 such steps the
+    review says "Its steps open 201 sites, more than the 200 a review can
+    list" and offers no Confirm; delete one step and save: the 200 are
+    listed and Confirm works.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world

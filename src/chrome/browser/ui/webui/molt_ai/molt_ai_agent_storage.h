@@ -30,7 +30,8 @@
 // until confirmDraftSites, after a real click, with the review token of
 // exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6), its
 // schedule starting over. getWorkflow, and a save, answer a draft with its
-// draftSites, its reviewToken and confirmWithoutSites: whether it may be
+// draftSites (every site, or none past kMaxReviewSites) and
+// draftSiteCount, its reviewToken and confirmWithoutSites: whether it may be
 // confirmed with an empty list (a change whose steps target no site,
 // AutomationSecurity::MayConfirmWithoutSites()), which the browser
 // decides, never the page. A save that names a workflow (one the page
@@ -47,6 +48,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_AGENT_STORAGE_H_
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_AGENT_STORAGE_H_
 
+#include <cstddef>
 #include <optional>
 #include <set>
 #include <string>
@@ -229,9 +231,21 @@ std::string UnusedWorkflowId(const StudioPlaces& places,
                              std::string id,
                              const std::set<std::string>& minted);
 
+// The most sites a draft's review lists, and so the most confirmDraftSites
+// takes: every host an agent run's draft targets fits (one a step at most,
+// agent_draft::kMaxDraftSteps). A draft whose steps target more (a file
+// changed outside the browser, a draft given more steps in the editor)
+// lists none and isn't confirmed in the studio: the review shows every
+// site it confirms. The page mirrors it (MAX_REVIEW_SITES in
+// molt_ai_agent_ui.cc).
+inline constexpr size_t kMaxReviewSites = 200;
+
 // The sites an unconfirmed draft (agent_run_draft.h) asks the user to
-// confirm: the hosts its steps target, as the browser computes them.
-base::ListValue DraftSites(const automation::Script& script);
+// confirm, set in |out| for the page: "draftSiteCount", how many hosts its
+// steps target, as the browser computes them
+// (AutomationSecurity::HostsReferencedBy()), and "draftSites", every one of
+// them, or none when there are more than kMaxReviewSites.
+void SetDraftSites(base::DictValue& out, const automation::Script& script);
 
 // An unconfirmed draft's review token, which confirmDraftSites must bring
 // back: AutomationSecurity::SecurityDigest() of what the page was shown

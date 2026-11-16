@@ -246,6 +246,9 @@ source_set("unit_tests") {
     # The studio's and voice mode's saves on one sequence (TaskEnvironment).
     "//base/test:test_support",
 
+    # kMaxDraftSteps, which the review's site cap covers.
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+
     # The next run a saved schedule is shown with (NextFireTime()).
     "//chrome/browser/molt_ai/automation:scheduler",
 

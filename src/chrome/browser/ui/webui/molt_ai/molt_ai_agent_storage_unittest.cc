@@ -8,7 +8,8 @@
 // sequence never interleave; a workflow whose file was changed outside the
 // browser (workflow_record.h) is shown for review, neither runs nor is
 // scheduled or trusted, and is confirmed only as it was reviewed (with no
-// site when its steps target none, never an agent's draft); an edit
+// site when its steps target none, never an agent's draft; the review
+// lists every site it confirms, up to its cap); an edit
 // of a workflow gone since it was opened is refused, as is the edit of a
 // draft that is no longer one, an id sent is always an edit, a new one
 // never goes over another file, an interval schedule counts from when it
@@ -36,6 +37,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/agent_run_draft.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
@@ -580,6 +582,102 @@ TEST_F(AgentStudioStorageTest, EditingAWorkflowChangedOutsideKeepsItADraft) {
   confirm.sites = {"news.example"};
   confirm.review_token = *saved.out.FindString("reviewToken");
   EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true);
+}
+
+// Every agent draft's sites fit in a review (one host a step at most).
+static_assert(kMaxReviewSites >= automation::agent_draft::kMaxDraftSteps,
+              "every agent draft's sites fit in a review");
+
+// |count| sites, site0.example on, in that order.
+std::vector<std::string> Sites(size_t count) {
+  std::vector<std::string> sites;
+  for (size_t i = 0; i < count; ++i) {
+    sites.push_back("site" + base::NumberToString(i) + ".example");
+  }
+  return sites;
+}
+
+// A file planted with a "Go to page" step on each of |count| sites.
+Script ClaimingSites(const std::string& id, size_t count) {
+  Script script = Claiming(id);
+  script.steps.clear();
+  for (const std::string& site : Sites(count)) {
+    Step step;
+    step.type = StepType::NAVIGATE;
+    step.target = "https://" + site + "/";
+    script.steps.push_back(std::move(step));
+  }
+  return script;
+}
+
+std::vector<std::string> Listed(const Answer& answer) {
+  std::vector<std::string> sites;
+  if (const base::ListValue* listed = answer.out.FindList("draftSites")) {
+    for (const base::Value& site : *listed) {
+      sites.push_back(site.GetString());
+    }
+  }
+  return sites;
+}
+
+// The review lists every site a change's steps target, up to the most it
+// lists (it listed 20 before), and a confirm of exactly those confirms
+// them all.
+TEST_F(AgentStudioStorageTest, AReviewListsEverySiteItConfirms) {
+  UseRecord();
+  Plant(ClaimingSites("wf_1", kMaxReviewSites));
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  EXPECT_EQ(get.out.FindInt("draftSiteCount"),
+            static_cast<int>(kMaxReviewSites));
+  EXPECT_EQ(Listed(get), Sites(kMaxReviewSites));
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.sites = Listed(get);
+  confirm.review_token = *get.out.FindString("reviewToken");
+  EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true);
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_FALSE(stored->security.sites_unconfirmed);
+  EXPECT_EQ(stored->security.domain_whitelist, Sites(kMaxReviewSites));
+}
+
+// More sites than a review lists: none listed, their count given, and no
+// confirm takes them, not even exactly the sites its steps target (the
+// review couldn't have shown them all). A save answers the same; edited
+// down to the most a review lists, it is listed and confirmed.
+TEST_F(AgentStudioStorageTest,
+       AChangeOfMoreSitesThanAReviewListsIsntConfirmed) {
+  UseRecord();
+  Plant(ClaimingSites("wf_1", kMaxReviewSites + 1));
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  EXPECT_EQ(get.out.FindInt("draftSiteCount"),
+            static_cast<int>(kMaxReviewSites + 1));
+  ASSERT_TRUE(get.out.FindList("draftSites"));
+  EXPECT_TRUE(get.out.FindList("draftSites")->empty());
+  EXPECT_EQ(get.out.FindBool("confirmWithoutSites"), false);
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.review_token = *get.out.FindString("reviewToken");
+  for (size_t count : {size_t{0}, kMaxReviewSites, kMaxReviewSites + 1}) {
+    confirm.sites = Sites(count);
+    EXPECT_EQ(Ask(confirm).out.FindBool("ok"), false) << count;
+  }
+  EXPECT_TRUE(Shared().Load("wf_1")->security.sites_unconfirmed);
+
+  Answer saved = SaveSharedWorkflow(
+      places_, Save(ClaimingSites("wf_1", kMaxReviewSites + 1)),
+      Holds::kNothing);
+  EXPECT_EQ(saved.out.FindInt("draftSiteCount"),
+            static_cast<int>(kMaxReviewSites + 1));
+  EXPECT_TRUE(Listed(saved).empty());
+  saved = SaveSharedWorkflow(
+      places_, Save(ClaimingSites("wf_1", kMaxReviewSites)), Holds::kNothing);
+  EXPECT_EQ(Listed(saved), Sites(kMaxReviewSites));
+  ASSERT_TRUE(IsReviewToken(saved.out.FindString("reviewToken")));
+  confirm.sites = Listed(saved);
+  confirm.review_token = *saved.out.FindString("reviewToken");
+  EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true);
+  EXPECT_FALSE(Shared().Load("wf_1")->security.sites_unconfirmed);
 }
 
 // A file changed outside whose only address comes from a value: no site to

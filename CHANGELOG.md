@@ -72,6 +72,14 @@ For longer narrative posts behind each entry see
   own, and a Snooze or Skip made meanwhile ended. Those saves now keep the
   schedule, whether it is paused, and any hold as last saved; only *Save
   schedule* changes them.
+- **Agent mode's review lists every site it confirms.** The review of an
+  AI agent's draft, or of a workflow changed outside MoltBrowser, listed
+  at most 20 sites, while **Confirm** needs every site the steps open, so
+  one that opened more than 20 couldn't be confirmed. The review now lists
+  all of them, up to 200, before its **Confirm these N sites** button. A
+  workflow whose steps open more than 200 sites says how many and can't be
+  confirmed in Agent mode: delete the steps you don't want and save, or
+  delete the workflow.
 - **The chat's `/wait-for` works.** It was read as `/wait`. It now
   waits for the element the rest of the line names (`/wait-for .results
   li`), as a recorded wait-for step does.

@@ -3012,7 +3012,10 @@ All in `molt_ai_unittests` except the last item:
   and the token, audited `no_sites`; refused for an agent draft and a
   voice routine with no site; a save answers whether it may still be
   confirmed with none; a change whose address has a value after a fixed
-  host lists it and is confirmed only on it.
+  host lists it and is confirmed only on it; a review lists every site up
+  to `kMaxReviewSites` and is confirmed with them all, while more lists
+  none, gives their count and is confirmed by no list (exactly the steps'
+  sites included), a save answering the same.
 - `ui/webui/molt_ai/molt_ai_automation_storage_unittest.cc`: trust refused
   with the reason; a save keeps it a draft; an import is vouched for at
   CASUAL, and starts its schedule over (no last fire from the JSON, an
@@ -3071,7 +3074,10 @@ All in `molt_ai_unittests` except the last item:
   the token (saved first when edited), the toast, and no button without
   the browser's own `true` or for an agent draft; molt://ai-automation's
   Snooze and Skip send their own messages, the card's hold line, and the
-  buttons only for cron and interval schedules.
+  buttons only for cron and interval schedules; only its Save schedule
+  says it is one; a review of 200 sites lists every one before its button
+  and confirms exactly them, while more (the browser's count, or a longer
+  list, also after a save) says how many with no button.
 - Browser tests (build machine), `security/molt_data_folder_browsertest.cc`:
   the record is in the user data directory, not the test's data folder; a
   workflow planted after startup loads as a draft;
@@ -3344,6 +3350,17 @@ All in `molt_ai_unittests` except the last item:
     when the card sent none and showed the same schedule; an interval
     never started still stays so. A workflow not stored is still taken as
     an import, its schedule turned off.
+  - the studio's review lists every site a draft's steps target
+    (`HostsReferencedBy()`), up to `kMaxReviewSites` (200,
+    `molt_ai_agent_storage.h`); it listed at most 20 (`cleanSites()`),
+    while a confirmation needs exactly those sites, so a change or an
+    agent draft targeting more couldn't be confirmed. getWorkflow and a
+    save answer a draft with `draftSiteCount` and `draftSites` (all of
+    them, or none past 200); the panel lists them inline, every one before
+    **Confirm these N sites** (no box that scrolls), and the confirm sends
+    exactly that list. `confirmDraftSites` takes at most 200 (the handler,
+    and the storage's confirm before its locked update). Every agent draft
+    fits: one host a step at most, `kMaxDraftSteps` (200).
 - **Existing gaps left as they are** (separate changes):
   the Agent studio's Stop doesn't stop a run (`cancelRun`'s
   `HandleCancelRun()` only answers; `AutomationRunner::Cancel()` has no
@@ -3354,10 +3371,7 @@ All in `molt_ai_unittests` except the last item:
   browser's clock (setting the clock back during one makes it last longer
   by the same amount); Skip next pressed in the few milliseconds between a
   timer's reload of a due workflow and its claim of that fire can skip
-  that run as well as the next; the studio's review lists at most 20 sites (`cleanSites()`),
-  while a confirmation needs exactly the sites the steps target, so a
-  change whose steps target more than 20 can't be confirmed in the studio;
-  the run limits count only what the run's tab reports as its loads
+  that run as well as the next; the run limits count only what the run's tab reports as its loads
   finish: a load still open (a stream, media still buffering) counts when
   it ends, and a load cancelled before it finished (aborted by the page,
   or cut off when the page navigated away), downloads, WebSockets, WebRTC,
@@ -3371,6 +3385,12 @@ All in `molt_ai_unittests` except the last item:
   so a stale card's *Save step changes* puts back its values, *Save values
   as defaults* its steps, and *Save schedule* both (last write wins, as in
   the studio's editor; the schedule is safe from all but Save schedule).
+- **A draft whose steps target more than 200 sites** isn't confirmed in
+  the studio: its review says how many and offers no button; the user
+  deletes steps (and saves) or the workflow. No recorded workflow or agent
+  draft comes near; a longer list would be a review no one checks.
+  (`HostsReferencedBy()` de-duplicates with a linear search, so a file
+  naming tens of thousands of hosts is slow to open for review.)
 - **A change confirmed by a daily build before the workflow-gaps-c
   change** whose step has a fixed host before a value (shown then as that
   step's address, not listed, and refused) now runs on that host without a
@@ -3453,6 +3473,10 @@ All in `molt_ai_unittests` except the last item:
 > such as `https://shop.example/search?q={{q}}`, names that site: the
 > review lists it, and once you confirm it the workflow opens that site
 > with any value (the value only changes the page or the search there).
+>
+> The review lists every site the workflow's steps open, up to 200. One
+> whose steps open more says how many and can't be confirmed in Agent
+> mode: delete the steps you don't want, or the workflow.
 >
 > **Snooze and Skip in molt://ai-automation now hold cron schedules too**,
 > and Snooze no longer pushes an interval a whole interval past the hour.
