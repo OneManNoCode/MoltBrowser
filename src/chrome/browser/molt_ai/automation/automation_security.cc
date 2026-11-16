@@ -546,7 +546,10 @@ bool AutomationSecurity::ConfirmDraftSites(
   if (!script.security.sites_unconfirmed)
     return false;
   std::vector<std::string> sites = HostsReferencedBy(script.steps);
-  if (sites.empty())
+  // No site to confirm: confirmed with none only when the studio showed
+  // none and it may be (a change whose every address comes from a value).
+  // Its whitelist then becomes empty.
+  if (sites.empty() && !(shown.empty() && MayConfirmWithoutSites(script)))
     return false;
   std::vector<std::string> sorted_sites = sites;
   std::vector<std::string> sorted_shown = shown;
@@ -558,6 +561,13 @@ bool AutomationSecurity::ConfirmDraftSites(
   script.security.sites_unconfirmed = false;
   script.security.changed_outside = false;
   return true;
+}
+
+// static
+bool AutomationSecurity::MayConfirmWithoutSites(const Script& script) {
+  return script.security.sites_unconfirmed && script.security.changed_outside &&
+         script.security.trust < TrustLevel::TRUSTED &&
+         !HasVoiceSteps(script) && HostsReferencedBy(script.steps).empty();
 }
 
 // static

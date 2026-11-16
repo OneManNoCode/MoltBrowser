@@ -23,9 +23,10 @@
 // nor run by another workflow), keeps only what the Agent studio's review
 // shows (the allowlist: step types, fields, extra keys, no control
 // character in a one-line field or a site tool's value, no default value),
-// clamped again is the same, and its digest is what a reader of its saved
-// file computes; an unconfirmed draft's effective trust is CASUAL, whatever
-// its file says.
+// clamped again is the same, its digest is what a reader of its saved file
+// computes, and it is confirmed with no site only when its steps target
+// none (not a routine taught by voice), still opening no page by itself;
+// an unconfirmed draft's effective trust is CASUAL, whatever its file says.
 
 #include <algorithm>
 #include <cstddef>
@@ -219,6 +220,32 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
             }
           }
         }
+      }
+    }
+    // Confirmed with no site only when its steps target none and it isn't
+    // a routine taught by voice; then its whitelist is empty, so it opens
+    // no page by itself: no step's address is allowed (below TRUSTED), nor
+    // a run window's first page.
+    {
+      std::optional<Script> copy =
+          Script::FromJSONString(clamped.ToJSONString());
+      CHECK(copy);
+      const bool no_site =
+          AutomationSecurity::HostsReferencedBy(copy->steps).empty() &&
+          !HasVoiceSteps(*copy);
+      CHECK(AutomationSecurity::MayConfirmWithoutSites(*copy) == no_site);
+      CHECK(AutomationSecurity::ConfirmDraftSites(*copy, {}) == no_site);
+      CHECK(copy->security.sites_unconfirmed == !no_site);
+      if (no_site) {
+        CHECK(copy->security.domain_whitelist.empty());
+        CHECK(copy->security.trust == TrustLevel::CASUAL);
+        const SecurityPolicy confirmed =
+            AutomationSecurity::EffectivePolicy(*copy);
+        CHECK(confirmed.domain_whitelist.empty());
+        for (const Step& step : copy->steps) {
+          CHECK(!AutomationSecurity().AllowNavigation(confirmed, step.target));
+        }
+        CHECK(AutomationSecurity::RunWindowStartURL(*copy, 0).empty());
       }
     }
     // Clamping twice is clamping once (the review token holds), and the

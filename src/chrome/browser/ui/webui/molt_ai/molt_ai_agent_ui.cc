@@ -1214,7 +1214,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   // activation is consumed: ConsumeUserClick()). The page sends it only
   // when the editor shows what is saved (edits not saved yet are saved
   // first, and the sites they use shown for another click), and keeps the
-  // trigger it is answered with for its next save.
+  // trigger it is answered with for its next save. An empty list confirms
+  // a change whose steps target no site, which the browser accepts only
+  // when it may be confirmed with none
+  // (AutomationSecurity::MayConfirmWithoutSites(), getWorkflow's
+  // confirmWithoutSites): it becomes a CASUAL workflow on no site, with the
+  // same click and token.
   void HandleConfirmDraftSites(const base::ListValue& args) {
     AllowJavascript();
     base::DictValue out;
@@ -2263,6 +2268,7 @@ function openEditor(id){
       draft:!!(wf.security&&wf.security.sites_unconfirmed===true),
       changedOutside:!!(wf.security&&wf.security.changed_outside===true),
       draftSites:wf.draftSites,
+      confirmWithoutSites:wf.confirmWithoutSites===true,
       reviewToken:wf.reviewToken
     });
   }).catch(function(){toast('Couldn’t open workflow','err');});
@@ -2284,6 +2290,9 @@ function openEditorDraft(wf){
     draft:!!wf.draft,
     changedOutside:!!wf.changedOutside,
     draftSites:cleanSites(wf.draftSites),
+    // The browser says a change whose steps target no site may be
+    // confirmed with none (only a real true counts).
+    confirmWithoutSites:wf.confirmWithoutSites===true,
     reviewToken:cleanToken(wf.reviewToken)
   };
   editorState.savedName=editorState.name;
@@ -2354,9 +2363,38 @@ function renderTrustPanel(){
   ]));
 }
 
-/* A draft from an AI agent run: what to check, and "Confirm sites" for
-   exactly the sites the browser listed (call it straight from the click:
-   the browser checks for the gesture). */
+/* "Confirm" in a draft's review, for |shown|: the sites the panel listed,
+   or none for a change whose steps target no site. Call it straight from
+   the click: the browser checks for the gesture. The browser confirms what
+   is saved (the token is of that): edits not saved yet are saved first,
+   and what they target now shown for a click of its own. */
+function confirmDraft(es,shown){
+  if(editorChanged(es)){
+    saveEditor(true).then(function(id){
+      if(id!=null&&editorState===es)toast('Saved — check the sites, then confirm','ok');
+    });
+    return;
+  }
+  var sent=shown.slice();
+  sendWithPromise('confirmDraftSites',es.id,sent,es.reviewToken||'').then(function(r){
+    if(!r||!r.ok){toast((r&&r.error)||'Couldn’t confirm the sites','err');return;}
+    es.draft=false;es.changedOutside=false;es.draftSites=[];es.reviewToken='';
+    es.confirmWithoutSites=false;
+    if(r.trust)es.trust=r.trust;
+    // The schedule as confirmed (started over): the one opened would
+    // write back the last fire from before the change.
+    if(r.trigger&&typeof r.trigger.type==='string')es.trigger=r.trigger;
+    toast(sent.length?'Sites confirmed — it can run now'
+                     :'Confirmed — add a “Go to page” step for each site it opens','ok');
+    renderEditorMeta();renderEditorSteps();
+  }).catch(function(){toast('Couldn’t confirm the sites','err');});
+}
+
+/* A draft from an AI agent run, or a workflow changed outside MoltBrowser:
+   what to check, and "Confirm" for exactly the sites the browser listed.
+   A change whose steps target no site is confirmed with none only when the
+   browser says it may be (confirmWithoutSites); otherwise it has no site
+   to confirm until a step opens one. */
 function renderDraftPanel(box){
   var es=editorState, sites=es.draftSites||[];
   var withheld=0, secret=0;
@@ -2378,33 +2416,21 @@ function renderDraftPanel(box){
       (withheld?(': '+withheld+' value'+(withheld===1?'':'s')+' asked at each run'):'')+
       (secret?((withheld?', ':': ')+secret+' card or code field'+(secret===1?'':'s')+' you enter yourself'):'')+'.'));
   }
-  if(!sites.length){
+  if(!sites.length&&es.confirmWithoutSites===true){
+    // A change whose every address comes from a value: confirmed, it has
+    // no site, so it opens and acts on no page by itself.
+    kids.push(h('div',{'class':'tp-s'},'Every address its steps open uses a value ({{…}}), so it has no site to confirm. Once confirmed it opens and acts on no page by itself. Each “Go to page” is refused until a step opens a fixed address on that site, or until you set it to Trusted in molt://ai-automation (any site). If another workflow runs it with a “Run workflow” step, its steps run on that workflow’s sites and trust.'));
+    kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
+      confirmDraft(es,[]);
+    }},'Confirm it with no sites'));
+  }else if(!sites.length){
     kids.push(h('div',{'class':'tp-s'},'It has no site to confirm. Add a “Go to page” step and save.'));
   }else{
     var list=h('div',{'class':'draft-sites'});
     sites.forEach(function(site){list.appendChild(h('span',{'class':'draft-site'},visible(site)));});
     kids.push(list);
     kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
-      // The browser confirms what is saved (the token is of that): edits
-      // not saved yet are saved first, and the sites they use now shown
-      // for a click of their own.
-      if(editorChanged(es)){
-        saveEditor(true).then(function(id){
-          if(id!=null&&editorState===es)toast('Saved — check the sites, then confirm','ok');
-        });
-        return;
-      }
-      var shown=sites.slice();
-      sendWithPromise('confirmDraftSites',es.id,shown,es.reviewToken||'').then(function(r){
-        if(!r||!r.ok){toast((r&&r.error)||'Couldn’t confirm the sites','err');return;}
-        es.draft=false;es.changedOutside=false;es.draftSites=[];es.reviewToken='';
-        if(r.trust)es.trust=r.trust;
-        // The schedule as confirmed (started over): the one opened would
-        // write back the last fire from before the change.
-        if(r.trigger&&typeof r.trigger.type==='string')es.trigger=r.trigger;
-        toast('Sites confirmed — it can run now','ok');
-        renderEditorMeta();renderEditorSteps();
-      }).catch(function(){toast('Couldn’t confirm the sites','err');});
+      confirmDraft(es,sites);
     }},'Confirm '+(sites.length===1?'this site':'these '+sites.length+' sites')));
   }
   box.appendChild(h('div',{'class':'trust-panel draft-panel'},kids));
@@ -2690,10 +2716,12 @@ function saveEditor(quiet){
       if(r.trust)es.trust=r.trust;
       es.savedName=typeof r.name==='string'?r.name:w.name;
       es.savedBody=body;
-      // Still a draft: the sites its saved steps target now, and the token
-      // of what was saved (what a confirm now confirms).
+      // Still a draft: the sites its saved steps target now, whether it may
+      // be confirmed with none, and the token of what was saved (what a
+      // confirm now confirms).
       if(es.draft){
         es.draftSites=cleanSites(r.draftSites);
+        es.confirmWithoutSites=r.confirmWithoutSites===true;
         es.reviewToken=cleanToken(r.reviewToken);
       }
       if(editorState===es)renderEditorMeta();

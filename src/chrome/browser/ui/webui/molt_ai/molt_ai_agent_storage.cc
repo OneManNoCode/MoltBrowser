@@ -132,10 +132,13 @@ base::DictValue SavedDict(const Script& script) {
   out.Set("name", script.name);
   out.Set("trust", TrustLevelToString(script.security.trust));
   // Still a draft (saving never confirms one): the sites its steps now
-  // target, for the review panel, and the token of what was saved (the
-  // stored file, as it will be read back).
+  // target, for the review panel, whether it may be confirmed with none
+  // (the browser decides, never the page), and the token of what was saved
+  // (the stored file, as it will be read back).
   if (script.security.sites_unconfirmed) {
     out.Set("draftSites", DraftSites(script));
+    out.Set("confirmWithoutSites",
+            AutomationSecurity::MayConfirmWithoutSites(script));
     out.Set("reviewToken",
             automation::AutomationSecurity::DigestAsStored(script));
   }
@@ -191,10 +194,13 @@ Answer OnFound(const WorkflowRequest& request,
         answer.out.Set("variables", dv->Clone());
       }
       // A draft (from an agent run, or a file changed outside the browser:
-      // security.changed_outside says which): the sites to confirm, and
-      // the token of what is shown.
+      // security.changed_outside says which): the sites to confirm,
+      // whether it may be confirmed with none (a change whose steps target
+      // no site), and the token of what is shown.
       if (found.security.sites_unconfirmed) {
         answer.out.Set("draftSites", DraftSites(found));
+        answer.out.Set("confirmWithoutSites",
+                       AutomationSecurity::MayConfirmWithoutSites(found));
         answer.out.Set("reviewToken", ReviewToken(found));
       }
       return answer;
@@ -350,10 +356,11 @@ Answer OnFound(const WorkflowRequest& request,
       if (!saved) {
         return NotOk();
       }
+      // A change confirmed with no site (its steps target none) says so.
       storage.AppendAudit(id,
                           was_changed_outside ? "outside_change_confirmed"
                                               : "draft_sites_confirmed",
-                          sites);
+                          sites.empty() ? std::string("no_sites") : sites);
       answer.routines_changed = routines != nullptr;
       answer.out.Set("ok", true);
       answer.out.Set("trust", trust);

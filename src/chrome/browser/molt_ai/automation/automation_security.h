@@ -32,8 +32,9 @@
 // CASUAL and unconfirmed, whatever it says, with only what the Agent
 // studio's review shows (ClampUnvouched(), an allowlist): it runs, fires
 // and is run by another workflow only once the user has reviewed it and
-// confirmed its sites in the Agent studio, and climbs the staircase again
-// from there (docs/design/AGENT_ACTIONS.md §3.6).
+// confirmed its sites in the Agent studio (with none when its steps target
+// none: MayConfirmWithoutSites()), and climbs the staircase again from
+// there (docs/design/AGENT_ACTIONS.md §3.6).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
@@ -147,8 +148,9 @@ class AutomationSecurity {
   static void ApplyPolicyFloor(SecurityPolicy& policy);
 
   // Hosts a script's steps visibly target: static http(s) NAVIGATE URLs
-  // ({{variable}} URLs are excluded — those are what the whitelist guards)
-  // and the page host the recorder stored in each step's extra["host"].
+  // (a URL with a {{variable}} anywhere in it is excluded, a fixed host's
+  // too — those are what the whitelist guards) and the page host the
+  // recorder stored in each step's extra["host"].
   static std::vector<std::string> HostsReferencedBy(
       const std::vector<Step>& steps);
 
@@ -185,12 +187,29 @@ class AutomationSecurity {
   // The user confirms the sites of an unconfirmed draft (a real click in
   // the Agent studio). |shown|, the sites the studio showed them, must be
   // exactly HostsReferencedBy(script.steps) (in any order) and not empty,
-  // so steps changed in between aren't confirmed blindly. The whitelist
-  // becomes those sites and the draft mark (and changed_outside) is
-  // cleared; trust is unchanged. Returns false, changing nothing,
-  // otherwise. The caller saves.
+  // so steps changed in between aren't confirmed blindly; or empty, when
+  // its steps target no site and MayConfirmWithoutSites(script). The
+  // whitelist becomes those sites (none for the latter, whatever was
+  // stored) and the draft mark (and changed_outside) is cleared; trust is
+  // unchanged. Returns false, changing nothing, otherwise. The caller
+  // saves.
   static bool ConfirmDraftSites(Script& script,
                                 const std::vector<std::string>& shown);
+
+  // Whether the unconfirmed |script| may be confirmed with no sites
+  // (ConfirmDraftSites() with an empty list): its file was changed outside
+  // the browser (sites_unconfirmed and changed_outside), its trust is below
+  // TRUSTED, it isn't a routine taught by voice (voice mode acts on the
+  // tab in front of the user), and its steps target no site
+  // (HostsReferencedBy() is empty: every address they open has a
+  // {{variable}} in it, or none opens a page). Confirmed, its whitelist is
+  // empty, so it opens and acts on no page by itself (AllowNavigation()
+  // matches no host below TRUSTED) until a step opens a fixed address on a
+  // site or the user sets it Trusted in molt://ai-automation; a run of
+  // another workflow (RUN_SCRIPT) runs its steps under that run's policy,
+  // adding no site to it. Never a draft from an agent run: confirming one
+  // says where the model may go (docs/design/AGENT_ACTIONS.md §2.9.5).
+  static bool MayConfirmWithoutSites(const Script& script);
 
   // ---- Workflow files the browser didn't write (workflow_record.h) ----
 

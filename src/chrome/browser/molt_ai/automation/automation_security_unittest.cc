@@ -426,7 +426,8 @@ TEST(AutomationSecurityTest, ConfirmDraftSitesNeedsWhatTheUserSaw) {
   // Only once, and only for a draft.
   EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(
       draft, {"pay.example", "shop.example"}));
-  // A draft with no site at all can't be confirmed.
+  // A draft with no site at all can't be confirmed (a file changed outside
+  // can: AChangeWithNoSiteIsConfirmedWithNone).
   Script empty;
   empty.security.sites_unconfirmed = true;
   EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(empty, {}));
@@ -1222,6 +1223,158 @@ TEST(AutomationSecurityTest, ConfirmDraftSitesClearsChangedOutside) {
   EXPECT_FALSE(changed.security.sites_unconfirmed);
   EXPECT_FALSE(changed.security.changed_outside);
   EXPECT_EQ(changed.security.trust, TrustLevel::CASUAL);
+}
+
+// A file changed outside whose steps open only {{variable}} addresses (or
+// no page) has no site to confirm: it is confirmed with none. Its
+// whitelist is then empty, so below TRUSTED it opens and acts on no page by
+// itself, and another workflow that runs it adds no site to its run.
+TEST(AutomationSecurityTest, AChangeWithNoSiteIsConfirmedWithNone) {
+  Script s;
+  s.id = "wf_1";
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "https://{{host}}/x"));
+  s.steps.push_back(MakeStep(StepType::CLICK, "#go"));
+  s.steps.push_back(MakeStep(StepType::WAIT, "", "1"));
+  // What the file claims.
+  s.security.trust = TrustLevel::TRUSTED;
+  s.security.domain_whitelist = {"evil.example"};
+  s.default_variables["url"] = "https://evil.example/";
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_EQ(s.steps.size(), 4u);
+  ASSERT_TRUE(AutomationSecurity::HostsReferencedBy(s.steps).empty());
+  EXPECT_TRUE(AutomationSecurity::MayConfirmWithoutSites(s));
+  // Never with a site its steps don't target.
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {"evil.example"}));
+  EXPECT_TRUE(s.security.sites_unconfirmed);
+  ASSERT_TRUE(AutomationSecurity::ConfirmDraftSites(s, {}));
+  EXPECT_FALSE(s.security.sites_unconfirmed);
+  EXPECT_FALSE(s.security.changed_outside);
+  EXPECT_TRUE(s.security.domain_whitelist.empty());
+  EXPECT_EQ(s.security.trust, TrustLevel::CASUAL);
+  // Only once.
+  EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(s));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {}));
+  AutomationSecurity sec;
+  for (TrustLevel trust : {TrustLevel::CASUAL, TrustLevel::APPROVED}) {
+    s.security.trust = trust;
+    const SecurityPolicy p = AutomationSecurity::EffectivePolicy(s);
+    EXPECT_TRUE(p.domain_whitelist.empty());
+    EXPECT_FALSE(sec.AllowNavigation(p, "https://evil.example/"));
+    EXPECT_FALSE(sec.AllowNavigation(p, "https://news.example/a"));
+    EXPECT_FALSE(sec.AllowClick(p, "about:blank", "#go"));
+    EXPECT_FALSE(sec.AllowClick(p, "https://evil.example/", "#go"));
+    EXPECT_FALSE(sec.AllowType(p, "https://evil.example/", "#q", "x"));
+    // Given a value for its address, its run window still opens no page.
+    s.default_variables["url"] = "https://evil.example/";
+    EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0), "");
+  }
+  // Another workflow may run it, and adds none of its sites to its run's.
+  EXPECT_TRUE(AutomationSecurity::MayRunAsChild(s));
+  EXPECT_TRUE(AutomationSecurity::EffectivePolicy(s).domain_whitelist.empty());
+  // Trusted (its own click in molt://ai-automation) is any site, as for
+  // every workflow.
+  s.security.trust = TrustLevel::TRUSTED;
+  EXPECT_TRUE(sec.AllowNavigation(AutomationSecurity::EffectivePolicy(s),
+                                  "https://evil.example/"));
+  // A step that opens a fixed address adds its site, and only it.
+  s.security.trust = TrustLevel::CASUAL;
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "https://news.example/"));
+  const SecurityPolicy with_site = AutomationSecurity::EffectivePolicy(s);
+  EXPECT_TRUE(sec.AllowNavigation(with_site, "https://news.example/a"));
+  EXPECT_TRUE(sec.AllowNavigation(with_site, "https://www.news.example/"));
+  EXPECT_FALSE(sec.AllowNavigation(with_site, "https://evil.example/"));
+}
+
+// HostsReferencedBy() skips an address with a {{variable}} anywhere in it,
+// a fixed host's too: such a change has no site to confirm either. Once
+// confirmed with none, that address is refused below TRUSTED until a step
+// opens a fixed address on its site.
+TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNoSite) {
+  Script s;
+  s.id = "wf_shop";
+  s.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://shop.example/search?q={{q}}"));
+  s.security.sites_unconfirmed = true;
+  s.security.changed_outside = true;
+  EXPECT_TRUE(AutomationSecurity::HostsReferencedBy(s.steps).empty());
+  EXPECT_TRUE(AutomationSecurity::MayConfirmWithoutSites(s));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {"shop.example"}));
+  ASSERT_TRUE(AutomationSecurity::ConfirmDraftSites(s, {}));
+  AutomationSecurity sec;
+  const SecurityPolicy p = AutomationSecurity::EffectivePolicy(s);
+  EXPECT_TRUE(p.domain_whitelist.empty());
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://shop.example/search?q=x"));
+  s.default_variables["q"] = "lamp";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0), "");
+  EXPECT_TRUE(AutomationSecurity::MayRunAsChild(s));
+}
+
+// Only a file changed outside, below TRUSTED and not a routine taught by
+// voice, whose steps target no site, is confirmed with none.
+TEST(AutomationSecurityTest, OnlyAChangeWithNoSiteIsConfirmedWithNone) {
+  // A draft from an agent run (confirming it says where the model may go).
+  Script draft;
+  draft.id = "agent_1";
+  draft.security.sites_unconfirmed = true;
+  draft.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
+  EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(draft));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(draft, {}));
+  EXPECT_TRUE(draft.security.sites_unconfirmed);
+  // A routine taught by voice (voice mode acts on the tab in front of the
+  // user), changed outside, with no site.
+  Script routine = VoiceRoutine();
+  routine.steps[0].target = "{{url}}";
+  routine.security.sites_unconfirmed = true;
+  routine.security.changed_outside = true;
+  routine.security.trust = TrustLevel::CASUAL;
+  routine.security.domain_whitelist.clear();
+  ASSERT_TRUE(AutomationSecurity::HostsReferencedBy(routine.steps).empty());
+  EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(routine));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(routine, {}));
+  EXPECT_TRUE(routine.security.sites_unconfirmed);
+  // A change with a site: confirmed only with it.
+  Script with_site = RichScript();
+  AutomationSecurity::ClampUnvouched(with_site);
+  ASSERT_FALSE(AutomationSecurity::HostsReferencedBy(with_site.steps).empty());
+  EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(with_site));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(with_site, {}));
+  EXPECT_TRUE(with_site.security.sites_unconfirmed);
+  // Not a draft (nothing to confirm).
+  Script plain;
+  plain.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
+  plain.security.changed_outside = true;
+  EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(plain));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(plain, {}));
+  // A change left TRUSTED or ADMIN (molt://ai-automation's save of a stored
+  // workflow keeps its trust): confirmed with no site, it would act on any.
+  for (TrustLevel trust : {TrustLevel::TRUSTED, TrustLevel::ADMIN}) {
+    Script trusted;
+    trusted.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
+    trusted.security.sites_unconfirmed = true;
+    trusted.security.changed_outside = true;
+    trusted.security.trust = trust;
+    EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(trusted));
+    EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(trusted, {}));
+    EXPECT_TRUE(trusted.security.sites_unconfirmed);
+  }
+  // A change whose draft carries a whitelist (a page's save): confirmed
+  // with none, it has none.
+  Script listed;
+  listed.steps.push_back(MakeStep(StepType::WAIT, "", "1"));
+  listed.security.sites_unconfirmed = true;
+  listed.security.changed_outside = true;
+  listed.security.domain_whitelist = {"evil.example"};
+  EXPECT_TRUE(AutomationSecurity::MayConfirmWithoutSites(listed));
+  ASSERT_TRUE(AutomationSecurity::ConfirmDraftSites(listed, {}));
+  EXPECT_TRUE(listed.security.domain_whitelist.empty());
+  EXPECT_FALSE(AutomationSecurity().AllowNavigation(
+      AutomationSecurity::EffectivePolicy(listed), "https://evil.example/"));
+  // No steps at all: no page, confirmed with none.
+  Script empty_change;
+  empty_change.security.sites_unconfirmed = true;
+  empty_change.security.changed_outside = true;
+  EXPECT_TRUE(AutomationSecurity::MayConfirmWithoutSites(empty_change));
 }
 
 TEST(AutomationSecurityTest, ClampTrustForSaveCarriesChangedOutside) {

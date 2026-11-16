@@ -29,7 +29,11 @@
 // draft from an agent run: it neither runs, nor is scheduled or trusted,
 // until confirmDraftSites, after a real click, with the review token of
 // exactly what the page showed (docs/design/AGENT_ACTIONS.md §3.6), its
-// schedule starting over. A save that names a workflow (one the page
+// schedule starting over. getWorkflow, and a save, answer a draft with its
+// draftSites, its reviewToken and confirmWithoutSites: whether it may be
+// confirmed with an empty list (a change whose steps target no site,
+// AutomationSecurity::MayConfirmWithoutSites()), which the browser
+// decides, never the page. A save that names a workflow (one the page
 // opened) is an edit of what is stored then, refused if it is gone, or if
 // the page edited a draft that is no longer one; only a save that names
 // none is a new workflow (SaveRequest, KindOfSave()). An

@@ -187,10 +187,17 @@ struct SecurityPolicy {
   // The workflow's file was changed outside this browser: what it says
   // didn't match what the browser last saved under its name
   // (workflow_record.h), so it was loaded as an unconfirmed import
-  // (AutomationSecurity::ClampUnvouched(), with |sites_unconfirmed|). It
-  // only chooses the words the user is shown; no check reads it.
-  // ConfirmDraftSites() clears it, saving keeps it. Stored only when true
-  // (an older build ignores it).
+  // (AutomationSecurity::ClampUnvouched(), with |sites_unconfirmed|). Read
+  // by: the words the user is shown (AutomationSecurity::ReviewMessage(),
+  // the Agent studio's review); voice mode, which refuses to confirm such a
+  // routine (only the Agent studio does, with its review token) and
+  // describes its steps as it runs them when it claims one
+  // (voice_routine_store.cc); the scheduler, which holds it for review (a
+  // due time that passes meanwhile isn't caught up later,
+  // automation_scheduler.cc); and
+  // AutomationSecurity::MayConfirmWithoutSites(), which lets one whose
+  // steps target no site be confirmed with none. ConfirmDraftSites() clears
+  // it, saving keeps it. Stored only when true (an older build ignores it).
   bool changed_outside = false;
 };
 

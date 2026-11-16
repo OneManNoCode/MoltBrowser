@@ -143,6 +143,17 @@ const CHANGED_TWO_SITES = {
           {type: 'navigate', target: 'https://mail.example/', description: 'Open mail.example'}],
 };
 const CONFIRMED_TRIGGER = {type: 'cron', expression: '0 8 * * *'};
+// Another, whose only address comes from a value: no site to confirm, and
+// the browser says it may be confirmed with none. Only getWorkflow has it
+// (not the library's list, whose banner counts one changed workflow).
+const CHANGED_NO_SITES = {
+  id: 'c3', name: 'Open a page', variables: {url: ''},
+  security: {trust: 'casual', sites_unconfirmed: true, changed_outside: true},
+  draftSites: [], confirmWithoutSites: true,
+  reviewToken: 'e'.repeat(64),
+  steps: [{type: 'navigate', target: '{{url}}'},
+          {type: 'wait', value: '1'}],
+};
 
 // The Agent studio's saves: a saved workflow's id is the one it sent, the
 // recording's it named, or a new one; a schedule is answered with the
@@ -1730,7 +1741,8 @@ const PAGES = [
      },
      getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW :
                             args[1] === 'c1' ? CHANGED_WORKFLOW :
-                            args[1] === 'c2' ? CHANGED_TWO_SITES : {
+                            args[1] === 'c2' ? CHANGED_TWO_SITES :
+                            args[1] === 'c3' ? CHANGED_NO_SITES : {
        id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
        steps: [{type: 'navigate', target: 'https://www.example.com/'},
                {type: 'click', target: '#buy', description: 'Click "Buy"',
@@ -1755,6 +1767,10 @@ const PAGES = [
        if (w.id === 'c2') {
          return {id: 'c2', name: w.name, trust: 'casual',
                  draftSites: ['evil.example'], reviewToken: 'd'.repeat(64)};
+       }
+       if (w.id === 'c3') {
+         return {id: 'c3', name: w.name, trust: 'casual', draftSites: [],
+                 confirmWithoutSites: true, reviewToken: 'f'.repeat(64)};
        }
        return {id: w.id || w.recordedId || 'wf_new', name: w.name, trust: 'casual'};
      },
@@ -2163,6 +2179,63 @@ const PAGES = [
      assert.deepStrictEqual(saves()[saved].trigger, CONFIRMED_TRIGGER,
                             'no last fire from before the change written back');
      assert(!('draft' in saves()[saved]), 'confirmed: no longer a draft');
+     // A changed workflow whose only address comes from a value: no site to
+     // confirm, and the browser says it may be confirmed with none. Its own
+     // button says what that means and sends an empty list with the token;
+     // edits not saved yet are saved first, as for sites.
+     window.openEditor('c3');
+     await tick();
+     const noSitePanel = () => doc.getElementById('edTrust');
+     assert(/opens and acts on no page by itself/.test(noSitePanel().textContent),
+            'says it acts on no page by itself');
+     assert(noSitePanel().textContent.includes(
+         'If another workflow runs it with a “Run workflow” step, its steps run ' +
+         'on that workflow’s sites and trust.'), 'says how another workflow runs it');
+     assert.strictEqual(noSitePanel().querySelectorAll('.draft-site').length, 0,
+                        'no site listed');
+     assert.strictEqual(doc.getElementById('draftConfirmBtn').textContent,
+                        'Confirm it with no sites');
+     window.deleteStep(1);
+     saved = saves().length;
+     const noSiteConfirmsBefore = draftConfirmCalls.length;
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.length, noSiteConfirmsBefore,
+                        'not confirmed unsaved');
+     assert.strictEqual(saves().length, saved + 1, 'saved first');
+     assert.strictEqual(saves()[saved].steps.length, 1);
+     assert.strictEqual(saves()[saved].draft, true);
+     await tick();
+     assert.strictEqual(doc.getElementById('draftConfirmBtn').textContent,
+                        'Confirm it with no sites', 'saved, still confirmed with none');
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(), '["c3",[],"' + 'f'.repeat(64) + '"]',
+                        'an empty list, with the token of what was saved');
+     await tick();
+     assert(!/Changed outside MoltBrowser/.test(noSitePanel().textContent), 'confirmed');
+     assert.strictEqual(doc.getElementById('toast').textContent,
+                        'Confirmed — add a “Go to page” step for each site it opens');
+     // Opened unchanged: confirmed straight from the click, with the token
+     // of what was shown.
+     window.openEditor('c3');
+     await tick();
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(), '["c3",[],"' + 'e'.repeat(64) + '"]',
+                        'an empty list, with the token of what was shown');
+     await tick();
+     // Only the browser's own true offers it: anything else, and an AI
+     // draft with no site, shows no button.
+     for (const [changedOutside, flag] of [[true, 'yes'], [true, 1], [true, undefined],
+                                           [false, undefined], [false, false]]) {
+       const what = JSON.stringify([changedOutside, flag]);
+       window.openEditorDraft({
+         id: 'c3', name: 'Open a page', variables: {},
+         steps: [{type: 'navigate', target: '{{url}}'}],
+         draft: true, changedOutside: changedOutside, draftSites: [],
+         confirmWithoutSites: flag, reviewToken: 'e'.repeat(64)});
+       assert(/It has no site to confirm\. Add a “Go to page” step and save\./.test(
+           noSitePanel().textContent), what);
+       assert(!doc.getElementById('draftConfirmBtn'), what);
+     }
      // A run's question: shown in the run's ticker as text; "Use it" and
      // "Stop the run" send the answer for that question from the click.
      window.showView('library');
