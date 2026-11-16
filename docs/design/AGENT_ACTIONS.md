@@ -3059,8 +3059,8 @@ All in `molt_ai_unittests` except the last item:
   `regress_unconfirmed_trust.molt`); an address with a value names a site
   only with its host fixed before the value, and no value moves it off that
   host (seed `templated_hosts.molt`); below TRUSTED each run limit is within
-  its default and a run one page or one byte past either of the last two
-  stops (none at TRUSTED and above).
+  its default, and a CASUAL run one page or one byte past either of the
+  last two stops (none at APPROVED and above).
 - `tools/webui_checks` smoke test: the badge, the banner, the review panel
   (schedule as text), a site tool's step titled by its tool with its site
   and its values in full (a cut said), each isolated, on its own row and
@@ -3109,7 +3109,8 @@ All in `molt_ai_unittests` except the last item:
   it); a run that ends in time completes; a question waiting at the limit
   is withdrawn; a run window's run at its limit ends its Agent Inbox
   entry, closes its window and is recorded "Max runtime exceeded" at its
-  first step.
+  first step; a wait-for finds an element that appears a second in, well
+  before its timeout (it checks every 250 ms).
 
 #### 3.6.11 Not done
 
@@ -3302,11 +3303,12 @@ All in `molt_ai_unittests` except the last item:
     passed once every step is done, or while the last step's result is
     being saved, doesn't fail the run, as for the run time. The message is
     "Stopped: this run opened more than 20 pages, the most this workflow
-    may open in one run. Only workflows set to Trusted in
-    molt://ai-automation have no such limit." (or "Stopped: this run's
-    pages loaded more than 200 MB, the most this workflow may load in one
-    run. …"). It isn't a needs-trust block: Approved doesn't lift it, so
-    the studio offers no "Trust & re-run". A child run by `RUN_SCRIPT`
+    may open in one run. Approve the workflow (Trust) if you made it or
+    checked it: an approved workflow has no such limit." (or "Stopped:
+    this run's pages loaded more than 200 MB, the most this workflow may
+    load in one run. …"). It isn't marked needs-trust, so the studio
+    offers no "Trust & re-run": approving the workflow (APPROVED and above
+    lift both limits) is the user's own decision. A child run by `RUN_SCRIPT`
     counts against its parent's limits.
   - a run's time limit (`AutomationSecurity::RunTimeLimit()` of the run's
     `EffectivePolicy()`: below TRUSTED at most 300 s, TRUSTED its own, one
@@ -3423,8 +3425,8 @@ All in `molt_ai_unittests` except the last item:
   and pages the run's page opens in other windows aren't counted; the
   bytes are the renderer's figures, so they bound a workflow that runs
   away, not a compromised renderer; no page shows or sets the limits, and
-  Approved workflows can't raise them: only Trusted, which also lifts the
-  site rule, removes them (a per-workflow limit is a possible follow-up);
+  a Casual workflow can't raise them: approving it (or recording it)
+  removes them (a per-workflow limit is a possible follow-up);
   a molt://ai-automation card still sends its whole copy with each save,
   so a stale card's *Save step changes* puts back its values, *Save values
   as defaults* its steps, and *Save schedule* both (last write wins, as in

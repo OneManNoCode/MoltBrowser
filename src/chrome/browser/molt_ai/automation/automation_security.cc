@@ -138,7 +138,7 @@ T WithinLimit(T value, T limit) {
   return value > 0 && value <= limit ? value : limit;
 }
 
-// Ends RunLimitMessage()'s words: only TRUSTED lifts a run's limits.
+// Ends RunLimitMessage()'s words: APPROVED and above lift a run's limits.
 constexpr char kRunLimitAdvice[] =
     " Approve the workflow (Trust) if you made it or checked it: an "
     "approved workflow has no such limit.";

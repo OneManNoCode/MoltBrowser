@@ -141,7 +141,7 @@ class AutomationRunner {
   // |needs_trust| marks a block that trusting the workflow lifts; it is
   // saved as Stats::last_run_needs_trust.
   void BlockStep(const std::string& reason, bool needs_trust = false);
-  // Below TRUSTED, the run's tab passed one of its limits
+  // At CASUAL, the run's tab passed one of its limits
   // (AutomationSecurity::RunLimitMessage(): |why|): the run ends on the step
   // it is at (BlockStep()), unless every step is done.
   void OnRunLimitExceeded(std::string why);
@@ -458,8 +458,8 @@ class AutomationRunner {
   base::ScopedClosureRunner capture_keepalive_;
   // Live during a click's post-navigation settle; reset before the next step.
   std::unique_ptr<NavigationSettleWaiter> nav_waiter_;
-  // Below TRUSTED, counts the run's pages and network bytes from Run() on
-  // and calls OnRunLimitExceeded() past a limit; null at TRUSTED and above.
+  // At CASUAL, counts the run's pages and network bytes from Run() on and
+  // calls OnRunLimitExceeded() past a limit; null at APPROVED and above.
   std::unique_ptr<RunLimitObserver> run_limits_;
   // Why the run passed a limit between two steps (OnRunLimitExceeded()):
   // ExecuteNextStep() stops it before the next one. Empty otherwise.

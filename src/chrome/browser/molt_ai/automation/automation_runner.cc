@@ -444,7 +444,7 @@ class NavigationSettleWaiter : public content::WebContentsObserver {
 // Counts what the run's tab uses (RunUsage) from the run's start, and once
 // the run's policy says to stop (AutomationSecurity::RunLimitMessage()),
 // runs |on_exceeded| with why, once, from a task of its own. The runner
-// makes one for each run below TRUSTED.
+// makes one for each CASUAL run.
 class RunLimitObserver : public content::WebContentsObserver {
  public:
   RunLimitObserver(content::WebContents* web_contents,
@@ -903,8 +903,9 @@ void AutomationRunner::OnRunLimitExceeded(std::string why) {
   if (!is_running_) {
     return;
   }
-  // In a step (retries included): it ends there, without retries. Not a
-  // needs-trust block: Approved doesn't lift a limit.
+  // In a step (retries included): it ends there, without retries. Not
+  // marked needs-trust (no Trust & re-run): approving the workflow, which
+  // lifts the limits (RunLimitMessage()), is the user's own decision.
   if (step_in_progress_) {
     BlockStep(why);
     return;

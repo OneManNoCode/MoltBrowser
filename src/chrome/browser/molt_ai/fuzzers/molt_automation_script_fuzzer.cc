@@ -10,8 +10,9 @@
 // the same file; scrubbing plaintext secrets leaves no value on a step it
 // recognizes as secret, is idempotent and still loads; the effective policy
 // keeps the file's own whitelist and approvals, never drops a default
-// approval, bounds the runtime, pages and bytes below TRUSTED (a run past
-// either of the last two stops; none at TRUSTED), never adds a host with
+// approval, bounds the runtime, pages and bytes below TRUSTED (a CASUAL run
+// past either of the last two stops; none at APPROVED and above), never adds a
+// host with
 // "{{" in it, and adds a {{variable}} address's host only when no value
 // after it can move it; trust is never raised by loading or saving (a new
 // script starts CASUAL with the default approvals, each limit within its
@@ -317,8 +318,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   CHECK(!policy.require_approval_for.empty());
   // Never without a default approval, whatever the file lists; below
   // TRUSTED, each run limit within its default (the run time, the pages
-  // and the bytes), a run stopped one page or one byte past either of the
-  // last two; at TRUSTED and above, held to neither.
+  // and the bytes); a CASUAL run stopped one page or one byte past either
+  // of the last two; at APPROVED and above, held to neither.
   for (const char* category : {"form_submit", "payment", "login"}) {
     CHECK(std::find(policy.require_approval_for.begin(),
                     policy.require_approval_for.end(),
@@ -333,6 +334,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           policy.max_navigations <= defaults.max_navigations);
     CHECK(policy.max_network_bytes > 0 &&
           policy.max_network_bytes <= defaults.max_network_bytes);
+  }
+  if (policy.trust == TrustLevel::CASUAL) {
     // At its limits a run goes on; one page or one byte past either stops
     // it.
     const uint64_t max_bytes = static_cast<uint64_t>(policy.max_network_bytes);

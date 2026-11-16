@@ -1937,7 +1937,7 @@ extension enablement and `MediaRouterEnabled()`).
   chromium/src/out/MoltTests/browser_tests \
     --gtest_filter='AutomationRunnerDeadlineBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/automation-runner-deadline-browser-tests.log
   ```
-  *Expected:* all five pass on Linux and macOS in a DCHECK build (and ASan
+  *Expected:* all six pass on Linux and macOS in a DCHECK build (and ASan
   if built), each within a few seconds:
   - `ALongStepEndsAtTheLimit`: a wait-for of ten minutes ends "Max runtime
     exceeded" at its two-second limit, its runner (kept alive by its own
@@ -1952,6 +1952,9 @@ extension enablement and `MediaRouterEnabled()`).
   - `ABackgroundRunEndsAtTheLimit`: a run window's run at its limit ends its
     Agent Inbox entry, its window closes, and its record says "Max runtime
     exceeded" at step 0.
+  - `AWaitForFindsALateElementWhenItAppears`: an element added 1 s in is
+    found then (a wait-for checks every 250 ms): the run succeeds in under
+    6 s with an 8 s timeout.
 - [ ] The workflow record and the data folder (workflow-integrity, and
   from #133):
   ```bash
