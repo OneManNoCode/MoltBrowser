@@ -2908,7 +2908,7 @@ WEB_AI_APIS.md §12):
     not the page limit's;
   - the chat's `/navigate` and `/click` in your own tab are never stopped
     by either limit (they run at Trusted); a Trusted scheduled workflow
-    with a loop over 30 pages still completes.
+    with a loop over 30 pages still completes;
   - time limit: write a `.molt` with `"max_runtime_seconds": 20`, a
     `navigate` to a real https page and a `wait_for` `#never` with
     `"timeout_ms": 600000`. Import it in molt://ai-automation and run it

@@ -3401,8 +3401,8 @@ All in `molt_ai_unittests` except the last item:
   `HandleCancelRun()` only answers; `AutomationRunner::Cancel()` has no
   caller); the studio's run poll (80 tries 1.5 s apart) gives up before a
   300 s limit; an on-device model answer in flight at a run's limit isn't
-  cancelled (dropped when it comes); workflows imported by
-  earlier builds keep their file's schedule switch; a hold is on this
+  cancelled (dropped when it comes); workflows imported by earlier builds
+  keep their file's schedule switch; a hold is on this
   browser's clock (setting the clock back during one makes it last longer
   by the same amount); Skip next pressed in the few milliseconds between a
   timer's reload and its claim of a cron's first run since its schedule
@@ -3414,8 +3414,8 @@ All in `molt_ai_unittests` except the last item:
   last fire, not the due time), and Skip next on it records that time as
   passed (its card shows it "now" until then); the run limits count only
   what the run's tab reports as its loads finish: a load still open (a
-  stream, media still buffering) counts when
-  it ends, and a load cancelled before it finished (aborted by the page,
+  stream, media still buffering) counts when it ends, and a load cancelled
+  before it finished (aborted by the page,
   or cut off when the page navigated away), downloads, WebSockets, WebRTC,
   a service or shared worker's own fetches, navigations that never commit
   and pages the run's page opens in other windows aren't counted; the
