@@ -1,12 +1,12 @@
 {
- "resume_run": "43723008086",
+ "resume_run": "43776798905",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Seventy-sixth build (incremental on the seventy-fifth, run 43723008086, Chromium 156.0.8078.100): workflow gaps closed. The default approvals always hold below Approved, imports get the default limits and their schedules start off, a site entry never covers a public suffix or another site, the chat's page watcher starts Casual, intervals run at most once a minute and one saved in molt://ai-automation runs, a scheduled run never starts beside an open one, and wait steps wait the seconds they show. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Seventy-seventh build (incremental on the seventy-sixth, run 43776798905, Chromium 156.0.8078.100): the workflow-gaps change with review rounds three and four. The chat's /wait-for takes the rest of its line as its selector, only Save schedule starts an interval an earlier version never started (and a save from a stale card keeps it as stored), a one-time scheduled run isn't skipped beside an open run, and Snooze and Skip don't start an interval never started. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
