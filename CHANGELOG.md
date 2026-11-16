@@ -47,17 +47,20 @@ For longer narrative posts behind each entry see
   one-time ("once at") schedule still to come that it is opened on, and
   molt://ai-automation no longer moves a one-time schedule by your time
   zone's offset when it is saved again.
-- **Snooze and Skip in molt://ai-automation hold every schedule.** On a
-  cron schedule ("weekdays at 9"), Skip next ran the very time it was
-  meant to skip, and Snooze 1h didn't hold the run back. Both now hold
-  cron and interval schedules alike. Snooze 1h runs nothing for the
-  hour, then the schedule goes on at its own next time; an hourly or
-  daily interval is no longer pushed a whole interval past the hour.
-  Skip next skips exactly the next run, and pressing it again skips the
-  one after. While a hold lasts, the card says "Held until …" next to
-  the next run, and each Snooze and Skip is listed in the Audit log. A
-  hold applies to this copy of MoltBrowser (all its profiles), not to
-  another copy that shares `~/.moltbrowser`, and it lasts across a
+- **Snooze and Skip in molt://ai-automation hold every schedule.** On a cron
+  schedule ("weekdays at 9"), Skip next ran the very time it was meant to
+  skip, and Snooze 1h didn't hold the run back. Both now hold cron and
+  interval schedules alike. Snooze 1h runs nothing for the hour, then the
+  schedule goes on at its own next time; an hourly or daily interval is no
+  longer pushed a whole interval past the hour. Skip next skips exactly the
+  next run, and pressing it again skips the one after. If a run is already
+  due but hasn't started (you press Skip next just as its time comes, or
+  after the computer wakes from sleep before a missed run has caught up),
+  that run is the one skipped and the one after it still happens; the card
+  shows such a run as due "now". While a hold lasts, the card says "Held
+  until …" next to the next run, and each Snooze and Skip is listed in the
+  Audit log. A hold applies to this copy of MoltBrowser (all its profiles),
+  not to another copy that shares `~/.moltbrowser`, and it lasts across a
   restart. Saving the same schedule again keeps the hold; a new schedule
   ends it, and so does confirming a workflow that was changed outside
   MoltBrowser. The two buttons are shown only for cron and interval

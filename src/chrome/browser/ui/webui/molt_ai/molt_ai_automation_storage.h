@@ -6,10 +6,9 @@
 // (automation/automation_shared_tasks.h), never on the UI thread. A
 // read-modify-write (a save that keeps the stored trust, a trust change, a
 // Snooze or a Skip) runs under the directory's lock (AutomationStorage::
-// SaveChecked(), Update(), HoldWith()), and a new workflow takes a free id
-// under it (SaveNew()), so
-// none interleaves with the Agent studio's, the runner's or another
-// browser's. Routines taught by voice belong to a profile
+// SaveChecked(), Update(), HoldOrPassWith()), and a new workflow takes a free
+// id under it (SaveNew()), so none interleaves with the Agent studio's, the
+// runner's or another browser's. Routines taught by voice belong to a profile
 // (molt_ai/voice/voice_routine_store.h): this page lists and changes none.
 // The page's messages and answers are the same as when this ran on the UI
 // thread.
@@ -120,8 +119,9 @@ base::DictValue PromoteTrust(const std::string& id,
 // snoozeScript (Snooze 1h): no automatic run of workflow |id| for |seconds|
 // from |now_unix|, then its own times again (a cron's first match at or
 // after then, an interval's first whole interval after its last fire). A
-// hold in this browser's workflow record (AutomationStorage::HoldWith()),
-// never a change to the workflow or its file: it holds this browser's
+// hold in this browser's workflow record (AutomationStorage::
+// HoldOrPassWith(), as a hold), never a change to the workflow or its file:
+// it holds this browser's
 // profiles, and no other browser. {success, held_until_unix,
 // next_fire_unix?} or {success: false, error}. Refused for a routine taught
 // by voice or a workflow that isn't there ("script not found"), an
@@ -134,12 +134,26 @@ base::DictValue Snooze(const std::string& id,
                        int64_t now_unix,
                        automation::AutomationStorage& storage);
 
-// skipNextFire (Skip next): workflow |id|'s first run after |now| (an
-// overdue interval's next time, not the one already passed) doesn't
-// happen; the one after it does. A hold just past that run, as Snooze()
-// sets one (after a hold already there: a second Skip skips the run after),
-// with the same refusals, and "No upcoming run to skip" when there is none.
-// The audit log says "run_skipped", "until=<unix time>".
+// The due time of |script|'s run due at |now| and not claimed yet, as the
+// scheduler finds one (its timer's reload, a listing's catch-up): it may
+// fire unattended, repeats (cron, interval), has a last fire here, and its
+// first time after that (the hold counted: a time a hold covered is never
+// due) has come. Null when none is (a cron never fired here: its missed
+// times aren't caught up, and a fire of it on its way to its claim can't be
+// told from a time that passed). The card shows it as the next run, and
+// Skip next skips it. No I/O.
+base::Time DueUnclaimed(const automation::Script& script, base::Time now);
+
+// skipNextFire (Skip next): workflow |id|'s next run doesn't happen; the
+// one after it does. A run due at |now| and not claimed yet (DueUnclaimed())
+// is that run: its due times are recorded as passed (AutomationStorage::
+// HoldOrPassWith(); {success, passed_unix, next_fire_unix?}), so its claim
+// fails and nothing after it is held. Otherwise its first run after |now|:
+// a hold just past it, as Snooze() sets one (after a hold already there: a
+// second Skip skips the run after; {success, held_until_unix,
+// next_fire_unix?}). Snooze()'s refusals, and "No upcoming run to skip"
+// when there is none. The audit log says "run_skipped", "passed=<unix
+// time>" or "until=<unix time>".
 base::DictValue SkipNext(const std::string& id,
                          base::Time now,
                          automation::AutomationStorage& storage);

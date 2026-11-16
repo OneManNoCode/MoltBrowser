@@ -2297,8 +2297,10 @@ produce an entry.
   (`ClaimFire()`/`RecordFire()`, on its own clock; a claimed fire exactly,
   `ClaimFired()`, even down from one still in the future), or a later time
   that passed while the file was held for review (`NotePassed()`,
-  §3.6.5); and `held_until` (left out when 0), a Snooze or Skip made in
-  this browser (`Hold()`, §3.6.5): no fire of the schedule before it. It
+  §3.6.5), or a run due and not claimed yet that Skip next skipped
+  (`NotePassed()` via `HoldOrPassWith()`); and `held_until` (left out
+  when 0), a Snooze or Skip made in this browser (`Hold()`, §3.6.5): no
+  fire of the schedule before it. It
   only rises, and it ends with a fire claimed at or after it, or with a
   write that doesn't keep the schedule (`Set()`; `SetKeepingHold()` keeps
   it, for a save of the same schedule of a workflow not changed outside,
@@ -2420,9 +2422,11 @@ that.
   time zone and end: a page's save, a trust change) and the workflow as
   read wasn't changed outside (its schedule may not be the one held, so
   its confirmation and a page's save of it end the hold); any other write
-  ends it, as do `Save()` and `SaveNew()` always. `HoldWith()`
-  (molt://ai-automation's Snooze and Skip) reads the workflow, computes the
-  hold and sets it in the record under one lock; the file isn't written,
+  ends it, as do `Save()` and `SaveNew()` always.
+  `HoldWith()`/`HoldOrPassWith()` (molt://ai-automation's Snooze and
+  Skip) reads the workflow, computes the hold (or, for a Skip of a run due
+  and not claimed yet, records it as passed) and sets it in the record
+  under one lock; the file isn't written,
   so its digest, and another browser's schedule, are unchanged. A move's rename carries the
   entry (`Take()`, `ReturnTaken()`); finishing it forgets it. A write of
   what an unvouched read gave is still an unconfirmed import:
@@ -2609,8 +2613,9 @@ next time (the same rule); after, it is final.
   starts its schedule over (no last fire from the JSON; an interval
   counted from the import), as in the studio. Snooze and Skip are
   messages of their own (`snoozeScript`, `skipNextFire`): each records a
-  hold and doesn't rewrite the workflow, and the audit log has it
-  (`snoozed` or `run_skipped`, `until=<unix time>`). They are shown only
+  hold (a Skip of a run due now records it as passed) and doesn't rewrite
+  the workflow, and the audit log has it (`snoozed` or `run_skipped`,
+  `until=<unix time>` or `passed=<unix time>`). They are shown only
   for cron and interval schedules. A save never moves a stored last fire
   later.
 - **Voice mode:** a routine from before profiles that was changed outside
@@ -2880,8 +2885,9 @@ All in `molt_ai_unittests` except the last item:
   with none nor with sites; a fixed host before a value listed (a port,
   `?` or `#` ending it; an IP address), confirmed only on it, then allowed
   with any value, its run window opening it resolved, no value moving it
-  off its host, a registry written as the host matching only itself; only a change confirmed with none (not an agent
-  draft, a voice routine, a change with a site, a non-draft, a TRUSTED or
+  off its host, a registry written as the host matching only itself;
+  only a change confirmed with none (not an agent draft, a voice routine,
+  a change with a site, a non-draft, a TRUSTED or
   ADMIN change; a stored whitelist cleared); the review message; the run window's first page only the page the
   first step run expects (the last `navigate` before it, else the first; a
   retry from a later step of a workflow whose page has a `{{variable}}`
@@ -2892,10 +2898,10 @@ All in `molt_ai_unittests` except the last item:
   routine's); a run's time limit (`RunTimeLimit()`: 300 s below TRUSTED
   whatever the file says, a shorter one kept, TRUSTED's own, a
   non-positive TRUSTED one none); below TRUSTED each run limit within its
-  default (a lower one kept, TRUSTED's own kept, a draft's bounded); a run stops one page or one
-  byte past a limit at CASUAL and APPROVED, never at TRUSTED or ADMIN; a
-  lower limit in its own words; a policy that isn't a run's held to the
-  defaults.
+  default (a lower one kept, TRUSTED's own kept, a draft's bounded); a
+  run stops one page or one byte past a limit at CASUAL and APPROVED,
+  never at TRUSTED or ADMIN; a lower limit in its own words; a policy that
+  isn't a run's held to the defaults.
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
   when it is written (`CountIntervalFromNow()`).
@@ -2925,8 +2931,11 @@ All in `molt_ai_unittests` except the last item:
   something else), while a new schedule or a whole write ends it and a
   failed write puts it back; a file changed outside keeps no hold (its
   confirmation, a page's save of it and any other change of it end it);
-  it is never claimed through; each user data directory keeps its own;
-  writes never launder an unvouched read; `SetTrustLevel()` refuses a
+  it is never claimed through; each user data directory keeps its own; a
+  run due and skipped is recorded as passed, in the record only, under one
+  lock, and the claim read before it fails; a hold through
+  `HoldOrPassWith()` is `HoldWith()`'s; writes never launder an unvouched
+  read; `SetTrustLevel()` refuses a
   review; `UpdateBookkeeping()` keeps the verdict and refuses security
   changes; `RecordFire()` keeps the floor when the file can't be written;
   the scrub rewrite keeps the verdict; moves carry it; a move cut short on
@@ -2953,9 +2962,12 @@ All in `molt_ai_unittests` except the last item:
   the hold; a Snooze holds an interval, which runs at its next time after
   the hold (75 min, not 85); a cron snoozed after its last listing doesn't
   fire at its time and fires at its first match after the hold; a skipped
-  interval keeps its phase; an overdue interval's Skip holds past its next
-  time (no catch-up); a restart keeps the recorded fire (a daily workflow of a browser
-  restarted every eight hours runs a day after its own last fire); a
+  interval keeps its phase; a hold over an overdue interval covers its
+  catch-up and its next time; a Skip of a run due now, recorded as passed
+  before its timer's reload, skips that run only, and the next runs an
+  interval later; a restart keeps the recorded fire (a daily workflow of
+  a browser restarted every eight hours runs a day after its own last
+  fire); a
   schedule saved afresh forces no catch-up and fires an interval later;
   two profiles' schedulers over one folder run a due workflow once (a
   catch-up, then a timer); a workflow held for review across five of its
@@ -3024,8 +3036,12 @@ All in `molt_ai_unittests` except the last item:
   on, its last fire and hold, whatever a stale card sends (values and
   steps saved after the schedule was changed, paused, snoozed or turned on
   elsewhere); Snooze holds without writing the file; Skip holds past the next
-  run only (cron, interval, overdue interval, none to come); each hold is
-  in the audit log (`snoozed`, `run_skipped`, until when); both refuse,
+  run only (cron, interval, none to come); a run due and not claimed yet
+  (an interval's or a fired cron's in flight, an overdue interval's
+  catch-up) is skipped alone, recorded as passed, its claim refused,
+  nothing held, but not a time an ended Snooze covered, a paused schedule
+  or a cron never fired here; each is in the audit log (`snoozed`,
+  `run_skipped`, `until=` or `passed=`); both refuse,
   and log nothing for, what they can't hold; an import with an address
   that has a value after a fixed host keeps that site.
 - `molt_automation_script_fuzzer`: the digest is empty or 64 hex digits and
@@ -3182,8 +3198,8 @@ All in `molt_ai_unittests` except the last item:
 
     Snooze (`snoozeScript`, a minute to an hour; the button sends an
     hour) holds from the click. Skip (`skipNextFire`) holds until one
-    second past the first run strictly after now: for an overdue interval
-    that is its next time to come, not the time already passed. A second
+    second past the first run strictly after now. A run due and not
+    claimed yet is skipped instead (the workflow-gaps-c change). A second
     Skip skips the run after that. A hold only rises, and each one set is
     in the audit log (`snoozed` or `run_skipped`, `until=<unix time>`).
 
@@ -3331,9 +3347,9 @@ All in `molt_ai_unittests` except the last item:
     it with no change of its own: `EffectivePolicy()`, the review
     (`DraftSites`, the review token), `ConfirmDraftSites()`,
     `MayConfirmWithoutSites()` (such a change now has a site, so it is
-    confirmed with it, never with none), `RunWindowStartURL()`, `RUN_SCRIPT`
-    and voice. A workflow imported with only such addresses (molt://ai-automation
-    keeps no file sites) works after the import.
+    confirmed with it, never with none), `RunWindowStartURL()`,
+    `RUN_SCRIPT` and voice. A workflow imported with only such addresses
+    (molt://ai-automation keeps no file sites) works after the import.
   - molt://ai-automation's saves other than Save schedule (*Save step
     changes*, *Save values as defaults*: `saveScript` without its third
     argument `true`) keep a stored workflow's schedule and whether it is on
@@ -3361,6 +3377,25 @@ All in `molt_ai_unittests` except the last item:
     exactly that list. `confirmDraftSites` takes at most 200 (the handler,
     and the storage's confirm before its locked update). Every agent draft
     fits: one host a step at most, `kMaxDraftSteps` (200).
+  - Skip next skips exactly one run when one is due and not claimed yet:
+    a timer's fire between its reload and its claim, or an overdue
+    catch-up the next listing runs (`automation_page::DueUnclaimed()`: it
+    may fire unattended, is cron or interval, has a last fire here, and
+    its first time after it, the hold counted, has come). Its due times
+    are recorded as passed up to `AutomationScheduler::PassedUntil()`
+    (`WorkflowRecord::NotePassed()` via
+    `AutomationStorage::HoldOrPassWith()`, under the lock it was read
+    under), so the claim made on the last fire read before fails, whatever
+    second it carries, and nothing after it is held. The answer carries
+    `passed_unix`, and the audit log says `run_skipped | passed=<unix
+    time>`. Otherwise Skip holds just past the first run after now, as
+    before. Not due: a time an ended Snooze covered, a schedule turned
+    off, a cron never fired here. molt://ai-automation's card shows such a
+    run as the next ("now"), so an overdue cron's card no longer shows its
+    next future time as the run Skip skips. A hold to now + 1 in its place
+    was rejected: a timer's reload taking a second or more would claim at
+    the next second, at or past the hold, and end it, so the Skip would
+    skip nothing.
 - **Existing gaps left as they are** (separate changes):
   the Agent studio's Stop doesn't stop a run (`cancelRun`'s
   `HandleCancelRun()` only answers; `AutomationRunner::Cancel()` has no
@@ -3370,9 +3405,16 @@ All in `molt_ai_unittests` except the last item:
   earlier builds keep their file's schedule switch; a hold is on this
   browser's clock (setting the clock back during one makes it last longer
   by the same amount); Skip next pressed in the few milliseconds between a
-  timer's reload of a due workflow and its claim of that fire can skip
-  that run as well as the next; the run limits count only what the run's tab reports as its loads
-  finish: a load still open (a stream, media still buffering) counts when
+  timer's reload and its claim of a cron's first run since its schedule
+  was saved (no last fire here, so a fire on its way to its claim can't be
+  told from a time that passed), or of a cron whose recorded last fire is
+  still ahead (a clock that was ahead), can skip that run as well as the
+  next; a schedule whose end passed after its last fire, with a time
+  between, still catches up once (the catch-up checks the end against the
+  last fire, not the due time), and Skip next on it records that time as
+  passed (its card shows it "now" until then); the run limits count only
+  what the run's tab reports as its loads finish: a load still open (a
+  stream, media still buffering) counts when
   it ends, and a load cancelled before it finished (aborted by the page,
   or cut off when the page navigated away), downloads, WebSockets, WebRTC,
   a service or shared worker's own fetches, navigations that never commit
@@ -3480,7 +3522,9 @@ All in `molt_ai_unittests` except the last item:
 >
 > **Snooze and Skip in molt://ai-automation now hold cron schedules too**,
 > and Snooze no longer pushes an interval a whole interval past the hour.
-> A hold applies to this copy of MoltBrowser only. Saving a workflow's
+> A hold applies to this copy of MoltBrowser only. Skip next skips one
+> run: if a run is due and about to start, or a missed run is about to be
+> caught up after sleep, that is the one skipped. Saving a workflow's
 > steps or default values in molt://ai-automation keeps its schedule, and
 > whether it is paused, as last saved: only **Save schedule** changes
 > them, so a card left open no longer undoes a schedule changed in Agent

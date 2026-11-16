@@ -1367,6 +1367,53 @@ TEST_F(AutomationStorageRecordTest, AFileChangedOutsideKeepsNoHold) {
   EXPECT_EQ(held(), 0);
 }
 
+// A run due and not claimed yet that a Skip skips is recorded as passed,
+// in the record only and under the lock it was read under: the claim made
+// on the last fire read before fails, the file is unchanged, and the run
+// after it is claimed. Only ever later. A hold through HoldOrPassWith() is
+// HoldWith()'s.
+TEST_F(AutomationStorageRecordTest, ARunDueSkippedIsRecordedAsPassed) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 3600));
+  const int64_t read = Load("wf_1")->trigger.last_fired_unix;
+  ASSERT_EQ(read, now - 3600);
+  const std::string bytes = Bytes("wf_1");
+  int64_t seen = 0;
+  const auto pass_now = [&](const Script& script) {
+    seen = script.trigger.last_fired_unix;
+    AutomationStorage::HoldOrPass set;
+    set.passed_unix = now;
+    return std::optional<AutomationStorage::HoldOrPass>(set);
+  };
+  std::optional<AutomationStorage::HoldOrPass> passed =
+      storage().HoldOrPassWith("wf_1", pass_now);
+  ASSERT_TRUE(passed);
+  EXPECT_EQ(passed->passed_unix, now);
+  EXPECT_EQ(passed->held_until_unix, 0);
+  EXPECT_EQ(seen, read);
+  EXPECT_FALSE(storage().ClaimFire("wf_1", now, read));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, now);
+  EXPECT_EQ(loaded->trigger.held_until_unix, 0);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+  // Only ever later: the same time again sets nothing.
+  EXPECT_FALSE(storage().HoldOrPassWith("wf_1", pass_now));
+  // A hold through it is a hold.
+  std::optional<AutomationStorage::HoldOrPass> held =
+      storage().HoldOrPassWith("wf_1", [now](const Script&) {
+        AutomationStorage::HoldOrPass set;
+        set.held_until_unix = now + 60;
+        return std::optional<AutomationStorage::HoldOrPass>(set);
+      });
+  ASSERT_TRUE(held);
+  EXPECT_EQ(held->held_until_unix, now + 60);
+  EXPECT_EQ(held->passed_unix, 0);
+  EXPECT_TRUE(storage().ClaimFire("wf_1", now + 3600, now));
+}
+
 // The scheduler's claim is refused before the hold (a Snooze or a Skip made
 // since it read the workflow wins) and leaves the last fire, here and in
 // the file; one at the hold is claimed, and ends it.

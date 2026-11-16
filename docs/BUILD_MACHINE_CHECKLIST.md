@@ -2963,7 +2963,18 @@ WEB_AI_APIS.md §12):
     `outside_change_confirmed` with all 25 hosts; with 201 such steps the
     review says "Its steps open 201 sites, more than the 200 a review can
     list" and offers no Confirm; delete one step and save: the 200 are
-    listed and Confirm works.
+    listed and Confirm works;
+  - Skip of a run due now: on an every-5-minutes cron (`*/5 * * * *`)
+    that has run once, sleep the Mac across its time. Right after waking,
+    before the scheduler's catch-up (within about a minute), the card
+    shows the missed time "(now)"; Skip next then logs
+    `run_skipped | passed=…`, the missed run doesn't run and the next
+    does. If the catch-up already ran (a `scheduled_fire` line), Skip
+    skips the following run (`until=…`): repeat;
+  - on a `1 minutes` interval, click Skip next at the card's Next fire
+    time, to the second, by the clock: exactly one run is skipped (that
+    one, or the next if it had already started), never two in a row;
+    check the Audit log's `scheduled_fire` lines.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world

@@ -536,7 +536,8 @@ std::optional<int64_t> TimeIn(const base::DictValue& answer,
 }
 
 // The holds the audit log has for workflow |id|, oldest first, each as
-// "<event> | until=<unix time>".
+// "<event> | until=<unix time>" (or, for a Skip of a run due now,
+// "run_skipped | passed=<unix time>").
 std::vector<std::string> HoldsLogged(const std::string& id,
                                      AutomationStorage& storage) {
   std::vector<std::string> out;
@@ -719,9 +720,10 @@ TEST_F(AutomationPageStorageTest, SnoozeHoldsWithoutWritingTheFile) {
 
 // Skip next holds just past the first run after now, so the run after it is
 // next; a second Skip skips that one too. An interval keeps its phase, and
-// an overdue one (its times passed while it was off) skips its next time
-// to come, not the one already passed. Each Skip is in the audit log
-// ("run_skipped", until when); one with nothing to skip isn't.
+// an overdue one (its catch-up not run yet) skips only that catch-up,
+// recorded as passed (nothing held), then holds past its next time. Each
+// Skip is in the audit log ("run_skipped", until when or passed when); one
+// with nothing to skip isn't.
 TEST_F(AutomationPageStorageTest, SkipNextHoldsPastTheNextRunOnly) {
   UseRecord();
   const base::Time now = base::Time::FromTimeT(kNow);
@@ -741,12 +743,22 @@ TEST_F(AutomationPageStorageTest, SkipNextHoldsPastTheNextRunOnly) {
   base::DictValue interval = SkipNext("wf_interval", now, storage());
   EXPECT_EQ(TimeIn(interval, "held_until_unix"), kNow + 800 + 1);
   EXPECT_EQ(TimeIn(interval, "next_fire_unix"), kNow + 1700);
-  // Last run 2000 s ago: due 1100 s and 200 s ago (overdue), next at 700 s.
+  // Last run 2000 s ago: due 1100 s and 200 s ago (overdue, its catch-up
+  // not run yet), next at 700 s. The catch-up is the run skipped: recorded
+  // as passed at its last due time (its phase kept), nothing held.
   ASSERT_TRUE(storage().Save(Scheduled(
       "wf_overdue", automation::TriggerType::INTERVAL, "900", kNow - 2000)));
   base::DictValue overdue = SkipNext("wf_overdue", now, storage());
-  EXPECT_EQ(TimeIn(overdue, "held_until_unix"), kNow + 700 + 1);
-  EXPECT_EQ(TimeIn(overdue, "next_fire_unix"), kNow + 1600);
+  EXPECT_EQ(overdue.FindBool("success"), true);
+  EXPECT_FALSE(overdue.FindDouble("held_until_unix"));
+  EXPECT_EQ(TimeIn(overdue, "passed_unix"), kNow - 200);
+  EXPECT_EQ(TimeIn(overdue, "next_fire_unix"), kNow + 700);
+  EXPECT_EQ(storage().Load("wf_overdue")->trigger.last_fired_unix, kNow - 200);
+  EXPECT_EQ(storage().Load("wf_overdue")->trigger.held_until_unix, 0);
+  // Then its next time is the next run: held past it.
+  base::DictValue again_overdue = SkipNext("wf_overdue", now, storage());
+  EXPECT_EQ(TimeIn(again_overdue, "held_until_unix"), kNow + 700 + 1);
+  EXPECT_EQ(TimeIn(again_overdue, "next_fire_unix"), kNow + 1600);
   // No run to come (its end has passed): nothing to skip.
   Script ended =
       Scheduled("wf_ended", automation::TriggerType::CRON, "*/5 * * * *", 0);
@@ -763,8 +775,76 @@ TEST_F(AutomationPageStorageTest, SkipNextHoldsPastTheNextRunOnly) {
   EXPECT_EQ(HoldsLogged("wf_interval", storage()),
             std::vector<std::string>{HoldLine("run_skipped", kNow + 800 + 1)});
   EXPECT_EQ(HoldsLogged("wf_overdue", storage()),
-            std::vector<std::string>{HoldLine("run_skipped", kNow + 700 + 1)});
+            (std::vector<std::string>{
+                "run_skipped | passed=" + base::NumberToString(kNow - 200),
+                HoldLine("run_skipped", kNow + 700 + 1)}));
   EXPECT_TRUE(HoldsLogged("wf_ended", storage()).empty());
+}
+
+// Skip next pressed while a run is due and not claimed yet (its timer's
+// fire on its way to its claim, a few milliseconds after its time) skips
+// that run only: it is recorded as passed, so the claim made on the last
+// fire read before fails, and nothing after it is held; the next runs as
+// usual. Not for a time an ended Snooze covered, a paused schedule or a
+// cron never fired here: those are held past their next run.
+TEST_F(AutomationPageStorageTest, SkipNextOfARunDueNowSkipsThatRunOnly) {
+  UseRecord();
+  const base::Time pressed =
+      base::Time::FromTimeT(kNow) + base::Milliseconds(5);
+  // Every 15 minutes, last run 15 minutes ago: due now, its claim to come.
+  ASSERT_TRUE(storage().Save(Scheduled(
+      "wf_due", automation::TriggerType::INTERVAL, "900", kNow - 900)));
+  const int64_t read = storage().Load("wf_due")->trigger.last_fired_unix;
+  ASSERT_EQ(read, kNow - 900);
+  base::DictValue due = SkipNext("wf_due", pressed, storage());
+  EXPECT_EQ(due.FindBool("success"), true);
+  EXPECT_EQ(TimeIn(due, "passed_unix"), kNow);
+  EXPECT_FALSE(due.FindDouble("held_until_unix"));
+  EXPECT_EQ(TimeIn(due, "next_fire_unix"), kNow + 900);
+  EXPECT_FALSE(storage().ClaimFire("wf_due", kNow, read));
+  EXPECT_EQ(storage().Load("wf_due")->trigger.last_fired_unix, kNow);
+  EXPECT_EQ(storage().Load("wf_due")->trigger.held_until_unix, 0);
+  // The run after it isn't held.
+  EXPECT_TRUE(storage().ClaimFire("wf_due", kNow + 900, kNow));
+  EXPECT_EQ(HoldsLogged("wf_due", storage()),
+            std::vector<std::string>{"run_skipped | passed=" +
+                                     base::NumberToString(kNow)});
+
+  // A cron fired here before (every five minutes; kNow is on one): the
+  // same.
+  ASSERT_TRUE(storage().Save(Scheduled("wf_cron", automation::TriggerType::CRON,
+                                       "*/5 * * * *", kNow - 300)));
+  base::DictValue cron = SkipNext("wf_cron", pressed, storage());
+  EXPECT_EQ(TimeIn(cron, "passed_unix"), kNow);
+  EXPECT_EQ(TimeIn(cron, "next_fire_unix"), kNow + 300);
+  EXPECT_FALSE(storage().ClaimFire("wf_cron", kNow, kNow - 300));
+
+  // A time an ended Snooze covered isn't due: held past the next run.
+  ASSERT_TRUE(storage().Save(Scheduled(
+      "wf_snoozed", automation::TriggerType::INTERVAL, "900", kNow - 1000)));
+  ASSERT_EQ(
+      Snooze("wf_snoozed", 3600, kNow - 3650, storage()).FindBool("success"),
+      true);
+  base::DictValue snoozed = SkipNext("wf_snoozed", pressed, storage());
+  EXPECT_FALSE(snoozed.FindDouble("passed_unix"));
+  EXPECT_EQ(TimeIn(snoozed, "held_until_unix"), kNow + 800 + 1);
+  EXPECT_EQ(TimeIn(snoozed, "next_fire_unix"), kNow + 1700);
+
+  // A paused schedule has no run due: held past the next.
+  Script paused = Scheduled("wf_paused", automation::TriggerType::INTERVAL,
+                            "900", kNow - 900);
+  paused.enabled = false;
+  ASSERT_TRUE(storage().Save(paused));
+  base::DictValue off = SkipNext("wf_paused", pressed, storage());
+  EXPECT_FALSE(off.FindDouble("passed_unix"));
+  EXPECT_EQ(TimeIn(off, "held_until_unix"), kNow + 900 + 1);
+
+  // A cron never fired here: held past its next time.
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_new", automation::TriggerType::CRON, "*/5 * * * *", 0)));
+  base::DictValue fresh = SkipNext("wf_new", pressed, storage());
+  EXPECT_FALSE(fresh.FindDouble("passed_unix"));
+  EXPECT_EQ(TimeIn(fresh, "held_until_unix"), kNow + 300 + 1);
 }
 
 // Snooze and Skip refuse what this page doesn't hold: a routine taught by

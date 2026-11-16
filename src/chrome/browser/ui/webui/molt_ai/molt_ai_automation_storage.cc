@@ -25,6 +25,7 @@ using automation::Script;
 using automation::Trigger;
 using automation::TriggerType;
 using automation::TrustLevel;
+using HoldOrPass = AutomationStorage::HoldOrPass;
 
 constexpr char kScriptNotFound[] = "script not found";
 
@@ -69,44 +70,54 @@ std::optional<std::string> HoldRefused(const Script& script) {
   return std::nullopt;
 }
 
-// The hold |until| gives for workflow |id| as stored (or, in |error|, why
-// none), set under the directory's lock (AutomationStorage::HoldWith()),
-// and the page's answer: {success, held_until_unix, next_fire_unix?} (its
-// next run after |now|, the hold counted), or {success: false, error}. A
-// hold set is in the audit log as |audit_event|, "until=<unix time>", so a
-// run that doesn't happen because of one is explained there.
-using HoldUntil =
-    base::FunctionRef<std::optional<int64_t>(const Script&, std::string&)>;
+// What |set_from| gives for workflow |id| as stored (or, in |error|, why
+// nothing), set under the directory's lock (AutomationStorage::
+// HoldOrPassWith()), and the page's answer: {success, held_until_unix |
+// passed_unix, next_fire_unix?} (its next run after |now|, counting what was
+// set), or {success: false, error}. In the audit log as |audit_event|,
+// "until=<unix time>" for a hold, "passed=<unix time>" for a run due now
+// that doesn't happen, so a run that doesn't happen because of one is
+// explained there.
+using SetFrom =
+    base::FunctionRef<std::optional<HoldOrPass>(const Script&, std::string&)>;
 base::DictValue HoldAnswer(const std::string& id,
                            base::Time now,
                            AutomationStorage& storage,
                            const char* audit_event,
-                           HoldUntil until) {
+                           SetFrom set_from) {
   std::string error = kScriptNotFound;
   Trigger trigger;
-  const std::optional<int64_t> held =
-      storage.HoldWith(id, [&](const Script& script) -> std::optional<int64_t> {
+  const std::optional<HoldOrPass> set = storage.HoldOrPassWith(
+      id, [&](const Script& script) -> std::optional<HoldOrPass> {
         if (std::optional<std::string> refused = HoldRefused(script)) {
           error = std::move(*refused);
           return std::nullopt;
         }
-        std::optional<int64_t> held_until = until(script, error);
-        if (held_until) {
+        std::optional<HoldOrPass> wanted = set_from(script, error);
+        if (wanted) {
           // The answer should the record have no entry to hold (a file this
           // browser didn't write is a draft, refused above).
           error = "This schedule couldn't be held";
           trigger = script.trigger;
         }
-        return held_until;
+        return wanted;
       });
-  if (!held) {
+  if (!set) {
     return Failed(error);
   }
-  storage.AppendAudit(id, audit_event, "until=" + base::NumberToString(*held));
-  trigger.held_until_unix = *held;
   base::DictValue result;
   result.Set("success", true);
-  result.Set("held_until_unix", static_cast<double>(*held));
+  if (set->passed_unix > 0) {
+    storage.AppendAudit(id, audit_event,
+                        "passed=" + base::NumberToString(set->passed_unix));
+    trigger.last_fired_unix = set->passed_unix;
+    result.Set("passed_unix", static_cast<double>(set->passed_unix));
+  } else {
+    storage.AppendAudit(id, audit_event,
+                        "until=" + base::NumberToString(set->held_until_unix));
+    trigger.held_until_unix = set->held_until_unix;
+    result.Set("held_until_unix", static_cast<double>(set->held_until_unix));
+  }
   const base::Time next = AutomationScheduler::NextFireTime(trigger, now);
   if (!next.is_null()) {
     result.Set("next_fire_unix", static_cast<double>(next.ToTimeT()));
@@ -317,20 +328,44 @@ base::DictValue Snooze(const std::string& id,
                        AutomationStorage& storage) {
   return HoldAnswer(id, base::Time::FromTimeT(now_unix), storage, "snoozed",
                     [now_unix, seconds](const Script&, std::string&) {
-                      return std::optional<int64_t>(now_unix + seconds);
+                      HoldOrPass hold;
+                      hold.held_until_unix = now_unix + seconds;
+                      return std::optional<HoldOrPass>(hold);
                     });
+}
+
+base::Time DueUnclaimed(const Script& script, base::Time now) {
+  const Trigger& trigger = script.trigger;
+  if (!AutomationSecurity::MayFireUnattended(script) ||
+      (trigger.type != TriggerType::CRON &&
+       trigger.type != TriggerType::INTERVAL) ||
+      trigger.last_fired_unix <= 0) {
+    return base::Time();
+  }
+  // Its first time after its last fire, its hold counted (the scheduler's
+  // test of a timer's reload, and a listing's catch-up).
+  const base::Time due = AutomationScheduler::NextFireTime(
+      trigger, base::Time::FromTimeT(trigger.last_fired_unix));
+  return !due.is_null() && due <= now ? due : base::Time();
 }
 
 base::DictValue SkipNext(const std::string& id,
                          base::Time now,
                          AutomationStorage& storage) {
-  const auto past_next_run = [now](
-                                 const Script& script,
-                                 std::string& error) -> std::optional<int64_t> {
-    // Its first run strictly after now, as the scheduler counts it from its
-    // last fire and any hold already set: an overdue interval's next time,
-    // not the one already passed (held just past that, the hold would be
-    // over already).
+  const auto next_run = [now](const Script& script,
+                              std::string& error) -> std::optional<HoldOrPass> {
+    HoldOrPass set;
+    // A run due and not claimed yet (its timer's fire on its way to its
+    // claim, an overdue catch-up the next listing runs) is the next run,
+    // and only it is skipped: its due times are recorded as passed up to
+    // now, its phase kept, so its claim, made on the last fire read
+    // before, fails, and nothing after it is held.
+    if (!DueUnclaimed(script, now).is_null()) {
+      set.passed_unix = AutomationScheduler::PassedUntil(script.trigger, now);
+      return set;
+    }
+    // Else its first run strictly after now, as the scheduler counts it
+    // from its last fire and any hold already set.
     Trigger after_now = script.trigger;
     after_now.held_until_unix = std::max<int64_t>(
         after_now.held_until_unix, static_cast<int64_t>(now.ToTimeT()) + 1);
@@ -340,9 +375,10 @@ base::DictValue SkipNext(const std::string& id,
       return std::nullopt;
     }
     // Held just past it: the run after it is the next.
-    return static_cast<int64_t>(next.ToTimeT()) + 1;
+    set.held_until_unix = static_cast<int64_t>(next.ToTimeT()) + 1;
+    return set;
   };
-  return HoldAnswer(id, now, storage, "run_skipped", past_next_run);
+  return HoldAnswer(id, now, storage, "run_skipped", next_run);
 }
 
 }  // namespace automation_page
