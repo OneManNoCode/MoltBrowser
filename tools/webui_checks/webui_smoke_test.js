@@ -364,11 +364,12 @@ async function checkChatPageActions(window) {
   assert.strictEqual(JSON.stringify(calls('runMoltAction')),
                      '[["runMoltAction",{"type":"click","selector":"#buy","confirmed":true}]]');
   assert.strictEqual(calls('proposeChatAction').length, 0);
-  // "/wait-for" is a wait-for, not a "/wait" of "-for ...".
+  // "/wait-for" is a wait-for, not a "/wait" of "-for ...", and the rest of
+  // the line is its selector.
   chatActionCalls.length = 0;
-  await send('/wait-for .results 3000');
+  await send('/wait-for .results li');
   const waitFor0 = calls('runMoltAction')[0];
-  assert(waitFor0 && waitFor0[1].type === 'wait-for' && waitFor0[1].selector === '.results',
+  assert(waitFor0 && waitFor0[1].type === 'wait-for' && waitFor0[1].selector === '.results li',
          'a wait-for: ' + JSON.stringify(waitFor0));
   window.setActionMode('ask');
   nextProposal = {status: 'none'};

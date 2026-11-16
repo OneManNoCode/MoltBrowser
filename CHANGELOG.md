@@ -31,8 +31,9 @@ For longer narrative posts behind each entry see
   one-time ("once at") schedule still to come that it is opened on, and
   molt://ai-automation no longer moves a one-time schedule by your time
   zone's offset when it is saved again.
-- **The chat's `/wait-for` works as written.** It was read as `/wait`,
-  and the timeout you give it (1 to 30000 ms) is now used.
+- **The chat's `/wait-for` works.** It was read as `/wait`. It now
+  waits for the element the rest of the line names (`/wait-for .results
+  li`), as a recorded wait-for step does.
 
 - **Voice mode's own reading, heard back as one word, no longer chooses
   from it.** On speakers, while voice mode read the search results, its
@@ -392,10 +393,11 @@ For longer narrative posts behind each entry see
 - **The chat's page watcher (`/watch`) starts as Casual.** It checks its
   page on its schedule as before; a step you add to it later that submits
   a form or fills a password asks you to trust it first.
-- **A scheduled workflow runs at most once a minute, and a scheduled run
-  doesn't start while its last run is still open.** A shorter interval
-  runs once a minute, and a scheduled run is skipped while the workflow's
-  last run is still open.
+- **A scheduled workflow runs at most once a minute, and a repeating
+  schedule doesn't start a run while its last run is still open.** A
+  shorter interval runs once a minute, and a repeating schedule's run is
+  skipped while the workflow's last run is still open (a one-time run
+  still runs).
 - **Workflows changed outside MoltBrowser now need your review.**
   MoltBrowser remembers, in its own profile folder, exactly what it last
   saved for each workflow in `~/.moltbrowser/automations`. If a workflow

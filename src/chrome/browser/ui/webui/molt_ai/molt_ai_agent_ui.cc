@@ -1460,6 +1460,8 @@ function scheduleText(tr){
   var e=visible(tr.expression||'');
   if(tr.type==='interval'){
     var n=parseInt(e,10)||0;
+    // As it runs: never more often than once a minute (kMinIntervalSeconds).
+    if(n>0)n=Math.max(n,60);
     var every=(n>=3600&&n%3600===0)?(n/3600)+' h':(n>=60&&n%60===0)?(n/60)+' min':n+' s';
     return 'Schedule: runs by itself every '+every+'.';
   }

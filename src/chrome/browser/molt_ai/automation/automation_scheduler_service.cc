@@ -86,10 +86,12 @@ void AutomationSchedulerService::OnTriggerFired(const Script& script,
                     RefusalReason(script));
     return;
   }
-  // One run of a workflow at a time: a fire while its last run (scheduled,
-  // or one the user started) is still open is skipped, not opened as
-  // another window beside it.
-  if (AgentInboxRegistry::Get()->IsRunning(script.id)) {
+  // One run of a repeating schedule at a time: a fire while the workflow's
+  // last run (scheduled, or one the user started) is still open is skipped,
+  // not opened as another window beside it; its next time comes. A
+  // one-time run has no next time, so it runs anyway.
+  if (script.trigger.type != TriggerType::AT &&
+      AgentInboxRegistry::Get()->IsRunning(script.id)) {
     PostSharedAudit(storage_dir_, script.id, "scheduled_fire_skipped",
                     "still_running");
     return;

@@ -3037,23 +3037,25 @@ All in `molt_ai_unittests` except the last item:
   - the chat's page watcher is saved CASUAL (its steps need nothing more;
     the scheduler fires it whatever its trust). Watchers made by earlier
     builds keep their trust until made again;
-  - an interval molt://ai-automation saves with no last fire counts from
-    the save; one an earlier version saved so (the record's last fire 0)
-    is shown "not started" on both pages until its schedule is saved
-    again, rather than started by the upgrade; the scheduler counts any interval as at least
+  - an interval molt://ai-automation's Save schedule saves (it sends no
+    last fire) counts from the save; one an earlier version saved so (the
+    record's last fire 0) is shown "not started" on both pages until its
+    schedule is saved again (only Save schedule, or the studio's Schedule
+    sheet, starts it), rather than started by the upgrade; the scheduler counts any interval as at least
     `kMinIntervalSeconds` (60 s), both pages and the chat refuse or raise a
     shorter one, and molt://ai-automation shows an interval in its largest
     whole unit (it showed seconds with "hours" selected, so re-saving one
     multiplied it by 3600);
-  - a scheduled fire while a run of the same workflow is still open (in the
-    Agent Inbox) is skipped (audit `scheduled_fire_skipped`), not opened as
-    a second window;
+  - a repeating schedule's fire (cron, interval) while a run of the same
+    workflow is still open (in the Agent Inbox) is skipped (audit
+    `scheduled_fire_skipped`), not opened as a second window; a one-time
+    run, which has no next time, runs anyway;
   - a `wait` step runs the seconds its value says, as the studio's number
     field shows them (`WaitMillisecondsOf()`: 0 to 60, empty is 2; anything
     else fails the step), never its timeout (before, its timer and its wait
     raced, and a wait with a timeout always failed "Step timed out"); the
     chat's `/wait` takes 0 to 60000 ms, and `/wait-for` is no longer read
-    as `/wait`.
+    as `/wait` (the rest of its line is its selector).
 - **Existing gaps left as they are** (separate changes):
   molt://ai-automation's Snooze and Skip don't hold back a cron schedule's
   timer in any browser (they are written as a future last fire, which cron

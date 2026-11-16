@@ -241,13 +241,18 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       Resolve(callback_id, std::move(result));
       return;
     }
+    // [callback_id, script, schedule_saved?]: whether it is Save
+    // schedule's (an interval it sends counts from now).
+    const bool schedule_saved =
+        args.size() > 2 && args[2].is_bool() && args[2].GetBool();
     // The dict's security is UI-supplied and ignored: a save keeps the
     // policy stored on disk (trust set only via promoteTrust) or takes a
     // script not stored as an import, in one read-modify-write.
     PostSharedChange(
         Dir(),
         base::BindOnce(&automation_page::SaveWorkflow, std::move(*script),
-                       static_cast<int64_t>(std::time(nullptr))),
+                       static_cast<int64_t>(std::time(nullptr)),
+                       schedule_saved),
         base::BindOnce(&MoltAIAutomationHandler::Resolve,
                        weak_factory_.GetWeakPtr(), callback_id));
   }
@@ -1432,11 +1437,13 @@ function saveSchedule(scriptObj, card) {
   scriptObj.trigger = {type: t, expression: expr,
                         timezone: '', until_unix: 0};
   scriptObj.enabled = enabled;
-  saveScript(scriptObj, 'Schedule saved');
+  // The schedule saved afresh: an interval counts from now (one never
+  // started is started only here).
+  saveScript(scriptObj, 'Schedule saved', true);
 }
 
-function saveScript(scriptObj, successMsg) {
-  sendWithPromise('saveScript', scriptObj).then(function(r){
+function saveScript(scriptObj, successMsg, scheduleSaved) {
+  sendWithPromise('saveScript', scriptObj, scheduleSaved === true).then(function(r){
     if (r.success) { showToast(successMsg || 'Saved'); refresh(); }
     else { showToast('Save failed: ' + (r.error || ''), true); }
   });

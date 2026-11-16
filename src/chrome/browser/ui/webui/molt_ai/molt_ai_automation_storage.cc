@@ -69,14 +69,15 @@ std::optional<Script> LoadToRun(const std::string& id,
 
 base::DictValue SaveWorkflow(Script script,
                              int64_t now_unix,
+                             bool schedule_saved,
                              AutomationStorage& storage) {
   if (HasVoiceSteps(script)) {
     return Failed(kVoiceRoutinesElsewhere);
   }
   bool stored_routine = false;
   const bool saved = storage.SaveChecked(
-      std::move(script),
-      [&stored_routine, now_unix](const Script* stored, Script& s) {
+      std::move(script), [&stored_routine, now_unix, schedule_saved](
+                             const Script* stored, Script& s) {
         if (stored && HasVoiceSteps(*stored)) {
           stored_routine = true;
           return false;
@@ -94,10 +95,14 @@ base::DictValue SaveWorkflow(Script script,
         // The stored trust, or CASUAL with the policy floor and any
         // schedule turned off for a new one.
         AutomationSecurity::ClampTrustForSave(s, stored);
-        // An interval saved with no last fire (Save schedule sends none)
-        // counts from this save: the scheduler would count it from each
-        // listing, and never fire it.
-        automation::CountIntervalFromNow(s.trigger, now_unix);
+        // An interval saved afresh (Save schedule sends no last fire), or
+        // a new one, counts from this save: the scheduler would count one
+        // with none from each listing, and never fire it. Any other save
+        // leaves one an earlier version saved with none as it is (shown
+        // "not started"): only Save schedule starts it.
+        if (!stored || schedule_saved) {
+          automation::CountIntervalFromNow(s.trigger, now_unix);
+        }
         return true;
       });
   if (stored_routine) {

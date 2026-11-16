@@ -3188,23 +3188,11 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
     }
     step.value = base::NumberToString(ms / 1000.0);
   } else if (t == "wait-for") {
-    // P3: poll until a selector appears, up to value ms (default 5000), at
-    // most this one-step script's runtime (the runner checks its runtime
-    // only between steps, so an unbounded timeout would hold the chat).
+    // P3: poll until a selector appears, as a recorded wait-for step does
+    // (its step timer below, then the runner's retries, within this
+    // one-step script's runtime).
     step.type = molt_ai::automation::StepType::WAIT_FOR;
     step.target = sel ? *sel : "";
-    constexpr int kMaxWaitForMs = 30000;
-    int ms = 5000;
-    if ((value && !value->empty() && !base::StringToInt(*value, &ms)) ||
-        ms < 1 || ms > kMaxWaitForMs) {
-      result.Set("success", false);
-      result.Set("error", base::StringPrintf("/wait-for takes 1 to %d ms",
-                                             kMaxWaitForMs));
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(result)));
-      return;
-    }
-    step.timeout_ms = ms;
   } else {
     result.Set("success", false);
     result.Set("error", "unknown action type: " + t);
@@ -3212,11 +3200,8 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
                               base::Value(std::move(result)));
     return;
   }
-  // A wait-for's own ms is its poll deadline and step timer; a wait's step
-  // timer is set past its wait (the runner's DoWait()).
-  if (t != "wait-for") {
-    step.timeout_ms = 8000;
-  }
+  // A wait's step timer is set past its wait (the runner's DoWait()).
+  step.timeout_ms = 8000;
   if (!confirmed && (t == "click" || t == "type")) {
     // The runner probes the element right before acting and stops with a
     // needs_confirmation message on a cross-origin link or a password /

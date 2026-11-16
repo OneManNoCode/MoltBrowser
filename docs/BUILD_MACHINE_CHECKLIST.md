@@ -2833,8 +2833,8 @@ WEB_AI_APIS.md §12):
   - a Wait step of 3 seconds waits about 3 seconds and succeeds; a value of
     `2000` stops with "A wait needs a number of seconds from 0 to 60";
   - `/watch https://news.example/ h1 600` in the chat: the workflow is
-    Casual and checks the page every 10 minutes; `/wait-for .x 3000` waits
-    up to 3 seconds;
+    Casual and checks the page every 10 minutes; `/wait-for .results li`
+    succeeds once that element is on the page;
   - on a profile upgraded from v0.2.5 with an interval saved in
     molt://ai-automation: it says "not started" on both pages until its
     schedule is saved again.

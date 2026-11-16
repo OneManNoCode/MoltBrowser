@@ -118,12 +118,12 @@ TEST_F(AutomationPageStorageTest,
   EXPECT_FALSE(DeleteWorkflow("voice_1", storage()));
   EXPECT_TRUE(storage().Load("voice_1"));
   // Saved over, or saved as one: neither.
-  base::DictValue over =
-      SaveWorkflow(Workflow("voice_1", "mine"), kNow, storage());
+  base::DictValue over = SaveWorkflow(Workflow("voice_1", "mine"), kNow,
+                                      /*schedule_saved=*/false, storage());
   EXPECT_EQ(over.FindBool("success"), false);
   EXPECT_EQ(*over.FindString("error"), kVoiceRoutinesElsewhere);
-  base::DictValue as_one =
-      SaveWorkflow(VoiceRoutine("wf_9", "news"), kNow, storage());
+  base::DictValue as_one = SaveWorkflow(VoiceRoutine("wf_9", "news"), kNow,
+                                        /*schedule_saved=*/false, storage());
   EXPECT_EQ(as_one.FindBool("success"), false);
   EXPECT_EQ(storage().Load("voice_1")->name, "news");
   EXPECT_FALSE(storage().Load("wf_9"));
@@ -138,8 +138,10 @@ TEST_F(AutomationPageStorageTest,
 TEST_F(AutomationPageStorageTest, ASaveKeepsTheStoredTrust) {
   Script first = Workflow("wf_1", "Prices");
   first.security.trust = TrustLevel::ADMIN;
-  EXPECT_EQ(SaveWorkflow(std::move(first), kNow, storage()).FindBool("success"),
-            true);
+  EXPECT_EQ(
+      SaveWorkflow(std::move(first), kNow, /*schedule_saved=*/false, storage())
+          .FindBool("success"),
+      true);
   EXPECT_EQ(storage().Load("wf_1")->security.trust, TrustLevel::CASUAL);
   base::DictValue promoted =
       PromoteTrust("wf_1", TrustLevel::APPROVED, storage());
@@ -147,8 +149,10 @@ TEST_F(AutomationPageStorageTest, ASaveKeepsTheStoredTrust) {
   EXPECT_EQ(*promoted.FindString("trust"), "approved");
   Script edit = Workflow("wf_1", "Prices, edited");
   edit.security.trust = TrustLevel::ADMIN;
-  EXPECT_EQ(SaveWorkflow(std::move(edit), kNow, storage()).FindBool("success"),
-            true);
+  EXPECT_EQ(
+      SaveWorkflow(std::move(edit), kNow, /*schedule_saved=*/false, storage())
+          .FindBool("success"),
+      true);
   std::optional<Script> saved = storage().Load("wf_1");
   ASSERT_TRUE(saved);
   EXPECT_EQ(saved->name, "Prices, edited");
@@ -250,7 +254,8 @@ TEST_F(AutomationPageStorageTest, ASaveKeepsAWorkflowChangedOutsideADraft) {
   EXPECT_TRUE(shown->security.changed_outside);
   shown->name = "Prices, edited";
   EXPECT_EQ(
-      SaveWorkflow(std::move(*shown), kNow, storage()).FindBool("success"),
+      SaveWorkflow(std::move(*shown), kNow, /*schedule_saved=*/false, storage())
+          .FindBool("success"),
       true);
   std::optional<Script> saved = storage().Load("wf_1");
   ASSERT_TRUE(saved);
@@ -369,8 +374,10 @@ TEST_F(AutomationPageStorageTest, ASaveKeepsTheStoredPolicy) {
   edit.security.require_approval_for = {"x"};
   edit.security.max_runtime_seconds = 100000;
   edit.security.domain_whitelist = {"com"};
-  EXPECT_EQ(SaveWorkflow(std::move(edit), kNow, storage()).FindBool("success"),
-            true);
+  EXPECT_EQ(
+      SaveWorkflow(std::move(edit), kNow, /*schedule_saved=*/false, storage())
+          .FindBool("success"),
+      true);
   std::optional<Script> saved = storage().Load("wf_1");
   ASSERT_TRUE(saved);
   EXPECT_EQ(saved->name, "Prices, edited");
@@ -391,8 +398,10 @@ TEST_F(AutomationPageStorageTest, ASaveOfAWorkflowNotStoredIsAnImport) {
   made.trigger.type = automation::TriggerType::CRON;
   made.trigger.expression = "* * * * *";
   made.trigger.last_fired_unix = 1;
-  EXPECT_EQ(SaveWorkflow(std::move(made), kNow, storage()).FindBool("success"),
-            true);
+  EXPECT_EQ(
+      SaveWorkflow(std::move(made), kNow, /*schedule_saved=*/false, storage())
+          .FindBool("success"),
+      true);
   std::optional<Script> saved = storage().Load("wf_new");
   ASSERT_TRUE(saved);
   EXPECT_EQ(saved->security.trust, TrustLevel::CASUAL);
@@ -421,13 +430,41 @@ TEST_F(AutomationPageStorageTest, AnIntervalSavedWithNoLastFireCountsFromIt) {
   shown->enabled = true;
   shown->trigger.last_fired_unix = 0;
   EXPECT_EQ(
-      SaveWorkflow(std::move(*shown), kNow, storage()).FindBool("success"),
+      SaveWorkflow(std::move(*shown), kNow, /*schedule_saved=*/true, storage())
+          .FindBool("success"),
       true);
   std::optional<Script> saved = storage().Load(id);
   ASSERT_TRUE(saved);
   EXPECT_TRUE(saved->enabled);
   EXPECT_EQ(saved->trigger.last_fired_unix, kNow);
   EXPECT_TRUE(automation::AutomationSecurity::MayFireUnattended(*saved));
+}
+
+// An interval an earlier version saved with no last fire (shown "not
+// started") is started only by Save schedule: saving its steps or values
+// leaves it as it is.
+TEST_F(AutomationPageStorageTest,
+       OnlySaveScheduleStartsAnIntervalNeverStarted) {
+  UseRecord();
+  Script hourly = Workflow("wf_hourly", "Hourly");
+  hourly.trigger.type = automation::TriggerType::INTERVAL;
+  hourly.trigger.expression = "3600";
+  ASSERT_TRUE(storage().Save(hourly));
+  ASSERT_EQ(storage().Load("wf_hourly")->trigger.last_fired_unix, 0);
+  Script steps_saved = *storage().Load("wf_hourly");
+  steps_saved.steps[0].description = "Open the news";
+  EXPECT_EQ(SaveWorkflow(std::move(steps_saved), kNow,
+                         /*schedule_saved=*/false, storage())
+                .FindBool("success"),
+            true);
+  EXPECT_EQ(storage().Load("wf_hourly")->trigger.last_fired_unix, 0);
+  EXPECT_EQ(storage().Load("wf_hourly")->steps[0].description, "Open the news");
+  Script rescheduled = *storage().Load("wf_hourly");
+  EXPECT_EQ(SaveWorkflow(std::move(rescheduled), kNow,
+                         /*schedule_saved=*/true, storage())
+                .FindBool("success"),
+            true);
+  EXPECT_EQ(storage().Load("wf_hourly")->trigger.last_fired_unix, kNow);
 }
 
 }  // namespace
