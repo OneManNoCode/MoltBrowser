@@ -102,6 +102,15 @@ base::DictValue SaveWorkflow(Script script,
         // "not started"): only Save schedule starts it.
         if (!stored || schedule_saved) {
           automation::CountIntervalFromNow(s.trigger, now_unix);
+        } else if (s.trigger.last_fired_unix <= 0 &&
+                   s.trigger.type == stored->trigger.type &&
+                   s.trigger.expression == stored->trigger.expression &&
+                   s.trigger.timezone == stored->trigger.timezone &&
+                   s.trigger.until_unix == stored->trigger.until_unix) {
+          // A card listed before the schedule was started elsewhere (an
+          // open card isn't refreshed): it stays as stored, started or
+          // not.
+          s.trigger.last_fired_unix = stored->trigger.last_fired_unix;
         }
         return true;
       });

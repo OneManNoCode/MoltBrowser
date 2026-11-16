@@ -2819,10 +2819,12 @@ WEB_AI_APIS.md §12):
 - [ ] Workflow gaps (workflow-gaps; docs/design/AGENT_ACTIONS.md §3.6.11):
   - in molt://ai-automation, import a `.molt` whose `security` lists
     `"require_approval_for": ["x"]` and a cron schedule: its card says
-    "(paused)" with no next run; a run stops before a form submit
-    ("Trust & re-run"); tick Enabled and click Save schedule: it runs on
-    its schedule;
-  - the same file imported in Agent mode: its card says "paused";
+    "(paused)" with no next run; a run stops before a form submit (its
+    last result says to trust it; the same run started from Agent mode
+    offers "Trust & re-run"); tick Enabled and click Save schedule: it runs
+    on its schedule;
+  - the same file (saved as `.json`, which Agent mode's Import takes)
+    imported in Agent mode: its card says "paused";
     Schedule opens on its schedule, Save turns it on; editing its steps
     afterwards doesn't turn it off or change its schedule;
   - in molt://ai-automation, save "every 1 hours" unchanged twice: it stays
@@ -2836,8 +2838,9 @@ WEB_AI_APIS.md §12):
     Casual and checks the page every 10 minutes; `/wait-for .results li`
     succeeds once that element is on the page;
   - on a profile upgraded from v0.2.5 with an interval saved in
-    molt://ai-automation: it says "not started" on both pages until its
-    schedule is saved again.
+    molt://ai-automation and a `/watch` watcher: each says "not started" on
+    both pages until its schedule is saved again (or the `/watch` is made
+    again); Snooze 1h and Skip next on it say to use Save schedule.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world

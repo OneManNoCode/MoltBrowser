@@ -465,6 +465,17 @@ TEST_F(AutomationPageStorageTest,
                 .FindBool("success"),
             true);
   EXPECT_EQ(storage().Load("wf_hourly")->trigger.last_fired_unix, kNow);
+  // A card listed while it was not started (an open card isn't refreshed)
+  // saves its steps afterwards: it stays started.
+  Script stale = *storage().Load("wf_hourly");
+  stale.trigger.last_fired_unix = 0;
+  stale.name = "Hourly, renamed";
+  EXPECT_EQ(SaveWorkflow(std::move(stale), kNow + 600,
+                         /*schedule_saved=*/false, storage())
+                .FindBool("success"),
+            true);
+  EXPECT_EQ(storage().Load("wf_hourly")->name, "Hourly, renamed");
+  EXPECT_EQ(storage().Load("wf_hourly")->trigger.last_fired_unix, kNow);
 }
 
 }  // namespace

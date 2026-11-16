@@ -3038,10 +3038,13 @@ All in `molt_ai_unittests` except the last item:
     the scheduler fires it whatever its trust). Watchers made by earlier
     builds keep their trust until made again;
   - an interval molt://ai-automation's Save schedule saves (it sends no
-    last fire) counts from the save; one an earlier version saved so (the
-    record's last fire 0) is shown "not started" on both pages until its
-    schedule is saved again (only Save schedule, or the studio's Schedule
-    sheet, starts it), rather than started by the upgrade; the scheduler counts any interval as at least
+    last fire) counts from the save; one an earlier version saved with no
+    last fire (on either page, or a `/watch` watcher: the record's last
+    fire 0) is shown "not started" on both pages until its schedule is
+    saved again (only Save schedule, the studio's Schedule sheet or the
+    `/watch` made again starts it; Snooze and Skip refuse, and another
+    save of it keeps it as stored, started or not), rather than started
+    by the upgrade; the scheduler counts any interval as at least
     `kMinIntervalSeconds` (60 s), both pages and the chat refuse or raise a
     shorter one, and molt://ai-automation shows an interval in its largest
     whole unit (it showed seconds with "hours" selected, so re-saving one

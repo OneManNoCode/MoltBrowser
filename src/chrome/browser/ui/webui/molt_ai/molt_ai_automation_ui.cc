@@ -1449,7 +1449,16 @@ function saveScript(scriptObj, successMsg, scheduleSaved) {
   });
 }
 
+// An interval never started (an earlier version saved it with no last
+// run) is started only by Save schedule, not by a Snooze or a Skip.
+function refuseNotStarted(scriptObj) {
+  if (scriptObj.interval_not_started !== true) return false;
+  showToast('Not started \u2014 click Save schedule to start it', true);
+  return true;
+}
+
 function snoozeFor(scriptObj, seconds) {
+  if (refuseNotStarted(scriptObj)) return;
   // Push the next-fire deadline by N seconds by setting last_fired_unix
   // to (now - interval_or_offset). For cron, this won't strictly skip
   // — instead we set enabled=false + a one-shot re-enable timer (not
@@ -1463,6 +1472,7 @@ function snoozeFor(scriptObj, seconds) {
 
 function skipNextFire(scriptObj) {
   if (!scriptObj.trigger) return;
+  if (refuseNotStarted(scriptObj)) return;
   // Mark "last_fired" as the upcoming computed fire so the scheduler's
   // catch-up logic considers it already done.
   if (scriptObj.next_fire_unix) {

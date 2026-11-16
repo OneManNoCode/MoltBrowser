@@ -22,9 +22,11 @@ For longer narrative posts behind each entry see
   the seconds its field shows (0 to 60; empty is 2) and stops with a
   message for anything else. The chat's `/wait` takes 0 to 60000 ms.
 - **An interval schedule saved in molt://ai-automation runs.** It never
-  ran: it now counts from when it is saved. One saved by an earlier
-  version is marked "not started" on both pages until you save its
-  schedule again. Saving an hourly schedule there unchanged no longer
+  ran: it now counts from when it is saved. An interval schedule an
+  earlier version saved without ever running it (in molt://ai-automation,
+  with Agent mode's Schedule, or a `/watch` page watcher) is marked "not
+  started" on both pages until you save its schedule again (or make the
+  `/watch` again); Snooze and Skip don't start it. Saving an hourly schedule there unchanged no longer
   turns it into one every 150 days (the page showed its seconds with
   "hours" selected); an interval now shows in its largest whole unit, and
   one under a minute is refused. Agent mode's Schedule sheet keeps a
@@ -391,8 +393,8 @@ For longer narrative posts behind each entry see
   ending in it, and a site allows its subdomains only within the same
   site (a bucket under "s3.amazonaws.com" isn't part of "amazonaws.com").
 - **The chat's page watcher (`/watch`) starts as Casual.** It checks its
-  page on its schedule as before; a step you add to it later that submits
-  a form or fills a password asks you to trust it first.
+  page on its schedule; a step you add to it later that submits a form or
+  fills a password asks you to trust it first.
 - **A scheduled workflow runs at most once a minute, and a repeating
   schedule doesn't start a run while its last run is still open.** A
   shorter interval runs once a minute, and a repeating schedule's run is
