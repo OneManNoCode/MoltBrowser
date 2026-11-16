@@ -186,10 +186,17 @@ class AutomationSecurity {
   // every new workflow.
   static void ApplyPolicyFloor(SecurityPolicy& policy);
 
-  // Hosts a script's steps visibly target: static http(s) NAVIGATE URLs
-  // (a URL with a {{variable}} anywhere in it is excluded, a fixed host's
-  // too — those are what the whitelist guards) and the page host the
-  // recorder stored in each step's extra["host"].
+  // Hosts a script's steps visibly target: the host of each http(s)
+  // NAVIGATE URL that names one whatever its values are, a static URL or
+  // one whose whole authority comes before its first {{variable}}
+  // ("https://shop.example/search?q={{q}}": shop.example; a value after it
+  // changes only the path, query or fragment; '/', '?' or '#' ends the
+  // host), and the page host the recorder stored in each step's
+  // extra["host"]. An address whose host, port or userinfo a value may
+  // give ("https://{{host}}/", "https://shop.{{tld}}/",
+  // "https://shop.example:{{p}}/", "https://a@{{x}}/",
+  // "{{x}}https://shop.example/"), or with a '\' in its host part, adds
+  // none: the whitelist guards what its value resolves to.
   static std::vector<std::string> HostsReferencedBy(
       const std::vector<Step>& steps);
 
@@ -244,13 +251,15 @@ class AutomationSecurity {
   // or only a path, query or fragment: the value gives the whole address,
   // its site included), or none opens a page (HostsReferencedBy() is
   // empty). A fixed host with a value after it
-  // ("https://shop.example/?q={{q}}"), or after a value that may be empty
-  // ("{{x}}https://shop.example/"), is no site HostsReferencedBy() lists, so
-  // the review, which would list none, wouldn't show it: such a change isn't
-  // confirmed with none (nor with sites: it has none to confirm). Confirmed,
+  // ("https://shop.example/?q={{q}}") is a site HostsReferencedBy() lists:
+  // such a change is confirmed with it. A fixed site after a value that may
+  // be empty ("{{x}}https://shop.example/"), or a host a value may change
+  // ("https://shop.{{tld}}/"), is none it lists, so the review, which would
+  // list none, wouldn't show it: such a change isn't confirmed with none
+  // (nor with sites, when it has none to confirm). Confirmed,
   // its whitelist is empty, so it opens and acts on no page by itself
-  // (AllowNavigation() matches no host below TRUSTED) until a step opens a
-  // fixed address on a site or the user sets it Trusted in
+  // (AllowNavigation() matches no host below TRUSTED) until a step opens an
+  // address on a fixed site or the user sets it Trusted in
   // molt://ai-automation; a run of another workflow (RUN_SCRIPT) runs its steps
   // under that run's policy, adding no site to it. Never a draft from an agent
   // run: confirming one says where the model may go

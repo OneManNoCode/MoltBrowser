@@ -2537,9 +2537,10 @@ next time (the same rule); after, it is final.
   step); never a draft's or a routine's. Otherwise about:blank, never an
   earlier page, and the runner opens a `navigate` step itself when it
   reaches one, resolved and checked. A `{{variable}}` URL is never opened
-  unresolved: that isn't the page the step opens, and its site is none the
-  review listed (`HostsReferencedBy()` skips it), so only the resolved
-  URL's site is checked against the list.
+  unresolved: that isn't the page the step opens. Its site is one the
+  review listed only when its whole authority comes before its first value
+  (`https://shop.example/?q={{q}}`: `HostsReferencedBy()`); either way the
+  resolved URL's site is what is checked.
 - **Agent studio:** the card says "changed outside · review it", the
   library a banner ("N workflows were changed outside MoltBrowser and need
   your review."). Run, Schedule and Trust are refused
@@ -2873,9 +2874,13 @@ All in `molt_ai_unittests` except the last item:
   don't target; once; then CASUAL with an empty whitelist: no navigation,
   click or typing at CASUAL or APPROVED, no run window page, runnable as a
   child adding no site, any site once TRUSTED, a fixed address added later
-  allowing only its site); one with an address that doesn't start with its
-  value (a fixed host, or a fixed scheme, before it) confirmed neither with
-  none nor with sites; only a change confirmed with none (not an agent
+  allowing only its site); one with an address whose host a value may give
+  or change (a host, port or user name from a value, a tab or a `\` in the
+  host, only a fixed scheme, a fixed site after a value) confirmed neither
+  with none nor with sites; a fixed host before a value listed (a port,
+  `?` or `#` ending it; an IP address), confirmed only on it, then allowed
+  with any value, its run window opening it resolved, no value moving it
+  off its host, a registry written as the host matching only itself; only a change confirmed with none (not an agent
   draft, a voice routine, a change with a site, a non-draft, a TRUSTED or
   ADMIN change; a stored whitelist cleared); the review message; the run window's first page only the page the
   first step run expects (the last `navigate` before it, else the first; a
@@ -3006,7 +3011,8 @@ All in `molt_ai_unittests` except the last item:
   getWorkflow's `confirmWithoutSites`, the confirmation with an empty list
   and the token, audited `no_sites`; refused for an agent draft and a
   voice routine with no site; a save answers whether it may still be
-  confirmed with none.
+  confirmed with none; a change whose address has a value after a fixed
+  host lists it and is confirmed only on it.
 - `ui/webui/molt_ai/molt_ai_automation_storage_unittest.cc`: trust refused
   with the reason; a save keeps it a draft; an import is vouched for at
   CASUAL, and starts its schedule over (no last fire from the JSON, an
@@ -3014,7 +3020,8 @@ All in `molt_ai_unittests` except the last item:
   later; Snooze holds without writing the file; Skip holds past the next
   run only (cron, interval, overdue interval, none to come); each hold is
   in the audit log (`snoozed`, `run_skipped`, until when); both refuse,
-  and log nothing for, what they can't hold.
+  and log nothing for, what they can't hold; an import with an address
+  that has a value after a fixed host keeps that site.
 - `molt_automation_script_fuzzer`: the digest is empty or 64 hex digits and
   what a reader of the saved file computes; a clamped workflow is CASUAL
   with no sites, may neither fire nor run as a child, holds only the
@@ -3027,7 +3034,9 @@ All in `molt_ai_unittests` except the last item:
   target none, every address with a `{{variable}}` in it starts with one
   and it has no voice step, and then allows no step's address nor a run
   window page; an unconfirmed draft's effective trust is CASUAL (seed
-  `regress_unconfirmed_trust.molt`); below TRUSTED each run limit is within
+  `regress_unconfirmed_trust.molt`); an address with a value names a site
+  only with its host fixed before the value, and no value moves it off that
+  host (seed `templated_hosts.molt`); below TRUSTED each run limit is within
   its default and a run one page or one byte past either of the last two
   stops (none at TRUSTED and above).
 - `tools/webui_checks` smoke test: the badge, the banner, the review panel
@@ -3211,8 +3220,9 @@ All in `molt_ai_unittests` except the last item:
     Below TRUSTED an empty whitelist matches no host, so it opens and acts
     on no page by itself: each `{{variable}}` navigation is refused, the run
     window opens `about:blank`, and clicks, typing, key presses and site
-    tools are refused on every page. It gains a site only from a step that
-    opens a fixed address (`EffectivePolicy()` reads it), or any site when
+    tools are refused on every page. It gains a site only from a step whose
+    address names a fixed site (a fixed address, or one with values only
+    after its host: `EffectivePolicy()` reads it), or any site when
     the user sets it Trusted in molt://ai-automation. Run by another
     workflow (`RUN_SCRIPT`, allowed once confirmed), its steps run under
     that run's policy and add no site to it, as for any confirmed child. It
@@ -3291,6 +3301,29 @@ All in `molt_ai_unittests` except the last item:
     finished in time completes. A `RUN_SCRIPT` child's steps count in the
     run's limit. A "retry from step N" counts afresh. The chat's one-step
     actions keep 30 s, and `/wait` adds its wait to it.
+  - the review lists the fixed host of an address with a value after it
+    (`https://shop.example/search?q={{q}}`: shop.example), and below
+    TRUSTED such a step opens that site with any value. `FixedHostOf()`
+    (`HostsReferencedBy()`'s `navigate` branch for a target with a `{{`):
+    the text before the first `{{` is `http://` or `https://`, then a
+    non-empty authority in printable ASCII ended by `/`, `?` or `#`, with
+    no `@` or `\` before it; the host is GURL's, lowercased. It holds
+    because every URL parser ends the authority there, and the runner
+    (`Resolve()`) and `RunWindowStartURL()` change only text from the
+    first `{{` on, so a value can only change the path, query or fragment
+    on a site the user confirmed. No site for `https://{{h}}/`,
+    `https://shop.{{tld}}/`, `https://a@{{x}}/`,
+    `https://shop.example:{{p}}/`, `https://\t/{{x}}`, `https:///{{x}}`,
+    `http://shop.example\@x{{y}}` (a `\` only some parsers take as a
+    slash) or `{{x}}https://shop.example/` (a fixed site after a value
+    that may be empty). A registry written as the host (`https://com/…`)
+    matches only itself (`DomainMatchesWhitelist()`). Every consumer reads
+    it with no change of its own: `EffectivePolicy()`, the review
+    (`DraftSites`, the review token), `ConfirmDraftSites()`,
+    `MayConfirmWithoutSites()` (such a change now has a site, so it is
+    confirmed with it, never with none), `RunWindowStartURL()`, `RUN_SCRIPT`
+    and voice. A workflow imported with only such addresses (molt://ai-automation
+    keeps no file sites) works after the import.
 - **Existing gaps left as they are** (separate changes):
   the Agent studio's Stop doesn't stop a run (`cancelRun`'s
   `HandleCancelRun()` only answers; `AutomationRunner::Cancel()` has no
@@ -3314,14 +3347,16 @@ All in `molt_ai_unittests` except the last item:
   away, not a compromised renderer; no page shows or sets the limits, and
   Approved workflows can't raise them: only Trusted, which also lifts the
   site rule, removes them (a per-workflow limit is a possible follow-up).
-- **The review lists the hosts of fixed addresses only**: an address with
-  a `{{variable}}` after a fixed host
-  (`https://shop.example/search?q={{q}}`) adds no site to the list
-  (`HostsReferencedBy()` skips an address with a `{{` anywhere in it), and
-  below TRUSTED it is refused until a step opens a fixed address on that
-  site. A change whose steps target no other site has none to confirm and
-  isn't confirmed with none (its fixed host would go unshown): the user
-  adds a "Go to page" step for that site, or imports the file again.
+- **A change confirmed by a daily build before the workflow-gaps-c
+  change** whose step has a fixed host before a value (shown then as that
+  step's address, not listed, and refused) now runs on that host without a
+  new review: `EffectivePolicy()` reads the steps, not what was confirmed.
+  Only builds since #134 (no tagged release) can have one.
+- **The chat's `/plan` saves the model's plan as a Casual workflow with no
+  review** (`HandleSavePlanScript()`): the hosts its `navigate` lines name
+  count as its sites, now including a fixed host before a value. That is
+  no new reach (a static `navigate https://h/` line already counted), but
+  such a workflow should be saved as a draft (a separate change).
 - **A confirmed change keeps only what the review showed** (§3.6.6's
   allowlist): the file's fallback selectors and locators, text anchor and
   description are gone, so a step whose element moved since needs
@@ -3389,8 +3424,11 @@ All in `molt_ai_unittests` except the last item:
 > address it opens is a value filled in when it runs (such as `{{url}}`)
 > and it has no recorded click or typing on a site, has no site to
 > confirm: **Confirm it with no sites** confirms it, and it then opens no page by itself until
-> you add a step that opens a fixed address, or set it to Trusted in
-> molt://ai-automation.
+> you add a step that opens an address on a fixed site, or set it to
+> Trusted in molt://ai-automation. An address with a value after its site,
+> such as `https://shop.example/search?q={{q}}`, names that site: the
+> review lists it, and once you confirm it the workflow opens that site
+> with any value (the value only changes the page or the search there).
 >
 > **Snooze and Skip in molt://ai-automation now hold cron schedules too**,
 > and Snooze no longer pushes an interval a whole interval past the hour.

@@ -18,6 +18,7 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace molt_ai {
 namespace automation {
@@ -1425,18 +1426,24 @@ TEST(AutomationSecurityTest, AChangeWithNoSiteIsConfirmedWithNone) {
   EXPECT_FALSE(sec.AllowNavigation(with_site, "https://evil.example/"));
 }
 
-// HostsReferencedBy() skips an address with a {{variable}} anywhere in it,
-// a fixed host's too, so the review would list no site for it. A change
-// with an address that doesn't start with its value (a fixed host, or only
-// a fixed scheme, before it) isn't confirmed with none, so no fixed host
+// HostsReferencedBy() lists no site for an address whose host, port or
+// user name a value may give or change, nor for one the URL parser could
+// read otherwise than it is written (a tab, slashes it skips, a '\'), so
+// the review would list none for it. A change with such an address that
+// doesn't start with its value isn't confirmed with none, so no fixed host
 // goes unshown; nor with sites, having none to confirm. It stays a draft,
 // as before. The same change whose addresses each start with a value is
 // confirmed with none.
-TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNotConfirmed) {
+TEST(AutomationSecurityTest, AnAddressAValueMayMoveIsNotConfirmed) {
   for (const char* target :
-       {"https://attacker.example/c?d={{token}}",
-        "https://shop.example/search?q={{q}}", "https://shop.example/{{path}}",
-        "https://{{host}}/x", "shop.example/{{path}}",
+       {"https://{{host}}/x", "https://shop.{{tld}}/",
+        "https://shop.example{{x}}", "https://a@{{x}}/",
+        "https://shop.example:{{p}}/", "https://a@shop.example/{{x}}",
+        "https:///{{x}}", "https://\\{{x}}", "https://\t/b{{x}}",
+        "https://shop.ex\tample/{{x}}", "https:{{x}}",
+        " https://shop.example/{{x}}", "ftp://shop.example/{{x}}",
+        "shop.example/{{path}}", "http://shop.example\\@{{x}}",
+        "https://shop.example\\{{x}}",
         // A fixed site after a value that may be empty.
         "{{x}}https://attacker.example/c?d={{y}}", "{{x}}//attacker.example/",
         "{{x}}attacker.example/", "{{a}}{{b}}", "{{x{{y}}/"}) {
@@ -1477,6 +1484,88 @@ TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNotConfirmed) {
   s.default_variables["url"] = "https://shop.example/";
   EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0), "");
   EXPECT_TRUE(AutomationSecurity::MayRunAsChild(s));
+}
+
+// A fixed host before an address's first {{variable}}, its whole authority
+// ended by '/', '?' or '#', is a site of the workflow's: the review lists
+// it, the change is confirmed only on it, and no value moves the address
+// off it, so the step then opens it with any value.
+TEST(AutomationSecurityTest, AFixedHostBeforeAValueIsASite) {
+  for (const auto& [target, host] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"https://shop.example/search?q={{q}}", "shop.example"},
+           {"https://shop.example/{{path}}", "shop.example"},
+           {"https://Shop.Example:8443/x?q={{q}}", "shop.example"},
+           {"http://shop.example?{{q}}", "shop.example"},
+           {"https://shop.example#{{q}}", "shop.example"},
+           {"http://192.168.1.1/reboot?x={{t}}", "192.168.1.1"}}) {
+    std::vector<Step> one;
+    one.push_back(MakeStep(StepType::NAVIGATE, target));
+    EXPECT_EQ(AutomationSecurity::HostsReferencedBy(one),
+              std::vector<std::string>{host})
+        << target;
+  }
+
+  Script s;
+  s.id = "wf_shop";
+  s.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://shop.example/search?q={{q}}"));
+  s.steps.push_back(MakeStep(StepType::CLICK, ".result"));
+  // What the file claims.
+  s.security.trust = TrustLevel::TRUSTED;
+  s.security.domain_whitelist = {"evil.example"};
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_EQ(s.steps.size(), 2u);
+  EXPECT_EQ(AutomationSecurity::HostsReferencedBy(s.steps),
+            std::vector<std::string>{"shop.example"});
+  EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(s));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {}));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {"evil.example"}));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(
+      s, {"shop.example", "evil.example"}));
+  EXPECT_TRUE(s.security.sites_unconfirmed);
+  // Unconfirmed, it allows nothing.
+  AutomationSecurity sec;
+  EXPECT_FALSE(sec.AllowNavigation(AutomationSecurity::EffectivePolicy(s),
+                                   "https://shop.example/search?q=lamp"));
+  ASSERT_TRUE(AutomationSecurity::ConfirmDraftSites(s, {"shop.example"}));
+  EXPECT_EQ(s.security.domain_whitelist,
+            std::vector<std::string>{"shop.example"});
+  EXPECT_EQ(s.security.trust, TrustLevel::CASUAL);
+  const SecurityPolicy p = AutomationSecurity::EffectivePolicy(s);
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://shop.example/search?q=lamp"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://www.shop.example/"));
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://evil.example/"));
+  // Its run window opens it once a value is given, resolved.
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0), "");
+  s.default_variables["q"] = "lamp";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0),
+            "https://shop.example/search?q=lamp");
+
+  // No value moves such an address off its host, as the URL parser reads
+  // it.
+  for (const char* prefix :
+       {"https://shop.example/search?q=", "https://shop.example/",
+        "https://shop.example#"}) {
+    for (const char* value :
+         {"", "@evil.example", "//evil.example/", "\\evil.example",
+          ":@evil.example/", "\t@evil.example", "%40evil.example"}) {
+      const GURL resolved(std::string(prefix) + value);
+      EXPECT_TRUE(resolved.is_valid()) << prefix << value;
+      EXPECT_EQ(std::string(resolved.host()), "shop.example")
+          << prefix << value;
+    }
+  }
+
+  // A registry (a public suffix) written as the host matches only itself.
+  Script suffix;
+  suffix.steps.push_back(MakeStep(StepType::NAVIGATE, "https://com/{{x}}"));
+  EXPECT_EQ(AutomationSecurity::HostsReferencedBy(suffix.steps),
+            std::vector<std::string>{"com"});
+  const SecurityPolicy suffix_policy =
+      AutomationSecurity::EffectivePolicy(suffix);
+  EXPECT_TRUE(sec.AllowNavigation(suffix_policy, "https://com/"));
+  EXPECT_FALSE(sec.AllowNavigation(suffix_policy, "https://evil.com/"));
 }
 
 // Only a file changed outside, below TRUSTED and not a routine taught by
@@ -1594,19 +1683,31 @@ Script ConfirmedOnItsListedSite(const std::string& first) {
 // The page a run window opens before its runner's checks, in the user's
 // profile: only the first NAVIGATE step's URL as the runner opens it (its
 // {{variables}} given the run's values), when it is http(s) and one of the
-// workflow's sites. A {{variable}} URL's site is none the review listed
-// (HostsReferencedBy() skips it): only its resolved URL is checked.
+// workflow's sites. A {{variable}} URL's site is one the review listed only
+// when its host is written before its first value (HostsReferencedBy());
+// either way only its resolved URL is checked.
 TEST(AutomationSecurityTest, ARunWindowOpensOnlyAPageOfItsSites) {
-  // A {{variable}} URL's site, which the review didn't list, with or
-  // without a value for it.
+  // A {{variable}} URL whose host is a value, which the review didn't
+  // list, with or without a value for it.
   Script unlisted =
-      ConfirmedOnItsListedSite("http://192.168.1.1/reboot?x={{t}}");
+      ConfirmedOnItsListedSite("http://{{router}}/reboot?x={{t}}");
   ASSERT_FALSE(unlisted.security.sites_unconfirmed);
   EXPECT_EQ(unlisted.security.domain_whitelist,
             std::vector<std::string>{"news.example"});
   EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted, 0), "");
+  unlisted.default_variables["router"] = "192.168.1.1";
   unlisted.default_variables["t"] = "1";
   EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted, 0), "");
+  // A fixed host before its value is listed: its page, resolved, once a
+  // value is given.
+  Script listed = ConfirmedOnItsListedSite("http://192.168.1.1/reboot?x={{t}}");
+  ASSERT_FALSE(listed.security.sites_unconfirmed);
+  EXPECT_EQ(listed.security.domain_whitelist,
+            (std::vector<std::string>{"192.168.1.1", "news.example"}));
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(listed, 0), "");
+  listed.default_variables["t"] = "1";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(listed, 0),
+            "http://192.168.1.1/reboot?x=1");
   // Nor a later step's page, before the first's.
   unlisted.steps.push_back(
       MakeStep(StepType::NAVIGATE, "https://news.example/today"));

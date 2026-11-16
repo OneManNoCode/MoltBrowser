@@ -709,6 +709,53 @@ TEST_F(AgentStudioStorageTest, ASaveSaysWhetherAChangeIsConfirmedWithNoSite) {
             std::vector<std::string>{"news.example"});
 }
 
+// A change whose address has a value after a fixed host lists that host
+// as its site, is confirmed only on it, and then opens it with any value.
+TEST_F(AgentStudioStorageTest,
+       AChangeWithAFixedHostBeforeAValueIsConfirmedOnIt) {
+  UseRecord();
+  Script planted = Claiming("wf_1");
+  planted.steps[0].target = "https://shop.example/search?q={{q}}";
+  Plant(planted);
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  const base::ListValue* sites = get.out.FindList("draftSites");
+  ASSERT_TRUE(sites);
+  ASSERT_EQ(sites->size(), 1u);
+  EXPECT_EQ((*sites)[0].GetString(), "shop.example");
+  EXPECT_EQ(get.out.FindBool("confirmWithoutSites"), false);
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.review_token = *get.out.FindString("reviewToken");
+  for (const std::vector<std::string>& wrong :
+       {std::vector<std::string>(), std::vector<std::string>{"evil.example"}}) {
+    confirm.sites = wrong;
+    EXPECT_EQ(*Error(Ask(confirm)),
+              "The draft's steps changed. Save them, then confirm again.");
+  }
+  confirm.sites = {"shop.example"};
+  EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true);
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_FALSE(stored->security.sites_unconfirmed);
+  EXPECT_EQ(stored->security.domain_whitelist,
+            std::vector<std::string>{"shop.example"});
+  bool logged = false;
+  for (const std::string& line : Shared().ReadAuditTail()) {
+    logged |= line.find("wf_1 | outside_change_confirmed | shop.example") !=
+              std::string::npos;
+  }
+  EXPECT_TRUE(logged);
+  // It runs, opening that site with the run's value, and no other.
+  Answer run = Ask(Request(Kind::kCheckRun, "wf_1"));
+  ASSERT_TRUE(run.script);
+  run.script->default_variables["q"] = "lamp";
+  EXPECT_EQ(automation::AutomationSecurity::RunWindowStartURL(*run.script, 0),
+            "https://shop.example/search?q=lamp");
+  EXPECT_FALSE(automation::AutomationSecurity().AllowNavigation(
+      automation::AutomationSecurity::EffectivePolicy(*run.script),
+      "https://evil.example/"));
+}
+
 TEST_F(AgentStudioStorageTest, ADuplicateOfAWorkflowChangedOutsideIsADraft) {
   UseRecord();
   Plant(Claiming("wf_1"));

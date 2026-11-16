@@ -294,6 +294,9 @@ fuzzer_test("molt_automation_script_fuzzer") {
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/molt_ai/security:agent_safety",
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+
+    # A {{variable}} address's listed host, as GURL reads it.
+    "//url",
   ]
   dict = "dicts/agent.dict"
   seed_corpus = "corpus/molt_automation_script_fuzzer"

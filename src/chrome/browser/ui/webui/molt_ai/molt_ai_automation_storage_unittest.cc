@@ -296,6 +296,29 @@ TEST_F(AutomationPageStorageTest, AnImportIsVouchedAtCasual) {
       true);
 }
 
+// An import keeps no sites of its file's, but the site of an address with
+// a value after its fixed host is one its steps name: such a workflow
+// still opens that site once imported, and no other.
+TEST_F(AutomationPageStorageTest, AnImportKeepsTheSiteOfAnAddressWithAValue) {
+  UseRecord();
+  Script file = Claiming("wf_9");
+  file.steps[0].target = "https://shop.example/search?q={{q}}";
+  file.security.domain_whitelist = {"shop.example"};
+  base::DictValue result = ImportWorkflow(std::move(file), kNow, storage());
+  ASSERT_EQ(result.FindBool("success"), true);
+  std::optional<Script> imported =
+      storage().Load(*result.FindString("script_id"));
+  ASSERT_TRUE(imported);
+  EXPECT_TRUE(imported->security.domain_whitelist.empty());
+  const automation::SecurityPolicy policy =
+      automation::AutomationSecurity::EffectivePolicy(*imported);
+  EXPECT_EQ(policy.domain_whitelist, std::vector<std::string>{"shop.example"});
+  automation::AutomationSecurity security;
+  EXPECT_TRUE(
+      security.AllowNavigation(policy, "https://shop.example/search?q=lamp"));
+  EXPECT_FALSE(security.AllowNavigation(policy, "https://evil.example/"));
+}
+
 // An import starts its schedule over: a last fire its JSON gives (an
 // exported workflow's, long past; one in 2100) was never this browser's, so
 // it neither forces a catch-up run nor holds the schedule back. An

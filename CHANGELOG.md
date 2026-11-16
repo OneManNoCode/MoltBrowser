@@ -17,6 +17,19 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **A workflow address with a value after its site works below Trusted.**
+  A "Go to page" address such as `https://shop.example/search?q={{q}}`
+  now counts `shop.example` as one of the workflow's sites, as
+  `https://shop.example/` does. Below Trusted it opens; it was refused
+  unless another step opened that site. A workflow imported with only
+  such addresses works after the import. Agent mode's review of a
+  workflow changed outside MoltBrowser lists that site and confirms it;
+  before, such a workflow couldn't be confirmed at all. Only a site
+  written in full before the first value counts. An address whose site,
+  port or user name comes from a value (`https://{{site}}/`,
+  `https://shop.{{tld}}/`, `https://shop.example:{{port}}/`) still names
+  no site, and a value only ever changes the page or the search on the
+  site.
 - **Wait steps wait the seconds they show.** A workflow's "Wait" step
   stopped the run with "Step timed out" instead of waiting. It now waits
   the seconds its field shows (0 to 60; empty is 2) and stops with a
@@ -458,7 +471,7 @@ For longer narrative posts behind each entry see
   in when it runs (such as `{{url}}`) and it has no recorded click or typing
   on a site, has no site to confirm: click **Confirm it with no sites**. It
   then opens and acts on no page by itself until you add a step that opens
-  a fixed address on a site, or set it to Trusted in molt://ai-automation.
+  an address on a fixed site, or set it to Trusted in molt://ai-automation.
   Confirming keeps only what the review shows: other ways the file gave of
   finding an element on the page are dropped, so a step may need recording
   again if its page has changed; steps the review can't show in full

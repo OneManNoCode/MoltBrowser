@@ -84,6 +84,54 @@ bool AddressIsAValue(std::string_view target) {
          (rest.front() == '/' || rest.front() == '?' || rest.front() == '#');
 }
 
+// The host an http(s) |target| with a {{value}} in it opens whatever its
+// values are: the host of its text before the first "{{", when that text
+// holds the whole authority: "http://" or "https://", then a non-empty
+// host and any port in printable ASCII with no userinfo ('@') and no '\',
+// ended by '/', '?' or '#'. Every URL parser ends the authority there, so
+// a value after it is only path, query or fragment (the runner replaces
+// text from the first "{{" on: AutomationRunner::Resolve()). "" when a
+// value could give or change the host ("https://{{h}}/",
+// "https://shop.{{tld}}/", "https://a@{{x}}/",
+// "https://shop.example:{{p}}/", "{{x}}https://shop.example/"), or the
+// parser could read the authority otherwise than it is written (a tab or
+// line break it drops, slashes it skips, a '\' that only some parsers
+// take as a slash: "https://\t/{{x}}", "https:///{{x}}",
+// "http://shop.example\@x{{y}}").
+std::string FixedHostOf(std::string_view target) {
+  const size_t first_value = target.find("{{");
+  if (first_value == std::string_view::npos) {
+    return std::string();
+  }
+  const std::string_view fixed = target.substr(0, first_value);
+  constexpr std::string_view kSchemes[] = {"https://", "http://"};
+  size_t authority = 0;
+  for (std::string_view scheme : kSchemes) {
+    if (base::StartsWith(fixed, scheme, base::CompareCase::INSENSITIVE_ASCII)) {
+      authority = scheme.size();
+      break;
+    }
+  }
+  if (authority == 0) {
+    return std::string();
+  }
+  const size_t end = fixed.find_first_of("/?#", authority);
+  if (end == std::string_view::npos || end == authority) {
+    return std::string();
+  }
+  for (char ch : fixed.substr(authority, end - authority)) {
+    const unsigned char c = static_cast<unsigned char>(ch);
+    if (c <= 0x20 || c >= 0x7F || c == '@' || c == '\\') {
+      return std::string();
+    }
+  }
+  const GURL url(fixed);
+  if (!agent_safety::IsAllowedNavigationURL(url)) {
+    return std::string();
+  }
+  return base::ToLowerASCII(url.host());
+}
+
 // |value| when it is positive and at most |limit|, else |limit|.
 template <typename T>
 T WithinLimit(T value, T limit) {
@@ -566,11 +614,16 @@ std::vector<std::string> AutomationSecurity::HostsReferencedBy(
     const std::vector<Step>& steps) {
   std::vector<std::string> hosts;
   for (const Step& s : steps) {
-    if (s.type == StepType::NAVIGATE &&
-        s.target.find("{{") == std::string::npos) {
-      GURL g(s.target);
-      if (agent_safety::IsAllowedNavigationURL(g))
-        AddUnique(hosts, base::ToLowerASCII(g.host()));
+    if (s.type == StepType::NAVIGATE) {
+      if (s.target.find("{{") == std::string::npos) {
+        GURL g(s.target);
+        if (agent_safety::IsAllowedNavigationURL(g))
+          AddUnique(hosts, base::ToLowerASCII(g.host()));
+      } else {
+        // A fixed host with values only after it: they change its path,
+        // query or fragment, never its site (FixedHostOf()).
+        AddUnique(hosts, FixedHostOf(s.target));
+      }
     }
     if (s.extra.is_dict()) {
       const std::string* host = s.extra.GetDict().FindString("host");
@@ -645,9 +698,11 @@ bool AutomationSecurity::MayConfirmWithoutSites(const Script& script) {
   }
   // Every address with a value in it is a value's: the value gives the
   // whole address, its site included. A fixed host with a value after it
-  // ("https://shop.example/?q={{q}}"), or after an empty value
-  // ("{{x}}https://shop.example/"), is no site HostsReferencedBy() lists,
-  // so the review, which would list none, wouldn't show it.
+  // ("https://shop.example/?q={{q}}") is a site HostsReferencedBy() lists
+  // (checked above). A fixed site after a value that may be empty
+  // ("{{x}}https://shop.example/"), or a host a value may change
+  // ("https://shop.{{tld}}/"), is none it lists, so the review, which would
+  // list none, wouldn't show it.
   for (const Step& step : script.steps) {
     if (step.type == StepType::NAVIGATE &&
         step.target.find("{{") != std::string::npos &&

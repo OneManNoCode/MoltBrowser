@@ -2880,8 +2880,8 @@ WEB_AI_APIS.md §12):
     keep none): Agent mode's review lists no site and offers *Confirm it
     with no sites*; once confirmed, a run (with a value given for `url` too) opens
     about:blank and its "Go to page" is refused: it opens nothing by
-    itself. The same file with `https://<a site>/?q={{q}}` or
-    `{{x}}https://<a site>/` as its address offers no such button.
+    itself. The same file with `{{x}}https://<a site>/` or
+    `https://{{site}}/` as its address offers no such button.
 - [ ] Workflow gaps C (workflow-gaps-c; docs/design/AGENT_ACTIONS.md
   §3.6.11):
   - run limits, with a local test page that reloads itself every second
@@ -2926,7 +2926,22 @@ WEB_AI_APIS.md §12):
     exceeded": Trusted gets the deadline too, with its own limit;
   - in the chat: `/wait 45000` waits 45 s and succeeds; `/wait-for #never`
     stops after about 30 s with "Max runtime exceeded"; `/wait 3000` and
-    `/click` on a present element still succeed.
+    `/click` on a present element still succeed;
+  - fixed-host sites: a hand-written `.molt` with a "Go to page"
+    `https://<a site>/search?q={{q}}` and a wait: Agent mode's review lists
+    `<a site>` and offers *Confirm this site*, not *Confirm it with no
+    sites*. Confirm it: the Audit log shows `outside_change_confirmed |
+    <a site>`. Run it with q=lamp: the run window opens
+    `https://<a site>/search?q=lamp` and the step succeeds at Casual; with
+    q=`@evil.example`, then `//evil.example/`, the run stays on `<a site>`;
+  - the same file with `https://{{site}}/search`,
+    `https://<a site>:{{port}}/` or `https://a@<a site>/{{q}}`: no site is
+    listed, it says "It has no site to confirm", and there is no button;
+  - in molt://ai-automation, export a Casual workflow whose only step opens
+    `https://<a site>/search?q={{q}}`, delete it, import it and run it: it
+    opens `<a site>` (before: "… is not one of this workflow's sites"); a
+    new Agent-mode workflow with that one step typed in "Web address" runs
+    at Casual.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world
