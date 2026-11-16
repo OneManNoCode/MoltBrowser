@@ -3173,13 +3173,16 @@ All in `molt_ai_unittests` except the last item:
     fire later: the page's value is capped at the stored one. No page has
     a reason to move it, and a fire time far ahead would stall the
     schedule.
-  - a file changed outside whose every address starts with a
-    `{{variable}}` (the value gives the whole address, its site included),
-    or whose steps open no page, is confirmed with no site
+  - a file changed outside whose every address with a value in it is a
+    value's (one leading `{{variable}}`, then nothing or only a path, query
+    or fragment: the value gives the whole address, its site included), no
+    step of which names a site (a recorded click or typing step does, by its
+    host), or whose steps open no page, is confirmed with no site
     (`AutomationSecurity::MayConfirmWithoutSites()`: `sites_unconfirmed`
     and `changed_outside`, trust below TRUSTED, no voice step,
-    `HostsReferencedBy()` empty, and no `navigate` target with a `{{`
-    anywhere but at its start). It couldn't be confirmed before.
+    `HostsReferencedBy()` empty, and every `navigate` target with a `{{`
+    an address a value gives: `{{x}}https://site/` or `{{x}}//site/`, a
+    fixed site after a value that may be empty, is not). It couldn't be confirmed before.
     getWorkflow and a save answer a draft with `confirmWithoutSites` (the
     browser decides, never the page); the studio's review then says so and
     shows **Confirm it with no sites**, which sends `confirmDraftSites` with
@@ -3290,9 +3293,10 @@ All in `molt_ai_unittests` except the last item:
 > trust or schedule in one needs one review in the other. If MoltBrowser's
 > profile folder is reset or replaced, every workflow needs one review.
 >
-> A changed workflow whose every address starts with a value filled in
-> when it runs (such as `{{url}}`) has no site to confirm: **Confirm it
-> with no sites** confirms it, and it then opens no page by itself until
+> A changed workflow none of whose steps names a site, because each
+> address it opens is a value filled in when it runs (such as `{{url}}`)
+> and it has no recorded click or typing on a site, has no site to
+> confirm: **Confirm it with no sites** confirms it, and it then opens no page by itself until
 > you add a step that opens a fixed address, or set it to Trusted in
 > molt://ai-automation.
 >

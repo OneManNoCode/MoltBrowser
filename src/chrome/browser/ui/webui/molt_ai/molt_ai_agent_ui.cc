@@ -2417,10 +2417,10 @@ function renderDraftPanel(box){
       (secret?((withheld?', ':': ')+secret+' card or code field'+(secret===1?'':'s')+' you enter yourself'):'')+'.'));
   }
   if(!sites.length&&es.confirmWithoutSites===true){
-    // A change whose every address starts with a value (the browser's
-    // MayConfirmWithoutSites(): no fixed host before a value): confirmed,
-    // it has no site, so it opens and acts on no page by itself.
-    kids.push(h('div',{'class':'tp-s'},'Every address its steps open starts with a value ({{…}}), which gives its site, so it has no site to confirm. Once confirmed it opens and acts on no page by itself. Each “Go to page” is refused until a step opens a fixed address on that site, or until you set it to Trusted in molt://ai-automation (any site). If another workflow runs it as one of its steps, its steps run on that workflow’s sites and trust.'));
+    // A change whose every address is a value's (the browser's
+    // MayConfirmWithoutSites(): no fixed host before or after a value):
+    // confirmed, it has no site, so it opens and acts on no page by itself.
+    kids.push(h('div',{'class':'tp-s'},'Every address its steps open is a value ({{…}}), which gives its site, so it has no site to confirm. Once confirmed it opens and acts on no page by itself. Each “Go to page” is refused until a step opens a fixed address on that site, or until you set it to Trusted in molt://ai-automation (any site). If another workflow runs it as one of its steps, its steps run on that workflow’s sites and trust.'));
     kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
       confirmDraft(es,[]);
     }},'Confirm it with no sites'));

@@ -1298,7 +1298,10 @@ TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNotConfirmed) {
   for (const char* target :
        {"https://attacker.example/c?d={{token}}",
         "https://shop.example/search?q={{q}}", "https://shop.example/{{path}}",
-        "https://{{host}}/x", "shop.example/{{path}}"}) {
+        "https://{{host}}/x", "shop.example/{{path}}",
+        // A fixed site after a value that may be empty.
+        "{{x}}https://attacker.example/c?d={{y}}", "{{x}}//attacker.example/",
+        "{{x}}attacker.example/", "{{a}}{{b}}", "{{x{{y}}/"}) {
     Script s;
     s.id = "wf_shop";
     s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
@@ -1317,11 +1320,14 @@ TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNotConfirmed) {
     EXPECT_TRUE(s.security.changed_outside) << target;
     EXPECT_FALSE(AutomationSecurity::MayRunAsChild(s)) << target;
   }
-  // Each address all a value: confirmed with none.
+  // Each address a value's (then only a path, query or fragment):
+  // confirmed with none.
   Script s;
   s.id = "wf_shop";
   s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
   s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{shop}}/search?q={{q}}"));
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{shop}}?q=1"));
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{shop}}#top"));
   s.security.sites_unconfirmed = true;
   s.security.changed_outside = true;
   EXPECT_TRUE(AutomationSecurity::MayConfirmWithoutSites(s));

@@ -63,6 +63,27 @@ bool LooksLikePaymentCardValue(const std::string& value) {
 constexpr const char* kDefaultApprovals[] = {"form_submit", "payment",
                                              "login"};
 
+// Whether |target| is an address a value gives: one leading {{name}}, and
+// after it nothing, or only a path, query or fragment ('/', '?' or '#', never
+// "//"). A scheme, a host or another value right after it could be a fixed
+// site once the value is empty.
+bool AddressIsAValue(std::string_view target) {
+  if (!target.starts_with("{{")) {
+    return false;
+  }
+  const size_t close = target.find("}}");
+  if (close == std::string_view::npos ||
+      target.substr(2, close - 2).find('{') != std::string_view::npos) {
+    return false;
+  }
+  const std::string_view rest = target.substr(close + 2);
+  if (rest.empty()) {
+    return true;
+  }
+  return !rest.starts_with("//") &&
+         (rest.front() == '/' || rest.front() == '?' || rest.front() == '#');
+}
+
 // |value| when it is positive and at most |limit|, else |limit|.
 template <typename T>
 T WithinLimit(T value, T limit) {
@@ -570,14 +591,15 @@ bool AutomationSecurity::MayConfirmWithoutSites(const Script& script) {
       !HostsReferencedBy(script.steps).empty()) {
     return false;
   }
-  // Every address with a value in it starts with one: the value gives the
+  // Every address with a value in it is a value's: the value gives the
   // whole address, its site included. A fixed host with a value after it
-  // ("https://shop.example/?q={{q}}") is no site HostsReferencedBy() lists,
+  // ("https://shop.example/?q={{q}}"), or after an empty value
+  // ("{{x}}https://shop.example/"), is no site HostsReferencedBy() lists,
   // so the review, which would list none, wouldn't show it.
   for (const Step& step : script.steps) {
     if (step.type == StepType::NAVIGATE &&
         step.target.find("{{") != std::string::npos &&
-        !step.target.starts_with("{{")) {
+        !AddressIsAValue(step.target)) {
       return false;
     }
   }

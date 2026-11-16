@@ -427,9 +427,10 @@ For longer narrative posts behind each entry see
   run, isn't run on its schedule, and no other workflow can run it until you
   open it in Agent mode, check its steps, sites and schedule, and click
   **Confirm**. It then starts as Casual; trust it again with **Trust** (or
-  in molt://ai-automation for Trusted or Admin). A changed workflow whose
-  every address starts with a value filled in when it runs (such as
-  `{{url}}`) has no site to confirm: click **Confirm it with no sites**. It
+  in molt://ai-automation for Trusted or Admin). A changed workflow none of
+  whose steps names a site, because each address it opens is a value filled
+  in when it runs (such as `{{url}}`) and it has no recorded click or typing
+  on a site, has no site to confirm: click **Confirm it with no sites**. It
   then opens and acts on no page by itself until you add a step that opens
   a fixed address on a site, or set it to Trusted in molt://ai-automation.
   Confirming keeps only what the review shows: other ways the file gave of

@@ -2853,12 +2853,13 @@ WEB_AI_APIS.md §12):
     and the held run still doesn't happen;
   - with a second user data dir open on the same `~/.moltbrowser`, a hold
     made in one doesn't hold the other (expected: a hold is per browser);
-  - edit a `.molt` by hand so its only "Go to page" step opens `{{url}}`:
-    Agent mode's review lists no site and offers *Confirm it with no
-    sites*; once confirmed, a run (with a value given for `url` too) opens
+  - write a `.molt` by hand whose only steps are a "Go to page" opening
+    `{{url}}` and a wait (recorded clicks and typing name their site, so
+    keep none): Agent mode's review lists no site and offers *Confirm it
+    with no sites*; once confirmed, a run (with a value given for `url` too) opens
     about:blank and its "Go to page" is refused: it opens nothing by
-    itself. The same file with `https://<a site>/?q={{q}}` as its address
-    offers no such button.
+    itself. The same file with `https://<a site>/?q={{q}}` or
+    `{{x}}https://<a site>/` as its address offers no such button.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world

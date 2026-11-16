@@ -224,8 +224,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       }
     }
     // Confirmed with no site only when its steps target none, every
-    // address with a {{variable}} in it starts with one (no fixed host
-    // before a value, which the review wouldn't show) and it isn't a
+    // address with a {{variable}} in it is a value's (one leading
+    // {{variable}}, then nothing or only a path, query or fragment: no
+    // fixed host before or after a value, which the review wouldn't show)
+    // and it isn't a
     // routine taught by voice; then its whitelist is empty, so it opens no
     // page by itself: no step's address is allowed (below TRUSTED), nor a
     // run window's first page.
@@ -233,11 +235,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       std::optional<Script> copy =
           Script::FromJSONString(clamped.ToJSONString());
       CHECK(copy);
+      const auto a_value_s = [](std::string_view t) {
+        const size_t close = t.find("}}");
+        if (!t.starts_with("{{") || close == std::string_view::npos ||
+            t.substr(2, close - 2).find('{') != std::string_view::npos) {
+          return false;
+        }
+        const std::string_view rest = t.substr(close + 2);
+        return rest.empty() ||
+               (!rest.starts_with("//") &&
+                (rest[0] == '/' || rest[0] == '?' || rest[0] == '#'));
+      };
       const bool values_whole = std::none_of(
-          copy->steps.begin(), copy->steps.end(), [](const Step& step) {
-            const size_t value = step.target.find("{{");
+          copy->steps.begin(), copy->steps.end(), [&](const Step& step) {
             return step.type == StepType::NAVIGATE &&
-                   value != std::string::npos && value != 0;
+                   step.target.find("{{") != std::string::npos &&
+                   !a_value_s(step.target);
           });
       const bool no_site =
           AutomationSecurity::HostsReferencedBy(copy->steps).empty() &&
