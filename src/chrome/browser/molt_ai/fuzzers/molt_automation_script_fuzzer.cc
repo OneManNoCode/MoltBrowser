@@ -9,9 +9,13 @@
 // Checks: no memory or UB error; a parsed workflow saves and loads back to
 // the same file; scrubbing plaintext secrets leaves no value on a step it
 // recognizes as secret, is idempotent and still loads; the effective policy
-// keeps the file's own whitelist and approvals and never adds a templated
+// keeps the file's own whitelist and approvals, never drops a default
+// approval, bounds the runtime below TRUSTED and never adds a templated
 // host; trust is never raised by loading or saving (a new script starts
-// CASUAL, promotion never reaches ADMIN); a step's AI_EXTRACT field list,
+// CASUAL with the default approvals, each limit within its default and any
+// schedule turned off; promotion never reaches ADMIN); a wait runs only a
+// value its studio field shows as it is, 0 to 60 s; a step's AI_EXTRACT
+// field list,
 // when accepted, gives a schema the inference service supports; the
 // security digest is empty or 64 lowercase hex digits, and the same once
 // the workflow is written and read back; a file the browser didn't write,
@@ -232,16 +236,43 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           AutomationSecurity::SecurityDigest(*clamped_read));
   }
 
-  // Trust: imports start CASUAL, saving keeps the stored level.
+  // Trust: imports start CASUAL, saving keeps the stored level. A new one
+  // also gets the policy floor (the default approvals, each limit within
+  // its default) and any schedule it brings turned off.
   Script incoming = std::move(*Script::FromJSONString(saved));
   AutomationSecurity::ClampTrustForSave(incoming, nullptr);
   CHECK(incoming.security.trust == TrustLevel::CASUAL);
+  {
+    const SecurityPolicy defaults;
+    CHECK(incoming.security.require_approval_for ==
+          std::vector<std::string>({"form_submit", "payment", "login"}));
+    CHECK(incoming.security.max_runtime_seconds > 0 &&
+          incoming.security.max_runtime_seconds <=
+              defaults.max_runtime_seconds);
+    CHECK(incoming.security.max_navigations > 0 &&
+          incoming.security.max_navigations <= defaults.max_navigations);
+    CHECK(incoming.security.max_network_bytes > 0 &&
+          incoming.security.max_network_bytes <= defaults.max_network_bytes);
+    CHECK(!incoming.enabled || !FiresByItself(incoming.trigger));
+  }
   AutomationSecurity::ClampTrustForSave(incoming, &*loaded);
   CHECK(incoming.security.trust == loaded->security.trust);
 
   AutomationSecurity security;
   const SecurityPolicy policy = AutomationSecurity::EffectivePolicy(*script);
   CHECK(!policy.require_approval_for.empty());
+  // Never without a default approval, whatever the file lists; below
+  // TRUSTED, a runtime within the default.
+  for (const char* category : {"form_submit", "payment", "login"}) {
+    CHECK(std::find(policy.require_approval_for.begin(),
+                    policy.require_approval_for.end(),
+                    category) != policy.require_approval_for.end())
+        << "the effective policy dropped " << category;
+  }
+  if (policy.trust < TrustLevel::TRUSTED) {
+    CHECK(policy.max_runtime_seconds > 0 &&
+          policy.max_runtime_seconds <= SecurityPolicy().max_runtime_seconds);
+  }
   // An unconfirmed draft is CASUAL whatever its file says.
   CHECK(policy.trust == (script->security.sites_unconfirmed
                              ? TrustLevel::CASUAL
@@ -266,6 +297,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   int checked = 0;
   for (Step& step : script->steps) {
     if (++checked > 64) break;
+    // A wait runs only a value the studio's number field shows as it is:
+    // "" (2 s), or a number from 0 to 60 with no spaces, '+' or trailing
+    // '.' (WaitMillisecondsOf()).
+    if (std::optional<int> wait_ms = WaitMillisecondsOf(step.value)) {
+      CHECK(*wait_ms >= 0 && *wait_ms <= kMaxWaitSeconds * 1000);
+      const std::string& v = step.value;
+      if (!v.empty()) {
+        CHECK(v.front() == '-' || v.front() == '.' ||
+              (v.front() >= '0' && v.front() <= '9'));
+        CHECK(v.back() != '.');
+        for (char c : v) {
+          CHECK(c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' &&
+                c != '\v');
+        }
+      }
+    }
     const std::string& url = step.target;
     const bool nav = security.AllowNavigation(policy, url);
     if (policy.trust < TrustLevel::TRUSTED && nav) {

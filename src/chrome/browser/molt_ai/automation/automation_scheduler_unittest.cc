@@ -151,6 +151,41 @@ class AutomationSchedulerTest : public testing::Test {
   std::vector<std::string> fired_;
 };
 
+// An interval runs at most once a minute, whatever its expression says (an
+// import, a file from an older build): counted as kMinIntervalSeconds.
+TEST(AutomationSchedulerNextFireTest, AnIntervalUnderAMinuteRunsOnceAMinute) {
+  const base::Time last = base::Time::FromTimeT(kStart);
+  Trigger t;
+  t.type = TriggerType::INTERVAL;
+  t.last_fired_unix = kStart;
+  for (const char* expression : {"1", "10", "59"}) {
+    t.expression = expression;
+    EXPECT_EQ(AutomationScheduler::NextFireTime(t, last),
+              last + base::Seconds(60))
+        << expression;
+  }
+  t.expression = "90";
+  EXPECT_EQ(AutomationScheduler::NextFireTime(t, last),
+            last + base::Seconds(90));
+}
+
+// A 10 s interval last fired 30 s ago isn't overdue (it would be at 10 s):
+// it fires a minute after that fire, and then once a minute.
+TEST_F(AutomationSchedulerTest, AnIntervalUnderAMinuteFiresOnceAMinute) {
+  const int64_t now = Unix(base::Time::Now());
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 10, now - 30)));
+  scheduler_.Start();
+  Tick();
+  task_environment_.FastForwardBy(base::Seconds(5));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(26));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  task_environment_.FastForwardBy(base::Seconds(50));
+  EXPECT_EQ(fired_.size(), 1u);
+  task_environment_.FastForwardBy(base::Seconds(11));
+  EXPECT_EQ(fired_.size(), 2u);
+}
+
 // The control: a workflow the browser saved, whose run was missed, fires
 // once, then an interval after that run.
 TEST_F(AutomationSchedulerTest, FiresAVouchedCatchUp) {

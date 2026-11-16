@@ -67,20 +67,51 @@ std::optional<Script> LoadToRun(const std::string& id,
   return script;
 }
 
-base::DictValue SaveWorkflow(Script script, AutomationStorage& storage) {
+base::DictValue SaveWorkflow(Script script,
+                             int64_t now_unix,
+                             bool schedule_saved,
+                             AutomationStorage& storage) {
   if (HasVoiceSteps(script)) {
     return Failed(kVoiceRoutinesElsewhere);
   }
   bool stored_routine = false;
   const bool saved = storage.SaveChecked(
-      std::move(script), [&stored_routine](const Script* stored, Script& s) {
+      std::move(script), [&stored_routine, now_unix, schedule_saved](
+                             const Script* stored, Script& s) {
         if (stored && HasVoiceSteps(*stored)) {
           stored_routine = true;
           return false;
         }
-        // The page's trust is ignored: the stored one is kept (changed only
-        // by promoteTrust), or a new workflow starts CASUAL.
+        if (stored) {
+          // The page never edits the policy: the stored one is kept (its
+          // trust changed only by promoteTrust).
+          s.security = stored->security;
+        } else {
+          // Not stored (deleted meanwhile, or a dict the page made): taken
+          // as an import. No runs, no last fire.
+          s.stats = automation::Stats();
+          s.trigger.last_fired_unix = 0;
+        }
+        // The stored trust, or CASUAL with the policy floor and any
+        // schedule turned off for a new one.
         AutomationSecurity::ClampTrustForSave(s, stored);
+        // An interval saved afresh (Save schedule sends no last fire), or
+        // a new one, counts from this save: the scheduler would count one
+        // with none from each listing, and never fire it. Any other save
+        // leaves one an earlier version saved with none as it is (shown
+        // "not started"): only Save schedule starts it.
+        if (!stored || schedule_saved) {
+          automation::CountIntervalFromNow(s.trigger, now_unix);
+        } else if (s.trigger.last_fired_unix <= 0 &&
+                   s.trigger.type == stored->trigger.type &&
+                   s.trigger.expression == stored->trigger.expression &&
+                   s.trigger.timezone == stored->trigger.timezone &&
+                   s.trigger.until_unix == stored->trigger.until_unix) {
+          // A card listed before the schedule was started elsewhere (an
+          // open card isn't refreshed): it stays as stored, started or
+          // not.
+          s.trigger.last_fired_unix = stored->trigger.last_fired_unix;
+        }
         return true;
       });
   if (stored_routine) {
@@ -111,10 +142,13 @@ base::DictValue ImportWorkflow(Script script,
   if (storage.Load(script.id)) {
     script.id += "-imported-" + base::NumberToString(now_unix);
   }
-  // The importer hasn't earned anything yet: no runs, and whatever trust
-  // the JSON claims, CASUAL.
+  // The importer hasn't earned anything yet: no runs, and whatever the
+  // JSON claims, CASUAL with the default approvals and limits, and its
+  // schedule (kept) turned off until the user turns it on.
   script.stats = automation::Stats();
   AutomationSecurity::ClampTrustForSave(script, /*existing=*/nullptr);
+  const bool schedule_off =
+      !script.enabled && automation::FiresByItself(script.trigger);
   // Nor has it fired here: its schedule starts over, whatever last fire the
   // JSON gives (an earlier one would run it at once, a later one hold it
   // back), an interval counted from the import.
@@ -122,11 +156,13 @@ base::DictValue ImportWorkflow(Script script,
   automation::CountIntervalFromNow(script.trigger, now_unix);
   const std::optional<std::string> id = storage.SaveNew(std::move(script));
   if (id) {
-    storage.AppendAudit(*id, "imported", "from_ui");
+    storage.AppendAudit(*id, "imported",
+                        schedule_off ? "from_ui, schedule off" : "from_ui");
   }
   base::DictValue result;
   result.Set("success", id.has_value());
   result.Set("script_id", id.value_or(std::string()));
+  result.Set("schedule_off", schedule_off);
   return result;
 }
 

@@ -1929,7 +1929,7 @@ extension enablement and `MediaRouterEnabled()`).
     storage's change sequence is held, and is once released.
   - `TheChatsSavesRunOnTheStoragesSequence`: two plans in one second are
     two workflows; a watcher is saved, with its interval counted from then
-    (workflow-integrity).
+    (workflow-integrity), CASUAL, on its one site (workflow-gaps).
 - [ ] The workflow record and the data folder (workflow-integrity, and
   from #133):
   ```bash
@@ -2816,6 +2816,31 @@ WEB_AI_APIS.md §12):
   - two user data dirs at once: a run in one doesn't make the other ask
     for a review; a trust change in one asks for one review in the other;
     a scheduled workflow runs in each (expected, §3.6.7).
+- [ ] Workflow gaps (workflow-gaps; docs/design/AGENT_ACTIONS.md §3.6.11):
+  - in molt://ai-automation, import a `.molt` whose `security` lists
+    `"require_approval_for": ["x"]` and a cron schedule: its card says
+    "(paused)" with no next run; a run stops before a form submit (its
+    last result says to trust it; the same run started from Agent mode
+    offers "Trust & re-run"); tick Enabled and click Save schedule: it runs
+    on its schedule;
+  - the same file (saved as `.json`, which Agent mode's Import takes)
+    imported in Agent mode: its card says "paused";
+    Schedule opens on its schedule, Save turns it on; editing its steps
+    afterwards doesn't turn it off or change its schedule;
+  - in molt://ai-automation, save "every 1 hours" unchanged twice: it stays
+    an hour, shown as 1 hours; 30 seconds is refused; the workflow runs an
+    hour after the save;
+  - a workflow whose last run is still open (a long wait-for) isn't opened
+    again by its schedule;
+  - a Wait step of 3 seconds waits about 3 seconds and succeeds; a value of
+    `2000` stops with "A wait needs a number of seconds from 0 to 60";
+  - `/watch https://news.example/ h1 600` in the chat: the workflow is
+    Casual and checks the page every 10 minutes; `/wait-for .results li`
+    succeeds once that element is on the page;
+  - on a profile upgraded from v0.2.5 with an interval saved in
+    molt://ai-automation and a `/watch` watcher: each says "not started" on
+    both pages until its schedule is saved again (or the `/watch` is made
+    again); Snooze 1h and Skip next on it say to use Save schedule.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world

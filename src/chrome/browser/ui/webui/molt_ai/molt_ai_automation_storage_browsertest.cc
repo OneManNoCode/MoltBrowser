@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -22,6 +23,7 @@
 #include "base/test/run_until.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/common/molt_home_dir.h"
 #include "chrome/browser/molt_ai/common/molt_home_dir_test_util.h"
@@ -207,6 +209,12 @@ IN_PROC_BROWSER_TEST_F(AutomationPageStorageBrowserTest,
       ASSERT_TRUE(stored);
       EXPECT_EQ(stored->trigger.type, automation::TriggerType::INTERVAL);
       EXPECT_GT(stored->trigger.last_fired_unix, 0);
+      // Saved CASUAL (a typed command isn't a trust click), on its one
+      // site, and the scheduler still fires it.
+      EXPECT_EQ(stored->security.trust, automation::TrustLevel::CASUAL);
+      EXPECT_EQ(stored->security.domain_whitelist,
+                std::vector<std::string>{"news.example"});
+      EXPECT_TRUE(automation::AutomationSecurity::MayFireUnattended(*stored));
       found = true;
     }
   }

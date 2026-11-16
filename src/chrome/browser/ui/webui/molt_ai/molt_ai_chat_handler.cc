@@ -3171,20 +3171,28 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
     step.type = molt_ai::automation::StepType::NAVIGATE;
     step.target = value ? *value : "";
   } else if (t == "wait") {
-    // P3: simple sleep. value is ms (default 1000).
+    // P3: simple sleep. value is ms (default 1000), from 0 to the longest
+    // wait a step runs (automation::WaitMillisecondsOf()), given to the step as
+    // the seconds its value holds.
     step.type = molt_ai::automation::StepType::WAIT;
     int ms = 1000;
-    if (value && !value->empty())
-      base::StringToInt(*value, &ms);
-    step.timeout_ms = ms;
+    if ((value && !value->empty() && !base::StringToInt(*value, &ms)) ||
+        ms < 0 || ms > molt_ai::automation::kMaxWaitSeconds * 1000) {
+      result.Set("success", false);
+      result.Set("error", base::StringPrintf(
+                              "/wait takes 0 to %d ms",
+                              molt_ai::automation::kMaxWaitSeconds * 1000));
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+    step.value = base::NumberToString(ms / 1000.0);
   } else if (t == "wait-for") {
-    // P3: poll until a selector appears, up to value ms (default 5000).
+    // P3: poll until a selector appears, as a recorded wait-for step does
+    // (its step timer below, then the runner's retries, within this
+    // one-step script's runtime).
     step.type = molt_ai::automation::StepType::WAIT_FOR;
     step.target = sel ? *sel : "";
-    int ms = 5000;
-    if (value && !value->empty())
-      base::StringToInt(*value, &ms);
-    step.timeout_ms = ms;
   } else {
     result.Set("success", false);
     result.Set("error", "unknown action type: " + t);
@@ -3192,6 +3200,7 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
                               base::Value(std::move(result)));
     return;
   }
+  // A wait's step timer is set past its wait (the runner's DoWait()).
   step.timeout_ms = 8000;
   if (!confirmed && (t == "click" || t == "type")) {
     // The runner probes the element right before acting and stops with a
@@ -3549,7 +3558,8 @@ void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
     return;
   }
   int seconds = interval.value_or(900);  // default 15 min
-  if (seconds < 60) seconds = 60;        // floor: 1 min
+  // At most once a minute (the scheduler's floor).
+  seconds = std::max(seconds, molt_ai::automation::kMinIntervalSeconds);
 
   GURL gurl(*url);
   if (!gurl.is_valid() || !gurl.SchemeIsHTTPOrHTTPS()) {
@@ -3574,7 +3584,14 @@ void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
   // come); made again, it starts over.
   molt_ai::automation::CountIntervalFromNow(s.trigger,
                                             base::Time::Now().ToTimeT());
-  s.security.trust = molt_ai::automation::TrustLevel::APPROVED;
+  // CASUAL, like a plan the chat saves: a typed command isn't the click a
+  // trust change takes. Its own steps need nothing more: the NAVIGATE opens
+  // its one site (AllowNavigation() is the same below TRUSTED), and
+  // WAIT_FOR / EXTRACT / NOTIFY have no trust check; the scheduler fires it
+  // whatever its trust (MayFireUnattended()). A step added later in the
+  // Agent studio that submits a form, fills a password or calls a site's
+  // tool stops at "Trust & re-run". Made again, it starts over.
+  s.security.trust = molt_ai::automation::TrustLevel::CASUAL;
   s.security.max_runtime_seconds = 120;
   s.security.domain_whitelist.push_back(std::string(gurl.host()));
 

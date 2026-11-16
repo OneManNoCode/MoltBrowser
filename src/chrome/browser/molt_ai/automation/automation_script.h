@@ -17,6 +17,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/values.h"
@@ -36,8 +37,8 @@ enum class StepType {
   KEYPRESS,
 
   // Synchronization
-  WAIT,        // sleep N ms
-  WAIT_FOR,    // wait until selector matches
+  WAIT,      // pause |value| seconds (WaitMillisecondsOf())
+  WAIT_FOR,  // wait until selector matches
 
   // Data flow
   EXTRACT,     // CSS query -> store as variable
@@ -53,7 +54,7 @@ enum class StepType {
   ASSERT,
 
   // Side effects
-  NOTIFY,      // OS notification on top-right (per user spec)
+  NOTIFY,  // OS notification on top-right (per user spec)
   SCREENSHOT,
   RUN_JS,      // arbitrary JS in the active frame (Trusted only)
   RUN_SCRIPT,  // delegate to another saved Script by id (chain agents)
@@ -99,7 +100,8 @@ struct Step {
   // Timeout for steps that wait (WAIT_FOR, navigation, AI_DECIDE) and
   // also a hard cap on every other step type — the runner arms a
   // OneShotTimer that fails the step if its dispatched callback hasn't
-  // fired by this deadline. Defaults to 5s.
+  // fired by this deadline. Defaults to 5s. Never a WAIT step's run time:
+  // its timer is set past the wait its value says (WaitMillisecondsOf()).
   int timeout_ms = 5000;
 
   // For LOOP / IF: max iterations or label, etc.
@@ -297,6 +299,32 @@ TriggerType TriggerTypeFromString(const std::string& s);
 
 // A trigger as a script's JSON holds it (its "trigger").
 base::DictValue TriggerToDict(const Trigger& t);
+
+// A trigger that runs its workflow by itself (a cron, an interval, a
+// one-shot time); a manual one, or a browser event, never does.
+bool FiresByItself(const Trigger& trigger);
+
+// The shortest interval any schedule runs at, whatever its expression
+// says: each fire opens a run window and shows a notification, and the
+// scheduler, cron and both pages' "next run" work in whole minutes. The
+// scheduler counts a shorter one as this (AutomationScheduler);
+// molt://ai-automation refuses one, and Agent mode's Schedule sheet and the
+// chat's /watch raise it to this.
+inline constexpr int kMinIntervalSeconds = 60;
+
+// A WAIT step pauses for the seconds its value says: what the Agent
+// studio's "Seconds to wait" number field and title ("Wait 2 seconds")
+// show, and all the review keeps of the step
+// (AutomationSecurity::ClampUnvouched()). Exactly what that field can show
+// (no surrounding spaces, no '+', no trailing '.'), from 0 to
+// kMaxWaitSeconds, fractions allowed; an empty value is kDefaultWaitSeconds
+// (the studio's title for one). Its timeout_ms is never its run time.
+// |resolved_value| is the value with its {{variables}} given. The wait in
+// milliseconds (0 to kMaxWaitSeconds * 1000); nullopt for anything else:
+// the step fails.
+inline constexpr int kDefaultWaitSeconds = 2;
+inline constexpr int kMaxWaitSeconds = 60;
+std::optional<int> WaitMillisecondsOf(std::string_view resolved_value);
 
 // An interval schedule the browser writes with no last fire (a schedule
 // saved afresh, a page watcher, one confirmed after a review) counts from

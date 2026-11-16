@@ -3,12 +3,14 @@
 
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 
+#include <cmath>
 #include <utility>
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 
 namespace molt_ai {
 namespace automation {
@@ -233,6 +235,35 @@ base::DictValue TriggerToDict(const Trigger& t) {
   if (t.last_fired_unix > 0)
     d.Set("last_fired_unix", static_cast<double>(t.last_fired_unix));
   return d;
+}
+
+bool FiresByItself(const Trigger& trigger) {
+  return trigger.type == TriggerType::CRON ||
+         trigger.type == TriggerType::INTERVAL ||
+         trigger.type == TriggerType::AT;
+}
+
+std::optional<int> WaitMillisecondsOf(std::string_view v) {
+  if (v.empty()) {
+    // The studio's "Wait 2 seconds".
+    return kDefaultWaitSeconds * 1000;
+  }
+  // What the studio's number field shows (it blanks anything else to its
+  // "2" placeholder): no surrounding spaces, no '+', no trailing '.'.
+  // base::StringToDouble() takes no hex, "inf" or "nan", and the range
+  // rules out an overflow ("1e400"), a negative ("-0" is 0) and
+  // milliseconds typed by habit ("2000").
+  const char first = v.front();
+  if (!(first == '-' || first == '.' || base::IsAsciiDigit(first)) ||
+      v.back() == '.') {
+    return std::nullopt;
+  }
+  double seconds = 0;
+  if (!base::StringToDouble(v, &seconds) || !std::isfinite(seconds) ||
+      seconds < 0 || seconds > kMaxWaitSeconds) {
+    return std::nullopt;
+  }
+  return static_cast<int>(std::llround(seconds * 1000));
 }
 
 void CountIntervalFromNow(Trigger& trigger, int64_t now_unix) {

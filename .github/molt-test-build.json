@@ -1,12 +1,12 @@
 {
- "resume_run": "43714601147",
+ "resume_run": "43776798905",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Seventy-fifth build (incremental on the seventy-fourth, run 43714601147, Chromium 156.0.8078.100): workflow files changed outside MoltBrowser need review (PR #134), with rounds nine and ten: a new routine saved under an id of its own (never taking another's policy), new workflow ids made unique, and the run window opening only the page the starting step expects, resolved and on the workflow's sites. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Seventy-seventh build (incremental on the seventy-sixth, run 43776798905, Chromium 156.0.8078.100): the workflow-gaps change with review rounds three and four. The chat's /wait-for takes the rest of its line as its selector, only Save schedule starts an interval an earlier version never started (and a save from a stale card keeps it as stored), a one-time scheduled run isn't skipped beside an open run, and Snooze and Skip don't start an interval never started. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }

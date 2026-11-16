@@ -74,6 +74,10 @@ class AgentInboxRegistry {
   // finished, oldest-first).
   std::vector<AgentInboxEntry> List() const;
 
+  // Whether a run of the workflow |script_id| is still open: added, not
+  // finished.
+  bool IsRunning(const std::string& script_id) const;
+
  private:
   friend class base::NoDestructor<AgentInboxRegistry>;
 

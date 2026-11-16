@@ -3,15 +3,18 @@
 //
 // STANDALONE FUZZING STAND-IN for Chromium's
 // base/strings/string_number_conversions.h (the subset MoltBrowser uses),
-// for tools/fuzz/molt_fuzz.py only. StringTo*() accept exactly what
-// upstream accepts: an optional '-' (or '+'), digits, nothing else, and
-// fail on overflow.
+// for tools/fuzz/molt_fuzz.py only. The integer StringTo*() accept exactly
+// what upstream accepts: an optional '-' (or '+'), digits, nothing else,
+// and fail on overflow; StringToDouble() is a decimal number, the whole
+// string.
 
 #ifndef MOLT_FUZZ_STAND_INS_BASE_STRINGS_STRING_NUMBER_CONVERSIONS_H_
 #define MOLT_FUZZ_STAND_INS_BASE_STRINGS_STRING_NUMBER_CONVERSIONS_H_
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <span>
 #include <string>
@@ -104,6 +107,25 @@ inline bool StringToUint64(std::string_view s, uint64_t* out) {
 }
 inline bool StringToSizeT(std::string_view s, size_t* out) {
   return internal::StringToUnsigned(s, out);
+}
+// As upstream: a decimal number (an optional sign, digits, a '.', an
+// exponent) that is the whole string; no leading or trailing space, hex,
+// "inf" or "nan". An overflow writes an infinity and returns false, as
+// upstream's does.
+inline bool StringToDouble(std::string_view s, double* out) {
+  if (s.empty()) return false;
+  for (char c : s) {
+    if (!((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.' ||
+          c == 'e' || c == 'E')) {
+      return false;
+    }
+  }
+  const std::string copy(s);
+  char* end = nullptr;
+  const double value = std::strtod(copy.c_str(), &end);
+  if (end != copy.c_str() + copy.size()) return false;
+  *out = value;
+  return value != HUGE_VAL && value != -HUGE_VAL;
 }
 
 inline std::string HexEncode(std::span<const uint8_t> bytes) {

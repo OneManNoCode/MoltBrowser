@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <iterator>
 #include <limits>
@@ -115,6 +116,43 @@ TEST(AutomationSecurityTest, EffectivePolicyAddsHostsTheStepsTarget) {
   EXPECT_FALSE(sec.AllowNavigation(p, "https://attacker.example/?d=secret"));
 }
 
+// A whitelist entry that is itself a registry (a public suffix), from the
+// file's whitelist or a step's host, allows no site under it; an ordinary
+// one allows its subdomains within its own site, and an IP address or a
+// single label only itself.
+TEST(AutomationSecurityTest, ARegistryInTheWhitelistAllowsNoSiteUnderIt) {
+  AutomationSecurity sec;
+  SecurityPolicy p;
+  p.domain_whitelist = {"com", "co.uk", "github.io"};
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://evil.com/"));
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://shop.co.uk/"));
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://someone.github.io/"));
+  EXPECT_FALSE(sec.AllowClick(p, "https://evil.com/", "#go"));
+  p.domain_whitelist = {"kayak.com", "user.github.io", "192.168.1.1",
+                        "localhost"};
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://kayak.com/"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://www.kayak.com/"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://a.user.github.io/"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "http://192.168.1.1/"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "http://localhost:8080/"));
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://evilkayak.com/"));
+  // Nor across a registry below the entry: a bucket under s3.amazonaws.com
+  // is someone else's site.
+  p.domain_whitelist = {"amazonaws.com"};
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://bucket.s3.amazonaws.com/"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://console.amazonaws.com/"));
+
+  // A step's recorded host, as a file can give it.
+  Script script;
+  Step click = MakeStep(StepType::CLICK, "#go");
+  base::DictValue extra;
+  extra.Set("host", "com");
+  click.extra = base::Value(std::move(extra));
+  script.steps.push_back(std::move(click));
+  EXPECT_FALSE(sec.AllowNavigation(AutomationSecurity::EffectivePolicy(script),
+                                   "https://attacker.com/?d=secret"));
+}
+
 TEST(AutomationSecurityTest, EffectivePolicyKeepsStoredFields) {
   Script script;
   script.security.trust = TrustLevel::APPROVED;
@@ -124,7 +162,130 @@ TEST(AutomationSecurityTest, EffectivePolicyKeepsStoredFields) {
   SecurityPolicy p = AutomationSecurity::EffectivePolicy(script);
   EXPECT_EQ(p.trust, TrustLevel::APPROVED);
   EXPECT_EQ(p.domain_whitelist, std::vector<std::string>{"kayak.com"});
-  EXPECT_EQ(p.require_approval_for, std::vector<std::string>{"payment"});
+  // A stored list adds to the defaults, never drops one.
+  EXPECT_EQ(p.require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login"}));
+}
+
+// A file can't opt a workflow out of an approval (an import from an older
+// build, a hand-edited file): below APPROVED, submits and sensitive fields
+// stay blocked whatever its list says; categories it adds are kept.
+TEST(AutomationSecurityTest, EffectivePolicyNeverDropsADefaultApproval) {
+  for (const std::vector<std::string>& listed :
+       {std::vector<std::string>{"x"}, std::vector<std::string>{""},
+        std::vector<std::string>{"payment"},
+        std::vector<std::string>{"later_category", "login"}}) {
+    Script script;
+    script.security.require_approval_for = listed;
+    SecurityPolicy p = AutomationSecurity::EffectivePolicy(script);
+    for (const char* category : {"form_submit", "payment", "login"}) {
+      EXPECT_NE(std::find(p.require_approval_for.begin(),
+                          p.require_approval_for.end(), category),
+                p.require_approval_for.end())
+          << category;
+    }
+    AutomationSecurity sec;
+    EXPECT_FALSE(sec.AllowSubmit(p));
+    EXPECT_FALSE(sec.AllowSensitiveField(
+        p, molt_ai::agent_safety::FieldKind::kPassword));
+    EXPECT_FALSE(sec.AllowSensitiveField(
+        p, molt_ai::agent_safety::FieldKind::kPaymentCard));
+  }
+  Script added;
+  added.security.require_approval_for = {"later_category"};
+  EXPECT_EQ(AutomationSecurity::EffectivePolicy(added).require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login",
+                                      "later_category"}));
+}
+
+// Below TRUSTED a run is at most the default 300 s, whatever its file says;
+// a shorter limit is kept, and TRUSTED keeps its own.
+TEST(AutomationSecurityTest, EffectivePolicyBoundsTheRuntimeBelowTrusted) {
+  for (int stored : {0, -1, 301, std::numeric_limits<int>::max()}) {
+    Script script;
+    script.security.max_runtime_seconds = stored;
+    EXPECT_EQ(AutomationSecurity::EffectivePolicy(script).max_runtime_seconds,
+              300)
+        << stored;
+    script.security.trust = TrustLevel::APPROVED;
+    EXPECT_EQ(AutomationSecurity::EffectivePolicy(script).max_runtime_seconds,
+              300)
+        << stored;
+  }
+  Script shorter;
+  shorter.security.max_runtime_seconds = 60;
+  EXPECT_EQ(AutomationSecurity::EffectivePolicy(shorter).max_runtime_seconds,
+            60);
+  Script trusted;
+  trusted.security.trust = TrustLevel::TRUSTED;
+  trusted.security.max_runtime_seconds = 3600;
+  EXPECT_EQ(AutomationSecurity::EffectivePolicy(trusted).max_runtime_seconds,
+            3600);
+}
+
+// A workflow a save brings in (an import, a copy, a page's save of one not
+// stored) believes nothing its JSON says about what it may do: the default
+// approvals and each limit within its default (a lower one kept), its sites
+// kept; and a schedule it brings is kept, turned off.
+TEST(AutomationSecurityTest, ANewSaveGetsThePolicyFloorAndItsScheduleOff) {
+  Script incoming;
+  incoming.security.require_approval_for = {"x"};
+  incoming.security.max_runtime_seconds = std::numeric_limits<int>::max();
+  incoming.security.max_navigations = -1;
+  incoming.security.max_network_bytes = 0;
+  incoming.security.domain_whitelist = {"shop.example"};
+  incoming.trigger.type = TriggerType::CRON;
+  incoming.trigger.expression = "*/5 * * * *";
+  AutomationSecurity::ClampTrustForSave(incoming, nullptr);
+  const SecurityPolicy defaults;
+  EXPECT_EQ(incoming.security.require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login"}));
+  EXPECT_EQ(incoming.security.max_runtime_seconds,
+            defaults.max_runtime_seconds);
+  EXPECT_EQ(incoming.security.max_navigations, defaults.max_navigations);
+  EXPECT_EQ(incoming.security.max_network_bytes, defaults.max_network_bytes);
+  EXPECT_EQ(incoming.security.domain_whitelist,
+            std::vector<std::string>{"shop.example"});
+  EXPECT_EQ(incoming.trigger.type, TriggerType::CRON);
+  EXPECT_EQ(incoming.trigger.expression, "*/5 * * * *");
+  EXPECT_FALSE(incoming.enabled);
+  EXPECT_FALSE(AutomationSecurity::MayFireUnattended(incoming));
+
+  // Lower limits are kept; a manual workflow stays on (nothing to fire).
+  Script lower;
+  lower.security.max_runtime_seconds = 60;
+  lower.security.max_navigations = 3;
+  lower.security.max_network_bytes = 1000;
+  AutomationSecurity::ClampTrustForSave(lower, nullptr);
+  EXPECT_EQ(lower.security.max_runtime_seconds, 60);
+  EXPECT_EQ(lower.security.max_navigations, 3);
+  EXPECT_EQ(lower.security.max_network_bytes, 1000);
+  EXPECT_TRUE(lower.enabled);
+
+  for (TriggerType type : {TriggerType::INTERVAL, TriggerType::AT}) {
+    Script scheduled;
+    scheduled.trigger.type = type;
+    AutomationSecurity::ClampTrustForSave(scheduled, nullptr);
+    EXPECT_FALSE(scheduled.enabled);
+  }
+  Script on_event;
+  on_event.trigger.type = TriggerType::ON_EVENT;
+  AutomationSecurity::ClampTrustForSave(on_event, nullptr);
+  EXPECT_TRUE(on_event.enabled);
+
+  // A stored workflow's save keeps its switch, and the policy its caller
+  // put there.
+  Script stored;
+  stored.trigger.type = TriggerType::CRON;
+  stored.security.max_runtime_seconds = 600;
+  stored.security.trust = TrustLevel::TRUSTED;
+  Script edit;
+  edit.trigger.type = TriggerType::CRON;
+  edit.security = stored.security;
+  AutomationSecurity::ClampTrustForSave(edit, &stored);
+  EXPECT_TRUE(edit.enabled);
+  EXPECT_EQ(edit.security.max_runtime_seconds, 600);
+  EXPECT_EQ(edit.security.trust, TrustLevel::TRUSTED);
 }
 
 TEST(AutomationSecurityTest, SavingNeverRaisesTrust) {

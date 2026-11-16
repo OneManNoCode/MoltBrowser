@@ -6,6 +6,7 @@
 #include <algorithm>  // for std::max
 #include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <ctime>
+#include <optional>
 #include <utility>
 
 #include "base/files/file_util.h"
@@ -253,6 +254,10 @@ std::string JSQuote(const std::string& s) {
 // How long a step may wait on the on-device model (inference can queue
 // behind a chat reply). The step's own timeout_ms wins if larger.
 constexpr base::TimeDelta kLLMStepBudget = base::Seconds(120);
+
+// How far past a wait step's own time its step timer is set (DoWait()), so
+// the step's timeout_ms never ends the wait first.
+constexpr base::TimeDelta kWaitStepSlack = base::Seconds(5);
 
 // Appended to blocks that trusting the workflow (trust >= APPROVED) lifts.
 // Those runs are flagged (Stats::last_run_needs_trust) so the Agent studio
@@ -539,9 +544,10 @@ void AutomationRunner::ExecuteNextStep() {
     Finish(true, "Completed");
     return;
   }
-  // Per-script overall timeout.
+  // Per-script overall timeout, as the run's policy has it (below TRUSTED
+  // at most the default, whatever the file says: EffectivePolicy()).
   int elapsed_s = (base::TimeTicks::Now() - start_time_).InSeconds();
-  if (elapsed_s > script_.security.max_runtime_seconds) {
+  if (elapsed_s > policy_.max_runtime_seconds) {
     Finish(false, "Max runtime exceeded");
     return;
   }
@@ -1872,13 +1878,26 @@ void AutomationRunner::DoScroll(const Step& s) {
 }
 
 void AutomationRunner::DoWait(const Step& s) {
-  int ms = s.timeout_ms > 0 ? s.timeout_ms : 1000;
+  // The seconds the step's value says, as the Agent studio and its review
+  // show them (WaitMillisecondsOf()); never its timeout_ms.
+  const std::optional<int> wait_ms = WaitMillisecondsOf(Resolve(s.value));
+  if (!wait_ms) {
+    // Fixed words: the value may come from a variable (page text).
+    OnStepFinished(false,
+                   base::StringPrintf("A wait needs a number of seconds from "
+                                      "0 to %d",
+                                      kMaxWaitSeconds));
+    return;
+  }
+  // The step's timer (armed with its timeout_ms, which the studio neither
+  // shows nor keeps) is set past the wait, so it never ends the wait first.
+  const base::TimeDelta wait = base::Milliseconds(*wait_ms);
+  ExtendStepTimeout(wait + kWaitStepSlack);
   base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&AutomationRunner::OnStepFinished,
-                     weak_factory_.GetWeakPtr(),
-                     true, "Waited"),
-      base::Milliseconds(ms));
+                     weak_factory_.GetWeakPtr(), true, "Waited"),
+      wait);
 }
 
 void AutomationRunner::DoWaitFor(const Step& s) {

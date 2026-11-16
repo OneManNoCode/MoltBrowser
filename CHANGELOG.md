@@ -17,6 +17,27 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **Wait steps wait the seconds they show.** A workflow's "Wait" step
+  stopped the run with "Step timed out" instead of waiting. It now waits
+  the seconds its field shows (0 to 60; empty is 2) and stops with a
+  message for anything else. The chat's `/wait` takes 0 to 60000 ms.
+- **An interval schedule saved in molt://ai-automation runs.** It never
+  ran: it now counts from when it is saved. An interval schedule an
+  earlier version saved without ever running it (in molt://ai-automation,
+  with Agent mode's Schedule, or a `/watch` page watcher) is marked "not
+  started" on both pages until you save its schedule again (or make the
+  `/watch` again); Snooze and Skip don't start it. Saving an hourly
+  schedule unchanged in molt://ai-automation no longer turns it into one
+  every 150 days (the page showed its seconds with "hours" selected); an
+  interval now shows in its largest whole unit there, and one under a
+  minute is refused. Agent mode's Schedule sheet keeps a
+  one-time ("once at") schedule still to come that it is opened on, and
+  molt://ai-automation no longer moves a one-time schedule by your time
+  zone's offset when it is saved again.
+- **The chat's `/wait-for` works.** It was read as `/wait`. It now
+  waits for the element the rest of the line names (`/wait-for .results
+  li`), as a recorded wait-for step does.
+
 - **Voice mode's own reading, heard back as one word, no longer chooses
   from it.** On speakers, while voice mode read the search results, its
   own voice came back through the microphone as "Live". Voice mode took
@@ -353,6 +374,33 @@ For longer narrative posts behind each entry see
 
 ### Security
 
+- **No workflow below Approved can opt out of asking first.** Whatever
+  its file lists, a workflow at Casual trust now always stops before it
+  submits a form, presses Enter in a form, types into a payment field or
+  fills a saved password, including workflows imported before this
+  version. Below Trusted, a run's time limit is at most the default 5
+  minutes, whatever its file says.
+- **An imported workflow gets the default approvals and limits, and its
+  schedule starts off.** A workflow you import, in molt://ai-automation or
+  in Agent mode, gets the default approvals and limits, whatever its file
+  says. A schedule it brings is kept but turned off: it runs by itself
+  only once you turn it on (tick **Enabled** and click **Save schedule** in
+  molt://ai-automation, or use **Schedule** in Agent mode, which now opens
+  on it). Its card says "paused" until then. Editing a workflow in Agent
+  mode no longer turns its schedule on or undoes a schedule saved since
+  the editor was opened.
+- **A workflow's sites never include a whole domain ending.** A site
+  listed as just "com", "co.uk" or "github.io" no longer allows every site
+  ending in it, and a site allows its subdomains only within the same
+  site (a bucket under "s3.amazonaws.com" isn't part of "amazonaws.com").
+- **The chat's page watcher (`/watch`) starts as Casual.** It checks its
+  page on its schedule; a step you add to it later that submits a form or
+  fills a password asks you to trust it first.
+- **A scheduled workflow runs at most once a minute, and a repeating
+  schedule doesn't start a run while its last run is still open.** A
+  shorter interval runs once a minute, and a repeating schedule's run is
+  skipped while the workflow's last run is still open (a one-time run
+  still runs).
 - **Workflows changed outside MoltBrowser now need your review.**
   MoltBrowser remembers, in its own profile folder, exactly what it last
   saved for each workflow in `~/.moltbrowser/automations`. If a workflow

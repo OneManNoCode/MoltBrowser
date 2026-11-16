@@ -7,6 +7,7 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 #include "chrome/browser/molt_ai/automation/automation_notification.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
@@ -83,6 +84,16 @@ void AutomationSchedulerService::OnTriggerFired(const Script& script,
   if (!AutomationSecurity::MayFireUnattended(script)) {
     PostSharedAudit(storage_dir_, script.id, "scheduled_fire_refused",
                     RefusalReason(script));
+    return;
+  }
+  // One run of a repeating schedule at a time: a fire while the workflow's
+  // last run (scheduled, or one the user started) is still open is skipped,
+  // not opened as another window beside it; its next time comes. A
+  // one-time run has no next time, so it runs anyway.
+  if (script.trigger.type != TriggerType::AT &&
+      AgentInboxRegistry::Get()->IsRunning(script.id)) {
+    PostSharedAudit(storage_dir_, script.id, "scheduled_fire_skipped",
+                    "still_running");
     return;
   }
   LOG(INFO) << "[MoltAutomation] trigger fired for script id=" << script.id

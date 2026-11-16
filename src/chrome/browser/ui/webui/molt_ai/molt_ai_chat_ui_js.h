@@ -2780,7 +2780,9 @@ function renderHistoryClusters(clusters, totalDocs) {
 }
 
 function tryDispatchActionCommand(text) {
-  var m = text.match(/^\s*\/(click|type|select|hover|right-click|rclick|drag|scroll|navigate|nav|goto|wait|wait-for|waitfor)\b\s*(.*)$/i);
+  // "wait-for" before "wait": the first alternative that matches wins, and
+  // \b matches between "wait" and "-for".
+  var m = text.match(/^\s*\/(click|type|select|hover|right-click|rclick|drag|scroll|navigate|nav|goto|wait-for|waitfor|wait)\b\s*(.*)$/i);
   if (!m) return false;
   var cmd = m[1].toLowerCase();
   var rest = (m[2] || '').trim();
@@ -2815,17 +2817,13 @@ function tryDispatchActionCommand(text) {
   } else if (cmd === 'wait') {
     action = {type: 'wait', value: rest || '1000'};
   } else if (cmd === 'wait-for') {
-    var sp2 = rest.indexOf(' ');
+    // The whole rest is the selector (".results li"); it waits as a
+    // recorded wait-for step does.
     if (!rest) {
-      addErrorMessage('Usage: /wait-for <selector> [timeout-ms]');
+      addErrorMessage('Usage: /wait-for <selector>');
       return true;
     }
-    if (sp2 < 0) {
-      action = {type: 'wait-for', selector: rest, value: '5000'};
-    } else {
-      action = {type: 'wait-for', selector: rest.slice(0, sp2),
-                value: rest.slice(sp2 + 1)};
-    }
+    action = {type: 'wait-for', selector: rest};
   }
   if (!action) return false;
 

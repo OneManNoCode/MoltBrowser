@@ -2662,7 +2662,7 @@ next time (the same rule); after, it is final.
      prompt too), fallback selectors or locators (the editor names a
      locator's kind, not its value), `extra.text` anchor or `ref_shot`
      picture (what the runner acts on when the target shown misses),
-     timeout (a wait's run time; existing gap, §3.6.11), retries, loop
+     timeout (never a wait's run time, which is its value: §3.6.11), retries, loop
      count, transform, review note (`extra.review`: named by the file, it
      would say a run stops at a step, or asks for a value, that it doesn't),
      the agent's ask-before flag, a secret's recorded host, a site tool's
@@ -2971,7 +2971,12 @@ All in `molt_ai_unittests` except the last item:
   (nothing run) when another editor was opened meanwhile; the editor
   keeps the schedule as the browser saved it, and as a confirm saved it;
   a saved interval is shown in hours, minutes or seconds and saved
-  unchanged as it was; a changed workflow edited and not saved yet is
+  unchanged as it was (one under a minute as a minute); a paused schedule
+  and an interval never started say so on their cards, with no next run;
+  the sheet keeps a one-time run still to come that it is opened on, and
+  offers none otherwise; molt://ai-automation's paused card refuses 10 s
+  and saves 90 s turned on, and an interval never started says so; the
+  chat's `/wait-for` is a wait-for; a changed workflow edited and not saved yet is
   saved before it is confirmed, then confirmed with the token of what was
   saved, on the sites its saved steps use.
 - Browser tests (build machine), `security/molt_data_folder_browsertest.cc`:
@@ -2982,13 +2987,17 @@ All in `molt_ai_unittests` except the last item:
   whatever was saved in the same second), and an edit of one that isn't
   there is refused;
   `ui/webui/molt_ai/molt_ai_automation_storage_browsertest.cc`: the chat's
-  page watcher is saved with its interval counted from then.
+  page watcher is saved with its interval counted from then, CASUAL, on its
+  one site, and may fire unattended.
 
 #### 3.6.11 Not done
 
 - **Seeding trusts what is there at the first start of this version**, as
-  the previous build did. A one-time studio notice listing seeded
-  TRUSTED/ADMIN or scheduled workflows would be a follow-up.
+  the previous build did: it keeps v0.2.5's exposure and adds none (the
+  audit log has the count, the browser log the names). No notice is
+  planned; if one is wanted, the record part lands by v0.3.1 (Linux users
+  seed there), recording only the notable seeded entries (TRUSTED/ADMIN,
+  or scheduled).
 - **A new user data directory whose first launch ends before the record's
   first load runs** (a crash in its first seconds) leaves neither the
   record nor its marker, while Chrome's first-run sentinel and Local State
@@ -3003,18 +3012,60 @@ All in `molt_ai_unittests` except the last item:
   confirm with no sites when `changed_outside` (CASUAL, empty whitelist).
 - **Same-user code that can write the user data directory** can edit the
   record; it could already drive the browser.
-- **Existing gaps left as they are** (separate changes): imports keep the
-  file's `require_approval_for` and limits; imported scheduled workflows
-  fire at CASUAL, from their next time (an import's schedule starts over);
-  the chat's watcher is saved at APPROVED without a click; an interval
-  schedule molt://ai-automation saves with no last fire still never fires
-  (the scheduler counts it from each listing; the studio's and the chat's
-  page watcher's now count from when they are written);
+- **Closed since** (the workflow-gaps change):
+  - every CASUAL workflow asks first for the default approvals
+    (`form_submit`, `payment`, `login`) whatever its file lists
+    (`EffectivePolicy()` adds a stored list to them, never drops one;
+    APPROVED lifts them in `AllowSubmit()`/`AllowSensitiveField()`,
+    TRUSTED needs none), so workflows imported by earlier builds are
+    covered too; below TRUSTED a run's limit is at most the default 300 s
+    (the runner reads it from the run's policy);
+  - a workflow a save brings in (`ClampTrustForSave()` with no stored one:
+    an import on either page, molt://ai-automation's save of a workflow not
+    stored, a copy) gets `ApplyPolicyFloor()` (the default approvals, each
+    limit within its default) and a schedule it brings is kept turned off
+    (`enabled` false) until the user turns it on (Save schedule; the
+    studio's Schedule sheet, which now opens on it); molt://ai-automation's
+    save of a stored workflow keeps the stored policy, and the studio's edit
+    keeps the stored schedule and whether it is on (only the Schedule sheet
+    changes them; it keeps a one-time `at` schedule it is opened on);
+  - a whitelist entry suffix-matches a host only within one registrable
+    domain: never from an entry that is a registry (a public suffix: `com`,
+    `co.uk`, `github.io`), from the file or a step's recorded host, nor
+    across a registry below it; an IP address or a single label matches
+    only itself;
+  - the chat's page watcher is saved CASUAL (its steps need nothing more;
+    the scheduler fires it whatever its trust). Watchers made by earlier
+    builds keep their trust until made again;
+  - an interval molt://ai-automation's Save schedule saves (it sends no
+    last fire) counts from the save; one an earlier version saved with no
+    last fire (on either page, or a `/watch` watcher: the record's last
+    fire 0) is shown "not started" on both pages until its schedule is
+    saved again (only Save schedule, the studio's Schedule sheet or the
+    `/watch` made again starts it; Snooze and Skip refuse, and another
+    save of it keeps it as stored, started or not), rather than started
+    by the upgrade; the scheduler counts any interval as at least
+    `kMinIntervalSeconds` (60 s), both pages and the chat refuse or raise a
+    shorter one, and molt://ai-automation shows an interval in its largest
+    whole unit (it showed seconds with "hours" selected, so re-saving one
+    multiplied it by 3600);
+  - a repeating schedule's fire (cron, interval) while a run of the same
+    workflow is still open (in the Agent Inbox) is skipped (audit
+    `scheduled_fire_skipped`), not opened as a second window; a one-time
+    run, which has no next time, runs anyway;
+  - a `wait` step runs the seconds its value says, as the studio's number
+    field shows them (`WaitMillisecondsOf()`: 0 to 60, empty is 2; anything
+    else fails the step), never its timeout (before, its timer and its wait
+    raced, and a wait with a timeout always failed "Step timed out"); the
+    chat's `/wait` takes 0 to 60000 ms, and `/wait-for` is no longer read
+    as `/wait` (the rest of its line is its selector).
+- **Existing gaps left as they are** (separate changes):
   molt://ai-automation's Snooze and Skip don't hold back a cron schedule's
-  timer in any browser; the studio's schedule sheet saves an interval of at
-  least a minute, so one under a minute (molt://ai-automation allows 10
-  seconds) saved there becomes a minute; a `wait` step's run waits its
-  timeout, not the seconds the editor shows (for every workflow).
+  timer in any browser (they are written as a future last fire, which cron
+  ignores; holds kept in the record are the planned fix); a run's limit is
+  checked between steps; `max_navigations` and `max_network_bytes` are
+  stored but not enforced; workflows imported by earlier builds keep their
+  file's schedule switch.
 - **A confirmed change keeps only what the review showed** (§3.6.6's
   allowlist): the file's fallback selectors and locators, text anchor and
   description are gone, so a step whose element moved since needs

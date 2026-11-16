@@ -1155,6 +1155,89 @@ TEST_F(AgentStudioStorageTest, ANewWorkflowStartsItsScheduleOver) {
   ASSERT_TRUE(stored);
   EXPECT_GE(stored->trigger.last_fired_unix, before);
   EXPECT_LE(stored->trigger.last_fired_unix, base::Time::Now().ToTimeT());
+  // Brought in (an import), each is kept turned off: it runs by itself
+  // only once the user turns it on with Schedule.
+  EXPECT_FALSE(stored->enabled);
+  EXPECT_FALSE(Shared().Load(*cron.out.FindString("id"))->enabled);
+}
+
+// The editor never edits the schedule (only the Schedule sheet does): an
+// edit keeps the stored schedule and whether it is on, whatever the page
+// sends. So it can't turn on an imported schedule, nor undo one saved, or
+// turned off, since the editor was opened.
+TEST_F(AgentStudioStorageTest, AnEditKeepsTheStoredScheduleAndItsSwitch) {
+  UseRecord();
+  // An import, its schedule off.
+  Script imported = Workflow("wf_import", "Imported");
+  imported.trigger.type = automation::TriggerType::CRON;
+  imported.trigger.expression = "*/5 * * * *";
+  Answer added =
+      SaveSharedWorkflow(places_, New(std::move(imported)), Holds::kNothing);
+  ASSERT_TRUE(added.out.FindString("id"));
+  const std::string id = *added.out.FindString("id");
+  std::optional<Script> editor = Shared().Load(id);
+  ASSERT_TRUE(editor);
+  ASSERT_FALSE(editor->enabled);
+  // The page's dict has no "enabled" (read as on) and a schedule of its own.
+  editor->enabled = true;
+  editor->trigger.expression = "* * * * *";
+  editor->steps[0].description = "Open the news";
+  Answer edited =
+      SaveSharedWorkflow(places_, Save(std::move(*editor)), Holds::kNothing);
+  EXPECT_FALSE(Error(edited));
+  std::optional<Script> stored = Shared().Load(id);
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->steps[0].description, "Open the news");
+  EXPECT_FALSE(stored->enabled);
+  EXPECT_EQ(stored->trigger.expression, "*/5 * * * *");
+  EXPECT_FALSE(automation::AutomationSecurity::MayFireUnattended(*stored));
+
+  // Turned on with Schedule; then a save from an editor opened before it
+  // (still showing no schedule) keeps it.
+  std::optional<Script> stale = Shared().Load(id);
+  ASSERT_TRUE(stale);
+  stale->trigger = automation::Trigger();
+  WorkflowRequest schedule = Request(Kind::kSchedule, id);
+  schedule.trigger.type = automation::TriggerType::CRON;
+  schedule.trigger.expression = "0 9 * * *";
+  ASSERT_EQ(Ask(schedule).out.FindBool("ok"), true);
+  ASSERT_TRUE(Shared().Load(id)->enabled);
+  Answer stale_save =
+      SaveSharedWorkflow(places_, Save(std::move(*stale)), Holds::kNothing);
+  EXPECT_FALSE(Error(stale_save));
+  stored = Shared().Load(id);
+  ASSERT_TRUE(stored);
+  EXPECT_TRUE(stored->enabled);
+  EXPECT_EQ(stored->trigger.type, automation::TriggerType::CRON);
+  EXPECT_EQ(stored->trigger.expression, "0 9 * * *");
+
+  // A manual workflow's edit can't give it a schedule.
+  ASSERT_TRUE(Shared().Save(Workflow("wf_manual", "Manual")));
+  std::optional<Script> manual = Shared().Load("wf_manual");
+  ASSERT_TRUE(manual);
+  manual->trigger.type = automation::TriggerType::INTERVAL;
+  manual->trigger.expression = "60";
+  SaveSharedWorkflow(places_, Save(std::move(*manual)), Holds::kNothing);
+  EXPECT_EQ(Shared().Load("wf_manual")->trigger.type,
+            automation::TriggerType::MANUAL);
+}
+
+// A file can't opt a workflow brought in through the studio out of an
+// approval or a limit: a new workflow gets the default policy.
+TEST_F(AgentStudioStorageTest, ANewWorkflowGetsTheDefaultPolicy) {
+  Script file = Workflow("wf_file", "Imported");
+  file.security.require_approval_for = {"x"};
+  file.security.max_runtime_seconds = 100000;
+  file.security.trust = automation::TrustLevel::ADMIN;
+  Answer added =
+      SaveSharedWorkflow(places_, New(std::move(file)), Holds::kNothing);
+  ASSERT_TRUE(added.out.FindString("id"));
+  std::optional<Script> stored = Shared().Load(*added.out.FindString("id"));
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->security.trust, automation::TrustLevel::CASUAL);
+  EXPECT_EQ(stored->security.require_approval_for,
+            (std::vector<std::string>{"form_submit", "payment", "login"}));
+  EXPECT_EQ(stored->security.max_runtime_seconds, 300);
 }
 
 // molt://ai-automation's Snooze (a last fire still to come), then a save
