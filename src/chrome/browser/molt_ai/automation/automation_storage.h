@@ -66,8 +66,10 @@
 // browser (another browser's run, or a forged one) changes nothing here: two
 // browsers with different user data directories sharing the directory each
 // run their own schedules (a workflow can run in both). A Snooze or a Skip
-// (HoldWith()) is a hold kept in the record only, as
-// trigger.held_until_unix on a read, never in the file.
+// (HoldWith(), HoldOrPassWith()) is a hold kept in the record only, as
+// trigger.held_until_unix on a read, never in the file; a Skip of a run due
+// and not claimed yet instead records it as passed
+// (WorkflowRecord::NotePassed()).
 // A read that finds a file unvouched looks again under the directory's
 // lock, so a save in progress in this browser is never taken for a change.
 // Every write records what it wrote (the bytes it writes, parsed as a reader
@@ -258,6 +260,26 @@ class AutomationStorage {
       base::FunctionRef<std::optional<int64_t>(const Script& script)>;
   std::optional<int64_t> HoldWith(const std::string& id, HoldFrom until);
 
+  // HoldWith(), or in its place due times recorded as passed: |set_from|
+  // sees the script as HoldWith()'s |until| does, under the same lock (no
+  // claim comes between), and returns a hold (held_until_unix, set as
+  // HoldWith() sets one), or, for a run due now and not claimed yet, the
+  // time its due times passed until (passed_unix, recorded as
+  // RecordPassed() records one: a claim made on the last fire read before
+  // fails, and nothing after it is held), or nullopt for nothing
+  // (molt://ai-automation's Skip next). What was set: the hold now set, or
+  // the last fire now recorded; nullopt, and nothing set, as for
+  // HoldWith(), or when the record's last fire is already that late. Only
+  // the record is changed, never the file.
+  struct HoldOrPass {
+    int64_t held_until_unix = 0;
+    int64_t passed_unix = 0;  // Wins when set.
+  };
+  using HoldOrPassFrom =
+      base::FunctionRef<std::optional<HoldOrPass>(const Script& script)>;
+  std::optional<HoldOrPass> HoldOrPassWith(const std::string& id,
+                                           HoldOrPassFrom set_from);
+
   // A read-modify-write of run bookkeeping only (the stats,
   // trigger.last_fired_unix): |change| sees the script as the file holds
   // it (never clamped), and it is written back only if its
@@ -278,9 +300,10 @@ class AutomationStorage {
   // UpdateBookkeeping() does, and true (written or not). False, and
   // nothing recorded, when that has moved since (another profile's
   // scheduler fired it: each regular profile's lists the directory, and
-  // they share its record; or its schedule was saved afresh), it is held
-  // past |fired_unix| (a Snooze or a Skip: HoldWith()), or the record has
-  // no entry for it (deleted). So of this browser's schedulers, one runs a
+  // they share its record; or its schedule was saved afresh, or Skip next
+  // recorded that run as passed: HoldOrPassWith()), it is held past
+  // |fired_unix| (a Snooze or a Skip: HoldWith()), or the record has no
+  // entry for it (deleted). So of this browser's schedulers, one runs a
   // due workflow, once. A storage without a record (its own directory):
   // the file written, and true.
   bool ClaimFire(const std::string& id,
@@ -291,7 +314,9 @@ class AutomationStorage {
   // record's last fire of it rises to |passed_unix| (WorkflowRecord::
   // NotePassed()), so no catch-up runs it at the moment the file was put
   // back; the file isn't written (it didn't run). False when there is no
-  // record or entry, or it is already that late.
+  // record or entry, or it is already that late. (A Skip of a run due now
+  // records it the same way, under the lock it was read under:
+  // HoldOrPassWith().)
   bool RecordPassed(const std::string& id, int64_t passed_unix);
 
   // Loads the workflow record (workflow_record.h), and on the first start

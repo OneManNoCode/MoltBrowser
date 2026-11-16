@@ -52,6 +52,10 @@ namespace automation {
 // (defined in the .cc). Forward-declared so it can be held as a member.
 class NavigationSettleWaiter;
 
+// Counts the run's pages and network bytes against its policy's limits
+// (defined in the .cc).
+class RunLimitObserver;
+
 // A RunPromptAsync request waiting for the in-flight one (defined in .cc).
 struct QueuedPrompt;
 
@@ -62,6 +66,10 @@ struct QueuedPrompt;
 // user has confirmed the action.
 inline constexpr char kAskBeforeSensitiveKey[] = "ask_before_sensitive";
 inline constexpr char kNeedsConfirmationPrefix[] = "needs_confirmation: ";
+
+// What a run ends with when its time limit passes
+// (AutomationSecurity::RunTimeLimit()), mid-step or between steps.
+inline constexpr char kMaxRuntimeExceeded[] = "Max runtime exceeded";
 
 // Result reported when a run finishes (success or failure).
 struct RunResult {
@@ -133,6 +141,10 @@ class AutomationRunner {
   // |needs_trust| marks a block that trusting the workflow lifts; it is
   // saved as Stats::last_run_needs_trust.
   void BlockStep(const std::string& reason, bool needs_trust = false);
+  // At CASUAL, the run's tab passed one of its limits
+  // (AutomationSecurity::RunLimitMessage(): |why|): the run ends on the step
+  // it is at (BlockStep()), unless every step is done.
+  void OnRunLimitExceeded(std::string why);
 
   // After a step reaches a terminal outcome (success, or failure with no
   // retries left), record a StepResult for the Runs timeline — including a
@@ -142,6 +154,9 @@ class AutomationRunner {
                           bool terminal_failure);
   void FinalizeStep(StepResult sr, std::string filename, std::string note,
                     bool terminal_failure, bool screenshot_ok);
+  // CapturePng()'s reply for a step whose outcome is decided: runs
+  // capture_finalize_.
+  void OnStepCaptured(bool screenshot_ok);
 
   // Capture the tab's current pixels to |path| as a downscaled PNG. |done|
   // runs on the UI thread with true iff a file was written. Best-effort:
@@ -164,6 +179,11 @@ class AutomationRunner {
   void DoKeypress(const Step& s);
   void DoWait(const Step& s);
   void DoWaitFor(const Step& s);
+  // A wait-for's checks for its selector, every 250 ms until |deadline|.
+  void PollWaitFor(std::string sel, base::TimeTicks deadline);
+  void OnWaitForPolled(std::string sel,
+                       base::TimeTicks deadline,
+                       base::Value matched);
   void DoExtract(const Step& s);
   void DoAIDecide(const Step& s);
   void DoAIExtract(const Step& s);
@@ -241,6 +261,12 @@ class AutomationRunner {
   // OnStepFinished.
   void ArmStepTimeout(const Step& s);
   void OnStepTimeout();
+  // The run's time limit has passed (run_deadline_): ends the run with
+  // kMaxRuntimeExceeded wherever it is, mid-step included; a step that had
+  // ended in time and waits only for its screenshot is recorded as it
+  // ended. Run by run_deadline_timer_, and by ExecuteNextStep() between
+  // steps (synchronously from Run() for a limit of 0 or less).
+  void OnRunDeadline();
   // Re-arms the current step's timeout to |budget| from now, for steps that
   // legitimately wait longer (an OS keychain prompt, LLM inference).
   void ExtendStepTimeout(base::TimeDelta budget);
@@ -432,10 +458,31 @@ class AutomationRunner {
   base::ScopedClosureRunner capture_keepalive_;
   // Live during a click's post-navigation settle; reset before the next step.
   std::unique_ptr<NavigationSettleWaiter> nav_waiter_;
+  // At CASUAL, counts the run's pages and network bytes from Run() on and
+  // calls OnRunLimitExceeded() past a limit; null at APPROVED and above.
+  std::unique_ptr<RunLimitObserver> run_limits_;
+  // Why the run passed a limit between two steps (OnRunLimitExceeded()):
+  // ExecuteNextStep() stops it before the next one. Empty otherwise.
+  std::string run_limit_stop_;
+  // From a step's dispatch (ExecuteNextStep()) until its result is being
+  // recorded (CaptureStepAndThen()), its retries included.
+  bool step_in_progress_ = false;
 
   // Per-step timeout — fires OnStepTimeout() if the dispatched step
   // doesn't call OnStepFinished in time.
   base::OneShotTimer step_timeout_timer_;
+
+  // When the run's time limit passes (start_time_ +
+  // AutomationSecurity::RunTimeLimit(policy_)), and the timer that runs
+  // OnRunDeadline() then. Bound with base::Unretained(this), never
+  // weak_factory_ (every step boundary invalidates it): a member timer
+  // can't outlive the runner, and Finish() stops it.
+  base::TimeTicks run_deadline_;
+  base::OneShotTimer run_deadline_timer_;
+  // FinalizeStep() bound with a step whose outcome is decided while its
+  // screenshot is taken (CaptureStepAndThen()): run by OnStepCaptured(), or
+  // by OnRunDeadline() without the screenshot. Null otherwise.
+  base::OnceCallback<void(bool)> capture_finalize_;
 
   // How the current step's element was found (StepResult::found_by), and
   // the token of the element pinned for it (automation_locators.h), if

@@ -39,10 +39,12 @@
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
@@ -83,6 +85,23 @@ inline constexpr char kDraftNeedsReviewMessage[] =
 inline constexpr char kChangedOutsideMessage[] =
     "This workflow's file was changed outside MoltBrowser. Review its steps, "
     "sites and schedule and confirm them in Agent mode before it can run.";
+
+// What a run's tab has used so far, against its policy's
+// max_navigations and max_network_bytes (AutomationSecurity::
+// RunLimitMessage()). The runner counts it (automation_runner.cc's
+// RunLimitObserver) from the run's start.
+struct RunUsage {
+  // Documents committed in the tab's primary main frame: a page opened,
+  // reloaded, or gone to by the page itself (a link, a redirect that
+  // commits, script). Never a same-document change (pushState, a
+  // fragment), a subframe's or a prerendered page's navigation.
+  int navigations = 0;
+  // Received from the network by the loads of the tab's documents (every
+  // frame), as each finished load reports it
+  // (blink::mojom::ResourceLoadInfo::total_received_bytes; a load from the
+  // cache received none). Saturates.
+  uint64_t network_bytes = 0;
+};
 
 class AutomationSecurity {
  public:
@@ -133,11 +152,31 @@ class AutomationSecurity {
   // (older / studio-saved scripts were stored with an empty whitelist),
   // require_approval_for never without {form_submit, payment, login} (a
   // stored list adds categories, never drops one), and below TRUSTED
-  // max_runtime_seconds at most the default (300 s). An unconfirmed draft
-  // (sites_unconfirmed) gets neither the widening nor its stored trust: its
-  // own whitelist (empty) at CASUAL. The runner refuses to run one at all;
+  // max_runtime_seconds, max_navigations and max_network_bytes each within
+  // (0, default] (300 s, 20 pages, 200 MB; a lower one is kept, anything
+  // else is the default). TRUSTED keeps its stored limits. An unconfirmed
+  // draft (sites_unconfirmed) gets neither the widening nor its stored
+  // trust: its own whitelist (empty) at CASUAL. The runner refuses to run one at all;
   // this keeps any other caller from reading it as allowed.
   static SecurityPolicy EffectivePolicy(const Script& script);
+
+  // How long a run under |policy| (as EffectivePolicy() gives it) may take,
+  // counted from its start: AutomationRunner ends the run there, mid-step
+  // included. Its max_runtime_seconds (below TRUSTED at most the default
+  // 300 s; TRUSTED keeps its own); a limit that isn't positive, which only
+  // TRUSTED keeps, allows no time.
+  static base::TimeDelta RunTimeLimit(const SecurityPolicy& policy);
+
+  // Why a run under |policy| (its EffectivePolicy()) must stop, having used
+  // |usage|: it opened more than max_navigations pages, or its pages loaded
+  // more than max_network_bytes from the network (pages first). "" while it
+  // is within both, and always at APPROVED and above: the limits bound a
+  // workflow nobody has vouched for (an import, a confirmed change), and no
+  // page sets them, so a workflow the user recorded or approved that opens
+  // many pages keeps running, held only to its run time. A limit outside
+  // (0, default] is the default.
+  static std::string RunLimitMessage(const SecurityPolicy& policy,
+                                     const RunUsage& usage);
 
   // The least a workflow brought in may require, whatever its file or a
   // page said: the default approvals (anything else listed is dropped; it
@@ -147,10 +186,17 @@ class AutomationSecurity {
   // every new workflow.
   static void ApplyPolicyFloor(SecurityPolicy& policy);
 
-  // Hosts a script's steps visibly target: static http(s) NAVIGATE URLs
-  // (a URL with a {{variable}} anywhere in it is excluded, a fixed host's
-  // too — those are what the whitelist guards) and the page host the
-  // recorder stored in each step's extra["host"].
+  // Hosts a script's steps visibly target: the host of each http(s)
+  // NAVIGATE URL that names one whatever its values are, a static URL or
+  // one whose whole authority comes before its first {{variable}}
+  // ("https://shop.example/search?q={{q}}": shop.example; a value after it
+  // changes only the path, query or fragment; '/', '?' or '#' ends the
+  // host), and the page host the recorder stored in each step's
+  // extra["host"]. An address whose host, port or userinfo a value may
+  // give ("https://{{host}}/", "https://shop.{{tld}}/",
+  // "https://shop.example:{{p}}/", "https://a@{{x}}/",
+  // "{{x}}https://shop.example/"), or with a '\' in its host part, adds
+  // none: the whitelist guards what its value resolves to.
   static std::vector<std::string> HostsReferencedBy(
       const std::vector<Step>& steps);
 
@@ -205,13 +251,15 @@ class AutomationSecurity {
   // or only a path, query or fragment: the value gives the whole address,
   // its site included), or none opens a page (HostsReferencedBy() is
   // empty). A fixed host with a value after it
-  // ("https://shop.example/?q={{q}}"), or after a value that may be empty
-  // ("{{x}}https://shop.example/"), is no site HostsReferencedBy() lists, so
-  // the review, which would list none, wouldn't show it: such a change isn't
-  // confirmed with none (nor with sites: it has none to confirm). Confirmed,
+  // ("https://shop.example/?q={{q}}") is a site HostsReferencedBy() lists:
+  // such a change is confirmed with it. A fixed site after a value that may
+  // be empty ("{{x}}https://shop.example/"), or a host a value may change
+  // ("https://shop.{{tld}}/"), is none it lists, so the review, which would
+  // list none, wouldn't show it: such a change isn't confirmed with none
+  // (nor with sites, when it has none to confirm). Confirmed,
   // its whitelist is empty, so it opens and acts on no page by itself
-  // (AllowNavigation() matches no host below TRUSTED) until a step opens a
-  // fixed address on a site or the user sets it Trusted in
+  // (AllowNavigation() matches no host below TRUSTED) until a step opens an
+  // address on a fixed site or the user sets it Trusted in
   // molt://ai-automation; a run of another workflow (RUN_SCRIPT) runs its steps
   // under that run's policy, adding no site to it. Never a draft from an agent
   // run: confirming one says where the model may go

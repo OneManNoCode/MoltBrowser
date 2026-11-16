@@ -104,24 +104,6 @@ bool IsDue(const Script& script, base::Time now) {
   return !next.is_null() && next <= now;
 }
 
-// The last time |trigger| was due at or before |now|, counted from its last
-// fire: an interval's keeps its phase (its last fire and whole intervals
-// after it); anything else's is |now| (a cron's next time after either is
-// the same).
-int64_t PassedUntil(const Trigger& trigger, base::Time now) {
-  const int64_t now_unix = UnixOf(now);
-  int seconds = 0;
-  if (trigger.type == TriggerType::INTERVAL && trigger.last_fired_unix > 0 &&
-      trigger.last_fired_unix < now_unix &&
-      base::StringToInt(trigger.expression, &seconds) && seconds > 0) {
-    // As NextFireTime() counts it.
-    seconds = std::max(seconds, kMinIntervalSeconds);
-    return trigger.last_fired_unix +
-           (now_unix - trigger.last_fired_unix) / seconds * seconds;
-  }
-  return now_unix;
-}
-
 }  // namespace
 
 base::Time NextCronFire(const std::string& expression,
@@ -229,6 +211,22 @@ base::Time AutomationScheduler::NextFireTime(const Trigger& trigger,
       return base::Time();  // event-driven, not time-driven
   }
   return base::Time();
+}
+
+// static
+int64_t AutomationScheduler::PassedUntil(const Trigger& trigger,
+                                         base::Time now) {
+  const int64_t now_unix = UnixOf(now);
+  int seconds = 0;
+  if (trigger.type == TriggerType::INTERVAL && trigger.last_fired_unix > 0 &&
+      trigger.last_fired_unix < now_unix &&
+      base::StringToInt(trigger.expression, &seconds) && seconds > 0) {
+    // As NextFireTime() counts it.
+    seconds = std::max(seconds, kMinIntervalSeconds);
+    return trigger.last_fired_unix +
+           (now_unix - trigger.last_fired_unix) / seconds * seconds;
+  }
+  return now_unix;
 }
 
 AutomationScheduler::AutomationScheduler() = default;
@@ -483,7 +481,8 @@ void AutomationScheduler::OnFireClaimed(Script script,
                                         base::Time fired_at,
                                         bool claimed) {
   // Not claimed: fired since it was read (by another profile's scheduler),
-  // held since (a Snooze or a Skip), saved afresh or deleted.
+  // held since (a Snooze or a Skip), or its run skipped (Skip next recorded
+  // it as passed), saved afresh or deleted.
   if (!claimed || !started_ || !fire_cb_) {
     return;
   }

@@ -179,9 +179,14 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       d.Set("interval_not_started", true);
     }
     // The next fire counts this browser's hold (a Snooze or a Skip), which
-    // the card shows while it lasts.
+    // the card shows while it lasts. A run due and not claimed yet (an
+    // overdue cron's catch-up, which NextFireTime() counts past from now)
+    // is the next: the one Skip next skips (automation_page::SkipNext()).
     const base::Time now = base::Time::Now();
-    base::Time next = AutomationScheduler::NextFireTime(s.trigger, now);
+    base::Time next = automation_page::DueUnclaimed(s, now);
+    if (next.is_null()) {
+      next = AutomationScheduler::NextFireTime(s.trigger, now);
+    }
     if (s.enabled && !not_started && !next.is_null()) {
       d.Set("next_fire_unix",
             static_cast<int>(next.InSecondsFSinceUnixEpoch()));
@@ -263,11 +268,14 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       return;
     }
     // [callback_id, script, schedule_saved?]: whether it is Save
-    // schedule's (an interval it sends counts from now).
+    // schedule's, the only save that changes a stored workflow's schedule
+    // and whether it is on (an interval it sends counts from now); any
+    // other keeps them as stored (automation_page::SaveWorkflow()).
     const bool schedule_saved =
         args.size() > 2 && args[2].is_bool() && args[2].GetBool();
     // The dict's security is UI-supplied and ignored: a save keeps the
-    // policy stored on disk (trust set only via promoteTrust) or takes a
+    // policy stored on disk (trust set only via promoteTrust), and its
+    // schedule and whether it is on, but for Save schedule, or takes a
     // script not stored as an import, in one read-modify-write.
     PostSharedChange(
         Dir(),
@@ -628,10 +636,11 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
                        weak_factory_.GetWeakPtr(), args[0].GetString()));
   }
 
-  // A hold set: the profile's scheduler lists the workflows again at once,
-  // so its timer is armed past the hold (a timer armed before it would
-  // still not fire it: the scheduler checks the hold on its reload, and
-  // the record refuses the claim).
+  // A hold set, or a run due now recorded as passed: the profile's
+  // scheduler lists the workflows again at once, so its timer is armed past
+  // it (a timer armed before it would still not fire it: the scheduler
+  // checks the hold and the last fire on its reload, and the record refuses
+  // the claim).
   void OnHeld(const std::string& callback_id, base::DictValue result) {
     if (result.FindBool("success").value_or(false)) {
       Profile* profile = Profile::FromBrowserContext(

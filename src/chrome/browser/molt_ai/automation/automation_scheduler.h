@@ -13,8 +13,8 @@
 // fire of the workflow is still the one the scheduler read when it found
 // it due, and the fire callback runs only then. So of the schedulers of
 // this browser's profiles, one runs a due workflow, once (the others find
-// it fired); one held (a Snooze or a Skip) or saved afresh since it was
-// read doesn't fire.
+// it fired); one held (a Snooze or a Skip), whose due run a Skip recorded
+// as passed, or saved afresh since it was read doesn't fire.
 //
 // Holds. molt://ai-automation's Snooze and Skip are holds in this browser's
 // workflow record (AutomationStorage::HoldWith()), read as
@@ -24,7 +24,9 @@
 // the timer is armed past it and the times it covers are never caught up;
 // a timer's reload that finds it held since it was listed doesn't fire it
 // (and lists again); and the claim is refused before the hold, which the
-// claimed fire ends.
+// claimed fire ends. A Skip of a run due and not claimed yet records it as
+// passed instead (AutomationStorage::HoldOrPassWith()): its claim, on the
+// last fire read before, fails.
 //
 // Threading: lives on the UI thread; uses base::OneShotTimer to wake up
 // at the next scheduled time. macOS sleep wake-ups deliver the timer
@@ -116,6 +118,15 @@ class AutomationScheduler {
   // first time at or after the hold: a cron's first match, an interval's
   // first whole interval after its last fire.
   static base::Time NextFireTime(const Trigger& trigger, base::Time now);
+
+  // The last time |trigger| was due at or before |now|, counted from its
+  // last fire: an interval's keeps its phase (its last fire and whole
+  // intervals after it); anything else's is |now| (a cron's next time after
+  // either is the same). Due times that don't run are recorded as passed up
+  // to it (AutomationStorage::RecordPassed(): a workflow held for review
+  // across them; molt://ai-automation's Skip of a run due now:
+  // AutomationStorage::HoldOrPassWith()).
+  static int64_t PassedUntil(const Trigger& trigger, base::Time now);
 
   // Test seam: drives the scheduler against |now| instead of real wall
   // clock. Visible for unit tests.
