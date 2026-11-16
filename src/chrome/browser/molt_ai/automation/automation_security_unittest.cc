@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/json/json_writer.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -221,6 +222,42 @@ TEST(AutomationSecurityTest, EffectivePolicyBoundsTheRuntimeBelowTrusted) {
   trusted.security.max_runtime_seconds = 3600;
   EXPECT_EQ(AutomationSecurity::EffectivePolicy(trusted).max_runtime_seconds,
             3600);
+}
+
+// A run's time limit is a deadline: its policy's seconds, below TRUSTED at
+// most 300 whatever the file says; TRUSTED keeps its own, and a limit that
+// isn't positive allows no time.
+TEST(AutomationSecurityTest, RunTimeLimitIsTheEffectivePolicysSeconds) {
+  for (int stored : {0, -1, 301, 99999}) {
+    Script casual;
+    casual.security.max_runtime_seconds = stored;
+    EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                  AutomationSecurity::EffectivePolicy(casual)),
+              base::Seconds(300))
+        << stored;
+  }
+  Script shorter;
+  shorter.security.max_runtime_seconds = 30;
+  EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                AutomationSecurity::EffectivePolicy(shorter)),
+            base::Seconds(30));
+  Script trusted;
+  trusted.security.trust = TrustLevel::TRUSTED;
+  trusted.security.max_runtime_seconds = 3600;
+  EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                AutomationSecurity::EffectivePolicy(trusted)),
+            base::Seconds(3600));
+  trusted.security.max_runtime_seconds = std::numeric_limits<int>::max();
+  EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                AutomationSecurity::EffectivePolicy(trusted)),
+            base::Seconds(std::numeric_limits<int>::max()));
+  for (int stored : {0, -1, std::numeric_limits<int>::min()}) {
+    trusted.security.max_runtime_seconds = stored;
+    EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                  AutomationSecurity::EffectivePolicy(trusted)),
+              base::TimeDelta())
+        << stored;
+  }
 }
 
 // Below TRUSTED a run opens at most the default 20 pages and loads at most

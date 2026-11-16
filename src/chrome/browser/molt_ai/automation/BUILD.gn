@@ -318,6 +318,37 @@ source_set("locators") {
   ]
 }
 
+# A run's time limit is a deadline, mid-step included
+# (automation_runner_browsertest.cc): the runner on a real tab, and a run
+# window's run. Picked up by browser_tests through
+# //chrome/browser/molt_ai/voice:browser_tests.
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "automation_runner_browsertest.cc" ]
+
+  deps = [
+    ":automation",
+    "//base",
+    "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true

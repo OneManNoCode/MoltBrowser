@@ -639,6 +639,9 @@ source_set("browser_tests") {
     # The Agent studio's storage, answered from its sequences (shared with
     # voice mode's routines).
     "//chrome/browser/ui/webui/molt_ai:browser_tests",
+
+    # A workflow run's time limit, mid-step included.
+    "//chrome/browser/molt_ai/automation:browser_tests",
     "//base",
     "//base/test:test_support",
 

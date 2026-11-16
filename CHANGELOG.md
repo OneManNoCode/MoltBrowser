@@ -433,6 +433,17 @@ For longer narrative posts behind each entry see
   shorter interval runs once a minute, and a repeating schedule's run is
   skipped while the workflow's last run is still open (a one-time run
   still runs).
+- **A workflow stops at its time limit.** A run was checked against its
+  time limit (at most 5 minutes below Trusted) only between steps. One
+  long step (a wait for an element that never comes, an on-device AI
+  step, a question waiting for your answer, a site's tool) could keep it
+  going, with its window open and its next scheduled runs skipped, well
+  past the limit. A run now stops at its limit, in the middle of a step
+  if need be, with "Max runtime exceeded". The step it was on does
+  nothing more (an action already sent to the page may still finish), a
+  question it was waiting on is withdrawn, and its window closes. Trusted
+  workflows keep their own limit. The AI chat's `/wait` still waits up to
+  a minute.
 - **Workflows changed outside MoltBrowser now need your review.**
   MoltBrowser remembers, in its own profile folder, exactly what it last
   saved for each workflow in `~/.moltbrowser/automations`. If a workflow

@@ -2884,8 +2884,10 @@ All in `molt_ai_unittests` except the last item:
   `{{variable}}`s given the run's values, http(s) and on the workflow's
   sites (never one left unresolved or a value that takes it elsewhere, at
   any trust for the former, nor a draft's, an unconfirmed change's or a
-  routine's); below TRUSTED each run limit within its default (a lower one
-  kept, TRUSTED's own kept, a draft's bounded); a run stops one page or one
+  routine's); a run's time limit (`RunTimeLimit()`: 300 s below TRUSTED
+  whatever the file says, a shorter one kept, TRUSTED's own, a
+  non-positive TRUSTED one none); below TRUSTED each run limit within its
+  default (a lower one kept, TRUSTED's own kept, a draft's bounded); a run stops one page or one
   byte past a limit at CASUAL and APPROVED, never at TRUSTED or ADMIN; a
   lower limit in its own words; a policy that isn't a run's held to the
   defaults.
@@ -3067,7 +3069,13 @@ All in `molt_ai_unittests` except the last item:
   there is refused;
   `ui/webui/molt_ai/molt_ai_automation_storage_browsertest.cc`: the chat's
   page watcher is saved with its interval counted from then, CASUAL, on its
-  one site, and may fire unattended.
+  one site, and may fire unattended;
+  `automation/automation_runner_browsertest.cc`: a 10-minute wait-for and a
+  30 s wait end at the limit (runner owned by its callback, or deleted in
+  it); a run that ends in time completes; a question waiting at the limit
+  is withdrawn; a run window's run at its limit ends its Agent Inbox
+  entry, closes its window and is recorded "Max runtime exceeded" at its
+  first step.
 
 #### 3.6.11 Not done
 
@@ -3262,8 +3270,33 @@ All in `molt_ai_unittests` except the last item:
     run. …"). It isn't a needs-trust block: Approved doesn't lift it, so
     the studio offers no "Trust & re-run". A child run by `RUN_SCRIPT`
     counts against its parent's limits.
+  - a run's time limit (`AutomationSecurity::RunTimeLimit()` of the run's
+    `EffectivePolicy()`: below TRUSTED at most 300 s, TRUSTED its own, one
+    that isn't positive no time) is a deadline from `Run()`.
+    `AutomationRunner`'s `run_deadline_timer_` (a member, bound
+    `Unretained`, since step boundaries invalidate `weak_factory_`) ends
+    the run "Max runtime exceeded" wherever it is, and `ExecuteNextStep()`
+    checks the same deadline between steps (both `OnRunDeadline()`). The
+    step's timer stops and its question is withdrawn. Its pending retry,
+    selector probe, click or typing reply, settle, model answer, vault
+    read and `RUN_SCRIPT` child read are dropped (`Finish()`), and a site
+    tool's listing or call and the settle observer stop. What was already
+    sent to the page still happens there. The record says "Max runtime
+    exceeded" at the step it was on (no timeline entry for the step it
+    cut; a step that had ended in time and was only waiting for its
+    screenshot, `capture_finalize_`, is recorded as it ended, without it:
+    its own failure or block ends the run, and after the last step the
+    run completes). The run window closes and its Agent Inbox entry ends,
+    so the overlap guard lets the next fire run. A run whose last step
+    finished in time completes. A `RUN_SCRIPT` child's steps count in the
+    run's limit. A "retry from step N" counts afresh. The chat's one-step
+    actions keep 30 s, and `/wait` adds its wait to it.
 - **Existing gaps left as they are** (separate changes):
-  a run's limit is checked between steps; workflows imported by
+  the Agent studio's Stop doesn't stop a run (`cancelRun`'s
+  `HandleCancelRun()` only answers; `AutomationRunner::Cancel()` has no
+  caller); the studio's run poll (80 tries 1.5 s apart) gives up before a
+  300 s limit; an on-device model answer in flight at a run's limit isn't
+  cancelled (dropped when it comes); workflows imported by
   earlier builds keep their file's schedule switch; a hold is on this
   browser's clock (setting the clock back during one makes it last longer
   by the same amount); Skip next pressed in the few milliseconds between a
@@ -3373,6 +3406,11 @@ All in `molt_ai_unittests` except the last item:
 > molt://ai-automation) does. The limits don't count downloads, other
 > windows a page opens, live connections, or a load in progress or cut
 > off.
+>
+> **A workflow stops at its time limit**, even in the middle of a step,
+> with "Max runtime exceeded". Before, a long step could keep it running
+> (and its window open) well past it. Trusted workflows keep their own
+> limit.
 
 ## 4. The AI chat's page actions
 

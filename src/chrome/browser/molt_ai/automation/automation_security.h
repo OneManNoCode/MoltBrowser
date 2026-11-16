@@ -44,6 +44,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
@@ -158,6 +159,13 @@ class AutomationSecurity {
   // trust: its own whitelist (empty) at CASUAL. The runner refuses to run one at all;
   // this keeps any other caller from reading it as allowed.
   static SecurityPolicy EffectivePolicy(const Script& script);
+
+  // How long a run under |policy| (as EffectivePolicy() gives it) may take,
+  // counted from its start: AutomationRunner ends the run there, mid-step
+  // included. Its max_runtime_seconds (below TRUSTED at most the default
+  // 300 s; TRUSTED keeps its own); a limit that isn't positive, which only
+  // TRUSTED keeps, allows no time.
+  static base::TimeDelta RunTimeLimit(const SecurityPolicy& policy);
 
   // Why a run under |policy| (its EffectivePolicy()) must stop, having used
   // |usage|: it opened more than max_navigations pages, or its pages loaded

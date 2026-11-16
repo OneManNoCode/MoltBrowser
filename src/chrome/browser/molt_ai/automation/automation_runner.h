@@ -67,6 +67,10 @@ struct QueuedPrompt;
 inline constexpr char kAskBeforeSensitiveKey[] = "ask_before_sensitive";
 inline constexpr char kNeedsConfirmationPrefix[] = "needs_confirmation: ";
 
+// What a run ends with when its time limit passes
+// (AutomationSecurity::RunTimeLimit()), mid-step or between steps.
+inline constexpr char kMaxRuntimeExceeded[] = "Max runtime exceeded";
+
 // Result reported when a run finishes (success or failure).
 struct RunResult {
   bool success = false;
@@ -150,6 +154,9 @@ class AutomationRunner {
                           bool terminal_failure);
   void FinalizeStep(StepResult sr, std::string filename, std::string note,
                     bool terminal_failure, bool screenshot_ok);
+  // CapturePng()'s reply for a step whose outcome is decided: runs
+  // capture_finalize_.
+  void OnStepCaptured(bool screenshot_ok);
 
   // Capture the tab's current pixels to |path| as a downscaled PNG. |done|
   // runs on the UI thread with true iff a file was written. Best-effort:
@@ -249,6 +256,12 @@ class AutomationRunner {
   // OnStepFinished.
   void ArmStepTimeout(const Step& s);
   void OnStepTimeout();
+  // The run's time limit has passed (run_deadline_): ends the run with
+  // kMaxRuntimeExceeded wherever it is, mid-step included; a step that had
+  // ended in time and waits only for its screenshot is recorded as it
+  // ended. Run by run_deadline_timer_, and by ExecuteNextStep() between
+  // steps (synchronously from Run() for a limit of 0 or less).
+  void OnRunDeadline();
   // Re-arms the current step's timeout to |budget| from now, for steps that
   // legitimately wait longer (an OS keychain prompt, LLM inference).
   void ExtendStepTimeout(base::TimeDelta budget);
@@ -453,6 +466,18 @@ class AutomationRunner {
   // Per-step timeout — fires OnStepTimeout() if the dispatched step
   // doesn't call OnStepFinished in time.
   base::OneShotTimer step_timeout_timer_;
+
+  // When the run's time limit passes (start_time_ +
+  // AutomationSecurity::RunTimeLimit(policy_)), and the timer that runs
+  // OnRunDeadline() then. Bound with base::Unretained(this), never
+  // weak_factory_ (every step boundary invalidates it): a member timer
+  // can't outlive the runner, and Finish() stops it.
+  base::TimeTicks run_deadline_;
+  base::OneShotTimer run_deadline_timer_;
+  // FinalizeStep() bound with a step whose outcome is decided while its
+  // screenshot is taken (CaptureStepAndThen()): run by OnStepCaptured(), or
+  // by OnRunDeadline() without the screenshot. Null otherwise.
+  base::OnceCallback<void(bool)> capture_finalize_;
 
   // How the current step's element was found (StepResult::found_by), and
   // the token of the element pinned for it (automation_locators.h), if

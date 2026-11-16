@@ -609,6 +609,13 @@ void AutomationRunner::Run(Script script,
     return;
   }
 
+  // The run's time limit is a deadline from here, mid-step included
+  // (OnRunDeadline()).
+  const base::TimeDelta limit = AutomationSecurity::RunTimeLimit(policy_);
+  run_deadline_ = start_time_ + limit;
+  run_deadline_timer_.Start(FROM_HERE, limit, this,
+                            &AutomationRunner::OnRunDeadline);
+
   // Below TRUSTED the run's tab may open at most policy_.max_navigations
   // pages and load at most policy_.max_network_bytes
   // (AutomationSecurity::RunLimitMessage()), counted from here: the run
@@ -633,6 +640,49 @@ void AutomationRunner::Cancel() {
   cancel_requested_ = true;
 }
 
+void AutomationRunner::OnRunDeadline() {
+  if (!is_running_) {
+    return;
+  }
+  // The step ended in time and only its screenshot was pending: it is
+  // recorded as it ended, without the screenshot. A failure or a block
+  // ends the run with its own message (and Trust & re-run); a step that
+  // went through advances, and the ExecuteNextStep() this posts ends the
+  // run at the limit (Completed after the last step). It may delete this
+  // runner, so nothing follows it.
+  if (capture_finalize_) {
+    std::move(capture_finalize_).Run(/*screenshot_ok=*/false);
+    return;
+  }
+  // Every step had finished in time; only the advance was still posted.
+  if (current_index_ >= script_.steps.size()) {
+    Finish(true, "Completed");
+    return;
+  }
+  LOG(WARNING) << "[Automation] step " << current_index_
+               << " stopped: the run reached its time limit ("
+               << policy_.max_runtime_seconds << " s)";
+  // Only a block's own end offers Trust & re-run.
+  blocked_needs_trust_ = false;
+  // The step ends where it is. Finish() stops its timer, withdraws its
+  // question and drops every callback it waits on (each bound to
+  // weak_factory_: a retry, a selector probe, a click or typing reply, a
+  // settle, a model answer, a vault read, RUN_SCRIPT's child). What polls
+  // on its own stops here: a site tool's listing or call, and the
+  // click-settle observer. Reached from run_deadline_timer_, from a posted
+  // ExecuteNextStep(), and synchronously from Run() through
+  // ExecuteNextStep() (a limit of 0 or less); never from inside a
+  // SiteToolHost or NavigationSettleWaiter callback.
+  if (site_tools_) {
+    site_tools_->Cancel();
+  }
+  tool_call_.reset();
+  nav_waiter_.reset();
+  // Last: on_complete may delete this runner (the run window's holder, the
+  // chat's self-owned runner). OneShotTimer allows its task to delete it.
+  Finish(false, kMaxRuntimeExceeded);
+}
+
 void AutomationRunner::ExecuteNextStep() {
   // Guard against a stale driver post arriving after the run already ended.
   if (!is_running_)
@@ -650,11 +700,11 @@ void AutomationRunner::ExecuteNextStep() {
     Finish(false, run_limit_stop_);
     return;
   }
-  // Per-script overall timeout, as the run's policy has it (below TRUSTED
-  // at most the default, whatever the file says: EffectivePolicy()).
-  int elapsed_s = (base::TimeTicks::Now() - start_time_).InSeconds();
-  if (elapsed_s > policy_.max_runtime_seconds) {
-    Finish(false, "Max runtime exceeded");
+  // The run's time limit, as the run's policy has it (below TRUSTED at
+  // most the default, whatever the file says: EffectivePolicy()). Also a
+  // timer (run_deadline_timer_), which ends a step still going then.
+  if (base::TimeTicks::Now() >= run_deadline_) {
+    OnRunDeadline();
     return;
   }
 
@@ -1030,10 +1080,23 @@ void AutomationRunner::CaptureStepAndThen(bool succeeded,
   auto finalize = base::BindOnce(&AutomationRunner::FinalizeStep,
                                  weak_factory_.GetWeakPtr(), std::move(sr),
                                  filename, note, terminal_failure);
-  if (path.empty())
+  if (path.empty()) {
     std::move(finalize).Run(/*screenshot_ok=*/false);
-  else
-    CapturePng(path, std::move(finalize));
+    return;
+  }
+  // The outcome is decided; only the screenshot is to come. Kept before
+  // CapturePng(), which may answer at once: the run's time limit passing
+  // meanwhile records the step without it (OnRunDeadline()).
+  capture_finalize_ = std::move(finalize);
+  CapturePng(path, base::BindOnce(&AutomationRunner::OnStepCaptured,
+                                  weak_factory_.GetWeakPtr()));
+}
+
+void AutomationRunner::OnStepCaptured(bool screenshot_ok) {
+  // Empty once OnRunDeadline() recorded the step without its screenshot.
+  if (capture_finalize_) {
+    std::move(capture_finalize_).Run(screenshot_ok);
+  }
 }
 
 void AutomationRunner::FinalizeStep(StepResult sr,
@@ -1130,6 +1193,8 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
   // Stop the step timer and abandon any lingering per-step async work so a late
   // completion can't resurrect the finished run.
   step_timeout_timer_.Stop();
+  run_deadline_timer_.Stop();
+  capture_finalize_.Reset();
   WithdrawQuestion();
   weak_factory_.InvalidateWeakPtrs();
   int duration_ms = (base::TimeTicks::Now() - start_time_).InMilliseconds();

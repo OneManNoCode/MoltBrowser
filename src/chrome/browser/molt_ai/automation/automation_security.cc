@@ -476,6 +476,11 @@ SecurityPolicy AutomationSecurity::EffectivePolicy(const Script& script) {
 }
 
 // static
+base::TimeDelta AutomationSecurity::RunTimeLimit(const SecurityPolicy& policy) {
+  return base::Seconds(std::max(0, policy.max_runtime_seconds));
+}
+
+// static
 std::string AutomationSecurity::RunLimitMessage(const SecurityPolicy& policy,
                                                 const RunUsage& usage) {
   if (policy.trust >= TrustLevel::TRUSTED) {
