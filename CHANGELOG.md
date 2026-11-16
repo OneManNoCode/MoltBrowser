@@ -26,10 +26,11 @@ For longer narrative posts behind each entry see
   earlier version saved without ever running it (in molt://ai-automation,
   with Agent mode's Schedule, or a `/watch` page watcher) is marked "not
   started" on both pages until you save its schedule again (or make the
-  `/watch` again); Snooze and Skip don't start it. Saving an hourly schedule there unchanged no longer
-  turns it into one every 150 days (the page showed its seconds with
-  "hours" selected); an interval now shows in its largest whole unit, and
-  one under a minute is refused. Agent mode's Schedule sheet keeps a
+  `/watch` again); Snooze and Skip don't start it. Saving an hourly
+  schedule unchanged in molt://ai-automation no longer turns it into one
+  every 150 days (the page showed its seconds with "hours" selected); an
+  interval now shows in its largest whole unit there, and one under a
+  minute is refused. Agent mode's Schedule sheet keeps a
   one-time ("once at") schedule still to come that it is opened on, and
   molt://ai-automation no longer moves a one-time schedule by your time
   zone's offset when it is saved again.
