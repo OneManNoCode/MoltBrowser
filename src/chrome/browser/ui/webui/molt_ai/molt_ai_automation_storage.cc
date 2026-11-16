@@ -172,13 +172,27 @@ base::DictValue SaveWorkflow(Script script,
           // The page never edits the policy: the stored one is kept (its
           // trust changed only by promoteTrust).
           s.security = stored->security;
-          // Nor moves the last fire later: that would hold the schedule
-          // back (a fire time far ahead, from a page or anything that can
-          // send this message, would stall it), and Snooze and Skip are
-          // holds of their own (Snooze(), SkipNext()). An earlier one is
-          // left to the storage (AutomationStorage::SaveChecked()).
-          s.trigger.last_fired_unix = std::min(s.trigger.last_fired_unix,
-                                               stored->trigger.last_fired_unix);
+          if (!schedule_saved) {
+            // Nor, except in Save schedule's save, the schedule or whether
+            // it is on: a card's copy may be stale (an open card isn't
+            // refreshed), so saving its steps or values would undo a
+            // schedule saved, started, turned on or paused since (in Agent
+            // mode, in another tab), and end a hold made since. Kept as
+            // stored, its last fire and hold included, as the studio's
+            // editor keeps them (KeepPolicy(), molt_ai_agent_storage.cc);
+            // an interval never started stays so.
+            s.trigger = stored->trigger;
+            s.enabled = stored->enabled;
+          } else {
+            // Save schedule never moves the last fire later: that would
+            // hold the schedule back (a fire time far ahead, from a page
+            // or anything that can send this message, would stall it),
+            // and Snooze and Skip are holds of their own (Snooze(),
+            // SkipNext()). An earlier one is left to the storage
+            // (AutomationStorage::SaveChecked()).
+            s.trigger.last_fired_unix = std::min(
+                s.trigger.last_fired_unix, stored->trigger.last_fired_unix);
+          }
         } else {
           // Not stored (deleted meanwhile, or a dict the page made): taken
           // as an import. No runs, no last fire, no sites of its own.
@@ -192,19 +206,10 @@ base::DictValue SaveWorkflow(Script script,
         // An interval saved afresh (Save schedule sends no last fire), or
         // a new one, counts from this save: the scheduler would count one
         // with none from each listing, and never fire it. Any other save
-        // leaves one an earlier version saved with none as it is (shown
-        // "not started"): only Save schedule starts it.
+        // kept the stored schedule as it is (above): only Save schedule
+        // starts an interval never started.
         if (!stored || schedule_saved) {
           automation::CountIntervalFromNow(s.trigger, now_unix);
-        } else if (s.trigger.last_fired_unix <= 0 &&
-                   s.trigger.type == stored->trigger.type &&
-                   s.trigger.expression == stored->trigger.expression &&
-                   s.trigger.timezone == stored->trigger.timezone &&
-                   s.trigger.until_unix == stored->trigger.until_unix) {
-          // A card listed before the schedule was started elsewhere (an
-          // open card isn't refreshed): it stays as stored, started or
-          // not.
-          s.trigger.last_fired_unix = stored->trigger.last_fired_unix;
         }
         return true;
       });

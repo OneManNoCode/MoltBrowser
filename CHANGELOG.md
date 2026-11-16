@@ -64,6 +64,14 @@ For longer narrative posts behind each entry see
   schedules. They no longer save the card's copy of the workflow, so
   pressing them on a card that was open while the workflow was edited
   elsewhere no longer undoes that edit.
+- **Saving a workflow's steps or default values in molt://ai-automation
+  keeps its schedule.** A card left open while the workflow's schedule was
+  changed, paused or turned on in Agent mode or another tab sent its old
+  schedule back with *Save step changes* or *Save values as defaults*,
+  undoing that change: a paused workflow could start running again on its
+  own, and a Snooze or Skip made meanwhile ended. Those saves now keep the
+  schedule, whether it is paused, and any hold as last saved; only *Save
+  schedule* changes them.
 - **The chat's `/wait-for` works.** It was read as `/wait`. It now
   waits for the element the rest of the line names (`/wait-for .results
   li`), as a recorded wait-for step does.

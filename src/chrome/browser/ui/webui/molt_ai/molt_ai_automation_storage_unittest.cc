@@ -6,13 +6,15 @@
 // the UI thread, now as one step on the storage's sequence; with a workflow
 // record (workflow_record.h), a workflow changed outside the browser is
 // neither trusted nor laundered here; a page never moves a last fire later,
-// and Snooze and Skip are holds in the record, refused for what they can't
+// and only Save schedule changes a stored schedule or whether it is on;
+// Snooze and Skip are holds in the record, refused for what they can't
 // hold.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_storage.h"
 
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -497,7 +499,8 @@ TEST_F(AutomationPageStorageTest,
             true);
   EXPECT_EQ(storage().Load("wf_hourly")->trigger.last_fired_unix, kNow);
   // A card listed while it was not started (an open card isn't refreshed)
-  // saves its steps afterwards: it stays started.
+  // saves its steps afterwards: it stays started (any save but Save
+  // schedule keeps the stored schedule whole).
   Script stale = *storage().Load("wf_hourly");
   stale.trigger.last_fired_unix = 0;
   stale.name = "Hourly, renamed";
@@ -558,8 +561,9 @@ std::string HoldLine(const std::string& event, int64_t held) {
 
 // A page never moves a stored last fire later (a fire time far ahead would
 // stall the schedule; Snooze and Skip are holds of their own), whichever
-// save it is; an earlier one is left to the storage, which keeps the
-// stored one for the same schedule.
+// save it is (any but Save schedule keeps the stored schedule whole); an
+// earlier one is left to the storage, which keeps the stored one for the
+// same schedule.
 TEST_F(AutomationPageStorageTest, APageCannotMoveTheLastFireLater) {
   UseRecord();
   constexpr int64_t kLast = kNow - 600;
@@ -589,6 +593,91 @@ TEST_F(AutomationPageStorageTest, APageCannotMoveTheLastFireLater) {
           .FindBool("success"),
       true);
   EXPECT_EQ(storage().Load("wf_2")->trigger.last_fired_unix, 0);
+}
+
+// What a card sends back: its copy of the workflow, as listed (the page
+// keeps the dict it was given, and the handler reads it back).
+std::optional<Script> Sent(const Script& card) {
+  return Script::FromJSON(card.ToJSON());
+}
+
+// A card's copy may be stale (an open card isn't refreshed): saving its
+// values or its steps keeps the schedule as stored and whether it is on,
+// its last fire and hold included, whatever the card sends, so a schedule
+// changed, paused or turned on elsewhere (Agent mode, another tab) isn't
+// undone. Only Save schedule changes them.
+TEST_F(AutomationPageStorageTest, OnlySaveScheduleChangesTheSchedule) {
+  UseRecord();
+  constexpr int64_t kLast = kNow - 600;
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_1", automation::TriggerType::CRON, "0 9 * * *", kLast)));
+  // Listed now, then left open: daily at 9, on.
+  std::optional<Script> card = LoadWorkflow("wf_1", storage());
+  ASSERT_TRUE(card);
+  // Elsewhere: made hourly and paused (Save schedule), then snoozed.
+  Script elsewhere = *LoadWorkflow("wf_1", storage());
+  elsewhere.trigger = automation::Trigger();
+  elsewhere.trigger.type = automation::TriggerType::INTERVAL;
+  elsewhere.trigger.expression = "3600";
+  elsewhere.enabled = false;
+  ASSERT_EQ(SaveWorkflow(std::move(elsewhere), kNow, /*schedule_saved=*/true,
+                         storage())
+                .FindBool("success"),
+            true);
+  ASSERT_EQ(Snooze("wf_1", 3600, kNow, storage()).FindBool("success"), true);
+  // The open card saves its values, then its steps.
+  card->default_variables["q"] = "news";
+  std::optional<Script> sent = Sent(*card);
+  ASSERT_TRUE(sent);
+  EXPECT_EQ(SaveWorkflow(std::move(*sent), kNow + 60,
+                         /*schedule_saved=*/false, storage())
+                .FindBool("success"),
+            true);
+  card->steps[0].description = "Open the news";
+  sent = Sent(*card);
+  ASSERT_TRUE(sent);
+  EXPECT_EQ(SaveWorkflow(std::move(*sent), kNow + 120,
+                         /*schedule_saved=*/false, storage())
+                .FindBool("success"),
+            true);
+  std::optional<Script> saved = storage().Load("wf_1");
+  ASSERT_TRUE(saved);
+  EXPECT_EQ(saved->default_variables,
+            (std::map<std::string, std::string>{{"q", "news"}}));
+  EXPECT_EQ(saved->steps[0].description, "Open the news");
+  EXPECT_EQ(saved->trigger.type, automation::TriggerType::INTERVAL);
+  EXPECT_EQ(saved->trigger.expression, "3600");
+  EXPECT_EQ(saved->trigger.last_fired_unix, kNow);
+  EXPECT_FALSE(saved->enabled);
+  EXPECT_EQ(saved->trigger.held_until_unix, kNow + 3600);
+  EXPECT_FALSE(saved->security.changed_outside);
+
+  // Listed while paused, then turned on elsewhere (Save schedule, the
+  // schedule as stored: the hold stays): the card's steps saved keep it on.
+  std::optional<Script> paused_card = LoadWorkflow("wf_1", storage());
+  ASSERT_TRUE(paused_card);
+  ASSERT_FALSE(paused_card->enabled);
+  Script on = *LoadWorkflow("wf_1", storage());
+  on.enabled = true;
+  on.trigger.last_fired_unix = 0;  // Save schedule sends none.
+  ASSERT_EQ(SaveWorkflow(std::move(on), kNow + 180, /*schedule_saved=*/true,
+                         storage())
+                .FindBool("success"),
+            true);
+  paused_card->steps[0].target = "https://news.example/today";
+  sent = Sent(*paused_card);
+  ASSERT_TRUE(sent);
+  EXPECT_EQ(SaveWorkflow(std::move(*sent), kNow + 240,
+                         /*schedule_saved=*/false, storage())
+                .FindBool("success"),
+            true);
+  saved = storage().Load("wf_1");
+  ASSERT_TRUE(saved);
+  EXPECT_EQ(saved->steps[0].target, "https://news.example/today");
+  EXPECT_TRUE(saved->enabled);
+  EXPECT_EQ(saved->trigger.type, automation::TriggerType::INTERVAL);
+  EXPECT_EQ(saved->trigger.last_fired_unix, kNow + 180);
+  EXPECT_EQ(saved->trigger.held_until_unix, kNow + 3600);
 }
 
 // Snooze holds the schedule in this browser's record, from now for the

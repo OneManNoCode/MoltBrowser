@@ -63,10 +63,14 @@ std::optional<automation::Script> LoadToRun(
 // workflow keeps its stored one (trust changed only by promoteTrust); one
 // not stored is taken as an import (no runs or last fire, CASUAL with the
 // policy floor, a schedule turned off: AutomationSecurity::
-// ClampTrustForSave()). An interval with no last fire counts from
-// |now_unix| when |schedule_saved| (Save schedule's save) or the workflow
-// is new; any other save leaves it as it is. A last fire later than the
-// stored one is the stored one: the page never holds a schedule back by
+// ClampTrustForSave()). Only Save schedule's save (|schedule_saved|)
+// changes a stored workflow's schedule and whether it is on: any other
+// (Save step changes, Save values as defaults) keeps them as stored, its
+// last fire and hold included, whatever the page sends (an open card isn't
+// refreshed, so its copy may be stale). An interval with no last fire
+// counts from |now_unix| when |schedule_saved| or the workflow is new; any
+// other save leaves it as it is. Save schedule never makes the last fire
+// later than the stored one: the page never holds a schedule back by
 // writing a fire time (Snooze and Skip are holds: Snooze(), SkipNext()). A
 // routine taught by voice is neither saved nor saved over.
 base::DictValue SaveWorkflow(automation::Script script,

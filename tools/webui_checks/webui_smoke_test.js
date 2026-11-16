@@ -2409,6 +2409,14 @@ const PAGES = [
      assert(saved, 'a 90 s interval is saved');
      assert.strictEqual(saved[1][1].trigger.expression, '90');
      assert.strictEqual(saved[1][1].enabled, true);
+     // Only Save schedule says it is one: the browser keeps a stored
+     // schedule, and whether it is on, for any other save (a card may be
+     // stale).
+     assert.strictEqual(saved[1][2], true, 'Save schedule says it is one');
+     paused.querySelector('[data-act="save-steps"]').click();
+     const stepSave = window.__sendArgs.filter(([m]) => m === 'saveScript').pop();
+     assert.notStrictEqual(stepSave, saved, 'Save step changes saves');
+     assert.notStrictEqual(stepSave[1][2], true, 'Save step changes is not Save schedule');
      // An interval never started says so, with no next run.
      const old = doc.querySelector('[data-script-id="s3"]');
      assert(/Every hour \(not started\)/.test(old.querySelector('.meta').textContent),

@@ -3017,7 +3017,10 @@ All in `molt_ai_unittests` except the last item:
   with the reason; a save keeps it a draft; an import is vouched for at
   CASUAL, and starts its schedule over (no last fire from the JSON, an
   interval counted from the import); a page can't move the last fire
-  later; Snooze holds without writing the file; Skip holds past the next
+  later; a save but Save schedule keeps the stored schedule, whether it is
+  on, its last fire and hold, whatever a stale card sends (values and
+  steps saved after the schedule was changed, paused, snoozed or turned on
+  elsewhere); Snooze holds without writing the file; Skip holds past the next
   run only (cron, interval, overdue interval, none to come); each hold is
   in the audit log (`snoozed`, `run_skipped`, until when); both refuse,
   and log nothing for, what they can't hold; an import with an address
@@ -3197,9 +3200,10 @@ All in `molt_ai_unittests` except the last item:
     The buttons are shown only for cron and interval schedules. They send
     their own message and no longer save the card's copy, which may be
     stale. molt://ai-automation's `saveScript` never moves a stored last
-    fire later: the page's value is capped at the stored one. No page has
-    a reason to move it, and a fire time far ahead would stall the
-    schedule.
+    fire later: Save schedule's value is capped at the stored one, and any
+    other save keeps the stored schedule whole (the workflow-gaps-c
+    change). No page has a reason to move it, and a fire time far ahead
+    would stall the schedule.
   - a file changed outside whose every address with a value in it is a
     value's (one leading `{{variable}}`, then nothing or only a path, query
     or fragment: the value gives the whole address, its site included), no
@@ -3324,6 +3328,22 @@ All in `molt_ai_unittests` except the last item:
     confirmed with it, never with none), `RunWindowStartURL()`, `RUN_SCRIPT`
     and voice. A workflow imported with only such addresses (molt://ai-automation
     keeps no file sites) works after the import.
+  - molt://ai-automation's saves other than Save schedule (*Save step
+    changes*, *Save values as defaults*: `saveScript` without its third
+    argument `true`) keep a stored workflow's schedule and whether it is on
+    as stored (`automation_page::SaveWorkflow()` with `schedule_saved`
+    false: the stored `trigger` whole, its type, expression, time zone, end,
+    last fire and hold, and `enabled`, as the studio's `KeepPolicy()` keeps
+    them), whatever the card sends. An open card isn't refreshed, so its
+    copy undid a schedule saved, started, paused or turned on since in
+    Agent mode or another tab, and ended a Snooze or Skip made meanwhile
+    (`SameSchedule()` failed). Such a save now always keeps the hold
+    (unless the workflow as read was changed outside). Only Save schedule
+    changes them, from what its card shows (the last Save schedule wins).
+    It replaces the workflow-gaps rule that kept the stored last fire only
+    when the card sent none and showed the same schedule; an interval
+    never started still stays so. A workflow not stored is still taken as
+    an import, its schedule turned off.
 - **Existing gaps left as they are** (separate changes):
   the Agent studio's Stop doesn't stop a run (`cancelRun`'s
   `HandleCancelRun()` only answers; `AutomationRunner::Cancel()` has no
@@ -3346,7 +3366,11 @@ All in `molt_ai_unittests` except the last item:
   bytes are the renderer's figures, so they bound a workflow that runs
   away, not a compromised renderer; no page shows or sets the limits, and
   Approved workflows can't raise them: only Trusted, which also lifts the
-  site rule, removes them (a per-workflow limit is a possible follow-up).
+  site rule, removes them (a per-workflow limit is a possible follow-up);
+  a molt://ai-automation card still sends its whole copy with each save,
+  so a stale card's *Save step changes* puts back its values, *Save values
+  as defaults* its steps, and *Save schedule* both (last write wins, as in
+  the studio's editor; the schedule is safe from all but Save schedule).
 - **A change confirmed by a daily build before the workflow-gaps-c
   change** whose step has a fixed host before a value (shown then as that
   step's address, not listed, and refused) now runs on that host without a
@@ -3432,7 +3456,11 @@ All in `molt_ai_unittests` except the last item:
 >
 > **Snooze and Skip in molt://ai-automation now hold cron schedules too**,
 > and Snooze no longer pushes an interval a whole interval past the hour.
-> A hold applies to this copy of MoltBrowser only.
+> A hold applies to this copy of MoltBrowser only. Saving a workflow's
+> steps or default values in molt://ai-automation keeps its schedule, and
+> whether it is paused, as last saved: only **Save schedule** changes
+> them, so a card left open no longer undoes a schedule changed in Agent
+> mode or another tab.
 >
 > **A workflow below Trusted stops after 20 pages or 200 MB in one run.**
 > A workflow that isn't set to Trusted now stops, on the step it is at,

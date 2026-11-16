@@ -263,11 +263,14 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       return;
     }
     // [callback_id, script, schedule_saved?]: whether it is Save
-    // schedule's (an interval it sends counts from now).
+    // schedule's, the only save that changes a stored workflow's schedule
+    // and whether it is on (an interval it sends counts from now); any
+    // other keeps them as stored (automation_page::SaveWorkflow()).
     const bool schedule_saved =
         args.size() > 2 && args[2].is_bool() && args[2].GetBool();
     // The dict's security is UI-supplied and ignored: a save keeps the
-    // policy stored on disk (trust set only via promoteTrust) or takes a
+    // policy stored on disk (trust set only via promoteTrust), and its
+    // schedule and whether it is on, but for Save schedule, or takes a
     // script not stored as an import, in one read-modify-write.
     PostSharedChange(
         Dir(),

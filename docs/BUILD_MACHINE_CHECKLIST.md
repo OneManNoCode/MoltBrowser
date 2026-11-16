@@ -2941,7 +2941,21 @@ WEB_AI_APIS.md §12):
     `https://<a site>/search?q={{q}}`, delete it, import it and run it: it
     opens `<a site>` (before: "… is not one of this workflow's sites"); a
     new Agent-mode workflow with that one step typed in "Web address" runs
-    at Casual.
+    at Casual;
+  - stale cards in molt://ai-automation: open the card of a workflow on a
+    daily cron schedule, Enabled, in one molt://ai-automation tab and leave
+    it; in a second tab (or Agent mode's Schedule sheet) set it to every 1
+    hours, untick Enabled, Save schedule; back in the first tab, without
+    reloading, change a value and click *Save values as defaults*, then
+    edit a step and click *Save step changes*: the card, listed again, says
+    "Every hour (paused)" and "Paused — it won't run by itself", Agent mode
+    shows the same, nothing runs, and both edits are saved;
+  - in the second tab (reloaded) tick Enabled, Save schedule, then Snooze
+    1h; in the first tab, without reloading, *Save step changes* again: it
+    stays on, the card says "Held until …" before its next fire, and
+    nothing runs during the hour;
+  - *Save schedule* on a card left open does change it (expected: the last
+    Save schedule wins); saved with a different schedule, it ends the hold.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world
