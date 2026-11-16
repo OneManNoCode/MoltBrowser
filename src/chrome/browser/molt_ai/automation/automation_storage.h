@@ -63,16 +63,18 @@
 // (WorkflowRecord::LastFired()), never the file's. The file's is still
 // written (RecordFire(), UpdateBookkeeping(), saves) for older builds, but
 // anything can write it, so a fire time written there outside this
-// browser (another browser's run, Snooze or Skip, or a forged one) changes
-// nothing here: two browsers with different user data directories sharing
-// the directory each run their own schedules (a workflow can run in both).
+// browser (another browser's run, or a forged one) changes nothing here: two
+// browsers with different user data directories sharing the directory each
+// run their own schedules (a workflow can run in both). A Snooze or a Skip
+// (HoldWith()) is a hold kept in the record only, as
+// trigger.held_until_unix on a read, never in the file.
 // A read that finds a file unvouched looks again under the directory's
 // lock, so a save in progress in this browser is never taken for a change.
 // Every write records what it wrote (the bytes it writes, parsed as a reader
 // parses them, its last fire time included, as WorkflowRecord::Set() takes it:
 // an earlier nonzero one, from a page opened before a fire, keeps that fire; a
-// page's SaveChecked() that keeps the schedule never moves it back, a snooze
-// included): Save(), SaveNew(), SaveChecked(), Update() (so SetTrustLevel()),
+// page's SaveChecked() that keeps the schedule never moves it back, and keeps
+// its hold): Save(), SaveNew(), SaveChecked(), Update() (so SetTrustLevel()),
 // each setting the entry before it renames the file into place (put back as it
 // was if the file can't be written); a move's renames copy the entry to the new
 // name first and forget the old one after, and deletions forget it before the
@@ -213,10 +215,11 @@ class AutomationStorage {
   // |check| must not use a storage. A page's save (the Agent studio's
   // editor, molt://ai-automation) that keeps the stored schedule (type,
   // expression, time zone, end) never moves its last fire back: an earlier
-  // nonzero one, from a page opened before a fire, Snooze or Skip, is
-  // written as the stored one, so the save neither forces a catch-up run
-  // nor ends a snooze. A later one (a Snooze, a Skip), 0, or a schedule of
-  // its own is written as it is.
+  // nonzero one, from a page opened before a fire, is written as the
+  // stored one, so the save forces no catch-up run; and it keeps the
+  // schedule's hold (a Snooze, a Skip: HoldWith()). A later one, 0, or a
+  // schedule of its own is written as it is, and a schedule of its own
+  // ends the hold.
   using SaveCheck =
       base::FunctionRef<bool(const Script* stored, Script& script)>;
   bool SaveChecked(Script script, SaveCheck check);
@@ -227,9 +230,29 @@ class AutomationStorage {
   // when it is missing or unreadable, |change| returns false, or the save
   // fails. |change| must not use a storage. |change| sees the script as a
   // read checked against the record gives it (above): what it saves of an
-  // unvouched one stays an unconfirmed import.
+  // unvouched one stays an unconfirmed import. A change that keeps the
+  // schedule (a trust change, a confirmation) keeps its hold; one that
+  // changes it (the Agent studio's Schedule) ends it. Save() and SaveNew()
+  // always end it.
   using ScriptChange = base::FunctionRef<bool(Script& script)>;
   bool Update(const std::string& id, ScriptChange change);
+
+  // A hold on script |id|'s schedule (molt://ai-automation's Snooze and
+  // Skip): no fire before the time |until| gives, kept in this browser's
+  // workflow record only (WorkflowRecord::Hold()), never in the file, so
+  // it holds this browser's profiles and no other browser. |until| sees the
+  // script as Load() reads it (its last fire and its hold the record's)
+  // and returns that time (unix seconds), or nullopt to set none; it must
+  // not use a storage. Read, computed and set all under the directory's
+  // lock, so a hold is always computed from the schedule it holds. A hold
+  // only rises; a fire claimed at or after it (ClaimFire()) or a write
+  // that changes the schedule ends it. The hold now set; nullopt, and
+  // nothing set, when the script is missing or unreadable, |until| returns
+  // nullopt, or there is no record (a storage of its own directory) or no
+  // entry (a file this browser didn't write).
+  using HoldFrom =
+      base::FunctionRef<std::optional<int64_t>(const Script& script)>;
+  std::optional<int64_t> HoldWith(const std::string& id, HoldFrom until);
 
   // A read-modify-write of run bookkeeping only (the stats,
   // trigger.last_fired_unix): |change| sees the script as the file holds
@@ -246,14 +269,16 @@ class AutomationStorage {
   // last fire of |id| is still |last_fired_read| (the one the scheduler
   // read when it found it due), and not in that same second, the record's
   // last fire is set to |fired_unix| exactly (WorkflowRecord::ClaimFired():
-  // a claim always moves it, from one still in the future too), then
-  // written to the file as UpdateBookkeeping() does, and true (written or
-  // not). False, and nothing recorded, when that has moved since (another
-  // profile's scheduler fired it: each regular profile's lists the
-  // directory, and they share its record; or it was snoozed, or its
-  // schedule saved afresh) or the record has no entry for it (deleted). So
-  // of this browser's schedulers, one runs a due workflow, once. A storage
-  // without a record (its own directory): the file written, and true.
+  // a claim always moves it, from one still in the future too, and ends
+  // the hold it has reached), then written to the file as
+  // UpdateBookkeeping() does, and true (written or not). False, and
+  // nothing recorded, when that has moved since (another profile's
+  // scheduler fired it: each regular profile's lists the directory, and
+  // they share its record; or its schedule was saved afresh), it is held
+  // past |fired_unix| (a Snooze or a Skip: HoldWith()), or the record has
+  // no entry for it (deleted). So of this browser's schedulers, one runs a
+  // due workflow, once. A storage without a record (its own directory):
+  // the file written, and true.
   bool ClaimFire(const std::string& id,
                  int64_t fired_unix,
                  int64_t last_fired_read);
@@ -393,8 +418,10 @@ class AutomationStorage {
   // WriteScriptJsonLocked() does.
   bool WriteScriptBytesLocked(const base::FilePath& path,
                               const std::string& bytes);
-  // Under the directory's lock: Save()'s write.
-  bool SaveLocked(const Script& script);
+  // Under the directory's lock: Save()'s write. |keep_hold|: it keeps the
+  // stored schedule, and so its hold (WorkflowRecord::SetKeepingHold());
+  // otherwise the hold ends.
+  bool SaveLocked(const Script& script, bool keep_hold);
   // Under the directory's lock: ReturnTaken()'s rename.
   bool ReturnSetAsideLocked(const SetAside& set_aside);
   // Under the directory's lock: |id| if nothing is at its script's path,

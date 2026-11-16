@@ -73,15 +73,23 @@ ExplodedLocal Explode(const std::tm& tm) {
           tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday};
 }
 
-// Whether |script|, read again when its timer comes, is due at |now|: a
-// cron or interval workflow whose last fire is known only once the next
-// fire after that one has come (else this browser fired it, or it was
-// snoozed here, since it was listed: a catch-up, a Snooze). A cron
-// workflow whose last fire is still in the future (a clock that was ahead)
-// is due, as before: its timer doesn't wait for that time, and its fire
-// records the real one.
+int64_t UnixOf(base::Time time) {
+  return static_cast<int64_t>(time.InSecondsFSinceUnixEpoch());
+}
+
+// Whether |script|, read again when its timer comes, is due at |now|: never
+// while it is held (a Snooze or a Skip made here since it was listed:
+// Trigger::held_until_unix); a cron or interval workflow whose last fire
+// is known only once the next fire after that one has come (else this
+// browser fired it since it was listed: a catch-up, another profile's
+// timer). A cron workflow whose last fire is still in the future (a clock
+// that was ahead) is due, as before: its timer doesn't wait for that time,
+// and its fire records the real one.
 bool IsDue(const Script& script, base::Time now) {
   const Trigger& trigger = script.trigger;
+  if (trigger.held_until_unix > UnixOf(now)) {
+    return false;
+  }
   if ((trigger.type != TriggerType::CRON &&
        trigger.type != TriggerType::INTERVAL) ||
       trigger.last_fired_unix <= 0) {
@@ -94,10 +102,6 @@ bool IsDue(const Script& script, base::Time now) {
   const base::Time next =
       AutomationScheduler::NextFireTime(trigger, last_fired);
   return !next.is_null() && next <= now;
-}
-
-int64_t UnixOf(base::Time time) {
-  return static_cast<int64_t>(time.InSecondsFSinceUnixEpoch());
 }
 
 // The last time |trigger| was due at or before |now|, counted from its last
@@ -171,12 +175,24 @@ base::Time AutomationScheduler::NextFireTime(const Trigger& trigger,
       now.InSecondsFSinceUnixEpoch() > trigger.until_unix) {
     return base::Time();
   }
+  // This browser's hold (a Snooze or a Skip): no fire before it.
+  const base::Time held = trigger.held_until_unix > 0
+                              ? base::Time::FromTimeT(trigger.held_until_unix)
+                              : base::Time();
   switch (trigger.type) {
     case TriggerType::MANUAL:
       return base::Time();  // never auto-fires
 
-    case TriggerType::CRON:
-      return NextCronFire(trigger.expression, trigger.timezone, now);
+    case TriggerType::CRON: {
+      // Held: its first time at or after the hold (NextCronFire() starts at
+      // the minute after the time it is given). A Skip of a time holds just
+      // past it, so this is the next one.
+      base::Time from = now;
+      if (!held.is_null() && held - base::Seconds(1) > now) {
+        from = held - base::Seconds(1);
+      }
+      return NextCronFire(trigger.expression, trigger.timezone, from);
+    }
 
     case TriggerType::INTERVAL: {
       int seconds = 0;
@@ -188,7 +204,17 @@ base::Time AutomationScheduler::NextFireTime(const Trigger& trigger,
       base::Time base_time = trigger.last_fired_unix > 0
           ? base::Time::FromTimeT(trigger.last_fired_unix)
           : now;
-      return base_time + base::Seconds(seconds);
+      base::Time next = base_time + base::Seconds(seconds);
+      if (!held.is_null() && next < held) {
+        // Held: the first of its times at or after the hold, so its phase
+        // is kept (whole intervals after its last fire). A Snooze doesn't
+        // push it a whole interval past the hold, and a Skip of one time
+        // gives the next.
+        const int64_t gap = (held - base_time).InSeconds();
+        next =
+            base_time + base::Seconds((gap + seconds - 1) / seconds * seconds);
+      }
+      return next;
     }
 
     case TriggerType::AT: {
@@ -457,7 +483,7 @@ void AutomationScheduler::OnFireClaimed(Script script,
                                         base::Time fired_at,
                                         bool claimed) {
   // Not claimed: fired since it was read (by another profile's scheduler),
-  // snoozed, saved afresh or deleted.
+  // held since (a Snooze or a Skip), saved afresh or deleted.
   if (!claimed || !started_ || !fire_cb_) {
     return;
   }

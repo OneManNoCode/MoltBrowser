@@ -1240,9 +1240,10 @@ TEST_F(AgentStudioStorageTest, ANewWorkflowGetsTheDefaultPolicy) {
   EXPECT_EQ(stored->security.max_runtime_seconds, 300);
 }
 
-// molt://ai-automation's Snooze (a last fire still to come), then a save
-// from an editor opened before it (the last fire it was shown, earlier):
-// the snooze holds, so the workflow doesn't run during it.
+// molt://ai-automation's Snooze (a hold in this browser's record), then a
+// save from an editor opened before it: the editor keeps the schedule, so
+// the snooze holds and the workflow doesn't run during it; its last fire
+// is the one recorded.
 TEST_F(AgentStudioStorageTest, AnEditorOpenedBeforeASnoozeKeepsIt) {
   UseRecord();
   Script interval = Workflow("wf_1", "Prices");
@@ -1254,10 +1255,11 @@ TEST_F(AgentStudioStorageTest, AnEditorOpenedBeforeASnoozeKeepsIt) {
   std::optional<Script> editor = Shared().Load("wf_1");
   ASSERT_TRUE(editor);
   ASSERT_EQ(editor->trigger.last_fired_unix, now - 600);
-  ASSERT_TRUE(Shared().Update("wf_1", [now](Script& script) {
-    script.trigger.last_fired_unix = now + 3600;
-    return true;
-  }));
+  ASSERT_EQ(Shared().HoldWith("wf_1",
+                              [now](const Script&) {
+                                return std::optional<int64_t>(now + 3600);
+                              }),
+            now + 3600);
   editor->steps[0].description = "Open the news";
   Answer saved =
       SaveSharedWorkflow(places_, Save(std::move(*editor)), Holds::kNothing);
@@ -1265,7 +1267,8 @@ TEST_F(AgentStudioStorageTest, AnEditorOpenedBeforeASnoozeKeepsIt) {
   std::optional<Script> stored = Shared().Load("wf_1");
   ASSERT_TRUE(stored);
   EXPECT_EQ(stored->steps[0].description, "Open the news");
-  EXPECT_EQ(stored->trigger.last_fired_unix, now + 3600);
+  EXPECT_EQ(stored->trigger.held_until_unix, now + 3600);
+  EXPECT_EQ(stored->trigger.last_fired_unix, now - 600);
 }
 
 }  // namespace

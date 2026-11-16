@@ -2262,9 +2262,11 @@ const PAGES = [
    noClick: ['#import-btn'],
    responses: {
      listScripts: {scripts: [{
+       // Held (a Snooze made in this browser): its next fire comes after.
        id: 's1', name: '<img src=x onerror=alert(1)>',
        security: {trust: 'x" onmouseover="alert(1)'},
        trigger: {type: 'cron', expression: '0 9 * * *'},
+       held_until_unix: 1900000000, next_fire_unix: 1900029600,
        steps: [{type: 'click', target: '" autofocus onfocus="alert(1)', value: "'><b>"}],
        variables: {'a"b': 'c'},
        stats: {runs: 1, ai_tokens_total: '<i>9</i>',
@@ -2281,11 +2283,22 @@ const PAGES = [
        security: {trust: 'casual'},
        trigger: {type: 'interval', expression: '3600'},
        steps: [{type: 'navigate', target: 'https://news.example/'}],
+     }, {
+       // Run only by hand: nothing to snooze or skip.
+       id: 's4', name: 'By hand',
+       security: {trust: 'casual'},
+       trigger: {type: 'manual'},
+       steps: [{type: 'navigate', target: 'https://news.example/'}],
      }]},
      getAuditForScript: {entries: [{ts: '<b>t</b>', event: 'run_failed', extra: '<i>e</i>'}]},
      auditTail: {lines: ['a', 'b']},
+     // Snooze 1h and Skip next: holds the browser keeps (its answers).
+     snoozeScript: {success: true, held_until_unix: 1900003600,
+                    next_fire_unix: 1900029600},
+     skipNextFire: {success: true, held_until_unix: 1900029601,
+                    next_fire_unix: 1900116000},
    },
-   after(window) {
+   async after(window) {
      const doc = window.document;
      const card = doc.querySelector('#list > *');
      assert(card, 'script card rendered');
@@ -2326,6 +2339,43 @@ const PAGES = [
             old.querySelector('.meta').textContent);
      assert(/Not started/.test(old.querySelector('.next-fire').textContent),
             old.querySelector('.next-fire').textContent);
+     // A hold shows on the card, with the next fire after it.
+     const toast = () => doc.getElementById('toast');
+     const tick = () => new Promise((r) => setTimeout(r, 20));
+     const cronCard = () => doc.querySelector('[data-script-id="s1"]');
+     const line = cronCard().querySelector('.next-fire').textContent;
+     assert(/Held until .*Next fire/.test(line), 'a hold shows: ' + line);
+     // Snooze and Skip only for a schedule that repeats (cron, interval).
+     const manual = doc.querySelector('[data-script-id="s4"]');
+     assert(manual, 'the manual card rendered');
+     assert(!manual.querySelector('[data-act="snooze-1h"], [data-act="skip-next"]'),
+            'no Snooze or Skip for a workflow run by hand');
+     assert(paused.querySelector('[data-act="snooze-1h"]') &&
+            old.querySelector('[data-act="skip-next"]'), 'an interval has them');
+     // Each is a message of its own: the card's copy is never saved back.
+     const saves = () => window.__sent.filter((m) => m === 'saveScript').length;
+     const savesBefore = saves();
+     cronCard().querySelector('[data-act="snooze-1h"]').click();
+     assert.deepStrictEqual(argsOf(window, 'snoozeScript').pop(), ['s1', 3600]);
+     await tick();
+     assert(/^Snoozed: no run until /.test(toast().textContent), toast().textContent);
+     // Answered, the list is read again (the card rebuilt).
+     cronCard().querySelector('[data-act="skip-next"]').click();
+     assert.deepStrictEqual(argsOf(window, 'skipNextFire').pop(), ['s1']);
+     await tick();
+     assert(/^Next run skipped; the one after is /.test(toast().textContent),
+            toast().textContent);
+     // An interval never started: refused here, nothing sent.
+     const snoozes = argsOf(window, 'snoozeScript').length;
+     const skips = argsOf(window, 'skipNextFire').length;
+     const oldCard = doc.querySelector('[data-script-id="s3"]');
+     oldCard.querySelector('[data-act="snooze-1h"]').click();
+     oldCard.querySelector('[data-act="skip-next"]').click();
+     assert.strictEqual(argsOf(window, 'snoozeScript').length, snoozes);
+     assert.strictEqual(argsOf(window, 'skipNextFire').length, skips);
+     assert(/Not started/.test(toast().textContent) &&
+            toast().classList.contains('error'), toast().textContent);
+     assert.strictEqual(saves(), savesBefore, 'Snooze and Skip save nothing');
    }},
   {name: 'molt://ai', file: 'molt_ai_ui.cc',
    listeners: ['#modelChip:click', '#sendBtn:click', '#cancelBtn:click',

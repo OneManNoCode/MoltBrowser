@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/functional/function_ref.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 
@@ -15,16 +17,96 @@ namespace automation_page {
 
 namespace {
 
+using automation::AutomationScheduler;
 using automation::AutomationSecurity;
 using automation::AutomationStorage;
 using automation::HasVoiceSteps;
 using automation::Script;
+using automation::Trigger;
+using automation::TriggerType;
 using automation::TrustLevel;
+
+constexpr char kScriptNotFound[] = "script not found";
 
 base::DictValue Failed(const std::string& error) {
   base::DictValue result;
   result.Set("success", false);
   result.Set("error", error);
+  return result;
+}
+
+// Why an unconfirmed draft isn't changed here: it is reviewed in Agent mode
+// first.
+const char* ReviewFirst(const Script& script) {
+  return script.security.changed_outside
+             ? "This workflow was changed outside MoltBrowser. Review it in "
+               "Agent mode first."
+             : "Confirm this draft's sites in Agent mode first.";
+}
+
+// Why |script| can't be held (snoozed or skipped); nullopt when it can.
+std::optional<std::string> HoldRefused(const Script& script) {
+  // Voice mode runs those, and this page lists none.
+  if (HasVoiceSteps(script)) {
+    return kScriptNotFound;
+  }
+  // A draft doesn't fire anyway; its schedule is reviewed first.
+  if (script.security.sites_unconfirmed) {
+    return ReviewFirst(script);
+  }
+  if (script.trigger.type != TriggerType::CRON &&
+      script.trigger.type != TriggerType::INTERVAL) {
+    return "Only a schedule that repeats can be snoozed or skipped";
+  }
+  // Saved with no last fire by an earlier version: the scheduler counts it
+  // from each listing, so a hold would hold nothing to come. Only Save
+  // schedule starts it.
+  if (script.trigger.type == TriggerType::INTERVAL &&
+      script.trigger.last_fired_unix <= 0) {
+    // In the page's words (refuseNotStarted()), its dash included.
+    return "Not started \xE2\x80\x94 click Save schedule to start it";
+  }
+  return std::nullopt;
+}
+
+// The hold |until| gives for workflow |id| as stored (or, in |error|, why
+// none), set under the directory's lock (AutomationStorage::HoldWith()),
+// and the page's answer: {success, held_until_unix, next_fire_unix?} (its
+// next run after |now|, the hold counted), or {success: false, error}.
+using HoldUntil =
+    base::FunctionRef<std::optional<int64_t>(const Script&, std::string&)>;
+base::DictValue HoldAnswer(const std::string& id,
+                           base::Time now,
+                           AutomationStorage& storage,
+                           HoldUntil until) {
+  std::string error = kScriptNotFound;
+  Trigger trigger;
+  const std::optional<int64_t> held =
+      storage.HoldWith(id, [&](const Script& script) -> std::optional<int64_t> {
+        if (std::optional<std::string> refused = HoldRefused(script)) {
+          error = std::move(*refused);
+          return std::nullopt;
+        }
+        std::optional<int64_t> held_until = until(script, error);
+        if (held_until) {
+          // The answer should the record have no entry to hold (a file this
+          // browser didn't write is a draft, refused above).
+          error = "This schedule couldn't be held";
+          trigger = script.trigger;
+        }
+        return held_until;
+      });
+  if (!held) {
+    return Failed(error);
+  }
+  trigger.held_until_unix = *held;
+  base::DictValue result;
+  result.Set("success", true);
+  result.Set("held_until_unix", static_cast<double>(*held));
+  const base::Time next = AutomationScheduler::NextFireTime(trigger, now);
+  if (!next.is_null()) {
+    result.Set("next_fire_unix", static_cast<double>(next.ToTimeT()));
+  }
   return result;
 }
 
@@ -86,6 +168,13 @@ base::DictValue SaveWorkflow(Script script,
           // The page never edits the policy: the stored one is kept (its
           // trust changed only by promoteTrust).
           s.security = stored->security;
+          // Nor moves the last fire later: that would hold the schedule
+          // back (a fire time far ahead, from a page or anything that can
+          // send this message, would stall it), and Snooze and Skip are
+          // holds of their own (Snooze(), SkipNext()). An earlier one is
+          // left to the storage (AutomationStorage::SaveChecked()).
+          s.trigger.last_fired_unix = std::min(s.trigger.last_fired_unix,
+                                               stored->trigger.last_fired_unix);
         } else {
           // Not stored (deleted meanwhile, or a dict the page made): taken
           // as an import. No runs, no last fire.
@@ -174,8 +263,7 @@ base::DictValue PromoteTrust(const std::string& id,
                              TrustLevel level,
                              AutomationStorage& storage) {
   bool found = false;
-  bool draft = false;
-  bool changed_outside = false;
+  const char* draft = nullptr;
   TrustLevel before = level;
   const bool saved = storage.Update(id, [&](Script& script) {
     if (HasVoiceSteps(script)) {
@@ -186,8 +274,7 @@ base::DictValue PromoteTrust(const std::string& id,
     // outside the browser, is trusted only after its sites are confirmed in
     // the Agent studio.
     if (script.security.sites_unconfirmed) {
-      draft = true;
-      changed_outside = script.security.changed_outside;
+      draft = ReviewFirst(script);
       return false;
     }
     before = script.security.trust;
@@ -195,13 +282,10 @@ base::DictValue PromoteTrust(const std::string& id,
     return true;
   });
   if (!found) {
-    return Failed("script not found");
+    return Failed(kScriptNotFound);
   }
   if (draft) {
-    return Failed(changed_outside
-                      ? "This workflow was changed outside MoltBrowser. "
-                        "Review it in Agent mode first."
-                      : "Confirm this draft's sites in Agent mode first.");
+    return Failed(draft);
   }
   if (saved) {
     storage.AppendAudit(id, "trust_changed",
@@ -212,6 +296,40 @@ base::DictValue PromoteTrust(const std::string& id,
   result.Set("success", saved);
   result.Set("trust", automation::TrustLevelToString(level));
   return result;
+}
+
+base::DictValue Snooze(const std::string& id,
+                       int seconds,
+                       int64_t now_unix,
+                       AutomationStorage& storage) {
+  return HoldAnswer(id, base::Time::FromTimeT(now_unix), storage,
+                    [now_unix, seconds](const Script&, std::string&) {
+                      return std::optional<int64_t>(now_unix + seconds);
+                    });
+}
+
+base::DictValue SkipNext(const std::string& id,
+                         base::Time now,
+                         AutomationStorage& storage) {
+  const auto past_next_run = [now](
+                                 const Script& script,
+                                 std::string& error) -> std::optional<int64_t> {
+    // Its first run strictly after now, as the scheduler counts it from its
+    // last fire and any hold already set: an overdue interval's next time,
+    // not the one already passed (held just past that, the hold would be
+    // over already).
+    Trigger after_now = script.trigger;
+    after_now.held_until_unix = std::max<int64_t>(
+        after_now.held_until_unix, static_cast<int64_t>(now.ToTimeT()) + 1);
+    const base::Time next = AutomationScheduler::NextFireTime(after_now, now);
+    if (next.is_null()) {
+      error = "No upcoming run to skip";
+      return std::nullopt;
+    }
+    // Held just past it: the run after it is the next.
+    return static_cast<int64_t>(next.ToTimeT()) + 1;
+  };
+  return HoldAnswer(id, now, storage, past_next_run);
 }
 
 }  // namespace automation_page

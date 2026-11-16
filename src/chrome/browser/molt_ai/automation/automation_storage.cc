@@ -225,19 +225,25 @@ std::string NameOf(const base::FilePath& path) {
   return path.BaseName().AsUTF8Unsafe();
 }
 
-// SaveChecked(): a save that keeps |stored|'s schedule (its type,
-// expression, time zone and end) never moves its last fire back. An
-// earlier nonzero one comes from a page opened before that last fire,
-// Snooze or Skip (the Agent studio's editor, a molt://ai-automation card
-// never refreshed): the stored one is kept, so the save neither forces a
-// catch-up run nor ends a snooze. A later one (molt://ai-automation's
-// Snooze and Skip), 0 and a schedule of its own are written as they are.
+// Whether |written| keeps |stored|'s schedule: its type, expression, time
+// zone and end (its last fire and hold aside). A save that does keeps the
+// schedule's hold (a Snooze, a Skip); any other ends it.
+bool SameSchedule(const Trigger& stored, const Trigger& written) {
+  return written.type == stored.type &&
+         written.expression == stored.expression &&
+         written.timezone == stored.timezone &&
+         written.until_unix == stored.until_unix;
+}
+
+// SaveChecked(): a save that keeps |stored|'s schedule never moves its last
+// fire back. An earlier nonzero one comes from a page opened before that
+// last fire (the Agent studio's editor, a molt://ai-automation card never
+// refreshed): the stored one is kept, so the save forces no catch-up run.
+// A later one, 0 and a schedule of its own are written as they are.
 void KeepStoredLastFire(const Trigger& stored, Trigger& written) {
   if (written.last_fired_unix > 0 &&
       written.last_fired_unix < stored.last_fired_unix &&
-      written.type == stored.type && written.expression == stored.expression &&
-      written.timezone == stored.timezone &&
-      written.until_unix == stored.until_unix) {
+      SameSchedule(stored, written)) {
     written.last_fired_unix = stored.last_fired_unix;
   }
 }
@@ -531,9 +537,13 @@ std::optional<Script> AutomationStorage::Vetted(base::DictValue dict,
   // only this browser's own, the one it wrote there or fired at
   // (WorkflowRecord::LastFired()), vouched or not (a clamped workflow
   // doesn't fire). Never the file's, which anything can write: another
-  // browser's runs and snoozes, or a forged time (earlier, it would force a
-  // catch-up run; later, it would stall the schedule).
+  // browser's runs (and an older build's snoozes), or a forged time
+  // (earlier, it would force a catch-up run; later, it would stall the
+  // schedule).
   script->trigger.last_fired_unix = record->LastFired(name);
+  // Its hold (a Snooze or a Skip made in this browser), which only the
+  // record keeps.
+  script->trigger.held_until_unix = record->HeldUntil(name);
   return script;
 }
 
@@ -625,7 +635,8 @@ bool AutomationStorage::Save(const Script& script) {
   bool saved = false;
   {
     ChangeScope locked(*this);
-    saved = SaveLocked(script);
+    // A whole write: any hold ends.
+    saved = SaveLocked(script, /*keep_hold=*/false);
   }
   if (saved)
     AppendAudit(script.id, "saved", "");
@@ -647,7 +658,7 @@ std::optional<std::string> AutomationStorage::SaveNew(Script script) {
     if (!id)
       return std::nullopt;
     script.id = std::move(*id);
-    saved = SaveLocked(script);
+    saved = SaveLocked(script, /*keep_hold=*/false);
   }
   if (!saved)
     return std::nullopt;
@@ -678,14 +689,18 @@ bool AutomationStorage::SaveChecked(Script script, SaveCheck check) {
     if (stored) {
       KeepStoredLastFire(stored->trigger, script.trigger);
     }
-    saved = SaveLocked(script);
+    // A page's save of the schedule as stored keeps its hold (a card or an
+    // editor opened before a Snooze ends no Snooze); a schedule of its own
+    // starts over.
+    saved = SaveLocked(script,
+                       stored && SameSchedule(stored->trigger, script.trigger));
   }
   if (saved)
     AppendAudit(id, "saved", "");
   return saved;
 }
 
-bool AutomationStorage::SaveLocked(const Script& script) {
+bool AutomationStorage::SaveLocked(const Script& script, bool keep_hold) {
   // Never persist a password / card / one-time-code value, whichever UI or
   // import path produced the script.
   base::DictValue json = script.ToJSON();
@@ -699,17 +714,23 @@ bool AutomationStorage::SaveLocked(const Script& script) {
   // version vouched for again. What this browser writes, as a reader will
   // parse it, its last fire time included, as WorkflowRecord::Set() takes
   // it (0 for a schedule saved afresh: it starts over; an earlier one, from
-  // a page opened before a fire, keeps that fire).
+  // a page opened before a fire, keeps that fire), its hold kept only with
+  // the schedule it holds. Put back as it was, its hold too, if the file
+  // can't be written.
   WorkflowRecord* record = Record();
   const std::string name = NameOf(path);
   std::optional<WorkflowRecord::Entry> before;
   if (record) {
     before = record->EntryOf(name);
     std::optional<Script> written = ParseScriptBytes(bytes);
-    record->Set(
-        name,
-        written ? AutomationSecurity::SecurityDigest(*written) : std::string(),
-        written ? written->trigger.last_fired_unix : 0);
+    std::string digest =
+        written ? AutomationSecurity::SecurityDigest(*written) : std::string();
+    const int64_t fired = written ? written->trigger.last_fired_unix : 0;
+    if (keep_hold) {
+      record->SetKeepingHold(name, std::move(digest), fired);
+    } else {
+      record->Set(name, std::move(digest), fired);
+    }
   }
   if (before_file_change_for_testing_) {
     before_file_change_for_testing_.Run();
@@ -744,13 +765,43 @@ bool AutomationStorage::Update(const std::string& script_id,
              : std::nullopt;
     if (!script)
       return false;
+    // The schedule as read: a change that keeps it (a trust change, a
+    // confirmation) keeps its hold; a new schedule starts over.
+    const Trigger before = script->trigger;
     if (!change(*script) || script->id != id)
       return false;
-    saved = SaveLocked(*script);
+    saved = SaveLocked(*script, SameSchedule(before, script->trigger));
   }
   if (saved)
     AppendAudit(id, "saved", "");
   return saved;
+}
+
+std::optional<int64_t> AutomationStorage::HoldWith(const std::string& id,
+                                                   HoldFrom until) {
+  BlockingScope blocking(*this);
+  if (!IsValidScriptId(id))
+    return std::nullopt;
+  PrepareRecord();
+  ChangeScope locked(*this);
+  const base::FilePath path = GetScriptPath(id);
+  std::optional<base::DictValue> dict = ReadScriptDict(path);
+  // As Load() reads it (its last fire and hold the record's), under the
+  // same lock as the hold: no save comes between, so the hold is computed
+  // from the schedule it holds.
+  std::optional<Script> script =
+      dict ? Vetted(std::move(*dict), id, path, Held::kChangeScope)
+           : std::nullopt;
+  if (!script)
+    return std::nullopt;
+  const std::optional<int64_t> held = until(*script);
+  WorkflowRecord* record = Record();
+  const std::string name = NameOf(path);
+  // Only in the record: the file isn't written, so its digest, and another
+  // browser's schedule, are unchanged.
+  if (!held || !record || !record->Hold(name, *held))
+    return std::nullopt;
+  return record->HeldUntil(name);
 }
 
 bool AutomationStorage::UpdateBookkeeping(const std::string& script_id,
@@ -791,9 +842,10 @@ bool AutomationStorage::ClaimFire(const std::string& id,
   PrepareRecord();
   ChangeScope locked(*this);
   // Fired since it was read (by another profile's scheduler: each
-  // profile's lists this directory), snoozed, saved afresh or deleted: not
-  // this fire's to run. Claimed, the record's fire time is this fire's,
-  // first: a file that can't be written now still never fires again for
+  // profile's lists this directory), held past this fire (a Snooze or a
+  // Skip), saved afresh or deleted: not this fire's to run. Claimed, the
+  // record's fire time is this fire's, first (and the hold it reached
+  // ends): a file that can't be written now still never fires again for
   // this time, and a second claim of what was read fails.
   if (WorkflowRecord* record = Record();
       record &&

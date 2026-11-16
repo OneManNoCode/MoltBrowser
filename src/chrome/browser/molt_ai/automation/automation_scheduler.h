@@ -13,7 +13,18 @@
 // fire of the workflow is still the one the scheduler read when it found
 // it due, and the fire callback runs only then. So of the schedulers of
 // this browser's profiles, one runs a due workflow, once (the others find
-// it fired); one snoozed or saved afresh since it was read doesn't fire.
+// it fired); one held (a Snooze or a Skip) or saved afresh since it was
+// read doesn't fire.
+//
+// Holds. molt://ai-automation's Snooze and Skip are holds in this browser's
+// workflow record (AutomationStorage::HoldWith()), read as
+// Trigger::held_until_unix: no fire before that time, for cron and interval
+// schedules alike. NextFireTime() gives the first time at or after the hold
+// (an interval keeps its phase: whole intervals after its last fire), so
+// the timer is armed past it and the times it covers are never caught up;
+// a timer's reload that finds it held since it was listed doesn't fire it
+// (and lists again); and the claim is refused before the hold, which the
+// claimed fire ends.
 //
 // Threading: lives on the UI thread; uses base::OneShotTimer to wake up
 // at the next scheduled time. macOS sleep wake-ups deliver the timer
@@ -29,7 +40,7 @@
 // listed and again when its timer's reload comes. A catch-up's next fire is
 // counted from the catch-up itself, and a timer's reload fires a cron or
 // interval workflow only if it is still due after its last fire (not
-// fired or snoozed since it was listed), so an overdue workflow runs once.
+// fired or held since it was listed), so an overdue workflow runs once.
 // One held for review that is the browser's again (its file put back as
 // the browser last wrote it) isn't caught up for the times that passed
 // while it was held: they are recorded as passed (AutomationStorage::
@@ -42,11 +53,11 @@
 // Its last fire time is this browser's own, as its workflow record has it
 // (the one it saved, or a fire it recorded: automation_storage.h), never
 // the file's: a fire time written into the file outside this browser
-// (another browser's run, Snooze or Skip, or a forged one) neither forces
-// a catch-up run nor holds the schedule back, and two browsers with
-// different user data directories sharing the folder each fire on their
-// own schedule (a workflow can run in both). base only (the storage's
-// sequences), so molt_ai_unittests tests it.
+// (another browser's run, an older build's Snooze or Skip, or a forged one)
+// neither forces a catch-up run nor holds the schedule back, and two
+// browsers with different user data directories sharing the folder each
+// fire on their own schedule (a workflow can run in both). base only (the
+// storage's sequences), so molt_ai_unittests tests it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCHEDULER_H_
@@ -101,7 +112,9 @@ class AutomationScheduler {
 
   // Compute the next fire time for a single trigger, given "now".
   // Returns base::Time() (null) if the trigger cannot fire (e.g.
-  // expired, malformed cron).
+  // expired, malformed cron). A held trigger's (held_until_unix) is its
+  // first time at or after the hold: a cron's first match, an interval's
+  // first whole interval after its last fire.
   static base::Time NextFireTime(const Trigger& trigger, base::Time now);
 
   // Test seam: drives the scheduler against |now| instead of real wall

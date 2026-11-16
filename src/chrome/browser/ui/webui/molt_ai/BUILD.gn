@@ -218,6 +218,10 @@ source_set("automation_page_storage") {
     "//chrome/browser/molt_ai/automation:automation_policy",
     "//chrome/browser/molt_ai/automation:storage",
   ]
+
+  # Snooze and Skip answer with the next run as the scheduler counts it
+  # (AutomationScheduler::NextFireTime()).
+  deps = [ "//chrome/browser/molt_ai/automation:scheduler" ]
 }
 
 # Pure-logic tests for the shared WebUI handler helpers (argument

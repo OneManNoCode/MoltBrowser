@@ -142,6 +142,14 @@ struct Trigger {
   // Last time this trigger fired (unix seconds), used by scheduler for
   // missed-run catch-up.
   int64_t last_fired_unix = 0;
+  // This browser's hold on the schedule (molt://ai-automation's Snooze or
+  // Skip): no fire before this time (unix seconds); 0: none. Only from this
+  // browser's workflow record (AutomationStorage fills it on a read:
+  // WorkflowRecord::HeldUntil()), never written to or read from a file:
+  // TriggerToDict() and TriggerFromDict() leave it out, so neither the file
+  // nor its security digest carries it, and a hold made in one browser
+  // holds no other.
+  int64_t held_until_unix = 0;
 };
 
 // Trust level granted to the script. Higher trust = fewer approval prompts.
