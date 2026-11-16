@@ -397,6 +397,21 @@ For longer narrative posts behind each entry see
   fills a saved password, including workflows imported before this
   version. Below Trusted, a run's time limit is at most the default 5
   minutes, whatever its file says.
+- **A workflow below Trusted stops after 20 pages or 200 MB in one run.**
+  A run of a workflow that isn't set to Trusted now stops, on the step it
+  is at, once it has opened more than 20 pages, or once its pages have
+  loaded more than 200 MB from the network. Each page opened, reloaded, or
+  reached by a link or a redirect counts; a change within the same page
+  doesn't, and neither does the run window's first page (what it loads
+  does). The run's result says which limit it passed. A lower limit in a
+  workflow's file is kept; a higher one counts as the default. Approving a
+  workflow doesn't lift either limit; setting it to Trusted in
+  molt://ai-automation does. Trusted and Admin workflows are held only to
+  their run time, as before, and the chat's page actions aren't held to
+  either limit. The limits stop a workflow that runs away. They don't
+  count downloads, a page's other windows, live connections (WebSockets,
+  calls), a load still in progress or one cut off before it finished.
+  Design: [docs/design/AGENT_ACTIONS.md §3.6.11](docs/design/AGENT_ACTIONS.md).
 - **An imported workflow gets the default approvals and limits, and its
   schedule starts off.** A workflow you import, in molt://ai-automation or
   in Agent mode, gets the default approvals and limits, whatever its file

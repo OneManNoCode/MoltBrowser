@@ -52,6 +52,10 @@ namespace automation {
 // (defined in the .cc). Forward-declared so it can be held as a member.
 class NavigationSettleWaiter;
 
+// Counts the run's pages and network bytes against its policy's limits
+// (defined in the .cc).
+class RunLimitObserver;
+
 // A RunPromptAsync request waiting for the in-flight one (defined in .cc).
 struct QueuedPrompt;
 
@@ -133,6 +137,10 @@ class AutomationRunner {
   // |needs_trust| marks a block that trusting the workflow lifts; it is
   // saved as Stats::last_run_needs_trust.
   void BlockStep(const std::string& reason, bool needs_trust = false);
+  // Below TRUSTED, the run's tab passed one of its limits
+  // (AutomationSecurity::RunLimitMessage(): |why|): the run ends on the step
+  // it is at (BlockStep()), unless every step is done.
+  void OnRunLimitExceeded(std::string why);
 
   // After a step reaches a terminal outcome (success, or failure with no
   // retries left), record a StepResult for the Runs timeline — including a
@@ -432,6 +440,15 @@ class AutomationRunner {
   base::ScopedClosureRunner capture_keepalive_;
   // Live during a click's post-navigation settle; reset before the next step.
   std::unique_ptr<NavigationSettleWaiter> nav_waiter_;
+  // Below TRUSTED, counts the run's pages and network bytes from Run() on
+  // and calls OnRunLimitExceeded() past a limit; null at TRUSTED and above.
+  std::unique_ptr<RunLimitObserver> run_limits_;
+  // Why the run passed a limit between two steps (OnRunLimitExceeded()):
+  // ExecuteNextStep() stops it before the next one. Empty otherwise.
+  std::string run_limit_stop_;
+  // From a step's dispatch (ExecuteNextStep()) until its result is being
+  // recorded (CaptureStepAndThen()), its retries included.
+  bool step_in_progress_ = false;
 
   // Per-step timeout — fires OnStepTimeout() if the dispatched step
   // doesn't call OnStepFinished in time.

@@ -9,12 +9,14 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/flat_set.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/numerics/clamped_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -32,6 +34,7 @@
 #include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
@@ -40,6 +43,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/referrer.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "third_party/blink/public/mojom/loader/resource_load_info.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -437,6 +441,87 @@ class NavigationSettleWaiter : public content::WebContentsObserver {
   base::WeakPtrFactory<NavigationSettleWaiter> weak_{this};
 };
 
+// Counts what the run's tab uses (RunUsage) from the run's start, and once
+// the run's policy says to stop (AutomationSecurity::RunLimitMessage()),
+// runs |on_exceeded| with why, once, from a task of its own. The runner
+// makes one for each run below TRUSTED.
+class RunLimitObserver : public content::WebContentsObserver {
+ public:
+  RunLimitObserver(content::WebContents* web_contents,
+                   const SecurityPolicy& policy,
+                   base::OnceCallback<void(std::string)> on_exceeded)
+      : content::WebContentsObserver(web_contents),
+        policy_(policy),
+        on_exceeded_(std::move(on_exceeded)) {}
+
+  RunLimitObserver(const RunLimitObserver&) = delete;
+  RunLimitObserver& operator=(const RunLimitObserver&) = delete;
+
+  void DidStartNavigation(content::NavigationHandle* handle) override {
+    started_.insert(handle->GetNavigationId());
+  }
+
+  // A document committed in the primary main frame by a navigation that
+  // started after the run did, whoever started it (a step, the page, a
+  // redirect it commits): a page opened. The run window's own first page,
+  // already loading when the run starts, isn't one.
+  void DidFinishNavigation(content::NavigationHandle* handle) override {
+    if (!started_.erase(handle->GetNavigationId()) ||
+        !handle->IsInPrimaryMainFrame() || !handle->HasCommitted() ||
+        handle->IsSameDocument()) {
+      return;
+    }
+    usage_.navigations = base::ClampAdd(usage_.navigations, 1);
+    Check();
+  }
+
+  // Every frame's loads (the main document's too) are the run's traffic.
+  // The count is the renderer's: added saturating, so no value it reports
+  // can wrap the total (and none can CHECK, as ByteSize's own sum would).
+  void ResourceLoadComplete(
+      content::RenderFrameHost* render_frame_host,
+      const content::GlobalRequestID& request_id,
+      const GURL& original_url,
+      const blink::mojom::ResourceLoadInfo& resource_load_info) override {
+    usage_.network_bytes =
+        base::ClampAdd(usage_.network_bytes,
+                       resource_load_info.total_received_bytes.InBytes());
+    Check();
+  }
+
+ private:
+  void Check() {
+    if (posted_) {
+      return;
+    }
+    std::string why = AutomationSecurity::RunLimitMessage(policy_, usage_);
+    if (why.empty()) {
+      return;
+    }
+    posted_ = true;
+    // Never from inside the tab's notification: stopping the run ends the
+    // step's work on this tab (its click-settle observer among it).
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&RunLimitObserver::Fire, weak_.GetWeakPtr(),
+                                  std::move(why)));
+  }
+
+  void Fire(std::string why) {
+    // Last: ending the run can delete the runner, and this observer with it
+    // (a run window's holder does on completion).
+    std::move(on_exceeded_).Run(std::move(why));
+  }
+
+  const SecurityPolicy policy_;
+  base::OnceCallback<void(std::string)> on_exceeded_;
+  RunUsage usage_;
+  // Navigations this observer saw start (DidStartNavigation()), until they
+  // finish.
+  base::flat_set<int64_t> started_;
+  bool posted_ = false;
+  base::WeakPtrFactory<RunLimitObserver> weak_{this};
+};
+
 AutomationRunner::AutomationRunner(content::WebContents* target_contents,
                                    BrowserAIRuntime* ai_runtime,
                                    const base::FilePath& storage_dir)
@@ -480,6 +565,9 @@ void AutomationRunner::Run(Script script,
   current_run_steps_.clear();
   run_ts_ = static_cast<int64_t>(std::time(nullptr));
   nav_waiter_.reset();
+  run_limits_.reset();
+  run_limit_stop_.clear();
+  step_in_progress_ = false;
   // Keep the tab compositing (and reporting visible to the page) for the whole
   // run so per-step screenshots capture real pixels even when the run window is
   // minimized in Auto mode. Released when this runner is destroyed.
@@ -521,6 +609,19 @@ void AutomationRunner::Run(Script script,
     return;
   }
 
+  // Below TRUSTED the run's tab may open at most policy_.max_navigations
+  // pages and load at most policy_.max_network_bytes
+  // (AutomationSecurity::RunLimitMessage()), counted from here: the run
+  // window's first page, already loading, isn't a page the run opened, but
+  // what it loads counts. Unretained: |run_limits_| is a member, and runs
+  // the callback only while it lives.
+  if (target_contents_ && policy_.trust < TrustLevel::TRUSTED) {
+    run_limits_ = std::make_unique<RunLimitObserver>(
+        target_contents_.get(), policy_,
+        base::BindOnce(&AutomationRunner::OnRunLimitExceeded,
+                       base::Unretained(this)));
+  }
+
   Audit("run_started", current_index_ > 0
                            ? "from_step=" + base::NumberToString(current_index_)
                            : std::string());
@@ -542,6 +643,11 @@ void AutomationRunner::ExecuteNextStep() {
   }
   if (current_index_ >= script_.steps.size()) {
     Finish(true, "Completed");
+    return;
+  }
+  // A page or byte limit passed between two steps (OnRunLimitExceeded()).
+  if (!run_limit_stop_.empty()) {
+    Finish(false, run_limit_stop_);
     return;
   }
   // Per-script overall timeout, as the run's policy has it (below TRUSTED
@@ -628,6 +734,7 @@ void AutomationRunner::ExecuteNextStep() {
   }
 
   EmitStepProgress(/*starting=*/true, /*succeeded=*/false, "");
+  step_in_progress_ = true;
   std::string blocked;
   bool needs_trust = false;
   if (!PreflightStepPolicy(s, &blocked, &needs_trust)) {
@@ -739,6 +846,23 @@ void AutomationRunner::BlockStep(const std::string& reason,
   step_attempt_ = 0;
   // Terminal: a policy decision does not change on retry.
   CaptureStepAndThen(/*succeeded=*/false, reason, /*terminal_failure=*/true);
+}
+
+void AutomationRunner::OnRunLimitExceeded(std::string why) {
+  if (!is_running_) {
+    return;
+  }
+  // In a step (retries included): it ends there, without retries. Not a
+  // needs-trust block: Approved doesn't lift a limit.
+  if (step_in_progress_) {
+    BlockStep(why);
+    return;
+  }
+  // Between steps (a step's result being recorded, or the next step not
+  // started yet): ExecuteNextStep() stops the run before the next step,
+  // unless every step is done. Never a second record of the step whose
+  // result is being saved.
+  run_limit_stop_ = std::move(why);
 }
 
 bool AutomationRunner::ShouldExecuteCurrentStep() const {
@@ -877,6 +1001,7 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
 void AutomationRunner::CaptureStepAndThen(bool succeeded,
                                           std::string note,
                                           bool terminal_failure) {
+  step_in_progress_ = false;
   StepResult sr;
   if (current_index_ < script_.steps.size()) {
     sr.index = static_cast<int>(current_index_);

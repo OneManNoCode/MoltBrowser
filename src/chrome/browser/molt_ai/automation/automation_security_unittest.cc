@@ -223,6 +223,107 @@ TEST(AutomationSecurityTest, EffectivePolicyBoundsTheRuntimeBelowTrusted) {
             3600);
 }
 
+// Below TRUSTED a run opens at most the default 20 pages and loads at most
+// the default 200 MB, whatever its file says; a lower limit is kept, and
+// TRUSTED keeps its own (no run is held to them: RunLimitMessage()).
+TEST(AutomationSecurityTest, EffectivePolicyBoundsTheRunLimitsBelowTrusted) {
+  const SecurityPolicy defaults;
+  for (TrustLevel trust : {TrustLevel::CASUAL, TrustLevel::APPROVED}) {
+    for (int stored : {0, -1, 21, std::numeric_limits<int>::max()}) {
+      Script script;
+      script.security.trust = trust;
+      script.security.max_navigations = stored;
+      EXPECT_EQ(AutomationSecurity::EffectivePolicy(script).max_navigations,
+                defaults.max_navigations)
+          << stored;
+    }
+    for (int64_t stored :
+         {int64_t{0}, int64_t{-1}, defaults.max_network_bytes + 1,
+          std::numeric_limits<int64_t>::max()}) {
+      Script script;
+      script.security.trust = trust;
+      script.security.max_network_bytes = stored;
+      EXPECT_EQ(AutomationSecurity::EffectivePolicy(script).max_network_bytes,
+                defaults.max_network_bytes)
+          << stored;
+    }
+    Script lower;
+    lower.security.trust = trust;
+    lower.security.max_navigations = 3;
+    lower.security.max_network_bytes = 1000;
+    const SecurityPolicy p = AutomationSecurity::EffectivePolicy(lower);
+    EXPECT_EQ(p.max_navigations, 3);
+    EXPECT_EQ(p.max_network_bytes, 1000);
+  }
+  Script trusted;
+  trusted.security.trust = TrustLevel::TRUSTED;
+  trusted.security.max_navigations = 500;
+  trusted.security.max_network_bytes = std::numeric_limits<int64_t>::max();
+  SecurityPolicy p = AutomationSecurity::EffectivePolicy(trusted);
+  EXPECT_EQ(p.max_navigations, 500);
+  EXPECT_EQ(p.max_network_bytes, std::numeric_limits<int64_t>::max());
+  // An unconfirmed draft is CASUAL whatever trust it was given.
+  trusted.security.sites_unconfirmed = true;
+  p = AutomationSecurity::EffectivePolicy(trusted);
+  EXPECT_EQ(p.max_navigations, defaults.max_navigations);
+  EXPECT_EQ(p.max_network_bytes, defaults.max_network_bytes);
+}
+
+// Below TRUSTED a run stops one page or one byte past a limit, Approved too
+// (trusting a workflow doesn't lift one); at its limits it goes on. TRUSTED
+// and ADMIN are held to neither.
+TEST(AutomationSecurityTest, RunLimitMessageStopsARunPastItsLimits) {
+  const SecurityPolicy defaults;
+  const uint64_t max_bytes = static_cast<uint64_t>(defaults.max_network_bytes);
+  for (TrustLevel trust : {TrustLevel::CASUAL, TrustLevel::APPROVED}) {
+    Script script;
+    script.security.trust = trust;
+    const SecurityPolicy p = AutomationSecurity::EffectivePolicy(script);
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {20, max_bytes}), "");
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {21, 0}),
+              "Stopped: this run opened more than 20 pages, the most this "
+              "workflow may open in one run. Only workflows set to Trusted "
+              "in molt://ai-automation have no such limit.");
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {0, max_bytes + 1}),
+              "Stopped: this run's pages loaded more than 200 MB, the most "
+              "this workflow may load in one run. Only workflows set to "
+              "Trusted in molt://ai-automation have no such limit.");
+    // Past both: the pages are named.
+    EXPECT_NE(AutomationSecurity::RunLimitMessage(p, {21, max_bytes + 1})
+                  .find("more than 20 pages,"),
+              std::string::npos);
+  }
+  for (TrustLevel trust : {TrustLevel::TRUSTED, TrustLevel::ADMIN}) {
+    SecurityPolicy p;
+    p.trust = trust;
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(
+                  p, {std::numeric_limits<int>::max(),
+                      std::numeric_limits<uint64_t>::max()}),
+              "");
+  }
+  // A lower limit, in its own words.
+  Script lower;
+  lower.security.max_navigations = 1;
+  lower.security.max_network_bytes = 1000;
+  const SecurityPolicy p = AutomationSecurity::EffectivePolicy(lower);
+  EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {1, 1000}), "");
+  EXPECT_NE(
+      AutomationSecurity::RunLimitMessage(p, {2, 0}).find("more than 1 page,"),
+      std::string::npos);
+  EXPECT_NE(AutomationSecurity::RunLimitMessage(p, {0, 1001})
+                .find("more than 1000 bytes,"),
+            std::string::npos);
+  // A policy that isn't a run's (no EffectivePolicy()) is held to the
+  // defaults, never to none.
+  SecurityPolicy raw;
+  raw.max_navigations = 0;
+  raw.max_network_bytes = -1;
+  EXPECT_EQ(AutomationSecurity::RunLimitMessage(raw, {20, max_bytes}), "");
+  EXPECT_FALSE(AutomationSecurity::RunLimitMessage(raw, {21, 0}).empty());
+  EXPECT_FALSE(
+      AutomationSecurity::RunLimitMessage(raw, {0, max_bytes + 1}).empty());
+}
+
 // A workflow a save brings in (an import, a copy, a page's save of one not
 // stored) believes nothing its JSON says about what it may do: the default
 // approvals and each limit within its default (a lower one kept), its sites

@@ -10,7 +10,8 @@
 // the same file; scrubbing plaintext secrets leaves no value on a step it
 // recognizes as secret, is idempotent and still loads; the effective policy
 // keeps the file's own whitelist and approvals, never drops a default
-// approval, bounds the runtime below TRUSTED and never adds a templated
+// approval, bounds the runtime, pages and bytes below TRUSTED (a run past
+// either of the last two stops; none at TRUSTED) and never adds a templated
 // host; trust is never raised by loading or saving (a new script starts
 // CASUAL with the default approvals, each limit within its default and any
 // schedule turned off; promotion never reaches ADMIN); a wait runs only a
@@ -33,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -311,7 +313,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const SecurityPolicy policy = AutomationSecurity::EffectivePolicy(*script);
   CHECK(!policy.require_approval_for.empty());
   // Never without a default approval, whatever the file lists; below
-  // TRUSTED, a runtime within the default.
+  // TRUSTED, each run limit within its default (the run time, the pages
+  // and the bytes), a run stopped one page or one byte past either of the
+  // last two; at TRUSTED and above, held to neither.
   for (const char* category : {"form_submit", "payment", "login"}) {
     CHECK(std::find(policy.require_approval_for.begin(),
                     policy.require_approval_for.end(),
@@ -319,8 +323,29 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         << "the effective policy dropped " << category;
   }
   if (policy.trust < TrustLevel::TRUSTED) {
+    const SecurityPolicy defaults;
     CHECK(policy.max_runtime_seconds > 0 &&
-          policy.max_runtime_seconds <= SecurityPolicy().max_runtime_seconds);
+          policy.max_runtime_seconds <= defaults.max_runtime_seconds);
+    CHECK(policy.max_navigations > 0 &&
+          policy.max_navigations <= defaults.max_navigations);
+    CHECK(policy.max_network_bytes > 0 &&
+          policy.max_network_bytes <= defaults.max_network_bytes);
+    // At its limits a run goes on; one page or one byte past either stops
+    // it.
+    const uint64_t max_bytes = static_cast<uint64_t>(policy.max_network_bytes);
+    CHECK(AutomationSecurity::RunLimitMessage(
+              policy, {policy.max_navigations, max_bytes})
+              .empty());
+    CHECK(!AutomationSecurity::RunLimitMessage(policy,
+                                               {policy.max_navigations + 1, 0})
+               .empty());
+    CHECK(!AutomationSecurity::RunLimitMessage(policy, {0, max_bytes + 1})
+               .empty());
+  } else {
+    CHECK(AutomationSecurity::RunLimitMessage(
+              policy, {std::numeric_limits<int>::max(),
+                       std::numeric_limits<uint64_t>::max()})
+              .empty());
   }
   // An unconfirmed draft is CASUAL whatever its file says.
   CHECK(policy.trust == (script->security.sites_unconfirmed

@@ -39,6 +39,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -83,6 +84,23 @@ inline constexpr char kDraftNeedsReviewMessage[] =
 inline constexpr char kChangedOutsideMessage[] =
     "This workflow's file was changed outside MoltBrowser. Review its steps, "
     "sites and schedule and confirm them in Agent mode before it can run.";
+
+// What a run's tab has used so far, against its policy's
+// max_navigations and max_network_bytes (AutomationSecurity::
+// RunLimitMessage()). The runner counts it (automation_runner.cc's
+// RunLimitObserver) from the run's start.
+struct RunUsage {
+  // Documents committed in the tab's primary main frame: a page opened,
+  // reloaded, or gone to by the page itself (a link, a redirect that
+  // commits, script). Never a same-document change (pushState, a
+  // fragment), a subframe's or a prerendered page's navigation.
+  int navigations = 0;
+  // Received from the network by the loads of the tab's documents (every
+  // frame), as each finished load reports it
+  // (blink::mojom::ResourceLoadInfo::total_received_bytes; a load from the
+  // cache received none). Saturates.
+  uint64_t network_bytes = 0;
+};
 
 class AutomationSecurity {
  public:
@@ -133,11 +151,24 @@ class AutomationSecurity {
   // (older / studio-saved scripts were stored with an empty whitelist),
   // require_approval_for never without {form_submit, payment, login} (a
   // stored list adds categories, never drops one), and below TRUSTED
-  // max_runtime_seconds at most the default (300 s). An unconfirmed draft
-  // (sites_unconfirmed) gets neither the widening nor its stored trust: its
-  // own whitelist (empty) at CASUAL. The runner refuses to run one at all;
+  // max_runtime_seconds, max_navigations and max_network_bytes each within
+  // (0, default] (300 s, 20 pages, 200 MB; a lower one is kept, anything
+  // else is the default). TRUSTED keeps its stored limits. An unconfirmed
+  // draft (sites_unconfirmed) gets neither the widening nor its stored
+  // trust: its own whitelist (empty) at CASUAL. The runner refuses to run one at all;
   // this keeps any other caller from reading it as allowed.
   static SecurityPolicy EffectivePolicy(const Script& script);
+
+  // Why a run under |policy| (its EffectivePolicy()) must stop, having used
+  // |usage|: it opened more than max_navigations pages, or its pages loaded
+  // more than max_network_bytes from the network (pages first). "" while it
+  // is within both, and always at TRUSTED and above: no page sets these
+  // limits, so a Trusted workflow that opens many pages keeps running, held
+  // only to its run time. A limit outside (0, default] is the default.
+  // Trusting a workflow (Approved) doesn't lift it, so the runner's stop
+  // isn't a needs-trust block.
+  static std::string RunLimitMessage(const SecurityPolicy& policy,
+                                     const RunUsage& usage);
 
   // The least a workflow brought in may require, whatever its file or a
   // page said: the default approvals (anything else listed is dropped; it

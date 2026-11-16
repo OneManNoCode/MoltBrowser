@@ -90,6 +90,19 @@ T WithinLimit(T value, T limit) {
   return value > 0 && value <= limit ? value : limit;
 }
 
+// Ends RunLimitMessage()'s words: only TRUSTED lifts a run's limits.
+constexpr char kRunLimitAdvice[] =
+    " Only workflows set to Trusted in molt://ai-automation have no such "
+    "limit.";
+
+// A positive byte limit as the user reads it: in whole MB from 1 MB (the
+// default is 200 MB), else in bytes.
+std::string DescribeBytes(int64_t bytes) {
+  constexpr int64_t kMB = 1024 * 1024;
+  return bytes >= kMB ? base::NumberToString(bytes / kMB) + " MB"
+                      : base::NumberToString(bytes) + " bytes";
+}
+
 bool Contains(const std::vector<std::string>& list, std::string_view item) {
   return std::find(list.begin(), list.end(), item) != list.end();
 }
@@ -445,14 +458,48 @@ SecurityPolicy AutomationSecurity::EffectivePolicy(const Script& script) {
     AddUnique(approvals, std::move(approval));
   }
   p.require_approval_for = std::move(approvals);
-  // Below TRUSTED, a run is at most as long as the default allows, whatever
-  // its file says (one imported before this build, or a legacy file); a
-  // shorter limit is kept.
+  // Below TRUSTED, a run is at most as long, opens at most as many pages and
+  // loads at most as much as the defaults allow, whatever its file says (one
+  // imported before this build, or a legacy file); a lower limit is kept.
+  // TRUSTED keeps its own (RunLimitMessage() holds it to none of the last
+  // two).
   if (p.trust < TrustLevel::TRUSTED) {
-    p.max_runtime_seconds = WithinLimit(p.max_runtime_seconds,
-                                        SecurityPolicy().max_runtime_seconds);
+    const SecurityPolicy defaults;
+    p.max_runtime_seconds =
+        WithinLimit(p.max_runtime_seconds, defaults.max_runtime_seconds);
+    p.max_navigations =
+        WithinLimit(p.max_navigations, defaults.max_navigations);
+    p.max_network_bytes =
+        WithinLimit(p.max_network_bytes, defaults.max_network_bytes);
   }
   return p;
+}
+
+// static
+std::string AutomationSecurity::RunLimitMessage(const SecurityPolicy& policy,
+                                                const RunUsage& usage) {
+  if (policy.trust >= TrustLevel::TRUSTED) {
+    return std::string();
+  }
+  // EffectivePolicy() already keeps both within (0, default] below TRUSTED;
+  // a policy that didn't come from it is held to the same.
+  const SecurityPolicy defaults;
+  const int max_navigations =
+      WithinLimit(policy.max_navigations, defaults.max_navigations);
+  const int64_t max_bytes =
+      WithinLimit(policy.max_network_bytes, defaults.max_network_bytes);
+  if (usage.navigations > max_navigations) {
+    return "Stopped: this run opened more than " +
+           base::NumberToString(max_navigations) +
+           (max_navigations == 1 ? " page" : " pages") +
+           ", the most this workflow may open in one run." + kRunLimitAdvice;
+  }
+  if (usage.network_bytes > static_cast<uint64_t>(max_bytes)) {
+    return "Stopped: this run's pages loaded more than " +
+           DescribeBytes(max_bytes) +
+           ", the most this workflow may load in one run." + kRunLimitAdvice;
+  }
+  return std::string();
 }
 
 // static

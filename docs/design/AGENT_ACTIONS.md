@@ -2884,7 +2884,11 @@ All in `molt_ai_unittests` except the last item:
   `{{variable}}`s given the run's values, http(s) and on the workflow's
   sites (never one left unresolved or a value that takes it elsewhere, at
   any trust for the former, nor a draft's, an unconfirmed change's or a
-  routine's).
+  routine's); below TRUSTED each run limit within its default (a lower one
+  kept, TRUSTED's own kept, a draft's bounded); a run stops one page or one
+  byte past a limit at CASUAL and APPROVED, never at TRUSTED or ADMIN; a
+  lower limit in its own words; a policy that isn't a run's held to the
+  defaults.
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
   when it is written (`CountIntervalFromNow()`).
@@ -3021,7 +3025,9 @@ All in `molt_ai_unittests` except the last item:
   target none, every address with a `{{variable}}` in it starts with one
   and it has no voice step, and then allows no step's address nor a run
   window page; an unconfirmed draft's effective trust is CASUAL (seed
-  `regress_unconfirmed_trust.molt`).
+  `regress_unconfirmed_trust.molt`); below TRUSTED each run limit is within
+  its default and a run one page or one byte past either of the last two
+  stops (none at TRUSTED and above).
 - `tools/webui_checks` smoke test: the badge, the banner, the review panel
   (schedule as text), a site tool's step titled by its tool with its site
   and its values in full (a cut said), each isolated, on its own row and
@@ -3213,16 +3219,68 @@ All in `molt_ai_unittests` except the last item:
     (`RoutineSitesConfirmed()`), so a changed routine is confirmed only
     with its sites (`VoiceRoutineStore::ConfirmSites()` refuses any changed
     routine anyway).
+- **Closed since** (the workflow-gaps-c change):
+  - below TRUSTED a run is held to its policy's `max_navigations` (default
+    20) and `max_network_bytes` (default 200 MB). `EffectivePolicy()`
+    keeps each within (0, default], as it does the run time: a lower
+    stored one is kept, anything else is the default. TRUSTED and ADMIN
+    keep their stored values and are held to neither: no page sets them,
+    and a long Trusted workflow (a loop over many pages) must not start
+    failing; they keep their run time. The runner's `RunLimitObserver`, a
+    `content::WebContentsObserver` on the run's tab, is made in `Run()`
+    after the refusals for any run below TRUSTED (in practice the run
+    window's runs; the chat's one-step actions run at TRUSTED and are
+    never counted). From the run's start it counts:
+    - each document the tab's primary main frame commits by a navigation
+      that started after the run did (`DidStartNavigation()`, then
+      `DidFinishNavigation()`: `IsInPrimaryMainFrame()`, `HasCommitted()`,
+      not `IsSameDocument()`). An error page, a reload, a redirect the page
+      commits and a bfcache restore count; a same-document change, a
+      subframe, a prerendered page and the run window's first page
+      (already loading when the run starts) don't;
+    - what each finished load of its documents, in any frame, received
+      from the network (`ResourceLoadComplete()`'s
+      `ResourceLoadInfo::total_received_bytes`: after TLS, headers
+      included, 0 from the cache), the first page's included. The figure
+      is the renderer's, added saturating.
+
+    `AutomationSecurity::RunLimitMessage()` decides. Past a limit the
+    observer posts the stop, once. Passed during a step (from its dispatch
+    until its result is being recorded, its retries included:
+    `step_in_progress_`), the run ends on that step (`BlockStep()`: no
+    retry; audit `step_blocked`, then `run_failed`). Passed between steps
+    (a step's result being saved, or the next step not started yet), the
+    run stops before the next step (`run_limit_stop_`, checked by
+    `ExecuteNextStep()`; audit `run_failed` only), and the step being
+    recorded keeps its own outcome, message and needs-trust mark. A limit
+    passed once every step is done, or while the last step's result is
+    being saved, doesn't fail the run, as for the run time. The message is
+    "Stopped: this run opened more than 20 pages, the most this workflow
+    may open in one run. Only workflows set to Trusted in
+    molt://ai-automation have no such limit." (or "Stopped: this run's
+    pages loaded more than 200 MB, the most this workflow may load in one
+    run. …"). It isn't a needs-trust block: Approved doesn't lift it, so
+    the studio offers no "Trust & re-run". A child run by `RUN_SCRIPT`
+    counts against its parent's limits.
 - **Existing gaps left as they are** (separate changes):
-  a run's limit is checked between steps; `max_navigations` and
-  `max_network_bytes` are stored but not enforced; workflows imported by
+  a run's limit is checked between steps; workflows imported by
   earlier builds keep their file's schedule switch; a hold is on this
   browser's clock (setting the clock back during one makes it last longer
   by the same amount); Skip next pressed in the few milliseconds between a
   timer's reload of a due workflow and its claim of that fire can skip
   that run as well as the next; the studio's review lists at most 20 sites (`cleanSites()`),
   while a confirmation needs exactly the sites the steps target, so a
-  change whose steps target more than 20 can't be confirmed in the studio.
+  change whose steps target more than 20 can't be confirmed in the studio;
+  the run limits count only what the run's tab reports as its loads
+  finish: a load still open (a stream, media still buffering) counts when
+  it ends, and a load cancelled before it finished (aborted by the page,
+  or cut off when the page navigated away), downloads, WebSockets, WebRTC,
+  a service or shared worker's own fetches, navigations that never commit
+  and pages the run's page opens in other windows aren't counted; the
+  bytes are the renderer's figures, so they bound a workflow that runs
+  away, not a compromised renderer; no page shows or sets the limits, and
+  Approved workflows can't raise them: only Trusted, which also lifts the
+  site rule, removes them (a per-workflow limit is a possible follow-up).
 - **The review lists the hosts of fixed addresses only**: an address with
   a `{{variable}}` after a fixed host
   (`https://shop.example/search?q={{q}}`) adds no site to the list
@@ -3304,6 +3362,17 @@ All in `molt_ai_unittests` except the last item:
 > **Snooze and Skip in molt://ai-automation now hold cron schedules too**,
 > and Snooze no longer pushes an interval a whole interval past the hour.
 > A hold applies to this copy of MoltBrowser only.
+>
+> **A workflow below Trusted stops after 20 pages or 200 MB in one run.**
+> A workflow that isn't set to Trusted now stops, on the step it is at,
+> once a run has opened more than 20 pages (each page opened, reloaded, or
+> reached by a link or a redirect; not a change within the same page, nor
+> the run window's first page) or its pages have loaded more than 200 MB.
+> Its result says which. A lower limit in its file is kept. Approving a
+> workflow doesn't lift these limits; only Trusted (in
+> molt://ai-automation) does. The limits don't count downloads, other
+> windows a page opens, live connections, or a load in progress or cut
+> off.
 
 ## 4. The AI chat's page actions
 

@@ -79,6 +79,10 @@ source_set("automation") {
     "//content/public/browser",
     "//mojo/public/cpp/bindings",
     "//skia",
+
+    # The run's network bytes (RunLimitObserver, automation_runner.cc):
+    # blink::mojom::ResourceLoadInfo.
+    "//third_party/blink/public/mojom:mojom_platform",
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/codec",
