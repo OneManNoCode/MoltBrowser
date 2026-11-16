@@ -25,7 +25,8 @@
 // character in a one-line field or a site tool's value, no default value),
 // clamped again is the same, its digest is what a reader of its saved file
 // computes, and it is confirmed with no site only when its steps target
-// none (not a routine taught by voice), still opening no page by itself;
+// none and every address with a {{variable}} in it starts with one (not a
+// routine taught by voice), still opening no page by itself;
 // an unconfirmed draft's effective trust is CASUAL, whatever its file says.
 
 #include <algorithm>
@@ -222,17 +223,25 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         }
       }
     }
-    // Confirmed with no site only when its steps target none and it isn't
-    // a routine taught by voice; then its whitelist is empty, so it opens
-    // no page by itself: no step's address is allowed (below TRUSTED), nor
-    // a run window's first page.
+    // Confirmed with no site only when its steps target none, every
+    // address with a {{variable}} in it starts with one (no fixed host
+    // before a value, which the review wouldn't show) and it isn't a
+    // routine taught by voice; then its whitelist is empty, so it opens no
+    // page by itself: no step's address is allowed (below TRUSTED), nor a
+    // run window's first page.
     {
       std::optional<Script> copy =
           Script::FromJSONString(clamped.ToJSONString());
       CHECK(copy);
+      const bool values_whole = std::none_of(
+          copy->steps.begin(), copy->steps.end(), [](const Step& step) {
+            const size_t value = step.target.find("{{");
+            return step.type == StepType::NAVIGATE &&
+                   value != std::string::npos && value != 0;
+          });
       const bool no_site =
           AutomationSecurity::HostsReferencedBy(copy->steps).empty() &&
-          !HasVoiceSteps(*copy);
+          values_whole && !HasVoiceSteps(*copy);
       CHECK(AutomationSecurity::MayConfirmWithoutSites(*copy) == no_site);
       CHECK(AutomationSecurity::ConfirmDraftSites(*copy, {}) == no_site);
       CHECK(copy->security.sites_unconfirmed == !no_site);

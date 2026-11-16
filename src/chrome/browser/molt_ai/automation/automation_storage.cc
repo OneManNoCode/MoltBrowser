@@ -225,16 +225,6 @@ std::string NameOf(const base::FilePath& path) {
   return path.BaseName().AsUTF8Unsafe();
 }
 
-// Whether |written| keeps |stored|'s schedule: its type, expression, time
-// zone and end (its last fire and hold aside). A save that does keeps the
-// schedule's hold (a Snooze, a Skip); any other ends it.
-bool SameSchedule(const Trigger& stored, const Trigger& written) {
-  return written.type == stored.type &&
-         written.expression == stored.expression &&
-         written.timezone == stored.timezone &&
-         written.until_unix == stored.until_unix;
-}
-
 // SaveChecked(): a save that keeps |stored|'s schedule never moves its last
 // fire back. An earlier nonzero one comes from a page opened before that
 // last fire (the Agent studio's editor, a molt://ai-automation card never
@@ -691,9 +681,11 @@ bool AutomationStorage::SaveChecked(Script script, SaveCheck check) {
     }
     // A page's save of the schedule as stored keeps its hold (a card or an
     // editor opened before a Snooze ends no Snooze); a schedule of its own
-    // starts over.
-    saved = SaveLocked(script,
-                       stored && SameSchedule(stored->trigger, script.trigger));
+    // starts over. So does one read from a file changed outside the
+    // browser: its schedule may not be the one the hold was made on.
+    saved =
+        SaveLocked(script, stored && !stored->security.changed_outside &&
+                               SameSchedule(stored->trigger, script.trigger));
   }
   if (saved)
     AppendAudit(id, "saved", "");
@@ -766,11 +758,15 @@ bool AutomationStorage::Update(const std::string& script_id,
     if (!script)
       return false;
     // The schedule as read: a change that keeps it (a trust change, a
-    // confirmation) keeps its hold; a new schedule starts over.
+    // page's save) keeps its hold; a new schedule starts over. So does
+    // one read from a file changed outside the browser, its confirmation
+    // included: its schedule may not be the one the hold was made on.
     const Trigger before = script->trigger;
+    const bool changed_outside = script->security.changed_outside;
     if (!change(*script) || script->id != id)
       return false;
-    saved = SaveLocked(*script, SameSchedule(before, script->trigger));
+    saved = SaveLocked(
+        *script, !changed_outside && SameSchedule(before, script->trigger));
   }
   if (saved)
     AppendAudit(id, "saved", "");

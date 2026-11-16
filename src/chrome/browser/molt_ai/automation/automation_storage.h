@@ -219,7 +219,9 @@ class AutomationStorage {
   // stored one, so the save forces no catch-up run; and it keeps the
   // schedule's hold (a Snooze, a Skip: HoldWith()). A later one, 0, or a
   // schedule of its own is written as it is, and a schedule of its own
-  // ends the hold.
+  // ends the hold, as does any save over a file changed outside the
+  // browser (SecurityPolicy::changed_outside: its schedule may not be the
+  // one the hold was made on).
   using SaveCheck =
       base::FunctionRef<bool(const Script* stored, Script& script)>;
   bool SaveChecked(Script script, SaveCheck check);
@@ -231,9 +233,11 @@ class AutomationStorage {
   // fails. |change| must not use a storage. |change| sees the script as a
   // read checked against the record gives it (above): what it saves of an
   // unvouched one stays an unconfirmed import. A change that keeps the
-  // schedule (a trust change, a confirmation) keeps its hold; one that
-  // changes it (the Agent studio's Schedule) ends it. Save() and SaveNew()
-  // always end it.
+  // schedule (a trust change, a page's save) keeps its hold; one that
+  // changes it (the Agent studio's Schedule) ends it, and so does any
+  // change of a file changed outside the browser, its confirmation
+  // included (its schedule may not be the one the hold was made on).
+  // Save() and SaveNew() always end it.
   using ScriptChange = base::FunctionRef<bool(Script& script)>;
   bool Update(const std::string& id, ScriptChange change);
 

@@ -246,6 +246,9 @@ source_set("unit_tests") {
     # The studio's and voice mode's saves on one sequence (TaskEnvironment).
     "//base/test:test_support",
 
+    # The next run a saved schedule is shown with (NextFireTime()).
+    "//chrome/browser/molt_ai/automation:scheduler",
+
     # The routines the studio's tests save (voice_routines.h, the grammar).
     "//chrome/browser/molt_ai/automation:storage",
 

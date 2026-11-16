@@ -565,9 +565,23 @@ bool AutomationSecurity::ConfirmDraftSites(
 
 // static
 bool AutomationSecurity::MayConfirmWithoutSites(const Script& script) {
-  return script.security.sites_unconfirmed && script.security.changed_outside &&
-         script.security.trust < TrustLevel::TRUSTED &&
-         !HasVoiceSteps(script) && HostsReferencedBy(script.steps).empty();
+  if (!script.security.sites_unconfirmed || !script.security.changed_outside ||
+      script.security.trust >= TrustLevel::TRUSTED || HasVoiceSteps(script) ||
+      !HostsReferencedBy(script.steps).empty()) {
+    return false;
+  }
+  // Every address with a value in it starts with one: the value gives the
+  // whole address, its site included. A fixed host with a value after it
+  // ("https://shop.example/?q={{q}}") is no site HostsReferencedBy() lists,
+  // so the review, which would list none, wouldn't show it.
+  for (const Step& step : script.steps) {
+    if (step.type == StepType::NAVIGATE &&
+        step.target.find("{{") != std::string::npos &&
+        !step.target.starts_with("{{")) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // static

@@ -86,7 +86,8 @@ struct Answer {
   bool routines_changed = false;
   // runWorkflow: the workflow to run.
   std::optional<automation::Script> script;
-  // saveSchedule: the trigger saved.
+  // saveSchedule: the trigger saved, with the hold it kept (the same
+  // schedule as stored) for its next run.
   std::optional<automation::Trigger> trigger;
 };
 

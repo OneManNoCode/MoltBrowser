@@ -123,7 +123,8 @@ base::DictValue PromoteTrust(const std::string& id,
 // by voice or a workflow that isn't there ("script not found"), an
 // unconfirmed draft (reviewed in Agent mode first, as for PromoteTrust()),
 // a workflow that isn't on a cron or interval schedule, and an interval
-// never started (only Save schedule starts it).
+// never started (only Save schedule starts it). The audit log says
+// "snoozed", "until=<unix time>".
 base::DictValue Snooze(const std::string& id,
                        int seconds,
                        int64_t now_unix,
@@ -134,6 +135,7 @@ base::DictValue Snooze(const std::string& id,
 // happen; the one after it does. A hold just past that run, as Snooze()
 // sets one (after a hold already there: a second Skip skips the run after),
 // with the same refusals, and "No upcoming run to skip" when there is none.
+// The audit log says "run_skipped", "until=<unix time>".
 base::DictValue SkipNext(const std::string& id,
                          base::Time now,
                          automation::AutomationStorage& storage);

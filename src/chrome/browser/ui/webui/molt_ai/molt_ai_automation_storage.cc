@@ -72,12 +72,15 @@ std::optional<std::string> HoldRefused(const Script& script) {
 // The hold |until| gives for workflow |id| as stored (or, in |error|, why
 // none), set under the directory's lock (AutomationStorage::HoldWith()),
 // and the page's answer: {success, held_until_unix, next_fire_unix?} (its
-// next run after |now|, the hold counted), or {success: false, error}.
+// next run after |now|, the hold counted), or {success: false, error}. A
+// hold set is in the audit log as |audit_event|, "until=<unix time>", so a
+// run that doesn't happen because of one is explained there.
 using HoldUntil =
     base::FunctionRef<std::optional<int64_t>(const Script&, std::string&)>;
 base::DictValue HoldAnswer(const std::string& id,
                            base::Time now,
                            AutomationStorage& storage,
+                           const char* audit_event,
                            HoldUntil until) {
   std::string error = kScriptNotFound;
   Trigger trigger;
@@ -99,6 +102,7 @@ base::DictValue HoldAnswer(const std::string& id,
   if (!held) {
     return Failed(error);
   }
+  storage.AppendAudit(id, audit_event, "until=" + base::NumberToString(*held));
   trigger.held_until_unix = *held;
   base::DictValue result;
   result.Set("success", true);
@@ -302,7 +306,7 @@ base::DictValue Snooze(const std::string& id,
                        int seconds,
                        int64_t now_unix,
                        AutomationStorage& storage) {
-  return HoldAnswer(id, base::Time::FromTimeT(now_unix), storage,
+  return HoldAnswer(id, base::Time::FromTimeT(now_unix), storage, "snoozed",
                     [now_unix, seconds](const Script&, std::string&) {
                       return std::optional<int64_t>(now_unix + seconds);
                     });
@@ -329,7 +333,7 @@ base::DictValue SkipNext(const std::string& id,
     // Held just past it: the run after it is the next.
     return static_cast<int64_t>(next.ToTimeT()) + 1;
   };
-  return HoldAnswer(id, now, storage, past_next_run);
+  return HoldAnswer(id, now, storage, "run_skipped", past_next_run);
 }
 
 }  // namespace automation_page

@@ -36,6 +36,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
@@ -878,6 +879,53 @@ TEST_F(AgentStudioStorageTest, AScheduleIsAnsweredAsSaved) {
   EXPECT_EQ(*trigger->FindString("type"), "cron");
   EXPECT_EQ(*trigger->FindString("expression"), "00 09 * * *");
   EXPECT_FALSE(trigger->FindDouble("last_fired_unix"));
+}
+
+// saveSchedule of the schedule as stored keeps its hold (a Snooze or a Skip
+// made in molt://ai-automation) and answers with it, so the next run the
+// studio shows (AutomationScheduler::NextFireTime(), as OnScheduleSaved()
+// counts it) is the first at or after the hold, as molt://ai-automation
+// shows it. The hold isn't in the answer's dict, as in no file. A new
+// schedule ends it and is answered with none.
+TEST_F(AgentStudioStorageTest, AScheduleSavedAgainIsAnsweredWithItsHold) {
+  UseRecord();
+  Script daily = Workflow("wf_1", "Prices");
+  daily.trigger.type = automation::TriggerType::CRON;
+  daily.trigger.expression = "0 9 * * *";
+  ASSERT_TRUE(Shared().Save(daily));
+  const int64_t now = base::Time::Now().ToTimeT();
+  // Two days: a daily schedule's next run without it is a day away at most.
+  const int64_t held = now + 2 * 86400;
+  ASSERT_EQ(Shared().HoldWith(
+                "wf_1",
+                [held](const Script&) { return std::optional<int64_t>(held); }),
+            held);
+  WorkflowRequest schedule = Request(Kind::kSchedule, "wf_1");
+  schedule.trigger.type = automation::TriggerType::CRON;
+  schedule.trigger.expression = "0 9 * * *";
+  Answer same = Ask(schedule);
+  EXPECT_EQ(same.out.FindBool("ok"), true);
+  ASSERT_TRUE(same.trigger);
+  EXPECT_EQ(same.trigger->held_until_unix, held);
+  EXPECT_GE(automation::AutomationScheduler::NextFireTime(
+                *same.trigger, base::Time::FromTimeT(now))
+                .ToTimeT(),
+            held);
+  const base::DictValue* dict = same.out.FindDict("trigger");
+  ASSERT_TRUE(dict);
+  EXPECT_FALSE(dict->Find("held_until_unix"));
+  EXPECT_EQ(Shared().Load("wf_1")->trigger.held_until_unix, held);
+  // A new schedule: the hold ends, and none is answered.
+  schedule.trigger.expression = "0 10 * * *";
+  Answer changed = Ask(schedule);
+  EXPECT_EQ(changed.out.FindBool("ok"), true);
+  ASSERT_TRUE(changed.trigger);
+  EXPECT_EQ(changed.trigger->held_until_unix, 0);
+  EXPECT_LT(automation::AutomationScheduler::NextFireTime(
+                *changed.trigger, base::Time::FromTimeT(now))
+                .ToTimeT(),
+            held);
+  EXPECT_EQ(Shared().Load("wf_1")->trigger.held_until_unix, 0);
 }
 
 // A workflow this browser fired, changed outside (its schedule too), then

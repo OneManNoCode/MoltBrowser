@@ -205,7 +205,9 @@ class WorkflowRecord {
   void Set(const std::string& name, std::string digest, int64_t fired);
   // Set(), keeping |name|'s hold: a write that keeps the schedule (same
   // type, expression, time zone and end: AutomationStorage::SaveChecked()
-  // and Update()), so a page's save or a trust change ends no Snooze.
+  // and Update()), so a page's save or a trust change ends no Snooze. Never
+  // a write over a file changed outside the browser: its schedule may not
+  // be the one held.
   void SetKeepingHold(const std::string& name,
                       std::string digest,
                       int64_t fired);

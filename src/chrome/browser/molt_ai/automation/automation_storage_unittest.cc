@@ -1309,6 +1309,64 @@ TEST_F(AutomationStorageRecordTest, OnlyASaveOfTheSameScheduleKeepsAHold) {
   EXPECT_EQ(held(), 0);
 }
 
+// A hold is made on the schedule this browser wrote. A file changed outside
+// the browser may have another (another program, or another browser that
+// shares the folder): any write of it ends the hold, though the schedule it
+// writes is the one read. Its confirmation in the Agent studio (which starts
+// its schedule over) and a page's save of it as a draft both end it.
+TEST_F(AutomationStorageRecordTest, AFileChangedOutsideKeepsNoHold) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 600));
+  auto hold = [this, now] {
+    return storage().HoldWith("wf_1", [now](const Script&) {
+      return std::optional<int64_t>(now + 3600);
+    });
+  };
+  auto held = [this] { return Load("wf_1")->trigger.held_until_unix; };
+  auto any = [](const Script* stored, Script&) { return stored != nullptr; };
+  // Changed outside to every half hour: read as a draft, the hold still
+  // in the record.
+  ASSERT_EQ(hold(), now + 3600);
+  EditRaw("wf_1", [](base::DictValue& d) {
+    d.FindDict("trigger")->Set("expression", "1800");
+  });
+  std::optional<Script> draft = Load("wf_1");
+  ASSERT_TRUE(draft);
+  EXPECT_TRUE(IsClamped(*draft));
+  EXPECT_EQ(draft->trigger.held_until_unix, now + 3600);
+  // Confirmed, the schedule read kept: the hold ends.
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    return AutomationSecurity::ConfirmDraftSites(script, {"news.example"});
+  }));
+  std::optional<Script> confirmed = Load("wf_1");
+  ASSERT_TRUE(confirmed);
+  EXPECT_FALSE(confirmed->security.changed_outside);
+  EXPECT_EQ(confirmed->trigger.expression, "1800");
+  EXPECT_EQ(confirmed->trigger.held_until_unix, 0);
+  // Changed outside again, its schedule kept: a page's save of the draft
+  // as read ends the hold too.
+  ASSERT_EQ(hold(), now + 3600);
+  EditRaw("wf_1", [](base::DictValue& d) { d.Set("name", "Prices, changed"); });
+  std::optional<Script> changed = Load("wf_1");
+  ASSERT_TRUE(changed);
+  ASSERT_TRUE(changed->security.changed_outside);
+  EXPECT_EQ(changed->trigger.expression, "1800");
+  EXPECT_EQ(changed->trigger.held_until_unix, now + 3600);
+  ASSERT_TRUE(storage().SaveChecked(std::move(*changed), any));
+  EXPECT_EQ(Load("wf_1")->name, "Prices, changed");
+  EXPECT_EQ(held(), 0);
+  // Saved here as a draft, it is still one: any other change of it keeps
+  // no hold either.
+  ASSERT_EQ(hold(), now + 3600);
+  ASSERT_TRUE(Load("wf_1")->security.changed_outside);
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    script.default_variables["q"] = "news";
+    return true;
+  }));
+  EXPECT_EQ(held(), 0);
+}
+
 // The scheduler's claim is refused before the hold (a Snooze or a Skip made
 // since it read the workflow wins) and leaves the last fire, here and in
 // the file; one at the hold is claimed, and ends it.

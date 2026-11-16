@@ -200,9 +200,14 @@ class AutomationSecurity {
   // (ConfirmDraftSites() with an empty list): its file was changed outside
   // the browser (sites_unconfirmed and changed_outside), its trust is below
   // TRUSTED, it isn't a routine taught by voice (voice mode acts on the
-  // tab in front of the user), and its steps target no site
-  // (HostsReferencedBy() is empty: every address they open has a
-  // {{variable}} in it, or none opens a page). Confirmed, its whitelist is
+  // tab in front of the user), and its steps target no site: every address
+  // they open starts with a {{variable}} (the value gives the whole
+  // address, its site included), or none opens a page (HostsReferencedBy()
+  // is empty, and no NAVIGATE target has a {{ anywhere but at its start).
+  // A fixed host with a value after it ("https://shop.example/?q={{q}}") is
+  // no site HostsReferencedBy() lists, so the review, which would list
+  // none, wouldn't show it: such a change isn't confirmed with none (nor
+  // with sites: it has none to confirm). Confirmed, its whitelist is
   // empty, so it opens and acts on no page by itself (AllowNavigation()
   // matches no host below TRUSTED) until a step opens a fixed address on a
   // site or the user sets it Trusted in molt://ai-automation; a run of

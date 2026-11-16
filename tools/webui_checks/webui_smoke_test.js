@@ -2189,7 +2189,10 @@ const PAGES = [
      assert(/opens and acts on no page by itself/.test(noSitePanel().textContent),
             'says it acts on no page by itself');
      assert(noSitePanel().textContent.includes(
-         'If another workflow runs it with a “Run workflow” step, its steps run ' +
+         'Every address its steps open starts with a value ({{…}}), which gives ' +
+         'its site, so it has no site to confirm.'), 'says why it has no site');
+     assert(noSitePanel().textContent.includes(
+         'If another workflow runs it as one of its steps, its steps run ' +
          'on that workflow’s sites and trust.'), 'says how another workflow runs it');
      assert.strictEqual(noSitePanel().querySelectorAll('.draft-site').length, 0,
                         'no site listed');

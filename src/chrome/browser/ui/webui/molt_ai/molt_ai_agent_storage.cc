@@ -271,12 +271,21 @@ Answer OnFound(const WorkflowRequest& request,
         if (HasVoiceSteps(stored)) {
           return false;
         }
+        const automation::Trigger before = stored.trigger;
         stored.trigger = request.trigger;
         automation::CountIntervalFromNow(stored.trigger,
                                          base::Time::Now().ToTimeT());
         stored.enabled =
             request.trigger.type != automation::TriggerType::MANUAL;
         trigger = stored.trigger;
+        // The same schedule keeps its hold (a Snooze or a Skip made in
+        // molt://ai-automation: AutomationStorage::Update()), which the
+        // answer carries, so the next run shown honours it; a new one ends
+        // it.
+        if (!stored.security.changed_outside &&
+            automation::SameSchedule(before, trigger)) {
+          trigger.held_until_unix = before.held_until_unix;
+        }
         return true;
       });
       if (draft) {

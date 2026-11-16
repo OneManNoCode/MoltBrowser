@@ -20,6 +20,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
@@ -504,6 +505,30 @@ std::optional<int64_t> TimeIn(const base::DictValue& answer,
   return static_cast<int64_t>(*value);
 }
 
+// The holds the audit log has for workflow |id|, oldest first, each as
+// "<event> | until=<unix time>".
+std::vector<std::string> HoldsLogged(const std::string& id,
+                                     AutomationStorage& storage) {
+  std::vector<std::string> out;
+  const std::string of_id = " | " + id + " | ";
+  for (const std::string& line : AuditTail(200, storage)) {
+    const size_t at = line.find(of_id);
+    if (at == std::string::npos) {
+      continue;
+    }
+    std::string rest = line.substr(at + of_id.size());
+    if (rest.starts_with("snoozed | ") || rest.starts_with("run_skipped | ")) {
+      out.push_back(std::move(rest));
+    }
+  }
+  return out;
+}
+
+// "<event> | until=<held>", as HoldsLogged() gives it.
+std::string HoldLine(const std::string& event, int64_t held) {
+  return event + " | until=" + base::NumberToString(held);
+}
+
 // A page never moves a stored last fire later (a fire time far ahead would
 // stall the schedule; Snooze and Skip are holds of their own), whichever
 // save it is; an earlier one is left to the storage, which keeps the
@@ -541,7 +566,8 @@ TEST_F(AutomationPageStorageTest, APageCannotMoveTheLastFireLater) {
 
 // Snooze holds the schedule in this browser's record, from now for the
 // seconds given: the file isn't written (still vouched for, as it was), and
-// the answer says until when and the next run after it.
+// the answer says until when and the next run after it. Each hold set is in
+// the audit log ("snoozed", until when).
 TEST_F(AutomationPageStorageTest, SnoozeHoldsWithoutWritingTheFile) {
   UseRecord();
   // Every five minutes (in any time zone); kNow is on one.
@@ -567,12 +593,19 @@ TEST_F(AutomationPageStorageTest, SnoozeHoldsWithoutWritingTheFile) {
   EXPECT_EQ(interval.FindBool("success"), true);
   EXPECT_EQ(TimeIn(interval, "held_until_unix"), kNow + 3600);
   EXPECT_EQ(TimeIn(interval, "next_fire_unix"), kNow - 600 + 5 * 900);
+  // The shorter one logged as the hold it left.
+  EXPECT_EQ(HoldsLogged("wf_1", storage()),
+            (std::vector<std::string>{HoldLine("snoozed", kNow + 3600),
+                                      HoldLine("snoozed", kNow + 3600)}));
+  EXPECT_EQ(HoldsLogged("wf_2", storage()),
+            std::vector<std::string>{HoldLine("snoozed", kNow + 3600)});
 }
 
 // Skip next holds just past the first run after now, so the run after it is
 // next; a second Skip skips that one too. An interval keeps its phase, and
 // an overdue one (its times passed while it was off) skips its next time
-// to come, not the one already passed.
+// to come, not the one already passed. Each Skip is in the audit log
+// ("run_skipped", until when); one with nothing to skip isn't.
 TEST_F(AutomationPageStorageTest, SkipNextHoldsPastTheNextRunOnly) {
   UseRecord();
   const base::Time now = base::Time::FromTimeT(kNow);
@@ -607,12 +640,21 @@ TEST_F(AutomationPageStorageTest, SkipNextHoldsPastTheNextRunOnly) {
   EXPECT_EQ(none.FindBool("success"), false);
   EXPECT_EQ(*none.FindString("error"), "No upcoming run to skip");
   EXPECT_EQ(storage().Load("wf_ended")->trigger.held_until_unix, 0);
+  EXPECT_EQ(
+      HoldsLogged("wf_cron", storage()),
+      (std::vector<std::string>{HoldLine("run_skipped", kNow + 300 + 1),
+                                HoldLine("run_skipped", kNow + 600 + 1)}));
+  EXPECT_EQ(HoldsLogged("wf_interval", storage()),
+            std::vector<std::string>{HoldLine("run_skipped", kNow + 800 + 1)});
+  EXPECT_EQ(HoldsLogged("wf_overdue", storage()),
+            std::vector<std::string>{HoldLine("run_skipped", kNow + 700 + 1)});
+  EXPECT_TRUE(HoldsLogged("wf_ended", storage()).empty());
 }
 
 // Snooze and Skip refuse what this page doesn't hold: a routine taught by
 // voice or a workflow that isn't there, an unconfirmed draft (in the words
 // PromoteTrust uses), a workflow that doesn't repeat, and an interval never
-// started (only Save schedule starts it). Nothing is held.
+// started (only Save schedule starts it). Nothing is held or logged.
 TEST_F(AutomationPageStorageTest, SnoozeAndSkipRefuseWhatTheyCantHold) {
   UseRecord();
   const base::Time now = base::Time::FromTimeT(kNow);
@@ -629,6 +671,7 @@ TEST_F(AutomationPageStorageTest, SnoozeAndSkipRefuseWhatTheyCantHold) {
     if (std::optional<Script> stored = storage().Load(id)) {
       EXPECT_EQ(stored->trigger.held_until_unix, 0) << id;
     }
+    EXPECT_TRUE(HoldsLogged(id, storage()).empty()) << id;
     return snooze_error ? *snooze_error : std::string();
   };
   EXPECT_EQ(refusals("gone"), "script not found");

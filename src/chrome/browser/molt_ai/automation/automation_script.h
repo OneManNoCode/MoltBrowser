@@ -188,16 +188,26 @@ struct SecurityPolicy {
   // didn't match what the browser last saved under its name
   // (workflow_record.h), so it was loaded as an unconfirmed import
   // (AutomationSecurity::ClampUnvouched(), with |sites_unconfirmed|). Read
-  // by: the words the user is shown (AutomationSecurity::ReviewMessage(),
-  // the Agent studio's review); voice mode, which refuses to confirm such a
-  // routine (only the Agent studio does, with its review token) and
-  // describes its steps as it runs them when it claims one
-  // (voice_routine_store.cc); the scheduler, which holds it for review (a
-  // due time that passes meanwhile isn't caught up later,
-  // automation_scheduler.cc); and
-  // AutomationSecurity::MayConfirmWithoutSites(), which lets one whose
-  // steps target no site be confirmed with none. ConfirmDraftSites() clears
-  // it, saving keeps it. Stored only when true (an older build ignores it).
+  // by, among others (search for changed_outside):
+  //   - the words the user is shown: AutomationSecurity::ReviewMessage(),
+  //     the Agent studio's review, and molt://ai-automation's refusals
+  //     (PromoteTrust()'s message, Snooze and Skip:
+  //     molt_ai_automation_storage.cc);
+  //   - voice mode, which refuses to run such a routine (ReadRoutine(),
+  //     voice_routines.cc) or to confirm it (only the Agent studio does,
+  //     with its review token), and describes its steps as it runs them
+  //     when it claims one (voice_routine_store.cc);
+  //   - the scheduler, which holds it for review (a due time that passes
+  //     meanwhile isn't caught up later, automation_scheduler.cc);
+  //   - the audit log's reason for a refused run: the runner's run_refused
+  //     (automation_runner.cc) and the scheduler service's RefusalReason()
+  //     (automation_scheduler_service.cc);
+  //   - AutomationStorage::SaveChecked() and Update(), which keep no hold
+  //     (a Snooze, a Skip) through a save of it;
+  //   - AutomationSecurity::MayConfirmWithoutSites(), which lets one whose
+  //     steps target no site be confirmed with none.
+  // ConfirmDraftSites() clears it, saving keeps it. Stored only when true
+  // (an older build ignores it).
   bool changed_outside = false;
 };
 
@@ -318,6 +328,12 @@ base::DictValue TriggerToDict(const Trigger& t);
 // A trigger that runs its workflow by itself (a cron, an interval, a
 // one-shot time); a manual one, or a browser event, never does.
 bool FiresByItself(const Trigger& trigger);
+
+// Whether |written| keeps |stored|'s schedule: its type, expression, time
+// zone and end (its last fire and hold aside). A save that does keeps the
+// schedule's hold (a Snooze, a Skip: AutomationStorage::SaveChecked() and
+// Update()); any other ends it.
+bool SameSchedule(const Trigger& stored, const Trigger& written);
 
 // The shortest interval any schedule runs at, whatever its expression
 // says: each fire opens a run window and shows a notification, and the
