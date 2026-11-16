@@ -9,9 +9,12 @@
 // reload comes, nor one its timer's reload finds snoozed since. It fires
 // on this browser's own last fire only: a last fire written into the file
 // outside (another browser's run or Snooze, or a forged one, earlier or
-// later) changes nothing, a Snooze saved here holds (a stale page's save
-// doesn't end it), a restart keeps the recorded fire, and a schedule saved
-// afresh starts over. Each fire is claimed in the record before it runs,
+// later) changes nothing, a Snooze or a Skip made here (a hold in the
+// record) holds cron and interval schedules alike until its time, then
+// gives their first time at or after it (an interval's phase kept; times it
+// covered not caught up; a stale page's save doesn't end it), a restart
+// keeps the recorded fire, and a schedule saved afresh starts over. Each
+// fire is claimed in the record before it runs,
 // so two profiles' schedulers over the folder run a due workflow once; a
 // workflow held for review, or missing (moved away, set aside across a
 // restart, not parsing, gone at its timer's reload), across its time, then
@@ -169,6 +172,46 @@ TEST(AutomationSchedulerNextFireTest, AnIntervalUnderAMinuteRunsOnceAMinute) {
             last + base::Seconds(90));
 }
 
+// A held trigger's next fire is its first time at or after the hold: a
+// cron's first match, an interval's first whole interval after its last
+// fire (its phase kept). A hold already over changes nothing.
+TEST(AutomationSchedulerNextFireTest, AHoldGivesTheFirstTimeAtOrAfterIt) {
+  const base::Time now = base::Time::FromTimeT(kStart);
+  // Every five minutes (in any time zone); kStart is on one.
+  Trigger cron;
+  cron.type = TriggerType::CRON;
+  cron.expression = "*/5 * * * *";
+  const auto next_fire = [&now](const Trigger& trigger, int64_t held) {
+    Trigger held_trigger = trigger;
+    held_trigger.held_until_unix = held;
+    return AutomationScheduler::NextFireTime(held_trigger, now);
+  };
+  EXPECT_EQ(next_fire(cron, 0), base::Time::FromTimeT(kStart + 300));
+  EXPECT_EQ(next_fire(cron, kStart - 1), base::Time::FromTimeT(kStart + 300));
+  EXPECT_EQ(next_fire(cron, kStart + 1), base::Time::FromTimeT(kStart + 300));
+  EXPECT_EQ(next_fire(cron, kStart + 301), base::Time::FromTimeT(kStart + 600));
+  EXPECT_EQ(next_fire(cron, kStart + 600), base::Time::FromTimeT(kStart + 600));
+  EXPECT_EQ(next_fire(cron, kStart + 601), base::Time::FromTimeT(kStart + 900));
+  // Every 15 minutes, last fired at kStart.
+  Trigger interval;
+  interval.type = TriggerType::INTERVAL;
+  interval.expression = "900";
+  interval.last_fired_unix = kStart;
+  EXPECT_EQ(next_fire(interval, 0), base::Time::FromTimeT(kStart + 900));
+  EXPECT_EQ(next_fire(interval, kStart + 500),
+            base::Time::FromTimeT(kStart + 900));
+  EXPECT_EQ(next_fire(interval, kStart + 901),
+            base::Time::FromTimeT(kStart + 1800));
+  EXPECT_EQ(next_fire(interval, kStart + 1800),
+            base::Time::FromTimeT(kStart + 1800));
+  EXPECT_EQ(next_fire(interval, kStart + 3600 + 600),
+            base::Time::FromTimeT(kStart + 4500));
+  // Under a minute, it is counted as one (kMinIntervalSeconds).
+  interval.expression = "10";
+  EXPECT_EQ(next_fire(interval, kStart + 61),
+            base::Time::FromTimeT(kStart + 120));
+}
+
 // A 10 s interval last fired 30 s ago isn't overdue (it would be at 10 s):
 // it fires a minute after that fire, and then once a minute.
 TEST_F(AutomationSchedulerTest, AnIntervalUnderAMinuteFiresOnceAMinute) {
@@ -237,9 +280,10 @@ TEST_F(AutomationSchedulerTest, ATimerReloadThatFindsAChangeDoesNotFire) {
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_b"});
 }
 
-// A timer's reload that finds the workflow snoozed here since its last
-// listing (molt://ai-automation's Snooze writes a last fire still to come)
-// doesn't fire it; an interval after the snoozed time, it fires.
+// A timer's reload that finds a later last fire recorded here since its
+// last listing (a browser write of one: what molt://ai-automation's Snooze
+// wrote before it became a hold, ASnoozedCronDoesNotFireAtItsTime) doesn't
+// fire it; an interval after that time, it fires.
 TEST_F(AutomationSchedulerTest,
        ATimerReloadOfAWorkflowSnoozedSinceDoesNotFire) {
   const int64_t now = Unix(base::Time::Now());
@@ -249,8 +293,8 @@ TEST_F(AutomationSchedulerTest,
   Tick();
   task_environment_.FastForwardBy(base::Seconds(65));
   EXPECT_TRUE(fired_.empty());
-  // Snoozed here for an hour, after the heartbeat's listing at 60 s and
-  // before the timer: next due at 65 + 3600 + 90 s.
+  // Its last fire set an hour ahead, after the heartbeat's listing at 60 s
+  // and before the timer: next due at 65 + 3600 + 90 s.
   ASSERT_TRUE(storage_->Update("wf_1", [now](Script& script) {
     script.trigger.last_fired_unix = now + 65 + 3600;
     return true;
@@ -332,9 +376,10 @@ TEST_F(AutomationSchedulerTest,
 }
 
 // Another browser on the same folder ran the workflow and then snoozed it
-// there (its last fire an hour ahead in the file): this browser runs the
-// catch-up its own last fire calls for at once, and its next run an
-// interval after that.
+// there (an older build's Snooze: its last fire an hour ahead in the file;
+// this version's is a hold in that browser's record, never in the file):
+// this browser runs the catch-up its own last fire calls for at once, and
+// its next run an interval after that.
 TEST_F(AutomationSchedulerTest, AnotherBrowsersRunAndSnoozeDoNotHoldThisOne) {
   const int64_t saved = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
@@ -354,25 +399,120 @@ TEST_F(AutomationSchedulerTest, AnotherBrowsersRunAndSnoozeDoNotHoldThisOne) {
   EXPECT_EQ(fired_.size(), 2u);
 }
 
-// A Snooze saved here (a browser write: the record takes its later last
-// fire) holds the schedule for the whole snooze, and the workflow runs an
-// interval after the snoozed time.
+// A Snooze made here (a hold in the record) holds the schedule for the
+// whole snooze, and the workflow then runs at its own next time (whole
+// intervals after its last fire), not an interval after the snooze ends.
 TEST_F(AutomationSchedulerTest, ASnoozeSavedHereHolds) {
   const int64_t saved = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 900, 0)));
   ASSERT_TRUE(storage_->RecordFire("wf_1", saved));
   task_environment_.FastForwardBy(base::Minutes(10));
   const int64_t snoozed = Unix(base::Time::Now()) + 3600;
-  ASSERT_TRUE(storage_->Update("wf_1", [snoozed](Script& script) {
-    script.trigger.last_fired_unix = snoozed;
-    return true;
-  }));
+  ASSERT_EQ(storage_->HoldWith("wf_1",
+                               [snoozed](const Script&) {
+                                 return std::optional<int64_t>(snoozed);
+                               }),
+            snoozed);
   scheduler_.Start();
   Tick();
-  task_environment_.FastForwardBy(base::Minutes(60 + 14));
+  // Its times at 15, 30, 45 and 60 min are held; it runs at 75.
+  task_environment_.FastForwardBy(base::Minutes(64));
   EXPECT_TRUE(fired_.empty());
   task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.held_until_unix, 0);
+}
+
+// molt://ai-automation's Snooze of a cron workflow, made after its last
+// listing and before its timer: the timer's reload finds it held and
+// doesn't fire it (nor would the record let that fire be claimed). It
+// fires at its first time at or after the hold, which that fire ends, and
+// then on its times again.
+TEST_F(AutomationSchedulerTest, ASnoozedCronDoesNotFireAtItsTime) {
+  // Every five minutes (in any time zone), last fired here at the start.
+  Script cron = Interval("wf_1", 3600, 0);
+  cron.trigger.type = TriggerType::CRON;
+  cron.trigger.expression = "*/5 * * * *";
+  ASSERT_TRUE(storage_->Save(cron));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", kStart));
+  // Started half a minute in, so no heartbeat lists at 5 min.
+  task_environment_.FastForwardBy(base::Seconds(30));
+  scheduler_.Start();
+  Tick();
+  // At 4:45, after the heartbeat's listing at 4:30 (its timer armed for
+  // 5:00), snoozed for an hour: until 64:45.
+  task_environment_.FastForwardBy(base::Seconds(255));
+  const int64_t until = Unix(base::Time::Now()) + 3600;
+  ASSERT_EQ(until, kStart + 3885);
+  ASSERT_EQ(storage_->HoldWith("wf_1",
+                               [until](const Script&) {
+                                 return std::optional<int64_t>(until);
+                               }),
+            until);
+  task_environment_.FastForwardBy(base::Seconds(16));
+  EXPECT_TRUE(fired_.empty());
+  // Nothing at 10, 15, ... 60 min; its first time after the hold is 65:00.
+  task_environment_.FastForwardBy(base::Minutes(59) + base::Seconds(58));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  std::optional<Script> loaded = storage_->Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, kStart + 3900);
+  EXPECT_EQ(loaded->trigger.held_until_unix, 0);
+  task_environment_.FastForwardBy(base::Minutes(5));
+  EXPECT_EQ(fired_.size(), 2u);
+}
+
+// molt://ai-automation's Skip of an interval's next time (held just past
+// it): that time doesn't run, the one after it does, an interval later
+// (its phase kept), and so on.
+TEST_F(AutomationSchedulerTest, ASkippedIntervalKeepsItsPhase) {
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 900, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", kStart));
+  scheduler_.Start();
+  Tick();
+  // At 2 min, its time at 15 min skipped.
+  task_environment_.FastForwardBy(base::Minutes(2));
+  ASSERT_EQ(storage_->HoldWith("wf_1",
+                               [](const Script&) {
+                                 return std::optional<int64_t>(kStart + 901);
+                               }),
+            kStart + 901);
+  task_environment_.FastForwardBy(base::Minutes(27) + base::Seconds(59));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, kStart + 1800);
+  task_environment_.FastForwardBy(base::Minutes(15));
+  EXPECT_EQ(fired_.size(), 2u);
+}
+
+// A Skip of an interval that is overdue (its times passed while it was
+// turned off, say) holds past its first time after now, as
+// molt://ai-automation's Skip sets it (automation_page::SkipNext()), not
+// the time already passed: the times the hold covers aren't caught up, the
+// next one doesn't run, and it runs at the one after.
+TEST_F(AutomationSchedulerTest, ASkipOfAnOverdueIntervalHoldsPastItsNextTime) {
+  // Hourly, last fired 2h10 ago: due 1h10 ago, 10 min ago, and at 50 min.
+  const int64_t last = kStart - 7800;
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", last));
+  ASSERT_EQ(storage_->HoldWith("wf_1",
+                               [](const Script&) {
+                                 return std::optional<int64_t>(kStart + 3001);
+                               }),
+            kStart + 3001);
+  scheduler_.Start();
+  Tick();
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(51));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(58));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, kStart + 6600);
 }
 
 // A restart keeps the recorded fire: a daily workflow of a browser
@@ -638,8 +778,9 @@ TEST_F(AutomationSchedulerTest, ATimerEarlyByTheWallClockFiresOnceOnTime) {
 }
 
 // A save from a page opened before a Snooze (an editor, a second
-// molt://ai-automation tab: the last fire it was shown, earlier) keeps the
-// schedule: the snooze holds, with no catch-up run during it.
+// molt://ai-automation tab: the last fire it was shown) keeps the schedule,
+// so its hold: the snooze holds, with no catch-up run during it, and the
+// workflow runs at its first time after it.
 TEST_F(AutomationSchedulerTest, AStalePagesSaveKeepsASnooze) {
   const int64_t saved = Unix(base::Time::Now());
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 900, 0)));
@@ -648,10 +789,11 @@ TEST_F(AutomationSchedulerTest, AStalePagesSaveKeepsASnooze) {
   ASSERT_TRUE(page);
   task_environment_.FastForwardBy(base::Minutes(10));
   const int64_t snoozed = Unix(base::Time::Now()) + 3600;
-  ASSERT_TRUE(storage_->Update("wf_1", [snoozed](Script& script) {
-    script.trigger.last_fired_unix = snoozed;
-    return true;
-  }));
+  ASSERT_EQ(storage_->HoldWith("wf_1",
+                               [snoozed](const Script&) {
+                                 return std::optional<int64_t>(snoozed);
+                               }),
+            snoozed);
   // Twenty minutes on, the page saves its copy, renamed.
   task_environment_.FastForwardBy(base::Minutes(20));
   page->name = "Renamed";
@@ -661,11 +803,12 @@ TEST_F(AutomationSchedulerTest, AStalePagesSaveKeepsASnooze) {
   std::optional<Script> loaded = storage_->Load("wf_1");
   ASSERT_TRUE(loaded);
   EXPECT_EQ(loaded->name, "Renamed");
-  EXPECT_EQ(loaded->trigger.last_fired_unix, snoozed);
-  // At 30 min: snoozed until 70, next due at 85.
+  EXPECT_EQ(loaded->trigger.last_fired_unix, saved);
+  EXPECT_EQ(loaded->trigger.held_until_unix, snoozed);
+  // At 30 min: snoozed until 70, next due at 75.
   scheduler_.Start();
   Tick();
-  task_environment_.FastForwardBy(base::Minutes(54));
+  task_environment_.FastForwardBy(base::Minutes(44));
   EXPECT_TRUE(fired_.empty());
   task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});

@@ -11,7 +11,9 @@
 // wrote it, on every read and write path, with its last fire this
 // browser's own (never the file's; a stale page's save never moving it
 // back; a fire claimed once; a time passed while held recorded, not
-// written), what a review doesn't show of a changed file's steps dropped,
+// written), its holds (Snooze, Skip) the record's only, set under one lock,
+// kept only by a save of the same schedule and never claimed through,
+// what a review doesn't show of a changed file's steps dropped,
 // moves cut short, a browser ending
 // between a record change and its file change, the one-time seeding (a new
 // user data directory recorded at startup) and two browsers over one
@@ -1050,9 +1052,11 @@ TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsTheLastFire) {
 }
 
 // A page's save that keeps the schedule never moves its last fire back:
-// opened before a Snooze, its earlier last fire doesn't end the snooze. A
-// later one (a Snooze, a Skip) is written as it is, and so is the last
-// fire of a schedule of its own.
+// opened before a later last fire was recorded (as molt://ai-automation's
+// Snooze wrote one before Snooze became a hold: AHoldIsRecordedNotWritten),
+// its earlier last fire doesn't bring it back down. A later one is written
+// as it is (molt://ai-automation caps what its page sends at the stored
+// one), and so is the last fire of a schedule of its own.
 TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsASnooze) {
   ASSERT_TRUE(storage().Save(Hourly("wf_1")));
   const int64_t now = NowUnix();
@@ -1060,7 +1064,7 @@ TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsASnooze) {
   std::optional<Script> page = Load("wf_1");
   ASSERT_TRUE(page);
   ASSERT_EQ(page->trigger.last_fired_unix, now - 600);
-  // molt://ai-automation's Snooze.
+  // A later last fire, written by the browser.
   ASSERT_TRUE(storage().Update("wf_1", [now](Script& script) {
     script.trigger.last_fired_unix = now + 3600;
     return true;
@@ -1091,9 +1095,10 @@ TEST_F(AutomationStorageRecordTest, AStalePagesSaveKeepsASnooze) {
 
 // The scheduler claims a fire before it runs it, only while the last fire
 // it read is still the record's: of two profiles' schedulers that read it
-// due, one runs it; nor is one snoozed since it was read, or one without
-// an entry, claimed. A claim always moves the record's last fire, from one
-// just ahead too (a Skip, a short Snooze), so the second fails there too.
+// due, one runs it; nor is one whose last fire moved since it was read, or
+// one without an entry, claimed (one held since: AHoldIsNotClaimedThrough).
+// A claim always moves the record's last fire, from one just ahead too (a
+// clock that was ahead), so the second fails there too.
 TEST_F(AutomationStorageRecordTest, AFireIsClaimedOnce) {
   ASSERT_TRUE(storage().Save(Hourly("wf_1")));
   const int64_t now = NowUnix();
@@ -1104,7 +1109,7 @@ TEST_F(AutomationStorageRecordTest, AFireIsClaimedOnce) {
   EXPECT_FALSE(storage().ClaimFire("wf_1", now + 1, read));
   EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, now);
   EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, now);
-  // Snoozed since it was read.
+  // A later last fire recorded since it was read.
   ASSERT_TRUE(storage().Update("wf_1", [now](Script& script) {
     script.trigger.last_fired_unix = now + 3600;
     return true;
@@ -1115,10 +1120,11 @@ TEST_F(AutomationStorageRecordTest, AFireIsClaimedOnce) {
   Plant("wf_2", Hourly("wf_2"));
   EXPECT_FALSE(storage().ClaimFire("wf_2", now, 0));
   EXPECT_EQ(Raw("wf_2")->trigger.last_fired_unix, 0);
-  // A cron workflow skipped (its last fire the next time and a second) or
-  // snoozed to just after that time: its timer fires it anyway (a last
-  // fire still to come is no fire here), once. The claim records the fire
-  // exactly, so a second claim of what was read fails.
+  // A cron workflow whose last fire is just ahead (a clock that was ahead,
+  // or an earlier version's Skip or Snooze, written as a fire time): its
+  // timer fires it anyway (a last fire still to come is no fire here),
+  // once. The claim records the fire exactly, so a second claim of what was
+  // read fails.
   for (const int64_t ahead : {int64_t{1}, int64_t{120}}) {
     Script skipped = Hourly("wf_3");
     skipped.trigger.type = TriggerType::CRON;
@@ -1133,6 +1139,286 @@ TEST_F(AutomationStorageRecordTest, AFireIsClaimedOnce) {
   }
   // Nor twice in one second.
   EXPECT_FALSE(storage().ClaimFire("wf_3", now, now));
+}
+
+// A hold (molt://ai-automation's Snooze or Skip) is kept in the record
+// only: a read gives it (trigger.held_until_unix), but the file isn't
+// written, so the workflow is still vouched for, its digest is unchanged
+// and no file carries it; a restart keeps it.
+TEST_F(AutomationStorageRecordTest, AHoldIsRecordedNotWritten) {
+  Script daily = Named("wf_1", "Prices");
+  daily.trigger.type = TriggerType::CRON;
+  daily.trigger.expression = "0 9 * * *";
+  ASSERT_TRUE(storage().Save(daily));
+  const std::string bytes = Bytes("wf_1");
+  const std::string digest = AutomationSecurity::SecurityDigest(*Load("wf_1"));
+  EXPECT_EQ(Load("wf_1")->trigger.held_until_unix, 0);
+  const int64_t now = NowUnix();
+  EXPECT_EQ(storage().HoldWith("wf_1",
+                               [now](const Script&) {
+                                 return std::optional<int64_t>(now + 3600);
+                               }),
+            now + 3600);
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->trigger.held_until_unix, now + 3600);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(AutomationSecurity::SecurityDigest(*loaded), digest);
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+  EXPECT_FALSE(loaded->ToJSON().FindDict("trigger")->Find("held_until_unix"));
+  EXPECT_EQ(Raw("wf_1")->trigger.held_until_unix, 0);
+  std::vector<Script> all = storage().ListAll();
+  ASSERT_EQ(all.size(), 1u);
+  EXPECT_EQ(all[0].trigger.held_until_unix, now + 3600);
+  Restart(/*may_seed=*/false);
+  EXPECT_EQ(Load("wf_1")->trigger.held_until_unix, now + 3600);
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+}
+
+// A hold is read, computed and set under the directory's lock: |until|
+// sees the workflow as a read gives it (its last fire and hold the
+// record's), and a change waiting for the lock (the Agent studio's
+// Schedule) comes after the hold, which its new schedule then ends. A hold
+// only rises. Nothing is set when |until| gives nothing, for a workflow
+// that isn't there (|until| isn't asked), or for a file with no entry (one
+// written outside the browser).
+TEST_F(AutomationStorageRecordTest, AHoldIsSetUnderOneLock) {
+  base::test::TaskEnvironment task_environment;
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 600));
+  EXPECT_EQ(storage().HoldWith("wf_1",
+                               [now](const Script& script) {
+                                 EXPECT_EQ(script.trigger.last_fired_unix,
+                                           now - 600);
+                                 EXPECT_EQ(script.trigger.held_until_unix, 0);
+                                 return std::optional<int64_t>(now + 60);
+                               }),
+            now + 60);
+  bool saw_hold = false;
+  EXPECT_EQ(storage().HoldWith("wf_1",
+                               [now, &saw_hold](const Script& script) {
+                                 saw_hold =
+                                     script.trigger.held_until_unix == now + 60;
+                                 return std::optional<int64_t>(now + 30);
+                               }),
+            now + 60);
+  EXPECT_TRUE(saw_hold);
+  EXPECT_FALSE(storage().HoldWith(
+      "wf_1", [](const Script&) { return std::optional<int64_t>(); }));
+  EXPECT_EQ(Load("wf_1")->trigger.held_until_unix, now + 60);
+  // The studio's Schedule, asked while the hold is computed: it waits for
+  // the lock, so it is saved after the hold, and ends it.
+  const base::FilePath dir = dir_;
+  bool rescheduled = false;
+  EXPECT_EQ(storage().HoldWith(
+                "wf_1",
+                [&](const Script&) {
+                  base::ThreadPool::PostTask(
+                      FROM_HERE, {base::MayBlock()},
+                      base::BindLambdaForTesting([dir, &rescheduled] {
+                        AutomationStorage studio(dir);
+                        rescheduled = studio.Update("wf_1", [](Script& script) {
+                          script.trigger.expression = "1800";
+                          return true;
+                        });
+                      }));
+                  return std::optional<int64_t>(now + 3600);
+                }),
+            now + 3600);
+  task_environment.RunUntilIdle();
+  EXPECT_TRUE(rescheduled);
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->trigger.expression, "1800");
+  EXPECT_EQ(loaded->trigger.held_until_unix, 0);
+  // Not there: |until| isn't asked.
+  bool asked = false;
+  EXPECT_FALSE(storage().HoldWith("gone", [now, &asked](const Script&) {
+    asked = true;
+    return std::optional<int64_t>(now + 3600);
+  }));
+  EXPECT_FALSE(asked);
+  // Written outside: no entry to hold.
+  Plant("wf_2", Hourly("wf_2"));
+  EXPECT_FALSE(storage().HoldWith("wf_2", [now](const Script& script) {
+    EXPECT_TRUE(script.security.changed_outside);
+    return std::optional<int64_t>(now + 3600);
+  }));
+  EXPECT_EQ(Load("wf_2")->trigger.held_until_unix, 0);
+}
+
+// A save that keeps the schedule keeps its hold (a page opened before the
+// Snooze saves its copy; a trust change; any Update() of something else);
+// one that changes the schedule ends it (a page's schedule of its own, the
+// Agent studio's Schedule), and so does a whole write (Save()). A write
+// that fails puts the record back, its hold too.
+TEST_F(AutomationStorageRecordTest, OnlyASaveOfTheSameScheduleKeepsAHold) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 600));
+  auto hold = [this, now] {
+    return storage().HoldWith("wf_1", [now](const Script&) {
+      return std::optional<int64_t>(now + 3600);
+    });
+  };
+  auto held = [this] { return Load("wf_1")->trigger.held_until_unix; };
+  auto any = [](const Script* stored, Script&) { return stored != nullptr; };
+  std::optional<Script> page = Load("wf_1");
+  ASSERT_TRUE(page);
+  ASSERT_EQ(hold(), now + 3600);
+  page->name = "Prices, renamed";
+  ASSERT_TRUE(storage().SaveChecked(std::move(*page), any));
+  EXPECT_EQ(Load("wf_1")->name, "Prices, renamed");
+  EXPECT_EQ(held(), now + 3600);
+  ASSERT_TRUE(storage().SetTrustLevel("wf_1", TrustLevel::APPROVED));
+  EXPECT_EQ(held(), now + 3600);
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    script.default_variables["q"] = "news";
+    return true;
+  }));
+  EXPECT_EQ(held(), now + 3600);
+  // A page's schedule of its own.
+  std::optional<Script> rescheduled = Load("wf_1");
+  ASSERT_TRUE(rescheduled);
+  rescheduled->trigger.expression = "1800";
+  ASSERT_TRUE(storage().SaveChecked(std::move(*rescheduled), any));
+  EXPECT_EQ(held(), 0);
+  // The studio's Schedule: a new time zone is a new schedule.
+  ASSERT_EQ(hold(), now + 3600);
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    script.trigger.timezone = "Europe/Paris";
+    return true;
+  }));
+  EXPECT_EQ(held(), 0);
+  // A write that fails (something but a regular file at its path by the
+  // time it is written): the record as it was, the hold included.
+  ASSERT_EQ(hold(), now + 3600);
+  storage().SetBeforeFileChangeForTesting(base::BindLambdaForTesting([&] {
+    ASSERT_TRUE(base::DeleteFile(File("wf_1")));
+    ASSERT_TRUE(base::CreateDirectory(File("wf_1")));
+  }));
+  EXPECT_FALSE(storage().Save(Hourly("wf_1")));
+  storage().SetBeforeFileChangeForTesting(base::RepeatingClosure());
+  WorkflowRecord* record = WorkflowRecord::For(dir_);
+  ASSERT_TRUE(record);
+  EXPECT_EQ(record->HeldUntil("wf_1.molt"), now + 3600);
+  ASSERT_TRUE(base::DeletePathRecursively(File("wf_1")));
+  // A whole write.
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  EXPECT_EQ(held(), 0);
+}
+
+// A hold is made on the schedule this browser wrote. A file changed outside
+// the browser may have another (another program, or another browser that
+// shares the folder): any write of it ends the hold, though the schedule it
+// writes is the one read. Its confirmation in the Agent studio (which starts
+// its schedule over) and a page's save of it as a draft both end it.
+TEST_F(AutomationStorageRecordTest, AFileChangedOutsideKeepsNoHold) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 600));
+  auto hold = [this, now] {
+    return storage().HoldWith("wf_1", [now](const Script&) {
+      return std::optional<int64_t>(now + 3600);
+    });
+  };
+  auto held = [this] { return Load("wf_1")->trigger.held_until_unix; };
+  auto any = [](const Script* stored, Script&) { return stored != nullptr; };
+  // Changed outside to every half hour: read as a draft, the hold still
+  // in the record.
+  ASSERT_EQ(hold(), now + 3600);
+  EditRaw("wf_1", [](base::DictValue& d) {
+    d.FindDict("trigger")->Set("expression", "1800");
+  });
+  std::optional<Script> draft = Load("wf_1");
+  ASSERT_TRUE(draft);
+  EXPECT_TRUE(IsClamped(*draft));
+  EXPECT_EQ(draft->trigger.held_until_unix, now + 3600);
+  // Confirmed, the schedule read kept: the hold ends.
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    return AutomationSecurity::ConfirmDraftSites(script, {"news.example"});
+  }));
+  std::optional<Script> confirmed = Load("wf_1");
+  ASSERT_TRUE(confirmed);
+  EXPECT_FALSE(confirmed->security.changed_outside);
+  EXPECT_EQ(confirmed->trigger.expression, "1800");
+  EXPECT_EQ(confirmed->trigger.held_until_unix, 0);
+  // Changed outside again, its schedule kept: a page's save of the draft
+  // as read ends the hold too.
+  ASSERT_EQ(hold(), now + 3600);
+  EditRaw("wf_1", [](base::DictValue& d) { d.Set("name", "Prices, changed"); });
+  std::optional<Script> changed = Load("wf_1");
+  ASSERT_TRUE(changed);
+  ASSERT_TRUE(changed->security.changed_outside);
+  EXPECT_EQ(changed->trigger.expression, "1800");
+  EXPECT_EQ(changed->trigger.held_until_unix, now + 3600);
+  ASSERT_TRUE(storage().SaveChecked(std::move(*changed), any));
+  EXPECT_EQ(Load("wf_1")->name, "Prices, changed");
+  EXPECT_EQ(held(), 0);
+  // Saved here as a draft, it is still one: any other change of it keeps
+  // no hold either.
+  ASSERT_EQ(hold(), now + 3600);
+  ASSERT_TRUE(Load("wf_1")->security.changed_outside);
+  ASSERT_TRUE(storage().Update("wf_1", [](Script& script) {
+    script.default_variables["q"] = "news";
+    return true;
+  }));
+  EXPECT_EQ(held(), 0);
+}
+
+// The scheduler's claim is refused before the hold (a Snooze or a Skip made
+// since it read the workflow wins) and leaves the last fire, here and in
+// the file; one at the hold is claimed, and ends it.
+TEST_F(AutomationStorageRecordTest, AHoldIsNotClaimedThrough) {
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 7200));
+  const int64_t read = Load("wf_1")->trigger.last_fired_unix;
+  ASSERT_EQ(read, now - 7200);
+  ASSERT_EQ(storage().HoldWith("wf_1",
+                               [now](const Script&) {
+                                 return std::optional<int64_t>(now + 3600);
+                               }),
+            now + 3600);
+  EXPECT_FALSE(storage().ClaimFire("wf_1", now + 60, read));
+  EXPECT_EQ(Load("wf_1")->trigger.last_fired_unix, read);
+  EXPECT_EQ(Raw("wf_1")->trigger.last_fired_unix, read);
+  EXPECT_TRUE(storage().ClaimFire("wf_1", now + 3600, read));
+  std::optional<Script> loaded = Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->trigger.last_fired_unix, now + 3600);
+  EXPECT_EQ(loaded->trigger.held_until_unix, 0);
+}
+
+// Two user data dirs over one folder each keep their own holds: a Snooze
+// made in one holds nothing in the other, which claims its fire.
+TEST_F(AutomationStorageRecordTest, EachUserDataDirKeepsItsOwnHold) {
+  const base::FilePath a = user_data_dir_;
+  const base::FilePath b = temp_.GetPath().AppendASCII("Other User Data");
+  ASSERT_TRUE(base::CreateDirectory(b));
+  const int64_t now = NowUnix();
+  ASSERT_TRUE(storage().Save(Hourly("wf_1")));
+  ASSERT_TRUE(storage().RecordFire("wf_1", now - 7200));
+  ASSERT_EQ(storage().HoldWith("wf_1",
+                               [now](const Script&) {
+                                 return std::optional<int64_t>(now + 3600);
+                               }),
+            now + 3600);
+  // B's first start of this version seeds it, with no hold of A's.
+  Restart(/*may_seed=*/true, b);
+  std::optional<Script> in_b = Load("wf_1");
+  ASSERT_TRUE(in_b);
+  EXPECT_FALSE(in_b->security.changed_outside);
+  EXPECT_EQ(in_b->trigger.held_until_unix, 0);
+  EXPECT_TRUE(storage().ClaimFire("wf_1", now, in_b->trigger.last_fired_unix));
+  // A's hold is still A's.
+  Restart(/*may_seed=*/false, a);
+  std::optional<Script> in_a = Load("wf_1");
+  ASSERT_TRUE(in_a);
+  EXPECT_FALSE(in_a->security.changed_outside);
+  EXPECT_EQ(in_a->trigger.held_until_unix, now + 3600);
+  EXPECT_EQ(in_a->trigger.last_fired_unix, now - 7200);
 }
 
 // A time that passed while a workflow was held for review is recorded as

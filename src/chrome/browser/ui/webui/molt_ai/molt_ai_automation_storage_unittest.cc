@@ -5,7 +5,9 @@
 // temporary directory: what each message reads and changes, as it did on
 // the UI thread, now as one step on the storage's sequence; with a workflow
 // record (workflow_record.h), a workflow changed outside the browser is
-// neither trusted nor laundered here.
+// neither trusted nor laundered here; a page never moves a last fire later,
+// and Snooze and Skip are holds in the record, refused for what they can't
+// hold.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_storage.h"
 
@@ -18,6 +20,8 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
@@ -280,9 +284,12 @@ TEST_F(AutomationPageStorageTest, AnImportIsVouchedAtCasual) {
   EXPECT_FALSE(imported->security.sites_unconfirmed);
   EXPECT_EQ(imported->security.trust, TrustLevel::CASUAL);
   EXPECT_EQ(imported->stats.runs, 0);
-  // Its sites are kept (its steps' hosts count anyway).
-  EXPECT_EQ(imported->security.domain_whitelist,
-            std::vector<std::string>{"evil.example"});
+  // No sites of its file's (which the page doesn't show): only the hosts
+  // its steps name count.
+  EXPECT_TRUE(imported->security.domain_whitelist.empty());
+  EXPECT_EQ(automation::AutomationSecurity::EffectivePolicy(*imported)
+                .domain_whitelist,
+            std::vector<std::string>{"news.example"});
   // Trusted with a click, as ever.
   EXPECT_EQ(
       PromoteTrust("wf_9", TrustLevel::APPROVED, storage()).FindBool("success"),
@@ -410,6 +417,7 @@ TEST_F(AutomationPageStorageTest, ASaveOfAWorkflowNotStoredIsAnImport) {
   EXPECT_EQ(saved->security.require_approval_for,
             (std::vector<std::string>{"form_submit", "payment", "login"}));
   EXPECT_FALSE(saved->enabled);
+  EXPECT_TRUE(saved->security.domain_whitelist.empty());
 }
 
 // An interval saved with no last fire (molt://ai-automation's Save schedule
@@ -476,6 +484,230 @@ TEST_F(AutomationPageStorageTest,
             true);
   EXPECT_EQ(storage().Load("wf_hourly")->name, "Hourly, renamed");
   EXPECT_EQ(storage().Load("wf_hourly")->trigger.last_fired_unix, kNow);
+}
+
+// A workflow on |trigger_type| |expression|, saved by the browser with
+// |last_fired| as its last fire.
+Script Scheduled(const std::string& id,
+                 automation::TriggerType trigger_type,
+                 const std::string& expression,
+                 int64_t last_fired) {
+  Script script = Workflow(id, "Prices");
+  script.trigger.type = trigger_type;
+  script.trigger.expression = expression;
+  script.trigger.last_fired_unix = last_fired;
+  return script;
+}
+
+// A unix time in a page's answer (a number), in whole seconds.
+std::optional<int64_t> TimeIn(const base::DictValue& answer,
+                              const std::string& key) {
+  const std::optional<double> value = answer.FindDouble(key);
+  if (!value) {
+    return std::nullopt;
+  }
+  return static_cast<int64_t>(*value);
+}
+
+// The holds the audit log has for workflow |id|, oldest first, each as
+// "<event> | until=<unix time>".
+std::vector<std::string> HoldsLogged(const std::string& id,
+                                     AutomationStorage& storage) {
+  std::vector<std::string> out;
+  const std::string of_id = " | " + id + " | ";
+  for (const std::string& line : AuditTail(200, storage)) {
+    const size_t at = line.find(of_id);
+    if (at == std::string::npos) {
+      continue;
+    }
+    std::string rest = line.substr(at + of_id.size());
+    if (rest.starts_with("snoozed | ") || rest.starts_with("run_skipped | ")) {
+      out.push_back(std::move(rest));
+    }
+  }
+  return out;
+}
+
+// "<event> | until=<held>", as HoldsLogged() gives it.
+std::string HoldLine(const std::string& event, int64_t held) {
+  return event + " | until=" + base::NumberToString(held);
+}
+
+// A page never moves a stored last fire later (a fire time far ahead would
+// stall the schedule; Snooze and Skip are holds of their own), whichever
+// save it is; an earlier one is left to the storage, which keeps the
+// stored one for the same schedule.
+TEST_F(AutomationPageStorageTest, APageCannotMoveTheLastFireLater) {
+  UseRecord();
+  constexpr int64_t kLast = kNow - 600;
+  constexpr int64_t kFarAhead = 4'102'444'800;
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_1", automation::TriggerType::INTERVAL, "3600", kLast)));
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_2", automation::TriggerType::CRON, "0 9 * * *", 0)));
+  for (const bool schedule_saved : {false, true}) {
+    Script ahead = *storage().Load("wf_1");
+    ahead.trigger.last_fired_unix = kFarAhead;
+    ahead.name = "Prices, renamed";
+    EXPECT_EQ(SaveWorkflow(std::move(ahead), kNow, schedule_saved, storage())
+                  .FindBool("success"),
+              true);
+    std::optional<Script> saved = storage().Load("wf_1");
+    ASSERT_TRUE(saved);
+    EXPECT_EQ(saved->name, "Prices, renamed");
+    EXPECT_EQ(saved->trigger.last_fired_unix, kLast) << schedule_saved;
+    EXPECT_FALSE(saved->security.changed_outside);
+  }
+  // A cron never fired here: still none.
+  Script cron = *storage().Load("wf_2");
+  cron.trigger.last_fired_unix = kFarAhead;
+  EXPECT_EQ(
+      SaveWorkflow(std::move(cron), kNow, /*schedule_saved=*/false, storage())
+          .FindBool("success"),
+      true);
+  EXPECT_EQ(storage().Load("wf_2")->trigger.last_fired_unix, 0);
+}
+
+// Snooze holds the schedule in this browser's record, from now for the
+// seconds given: the file isn't written (still vouched for, as it was), and
+// the answer says until when and the next run after it. Each hold set is in
+// the audit log ("snoozed", until when).
+TEST_F(AutomationPageStorageTest, SnoozeHoldsWithoutWritingTheFile) {
+  UseRecord();
+  // Every five minutes (in any time zone); kNow is on one.
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_1", automation::TriggerType::CRON, "*/5 * * * *", 0)));
+  const std::string bytes = Bytes("wf_1");
+  base::DictValue snoozed = Snooze("wf_1", 3600, kNow, storage());
+  EXPECT_EQ(snoozed.FindBool("success"), true);
+  EXPECT_EQ(TimeIn(snoozed, "held_until_unix"), kNow + 3600);
+  EXPECT_EQ(TimeIn(snoozed, "next_fire_unix"), kNow + 3600);
+  std::optional<Script> loaded = storage().Load("wf_1");
+  ASSERT_TRUE(loaded);
+  EXPECT_EQ(loaded->trigger.held_until_unix, kNow + 3600);
+  EXPECT_FALSE(loaded->security.changed_outside);
+  EXPECT_EQ(Bytes("wf_1"), bytes);
+  // A shorter one ends nothing.
+  EXPECT_EQ(TimeIn(Snooze("wf_1", 60, kNow, storage()), "held_until_unix"),
+            kNow + 3600);
+  // An interval: its first time at or after the snooze, its phase kept.
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_2", automation::TriggerType::INTERVAL, "900", kNow - 600)));
+  base::DictValue interval = Snooze("wf_2", 3600, kNow, storage());
+  EXPECT_EQ(interval.FindBool("success"), true);
+  EXPECT_EQ(TimeIn(interval, "held_until_unix"), kNow + 3600);
+  EXPECT_EQ(TimeIn(interval, "next_fire_unix"), kNow - 600 + 5 * 900);
+  // The shorter one logged as the hold it left.
+  EXPECT_EQ(HoldsLogged("wf_1", storage()),
+            (std::vector<std::string>{HoldLine("snoozed", kNow + 3600),
+                                      HoldLine("snoozed", kNow + 3600)}));
+  EXPECT_EQ(HoldsLogged("wf_2", storage()),
+            std::vector<std::string>{HoldLine("snoozed", kNow + 3600)});
+}
+
+// Skip next holds just past the first run after now, so the run after it is
+// next; a second Skip skips that one too. An interval keeps its phase, and
+// an overdue one (its times passed while it was off) skips its next time
+// to come, not the one already passed. Each Skip is in the audit log
+// ("run_skipped", until when); one with nothing to skip isn't.
+TEST_F(AutomationPageStorageTest, SkipNextHoldsPastTheNextRunOnly) {
+  UseRecord();
+  const base::Time now = base::Time::FromTimeT(kNow);
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_cron", automation::TriggerType::CRON, "*/5 * * * *", 0)));
+  base::DictValue skipped = SkipNext("wf_cron", now, storage());
+  EXPECT_EQ(skipped.FindBool("success"), true);
+  EXPECT_EQ(TimeIn(skipped, "held_until_unix"), kNow + 300 + 1);
+  EXPECT_EQ(TimeIn(skipped, "next_fire_unix"), kNow + 600);
+  base::DictValue again = SkipNext("wf_cron", now, storage());
+  EXPECT_EQ(TimeIn(again, "held_until_unix"), kNow + 600 + 1);
+  EXPECT_EQ(TimeIn(again, "next_fire_unix"), kNow + 900);
+  EXPECT_EQ(storage().Load("wf_cron")->trigger.held_until_unix, kNow + 600 + 1);
+  // Every 15 minutes, last run 100 s ago: next at 800 s, then 1700 s.
+  ASSERT_TRUE(storage().Save(Scheduled(
+      "wf_interval", automation::TriggerType::INTERVAL, "900", kNow - 100)));
+  base::DictValue interval = SkipNext("wf_interval", now, storage());
+  EXPECT_EQ(TimeIn(interval, "held_until_unix"), kNow + 800 + 1);
+  EXPECT_EQ(TimeIn(interval, "next_fire_unix"), kNow + 1700);
+  // Last run 2000 s ago: due 1100 s and 200 s ago (overdue), next at 700 s.
+  ASSERT_TRUE(storage().Save(Scheduled(
+      "wf_overdue", automation::TriggerType::INTERVAL, "900", kNow - 2000)));
+  base::DictValue overdue = SkipNext("wf_overdue", now, storage());
+  EXPECT_EQ(TimeIn(overdue, "held_until_unix"), kNow + 700 + 1);
+  EXPECT_EQ(TimeIn(overdue, "next_fire_unix"), kNow + 1600);
+  // No run to come (its end has passed): nothing to skip.
+  Script ended =
+      Scheduled("wf_ended", automation::TriggerType::CRON, "*/5 * * * *", 0);
+  ended.trigger.until_unix = kNow - 1;
+  ASSERT_TRUE(storage().Save(ended));
+  base::DictValue none = SkipNext("wf_ended", now, storage());
+  EXPECT_EQ(none.FindBool("success"), false);
+  EXPECT_EQ(*none.FindString("error"), "No upcoming run to skip");
+  EXPECT_EQ(storage().Load("wf_ended")->trigger.held_until_unix, 0);
+  EXPECT_EQ(
+      HoldsLogged("wf_cron", storage()),
+      (std::vector<std::string>{HoldLine("run_skipped", kNow + 300 + 1),
+                                HoldLine("run_skipped", kNow + 600 + 1)}));
+  EXPECT_EQ(HoldsLogged("wf_interval", storage()),
+            std::vector<std::string>{HoldLine("run_skipped", kNow + 800 + 1)});
+  EXPECT_EQ(HoldsLogged("wf_overdue", storage()),
+            std::vector<std::string>{HoldLine("run_skipped", kNow + 700 + 1)});
+  EXPECT_TRUE(HoldsLogged("wf_ended", storage()).empty());
+}
+
+// Snooze and Skip refuse what this page doesn't hold: a routine taught by
+// voice or a workflow that isn't there, an unconfirmed draft (in the words
+// PromoteTrust uses), a workflow that doesn't repeat, and an interval never
+// started (only Save schedule starts it). Nothing is held or logged.
+TEST_F(AutomationPageStorageTest, SnoozeAndSkipRefuseWhatTheyCantHold) {
+  UseRecord();
+  const base::Time now = base::Time::FromTimeT(kNow);
+  const auto refusals = [&](const std::string& id) {
+    base::DictValue snoozed = Snooze(id, 3600, kNow, storage());
+    base::DictValue skipped = SkipNext(id, now, storage());
+    EXPECT_EQ(snoozed.FindBool("success"), false) << id;
+    EXPECT_EQ(skipped.FindBool("success"), false) << id;
+    EXPECT_FALSE(snoozed.FindDouble("held_until_unix")) << id;
+    const std::string* snooze_error = snoozed.FindString("error");
+    const std::string* skip_error = skipped.FindString("error");
+    EXPECT_TRUE(snooze_error && skip_error && *snooze_error == *skip_error)
+        << id;
+    if (std::optional<Script> stored = storage().Load(id)) {
+      EXPECT_EQ(stored->trigger.held_until_unix, 0) << id;
+    }
+    EXPECT_TRUE(HoldsLogged(id, storage()).empty()) << id;
+    return snooze_error ? *snooze_error : std::string();
+  };
+  EXPECT_EQ(refusals("gone"), "script not found");
+  Script routine = VoiceRoutine("voice_1", "news");
+  routine.trigger.type = automation::TriggerType::CRON;
+  routine.trigger.expression = "0 9 * * *";
+  ASSERT_TRUE(storage().Save(routine));
+  EXPECT_EQ(refusals("voice_1"), "script not found");
+  Script draft =
+      Scheduled("agent_1", automation::TriggerType::CRON, "0 9 * * *", 0);
+  draft.security.sites_unconfirmed = true;
+  ASSERT_TRUE(storage().Save(draft));
+  EXPECT_EQ(refusals("agent_1"),
+            "Confirm this draft's sites in Agent mode first.");
+  Script planted = Claiming("wf_planted");
+  planted.trigger.type = automation::TriggerType::CRON;
+  planted.trigger.expression = "0 9 * * *";
+  Plant(planted);
+  EXPECT_EQ(refusals("wf_planted"),
+            "This workflow was changed outside MoltBrowser. Review it in "
+            "Agent mode first.");
+  ASSERT_TRUE(storage().Save(Workflow("wf_manual", "Manual")));
+  EXPECT_EQ(refusals("wf_manual"),
+            "Only a schedule that repeats can be snoozed or skipped");
+  ASSERT_TRUE(storage().Save(Scheduled("wf_once", automation::TriggerType::AT,
+                                       "2027-01-15T09:00:00Z", 0)));
+  EXPECT_EQ(refusals("wf_once"),
+            "Only a schedule that repeats can be snoozed or skipped");
+  ASSERT_TRUE(storage().Save(
+      Scheduled("wf_old", automation::TriggerType::INTERVAL, "3600", 0)));
+  EXPECT_EQ(refusals("wf_old"),
+            "Not started \xE2\x80\x94 click Save schedule to start it");
 }
 
 }  // namespace

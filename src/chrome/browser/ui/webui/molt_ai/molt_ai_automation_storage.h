@@ -4,9 +4,10 @@
 // molt://ai-automation's reads and changes of the shared storage
 // (molt_ai_automation_ui.cc), each run on the storage's sequences
 // (automation/automation_shared_tasks.h), never on the UI thread. A
-// read-modify-write (a save that keeps the stored trust, a trust change)
-// runs under the directory's lock (AutomationStorage::SaveChecked(),
-// Update()), and a new workflow takes a free id under it (SaveNew()), so
+// read-modify-write (a save that keeps the stored trust, a trust change, a
+// Snooze or a Skip) runs under the directory's lock (AutomationStorage::
+// SaveChecked(), Update(), HoldWith()), and a new workflow takes a free id
+// under it (SaveNew()), so
 // none interleaves with the Agent studio's, the runner's or another
 // browser's. Routines taught by voice belong to a profile
 // (molt_ai/voice/voice_routine_store.h): this page lists and changes none.
@@ -26,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
@@ -63,8 +65,10 @@ std::optional<automation::Script> LoadToRun(
 // policy floor, a schedule turned off: AutomationSecurity::
 // ClampTrustForSave()). An interval with no last fire counts from
 // |now_unix| when |schedule_saved| (Save schedule's save) or the workflow
-// is new; any other save leaves it as it is. A routine taught by voice is
-// neither saved nor saved over.
+// is new; any other save leaves it as it is. A last fire later than the
+// stored one is the stored one: the page never holds a schedule back by
+// writing a fire time (Snooze and Skip are holds: Snooze(), SkipNext()). A
+// routine taught by voice is neither saved nor saved over.
 base::DictValue SaveWorkflow(automation::Script script,
                              int64_t now_unix,
                              bool schedule_saved,
@@ -108,6 +112,33 @@ std::vector<std::string> AuditTail(int max_lines,
 base::DictValue PromoteTrust(const std::string& id,
                              automation::TrustLevel level,
                              automation::AutomationStorage& storage);
+
+// snoozeScript (Snooze 1h): no automatic run of workflow |id| for |seconds|
+// from |now_unix|, then its own times again (a cron's first match at or
+// after then, an interval's first whole interval after its last fire). A
+// hold in this browser's workflow record (AutomationStorage::HoldWith()),
+// never a change to the workflow or its file: it holds this browser's
+// profiles, and no other browser. {success, held_until_unix,
+// next_fire_unix?} or {success: false, error}. Refused for a routine taught
+// by voice or a workflow that isn't there ("script not found"), an
+// unconfirmed draft (reviewed in Agent mode first, as for PromoteTrust()),
+// a workflow that isn't on a cron or interval schedule, and an interval
+// never started (only Save schedule starts it). The audit log says
+// "snoozed", "until=<unix time>".
+base::DictValue Snooze(const std::string& id,
+                       int seconds,
+                       int64_t now_unix,
+                       automation::AutomationStorage& storage);
+
+// skipNextFire (Skip next): workflow |id|'s first run after |now| (an
+// overdue interval's next time, not the one already passed) doesn't
+// happen; the one after it does. A hold just past that run, as Snooze()
+// sets one (after a hold already there: a second Skip skips the run after),
+// with the same refusals, and "No upcoming run to skip" when there is none.
+// The audit log says "run_skipped", "until=<unix time>".
+base::DictValue SkipNext(const std::string& id,
+                         base::Time now,
+                         automation::AutomationStorage& storage);
 
 }  // namespace automation_page
 }  // namespace molt_ai

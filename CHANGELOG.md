@@ -34,6 +34,23 @@ For longer narrative posts behind each entry see
   one-time ("once at") schedule still to come that it is opened on, and
   molt://ai-automation no longer moves a one-time schedule by your time
   zone's offset when it is saved again.
+- **Snooze and Skip in molt://ai-automation hold every schedule.** On a
+  cron schedule ("weekdays at 9"), Skip next ran the very time it was
+  meant to skip, and Snooze 1h didn't hold the run back. Both now hold
+  cron and interval schedules alike. Snooze 1h runs nothing for the
+  hour, then the schedule goes on at its own next time; an hourly or
+  daily interval is no longer pushed a whole interval past the hour.
+  Skip next skips exactly the next run, and pressing it again skips the
+  one after. While a hold lasts, the card says "Held until …" next to
+  the next run, and each Snooze and Skip is listed in the Audit log. A
+  hold applies to this copy of MoltBrowser (all its profiles), not to
+  another copy that shares `~/.moltbrowser`, and it lasts across a
+  restart. Saving the same schedule again keeps the hold; a new schedule
+  ends it, and so does confirming a workflow that was changed outside
+  MoltBrowser. The two buttons are shown only for cron and interval
+  schedules. They no longer save the card's copy of the workflow, so
+  pressing them on a card that was open while the workflow was edited
+  elsewhere no longer undoes that edit.
 - **The chat's `/wait-for` works.** It was read as `/wait`. It now
   waits for the element the rest of the line names (`/wait-for .results
   li`), as a recorded wait-for step does.
@@ -383,7 +400,7 @@ For longer narrative posts behind each entry see
 - **An imported workflow gets the default approvals and limits, and its
   schedule starts off.** A workflow you import, in molt://ai-automation or
   in Agent mode, gets the default approvals and limits, whatever its file
-  says. A schedule it brings is kept but turned off: it runs by itself
+  says, and only the sites its steps name. A schedule it brings is kept but turned off: it runs by itself
   only once you turn it on (tick **Enabled** and click **Save schedule** in
   molt://ai-automation, or use **Schedule** in Agent mode, which now opens
   on it). Its card says "paused" until then. Editing a workflow in Agent
@@ -410,10 +427,16 @@ For longer narrative posts behind each entry see
   run, isn't run on its schedule, and no other workflow can run it until you
   open it in Agent mode, check its steps, sites and schedule, and click
   **Confirm**. It then starts as Casual; trust it again with **Trust** (or
-  in molt://ai-automation for Trusted or Admin). Confirming keeps only what
-  the review shows: other ways the file gave of finding an element on the
-  page are dropped, so a step may need recording again if its page has
-  changed; steps the review can't show in full (conditions and loops, page
+  in molt://ai-automation for Trusted or Admin). A changed workflow none of
+  whose steps names a site, because each address it opens is a value filled
+  in when it runs (such as `{{url}}`) and it has no recorded click or typing
+  on a site, has no site to confirm: click **Confirm it with no sites**. It
+  then opens and acts on no page by itself until you add a step that opens
+  a fixed address on a site, or set it to Trusted in molt://ai-automation.
+  Confirming keeps only what the review shows: other ways the file gave of
+  finding an element on the page are dropped, so a step may need recording
+  again if its page has changed; steps the review can't show in full
+  (conditions and loops, page
   snapshots, scripts, AI decisions and extractions, a step that runs another
   workflow, a step whose text holds a line break or a hidden character, or
   that gives a site's tool a value with a line break) are removed; the

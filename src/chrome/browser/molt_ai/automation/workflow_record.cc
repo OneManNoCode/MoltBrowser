@@ -211,7 +211,14 @@ std::optional<ParsedRecord> ParseRecord(std::string_view contents) {
     if (!fired) {
       continue;
     }
-    parsed.files[name] = {*digest, *fired};
+    // "held_until" is left out when 0. A malformed one is no hold: the
+    // entry, which vouches for its file, is kept (dropped, the file would
+    // need a review).
+    int64_t held_until = 0;
+    if (const base::Value* value_held = entry.Find("held_until")) {
+      held_until = RecordedSeconds(value_held).value_or(0);
+    }
+    parsed.files[name] = {*digest, *fired, held_until};
   }
   return parsed;
 }
@@ -510,6 +517,12 @@ int64_t WorkflowRecord::LastFired(const std::string& name) const {
   return it == entries_.end() ? 0 : it->second.fired;
 }
 
+int64_t WorkflowRecord::HeldUntil(const std::string& name) const {
+  base::AutoLock hold(lock_);
+  auto it = entries_.find(name);
+  return it == entries_.end() ? 0 : it->second.held_until;
+}
+
 std::optional<WorkflowRecord::Entry> WorkflowRecord::EntryOf(
     const std::string& name) const {
   base::AutoLock hold(lock_);
@@ -523,6 +536,19 @@ std::optional<WorkflowRecord::Entry> WorkflowRecord::EntryOf(
 void WorkflowRecord::Set(const std::string& name,
                          std::string digest,
                          int64_t fired) {
+  SetEntry(name, std::move(digest), fired, /*keep_hold=*/false);
+}
+
+void WorkflowRecord::SetKeepingHold(const std::string& name,
+                                    std::string digest,
+                                    int64_t fired) {
+  SetEntry(name, std::move(digest), fired, /*keep_hold=*/true);
+}
+
+void WorkflowRecord::SetEntry(const std::string& name,
+                              std::string digest,
+                              int64_t fired,
+                              bool keep_hold) {
   const int64_t now = NowUnix();
   {
     base::AutoLock hold(lock_);
@@ -530,10 +556,11 @@ void WorkflowRecord::Set(const std::string& name,
       entries_.erase(name);
     } else {
       // What it writes: 0 (a schedule saved afresh starts over) and a later
-      // fire time (a snooze) as they are. An earlier one comes from a page
-      // opened before the last fire, which would run it again: the fire
-      // recorded is kept, unless it is still in the future (a snooze, or a
-      // clock that was ahead), which any write replaces.
+      // fire time (counted from now) as they are. An earlier one comes from
+      // a page opened before the last fire, which would run it again: the
+      // fire recorded is kept, unless it is still in the future (a clock
+      // that was ahead, or an earlier version's snooze), which any write
+      // replaces.
       int64_t written_fired = std::max<int64_t>(0, fired);
       auto it = entries_.find(name);
       if (written_fired > 0 && it != entries_.end() &&
@@ -541,7 +568,11 @@ void WorkflowRecord::Set(const std::string& name,
           it->second.fired <= now + kLastFiredSlackSeconds) {
         written_fired = it->second.fired;
       }
-      entries_[name] = {std::move(digest), written_fired};
+      // A Snooze or a Skip holds the schedule it was made on: kept by a
+      // write that keeps that schedule, ended by any other.
+      const int64_t held_until =
+          keep_hold && it != entries_.end() ? it->second.held_until : 0;
+      entries_[name] = {std::move(digest), written_fired, held_until};
     }
   }
   Persist();
@@ -586,11 +617,15 @@ bool WorkflowRecord::ClaimFired(const std::string& name,
   {
     base::AutoLock hold(lock_);
     auto it = entries_.find(name);
+    // Fired since it was read, a second fire in that second, or held (a
+    // Snooze or a Skip made since it was read): not this fire's to run.
     if (it == entries_.end() || it->second.fired != expected ||
-        fired == expected) {
+        fired == expected || it->second.held_until > fired) {
       return false;
     }
     it->second.fired = fired;
+    // The fire has reached the hold: it is over.
+    it->second.held_until = 0;
   }
   Persist();
   return true;
@@ -600,11 +635,30 @@ bool WorkflowRecord::NotePassed(const std::string& name, int64_t passed) {
   {
     base::AutoLock hold(lock_);
     auto it = entries_.find(name);
-    // Only ever later: never a fire time brought down, nor a snooze ended.
+    // Only ever later: never a fire time brought down. A hold is left as it
+    // is (the times it covers aren't caught up anyway).
     if (it == entries_.end() || passed <= it->second.fired) {
       return false;
     }
     it->second.fired = passed;
+  }
+  Persist();
+  return true;
+}
+
+bool WorkflowRecord::Hold(const std::string& name, int64_t until) {
+  {
+    base::AutoLock hold(lock_);
+    auto it = entries_.find(name);
+    if (it == entries_.end()) {
+      return false;
+    }
+    // Only ever later: a shorter Snooze made after a longer one, or a Skip
+    // within a Snooze, ends nothing.
+    if (until <= it->second.held_until) {
+      return true;
+    }
+    it->second.held_until = until;
   }
   Persist();
   return true;
@@ -653,6 +707,9 @@ void WorkflowRecord::Persist() {
       value.Set("digest", entry.digest);
       if (entry.fired > 0) {
         value.Set("fired", static_cast<double>(entry.fired));
+      }
+      if (entry.held_until > 0) {
+        value.Set("held_until", static_cast<double>(entry.held_until));
       }
       files.Set(name, std::move(value));
     }

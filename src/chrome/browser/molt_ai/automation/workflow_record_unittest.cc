@@ -10,8 +10,10 @@
 // time taken from the files only at seeding, set by writes (never back
 // below a past fire) and raised by fires (a fire recorded on a clock that
 // was ahead giving way) and by times passed while held for review, an
-// entry restored exactly, and a session's writes before configuration
-// kept.
+// entry restored exactly, a session's writes before configuration kept,
+// and holds (Snooze, Skip) that only rise, refuse a claim before them, end
+// with a claim or a write that doesn't keep the schedule, and survive a
+// restart (a malformed one read as none).
 
 #include "chrome/browser/molt_ai/automation/workflow_record.h"
 
@@ -301,6 +303,7 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
         std::string("x/y.molt"), std::string(".hidden.molt"), long_name,
         std::string("short.molt"), std::string("upper.molt"),
         std::string("fired.molt"), std::string("negative.molt"),
+        std::string("held.molt"), std::string("held_negative.molt"),
         std::string("notes.txt")}) {
     present_.insert(name);
   }
@@ -308,7 +311,13 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
     return base::DictValue().Set("digest", digest);
   };
   base::DictValue files;
-  files.Set("a.molt", entry(good).Set("fired", 1800000000.0));
+  files.Set(
+      "a.molt",
+      entry(good).Set("fired", 1800000000.0).Set("held_until", 1800003600.0));
+  // A malformed hold is no hold: the entry, which vouches for its file, is
+  // kept.
+  files.Set("held.molt", entry(good).Set("fired", 7.0).Set("held_until", "x"));
+  files.Set("held_negative.molt", entry(good).Set("held_until", -1.0));
   files.Set("b.molt.0123.taken", entry(good));
   files.Set("x/y.molt", entry(good));
   files.Set(".hidden.molt", entry(good));
@@ -333,8 +342,15 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
   EXPECT_EQ(loaded->origin(), Origin::kSeeded);
   EXPECT_TRUE(loaded->Vouches("a.molt", good));
   EXPECT_EQ(loaded->LastFired("a.molt"), 1800000000);
+  EXPECT_EQ(loaded->HeldUntil("a.molt"), 1800003600);
   EXPECT_TRUE(loaded->Vouches("b.molt.0123.taken", good));
   EXPECT_EQ(loaded->LastFired("b.molt.0123.taken"), 0);
+  EXPECT_EQ(loaded->HeldUntil("b.molt.0123.taken"), 0);
+  EXPECT_TRUE(loaded->Vouches("held.molt", good));
+  EXPECT_EQ(loaded->LastFired("held.molt"), 7);
+  EXPECT_EQ(loaded->HeldUntil("held.molt"), 0);
+  EXPECT_TRUE(loaded->Vouches("held_negative.molt", good));
+  EXPECT_EQ(loaded->HeldUntil("held_negative.molt"), 0);
   for (const std::string& dropped :
        {std::string("x/y.molt"), std::string(".hidden.molt"), std::string(),
         long_name, std::string("short.molt"), std::string("upper.molt"),
@@ -345,7 +361,8 @@ TEST_F(WorkflowRecordTest, MalformedEntriesAreDroppedOneByOne) {
   EXPECT_FALSE(loaded->Vouches("short.molt", std::string(63, 'a')));
   EXPECT_FALSE(loaded->Vouches("upper.molt", std::string(64, 'A')));
   EXPECT_EQ(RecordedNames(),
-            (std::set<std::string>{"a.molt", "b.molt.0123.taken"}));
+            (std::set<std::string>{"a.molt", "b.molt.0123.taken", "held.molt",
+                                   "held_negative.molt"}));
 }
 
 TEST_F(WorkflowRecordTest, EntriesForFilesNoLongerThereAreDroppedAtLoad) {
@@ -534,8 +551,9 @@ TEST_F(WorkflowRecordTest, AFireRecordedWhileTheClockWasAheadGivesWay) {
 
 // A claimed fire is recorded exactly, only while the fire time is still
 // the one read and never twice in one second: from a past one, and down
-// from one just ahead (a Skip, a short Snooze), so a second claim of the
-// same read always fails; no entry, no claim.
+// from one just ahead (a clock that was ahead, or an earlier version's
+// Skip or short Snooze), so a second claim of the same read always fails;
+// no entry, no claim.
 TEST_F(WorkflowRecordTest, AClaimedFireIsRecordedExactlyOnce) {
   WorkflowRecord* record = Start(/*may_seed=*/false);
   const int64_t now = NowUnix();
@@ -584,6 +602,100 @@ TEST_F(WorkflowRecordTest, RestorePutsAnEntryBackExactly) {
   EXPECT_FALSE(record->EntryOf("b.molt"));
   EXPECT_FALSE(record->Vouches("b.molt", Digest('b')));
   EXPECT_EQ(RecordedNames(), std::set<std::string>{"a.molt"});
+}
+
+// A hold (molt://ai-automation's Snooze or Skip) only rises, leaves the
+// last fire as it is, needs an entry, and is kept in the record file across
+// a restart.
+TEST_F(WorkflowRecordTest, AHoldOnlyRisesAndSurvivesARestart) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  record->Set("a.molt", Digest('a'), now - 60);
+  EXPECT_EQ(record->HeldUntil("a.molt"), 0);
+  EXPECT_TRUE(record->Hold("a.molt", now + 3600));
+  EXPECT_EQ(record->HeldUntil("a.molt"), now + 3600);
+  // A shorter one (a Skip within a Snooze) ends nothing.
+  EXPECT_TRUE(record->Hold("a.molt", now + 60));
+  EXPECT_EQ(record->HeldUntil("a.molt"), now + 3600);
+  EXPECT_EQ(record->LastFired("a.molt"), now - 60);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('a')));
+  // No entry: nothing held.
+  EXPECT_FALSE(record->Hold("none.molt", now + 3600));
+  EXPECT_FALSE(record->EntryOf("none.molt"));
+  EXPECT_EQ(record->HeldUntil("none.molt"), 0);
+  std::string contents;
+  ASSERT_TRUE(base::ReadFileToString(record_file_, &contents));
+  EXPECT_NE(contents.find("\"held_until\""), std::string::npos);
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->HeldUntil("a.molt"), now + 3600);
+  EXPECT_EQ(record->LastFired("a.molt"), now - 60);
+}
+
+// A claim before the hold ends is refused (a Snooze or a Skip made since
+// the scheduler read the workflow wins) and leaves the last fire; one at or
+// after it is claimed, and ends the hold, in the record file too.
+TEST_F(WorkflowRecordTest, AClaimBeforeTheHoldEndsIsRefused) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  const int64_t last = now - 3600;
+  const int64_t held = now + 3600;
+  record->Set("a.molt", Digest('a'), last);
+  ASSERT_TRUE(record->Hold("a.molt", held));
+  EXPECT_FALSE(record->ClaimFired("a.molt", last, now));
+  EXPECT_FALSE(record->ClaimFired("a.molt", last, held - 1));
+  EXPECT_EQ(record->LastFired("a.molt"), last);
+  EXPECT_EQ(record->HeldUntil("a.molt"), held);
+  EXPECT_TRUE(record->ClaimFired("a.molt", last, held));
+  EXPECT_EQ(record->LastFired("a.molt"), held);
+  EXPECT_EQ(record->HeldUntil("a.molt"), 0);
+  std::string contents;
+  ASSERT_TRUE(base::ReadFileToString(record_file_, &contents));
+  EXPECT_EQ(contents.find("\"held_until\""), std::string::npos);
+  present_ = {"a.molt"};
+  record = Start(/*may_seed=*/false);
+  EXPECT_EQ(record->HeldUntil("a.molt"), 0);
+  EXPECT_EQ(record->LastFired("a.molt"), held);
+}
+
+// A write ends the hold (a schedule saved afresh, a whole write) unless it
+// keeps the schedule (SetKeepingHold()); a move's copy carries it, and a
+// write whose file couldn't be written puts it back exactly (Restore()).
+TEST_F(WorkflowRecordTest, AWriteEndsAHoldUnlessItKeepsTheSchedule) {
+  WorkflowRecord* record = Start(/*may_seed=*/false);
+  const int64_t now = NowUnix();
+  record->Set("a.molt", Digest('a'), now - 60);
+  ASSERT_TRUE(record->Hold("a.molt", now + 3600));
+  // A page's save, or a trust change, that keeps the schedule.
+  record->SetKeepingHold("a.molt", Digest('b'), now - 60);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('b')));
+  EXPECT_EQ(record->LastFired("a.molt"), now - 60);
+  EXPECT_EQ(record->HeldUntil("a.molt"), now + 3600);
+  // Copied with its entry before a move's rename.
+  ASSERT_TRUE(record->Copy("a.molt", "a.molt.00ff.taken"));
+  EXPECT_EQ(record->HeldUntil("a.molt.00ff.taken"), now + 3600);
+  record->Forget("a.molt.00ff.taken");
+  // A write that fails is put back as it was, its hold too.
+  const std::optional<WorkflowRecord::Entry> before = record->EntryOf("a.molt");
+  ASSERT_TRUE(before);
+  EXPECT_EQ(before->held_until, now + 3600);
+  std::string bytes;
+  ASSERT_TRUE(base::ReadFileToString(record_file_, &bytes));
+  record->Set("a.molt", Digest('c'), 0);
+  EXPECT_EQ(record->HeldUntil("a.molt"), 0);
+  record->Restore("a.molt", before);
+  EXPECT_TRUE(record->Vouches("a.molt", Digest('b')));
+  EXPECT_EQ(record->HeldUntil("a.molt"), now + 3600);
+  std::string restored;
+  ASSERT_TRUE(base::ReadFileToString(record_file_, &restored));
+  EXPECT_EQ(restored, bytes);
+  // A write that doesn't keep the schedule ends it, whatever it writes.
+  record->Set("a.molt", Digest('b'), now - 60);
+  EXPECT_EQ(record->HeldUntil("a.molt"), 0);
+  // A write keeping the hold of a name with no entry has none to keep.
+  record->SetKeepingHold("b.molt", Digest('b'), 0);
+  EXPECT_TRUE(record->Vouches("b.molt", Digest('b')));
+  EXPECT_EQ(record->HeldUntil("b.molt"), 0);
 }
 
 TEST_F(WorkflowRecordTest, WritesBeforeConfigurationAreKept) {

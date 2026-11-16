@@ -142,6 +142,14 @@ struct Trigger {
   // Last time this trigger fired (unix seconds), used by scheduler for
   // missed-run catch-up.
   int64_t last_fired_unix = 0;
+  // This browser's hold on the schedule (molt://ai-automation's Snooze or
+  // Skip): no fire before this time (unix seconds); 0: none. Only from this
+  // browser's workflow record (AutomationStorage fills it on a read:
+  // WorkflowRecord::HeldUntil()), never written to or read from a file:
+  // TriggerToDict() and TriggerFromDict() leave it out, so neither the file
+  // nor its security digest carries it, and a hold made in one browser
+  // holds no other.
+  int64_t held_until_unix = 0;
 };
 
 // Trust level granted to the script. Higher trust = fewer approval prompts.
@@ -179,8 +187,25 @@ struct SecurityPolicy {
   // The workflow's file was changed outside this browser: what it says
   // didn't match what the browser last saved under its name
   // (workflow_record.h), so it was loaded as an unconfirmed import
-  // (AutomationSecurity::ClampUnvouched(), with |sites_unconfirmed|). It
-  // only chooses the words the user is shown; no check reads it.
+  // (AutomationSecurity::ClampUnvouched(), with |sites_unconfirmed|). Read
+  // by, among others (search for changed_outside):
+  //   - the words the user is shown: AutomationSecurity::ReviewMessage(),
+  //     the Agent studio's review, and molt://ai-automation's refusals
+  //     (PromoteTrust()'s message, Snooze and Skip:
+  //     molt_ai_automation_storage.cc);
+  //   - voice mode, which refuses to run such a routine (ReadRoutine(),
+  //     voice_routines.cc) or to confirm it (only the Agent studio does,
+  //     with its review token), and describes its steps as it runs them
+  //     when it claims one (voice_routine_store.cc);
+  //   - the scheduler, which holds it for review (a due time that passes
+  //     meanwhile isn't caught up later, automation_scheduler.cc);
+  //   - the audit log's reason for a refused run: the runner's run_refused
+  //     (automation_runner.cc) and the scheduler service's RefusalReason()
+  //     (automation_scheduler_service.cc);
+  //   - AutomationStorage::SaveChecked() and Update(), which keep no hold
+  //     (a Snooze, a Skip) through a save of it;
+  //   - AutomationSecurity::MayConfirmWithoutSites(), which lets one whose
+  //     steps target no site be confirmed with none.
   // ConfirmDraftSites() clears it, saving keeps it. Stored only when true
   // (an older build ignores it).
   bool changed_outside = false;
@@ -303,6 +328,12 @@ base::DictValue TriggerToDict(const Trigger& t);
 // A trigger that runs its workflow by itself (a cron, an interval, a
 // one-shot time); a manual one, or a browser event, never does.
 bool FiresByItself(const Trigger& trigger);
+
+// Whether |written| keeps |stored|'s schedule: its type, expression, time
+// zone and end (its last fire and hold aside). A save that does keeps the
+// schedule's hold (a Snooze, a Skip: AutomationStorage::SaveChecked() and
+// Update()); any other ends it.
+bool SameSchedule(const Trigger& stored, const Trigger& written);
 
 // The shortest interval any schedule runs at, whatever its expression
 // says: each fire opens a run window and shows a notification, and the

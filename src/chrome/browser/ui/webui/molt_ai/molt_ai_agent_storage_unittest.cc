@@ -7,7 +7,8 @@
 // the studio's and voice mode's changes to the profile's routines on one
 // sequence never interleave; a workflow whose file was changed outside the
 // browser (workflow_record.h) is shown for review, neither runs nor is
-// scheduled or trusted, and is confirmed only as it was reviewed; an edit
+// scheduled or trusted, and is confirmed only as it was reviewed (with no
+// site when its steps target none, never an agent's draft); an edit
 // of a workflow gone since it was opened is refused, as is the edit of a
 // draft that is no longer one, an id sent is always an edit, a new one
 // never goes over another file, an interval schedule counts from when it
@@ -35,6 +36,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
@@ -580,6 +582,133 @@ TEST_F(AgentStudioStorageTest, EditingAWorkflowChangedOutsideKeepsItADraft) {
   EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true);
 }
 
+// A file changed outside whose only address comes from a value: no site to
+// confirm, so the browser says it may be confirmed with none, and it is,
+// with the click's empty list and the review token. It is then CASUAL on no
+// site: given any value for its address, its run window opens no page.
+TEST_F(AgentStudioStorageTest, AChangeWithNoSiteIsConfirmedWithNone) {
+  UseRecord();
+  Script planted = Claiming("wf_1");
+  planted.steps[0].target = "{{url}}";
+  planted.default_variables["url"] = "https://evil.example/";
+  Plant(planted);
+  Answer get = Ask(Request(Kind::kGet, "wf_1"));
+  const base::ListValue* sites = get.out.FindList("draftSites");
+  ASSERT_TRUE(sites);
+  EXPECT_TRUE(sites->empty());
+  EXPECT_EQ(get.out.FindBool("confirmWithoutSites"), true);
+  ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.review_token = *get.out.FindString("reviewToken");
+  confirm.sites = {"evil.example"};
+  EXPECT_EQ(*Error(Ask(confirm)),
+            "The draft's steps changed. Save them, then confirm again.");
+  confirm.sites.clear();
+  Answer confirmed = Ask(confirm);
+  EXPECT_EQ(confirmed.out.FindBool("ok"), true);
+  EXPECT_EQ(*confirmed.out.FindString("trust"), "casual");
+  std::optional<Script> stored = Shared().Load("wf_1");
+  ASSERT_TRUE(stored);
+  EXPECT_FALSE(stored->security.changed_outside);
+  EXPECT_FALSE(stored->security.sites_unconfirmed);
+  EXPECT_EQ(stored->security.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(stored->security.domain_whitelist.empty());
+  // Said so in the audit log.
+  bool logged = false;
+  for (const std::string& line : Shared().ReadAuditTail()) {
+    logged |= line.find("wf_1 | outside_change_confirmed | no_sites") !=
+              std::string::npos;
+  }
+  EXPECT_TRUE(logged);
+  // It runs now, and opens no page by itself.
+  Answer run = Ask(Request(Kind::kCheckRun, "wf_1"));
+  ASSERT_TRUE(run.script);
+  run.script->default_variables["url"] = "https://evil.example/";
+  EXPECT_EQ(automation::AutomationSecurity::RunWindowStartURL(*run.script, 0),
+            "");
+  EXPECT_FALSE(automation::AutomationSecurity().AllowNavigation(
+      automation::AutomationSecurity::EffectivePolicy(*run.script),
+      "https://evil.example/"));
+}
+
+// A draft from an agent run with no site, and a routine taught by voice
+// changed outside with none, are never confirmed with none.
+TEST_F(AgentStudioStorageTest, OnlyAChangeIsConfirmedWithNoSite) {
+  Script draft = Workflow("wf_draft", "Draft");
+  draft.steps[0].target = "{{url}}";
+  draft.security.sites_unconfirmed = true;
+  ASSERT_TRUE(Shared().Save(draft));
+  Script routine = Routine("voice_1", "my news");
+  ASSERT_FALSE(routine.steps.empty());
+  routine.steps[0].target = "{{url}}";
+  ASSERT_TRUE(routine.steps[0].extra.is_dict());
+  routine.steps[0].extra.GetDict().Remove(automation::kStepHostKey);
+  routine.security.sites_unconfirmed = true;
+  routine.security.changed_outside = true;
+  routine.security.domain_whitelist.clear();
+  ASSERT_TRUE(
+      automation::AutomationSecurity::HostsReferencedBy(routine.steps).empty());
+  ASSERT_TRUE(Routines().Save(routine));
+  for (const char* id : {"wf_draft", "voice_1"}) {
+    Answer get = Ask(Request(Kind::kGet, id));
+    ASSERT_TRUE(get.out.FindList("draftSites")) << id;
+    EXPECT_TRUE(get.out.FindList("draftSites")->empty()) << id;
+    EXPECT_EQ(get.out.FindBool("confirmWithoutSites"), false) << id;
+    ASSERT_TRUE(IsReviewToken(get.out.FindString("reviewToken"))) << id;
+    WorkflowRequest confirm = Request(Kind::kConfirmSites, id);
+    confirm.review_token = *get.out.FindString("reviewToken");
+    EXPECT_EQ(*Error(Ask(confirm)),
+              "The draft's steps changed. Save them, then confirm again.")
+        << id;
+  }
+  EXPECT_TRUE(Shared().Load("wf_draft")->security.sites_unconfirmed);
+  EXPECT_TRUE(Routines().Load("voice_1")->security.sites_unconfirmed);
+}
+
+// A save of a change answers whether it may still be confirmed with no
+// site: not once a step opens a fixed address, whose site it is then
+// confirmed on.
+TEST_F(AgentStudioStorageTest, ASaveSaysWhetherAChangeIsConfirmedWithNoSite) {
+  UseRecord();
+  Script planted = Claiming("wf_1");
+  planted.steps[0].target = "{{url}}";
+  Plant(planted);
+  SaveRequest edit = Save(Workflow("wf_1", "Open a page"));
+  edit.script.steps[0].target = "{{url}}";
+  edit.edited_draft = true;
+  Answer saved = SaveSharedWorkflow(places_, std::move(edit), Holds::kNothing);
+  ASSERT_FALSE(Error(saved));
+  ASSERT_TRUE(saved.out.FindList("draftSites"));
+  EXPECT_TRUE(saved.out.FindList("draftSites")->empty());
+  EXPECT_EQ(saved.out.FindBool("confirmWithoutSites"), true);
+  EXPECT_TRUE(IsReviewToken(saved.out.FindString("reviewToken")));
+  // A step that opens a fixed address added: its site to confirm.
+  SaveRequest with_site = Save(Workflow("wf_1", "Open a page"));
+  with_site.script.steps[0].target = "{{url}}";
+  Step news;
+  news.type = StepType::NAVIGATE;
+  news.target = "https://news.example/";
+  with_site.script.steps.push_back(std::move(news));
+  with_site.edited_draft = true;
+  Answer saved_site =
+      SaveSharedWorkflow(places_, std::move(with_site), Holds::kNothing);
+  ASSERT_FALSE(Error(saved_site));
+  const base::ListValue* sites = saved_site.out.FindList("draftSites");
+  ASSERT_TRUE(sites);
+  ASSERT_EQ(sites->size(), 1u);
+  EXPECT_EQ((*sites)[0].GetString(), "news.example");
+  EXPECT_EQ(saved_site.out.FindBool("confirmWithoutSites"), false);
+  ASSERT_TRUE(IsReviewToken(saved_site.out.FindString("reviewToken")));
+  WorkflowRequest confirm = Request(Kind::kConfirmSites, "wf_1");
+  confirm.review_token = *saved_site.out.FindString("reviewToken");
+  EXPECT_EQ(*Error(Ask(confirm)),
+            "The draft's steps changed. Save them, then confirm again.");
+  confirm.sites = {"news.example"};
+  EXPECT_EQ(Ask(confirm).out.FindBool("ok"), true);
+  EXPECT_EQ(Shared().Load("wf_1")->security.domain_whitelist,
+            std::vector<std::string>{"news.example"});
+}
+
 TEST_F(AgentStudioStorageTest, ADuplicateOfAWorkflowChangedOutsideIsADraft) {
   UseRecord();
   Plant(Claiming("wf_1"));
@@ -750,6 +879,53 @@ TEST_F(AgentStudioStorageTest, AScheduleIsAnsweredAsSaved) {
   EXPECT_EQ(*trigger->FindString("type"), "cron");
   EXPECT_EQ(*trigger->FindString("expression"), "00 09 * * *");
   EXPECT_FALSE(trigger->FindDouble("last_fired_unix"));
+}
+
+// saveSchedule of the schedule as stored keeps its hold (a Snooze or a Skip
+// made in molt://ai-automation) and answers with it, so the next run the
+// studio shows (AutomationScheduler::NextFireTime(), as OnScheduleSaved()
+// counts it) is the first at or after the hold, as molt://ai-automation
+// shows it. The hold isn't in the answer's dict, as in no file. A new
+// schedule ends it and is answered with none.
+TEST_F(AgentStudioStorageTest, AScheduleSavedAgainIsAnsweredWithItsHold) {
+  UseRecord();
+  Script daily = Workflow("wf_1", "Prices");
+  daily.trigger.type = automation::TriggerType::CRON;
+  daily.trigger.expression = "0 9 * * *";
+  ASSERT_TRUE(Shared().Save(daily));
+  const int64_t now = base::Time::Now().ToTimeT();
+  // Two days: a daily schedule's next run without it is a day away at most.
+  const int64_t held = now + 2 * 86400;
+  ASSERT_EQ(Shared().HoldWith(
+                "wf_1",
+                [held](const Script&) { return std::optional<int64_t>(held); }),
+            held);
+  WorkflowRequest schedule = Request(Kind::kSchedule, "wf_1");
+  schedule.trigger.type = automation::TriggerType::CRON;
+  schedule.trigger.expression = "0 9 * * *";
+  Answer same = Ask(schedule);
+  EXPECT_EQ(same.out.FindBool("ok"), true);
+  ASSERT_TRUE(same.trigger);
+  EXPECT_EQ(same.trigger->held_until_unix, held);
+  EXPECT_GE(automation::AutomationScheduler::NextFireTime(
+                *same.trigger, base::Time::FromTimeT(now))
+                .ToTimeT(),
+            held);
+  const base::DictValue* dict = same.out.FindDict("trigger");
+  ASSERT_TRUE(dict);
+  EXPECT_FALSE(dict->Find("held_until_unix"));
+  EXPECT_EQ(Shared().Load("wf_1")->trigger.held_until_unix, held);
+  // A new schedule: the hold ends, and none is answered.
+  schedule.trigger.expression = "0 10 * * *";
+  Answer changed = Ask(schedule);
+  EXPECT_EQ(changed.out.FindBool("ok"), true);
+  ASSERT_TRUE(changed.trigger);
+  EXPECT_EQ(changed.trigger->held_until_unix, 0);
+  EXPECT_LT(automation::AutomationScheduler::NextFireTime(
+                *changed.trigger, base::Time::FromTimeT(now))
+                .ToTimeT(),
+            held);
+  EXPECT_EQ(Shared().Load("wf_1")->trigger.held_until_unix, 0);
 }
 
 // A workflow this browser fired, changed outside (its schedule too), then
@@ -1240,9 +1416,10 @@ TEST_F(AgentStudioStorageTest, ANewWorkflowGetsTheDefaultPolicy) {
   EXPECT_EQ(stored->security.max_runtime_seconds, 300);
 }
 
-// molt://ai-automation's Snooze (a last fire still to come), then a save
-// from an editor opened before it (the last fire it was shown, earlier):
-// the snooze holds, so the workflow doesn't run during it.
+// molt://ai-automation's Snooze (a hold in this browser's record), then a
+// save from an editor opened before it: the editor keeps the schedule, so
+// the snooze holds and the workflow doesn't run during it; its last fire
+// is the one recorded.
 TEST_F(AgentStudioStorageTest, AnEditorOpenedBeforeASnoozeKeepsIt) {
   UseRecord();
   Script interval = Workflow("wf_1", "Prices");
@@ -1254,10 +1431,11 @@ TEST_F(AgentStudioStorageTest, AnEditorOpenedBeforeASnoozeKeepsIt) {
   std::optional<Script> editor = Shared().Load("wf_1");
   ASSERT_TRUE(editor);
   ASSERT_EQ(editor->trigger.last_fired_unix, now - 600);
-  ASSERT_TRUE(Shared().Update("wf_1", [now](Script& script) {
-    script.trigger.last_fired_unix = now + 3600;
-    return true;
-  }));
+  ASSERT_EQ(Shared().HoldWith("wf_1",
+                              [now](const Script&) {
+                                return std::optional<int64_t>(now + 3600);
+                              }),
+            now + 3600);
   editor->steps[0].description = "Open the news";
   Answer saved =
       SaveSharedWorkflow(places_, Save(std::move(*editor)), Holds::kNothing);
@@ -1265,7 +1443,8 @@ TEST_F(AgentStudioStorageTest, AnEditorOpenedBeforeASnoozeKeepsIt) {
   std::optional<Script> stored = Shared().Load("wf_1");
   ASSERT_TRUE(stored);
   EXPECT_EQ(stored->steps[0].description, "Open the news");
-  EXPECT_EQ(stored->trigger.last_fired_unix, now + 3600);
+  EXPECT_EQ(stored->trigger.held_until_unix, now + 3600);
+  EXPECT_EQ(stored->trigger.last_fired_unix, now - 600);
 }
 
 }  // namespace

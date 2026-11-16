@@ -1,12 +1,12 @@
 {
- "resume_run": "43776798905",
+ "resume_run": "43786145854",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Seventy-seventh build (incremental on the seventy-sixth, run 43776798905, Chromium 156.0.8078.100): the workflow-gaps change with review rounds three and four. The chat's /wait-for takes the rest of its line as its selector, only Save schedule starts an interval an earlier version never started (and a save from a stale card keeps it as stored), a one-time scheduled run isn't skipped beside an open run, and Snooze and Skip don't start an interval never started. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Seventy-eighth build (incremental on the seventy-seventh, run 43786145854, Chromium 156.0.8078.100): workflow gaps B. molt://ai-automation's Snooze and Skip are holds kept in the browser's record, honoured by cron and interval schedules; a changed workflow whose addresses are all values can be confirmed with no sites; an import there keeps no sites of its file's. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }

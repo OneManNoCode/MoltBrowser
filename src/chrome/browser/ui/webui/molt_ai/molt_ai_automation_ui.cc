@@ -28,6 +28,8 @@
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_shared_tasks.h"
@@ -47,6 +49,7 @@ namespace {
 
 namespace automation_page = molt_ai::automation_page;
 using molt_ai::automation::AutomationScheduler;
+using molt_ai::automation::AutomationSchedulerServiceFactory;
 using molt_ai::automation::AutomationSecurity;
 using molt_ai::automation::AutomationStorage;
 using molt_ai::automation::PostSharedChange;
@@ -61,6 +64,10 @@ using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
 // The most audit-log lines a page may ask for at once.
 constexpr int kMaxAuditLines = 2000;
+// A Snooze holds a schedule for a minute to an hour (the page's button
+// snoozes for an hour).
+constexpr int kMinSnoozeSeconds = 60;
+constexpr int kMaxSnoozeSeconds = 3600;
 
 // ---- Message Handler ----
 // Every read and change of the shared storage runs on its sequences
@@ -122,6 +129,15 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
         base::BindRepeating(
             &MoltAIAutomationHandler::HandleGetAuditForScript,
             base::Unretained(this)));
+    // Snooze 1h and Skip next: holds in this browser's workflow record.
+    web_ui()->RegisterMessageCallback(
+        "snoozeScript",
+        base::BindRepeating(&MoltAIAutomationHandler::HandleSnoozeScript,
+                            base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "skipNextFire",
+        base::BindRepeating(&MoltAIAutomationHandler::HandleSkipNextFire,
+                            base::Unretained(this)));
   }
 
   void OnJavascriptDisallowed() override {
@@ -162,11 +178,16 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (not_started) {
       d.Set("interval_not_started", true);
     }
-    base::Time next = AutomationScheduler::NextFireTime(s.trigger,
-                                                          base::Time::Now());
+    // The next fire counts this browser's hold (a Snooze or a Skip), which
+    // the card shows while it lasts.
+    const base::Time now = base::Time::Now();
+    base::Time next = AutomationScheduler::NextFireTime(s.trigger, now);
     if (s.enabled && !not_started && !next.is_null()) {
       d.Set("next_fire_unix",
             static_cast<int>(next.InSecondsFSinceUnixEpoch()));
+    }
+    if (s.trigger.held_until_unix > static_cast<int64_t>(now.ToTimeT())) {
+      d.Set("held_until_unix", static_cast<double>(s.trigger.held_until_unix));
     }
 
     // Day 5: trust promotion suggestion. Never for a draft (from an agent
@@ -563,6 +584,68 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
                        weak_factory_.GetWeakPtr(), callback_id));
   }
 
+  // Snooze 1h: [callback_id, id, seconds]. No automatic run of the workflow
+  // for |seconds| (a minute to an hour), then its own times again: a hold
+  // this browser keeps in its workflow record, never a change to the
+  // workflow (automation_page::Snooze()), so a card opened before an edit
+  // elsewhere writes nothing back. Like the schedule it holds, it needs no
+  // click of its own: it only ever delays runs.
+  void HandleSnoozeScript(const base::ListValue& args) {
+    AllowJavascript();
+    if (!HasCallbackArgs(args, 3u, __func__)) {
+      return;
+    }
+    const std::string callback_id = args[0].GetString();
+    if (!args[1].is_string() || !args[2].is_int() ||
+        args[2].GetInt() < kMinSnoozeSeconds ||
+        args[2].GetInt() > kMaxSnoozeSeconds) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("error", "Snooze for a minute to an hour");
+      Resolve(callback_id, std::move(result));
+      return;
+    }
+    PostSharedChange(Dir(),
+                     base::BindOnce(&automation_page::Snooze,
+                                    args[1].GetString(), args[2].GetInt(),
+                                    static_cast<int64_t>(std::time(nullptr))),
+                     base::BindOnce(&MoltAIAutomationHandler::OnHeld,
+                                    weak_factory_.GetWeakPtr(), callback_id));
+  }
+
+  // Skip next: [callback_id, id]. The workflow's next run doesn't happen,
+  // the one after it does (automation_page::SkipNext()).
+  void HandleSkipNextFire(const base::ListValue& args) {
+    AllowJavascript();
+    if (!HasCallbackArgs(args, 2u, __func__)) {
+      return;
+    }
+    const std::string id = args[1].is_string() ? args[1].GetString() : "";
+    PostSharedChange(
+        Dir(),
+        base::BindOnce(&automation_page::SkipNext, id, base::Time::Now()),
+        base::BindOnce(&MoltAIAutomationHandler::OnHeld,
+                       weak_factory_.GetWeakPtr(), args[0].GetString()));
+  }
+
+  // A hold set: the profile's scheduler lists the workflows again at once,
+  // so its timer is armed past the hold (a timer armed before it would
+  // still not fire it: the scheduler checks the hold on its reload, and
+  // the record refuses the claim).
+  void OnHeld(const std::string& callback_id, base::DictValue result) {
+    if (result.FindBool("success").value_or(false)) {
+      Profile* profile = Profile::FromBrowserContext(
+          web_ui()->GetWebContents()->GetBrowserContext());
+      if (auto* svc =
+              AutomationSchedulerServiceFactory::GetForProfile(profile)) {
+        if (svc->scheduler()) {
+          svc->scheduler()->Reschedule();
+        }
+      }
+    }
+    Resolve(callback_id, std::move(result));
+  }
+
   AutomationSecurity security_;
   base::WeakPtrFactory<MoltAIAutomationHandler> weak_factory_{this};
 };
@@ -805,6 +888,12 @@ function buildScheduleHTML(s) {
     '</div>' +
     '</div>';
 
+  // This browser's hold (Snooze, Skip), while it lasts: the next fire
+  // below is the first one after it.
+  var held = s.held_until_unix
+      ? 'Held until ' + esc(new Date(s.held_until_unix * 1000).toLocaleString()) +
+        ' &middot; '
+      : '';
   var nextLine = '';
   if (s.enabled === false && t !== 'manual') {
     // Off (an import's schedule starts off): no next fire is computed.
@@ -825,11 +914,18 @@ function buildScheduleHTML(s) {
     else if (ms < 60*60*1000) rel = 'in ' + Math.round(ms/60000) + 'm';
     else if (ms < 24*60*60*1000) rel = 'in ' + Math.round(ms/3600000) + 'h';
     else rel = 'in ' + Math.round(ms/86400000) + 'd';
-    nextLine = '<div class="next-fire">Next fire: ' + esc(d.toLocaleString()) +
-               ' (' + rel + ')</div>';
+    nextLine = '<div class="next-fire">' + held + 'Next fire: ' +
+               esc(d.toLocaleString()) + ' (' + rel + ')</div>';
   } else if (t !== 'manual') {
-    nextLine = '<div class="next-fire disabled">No upcoming fire</div>';
+    nextLine = '<div class="next-fire disabled">' + held +
+               'No upcoming fire</div>';
   }
+
+  // Snooze and Skip hold a schedule that repeats: a cron or interval one.
+  var holdButtons = (t === 'cron' || t === 'interval')
+    ? ' <button class="btn ghost small" data-act="snooze-1h">Snooze 1h</button>' +
+      ' <button class="btn ghost small" data-act="skip-next">Skip next</button>'
+    : '';
 
   var enabledHTML = '<label style="font-size:.75rem;color:#aaa;">' +
     '<input type="checkbox" data-sched="enabled"' +
@@ -843,9 +939,8 @@ function buildScheduleHTML(s) {
     +   cronBlock + intervalBlock + atBlock
     +   nextLine
     +   '<div style="margin-top:10px;">'
-    +     '<button class="btn green small" data-act="save-schedule">Save schedule</button> '
-    +     '<button class="btn ghost small" data-act="snooze-1h">Snooze 1h</button> '
-    +     '<button class="btn ghost small" data-act="skip-next">Skip next</button>'
+    +     '<button class="btn green small" data-act="save-schedule">Save schedule</button>'
+    +     holdButtons
     +   '</div>'
     + '</div>';
 }
@@ -1457,30 +1552,39 @@ function refuseNotStarted(scriptObj) {
   return true;
 }
 
+// A unix time as the page shows times.
+function whenText(unix) {
+  return new Date(unix * 1000).toLocaleString();
+}
+
+// Snooze and Skip are holds the browser keeps for this browser only (its
+// workflow record), honoured by cron and interval schedules alike. They
+// change nothing in the workflow, so the card's copy (which may be stale:
+// an open card isn't refreshed) is never sent back.
 function snoozeFor(scriptObj, seconds) {
   if (refuseNotStarted(scriptObj)) return;
-  // Push the next-fire deadline by N seconds by setting last_fired_unix
-  // to (now - interval_or_offset). For cron, this won't strictly skip
-  // — instead we set enabled=false + a one-shot re-enable timer (not
-  // implemented for v1). Simple v1: bump last_fired so interval-based
-  // triggers wait `seconds` more before firing.
-  if (!scriptObj.trigger) scriptObj.trigger = {type:'manual'};
-  scriptObj.trigger.last_fired_unix =
-    Math.floor(Date.now() / 1000) - 0 + seconds; // a bit forward
-  saveScript(scriptObj, 'Snoozed for 1h');
+  sendWithPromise('snoozeScript', scriptObj.id, seconds).then(function(r) {
+    if (r && r.success) {
+      showToast('Snoozed: no run until ' + whenText(r.held_until_unix));
+      refresh();
+    } else {
+      showToast('Snooze failed: ' + ((r && r.error) || ''), true);
+    }
+  });
 }
 
 function skipNextFire(scriptObj) {
-  if (!scriptObj.trigger) return;
   if (refuseNotStarted(scriptObj)) return;
-  // Mark "last_fired" as the upcoming computed fire so the scheduler's
-  // catch-up logic considers it already done.
-  if (scriptObj.next_fire_unix) {
-    scriptObj.trigger.last_fired_unix = scriptObj.next_fire_unix + 1;
-  } else {
-    scriptObj.trigger.last_fired_unix = Math.floor(Date.now() / 1000);
-  }
-  saveScript(scriptObj, 'Next fire skipped');
+  sendWithPromise('skipNextFire', scriptObj.id).then(function(r) {
+    if (r && r.success) {
+      showToast(r.next_fire_unix
+          ? 'Next run skipped; the one after is ' + whenText(r.next_fire_unix)
+          : 'Next run skipped');
+      refresh();
+    } else {
+      showToast('Skip failed: ' + ((r && r.error) || ''), true);
+    }
+  });
 }
 
 // Day 4: blank create + import + export

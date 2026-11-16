@@ -16,7 +16,8 @@
 //                "other_directory",
 //      "created": "<ISO 8601>",
 //      "files": {"<file name>": {"digest": "<64 lowercase hex>",
-//                                "fired": <unix seconds>}}}
+//                                "fired": <unix seconds>,
+//                                "held_until": <unix seconds>}}}
 //   <user data dir>/Molt Workflow Record Started   ("1\n", never deleted)
 //
 // An entry, by the file's base name in the directory (<id>.molt, or a
@@ -33,17 +34,26 @@
 // scheduling (LastFired()): the file's own trigger.last_fired_unix, which
 // anything can write, is never believed, and no fire time read from a
 // file is recorded (but at seeding). So a fire time written into a file
-// outside this browser (another browser's run, Snooze or Skip, or a
-// forged one) changes nothing here, and two browsers with different user
-// data directories sharing the directory each run their own schedules (a
-// workflow can run in both). A deleted file's entry is forgotten (put
-// back, it doesn't match), and an entry whose file is gone is dropped at
-// the next load, unless the file is set aside now (<id>.molt while
-// <id>.molt.*.taken is there: another browser's move, or one cut short),
-// so it is vouched for again once it is put back. A move copies the entry
-// to the new name before its rename and forgets the old one after
+// outside this browser (another browser's run, an older build's Snooze or
+// Skip, or a forged one) changes nothing here, and two browsers with
+// different user data directories sharing the directory each run their own
+// schedules (a workflow can run in both). A deleted file's entry is
+// forgotten (put back, it doesn't match), and an entry whose file is gone
+// is dropped at the next load, unless the file is set aside now (<id>.molt
+// while <id>.molt.*.taken is there: another browser's move, or one cut
+// short), so it is vouched for again once it is put back. A move copies the
+// entry to the new name before its rename and forgets the old one after
 // (Copy(), Forget()), so whichever name holds the file if the browser ends
 // in between has one.
+//
+// Holds. "held_until" (left out when 0) is a hold made in this browser
+// (molt://ai-automation's Snooze and Skip: Hold()): no fire of the
+// schedule before that time. It only rises, and ends with a fire claimed at
+// or after it (ClaimFired()) or a write that doesn't keep the schedule
+// (Set(); SetKeepingHold() keeps it). It is kept in the record only, never
+// in the file: a hold covers this browser's profiles, which share the
+// record, and no other browser. A malformed one is read as none (the entry
+// is kept), and an older build ignores it (a downgrade ends holds).
 //
 // The first load. The record is always written at its first load (empty
 // when there is nothing to record), and the "Started" marker never goes
@@ -59,11 +69,12 @@
 // written only as regular files (molt_regular_file.h), atomically.
 //
 // Threads. Configure() and For() run anywhere (no I/O). LoadLocked() and
-// every change (Set(), NoteFired(), ClaimFired(), NotePassed(), Copy(),
-// Forget(), Restore()) run only under the storage's change scope of
-// |directory| (its lock, then its lock file), so each is ordered with the
-// file change it mirrors, and their writes of the record happen there too,
-// one at a time. Vouches(), LastFired(), EntryOf() and loaded() only read,
+// every change (Set(), SetKeepingHold(), NoteFired(), ClaimFired(),
+// NotePassed(), Hold(), Copy(), Forget(), Restore()) run only under the
+// storage's change scope of |directory| (its lock, then its lock file), so
+// each is ordered with the file change it mirrors, and their writes of the
+// record happen there too, one at a time. Vouches(), LastFired(),
+// HeldUntil(), EntryOf() and loaded() only read,
 // under this record's own lock, the innermost of all (the registry's is
 // another, never held with it).
 // base only, so molt_ai_unittests tests it on real files.
@@ -100,7 +111,8 @@ inline constexpr size_t kMaxWorkflowRecordBytes = 16 * 1024 * 1024;
 inline constexpr size_t kMaxWorkflowRecordEntries = 65536;
 // A recorded fire time later than now (WorkflowRecord::Set()), or than a
 // fire happening now (WorkflowRecord::NoteFired()), by more than this is no
-// past fire: a snooze, or a clock that was ahead.
+// past fire: a clock that was ahead, or a snooze an earlier version wrote
+// as a fire time (a Snooze is now a hold: Entry::held_until).
 inline constexpr int64_t kLastFiredSlackSeconds = 5 * 60;
 
 class WorkflowRecord {
@@ -118,6 +130,9 @@ class WorkflowRecord {
     // The last fire time this browser wrote under the name, or a later one
     // it fired at (unix seconds).
     int64_t fired = 0;
+    // This browser's hold on the schedule (a Snooze or a Skip): no fire
+    // before this time (unix seconds); 0: none.
+    int64_t held_until = 0;
   };
   enum class Origin {
     kSeeded,
@@ -168,6 +183,9 @@ class WorkflowRecord {
   // |name|'s last fire, for scheduling: the one recorded (Entry::fired),
   // whatever its file says; 0 when there is no entry.
   int64_t LastFired(const std::string& name) const;
+  // |name|'s hold (Entry::held_until): no fire before it; 0 when there is
+  // none, or no entry.
+  int64_t HeldUntil(const std::string& name) const;
 
   // The entry recorded for |name| now, if any (for Restore()).
   std::optional<Entry> EntryOf(const std::string& name) const;
@@ -177,14 +195,22 @@ class WorkflowRecord {
   // Before the write (AutomationStorage sets it, then renames the file
   // into place): this browser writes |digest| under |name| ("" forgets it)
   // now, with |fired| as its last fire time. 0 and a later one are the
-  // entry's as they are (a schedule saved afresh starts over; a snooze). An
-  // earlier one is a page's opened before a fire (a page's save that keeps
-  // the schedule writes the stored one instead: AutomationStorage::
-  // SaveChecked()), or a schedule saved afresh counted from now: the past
-  // fire recorded is kept, and only one still in the future (beyond now by
-  // kLastFiredSlackSeconds: a snooze, or a clock that was ahead) gives way
-  // to it.
+  // entry's as they are (a schedule saved afresh starts over, or counts
+  // from now). An earlier one is a page's opened before a fire (a page's
+  // save that keeps the schedule writes the stored one instead:
+  // AutomationStorage::SaveChecked()), or a schedule saved afresh counted
+  // from now: the past fire recorded is kept, and only one still in the
+  // future (beyond now by kLastFiredSlackSeconds) gives way to it. It ends
+  // |name|'s hold (a schedule saved afresh, or a whole write, starts over).
   void Set(const std::string& name, std::string digest, int64_t fired);
+  // Set(), keeping |name|'s hold: a write that keeps the schedule (same
+  // type, expression, time zone and end: AutomationStorage::SaveChecked()
+  // and Update()), so a page's save or a trust change ends no Snooze. Never
+  // a write over a file changed outside the browser: its schedule may not
+  // be the one held.
+  void SetKeepingHold(const std::string& name,
+                      std::string digest,
+                      int64_t fired);
   // |name|'s entry exactly as |entry| was (EntryOf() before a Set() whose
   // file couldn't be written); none: forgotten.
   void Restore(const std::string& name, const std::optional<Entry>& entry);
@@ -196,11 +222,13 @@ class WorkflowRecord {
   void NoteFired(const std::string& name, int64_t fired);
   // The scheduler's claim of a fire of |name| at |fired| (its own clock),
   // made when it read |expected| as the last fire: only while the entry's
-  // fire time is still |expected|, and never a second fire in that second
-  // (|fired| == |expected|). The fire time is then |fired| exactly (down
-  // from one still in the future: a snooze, a Skip or a clock that was
-  // ahead, which the fire, due now, has overtaken), so a claim always moves
-  // it and a second one of the same read fails. Whether it was claimed.
+  // fire time is still |expected|, never a second fire in that second
+  // (|fired| == |expected|), and never before its hold (a Snooze or a Skip
+  // made since the read wins). The fire time is then |fired| exactly (down
+  // from one still in the future: a clock that was ahead, which the fire,
+  // due now, has overtaken), so a claim always moves it and a second one
+  // of the same read fails; the hold, which the fire has reached, ends.
+  // Whether it was claimed.
   bool ClaimFired(const std::string& name, int64_t expected, int64_t fired);
   // Due times of |name| up to |passed| went by while its file was held for
   // review (changed outside this browser; the scheduler's clock, never a
@@ -208,6 +236,11 @@ class WorkflowRecord {
   // rises to |passed|, so they aren't caught up (run at the moment the file
   // was put back). Only ever later; no entry, nothing. Whether it changed.
   bool NotePassed(const std::string& name, int64_t passed);
+  // A hold on |name|'s schedule made in this browser (molt://ai-automation's
+  // Snooze or Skip, on this browser's clock): no fire before |until|. A
+  // hold only rises (the later of the two is kept). False, and nothing
+  // changed, with no entry for |name|.
+  bool Hold(const std::string& name, int64_t until);
   // Before |from| is renamed |to|: |from|'s entry, under |to| too (then
   // the rename, then Forget(|from|); Forget(|to|) if it failed). False,
   // and nothing changed, with no entry for |from| (|to|'s, if any, stays).
@@ -222,6 +255,11 @@ class WorkflowRecord {
 
   // (Re)configures; LoadLocked() runs again.
   void Reconfigure(const Config& config);
+  // Set() and SetKeepingHold().
+  void SetEntry(const std::string& name,
+                std::string digest,
+                int64_t fired,
+                bool keep_hold);
   // LoadLocked()'s end for a record that is session only, unless it was
   // reconfigured since |generation|.
   void FinishSessionOnly(uint64_t generation);

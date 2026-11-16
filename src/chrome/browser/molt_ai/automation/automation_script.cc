@@ -243,6 +243,13 @@ bool FiresByItself(const Trigger& trigger) {
          trigger.type == TriggerType::AT;
 }
 
+bool SameSchedule(const Trigger& stored, const Trigger& written) {
+  return written.type == stored.type &&
+         written.expression == stored.expression &&
+         written.timezone == stored.timezone &&
+         written.until_unix == stored.until_unix;
+}
+
 std::optional<int> WaitMillisecondsOf(std::string_view v) {
   if (v.empty()) {
     // The studio's "Wait 2 seconds".

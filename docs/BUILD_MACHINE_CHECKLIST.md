@@ -2841,6 +2841,25 @@ WEB_AI_APIS.md §12):
     molt://ai-automation and a `/watch` watcher: each says "not started" on
     both pages until its schedule is saved again (or the `/watch` is made
     again); Snooze 1h and Skip next on it say to use Save schedule.
+- [ ] Workflow gaps B (workflow-gaps-b; docs/design/AGENT_ACTIONS.md
+  §3.6.11):
+  - in molt://ai-automation, on a workflow with an hourly cron schedule
+    (`0 * * * *`), click Snooze 1h: the card says "Held until …", no run
+    happens for about an hour, and it then runs at its next hour as
+    usual; the Audit log lists the snooze;
+  - Skip next: exactly the next run is skipped and the one after it runs;
+    the card's next run says so;
+  - quit and restart during a hold: the card still says "Held until …",
+    and the held run still doesn't happen;
+  - with a second user data dir open on the same `~/.moltbrowser`, a hold
+    made in one doesn't hold the other (expected: a hold is per browser);
+  - write a `.molt` by hand whose only steps are a "Go to page" opening
+    `{{url}}` and a wait (recorded clicks and typing name their site, so
+    keep none): Agent mode's review lists no site and offers *Confirm it
+    with no sites*; once confirmed, a run (with a value given for `url` too) opens
+    about:blank and its "Go to page" is refused: it opens nothing by
+    itself. The same file with `https://<a site>/?q={{q}}` or
+    `{{x}}https://<a site>/` as its address offers no such button.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world
