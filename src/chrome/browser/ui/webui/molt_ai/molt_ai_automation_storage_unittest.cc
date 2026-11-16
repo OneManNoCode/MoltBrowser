@@ -284,9 +284,12 @@ TEST_F(AutomationPageStorageTest, AnImportIsVouchedAtCasual) {
   EXPECT_FALSE(imported->security.sites_unconfirmed);
   EXPECT_EQ(imported->security.trust, TrustLevel::CASUAL);
   EXPECT_EQ(imported->stats.runs, 0);
-  // Its sites are kept (its steps' hosts count anyway).
-  EXPECT_EQ(imported->security.domain_whitelist,
-            std::vector<std::string>{"evil.example"});
+  // No sites of its file's (which the page doesn't show): only the hosts
+  // its steps name count.
+  EXPECT_TRUE(imported->security.domain_whitelist.empty());
+  EXPECT_EQ(automation::AutomationSecurity::EffectivePolicy(*imported)
+                .domain_whitelist,
+            std::vector<std::string>{"news.example"});
   // Trusted with a click, as ever.
   EXPECT_EQ(
       PromoteTrust("wf_9", TrustLevel::APPROVED, storage()).FindBool("success"),
@@ -414,6 +417,7 @@ TEST_F(AutomationPageStorageTest, ASaveOfAWorkflowNotStoredIsAnImport) {
   EXPECT_EQ(saved->security.require_approval_for,
             (std::vector<std::string>{"form_submit", "payment", "login"}));
   EXPECT_FALSE(saved->enabled);
+  EXPECT_TRUE(saved->security.domain_whitelist.empty());
 }
 
 // An interval saved with no last fire (molt://ai-automation's Save schedule

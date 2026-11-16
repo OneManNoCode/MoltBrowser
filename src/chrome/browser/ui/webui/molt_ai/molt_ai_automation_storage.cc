@@ -181,9 +181,10 @@ base::DictValue SaveWorkflow(Script script,
                                                stored->trigger.last_fired_unix);
         } else {
           // Not stored (deleted meanwhile, or a dict the page made): taken
-          // as an import. No runs, no last fire.
+          // as an import. No runs, no last fire, no sites of its own.
           s.stats = automation::Stats();
           s.trigger.last_fired_unix = 0;
+          s.security.domain_whitelist.clear();
         }
         // The stored trust, or CASUAL with the policy floor and any
         // schedule turned off for a new one.
@@ -237,8 +238,11 @@ base::DictValue ImportWorkflow(Script script,
   }
   // The importer hasn't earned anything yet: no runs, and whatever the
   // JSON claims, CASUAL with the default approvals and limits, and its
-  // schedule (kept) turned off until the user turns it on.
+  // schedule (kept) turned off until the user turns it on. Nor sites of its
+  // own, which nothing on this page shows: only the hosts its steps name
+  // count (EffectivePolicy()), as for Agent mode's import.
   script.stats = automation::Stats();
+  script.security.domain_whitelist.clear();
   AutomationSecurity::ClampTrustForSave(script, /*existing=*/nullptr);
   const bool schedule_off =
       !script.enabled && automation::FiresByItself(script.trigger);

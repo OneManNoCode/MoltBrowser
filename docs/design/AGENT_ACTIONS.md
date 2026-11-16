@@ -3130,6 +3130,10 @@ All in `molt_ai_unittests` except the last item:
     chat's `/wait` takes 0 to 60000 ms, and `/wait-for` is no longer read
     as `/wait` (the rest of its line is its selector).
 - **Closed since** (the workflow-gaps-b change):
+  - molt://ai-automation's import, and its save of a workflow not stored,
+    keep no sites of the file's (`domain_whitelist` cleared, as Agent
+    mode's import does): only the hosts its steps name count
+    (`EffectivePolicy()`);
   - molt://ai-automation's Snooze and Skip are holds in this browser's
     record (they were written as a future last fire, which a cron
     schedule ignored): the entry's `held_until`, set by
@@ -3216,10 +3220,7 @@ All in `molt_ai_unittests` except the last item:
   browser's clock (setting the clock back during one makes it last longer
   by the same amount); Skip next pressed in the few milliseconds between a
   timer's reload of a due workflow and its claim of that fire can skip
-  that run as well as the next; molt://ai-automation's import keeps the
-  file's `domain_whitelist` (`ClampTrustForSave()` clears it only for a
-  routine taught by voice), so such an import may open the sites its file
-  lists; the studio's review lists at most 20 sites (`cleanSites()`),
+  that run as well as the next; the studio's review lists at most 20 sites (`cleanSites()`),
   while a confirmation needs exactly the sites the steps target, so a
   change whose steps target more than 20 can't be confirmed in the studio.
 - **The review lists the hosts of fixed addresses only**: an address with

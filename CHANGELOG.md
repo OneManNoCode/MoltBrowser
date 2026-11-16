@@ -400,7 +400,7 @@ For longer narrative posts behind each entry see
 - **An imported workflow gets the default approvals and limits, and its
   schedule starts off.** A workflow you import, in molt://ai-automation or
   in Agent mode, gets the default approvals and limits, whatever its file
-  says. A schedule it brings is kept but turned off: it runs by itself
+  says, and only the sites its steps name. A schedule it brings is kept but turned off: it runs by itself
   only once you turn it on (tick **Enabled** and click **Save schedule** in
   molt://ai-automation, or use **Schedule** in Agent mode, which now opens
   on it). Its card says "paused" until then. Editing a workflow in Agent
