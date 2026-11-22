@@ -1,12 +1,12 @@
 {
- "resume_run": "43798848708",
+ "resume_run": "43833525632",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Seventy-ninth build (incremental on the seventy-eighth, run 43798848708, Chromium 156.0.8078.100): workflow gaps C. A run's time limit is a hard deadline (mid-step included); a Casual run is held to its page and byte limits; a fixed host before a value is one of a workflow's sites; molt://ai-automation's card saves never change a schedule; the studio's review lists up to 200 sites; Skip of a run due now skips that run only; a wait-for checks every 250 ms. Runs the unit and browser tests (new automation:browser_tests) and the typed spoken suite.",
+ "request": "Eightieth build (incremental on the seventy-ninth, run 43833525632, Chromium 156.0.8078.100): workflow gaps C, review rounds 1 and 2. The wait-for browser test's late element is visible (build 79's one failure); the rest is comments, docs and the fuzzer. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
