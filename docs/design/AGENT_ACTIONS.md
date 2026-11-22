@@ -3266,18 +3266,25 @@ All in `molt_ai_unittests` except the last item:
     routine anyway).
 - **Closed since** (the workflow-gaps-c change):
   - a CASUAL run (a workflow nobody has vouched for: an import, a
-    confirmed change) is held to its policy's `max_navigations` (default
+    confirmed change, the chat's `/watch` watcher, and one the user built
+    in the studio's editor, started blank or from a sample, or duplicated,
+    without recording it) is held to its policy's `max_navigations` (default
     20) and `max_network_bytes` (default 200 MB). `EffectivePolicy()`
     keeps each within (0, default] below TRUSTED, as it does the run time:
     a lower stored one is kept, anything else is the default. APPROVED
     (the user recorded or approved it), TRUSTED and ADMIN are held to
     neither (`RunLimitMessage()`): no page sets them, and a long workflow
-    the user made (a loop over many pages) must not start failing; they
-    keep their run time. The runner's `RunLimitObserver`, a
+    the user recorded or approved (a loop over many pages) must not start
+    failing; they keep their run time. One the user built by hand, started
+    blank or duplicated is CASUAL, and so limited, until they approve it:
+    the stop message says so (`kRunLimitAdvice`), and Trust lifts the
+    limits. The runner's `RunLimitObserver`, a
     `content::WebContentsObserver` on the run's tab, is made in `Run()`
     after the refusals for a CASUAL run (in practice the run
     window's runs; the chat's one-step actions run at TRUSTED and are
-    never counted). From the run's start it counts:
+    never counted, and voice mode plays a routine step by step in the
+    user's tab through `VoiceLearningLoop`, not the runner, so it has
+    neither these limits nor the deadline). From the run's start it counts:
     - each document the tab's primary main frame commits by a navigation
       that started after the run did (`DidStartNavigation()`, then
       `DidFinishNavigation()`: `IsInPrimaryMainFrame()`, `HasCommitted()`,
@@ -3540,8 +3547,10 @@ All in `molt_ai_unittests` except the last item:
 > reached by a link or a redirect; not a change within the same page, nor
 > the run window's first page) or its pages have loaded more than 200 MB.
 > Its result says which. A lower limit in its file is kept. It applies to
-> a Casual workflow (an import, a confirmed change): approving it, or
-> recording it yourself, lifts both limits. The limits don't count downloads, other
+> a Casual workflow: an import, a confirmed change, the chat's `/watch`
+> watcher, or one built in Agent mode's editor, started blank or from a
+> sample, or duplicated, without recording it. Approving it, or recording
+> it yourself, lifts both limits. The limits don't count downloads, other
 > windows a page opens, live connections, or a load in progress or cut
 > off.
 >

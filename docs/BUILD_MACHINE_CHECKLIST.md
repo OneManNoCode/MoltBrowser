@@ -2902,8 +2902,10 @@ WEB_AI_APIS.md §12):
     with "Stopped: this run's pages loaded more than 200 MB, …";
   - the same reload workflow imported with `"max_navigations": 3` (an
     import keeps a lower one) stops at "more than 3 pages";
-  - a workflow of 21 "Go to page" steps on the local server stops at step
-    21 (`step_blocked`, `run_failed`); one of 20 steps completes;
+  - a workflow of 21 "Go to page" steps on the local server, built by
+    hand in Agent mode (New workflow, no recording: it is Casual), stops
+    at step 21 (`step_blocked`, `run_failed`); after Trust it completes;
+    one of 20 steps completes at Casual;
   - a single-page app (pushState, fragment links) clicked through 30 times
     doesn't stop a run: changes within the same page don't count;
   - a Casual workflow blocked on a submit (it needs trust) on the
