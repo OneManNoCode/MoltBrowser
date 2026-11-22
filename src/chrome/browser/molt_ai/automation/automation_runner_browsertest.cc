@@ -168,7 +168,8 @@ IN_PROC_BROWSER_TEST_F(AutomationRunnerDeadlineBrowserTest,
   ASSERT_TRUE(content::ExecJs(
       web_contents(),
       "setTimeout(() => { const d = document.createElement('div');"
-      " d.id = 'late'; document.body.appendChild(d); }, 1000);"));
+      " d.id = 'late'; d.textContent = 'Late';"
+      " document.body.appendChild(d); }, 1000);"));
   Step wait_for = MakeStep(StepType::WAIT_FOR, "#late");
   wait_for.timeout_ms = 8000;
   std::unique_ptr<AutomationRunner> runner = MakeRunner();
