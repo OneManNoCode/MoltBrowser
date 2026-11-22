@@ -1116,6 +1116,8 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `automation/automation_storage.{h,cc}` (a directory of its own; `Take()`, `FinishTake()`, `ReturnTaken()` with `base::ReplaceFile`; moved into the new light target `automation:storage`, which `//chrome/browser/molt_ai/automation` re-exports), `voice/voice_routine_store.{h,cc}` (new: the profile's `MoltVoiceRoutines/` and the claim of older routines), `voice/voice_learning.cc` (the store on its sequence; `ClaimRoutines()`, `DeclineRoutines()`, `UndeclineRoutines()`), `voice/voice_learning_loop.cc` (the replace, claim and decline steps), `ui/webui/molt_ai/molt_ai_agent_ui.cc` (the studio finds each workflow where it is, `VoiceLearning::WhenLoaded()` before listing, three new messages), `molt_ai_automation_ui.cc` (no voice routines); the GN edges `voice:voice_controller` → `voice:voice_routine_store` → `automation:storage` (replacing `voice:voice_controller` → `//chrome/browser/molt_ai/automation`), and `voice:voice_learning_browser_tests` → `//chrome/browser:browser_process`, `//chrome/browser/profiles:profile_manager`, `:profile_test_util`, `//ui/base` | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: §5.1's browser tests (two profiles; the studio opened in a tab of each), and that `automation_storage.cc` moving target leaves no link error | profile-routines |
 | `common/molt_regular_file.{h,cc}` (new: `lstat()`, `open()` with `O_NONBLOCK` and `O_NOFOLLOW`, `fstat()`, `pread()` through `base::ScopedFD` and `HANDLE_EINTR`, `base::MakeAbsoluteFilePath()`, `FilePath::IsParent()`, `base::WriteFileDescriptor()`; on Windows `base::File` with `FLAG_OPEN_ALWAYS` and `FLAG_APPEND`, `File::Read()` into `base::as_writable_byte_span()`), `common/molt_settings_file.cc` (`MoltSettingsRead::kNotAFile`, writes through `MoltFileWritePath()`), `automation/automation_storage.{h,cc}` (a lock per directory in a `base::NoDestructor<std::map<base::FilePath, std::unique_ptr<base::Lock>>>`, `base::LazyThreadPoolSequencedTaskRunner` (`SharedSequence()`), `std::optional<ScopedAllowBlockingForMolt>` beside `std::optional<base::ScopedBlockingCall>`, `base::FunctionRef` (`Update()`), `ImportantFileWriter::WriteFileAtomically()`, `base::TouchFile()`, `base::GetFileInfo()`, `base::RandUint64()`), `automation/automation_runner.cc` and `automation_scheduler_service.cc` (`Update()` with a lambda), `voice/voice_routine_store.cc` (`RecoverInterruptedClaims()`), `voice/voice_learning.{h,cc}` (`routines_task_runner()`), `voice/voice_learning_store.cc` (`std::set`), `ui/webui/molt_ai/molt_ai_agent_storage.{h,cc}` (new), `molt_ai_agent_ui.cc` (`PostTaskAndReplyWithResult()` to `VoiceLearning::routines_task_runner()` and `AutomationStorage::SharedSequence()`, replies bound to a `WeakPtr` with move-only `SaveRequest`/`Answer`), `molt_ai_settings_ui.cc` ("fileNotice"); the GN targets `common:molt_regular_file`, `ui/webui/molt_ai:agent_studio_storage` and `:browser_tests` (picked up by `voice:browser_tests`) | type-checked against 156's headers here; the GN graph checked statically; what only the build shows: §5.1's `AgentStudioStorageBrowserTest` (no file I/O on the UI thread, where a browser test disallows blocking), the unit tests on the build machine's file system (a FIFO, a socket, links), and the studio in a side panel | storage-robustness |
 | `common/molt_home_dir.{h,cc}`, `molt_home_dir_test_util.{h,cc}` (new: `base::NoDestructor` with a `base::Lock`, `base::ScopedTempDir` under `base::ScopedAllowBlockingForTesting`), `common/molt_file_sequences.h` (new: `PostReadAfterChanges()`, a template over `SequencedTaskRunner::PostTaskAndReply()` and `PostTaskAndReplyWithResult()` with a `const base::Location&` bound), `common/molt_regular_file.{h,cc}` (`DeleteStaleWriteTemporaries()`: `base::FormatTemporaryFileName()`, `base::GetNamePrefixForTemporaryFile()`, `base::FunctionRef`; `MoltFileLock`: `base::File(PlatformFile)`, `File::Lock(LockMode::kExclusive)`, `base::PlatformThread::Sleep()`; on Windows `CreateFileW()` with `FILE_FLAG_OPEN_REPARSE_POINT` and `FILE_FLAG_BACKUP_SEMANTICS`, `GetFileInformationByHandleEx(FileAttributeTagInfo)`, `IsReparseTagNameSurrogate()`, `GetFileType()`, `GetFinalPathNameByHandleW()`, `base::win::ScopedHandle::Take()`), `common/molt_settings_file.{h,cc}` (`PostReadMoltSettings()`, a second `LazyThreadPoolSequencedTaskRunner`), `automation/automation_storage.{h,cc}` (`ChangeScope`, `SaveNew()`, `SaveChecked()`, `SharedReadSequence()`; no `ScopedAllowBlockingForMolt`), `automation/automation_shared_tasks.h` (new: `PostSharedChange()`/`PostSharedRead()` templates binding a `base::OnceCallback<R(AutomationStorage&)>`), the runner, scheduler, scheduler service, recorder tab helper and run window (the storage's directory instead of an `AutomationStorage*`; `Profile::GetWeakPtr()`), `ui/webui/molt_ai/molt_ai_automation_storage.{h,cc}` (new) and `molt_ai_automation_ui.cc` (a `WeakPtrFactory`, `OnJavascriptDisallowed()`), `molt_ai_agent_ui.cc` (a second, reply-only `WeakPtrFactory` invalidated in `OnJavascriptDisallowed()`), the chat's watcher, plan and agent-run saves, `voice/voice_learning.{h,cc}` (`routines_read_task_runner()`), `voice/page_map_text.{h,cc}` (`FieldLanguage`), `voice/ax_page_source.cc` (`AXNode::GetLanguage()`), `voice/voice_routines_logic.{h,cc}` (`MatchRoutineNameInAnyLanguage()`), `agents/web_agent.{h,cc}` (`ConfirmRequest::spoken`) and `agents/voice_agent_speech.{h,cc}` | type-checked against 156's headers here (Windows included); the GN graph checked statically; what only the build shows: the browser tests below, the unit tests on the build machine's file systems (the lock between two processes, reparse points on Windows), and shutdown with a home directory that stopped answering | leftovers |
+| `automation/automation_runner.cc` (`RunLimitObserver`: `WebContentsObserver::DidStartNavigation()`, `DidFinishNavigation()` with `NavigationHandle::GetNavigationId()`, the 4-argument `ResourceLoadComplete(RenderFrameHost*, const GlobalRequestID&, const GURL&, const blink::mojom::ResourceLoadInfo&)`, `total_received_bytes` as `base::ByteSize`, `base::ClampAdd`, `base::flat_set<int64_t>`), `automation_security.{h,cc}` (`RunUsage`, `RunLimitMessage()`), `automation:automation` → `//third_party/blink/public/mojom:mojom_platform` | type-checked against 156's headers here (Linux and Windows); what only the build shows: `gn gen --check` of the new edge, and the observer's events in a real run window (§7.3) | workflow-gaps-c |
+| `automation/automation_runner.cc` (the run's deadline: a member `base::OneShotTimer` started with the receiver form of `Start()`, whose task may delete the runner; `capture_finalize_`), `automation/automation_runner_browsertest.cc` (new: `EmbeddedTestServer::RegisterRequestHandler()`, `base::test::RunUntil`, `GetAllBrowserWindowInterfaces()`, `RunScriptInBackgroundBrowser()`), the new `automation:browser_tests` target in `voice:browser_tests` | what only the build shows: `gn gen --check` of the new target, and §5.1's `AutomationRunnerDeadlineBrowserTest` (ASan too, if built: a runner deleted inside its own timer's task) | workflow-gaps-c |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1930,6 +1932,29 @@ extension enablement and `MediaRouterEnabled()`).
   - `TheChatsSavesRunOnTheStoragesSequence`: two plans in one second are
     two workflows; a watcher is saved, with its interval counted from then
     (workflow-integrity), CASUAL, on its one site (workflow-gaps).
+- [ ] A run's time limit is a deadline (workflow-gaps-c):
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='AutomationRunnerDeadlineBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/automation-runner-deadline-browser-tests.log
+  ```
+  *Expected:* all six pass on Linux and macOS in a DCHECK build (and ASan
+  if built), each within a few seconds:
+  - `ALongStepEndsAtTheLimit`: a wait-for of ten minutes ends "Max runtime
+    exceeded" at its two-second limit, its runner (kept alive by its own
+    callback, as the chat's is) freed.
+  - `AWaitEndsAtTheLimit`: a 30 s wait ends at a one-second limit, its
+    runner deleted in its own callback (as the run window's holder does).
+  - `ARunThatEndsInTimeCompletes`: a 1 s wait under a 3 s limit completes,
+    and nothing more happens after the limit.
+  - `AQuestionWaitingAtTheLimitIsWithdrawn`: a step asking "Use it?" (a weak
+    locator's match) ends at the limit, its question gone and no longer
+    answerable.
+  - `ABackgroundRunEndsAtTheLimit`: a run window's run at its limit ends its
+    Agent Inbox entry, its window closes, and its record says "Max runtime
+    exceeded" at step 0.
+  - `AWaitForFindsALateElementWhenItAppears`: an element added 1 s in is
+    found then (a wait-for checks every 250 ms): the run succeeds in under
+    6 s with an 8 s timeout.
 - [ ] The workflow record and the data folder (workflow-integrity, and
   from #133):
   ```bash
@@ -2858,8 +2883,103 @@ WEB_AI_APIS.md §12):
     keep none): Agent mode's review lists no site and offers *Confirm it
     with no sites*; once confirmed, a run (with a value given for `url` too) opens
     about:blank and its "Go to page" is refused: it opens nothing by
-    itself. The same file with `https://<a site>/?q={{q}}` or
-    `{{x}}https://<a site>/` as its address offers no such button.
+    itself. The same file with `{{x}}https://<a site>/` or
+    `https://{{site}}/` as its address offers no such button.
+- [ ] Workflow gaps C (workflow-gaps-c; docs/design/AGENT_ACTIONS.md
+  §3.6.11):
+  - run limits, with a local test page that reloads itself every second
+    (`<meta http-equiv="refresh" content="1">`, served by
+    `python3 -m http.server`): import a workflow in molt://ai-automation
+    that goes to that page, then waits 60 seconds, and run it in Watch
+    mode. It stops during the wait, after about 20 reloads (the run
+    window's first page doesn't count), with "Stopped: this run opened
+    more than 20 pages, …"; the studio says "Failed at step 2" with no
+    Trust & re-run button, and the Audit log lists `step_blocked` and
+    `run_failed` with that text. Approve it (Trust): it runs the full
+    60 s;
+  - a Casual (imported) workflow on a page whose script `fetch()`es a
+    250 MB file from the same server, then waits: it stops once that load finishes,
+    with "Stopped: this run's pages loaded more than 200 MB, …";
+  - the same reload workflow imported with `"max_navigations": 3` (an
+    import keeps a lower one) stops at "more than 3 pages";
+  - a workflow of 21 "Go to page" steps on the local server, built by
+    hand in Agent mode (New workflow, no recording: it is Casual), stops
+    at step 21 (`step_blocked`, `run_failed`); after Trust it completes;
+    one of 20 steps completes at Casual;
+  - a single-page app (pushState, fragment links) clicked through 30 times
+    doesn't stop a run: changes within the same page don't count;
+  - a Casual workflow blocked on a submit (it needs trust) on the
+    self-reloading page still offers Trust & re-run with its own message,
+    not the page limit's;
+  - the chat's `/navigate` and `/click` in your own tab are never stopped
+    by either limit (they run at Trusted); a workflow you recorded
+    (Approved) with a loop over 30 pages still completes;
+  - time limit: write a `.molt` with `"max_runtime_seconds": 20`, a
+    `navigate` to a real https page and a `wait_for` `#never` with
+    `"timeout_ms": 600000`. Import it in molt://ai-automation and run it
+    from Agent mode. At about 20 s the run window closes, the studio says
+    "Failed at step 2 … — Max runtime exceeded", and the Agent Inbox row
+    ends. Turn its schedule on at every minute: a fire after that run opens
+    a new run, and no `scheduled_fire_skipped still_running` appears in the
+    Audit log after the first run ended;
+  - break a recorded selector as in the agent-replay check so that "Use
+    it?" is asked, in a workflow with a 30 s limit, and don't answer: at
+    30 s the run stops "Max runtime exceeded", the question disappears, and
+    a stale button says the question is no longer open;
+  - the same 20 s workflow set to Trusted in molt://ai-automation (a lower
+    limit is kept on import) also stops at about 20 s with "Max runtime
+    exceeded": Trusted gets the deadline too, with its own limit;
+  - in the chat: `/wait 45000` waits 45 s and succeeds; `/wait-for #never`
+    stops after about 30 s with "Max runtime exceeded"; `/wait 3000` and
+    `/click` on a present element still succeed;
+  - fixed-host sites: a hand-written `.molt` with a "Go to page"
+    `https://<a site>/search?q={{q}}` and a wait: Agent mode's review lists
+    `<a site>` and offers *Confirm this site*, not *Confirm it with no
+    sites*. Confirm it: the Audit log shows `outside_change_confirmed |
+    <a site>`. Run it with q=lamp: the run window opens
+    `https://<a site>/search?q=lamp` and the step succeeds at Casual; with
+    q=`@evil.example`, then `//evil.example/`, the run stays on `<a site>`;
+  - the same file with `https://{{site}}/search`,
+    `https://<a site>:{{port}}/` or `https://a@<a site>/{{q}}`: no site is
+    listed, it says "It has no site to confirm", and there is no button;
+  - in molt://ai-automation, export a Casual workflow whose only step opens
+    `https://<a site>/search?q={{q}}`, delete it, import it and run it: it
+    opens `<a site>` (before: "… is not one of this workflow's sites"); a
+    new Agent-mode workflow with that one step typed in "Web address" runs
+    at Casual;
+  - stale cards in molt://ai-automation: open the card of a workflow on a
+    daily cron schedule, Enabled, in one molt://ai-automation tab and leave
+    it; in a second tab (or Agent mode's Schedule sheet) set it to every 1
+    hours, untick Enabled, Save schedule; back in the first tab, without
+    reloading, change a value and click *Save values as defaults*, then
+    edit a step and click *Save step changes*: the card, listed again, says
+    "Every hour (paused)" and "Paused — it won't run by itself", Agent mode
+    shows the same, nothing runs, and both edits are saved;
+  - in the second tab (reloaded) tick Enabled, Save schedule, then Snooze
+    1h; in the first tab, without reloading, *Save step changes* again: it
+    stays on, the card says "Held until …" before its next fire, and
+    nothing runs during the hour;
+  - *Save schedule* on a card left open does change it (expected: the last
+    Save schedule wins); saved with a different schedule, it ends the hold;
+  - the review's sites: write a `.molt` by hand with 25 "Go to page" steps
+    on 25 sites (`https://s1.example/` to `https://s25.example/`): Agent
+    mode's review lists all 25 before *Confirm these 25 sites*, and Confirm
+    makes it Casual, and molt://ai-automation's Audit log shows
+    `outside_change_confirmed` with all 25 hosts; with 201 such steps the
+    review says "Its steps open 201 sites, more than the 200 a review can
+    list" and offers no Confirm; delete one step and save: the 200 are
+    listed and Confirm works;
+  - Skip of a run due now: on an every-5-minutes cron (`*/5 * * * *`)
+    that has run once, sleep the Mac across its time. Right after waking,
+    before the scheduler's catch-up (within about a minute), the card
+    shows the missed time "(now)"; Skip next then logs
+    `run_skipped | passed=…`, the missed run doesn't run and the next
+    does. If the catch-up already ran (a `scheduled_fire` line), Skip
+    skips the following run (`until=…`): repeat;
+  - on a `1 minutes` interval, click Skip next at the card's Next fire
+    time, to the second, by the clock: exactly one run is skipped (that
+    one, or the next if it had already started), never two in a row;
+    check the Audit log's `scheduled_fire` lines.
 - [ ] WebMCP site tools on a trial page, with `chrome://flags/#enable-webmcp-testing`
   on and `#molt-agent-site-tools` on (default) (from #45):
   - `getTools()` and `executeTool()` work from the agent's isolated world

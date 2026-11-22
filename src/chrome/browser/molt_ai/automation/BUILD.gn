@@ -79,6 +79,10 @@ source_set("automation") {
     "//content/public/browser",
     "//mojo/public/cpp/bindings",
     "//skia",
+
+    # The run's network bytes (RunLimitObserver, automation_runner.cc):
+    # blink::mojom::ResourceLoadInfo.
+    "//third_party/blink/public/mojom:mojom_platform",
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/codec",
@@ -311,6 +315,37 @@ source_set("locators") {
   public_deps = [
     "//base",
     "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# A run's time limit is a deadline, mid-step included
+# (automation_runner_browsertest.cc): the runner on a real tab, and a run
+# window's run. Picked up by browser_tests through
+# //chrome/browser/molt_ai/voice:browser_tests.
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "automation_runner_browsertest.cc" ]
+
+  deps = [
+    ":automation",
+    "//base",
+    "//base/test:test_support",
+
+    # ~/.moltbrowser is the test's own.
+    "//chrome/browser/molt_ai/common:molt_home_dir_test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
   ]
 }
 

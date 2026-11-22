@@ -3187,6 +3187,10 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
       return;
     }
     step.value = base::NumberToString(ms / 1000.0);
+    // The runner's limit is a deadline the wait must fit in
+    // (AutomationRunner::OnRunDeadline()): the action's 30 s on top of the
+    // wait.
+    s.security.max_runtime_seconds += (ms + 999) / 1000;
   } else if (t == "wait-for") {
     // P3: poll until a selector appears, as a recorded wait-for step does
     // (its step timer below, then the runner's retries, within this

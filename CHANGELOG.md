@@ -17,6 +17,19 @@ For longer narrative posts behind each entry see
 
 ### Fixed
 
+- **A workflow address with a value after its site works below Trusted.**
+  A "Go to page" address such as `https://shop.example/search?q={{q}}`
+  now counts `shop.example` as one of the workflow's sites, as
+  `https://shop.example/` does. Below Trusted it opens; it was refused
+  unless another step opened that site. A workflow imported with only
+  such addresses works after the import. Agent mode's review of a
+  workflow changed outside MoltBrowser lists that site and confirms it;
+  before, such a workflow couldn't be confirmed at all. Only a site
+  written in full before the first value counts. An address whose site,
+  port or user name comes from a value (`https://{{site}}/`,
+  `https://shop.{{tld}}/`, `https://shop.example:{{port}}/`) still names
+  no site, and a value only ever changes the page or the search on the
+  site.
 - **Wait steps wait the seconds they show.** A workflow's "Wait" step
   stopped the run with "Step timed out" instead of waiting. It now waits
   the seconds its field shows (0 to 60; empty is 2) and stops with a
@@ -34,23 +47,44 @@ For longer narrative posts behind each entry see
   one-time ("once at") schedule still to come that it is opened on, and
   molt://ai-automation no longer moves a one-time schedule by your time
   zone's offset when it is saved again.
-- **Snooze and Skip in molt://ai-automation hold every schedule.** On a
-  cron schedule ("weekdays at 9"), Skip next ran the very time it was
-  meant to skip, and Snooze 1h didn't hold the run back. Both now hold
-  cron and interval schedules alike. Snooze 1h runs nothing for the
-  hour, then the schedule goes on at its own next time; an hourly or
-  daily interval is no longer pushed a whole interval past the hour.
-  Skip next skips exactly the next run, and pressing it again skips the
-  one after. While a hold lasts, the card says "Held until …" next to
-  the next run, and each Snooze and Skip is listed in the Audit log. A
-  hold applies to this copy of MoltBrowser (all its profiles), not to
-  another copy that shares `~/.moltbrowser`, and it lasts across a
+- **Snooze and Skip in molt://ai-automation hold every schedule.** On a cron
+  schedule ("weekdays at 9"), Skip next ran the very time it was meant to
+  skip, and Snooze 1h didn't hold the run back. Both now hold cron and
+  interval schedules alike. Snooze 1h runs nothing for the hour, then the
+  schedule goes on at its own next time; an hourly or daily interval is no
+  longer pushed a whole interval past the hour. Skip next skips exactly the
+  next run, and pressing it again skips the one after. If a run is already
+  due but hasn't started (you press Skip next just as its time comes, or
+  after the computer wakes from sleep before a missed run has caught up),
+  that run is the one skipped and the one after it still happens; the card
+  shows such a run as due "now". (Not for a cron schedule's first run after
+  Save schedule: Skip pressed in the instant that run starts skips it and
+  the one after.) While a hold lasts, the card says "Held
+  until …" next to the next run, and each Snooze and Skip is listed in the
+  Audit log. A hold applies to this copy of MoltBrowser (all its profiles),
+  not to another copy that shares `~/.moltbrowser`, and it lasts across a
   restart. Saving the same schedule again keeps the hold; a new schedule
   ends it, and so does confirming a workflow that was changed outside
   MoltBrowser. The two buttons are shown only for cron and interval
   schedules. They no longer save the card's copy of the workflow, so
   pressing them on a card that was open while the workflow was edited
   elsewhere no longer undoes that edit.
+- **Saving a workflow's steps or default values in molt://ai-automation
+  keeps its schedule.** A card left open while the workflow's schedule was
+  changed, paused or turned on in Agent mode or another tab sent its old
+  schedule back with *Save step changes* or *Save values as defaults*,
+  undoing that change: a paused workflow could start running again on its
+  own, and a Snooze or Skip made meanwhile ended. Those saves now keep the
+  schedule, whether it is paused, and any hold as last saved; only *Save
+  schedule* changes them.
+- **Agent mode's review lists every site it confirms.** The review of an
+  AI agent's draft, or of a workflow changed outside MoltBrowser, listed
+  at most 20 sites, while **Confirm** needs every site the steps open, so
+  one that opened more than 20 couldn't be confirmed. The review now lists
+  all of them, up to 200, before its **Confirm these N sites** button. A
+  workflow whose steps open more than 200 sites says how many and can't be
+  confirmed in Agent mode: delete the steps you don't want and save, or
+  delete the workflow.
 - **The chat's `/wait-for` works.** It was read as `/wait`. It now
   waits for the element the rest of the line names (`/wait-for .results
   li`), as a recorded wait-for step does.
@@ -397,6 +431,25 @@ For longer narrative posts behind each entry see
   fills a saved password, including workflows imported before this
   version. Below Trusted, a run's time limit is at most the default 5
   minutes, whatever its file says.
+- **A Casual workflow stops after 20 pages or 200 MB in one run.** A run
+  of a workflow nobody has vouched for yet now stops, on the step it is at,
+  once it has opened more than 20 pages, or once its pages have loaded
+  more than 200 MB from the network. Casual workflows are imports, changed
+  workflows you confirmed, the chat's `/watch` watchers, and the ones you
+  build in Agent mode's editor, start blank or from a sample, or duplicate,
+  without recording them. Each page opened, reloaded, or
+  reached by a link or a redirect counts; a change within the same page
+  doesn't, and neither does the run window's first page (what it loads
+  does). The run's result says which limit it passed. A lower limit in a
+  workflow's file is kept; a higher one counts as the default. Approving
+  the workflow (Trust, or recording it yourself) lifts both: Approved,
+  Trusted and Admin workflows are held only to their run time, as before,
+  and the chat's page actions aren't held to either limit, nor is a
+  routine voice mode plays step by step in your own tab. The limits stop a
+  workflow that runs away. They don't
+  count downloads, a page's other windows, live connections (WebSockets,
+  calls), a load still in progress or one cut off before it finished.
+  Design: [docs/design/AGENT_ACTIONS.md §3.6.11](docs/design/AGENT_ACTIONS.md).
 - **An imported workflow gets the default approvals and limits, and its
   schedule starts off.** A workflow you import, in molt://ai-automation or
   in Agent mode, gets the default approvals and limits, whatever its file
@@ -418,6 +471,17 @@ For longer narrative posts behind each entry see
   shorter interval runs once a minute, and a repeating schedule's run is
   skipped while the workflow's last run is still open (a one-time run
   still runs).
+- **A workflow stops at its time limit.** A run was checked against its
+  time limit (at most 5 minutes below Trusted) only between steps. One
+  long step (a wait for an element that never comes, an on-device AI
+  step, a question waiting for your answer, a site's tool) could keep it
+  going, with its window open and its next scheduled runs skipped, well
+  past the limit. A run now stops at its limit, in the middle of a step
+  if need be, with "Max runtime exceeded". The step it was on does
+  nothing more (an action already sent to the page may still finish), a
+  question it was waiting on is withdrawn, and its window closes. Trusted
+  workflows keep their own limit. The AI chat's `/wait` still waits up to
+  a minute.
 - **Workflows changed outside MoltBrowser now need your review.**
   MoltBrowser remembers, in its own profile folder, exactly what it last
   saved for each workflow in `~/.moltbrowser/automations`. If a workflow
@@ -432,7 +496,7 @@ For longer narrative posts behind each entry see
   in when it runs (such as `{{url}}`) and it has no recorded click or typing
   on a site, has no site to confirm: click **Confirm it with no sites**. It
   then opens and acts on no page by itself until you add a step that opens
-  a fixed address on a site, or set it to Trusted in molt://ai-automation.
+  an address on a fixed site, or set it to Trusted in molt://ai-automation.
   Confirming keeps only what the review shows: other ways the file gave of
   finding an element on the page are dropped, so a step may need recording
   again if its page has changed; steps the review can't show in full

@@ -14,9 +14,11 @@
 #include <vector>
 
 #include "base/json/json_writer.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_voice_steps.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace molt_ai {
 namespace automation {
@@ -221,6 +223,146 @@ TEST(AutomationSecurityTest, EffectivePolicyBoundsTheRuntimeBelowTrusted) {
   trusted.security.max_runtime_seconds = 3600;
   EXPECT_EQ(AutomationSecurity::EffectivePolicy(trusted).max_runtime_seconds,
             3600);
+}
+
+// A run's time limit is a deadline: its policy's seconds, below TRUSTED at
+// most 300 whatever the file says; TRUSTED keeps its own, and a limit that
+// isn't positive allows no time.
+TEST(AutomationSecurityTest, RunTimeLimitIsTheEffectivePolicysSeconds) {
+  for (int stored : {0, -1, 301, 99999}) {
+    Script casual;
+    casual.security.max_runtime_seconds = stored;
+    EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                  AutomationSecurity::EffectivePolicy(casual)),
+              base::Seconds(300))
+        << stored;
+  }
+  Script shorter;
+  shorter.security.max_runtime_seconds = 30;
+  EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                AutomationSecurity::EffectivePolicy(shorter)),
+            base::Seconds(30));
+  Script trusted;
+  trusted.security.trust = TrustLevel::TRUSTED;
+  trusted.security.max_runtime_seconds = 3600;
+  EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                AutomationSecurity::EffectivePolicy(trusted)),
+            base::Seconds(3600));
+  trusted.security.max_runtime_seconds = std::numeric_limits<int>::max();
+  EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                AutomationSecurity::EffectivePolicy(trusted)),
+            base::Seconds(std::numeric_limits<int>::max()));
+  for (int stored : {0, -1, std::numeric_limits<int>::min()}) {
+    trusted.security.max_runtime_seconds = stored;
+    EXPECT_EQ(AutomationSecurity::RunTimeLimit(
+                  AutomationSecurity::EffectivePolicy(trusted)),
+              base::TimeDelta())
+        << stored;
+  }
+}
+
+// Below TRUSTED a run opens at most the default 20 pages and loads at most
+// the default 200 MB, whatever its file says; a lower limit is kept, and
+// TRUSTED keeps its own (no run is held to them: RunLimitMessage()).
+TEST(AutomationSecurityTest, EffectivePolicyBoundsTheRunLimitsBelowTrusted) {
+  const SecurityPolicy defaults;
+  for (TrustLevel trust : {TrustLevel::CASUAL, TrustLevel::APPROVED}) {
+    for (int stored : {0, -1, 21, std::numeric_limits<int>::max()}) {
+      Script script;
+      script.security.trust = trust;
+      script.security.max_navigations = stored;
+      EXPECT_EQ(AutomationSecurity::EffectivePolicy(script).max_navigations,
+                defaults.max_navigations)
+          << stored;
+    }
+    for (int64_t stored :
+         {int64_t{0}, int64_t{-1}, defaults.max_network_bytes + 1,
+          std::numeric_limits<int64_t>::max()}) {
+      Script script;
+      script.security.trust = trust;
+      script.security.max_network_bytes = stored;
+      EXPECT_EQ(AutomationSecurity::EffectivePolicy(script).max_network_bytes,
+                defaults.max_network_bytes)
+          << stored;
+    }
+    Script lower;
+    lower.security.trust = trust;
+    lower.security.max_navigations = 3;
+    lower.security.max_network_bytes = 1000;
+    const SecurityPolicy p = AutomationSecurity::EffectivePolicy(lower);
+    EXPECT_EQ(p.max_navigations, 3);
+    EXPECT_EQ(p.max_network_bytes, 1000);
+  }
+  Script trusted;
+  trusted.security.trust = TrustLevel::TRUSTED;
+  trusted.security.max_navigations = 500;
+  trusted.security.max_network_bytes = std::numeric_limits<int64_t>::max();
+  SecurityPolicy p = AutomationSecurity::EffectivePolicy(trusted);
+  EXPECT_EQ(p.max_navigations, 500);
+  EXPECT_EQ(p.max_network_bytes, std::numeric_limits<int64_t>::max());
+  // An unconfirmed draft is CASUAL whatever trust it was given.
+  trusted.security.sites_unconfirmed = true;
+  p = AutomationSecurity::EffectivePolicy(trusted);
+  EXPECT_EQ(p.max_navigations, defaults.max_navigations);
+  EXPECT_EQ(p.max_network_bytes, defaults.max_network_bytes);
+}
+
+// A Casual run stops one page or one byte past a limit; at its limits it
+// goes on. A workflow the user recorded or approved (APPROVED and above)
+// is held to neither.
+TEST(AutomationSecurityTest, RunLimitMessageStopsARunPastItsLimits) {
+  const SecurityPolicy defaults;
+  const uint64_t max_bytes = static_cast<uint64_t>(defaults.max_network_bytes);
+  for (TrustLevel trust : {TrustLevel::CASUAL}) {
+    Script script;
+    script.security.trust = trust;
+    const SecurityPolicy p = AutomationSecurity::EffectivePolicy(script);
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {20, max_bytes}), "");
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {21, 0}),
+              "Stopped: this run opened more than 20 pages, the most this "
+              "workflow may open in one run. Approve the workflow (Trust) if "
+              "you made it or checked it: an approved workflow has no such "
+              "limit.");
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {0, max_bytes + 1}),
+              "Stopped: this run's pages loaded more than 200 MB, the most "
+              "this workflow may load in one run. Approve the workflow "
+              "(Trust) if you made it or checked it: an approved workflow "
+              "has no such limit.");
+    // Past both: the pages are named.
+    EXPECT_NE(AutomationSecurity::RunLimitMessage(p, {21, max_bytes + 1})
+                  .find("more than 20 pages,"),
+              std::string::npos);
+  }
+  for (TrustLevel trust :
+       {TrustLevel::APPROVED, TrustLevel::TRUSTED, TrustLevel::ADMIN}) {
+    SecurityPolicy p;
+    p.trust = trust;
+    EXPECT_EQ(AutomationSecurity::RunLimitMessage(
+                  p, {std::numeric_limits<int>::max(),
+                      std::numeric_limits<uint64_t>::max()}),
+              "");
+  }
+  // A lower limit, in its own words.
+  Script lower;
+  lower.security.max_navigations = 1;
+  lower.security.max_network_bytes = 1000;
+  const SecurityPolicy p = AutomationSecurity::EffectivePolicy(lower);
+  EXPECT_EQ(AutomationSecurity::RunLimitMessage(p, {1, 1000}), "");
+  EXPECT_NE(
+      AutomationSecurity::RunLimitMessage(p, {2, 0}).find("more than 1 page,"),
+      std::string::npos);
+  EXPECT_NE(AutomationSecurity::RunLimitMessage(p, {0, 1001})
+                .find("more than 1000 bytes,"),
+            std::string::npos);
+  // A policy that isn't a run's (no EffectivePolicy()) is held to the
+  // defaults, never to none.
+  SecurityPolicy raw;
+  raw.max_navigations = 0;
+  raw.max_network_bytes = -1;
+  EXPECT_EQ(AutomationSecurity::RunLimitMessage(raw, {20, max_bytes}), "");
+  EXPECT_FALSE(AutomationSecurity::RunLimitMessage(raw, {21, 0}).empty());
+  EXPECT_FALSE(
+      AutomationSecurity::RunLimitMessage(raw, {0, max_bytes + 1}).empty());
 }
 
 // A workflow a save brings in (an import, a copy, a page's save of one not
@@ -1287,18 +1429,24 @@ TEST(AutomationSecurityTest, AChangeWithNoSiteIsConfirmedWithNone) {
   EXPECT_FALSE(sec.AllowNavigation(with_site, "https://evil.example/"));
 }
 
-// HostsReferencedBy() skips an address with a {{variable}} anywhere in it,
-// a fixed host's too, so the review would list no site for it. A change
-// with an address that doesn't start with its value (a fixed host, or only
-// a fixed scheme, before it) isn't confirmed with none, so no fixed host
+// HostsReferencedBy() lists no site for an address whose host, port or
+// user name a value may give or change, nor for one the URL parser could
+// read otherwise than it is written (a tab, slashes it skips, a '\'), so
+// the review would list none for it. A change with such an address that
+// doesn't start with its value isn't confirmed with none, so no fixed host
 // goes unshown; nor with sites, having none to confirm. It stays a draft,
 // as before. The same change whose addresses each start with a value is
 // confirmed with none.
-TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNotConfirmed) {
+TEST(AutomationSecurityTest, AnAddressAValueMayMoveIsNotConfirmed) {
   for (const char* target :
-       {"https://attacker.example/c?d={{token}}",
-        "https://shop.example/search?q={{q}}", "https://shop.example/{{path}}",
-        "https://{{host}}/x", "shop.example/{{path}}",
+       {"https://{{host}}/x", "https://shop.{{tld}}/",
+        "https://shop.example{{x}}", "https://a@{{x}}/",
+        "https://shop.example:{{p}}/", "https://a@shop.example/{{x}}",
+        "https:///{{x}}", "https://\\{{x}}", "https://\t/b{{x}}",
+        "https://shop.ex\tample/{{x}}", "https:{{x}}",
+        " https://shop.example/{{x}}", "ftp://shop.example/{{x}}",
+        "shop.example/{{path}}", "http://shop.example\\@{{x}}",
+        "https://shop.example\\{{x}}",
         // A fixed site after a value that may be empty.
         "{{x}}https://attacker.example/c?d={{y}}", "{{x}}//attacker.example/",
         "{{x}}attacker.example/", "{{a}}{{b}}", "{{x{{y}}/"}) {
@@ -1339,6 +1487,88 @@ TEST(AutomationSecurityTest, AFixedHostWithAValueInItsAddressIsNotConfirmed) {
   s.default_variables["url"] = "https://shop.example/";
   EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0), "");
   EXPECT_TRUE(AutomationSecurity::MayRunAsChild(s));
+}
+
+// A fixed host before an address's first {{variable}}, its whole authority
+// ended by '/', '?' or '#', is a site of the workflow's: the review lists
+// it, the change is confirmed only on it, and no value moves the address
+// off it, so the step then opens it with any value.
+TEST(AutomationSecurityTest, AFixedHostBeforeAValueIsASite) {
+  for (const auto& [target, host] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"https://shop.example/search?q={{q}}", "shop.example"},
+           {"https://shop.example/{{path}}", "shop.example"},
+           {"https://Shop.Example:8443/x?q={{q}}", "shop.example"},
+           {"http://shop.example?{{q}}", "shop.example"},
+           {"https://shop.example#{{q}}", "shop.example"},
+           {"http://192.168.1.1/reboot?x={{t}}", "192.168.1.1"}}) {
+    std::vector<Step> one;
+    one.push_back(MakeStep(StepType::NAVIGATE, target));
+    EXPECT_EQ(AutomationSecurity::HostsReferencedBy(one),
+              std::vector<std::string>{host})
+        << target;
+  }
+
+  Script s;
+  s.id = "wf_shop";
+  s.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://shop.example/search?q={{q}}"));
+  s.steps.push_back(MakeStep(StepType::CLICK, ".result"));
+  // What the file claims.
+  s.security.trust = TrustLevel::TRUSTED;
+  s.security.domain_whitelist = {"evil.example"};
+  AutomationSecurity::ClampUnvouched(s);
+  ASSERT_EQ(s.steps.size(), 2u);
+  EXPECT_EQ(AutomationSecurity::HostsReferencedBy(s.steps),
+            std::vector<std::string>{"shop.example"});
+  EXPECT_FALSE(AutomationSecurity::MayConfirmWithoutSites(s));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {}));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(s, {"evil.example"}));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(
+      s, {"shop.example", "evil.example"}));
+  EXPECT_TRUE(s.security.sites_unconfirmed);
+  // Unconfirmed, it allows nothing.
+  AutomationSecurity sec;
+  EXPECT_FALSE(sec.AllowNavigation(AutomationSecurity::EffectivePolicy(s),
+                                   "https://shop.example/search?q=lamp"));
+  ASSERT_TRUE(AutomationSecurity::ConfirmDraftSites(s, {"shop.example"}));
+  EXPECT_EQ(s.security.domain_whitelist,
+            std::vector<std::string>{"shop.example"});
+  EXPECT_EQ(s.security.trust, TrustLevel::CASUAL);
+  const SecurityPolicy p = AutomationSecurity::EffectivePolicy(s);
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://shop.example/search?q=lamp"));
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://www.shop.example/"));
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://evil.example/"));
+  // Its run window opens it once a value is given, resolved.
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0), "");
+  s.default_variables["q"] = "lamp";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(s, 0),
+            "https://shop.example/search?q=lamp");
+
+  // No value moves such an address off its host, as the URL parser reads
+  // it.
+  for (const char* prefix :
+       {"https://shop.example/search?q=", "https://shop.example/",
+        "https://shop.example#"}) {
+    for (const char* value :
+         {"", "@evil.example", "//evil.example/", "\\evil.example",
+          ":@evil.example/", "\t@evil.example", "%40evil.example"}) {
+      const GURL resolved(std::string(prefix) + value);
+      EXPECT_TRUE(resolved.is_valid()) << prefix << value;
+      EXPECT_EQ(std::string(resolved.host()), "shop.example")
+          << prefix << value;
+    }
+  }
+
+  // A registry (a public suffix) written as the host matches only itself.
+  Script suffix;
+  suffix.steps.push_back(MakeStep(StepType::NAVIGATE, "https://com/{{x}}"));
+  EXPECT_EQ(AutomationSecurity::HostsReferencedBy(suffix.steps),
+            std::vector<std::string>{"com"});
+  const SecurityPolicy suffix_policy =
+      AutomationSecurity::EffectivePolicy(suffix);
+  EXPECT_TRUE(sec.AllowNavigation(suffix_policy, "https://com/"));
+  EXPECT_FALSE(sec.AllowNavigation(suffix_policy, "https://evil.com/"));
 }
 
 // Only a file changed outside, below TRUSTED and not a routine taught by
@@ -1456,19 +1686,31 @@ Script ConfirmedOnItsListedSite(const std::string& first) {
 // The page a run window opens before its runner's checks, in the user's
 // profile: only the first NAVIGATE step's URL as the runner opens it (its
 // {{variables}} given the run's values), when it is http(s) and one of the
-// workflow's sites. A {{variable}} URL's site is none the review listed
-// (HostsReferencedBy() skips it): only its resolved URL is checked.
+// workflow's sites. A {{variable}} URL's site is one the review listed only
+// when its host is written before its first value (HostsReferencedBy());
+// either way only its resolved URL is checked.
 TEST(AutomationSecurityTest, ARunWindowOpensOnlyAPageOfItsSites) {
-  // A {{variable}} URL's site, which the review didn't list, with or
-  // without a value for it.
+  // A {{variable}} URL whose host is a value, which the review didn't
+  // list, with or without a value for it.
   Script unlisted =
-      ConfirmedOnItsListedSite("http://192.168.1.1/reboot?x={{t}}");
+      ConfirmedOnItsListedSite("http://{{router}}/reboot?x={{t}}");
   ASSERT_FALSE(unlisted.security.sites_unconfirmed);
   EXPECT_EQ(unlisted.security.domain_whitelist,
             std::vector<std::string>{"news.example"});
   EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted, 0), "");
+  unlisted.default_variables["router"] = "192.168.1.1";
   unlisted.default_variables["t"] = "1";
   EXPECT_EQ(AutomationSecurity::RunWindowStartURL(unlisted, 0), "");
+  // A fixed host before its value is listed: its page, resolved, once a
+  // value is given.
+  Script listed = ConfirmedOnItsListedSite("http://192.168.1.1/reboot?x={{t}}");
+  ASSERT_FALSE(listed.security.sites_unconfirmed);
+  EXPECT_EQ(listed.security.domain_whitelist,
+            (std::vector<std::string>{"192.168.1.1", "news.example"}));
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(listed, 0), "");
+  listed.default_variables["t"] = "1";
+  EXPECT_EQ(AutomationSecurity::RunWindowStartURL(listed, 0),
+            "http://192.168.1.1/reboot?x=1");
   // Nor a later step's page, before the first's.
   unlisted.steps.push_back(
       MakeStep(StepType::NAVIGATE, "https://news.example/today"));

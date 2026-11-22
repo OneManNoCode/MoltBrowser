@@ -2297,8 +2297,10 @@ produce an entry.
   (`ClaimFire()`/`RecordFire()`, on its own clock; a claimed fire exactly,
   `ClaimFired()`, even down from one still in the future), or a later time
   that passed while the file was held for review (`NotePassed()`,
-  §3.6.5); and `held_until` (left out when 0), a Snooze or Skip made in
-  this browser (`Hold()`, §3.6.5): no fire of the schedule before it. It
+  §3.6.5), or a run due and not claimed yet that Skip next skipped
+  (`NotePassed()` via `HoldOrPassWith()`); and `held_until` (left out
+  when 0), a Snooze or Skip made in this browser (`Hold()`, §3.6.5): no
+  fire of the schedule before it. It
   only rises, and it ends with a fire claimed at or after it, or with a
   write that doesn't keep the schedule (`Set()`; `SetKeepingHold()` keeps
   it, for a save of the same schedule of a workflow not changed outside,
@@ -2420,9 +2422,11 @@ that.
   time zone and end: a page's save, a trust change) and the workflow as
   read wasn't changed outside (its schedule may not be the one held, so
   its confirmation and a page's save of it end the hold); any other write
-  ends it, as do `Save()` and `SaveNew()` always. `HoldWith()`
-  (molt://ai-automation's Snooze and Skip) reads the workflow, computes the
-  hold and sets it in the record under one lock; the file isn't written,
+  ends it, as do `Save()` and `SaveNew()` always.
+  `HoldWith()`/`HoldOrPassWith()` (molt://ai-automation's Snooze and
+  Skip) reads the workflow, computes the hold (or, for a Skip of a run due
+  and not claimed yet, records it as passed) and sets it in the record
+  under one lock; the file isn't written,
   so its digest, and another browser's schedule, are unchanged. A move's rename carries the
   entry (`Take()`, `ReturnTaken()`); finishing it forgets it. A write of
   what an unvouched read gave is still an unconfirmed import:
@@ -2537,9 +2541,10 @@ next time (the same rule); after, it is final.
   step); never a draft's or a routine's. Otherwise about:blank, never an
   earlier page, and the runner opens a `navigate` step itself when it
   reaches one, resolved and checked. A `{{variable}}` URL is never opened
-  unresolved: that isn't the page the step opens, and its site is none the
-  review listed (`HostsReferencedBy()` skips it), so only the resolved
-  URL's site is checked against the list.
+  unresolved: that isn't the page the step opens. Its site is one the
+  review listed only when its whole authority comes before its first value
+  (`https://shop.example/?q={{q}}`: `HostsReferencedBy()`); either way the
+  resolved URL's site is what is checked.
 - **Agent studio:** the card says "changed outside · review it", the
   library a banner ("N workflows were changed outside MoltBrowser and need
   your review."). Run, Schedule and Trust are refused
@@ -2608,8 +2613,9 @@ next time (the same rule); after, it is final.
   starts its schedule over (no last fire from the JSON; an interval
   counted from the import), as in the studio. Snooze and Skip are
   messages of their own (`snoozeScript`, `skipNextFire`): each records a
-  hold and doesn't rewrite the workflow, and the audit log has it
-  (`snoozed` or `run_skipped`, `until=<unix time>`). They are shown only
+  hold (a Skip of a run due now records it as passed) and doesn't rewrite
+  the workflow, and the audit log has it (`snoozed` or `run_skipped`,
+  `until=<unix time>` or `passed=<unix time>`). They are shown only
   for cron and interval schedules. A save never moves a stored last fire
   later.
 - **Voice mode:** a routine from before profiles that was changed outside
@@ -2873,10 +2879,15 @@ All in `molt_ai_unittests` except the last item:
   don't target; once; then CASUAL with an empty whitelist: no navigation,
   click or typing at CASUAL or APPROVED, no run window page, runnable as a
   child adding no site, any site once TRUSTED, a fixed address added later
-  allowing only its site); one with an address that doesn't start with its
-  value (a fixed host, or a fixed scheme, before it) confirmed neither with
-  none nor with sites; only a change confirmed with none (not an agent
-  draft, a voice routine, a change with a site, a non-draft, a TRUSTED or
+  allowing only its site); one with an address whose host a value may give
+  or change (a host, port or user name from a value, a tab or a `\` in the
+  host, only a fixed scheme, a fixed site after a value) confirmed neither
+  with none nor with sites; a fixed host before a value listed (a port,
+  `?` or `#` ending it; an IP address), confirmed only on it, then allowed
+  with any value, its run window opening it resolved, no value moving it
+  off its host, a registry written as the host matching only itself;
+  only a change confirmed with none (not an agent draft, a voice routine,
+  a change with a site, a non-draft, a TRUSTED or
   ADMIN change; a stored whitelist cleared); the review message; the run window's first page only the page the
   first step run expects (the last `navigate` before it, else the first; a
   retry from a later step of a workflow whose page has a `{{variable}}`
@@ -2884,7 +2895,13 @@ All in `molt_ai_unittests` except the last item:
   `{{variable}}`s given the run's values, http(s) and on the workflow's
   sites (never one left unresolved or a value that takes it elsewhere, at
   any trust for the former, nor a draft's, an unconfirmed change's or a
-  routine's).
+  routine's); a run's time limit (`RunTimeLimit()`: 300 s below TRUSTED
+  whatever the file says, a shorter one kept, TRUSTED's own, a
+  non-positive TRUSTED one none); below TRUSTED each run limit within its
+  default (a lower one kept, TRUSTED's own kept, a draft's bounded); a
+  run stops one page or one byte past a limit at CASUAL, never at
+  APPROVED, TRUSTED or ADMIN; a lower limit in its own words; a policy that
+  isn't a run's held to the defaults.
 - `automation/automation_script_unittest.cc`: `changed_outside` stored only
   when true; a stable round trip; an interval with no last fire counts from
   when it is written (`CountIntervalFromNow()`).
@@ -2914,8 +2931,11 @@ All in `molt_ai_unittests` except the last item:
   something else), while a new schedule or a whole write ends it and a
   failed write puts it back; a file changed outside keeps no hold (its
   confirmation, a page's save of it and any other change of it end it);
-  it is never claimed through; each user data directory keeps its own;
-  writes never launder an unvouched read; `SetTrustLevel()` refuses a
+  it is never claimed through; each user data directory keeps its own; a
+  run due and skipped is recorded as passed, in the record only, under one
+  lock, and the claim read before it fails; a hold through
+  `HoldOrPassWith()` is `HoldWith()`'s; writes never launder an unvouched
+  read; `SetTrustLevel()` refuses a
   review; `UpdateBookkeeping()` keeps the verdict and refuses security
   changes; `RecordFire()` keeps the floor when the file can't be written;
   the scrub rewrite keeps the verdict; moves carry it; a move cut short on
@@ -2942,9 +2962,12 @@ All in `molt_ai_unittests` except the last item:
   the hold; a Snooze holds an interval, which runs at its next time after
   the hold (75 min, not 85); a cron snoozed after its last listing doesn't
   fire at its time and fires at its first match after the hold; a skipped
-  interval keeps its phase; an overdue interval's Skip holds past its next
-  time (no catch-up); a restart keeps the recorded fire (a daily workflow of a browser
-  restarted every eight hours runs a day after its own last fire); a
+  interval keeps its phase; a hold over an overdue interval covers its
+  catch-up and its next time; a Skip of a run due now, recorded as passed
+  before its timer's reload, skips that run only, and the next runs an
+  interval later; a restart keeps the recorded fire (a daily workflow of
+  a browser restarted every eight hours runs a day after its own last
+  fire); a
   schedule saved afresh forces no catch-up and fires an interval later;
   two profiles' schedulers over one folder run a due workflow once (a
   catch-up, then a timer); a workflow held for review across five of its
@@ -3000,15 +3023,27 @@ All in `molt_ai_unittests` except the last item:
   getWorkflow's `confirmWithoutSites`, the confirmation with an empty list
   and the token, audited `no_sites`; refused for an agent draft and a
   voice routine with no site; a save answers whether it may still be
-  confirmed with none.
+  confirmed with none; a change whose address has a value after a fixed
+  host lists it and is confirmed only on it; a review lists every site up
+  to `kMaxReviewSites` and is confirmed with them all, while more lists
+  none, gives their count and is confirmed by no list (exactly the steps'
+  sites included), a save answering the same.
 - `ui/webui/molt_ai/molt_ai_automation_storage_unittest.cc`: trust refused
   with the reason; a save keeps it a draft; an import is vouched for at
   CASUAL, and starts its schedule over (no last fire from the JSON, an
   interval counted from the import); a page can't move the last fire
-  later; Snooze holds without writing the file; Skip holds past the next
-  run only (cron, interval, overdue interval, none to come); each hold is
-  in the audit log (`snoozed`, `run_skipped`, until when); both refuse,
-  and log nothing for, what they can't hold.
+  later; a save but Save schedule keeps the stored schedule, whether it is
+  on, its last fire and hold, whatever a stale card sends (values and
+  steps saved after the schedule was changed, paused, snoozed or turned on
+  elsewhere); Snooze holds without writing the file; Skip holds past the next
+  run only (cron, interval, none to come); a run due and not claimed yet
+  (an interval's or a fired cron's in flight, an overdue interval's
+  catch-up) is skipped alone, recorded as passed, its claim refused,
+  nothing held, but not a time an ended Snooze covered, a paused schedule
+  or a cron never fired here; each is in the audit log (`snoozed`,
+  `run_skipped`, `until=` or `passed=`); both refuse,
+  and log nothing for, what they can't hold; an import with an address
+  that has a value after a fixed host keeps that site.
 - `molt_automation_script_fuzzer`: the digest is empty or 64 hex digits and
   what a reader of the saved file computes; a clamped workflow is CASUAL
   with no sites, may neither fire nor run as a child, holds only the
@@ -3021,7 +3056,11 @@ All in `molt_ai_unittests` except the last item:
   target none, every address with a `{{variable}}` in it starts with one
   and it has no voice step, and then allows no step's address nor a run
   window page; an unconfirmed draft's effective trust is CASUAL (seed
-  `regress_unconfirmed_trust.molt`).
+  `regress_unconfirmed_trust.molt`); an address with a value names a site
+  only with its host fixed before the value, and no value moves it off that
+  host (seed `templated_hosts.molt`); below TRUSTED each run limit is within
+  its default, and a CASUAL run one page or one byte past either of the
+  last two stops (none at APPROVED and above).
 - `tools/webui_checks` smoke test: the badge, the banner, the review panel
   (schedule as text), a site tool's step titled by its tool with its site
   and its values in full (a cut said), each isolated, on its own row and
@@ -3051,7 +3090,10 @@ All in `molt_ai_unittests` except the last item:
   the token (saved first when edited), the toast, and no button without
   the browser's own `true` or for an agent draft; molt://ai-automation's
   Snooze and Skip send their own messages, the card's hold line, and the
-  buttons only for cron and interval schedules.
+  buttons only for cron and interval schedules; only its Save schedule
+  says it is one; a review of 200 sites lists every one before its button
+  and confirms exactly them, while more (the browser's count, or a longer
+  list, also after a save) says how many with no button.
 - Browser tests (build machine), `security/molt_data_folder_browsertest.cc`:
   the record is in the user data directory, not the test's data folder; a
   workflow planted after startup loads as a draft;
@@ -3061,7 +3103,14 @@ All in `molt_ai_unittests` except the last item:
   there is refused;
   `ui/webui/molt_ai/molt_ai_automation_storage_browsertest.cc`: the chat's
   page watcher is saved with its interval counted from then, CASUAL, on its
-  one site, and may fire unattended.
+  one site, and may fire unattended;
+  `automation/automation_runner_browsertest.cc`: a 10-minute wait-for and a
+  30 s wait end at the limit (runner owned by its callback, or deleted in
+  it); a run that ends in time completes; a question waiting at the limit
+  is withdrawn; a run window's run at its limit ends its Agent Inbox
+  entry, closes its window and is recorded "Max runtime exceeded" at its
+  first step; a wait-for finds an element that appears a second in, well
+  before its timeout (it checks every 250 ms).
 
 #### 3.6.11 Not done
 
@@ -3150,8 +3199,8 @@ All in `molt_ai_unittests` except the last item:
 
     Snooze (`snoozeScript`, a minute to an hour; the button sends an
     hour) holds from the click. Skip (`skipNextFire`) holds until one
-    second past the first run strictly after now: for an overdue interval
-    that is its next time to come, not the time already passed. A second
+    second past the first run strictly after now. A run due and not
+    claimed yet is skipped instead (the workflow-gaps-c change). A second
     Skip skips the run after that. A hold only rises, and each one set is
     in the audit log (`snoozed` or `run_skipped`, `until=<unix time>`).
 
@@ -3174,9 +3223,10 @@ All in `molt_ai_unittests` except the last item:
     The buttons are shown only for cron and interval schedules. They send
     their own message and no longer save the card's copy, which may be
     stale. molt://ai-automation's `saveScript` never moves a stored last
-    fire later: the page's value is capped at the stored one. No page has
-    a reason to move it, and a fire time far ahead would stall the
-    schedule.
+    fire later: Save schedule's value is capped at the stored one, and any
+    other save keeps the stored schedule whole (the workflow-gaps-c
+    change). No page has a reason to move it, and a fire time far ahead
+    would stall the schedule.
   - a file changed outside whose every address with a value in it is a
     value's (one leading `{{variable}}`, then nothing or only a path, query
     or fragment: the value gives the whole address, its site included), no
@@ -3197,8 +3247,9 @@ All in `molt_ai_unittests` except the last item:
     Below TRUSTED an empty whitelist matches no host, so it opens and acts
     on no page by itself: each `{{variable}}` navigation is refused, the run
     window opens `about:blank`, and clicks, typing, key presses and site
-    tools are refused on every page. It gains a site only from a step that
-    opens a fixed address (`EffectivePolicy()` reads it), or any site when
+    tools are refused on every page. It gains a site only from a step whose
+    address names a fixed site (a fixed address, or one with values only
+    after its host: `EffectivePolicy()` reads it), or any site when
     the user sets it Trusted in molt://ai-automation. Run by another
     workflow (`RUN_SCRIPT`, allowed once confirmed), its steps run under
     that run's policy and add no site to it, as for any confirmed child. It
@@ -3213,24 +3264,196 @@ All in `molt_ai_unittests` except the last item:
     (`RoutineSitesConfirmed()`), so a changed routine is confirmed only
     with its sites (`VoiceRoutineStore::ConfirmSites()` refuses any changed
     routine anyway).
+- **Closed since** (the workflow-gaps-c change):
+  - a CASUAL run (a workflow nobody has vouched for: an import, a
+    confirmed change, the chat's `/watch` watcher, and one the user built
+    in the studio's editor, started blank or from a sample, or duplicated,
+    without recording it) is held to its policy's `max_navigations` (default
+    20) and `max_network_bytes` (default 200 MB). `EffectivePolicy()`
+    keeps each within (0, default] below TRUSTED, as it does the run time:
+    a lower stored one is kept, anything else is the default. APPROVED
+    (the user recorded or approved it), TRUSTED and ADMIN are held to
+    neither (`RunLimitMessage()`): no page sets them, and a long workflow
+    the user recorded or approved (a loop over many pages) must not start
+    failing; they keep their run time. One the user built by hand, started
+    blank or duplicated is CASUAL, and so limited, until they approve it:
+    the stop message says so (`kRunLimitAdvice`), and Trust lifts the
+    limits. The runner's `RunLimitObserver`, a
+    `content::WebContentsObserver` on the run's tab, is made in `Run()`
+    after the refusals for a CASUAL run (in practice the run
+    window's runs; the chat's one-step actions run at TRUSTED and are
+    never counted, and voice mode plays a routine step by step in the
+    user's tab through `VoiceLearningLoop`, not the runner, so it has
+    neither these limits nor the deadline). From the run's start it counts:
+    - each document the tab's primary main frame commits by a navigation
+      that started after the run did (`DidStartNavigation()`, then
+      `DidFinishNavigation()`: `IsInPrimaryMainFrame()`, `HasCommitted()`,
+      not `IsSameDocument()`). An error page, a reload, a redirect the page
+      commits and a bfcache restore count; a same-document change, a
+      subframe, a prerendered page and the run window's first page
+      (already loading when the run starts) don't;
+    - what each finished load of its documents, in any frame, received
+      from the network (`ResourceLoadComplete()`'s
+      `ResourceLoadInfo::total_received_bytes`: after TLS, headers
+      included, 0 from the cache), the first page's included. The figure
+      is the renderer's, added saturating.
+
+    `AutomationSecurity::RunLimitMessage()` decides. Past a limit the
+    observer posts the stop, once. Passed during a step (from its dispatch
+    until its result is being recorded, its retries included:
+    `step_in_progress_`), the run ends on that step (`BlockStep()`: no
+    retry; audit `step_blocked`, then `run_failed`). Passed between steps
+    (a step's result being saved, or the next step not started yet), the
+    run stops before the next step (`run_limit_stop_`, checked by
+    `ExecuteNextStep()`; audit `run_failed` only), and the step being
+    recorded keeps its own outcome, message and needs-trust mark. A limit
+    passed once every step is done, or while the last step's result is
+    being saved, doesn't fail the run, as for the run time. The message is
+    "Stopped: this run opened more than 20 pages, the most this workflow
+    may open in one run. Approve the workflow (Trust) if you made it or
+    checked it: an approved workflow has no such limit." (or "Stopped:
+    this run's pages loaded more than 200 MB, the most this workflow may
+    load in one run. …"). It isn't marked needs-trust, so the studio
+    offers no "Trust & re-run": approving the workflow (APPROVED and above
+    lift both limits) is the user's own decision. A child run by `RUN_SCRIPT`
+    counts against its parent's limits.
+  - a run's time limit (`AutomationSecurity::RunTimeLimit()` of the run's
+    `EffectivePolicy()`: below TRUSTED at most 300 s, TRUSTED its own, one
+    that isn't positive no time) is a deadline from `Run()`.
+    `AutomationRunner`'s `run_deadline_timer_` (a member, bound
+    `Unretained`, since step boundaries invalidate `weak_factory_`) ends
+    the run "Max runtime exceeded" wherever it is, and `ExecuteNextStep()`
+    checks the same deadline between steps (both `OnRunDeadline()`). The
+    step's timer stops and its question is withdrawn. Its pending retry,
+    selector probe, click or typing reply, settle, model answer, vault
+    read and `RUN_SCRIPT` child read are dropped (`Finish()`), and a site
+    tool's listing or call and the settle observer stop. What was already
+    sent to the page still happens there. The record says "Max runtime
+    exceeded" at the step it was on (no timeline entry for the step it
+    cut; a step that had ended in time and was only waiting for its
+    screenshot, `capture_finalize_`, is recorded as it ended, without it:
+    its own failure or block ends the run, and after the last step the
+    run completes). The run window closes and its Agent Inbox entry ends,
+    so the overlap guard lets the next fire run. A run whose last step
+    finished in time completes. A `RUN_SCRIPT` child's steps count in the
+    run's limit. A "retry from step N" counts afresh. The chat's one-step
+    actions keep 30 s, and `/wait` adds its wait to it.
+  - the review lists the fixed host of an address with a value after it
+    (`https://shop.example/search?q={{q}}`: shop.example), and below
+    TRUSTED such a step opens that site with any value. `FixedHostOf()`
+    (`HostsReferencedBy()`'s `navigate` branch for a target with a `{{`):
+    the text before the first `{{` is `http://` or `https://`, then a
+    non-empty authority in printable ASCII ended by `/`, `?` or `#`, with
+    no `@` or `\` before it; the host is GURL's, lowercased. It holds
+    because every URL parser ends the authority there, and the runner
+    (`Resolve()`) and `RunWindowStartURL()` change only text from the
+    first `{{` on, so a value can only change the path, query or fragment
+    on a site the user confirmed. No site for `https://{{h}}/`,
+    `https://shop.{{tld}}/`, `https://a@{{x}}/`,
+    `https://shop.example:{{p}}/`, `https://\t/{{x}}`, `https:///{{x}}`,
+    `http://shop.example\@x{{y}}` (a `\` only some parsers take as a
+    slash) or `{{x}}https://shop.example/` (a fixed site after a value
+    that may be empty). A registry written as the host (`https://com/…`)
+    matches only itself (`DomainMatchesWhitelist()`). Every consumer reads
+    it with no change of its own: `EffectivePolicy()`, the review
+    (`SetDraftSites()`, the review token), `ConfirmDraftSites()`,
+    `MayConfirmWithoutSites()` (such a change now has a site, so it is
+    confirmed with it, never with none), `RunWindowStartURL()`,
+    `RUN_SCRIPT` and voice. A workflow imported with only such addresses
+    (molt://ai-automation keeps no file sites) works after the import.
+  - molt://ai-automation's saves other than Save schedule (*Save step
+    changes*, *Save values as defaults*: `saveScript` without its third
+    argument `true`) keep a stored workflow's schedule and whether it is on
+    as stored (`automation_page::SaveWorkflow()` with `schedule_saved`
+    false: the stored `trigger` whole, its type, expression, time zone, end,
+    last fire and hold, and `enabled`, as the studio's `KeepPolicy()` keeps
+    them), whatever the card sends. An open card isn't refreshed, so its
+    copy undid a schedule saved, started, paused or turned on since in
+    Agent mode or another tab, and ended a Snooze or Skip made meanwhile
+    (`SameSchedule()` failed). Such a save now always keeps the hold
+    (unless the workflow as read was changed outside). Only Save schedule
+    changes them, from what its card shows (the last Save schedule wins).
+    It replaces the workflow-gaps rule that kept the stored last fire only
+    when the card sent none and showed the same schedule; an interval
+    never started still stays so. A workflow not stored is still taken as
+    an import, its schedule turned off.
+  - the studio's review lists every site a draft's steps target
+    (`HostsReferencedBy()`), up to `kMaxReviewSites` (200,
+    `molt_ai_agent_storage.h`); it listed at most 20 (`cleanSites()`),
+    while a confirmation needs exactly those sites, so a change or an
+    agent draft targeting more couldn't be confirmed. getWorkflow and a
+    save answer a draft with `draftSiteCount` and `draftSites` (all of
+    them, or none past 200); the panel lists them inline, every one before
+    **Confirm these N sites** (no box that scrolls), and the confirm sends
+    exactly that list. `confirmDraftSites` takes at most 200 (the handler,
+    and the storage's confirm before its locked update). Every agent draft
+    fits: one host a step at most, `kMaxDraftSteps` (200).
+  - Skip next skips exactly one run when one is due and not claimed yet:
+    a timer's fire between its reload and its claim, or an overdue
+    catch-up the next listing runs (`automation_page::DueUnclaimed()`: it
+    may fire unattended, is cron or interval, has a last fire here, and
+    its first time after it, the hold counted, has come). Its due times
+    are recorded as passed up to `AutomationScheduler::PassedUntil()`
+    (`WorkflowRecord::NotePassed()` via
+    `AutomationStorage::HoldOrPassWith()`, under the lock it was read
+    under), so the claim made on the last fire read before fails, whatever
+    second it carries, and nothing after it is held. The answer carries
+    `passed_unix`, and the audit log says `run_skipped | passed=<unix
+    time>`. Otherwise Skip holds just past the first run after now, as
+    before. Not due: a time an ended Snooze covered, a schedule turned
+    off, a cron never fired here. molt://ai-automation's card shows such a
+    run as the next ("now"), so an overdue cron's card no longer shows its
+    next future time as the run Skip skips. A hold to now + 1 in its place
+    was rejected: a timer's reload taking a second or more would claim at
+    the next second, at or past the hold, and end it, so the Skip would
+    skip nothing.
 - **Existing gaps left as they are** (separate changes):
-  a run's limit is checked between steps; `max_navigations` and
-  `max_network_bytes` are stored but not enforced; workflows imported by
-  earlier builds keep their file's schedule switch; a hold is on this
+  the Agent studio's Stop doesn't stop a run (`cancelRun`'s
+  `HandleCancelRun()` only answers; `AutomationRunner::Cancel()` has no
+  caller); the studio's run poll (80 tries 1.5 s apart) gives up before a
+  300 s limit; an on-device model answer in flight at a run's limit isn't
+  cancelled (dropped when it comes); workflows imported by earlier builds
+  keep their file's schedule switch; a hold is on this
   browser's clock (setting the clock back during one makes it last longer
   by the same amount); Skip next pressed in the few milliseconds between a
-  timer's reload of a due workflow and its claim of that fire can skip
-  that run as well as the next; the studio's review lists at most 20 sites (`cleanSites()`),
-  while a confirmation needs exactly the sites the steps target, so a
-  change whose steps target more than 20 can't be confirmed in the studio.
-- **The review lists the hosts of fixed addresses only**: an address with
-  a `{{variable}}` after a fixed host
-  (`https://shop.example/search?q={{q}}`) adds no site to the list
-  (`HostsReferencedBy()` skips an address with a `{{` anywhere in it), and
-  below TRUSTED it is refused until a step opens a fixed address on that
-  site. A change whose steps target no other site has none to confirm and
-  isn't confirmed with none (its fixed host would go unshown): the user
-  adds a "Go to page" step for that site, or imports the file again.
+  timer's reload and its claim of a cron's first run since its schedule
+  was saved (no last fire here, so a fire on its way to its claim can't be
+  told from a time that passed), or of a cron whose recorded last fire is
+  still ahead (a clock that was ahead), can skip that run as well as the
+  next; a schedule whose end passed after its last fire, with a time
+  between, still catches up once (the catch-up checks the end against the
+  last fire, not the due time), and Skip next on it records that time as
+  passed (its card shows it "now" until then); the run limits count only
+  what the run's tab reports as its loads finish: a load still open (a
+  stream, media still buffering) counts when it ends, and a load cancelled
+  before it finished (aborted by the page,
+  or cut off when the page navigated away), downloads, WebSockets, WebRTC,
+  a service or shared worker's own fetches, navigations that never commit
+  and pages the run's page opens in other windows aren't counted; the
+  bytes are the renderer's figures, so they bound a workflow that runs
+  away, not a compromised renderer; no page shows or sets the limits, and
+  a Casual workflow can't raise them: approving it (or recording it)
+  removes them (a per-workflow limit is a possible follow-up);
+  a molt://ai-automation card still sends its whole copy with each save,
+  so a stale card's *Save step changes* puts back its values, *Save values
+  as defaults* its steps, and *Save schedule* both (last write wins, as in
+  the studio's editor; the schedule is safe from all but Save schedule).
+- **A draft whose steps target more than 200 sites** isn't confirmed in
+  the studio: its review says how many and offers no button; the user
+  deletes steps (and saves) or the workflow. No recorded workflow or agent
+  draft comes near; a longer list would be a review no one checks.
+  (`HostsReferencedBy()` de-duplicates with a linear search, so a file
+  naming tens of thousands of hosts is slow to open for review.)
+- **A change confirmed by a daily build before the workflow-gaps-c
+  change** whose step has a fixed host before a value (shown then as that
+  step's address, not listed, and refused) now runs on that host without a
+  new review: `EffectivePolicy()` reads the steps, not what was confirmed.
+  Only builds since #134 (no tagged release) can have one.
+- **The chat's `/plan` saves the model's plan as a Casual workflow with no
+  review** (`HandleSavePlanScript()`): the hosts its `navigate` lines name
+  count as its sites, now including a fixed host before a value. That is
+  no new reach (a static `navigate https://h/` line already counted), but
+  such a workflow should be saved as a draft (a separate change).
 - **A confirmed change keeps only what the review showed** (§3.6.6's
   allowlist): the file's fallback selectors and locators, text anchor and
   description are gone, so a step whose element moved since needs
@@ -3298,12 +3521,43 @@ All in `molt_ai_unittests` except the last item:
 > address it opens is a value filled in when it runs (such as `{{url}}`)
 > and it has no recorded click or typing on a site, has no site to
 > confirm: **Confirm it with no sites** confirms it, and it then opens no page by itself until
-> you add a step that opens a fixed address, or set it to Trusted in
-> molt://ai-automation.
+> you add a step that opens an address on a fixed site, or set it to
+> Trusted in molt://ai-automation. An address with a value after its site,
+> such as `https://shop.example/search?q={{q}}`, names that site: the
+> review lists it, and once you confirm it the workflow opens that site
+> with any value (the value only changes the page or the search there).
+>
+> The review lists every site the workflow's steps open, up to 200. One
+> whose steps open more says how many and can't be confirmed in Agent
+> mode: delete the steps you don't want, or the workflow.
 >
 > **Snooze and Skip in molt://ai-automation now hold cron schedules too**,
 > and Snooze no longer pushes an interval a whole interval past the hour.
-> A hold applies to this copy of MoltBrowser only.
+> A hold applies to this copy of MoltBrowser only. Skip next skips one
+> run: if a run is due and about to start, or a missed run is about to be
+> caught up after sleep, that is the one skipped. Saving a workflow's
+> steps or default values in molt://ai-automation keeps its schedule, and
+> whether it is paused, as last saved: only **Save schedule** changes
+> them, so a card left open no longer undoes a schedule changed in Agent
+> mode or another tab.
+>
+> **A Casual workflow stops after 20 pages or 200 MB in one run.**
+> A workflow nobody has vouched for yet now stops, on the step it is at,
+> once a run has opened more than 20 pages (each page opened, reloaded, or
+> reached by a link or a redirect; not a change within the same page, nor
+> the run window's first page) or its pages have loaded more than 200 MB.
+> Its result says which. A lower limit in its file is kept. It applies to
+> a Casual workflow: an import, a confirmed change, the chat's `/watch`
+> watcher, or one built in Agent mode's editor, started blank or from a
+> sample, or duplicated, without recording it. Approving it, or recording
+> it yourself, lifts both limits. The limits don't count downloads, other
+> windows a page opens, live connections, or a load in progress or cut
+> off.
+>
+> **A workflow stops at its time limit**, even in the middle of a step,
+> with "Max runtime exceeded". Before, a long step could keep it running
+> (and its window open) well past it. Trusted workflows keep their own
+> limit.
 
 ## 4. The AI chat's page actions
 

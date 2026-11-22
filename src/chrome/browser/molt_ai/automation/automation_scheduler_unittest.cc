@@ -488,12 +488,13 @@ TEST_F(AutomationSchedulerTest, ASkippedIntervalKeepsItsPhase) {
   EXPECT_EQ(fired_.size(), 2u);
 }
 
-// A Skip of an interval that is overdue (its times passed while it was
-// turned off, say) holds past its first time after now, as
-// molt://ai-automation's Skip sets it (automation_page::SkipNext()), not
-// the time already passed: the times the hold covers aren't caught up, the
-// next one doesn't run, and it runs at the one after.
-TEST_F(AutomationSchedulerTest, ASkipOfAnOverdueIntervalHoldsPastItsNextTime) {
+// A hold made while an interval is overdue (its times passed while it was
+// turned off, say), such as a Snooze, past its first time after now, covers
+// its catch-up too: the times the hold covers aren't caught up, the next
+// one doesn't run, and it runs at the one after. (molt://ai-automation's
+// Skip of an enabled overdue interval records its catch-up as passed
+// instead: ASkipOfARunDueNowSkipsThatRunOnly.)
+TEST_F(AutomationSchedulerTest, AHoldOverAnOverdueIntervalCoversItsCatchUp) {
   // Hourly, last fired 2h10 ago: due 1h10 ago, 10 min ago, and at 50 min.
   const int64_t last = kStart - 7800;
   ASSERT_TRUE(storage_->Save(Interval("wf_1", 3600, 0)));
@@ -513,6 +514,35 @@ TEST_F(AutomationSchedulerTest, ASkipOfAnOverdueIntervalHoldsPastItsNextTime) {
   task_environment_.FastForwardBy(base::Minutes(2));
   EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
   EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, kStart + 6600);
+}
+
+// A Skip of a run due now and not claimed yet (pressed a few milliseconds
+// after its time, before its timer's reload) records it as passed
+// (AutomationStorage::HoldOrPassWith(), as molt://ai-automation's Skip
+// does: automation_page::SkipNext()): the reload finds it not due, it
+// doesn't run, and the next runs an interval later, nothing held.
+TEST_F(AutomationSchedulerTest, ASkipOfARunDueNowSkipsThatRunOnly) {
+  ASSERT_TRUE(storage_->Save(Interval("wf_1", 900, 0)));
+  ASSERT_TRUE(storage_->RecordFire("wf_1", kStart));
+  scheduler_.Start();
+  Tick();
+  // Its time has come; its timer's task hasn't run yet.
+  task_environment_.AdvanceClock(base::Minutes(15) + base::Milliseconds(5));
+  ASSERT_TRUE(storage_->HoldOrPassWith("wf_1", [](const Script& script) {
+    AutomationStorage::HoldOrPass set;
+    set.passed_unix =
+        AutomationScheduler::PassedUntil(script.trigger, base::Time::Now());
+    return std::optional<AutomationStorage::HoldOrPass>(set);
+  }));
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(fired_.empty());
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, kStart + 900);
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.held_until_unix, 0);
+  task_environment_.FastForwardBy(base::Minutes(15) - base::Seconds(1));
+  EXPECT_TRUE(fired_.empty());
+  task_environment_.FastForwardBy(base::Seconds(2));
+  EXPECT_EQ(fired_, std::vector<std::string>{"wf_1"});
+  EXPECT_EQ(storage_->Load("wf_1")->trigger.last_fired_unix, kStart + 1800);
 }
 
 // A restart keeps the recorded fire: a daily workflow of a browser

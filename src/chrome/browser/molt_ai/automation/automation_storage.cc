@@ -775,6 +775,27 @@ bool AutomationStorage::Update(const std::string& script_id,
 
 std::optional<int64_t> AutomationStorage::HoldWith(const std::string& id,
                                                    HoldFrom until) {
+  // No scope of its own: HoldOrPassWith() takes the lock (ChangeScope isn't
+  // re-entrant).
+  const std::optional<HoldOrPass> set = HoldOrPassWith(
+      id, [&until](const Script& script) -> std::optional<HoldOrPass> {
+        const std::optional<int64_t> held = until(script);
+        if (!held) {
+          return std::nullopt;
+        }
+        HoldOrPass hold;
+        hold.held_until_unix = *held;
+        return hold;
+      });
+  if (!set) {
+    return std::nullopt;
+  }
+  return set->held_until_unix;
+}
+
+std::optional<AutomationStorage::HoldOrPass> AutomationStorage::HoldOrPassWith(
+    const std::string& id,
+    HoldOrPassFrom set_from) {
   BlockingScope blocking(*this);
   if (!IsValidScriptId(id))
     return std::nullopt;
@@ -783,21 +804,33 @@ std::optional<int64_t> AutomationStorage::HoldWith(const std::string& id,
   const base::FilePath path = GetScriptPath(id);
   std::optional<base::DictValue> dict = ReadScriptDict(path);
   // As Load() reads it (its last fire and hold the record's), under the
-  // same lock as the hold: no save comes between, so the hold is computed
-  // from the schedule it holds.
+  // same lock as what is set: no save or claim comes between, so the hold
+  // is computed from the schedule it holds.
   std::optional<Script> script =
       dict ? Vetted(std::move(*dict), id, path, Held::kChangeScope)
            : std::nullopt;
   if (!script)
     return std::nullopt;
-  const std::optional<int64_t> held = until(*script);
+  const std::optional<HoldOrPass> set = set_from(*script);
   WorkflowRecord* record = Record();
   const std::string name = NameOf(path);
+  if (!set || !record)
+    return std::nullopt;
   // Only in the record: the file isn't written, so its digest, and another
   // browser's schedule, are unchanged.
-  if (!held || !record || !record->Hold(name, *held))
+  HoldOrPass now_set;
+  if (set->passed_unix > 0) {
+    // A run due and not claimed yet doesn't happen (as RecordPassed()):
+    // the claim made on the last fire read before fails.
+    if (!record->NotePassed(name, set->passed_unix))
+      return std::nullopt;
+    now_set.passed_unix = record->LastFired(name);
+    return now_set;
+  }
+  if (!record->Hold(name, set->held_until_unix))
     return std::nullopt;
-  return record->HeldUntil(name);
+  now_set.held_until_unix = record->HeldUntil(name);
+  return now_set;
 }
 
 bool AutomationStorage::UpdateBookkeeping(const std::string& script_id,

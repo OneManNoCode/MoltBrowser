@@ -29,7 +29,8 @@
 // before a fire, leaves a past fire it recorded as it is), or a fire its
 // scheduler recorded since (one recorded while the clock was ahead gives
 // way to the next; a claimed fire, ClaimFired(), is recorded exactly), or
-// a later time that passed while the file was held for review
+// a later time that passed while the file was held for review, or a run due
+// and not claimed yet that molt://ai-automation's Skip next skipped
 // (NotePassed()). "fired" is the only last fire the storage uses for
 // scheduling (LastFired()): the file's own trigger.last_fired_unix, which
 // anything can write, is never believed, and no fire time read from a
@@ -234,7 +235,10 @@ class WorkflowRecord {
   // review (changed outside this browser; the scheduler's clock, never a
   // time read from a file), and it is this browser's again: its fire time
   // rises to |passed|, so they aren't caught up (run at the moment the file
-  // was put back). Only ever later; no entry, nothing. Whether it changed.
+  // was put back). Also a run due and not claimed yet that
+  // molt://ai-automation's Skip next skipped (on this browser's clock): a
+  // claim made on the fire time read before fails. Only ever later; no
+  // entry, nothing. Whether it changed.
   bool NotePassed(const std::string& name, int64_t passed);
   // A hold on |name|'s schedule made in this browser (molt://ai-automation's
   // Snooze or Skip, on this browser's clock): no fire before |until|. A

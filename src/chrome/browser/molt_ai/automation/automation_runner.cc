@@ -9,12 +9,14 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/flat_set.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/numerics/clamped_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -32,6 +34,7 @@
 #include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
@@ -40,6 +43,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/referrer.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "third_party/blink/public/mojom/loader/resource_load_info.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -437,6 +441,87 @@ class NavigationSettleWaiter : public content::WebContentsObserver {
   base::WeakPtrFactory<NavigationSettleWaiter> weak_{this};
 };
 
+// Counts what the run's tab uses (RunUsage) from the run's start, and once
+// the run's policy says to stop (AutomationSecurity::RunLimitMessage()),
+// runs |on_exceeded| with why, once, from a task of its own. The runner
+// makes one for each CASUAL run.
+class RunLimitObserver : public content::WebContentsObserver {
+ public:
+  RunLimitObserver(content::WebContents* web_contents,
+                   const SecurityPolicy& policy,
+                   base::OnceCallback<void(std::string)> on_exceeded)
+      : content::WebContentsObserver(web_contents),
+        policy_(policy),
+        on_exceeded_(std::move(on_exceeded)) {}
+
+  RunLimitObserver(const RunLimitObserver&) = delete;
+  RunLimitObserver& operator=(const RunLimitObserver&) = delete;
+
+  void DidStartNavigation(content::NavigationHandle* handle) override {
+    started_.insert(handle->GetNavigationId());
+  }
+
+  // A document committed in the primary main frame by a navigation that
+  // started after the run did, whoever started it (a step, the page, a
+  // redirect it commits): a page opened. The run window's own first page,
+  // already loading when the run starts, isn't one.
+  void DidFinishNavigation(content::NavigationHandle* handle) override {
+    if (!started_.erase(handle->GetNavigationId()) ||
+        !handle->IsInPrimaryMainFrame() || !handle->HasCommitted() ||
+        handle->IsSameDocument()) {
+      return;
+    }
+    usage_.navigations = base::ClampAdd(usage_.navigations, 1);
+    Check();
+  }
+
+  // Every frame's loads (the main document's too) are the run's traffic.
+  // The count is the renderer's: added saturating, so no value it reports
+  // can wrap the total (and none can CHECK, as ByteSize's own sum would).
+  void ResourceLoadComplete(
+      content::RenderFrameHost* render_frame_host,
+      const content::GlobalRequestID& request_id,
+      const GURL& original_url,
+      const blink::mojom::ResourceLoadInfo& resource_load_info) override {
+    usage_.network_bytes =
+        base::ClampAdd(usage_.network_bytes,
+                       resource_load_info.total_received_bytes.InBytes());
+    Check();
+  }
+
+ private:
+  void Check() {
+    if (posted_) {
+      return;
+    }
+    std::string why = AutomationSecurity::RunLimitMessage(policy_, usage_);
+    if (why.empty()) {
+      return;
+    }
+    posted_ = true;
+    // Never from inside the tab's notification: stopping the run ends the
+    // step's work on this tab (its click-settle observer among it).
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&RunLimitObserver::Fire, weak_.GetWeakPtr(),
+                                  std::move(why)));
+  }
+
+  void Fire(std::string why) {
+    // Last: ending the run can delete the runner, and this observer with it
+    // (a run window's holder does on completion).
+    std::move(on_exceeded_).Run(std::move(why));
+  }
+
+  const SecurityPolicy policy_;
+  base::OnceCallback<void(std::string)> on_exceeded_;
+  RunUsage usage_;
+  // Navigations this observer saw start (DidStartNavigation()), until they
+  // finish.
+  base::flat_set<int64_t> started_;
+  bool posted_ = false;
+  base::WeakPtrFactory<RunLimitObserver> weak_{this};
+};
+
 AutomationRunner::AutomationRunner(content::WebContents* target_contents,
                                    BrowserAIRuntime* ai_runtime,
                                    const base::FilePath& storage_dir)
@@ -480,6 +565,9 @@ void AutomationRunner::Run(Script script,
   current_run_steps_.clear();
   run_ts_ = static_cast<int64_t>(std::time(nullptr));
   nav_waiter_.reset();
+  run_limits_.reset();
+  run_limit_stop_.clear();
+  step_in_progress_ = false;
   // Keep the tab compositing (and reporting visible to the page) for the whole
   // run so per-step screenshots capture real pixels even when the run window is
   // minimized in Auto mode. Released when this runner is destroyed.
@@ -521,6 +609,27 @@ void AutomationRunner::Run(Script script,
     return;
   }
 
+  // The run's time limit is a deadline from here, mid-step included
+  // (OnRunDeadline()).
+  const base::TimeDelta limit = AutomationSecurity::RunTimeLimit(policy_);
+  run_deadline_ = start_time_ + limit;
+  run_deadline_timer_.Start(FROM_HERE, limit, this,
+                            &AutomationRunner::OnRunDeadline);
+
+  // At CASUAL (nobody has vouched for the workflow: an import, a confirmed
+  // change) the run's tab may open at most policy_.max_navigations pages
+  // and load at most policy_.max_network_bytes
+  // (AutomationSecurity::RunLimitMessage()), counted from here: the run
+  // window's first page, already loading, isn't a page the run opened, but
+  // what it loads counts. Unretained: |run_limits_| is a member, and runs
+  // the callback only while it lives.
+  if (target_contents_ && policy_.trust == TrustLevel::CASUAL) {
+    run_limits_ = std::make_unique<RunLimitObserver>(
+        target_contents_.get(), policy_,
+        base::BindOnce(&AutomationRunner::OnRunLimitExceeded,
+                       base::Unretained(this)));
+  }
+
   Audit("run_started", current_index_ > 0
                            ? "from_step=" + base::NumberToString(current_index_)
                            : std::string());
@@ -530,6 +639,49 @@ void AutomationRunner::Run(Script script,
 
 void AutomationRunner::Cancel() {
   cancel_requested_ = true;
+}
+
+void AutomationRunner::OnRunDeadline() {
+  if (!is_running_) {
+    return;
+  }
+  // The step ended in time and only its screenshot was pending: it is
+  // recorded as it ended, without the screenshot. A failure or a block
+  // ends the run with its own message (and Trust & re-run); a step that
+  // went through advances, and the ExecuteNextStep() this posts ends the
+  // run at the limit (Completed after the last step). It may delete this
+  // runner, so nothing follows it.
+  if (capture_finalize_) {
+    std::move(capture_finalize_).Run(/*screenshot_ok=*/false);
+    return;
+  }
+  // Every step had finished in time; only the advance was still posted.
+  if (current_index_ >= script_.steps.size()) {
+    Finish(true, "Completed");
+    return;
+  }
+  LOG(WARNING) << "[Automation] step " << current_index_
+               << " stopped: the run reached its time limit ("
+               << policy_.max_runtime_seconds << " s)";
+  // Only a block's own end offers Trust & re-run.
+  blocked_needs_trust_ = false;
+  // The step ends where it is. Finish() stops its timer, withdraws its
+  // question and drops every callback it waits on (each bound to
+  // weak_factory_: a retry, a selector probe, a click or typing reply, a
+  // settle, a model answer, a vault read, RUN_SCRIPT's child). What polls
+  // on its own stops here: a site tool's listing or call, and the
+  // click-settle observer. Reached from run_deadline_timer_, from a posted
+  // ExecuteNextStep(), and synchronously from Run() through
+  // ExecuteNextStep() (a limit of 0 or less); never from inside a
+  // SiteToolHost or NavigationSettleWaiter callback.
+  if (site_tools_) {
+    site_tools_->Cancel();
+  }
+  tool_call_.reset();
+  nav_waiter_.reset();
+  // Last: on_complete may delete this runner (the run window's holder, the
+  // chat's self-owned runner). OneShotTimer allows its task to delete it.
+  Finish(false, kMaxRuntimeExceeded);
 }
 
 void AutomationRunner::ExecuteNextStep() {
@@ -544,11 +696,16 @@ void AutomationRunner::ExecuteNextStep() {
     Finish(true, "Completed");
     return;
   }
-  // Per-script overall timeout, as the run's policy has it (below TRUSTED
-  // at most the default, whatever the file says: EffectivePolicy()).
-  int elapsed_s = (base::TimeTicks::Now() - start_time_).InSeconds();
-  if (elapsed_s > policy_.max_runtime_seconds) {
-    Finish(false, "Max runtime exceeded");
+  // A page or byte limit passed between two steps (OnRunLimitExceeded()).
+  if (!run_limit_stop_.empty()) {
+    Finish(false, run_limit_stop_);
+    return;
+  }
+  // The run's time limit, as the run's policy has it (below TRUSTED at
+  // most the default, whatever the file says: EffectivePolicy()). Also a
+  // timer (run_deadline_timer_), which ends a step still going then.
+  if (base::TimeTicks::Now() >= run_deadline_) {
+    OnRunDeadline();
     return;
   }
 
@@ -628,6 +785,7 @@ void AutomationRunner::ExecuteNextStep() {
   }
 
   EmitStepProgress(/*starting=*/true, /*succeeded=*/false, "");
+  step_in_progress_ = true;
   std::string blocked;
   bool needs_trust = false;
   if (!PreflightStepPolicy(s, &blocked, &needs_trust)) {
@@ -739,6 +897,24 @@ void AutomationRunner::BlockStep(const std::string& reason,
   step_attempt_ = 0;
   // Terminal: a policy decision does not change on retry.
   CaptureStepAndThen(/*succeeded=*/false, reason, /*terminal_failure=*/true);
+}
+
+void AutomationRunner::OnRunLimitExceeded(std::string why) {
+  if (!is_running_) {
+    return;
+  }
+  // In a step (retries included): it ends there, without retries. Not
+  // marked needs-trust (no Trust & re-run): approving the workflow, which
+  // lifts the limits (RunLimitMessage()), is the user's own decision.
+  if (step_in_progress_) {
+    BlockStep(why);
+    return;
+  }
+  // Between steps (a step's result being recorded, or the next step not
+  // started yet): ExecuteNextStep() stops the run before the next step,
+  // unless every step is done. Never a second record of the step whose
+  // result is being saved.
+  run_limit_stop_ = std::move(why);
 }
 
 bool AutomationRunner::ShouldExecuteCurrentStep() const {
@@ -877,6 +1053,7 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
 void AutomationRunner::CaptureStepAndThen(bool succeeded,
                                           std::string note,
                                           bool terminal_failure) {
+  step_in_progress_ = false;
   StepResult sr;
   if (current_index_ < script_.steps.size()) {
     sr.index = static_cast<int>(current_index_);
@@ -905,10 +1082,23 @@ void AutomationRunner::CaptureStepAndThen(bool succeeded,
   auto finalize = base::BindOnce(&AutomationRunner::FinalizeStep,
                                  weak_factory_.GetWeakPtr(), std::move(sr),
                                  filename, note, terminal_failure);
-  if (path.empty())
+  if (path.empty()) {
     std::move(finalize).Run(/*screenshot_ok=*/false);
-  else
-    CapturePng(path, std::move(finalize));
+    return;
+  }
+  // The outcome is decided; only the screenshot is to come. Kept before
+  // CapturePng(), which may answer at once: the run's time limit passing
+  // meanwhile records the step without it (OnRunDeadline()).
+  capture_finalize_ = std::move(finalize);
+  CapturePng(path, base::BindOnce(&AutomationRunner::OnStepCaptured,
+                                  weak_factory_.GetWeakPtr()));
+}
+
+void AutomationRunner::OnStepCaptured(bool screenshot_ok) {
+  // Empty once OnRunDeadline() recorded the step without its screenshot.
+  if (capture_finalize_) {
+    std::move(capture_finalize_).Run(screenshot_ok);
+  }
 }
 
 void AutomationRunner::FinalizeStep(StepResult sr,
@@ -1005,6 +1195,8 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
   // Stop the step timer and abandon any lingering per-step async work so a late
   // completion can't resurrect the finished run.
   step_timeout_timer_.Stop();
+  run_deadline_timer_.Stop();
+  capture_finalize_.Reset();
   WithdrawQuestion();
   weak_factory_.InvalidateWeakPtrs();
   int duration_ms = (base::TimeTicks::Now() - start_time_).InMilliseconds();
@@ -1907,46 +2099,36 @@ void AutomationRunner::DoWaitFor(const Step& s) {
     OnStepFinished(false, "Empty selector");
     return;
   }
-  // Capture deadline by reference via copy into the lambda.
-  auto deadline = base::TimeTicks::Now() + base::Milliseconds(s.timeout_ms);
-  auto poll = std::make_shared<base::OnceClosure>();
-  *poll = base::BindOnce(
-      [](base::WeakPtr<AutomationRunner> self, std::string sel,
-         base::TimeTicks deadline,
-         std::shared_ptr<base::OnceClosure> poll_holder) {
-        if (!self) return;
-        std::string js = base::StringPrintf(
-            kHasSelectorJSTemplate, JSQuote(sel).c_str());
-        self->EvalJS(js, base::BindOnce(
-            [](base::WeakPtr<AutomationRunner> self, std::string sel,
-               base::TimeTicks deadline,
-               std::shared_ptr<base::OnceClosure> poll_holder,
-               base::Value v) {
-              if (!self) return;
-              bool matched = v.is_bool() && v.GetBool();
-              if (matched) {
-                self->OnStepFinished(true, "Selector appeared");
-                return;
-              }
-              if (base::TimeTicks::Now() >= deadline) {
-                self->OnStepFinished(false, "Timed out waiting for selector");
-                return;
-              }
-              // Re-arm.
-              base::SequencedTaskRunner::GetCurrentDefault()
-                  ->PostDelayedTask(
-                      FROM_HERE,
-                      base::BindOnce(
-                          [](std::shared_ptr<base::OnceClosure> p) {
-                            if (p && *p) std::move(*p).Run();
-                          },
-                          poll_holder),
-                      base::Milliseconds(250));
-            },
-            self, sel, deadline, poll_holder));
-      },
-      weak_factory_.GetWeakPtr(), sel, deadline, poll);
-  std::move(*poll).Run();
+  PollWaitFor(std::move(sel),
+              base::TimeTicks::Now() + base::Milliseconds(s.timeout_ms));
+}
+
+void AutomationRunner::PollWaitFor(std::string sel, base::TimeTicks deadline) {
+  const std::string js =
+      base::StringPrintf(kHasSelectorJSTemplate, JSQuote(sel).c_str());
+  EvalJS(js,
+         base::BindOnce(&AutomationRunner::OnWaitForPolled,
+                        weak_factory_.GetWeakPtr(), std::move(sel), deadline));
+}
+
+void AutomationRunner::OnWaitForPolled(std::string sel,
+                                       base::TimeTicks deadline,
+                                       base::Value matched) {
+  if (matched.is_bool() && matched.GetBool()) {
+    OnStepFinished(true, "Selector appeared");
+    return;
+  }
+  if (base::TimeTicks::Now() >= deadline) {
+    OnStepFinished(false, "Timed out waiting for selector");
+    return;
+  }
+  // Check again in 250 ms. Bound to this step's weak pointer: a step that
+  // ended (timed out, the run stopped) drops the next check.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&AutomationRunner::PollWaitFor, weak_factory_.GetWeakPtr(),
+                     std::move(sel), deadline),
+      base::Milliseconds(250));
 }
 
 void AutomationRunner::DoExtract(const Step& s) {

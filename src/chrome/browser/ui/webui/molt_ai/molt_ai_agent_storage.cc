@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/numerics/safe_conversions.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
@@ -136,7 +137,7 @@ base::DictValue SavedDict(const Script& script) {
   // (the browser decides, never the page), and the token of what was saved
   // (the stored file, as it will be read back).
   if (script.security.sites_unconfirmed) {
-    out.Set("draftSites", DraftSites(script));
+    SetDraftSites(out, script);
     out.Set("confirmWithoutSites",
             AutomationSecurity::MayConfirmWithoutSites(script));
     out.Set("reviewToken",
@@ -198,7 +199,7 @@ Answer OnFound(const WorkflowRequest& request,
       // whether it may be confirmed with none (a change whose steps target
       // no site), and the token of what is shown.
       if (found.security.sites_unconfirmed) {
-        answer.out.Set("draftSites", DraftSites(found));
+        SetDraftSites(answer.out, found);
         answer.out.Set("confirmWithoutSites",
                        AutomationSecurity::MayConfirmWithoutSites(found));
         answer.out.Set("reviewToken", ReviewToken(found));
@@ -321,6 +322,11 @@ Answer OnFound(const WorkflowRequest& request,
       answer.out.Set("trust", request.level);
       return answer;
     case Kind::kConfirmSites: {
+      // Never more sites than a review lists (SetDraftSites()), refused
+      // before the locked update.
+      if (request.sites.size() > kMaxReviewSites) {
+        return NotOk();
+      }
       bool changed_since_review = false;
       bool steps_changed = false;
       bool was_changed_outside = false;
@@ -733,13 +739,17 @@ std::string UnusedWorkflowId(const StudioPlaces& places,
   return id;
 }
 
-base::ListValue DraftSites(const Script& script) {
+void SetDraftSites(base::DictValue& out, const Script& script) {
+  std::vector<std::string> hosts =
+      AutomationSecurity::HostsReferencedBy(script.steps);
+  out.Set("draftSiteCount", base::saturated_cast<int>(hosts.size()));
   base::ListValue sites;
-  for (std::string& host :
-       AutomationSecurity::HostsReferencedBy(script.steps)) {
-    sites.Append(std::move(host));
+  if (hosts.size() <= kMaxReviewSites) {
+    for (std::string& host : hosts) {
+      sites.Append(std::move(host));
+    }
   }
-  return sites;
+  out.Set("draftSites", std::move(sites));
 }
 
 std::string ReviewToken(const Script& script) {
