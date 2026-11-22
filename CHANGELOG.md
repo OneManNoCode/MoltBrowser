@@ -57,7 +57,9 @@ For longer narrative posts behind each entry see
   due but hasn't started (you press Skip next just as its time comes, or
   after the computer wakes from sleep before a missed run has caught up),
   that run is the one skipped and the one after it still happens; the card
-  shows such a run as due "now". While a hold lasts, the card says "Held
+  shows such a run as due "now". (Not for a cron schedule's first run after
+  Save schedule: Skip pressed in the instant that run starts skips it and
+  the one after.) While a hold lasts, the card says "Held
   until …" next to the next run, and each Snooze and Skip is listed in the
   Audit log. A hold applies to this copy of MoltBrowser (all its profiles),
   not to another copy that shares `~/.moltbrowser`, and it lasts across a
