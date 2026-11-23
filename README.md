@@ -127,6 +127,12 @@ cd MoltBrowser
 ./scripts/build.sh
 ```
 
+To test on your own Mac, `./scripts/configure.sh --dev` makes a faster
+build: optimized, but not an official build (no ThinLTO, so the final link
+takes minutes rather than hours) and without debugging checks. It is never
+a release: `scripts/release.sh` refuses it. Install it with
+`./scripts/dev-install-mac.sh`.
+
 ### macOS (Apple Silicon)
 ```bash
 # GPU acceleration uses Metal API automatically

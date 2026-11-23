@@ -107,6 +107,34 @@ else
   GN_OUT_ARGS=(--gn-out-dir "$BUILD_DIR")
 fi
 
+# A release is an official build: never an out dir that configure.sh --dev
+# or --debug made (not official, so no ThinLTO; --debug unoptimized).
+# Checked now for an out dir already configured, and again after the build.
+GN_OUT_DIRS=()
+for ((i = 1; i < ${#GN_OUT_ARGS[@]}; i += 2)); do
+  GN_OUT_DIRS+=("${GN_OUT_ARGS[$i]}")
+done
+require_official_out_dir() {
+  local args="$1/args.gn"
+  if [ ! -f "$args" ]; then
+    if [ "$2" = may_be_missing ]; then
+      return 0
+    fi
+    echo "ERROR: $1 has no args.gn: configure it with ./scripts/configure.sh."
+    exit 1
+  fi
+  if ! grep -Eq '^[[:space:]]*is_official_build[[:space:]]*=[[:space:]]*true' "$args" ||
+     grep -Eq '^[[:space:]]*is_debug[[:space:]]*=[[:space:]]*true' "$args"; then
+    echo "ERROR: $1 isn't an official release build (configure.sh --dev or"
+    echo "  --debug made it). Reconfigure it with ./scripts/configure.sh, without"
+    echo "  --dev or --debug, and build again."
+    exit 1
+  fi
+}
+for d in "${GN_OUT_DIRS[@]}"; do
+  require_official_out_dir "$d" may_be_missing
+done
+
 # A release records its build provenance (scripts/release-provenance.sh).
 # Check now, not after hours of building, that this Mac has a builder label
 # (MOLT_BUILDER_ID) and the checkout is the clean, tagged source.
@@ -164,6 +192,9 @@ if [ "$SKIP_BUILD" = false ]; then
 else
   echo "[$STEP/$STEPS_TOTAL] Skipping build (--skip-build)"
 fi
+for d in "${GN_OUT_DIRS[@]}"; do
+  require_official_out_dir "$d" must_exist
+done
 
 # ---- Step 2: Patch Info.plist ----
 STEP=$((STEP + 1))

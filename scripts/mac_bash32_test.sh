@@ -159,4 +159,56 @@ out="$(host_check 12.7.6 "$tmp/xc13" refuse "$tmp/no-checkout")"
 ) || { echo "molt_version_ge compared wrongly" >&2; exit 1; }
 echo "lib-mac-host-check.sh: ok"
 
+# configure.sh --dev: the Mac config, not official (so no ThinLTO), with
+# DCHECKs off. release.sh then refuses that out dir, and a --debug one,
+# before building anything; an official one gets past the check. A
+# stand-in repo root with a stand-in gn (writes its --args to args.gn) and
+# a Linux uname (no host check).
+dev="$tmp/devroot"
+mkdir -p "$dev/scripts" "$dev/configs" "$dev/chromium/src" "$tmp/devbin"
+cp "$ROOT/scripts/configure.sh" "$ROOT/scripts/lib-mac-host-check.sh" \
+   "$ROOT/scripts/release.sh" "$ROOT/scripts/lib-release-names.sh" "$dev/scripts/"
+cp "$ROOT/configs/macos-x64.gn" "$dev/configs/"
+cat > "$tmp/devbin/gn" <<'STUB'
+#!/bin/bash
+mkdir -p "$2"
+printf '%s\n' "${3#--args=}" > "$2/args.gn"
+STUB
+cat > "$tmp/devbin/uname" <<'STUB'
+#!/bin/bash
+case "$1" in -m) echo x86_64 ;; *) echo Linux ;; esac
+STUB
+chmod +x "$tmp/devbin/gn" "$tmp/devbin/uname"
+args="$dev/chromium/src/out/MoltBrowser/args.gn"
+PATH="$tmp/devbin:$PATH" "$BASH" "$dev/scripts/configure.sh" \
+  --platform macos --arch x64 --dev > "$tmp/dev.log" 2>&1 ||
+  { echo "configure.sh --dev failed:" >&2; cat "$tmp/dev.log" >&2; exit 1; }
+grep -q '^is_official_build = false$' "$args" &&
+  grep -q '^dcheck_always_on = false$' "$args" &&
+  grep -q '^target_cpu = "x64"$' "$args" &&
+  ! grep -q 'is_official_build = true' "$args" ||
+  { echo "configure.sh --dev wrote:" >&2; cat "$args" >&2; exit 1; }
+if PATH="$tmp/devbin:$PATH" "$BASH" "$dev/scripts/configure.sh" \
+     --platform macos --arch x64 --dev --debug > /dev/null 2>&1; then
+  echo "configure.sh took --dev with --debug" >&2
+  exit 1
+fi
+release_out() {  # release_out: release.sh's output on the stand-in root
+  PATH="$tmp/devbin:$PATH" "$BASH" "$dev/scripts/release.sh" \
+    --version 0.0.1 --build 1 --skip-build 2>&1 || true
+}
+expect "release.sh on a --dev out dir" "$(release_out)" "isn't an official release build"
+sed 's/is_official_build = false/is_official_build = true/; s/is_debug = false/is_debug = true/' \
+  "$args" > "$args.new" && mv "$args.new" "$args"
+expect "release.sh on a --debug out dir" "$(release_out)" "isn't an official release build"
+sed 's/is_debug = true/is_debug = false/' "$args" > "$args.new" && mv "$args.new" "$args"
+out="$(release_out)"
+if printf '%s\n' "$out" | grep -q "official release build"; then
+  echo "release.sh refused an official out dir:" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+expect "release.sh on an official out dir" "$out" 'Patching Info.plist'
+echo "configure.sh --dev and release.sh's refusal: ok"
+
 echo "all passed"
