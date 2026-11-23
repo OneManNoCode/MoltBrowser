@@ -105,6 +105,10 @@ as usual. Details:
 - CMake 3.16+
 - 100GB+ free disk space
 - 16GB+ RAM
+- On a Mac: Xcode 16 or later (the macOS 15 SDK; Chromium's own builds use
+  Xcode 26, which needs macOS 15.6 or later), not only the Command Line
+  Tools. `./scripts/configure.sh` checks this and says what to install. The
+  browser it builds runs on macOS 13 or later.
 
 ### Build Steps
 

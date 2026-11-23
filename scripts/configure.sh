@@ -204,6 +204,20 @@ if [ -n "$TARGET_PLATFORM" ]; then
   esac
 fi
 
+# A macOS build on a Mac: is this Mac's Xcode new enough for the pinned
+# Chromium? Refuse here, with what to do, rather than fail in gn gen.
+IS_MACOS=false
+if [ "$TARGET_PLATFORM" = "macos" ]; then
+  IS_MACOS=true
+elif [ -z "$TARGET_PLATFORM" ] && [[ "$(basename "$CONFIG_FILE")" == macos-* ]]; then
+  IS_MACOS=true
+fi
+if [ "$IS_MACOS" = true ] && [ "$HOST_PLATFORM" = "Darwin" ]; then
+  # shellcheck source=scripts/lib-mac-host-check.sh
+  source "$SCRIPT_DIR/lib-mac-host-check.sh"
+  molt_mac_host_check "$CHROMIUM_SRC" refuse || exit 1
+fi
+
 # Generate build files
 echo "Generating build files in $BUILD_DIR..."
 gn gen "$BUILD_DIR" --args="$GN_ARGS"
