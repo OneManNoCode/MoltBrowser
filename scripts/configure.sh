@@ -41,6 +41,7 @@ TARGET_ARCH=""
 CONFIG_FILE=""
 BUILD_DIR=""
 DEBUG_BUILD=false
+DEV_BUILD=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -65,6 +66,10 @@ while [[ $# -gt 0 ]]; do
       DEBUG_BUILD=true
       shift
       ;;
+    --dev)
+      DEV_BUILD=true
+      shift
+      ;;
     --help|-h)
       echo "Usage: $0 [OPTIONS]"
       echo ""
@@ -75,6 +80,10 @@ while [[ $# -gt 0 ]]; do
       echo "  --build-dir      Custom output directory (default: out/MoltBrowser,"
       echo "                   out/MoltBrowser-linux for Linux)"
       echo "  --debug          Enable debug build"
+      echo "  --dev            A faster build to test on this machine: optimized,"
+      echo "                   but not an official build (no ThinLTO: the final"
+      echo "                   link takes minutes, not hours) and no DCHECKs."
+      echo "                   Never a release: scripts/release.sh refuses it."
       echo "  --help, -h       Show this help"
       echo ""
       echo "Platforms & architectures:"
@@ -166,10 +175,29 @@ cd "$CHROMIUM_SRC"
 GN_ARGS=$(cat "$CONFIG_FILE")
 
 # Override debug if requested
+if [ "$DEBUG_BUILD" = true ] && [ "$DEV_BUILD" = true ]; then
+  echo "ERROR: --debug and --dev are different builds: pick one."
+  exit 1
+fi
 if [ "$DEBUG_BUILD" = true ]; then
   GN_ARGS=$(echo "$GN_ARGS" | sed 's/is_debug = false/is_debug = true/')
   GN_ARGS=$(echo "$GN_ARGS" | sed 's/is_official_build = true/is_official_build = false/')
   echo "Mode: DEBUG"
+elif [ "$DEV_BUILD" = true ]; then
+  # A release build without the official-build work: no ThinLTO (whose
+  # link of the browser framework takes hours and most of the RAM on a
+  # small machine) and no DCHECKs (on by default in a non-official build).
+  # release.sh refuses an out dir whose args.gn isn't official.
+  GN_ARGS=$(echo "$GN_ARGS" | sed 's/is_official_build = true/is_official_build = false/')
+  if ! echo "$GN_ARGS" | grep -q '^is_official_build = false'; then
+    echo "ERROR: --dev expects \"is_official_build = true\" in $CONFIG_FILE."
+    exit 1
+  fi
+  GN_ARGS="$GN_ARGS
+
+# configure.sh --dev: a build to test on this machine, never a release.
+dcheck_always_on = false"
+  echo "Mode: DEV (to test on this machine; not a release build)"
 else
   echo "Mode: RELEASE"
 fi

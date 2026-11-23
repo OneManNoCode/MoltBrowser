@@ -325,7 +325,19 @@ to §6 hold the detail (from build-readiness, round 44).
   - `cmake` (for `scripts/bundle-whisper.sh`), Homebrew's `tesseract`
     (`scripts/bundle-tesseract.sh` copies it and its dylibs into the app;
     without it OCR is unavailable, from #17), Docker Desktop (Linux build),
-    `gh` logged in with `repo` and `workflow` scopes.
+    `gh` logged in with `repo` and `workflow` scopes;
+  - GNU `gzip` (`brew install gzip`): when a pinned GitHub download fails,
+    `scripts/bundle-speech.sh` rebuilds the archive from its pinned commit,
+    which only GNU gzip reproduces byte for byte;
+  - ONNX Runtime's source for the speech helper: since about 2026-11-20
+    `github.com/microsoft/onnxruntime` doesn't answer (its archive URL gives
+    404 and git asks for credentials), so `bundle-speech.sh` can fetch it
+    neither way, and a release build stops there. Check the build Mac
+    still has it from an earlier build:
+    `shasum -a 256 .molt-speech-cache/downloads/onnxruntime-1.28.2.tar.gz`
+    must print the pin in `scripts/bundle-speech.sh`
+    (`a5003dfd85d66a4d…`). Don't take it from a fork or mirror without the
+    owner's decision.
 - [ ] The builder label is set in the build account's shell profile (§2.5):
   `echo "$MOLT_BUILDER_ID"` prints e.g. `geneye-mac-1` (from #43).
 

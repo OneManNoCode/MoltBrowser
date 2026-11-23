@@ -84,10 +84,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Tools
+        # GNU gzip: when a pinned GitHub /archive/ download fails,
+        # bundle-speech.sh rebuilds the archive from the pinned commit,
+        # and only GNU gzip gives GitHub's bytes (macOS's doesn't).
         run: |
-          brew install ninja cmake
+          brew install ninja cmake gzip
           cmake --version | head -1
           ninja --version
+          "$(brew --prefix)/bin/gzip" --version | head -1
           xcodebuild -version
       - name: Cache the pinned downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0

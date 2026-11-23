@@ -517,6 +517,20 @@ For longer narrative posts behind each entry see
   workflow needs one review. Design:
   [docs/design/AGENT_ACTIONS.md §3.6](docs/design/AGENT_ACTIONS.md).
 
+### Engineering
+
+- **Building on a Mac says when its Xcode is too old.** `configure.sh`
+  stops before generating the build, with the macOS SDK the pinned Chromium
+  needs, what the selected Xcode has, and which macOS each Xcode needs;
+  `setup.sh` warns the same. Both say when the Mac's macOS is too old to
+  run the browser it builds. Before, the build stopped in a Python
+  traceback.
+- **A faster build to test on your own Mac: `configure.sh --dev`.** It is
+  optimized like a release but not an official build: no ThinLTO, whose
+  final link takes hours and most of the memory on a small machine, and no
+  debugging checks. `release.sh` refuses such a build (or a `--debug`
+  one), so it can't become a release.
+
 ## 2026-11-06 — v0.3.0: Private by default
 
 The result of a full security and privacy audit (October 2026), on
