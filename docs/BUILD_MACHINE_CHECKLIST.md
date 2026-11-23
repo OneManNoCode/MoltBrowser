@@ -325,7 +325,11 @@ to §6 hold the detail (from build-readiness, round 44).
   - `cmake` (for `scripts/bundle-whisper.sh`), Homebrew's `tesseract`
     (`scripts/bundle-tesseract.sh` copies it and its dylibs into the app;
     without it OCR is unavailable, from #17), Docker Desktop (Linux build),
-    `gh` logged in with `repo` and `workflow` scopes.
+    `gh` logged in with `repo` and `workflow` scopes;
+  - GNU `gzip` (`brew install gzip`): when a pinned GitHub download fails,
+    `scripts/bundle-speech.sh` rebuilds the archive from its pinned commit,
+    which only GNU gzip reproduces byte for byte. On 2026-11-23 ONNX
+    Runtime 1.28.2's archive URL returned 404 to CI.
 - [ ] The builder label is set in the build account's shell profile (§2.5):
   `echo "$MOLT_BUILDER_ID"` prints e.g. `geneye-mac-1` (from #43).
 
