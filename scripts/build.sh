@@ -130,9 +130,11 @@ echo ""
 
 cd "$CHROMIUM_SRC"
 
-# Check if configured
-if [ ! -d "$BUILD_DIR" ]; then
-  echo "ERROR: Build not configured. Run ./scripts/configure.sh first."
+# Check if configured: gn gen writes build.ninja last, so a configure.sh
+# that failed leaves the directory without it.
+if [ ! -f "$BUILD_DIR/build.ninja" ]; then
+  echo "ERROR: Build not configured. Run ./scripts/configure.sh first, and"
+  echo "  fix what it reports if it fails."
   if [ -z "$PLATFORM" ] && [ -f "out/MoltBrowser-linux/args.gn" ]; then
     echo "  (out/MoltBrowser-linux is configured: for Linux, pass --platform linux.)"
   fi

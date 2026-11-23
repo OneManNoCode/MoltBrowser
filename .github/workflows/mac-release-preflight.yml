@@ -6,7 +6,8 @@
 #   * shell: the release scripts under macOS's own /bin/bash 3.2, the bash
 #     the release Mac runs them with: they parse (bash -n), and
 #     scripts/mac_bash32_test.sh runs release-sbom.sh with a stand-in SBOM
-#     tool and checks bundle-speech.sh's guards for arrays that may be empty,
+#     tool, checks bundle-speech.sh's guards for arrays that may be empty
+#     and lib-mac-host-check.sh's Xcode and macOS checks,
 #     and scripts/vendor_rust_crates_test.sh runs vendor-rust-crates.sh's
 #     copy-back on a stand-in Chromium checkout;
 #   * bundles: scripts/bundle-speech.sh builds the speech helper and voice
@@ -65,7 +66,8 @@ jobs:
                    scripts/lib-release-names.sh scripts/release-sbom.sh \
                    scripts/release-checksums.sh scripts/release-provenance.sh \
                    scripts/release-draft.sh scripts/publish-release-signature.sh \
-                   scripts/dev-install-mac.sh tools/chromium/pin.sh; do
+                   scripts/dev-install-mac.sh scripts/lib-mac-host-check.sh \
+                   tools/chromium/pin.sh; do
             /bin/bash -n "$f"
           done
       - name: scripts/mac_bash32_test.sh under bash 3.2

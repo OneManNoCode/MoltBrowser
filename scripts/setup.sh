@@ -204,6 +204,17 @@ else
 fi
 echo ""
 
+# A Mac checkout: can this Mac's Xcode build it, and its macOS run it?
+# A warning here; configure.sh refuses.
+case ",$TARGET_OS," in
+  *,mac,*)
+    # shellcheck source=scripts/lib-mac-host-check.sh
+    source "$SCRIPT_DIR/lib-mac-host-check.sh"
+    molt_mac_host_check "$CHROMIUM_DIR/src" warn
+    echo ""
+    ;;
+esac
+
 echo "=== Setup Complete ==="
 echo ""
 echo "Next steps:"
