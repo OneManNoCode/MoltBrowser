@@ -308,6 +308,12 @@ cmd_save() {
   say "Saving the out dir"
   tar -C "$SRC" -cf - "$OUT_REL" | zstd -q -T0 -3 \
     | split -b 3800M -d -a 2 - "$dir/molt-out.tar.zst."
+  # A complete build has rebuilt everything the changed files feed: the
+  # times molt_ci_times.py keeps for them ("@" lines) are done with.
+  if [ "$(cat "$STATE/status" 2>/dev/null)" = complete ]; then
+    grep -v '^@' "$STATE/manifest.txt" > "$STATE/manifest.txt.new" || true
+    mv "$STATE/manifest.txt.new" "$STATE/manifest.txt"
+  fi
   zstd -q -f "$STATE/manifest.txt" -o "$dir/manifest.txt.zst"
   cp "$STATE/status" "$dir/status" 2>/dev/null || true
   for f in failed-steps.txt errors.txt failures.txt; do

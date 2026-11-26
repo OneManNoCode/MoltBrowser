@@ -6,7 +6,7 @@
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Eighty-first build (incremental on the eightieth, run 45059459856): Chromium 156.0.8078.114, from 156.0.8078.100 (Extended Stable's .108, .109 and .114). Six clean merges and one resolved conflict (the download request's fetch mode, which upstream now sets). Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Eighty-second build (incremental on the eightieth, run 45059459856, again): Chromium 156.0.8078.114. Build 81 took two stages, and its second stage counted what the first had not rebuilt as up to date (molt_ci_times.py set every file of an unchanged tree to the old time): objects built against two versions of download_params.h, and four tests failed on that. The manifest now carries the time of each changed file to the next stage. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
