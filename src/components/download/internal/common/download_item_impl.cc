@@ -298,6 +298,7 @@ DownloadItemImpl::RequestInfo::RequestInfo(
     const std::string& remote_address,
     base::Time start_time,
     ::network::mojom::CredentialsMode credentials_mode,
+    ::network::mojom::RequestMode fetch_request_mode,
     const std::optional<net::IsolationInfo>& isolation_info,
     int64_t range_request_from,
     int64_t range_request_to)
@@ -314,6 +315,7 @@ DownloadItemImpl::RequestInfo::RequestInfo(
       remote_address(remote_address),
       start_time(start_time),
       credentials_mode(credentials_mode),
+      fetch_request_mode(fetch_request_mode),
       isolation_info(isolation_info),
       range_request_from(range_request_from),
       range_request_to(range_request_to) {}
@@ -401,6 +403,7 @@ DownloadItemImpl::DownloadItemImpl(
                     std::string(),
                     start_time,
                     ::network::mojom::CredentialsMode::kInclude,
+                    ::network::mojom::RequestMode::kNavigate,
                     std::nullopt,
                     range_request_from,
                     range_request_to),
@@ -467,6 +470,7 @@ DownloadItemImpl::DownloadItemImpl(DownloadItemImplDelegate* delegate,
                     info.remote_address,
                     info.start_time,
                     info.credentials_mode,
+                    info.fetch_request_mode,
                     info.isolation_info,
                     info.save_info->range_request_from,
                     info.save_info->range_request_to),
@@ -1282,6 +1286,10 @@ DownloadItem::DownloadCreationType DownloadItemImpl::GetDownloadCreationType()
 
 ::network::mojom::CredentialsMode DownloadItemImpl::GetCredentialsMode() const {
   return request_info_.credentials_mode;
+}
+
+::network::mojom::RequestMode DownloadItemImpl::GetFetchRequestMode() const {
+  return request_info_.fetch_request_mode;
 }
 
 const std::optional<net::IsolationInfo>& DownloadItemImpl::GetIsolationInfo()

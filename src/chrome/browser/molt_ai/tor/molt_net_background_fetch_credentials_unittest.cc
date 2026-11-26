@@ -127,6 +127,31 @@ TEST(MoltNetBackgroundFetchCredentialsTest, SameOriginNeedsAnOrigin) {
   EXPECT_EQ(request.mode, RequestMode::kNoCors);
 }
 
+// Chromium (since 156.0.8078.108) gives a Background Fetch's request its
+// own mode, "cors": that mode is kept, with the fetch's credentials mode,
+// and "same-origin" without an initiator still sends nothing.
+TEST(MoltNetBackgroundFetchCredentialsTest, TheFetchsRequestModeIsKept) {
+  const GURL url("https://cdn.example/file.bin");
+  DownloadUrlParameters params(url, TRAFFIC_ANNOTATION_FOR_TESTS);
+  params.set_fetch_request_mode(RequestMode::kCors);
+  params.set_credentials_mode(CredentialsMode::kOmit);
+  params.set_initiator(url::Origin::Create(GURL("https://site.example/")));
+  std::unique_ptr<network::ResourceRequest> cors =
+      CreateResourceRequest(&params);
+  EXPECT_EQ(cors->mode, RequestMode::kCors);
+  EXPECT_EQ(cors->credentials_mode, CredentialsMode::kOmit);
+
+  network::ResourceRequest request;
+  request.mode = RequestMode::kCors;
+  MoltApplyDownloadCredentialsMode(CredentialsMode::kSameOrigin, request);
+  EXPECT_EQ(request.mode, RequestMode::kCors);
+  EXPECT_EQ(request.credentials_mode, CredentialsMode::kOmit);
+  request.mode = RequestMode::kCors;
+  MoltApplyDownloadCredentialsMode(CredentialsMode::kInclude, request);
+  EXPECT_EQ(request.mode, RequestMode::kCors);
+  EXPECT_EQ(request.credentials_mode, CredentialsMode::kInclude);
+}
+
 // A resumed Background Fetch (a download the download service made, with an
 // initiator) is requested with its first request's initiator, isolation and
 // credentials mode, not as a top-level navigation the browser starts.

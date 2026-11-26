@@ -4,6 +4,49 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-11-26: patch levels before a test install (November 2026)
+
+**Scope.** Whether main carries every published security fix of what it is
+built from: Chromium, the vendored llama.cpp, the Rust crates in
+`third_party/rust/chromium_crates_io/Cargo.lock` (406), and the helpers
+built from pinned sources (whisper.cpp, sherpa-onnx, ONNX Runtime, Tor).
+Not a new review of MoltBrowser's own code: rounds 1 to 44 and the
+reviews of each later change are that.
+
+**Method.** The pins read from the repository; Chrome's release posts as
+reported; the 156 branch's own commits between the tags (the rebase dry
+run); llama.cpp's, whisper.cpp's and sherpa-onnx's advisory and release
+pages; every crate and version in Cargo.lock matched against the RustSec
+advisory database (its commit of 2026-11-25), and each match traced to
+the code that calls the crate.
+
+**Findings.**
+
+- **Chromium was two Extended Stable updates behind** (156.0.8078.100;
+  .108/.109 of 2026-11-17 and .114 of 2026-11-23). Fixed: this change
+  moves the pin to 156.0.8078.114 (docs/REBASING.md).
+- **Bundled libraries behind their newest releases:** whisper.cpp
+  (v1.7.5; not bundled at all until its model's SHA-256 is pinned) and
+  four Rust crates of the sandboxed document parser and MoltShield
+  (`zip`, `calamine`, `lopdf`, `url`). Each published advisory was traced
+  to the calling code: none is reachable as described, or it ends at
+  most the document parser's sandboxed process. Their updates need new
+  major versions of the parsers and a re-vendoring, a change of its own;
+  the details are tracked privately until it lands.
+- **llama.cpp b11641:** the 2026 advisories for code MoltBrowser builds
+  (GGUF parsing: CVE-2026-33298, CVE-2026-27940) are fixed in the pin.
+  The two others are in `llama-server` and the RPC backend, which are not
+  built (`BUILD.gn` compiles neither).
+- **sherpa-onnx v2.0.1:** no advisory; v2.0.2 and v2.0.3 carry no fix
+  marked as security. **ONNX Runtime 1.28.2:** its repository is offline
+  (tracked: the speech helper's source).
+- **Tor 15.0.15:** 15.0.16 exists; torproject.org can't be read from the
+  review environment, so whether it changes `tor` itself is unchecked.
+  The pin moves with the owner's hashes (BUILD_MACHINE_CHECKLIST.md).
+- **The published release (v0.2.5, 2026-07-13)** predates all of the
+  above and every hardening change since. It should not be installed
+  for anything but comparison until v0.3.0 is out.
+
 ## 2026-11-04: round 44 (November 2026)
 
 **Scope.** The code of round 44, which each of its four workstreams had
