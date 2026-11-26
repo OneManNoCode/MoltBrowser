@@ -1,12 +1,12 @@
 {
- "resume_run": "43833525632",
+ "resume_run": "45059459856",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Eightieth build (incremental on the seventy-ninth, run 43833525632, Chromium 156.0.8078.100): workflow gaps C, review rounds 1 and 2. The wait-for browser test's late element is visible (build 79's one failure); the rest is comments, docs and the fuzzer. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Eighty-first build (incremental on the eightieth, run 45059459856): Chromium 156.0.8078.114, from 156.0.8078.100 (Extended Stable's .108, .109 and .114). Six clean merges and one resolved conflict (the download request's fetch mode, which upstream now sets). Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }
