@@ -1,12 +1,12 @@
 {
- "resume_run": "",
+ "resume_run": "46065990174",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Eighty-third build: Chromium 156.0.8078.114 from scratch (no out dir restored). Build 82 (incremental, two stages, with the file-time carry) passed every unit test (3247/3247, the three download tests build 81 failed among them) but 129 of 131 browser tests crashed in PartitionAlloc's bucket check, as a binary linked from libraries of two builds does. A clean build settles whether anything but stale incremental output is wrong. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Eighty-fifth build (incremental on the eighty-fourth, run 46065990174): the vendored tree build 84 printed, committed (url 2.5.9, form_urlencoded 1.2.3); gnrt's output must now match it. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
  "vendor_dump": false
 }

@@ -524,6 +524,7 @@ For longer narrative posts behind each entry see
   Chromium now applies a Background Fetch's own request and credentials
   mode itself, which MoltBrowser had patched; MoltBrowser's patch is
   reduced to what that leaves open.
+- **Rust `url` 2.5.9** (MoltShield's ad blocker), for RUSTSEC-2026-0592.
 - **Building on a Mac says when its Xcode is too old.** `configure.sh`
   stops before generating the build, with the macOS SDK the pinned Chromium
   needs, what the selected Xcode has, and which macOS each Xcode needs;
