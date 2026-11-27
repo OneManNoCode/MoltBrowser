@@ -14,6 +14,6 @@ rust_static_library("anydoc_ffi") {
   crate_root = "anydoc_ffi.rs"
   sources = [ "anydoc_ffi.rs" ]
   cxx_bindings = [ "anydoc_ffi.rs" ]
-  deps = [ "//third_party/rust/anydoc/v0_1:lib" ]
+  deps = [ "//third_party/rust/anydoc/v0_2:lib" ]
   visibility = [ "//chrome/services/molt_ai/document_parser:*" ]
 }

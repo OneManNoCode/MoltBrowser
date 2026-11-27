@@ -1,12 +1,12 @@
 {
- "resume_run": "",
+ "resume_run": "45910450280",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Eighty-third build: Chromium 156.0.8078.114 from scratch (no out dir restored). Build 82 (incremental, two stages, with the file-time carry) passed every unit test (3247/3247, the three download tests build 81 failed among them) but 129 of 131 browser tests crashed in PartitionAlloc's bucket check, as a binary linked from libraries of two builds does. A clean build settles whether anything but stale incremental output is wrong. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Eighty-fourth build (incremental on the eighty-third, run 45910450280): the document parser's Rust crates for published advisories. anydoc 0.1.6 -> 0.2.5 (zip 8.6 -> 9.x; calamine dropped, anydoc reads spreadsheets itself), pdf-inspector 0.1.7 -> 1.x with lopdf 0.41 -> 0.45, url 2.5.8 -> 2.5.9 (adblock). vendor_dump on: gnrt's output goes into the log to commit. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
- "vendor_dump": false
+ "vendor_dump": true
 }

@@ -245,10 +245,6 @@ extra_kv = { allow_unsafe = false }
 [crate.bytes.extra_kv]
 allow_unsafe = true
 
-[crate.calamine]
-extra_input_roots = ['../Changelog.md']
-extra_kv = { allow_unsafe = false }
-
 [crate.calendrical_calculations.extra_kv]
 allow_unsafe = false
 
@@ -431,7 +427,7 @@ extra_kv = { allow_unsafe = false }
 allow_unsafe = true
 
 # MoltBrowser: upstream stopped vendoring encoding_rs at 152; anydoc's
-# tree (anydoc, calamine, codepage, lopdf, quick-xml) still needs it.
+# tree (anydoc, codepage, lopdf, quick-xml) still needs it.
 [crate.encoding_rs]
 # "(Apache-2.0 OR MIT) AND BSD-3-Clause": the BSD part is the WHATWG
 # licence of the encoding data.

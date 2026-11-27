@@ -17,7 +17,7 @@ version = "0.1.0"
 
 [dependencies]
 antlr4rust = "0.5.2"
-anydoc = "0.1.6"
+anydoc = "0.2.5"
 anyhow = "1.0.98"
 base64 = "0.22"
 bitflags = "2"
