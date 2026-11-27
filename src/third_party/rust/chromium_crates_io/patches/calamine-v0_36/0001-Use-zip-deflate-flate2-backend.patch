@@ -1,0 +1,21 @@
+From: MoltBrowser <noreply@geneye.ai>
+Subject: [PATCH] Use zip's deflate-flate2 backend (no zopfli, no zlib-rs)
+
+calamine asks for zip's `deflate` feature, which pulls in zopfli and
+flate2's `zlib-rs` backend. Chromium bans flate2's zlib backends, and
+calamine only reads workbooks, so use the pure-Rust miniz_oxide backend
+that `deflate-flate2` (also what //third_party/rust/zip uses) selects.
+anydoc-v0_1 carries the same change.
+---
+diff --git a/third_party/rust/chromium_crates_io/vendor/calamine-v0_36/Cargo.toml b/third_party/rust/chromium_crates_io/vendor/calamine-v0_36/Cargo.toml
+--- a/third_party/rust/chromium_crates_io/vendor/calamine-v0_36/Cargo.toml
++++ b/third_party/rust/chromium_crates_io/vendor/calamine-v0_36/Cargo.toml
+@@ -147,7 +147,7 @@
+
+ [dependencies.zip]
+ version = "8.6"
+-features = ["deflate"]
++features = ["deflate-flate2"]
+ default-features = false
+
+ [dev-dependencies.criterion]

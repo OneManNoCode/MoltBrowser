@@ -245,6 +245,10 @@ extra_kv = { allow_unsafe = false }
 [crate.bytes.extra_kv]
 allow_unsafe = true
 
+[crate.calamine]
+extra_input_roots = ['../Changelog.md']
+extra_kv = { allow_unsafe = false }
+
 [crate.calendrical_calculations.extra_kv]
 allow_unsafe = false
 
@@ -427,7 +431,7 @@ extra_kv = { allow_unsafe = false }
 allow_unsafe = true
 
 # MoltBrowser: upstream stopped vendoring encoding_rs at 152; anydoc's
-# tree (anydoc, codepage, lopdf, quick-xml) still needs it.
+# tree (anydoc, calamine, codepage, lopdf, quick-xml) still needs it.
 [crate.encoding_rs]
 # "(Apache-2.0 OR MIT) AND BSD-3-Clause": the BSD part is the WHATWG
 # licence of the encoding data.
@@ -1416,15 +1420,6 @@ extra_kv = { allow_unsafe = true }
 
 # --- MoltBrowser: anydoc (on-device document -> Markdown) dependency tree ---
 # zopfli ships its Apache-2.0 license as COPYING, which gnrt doesn't auto-detect.
-[crate.include_dir]
-# The crates.io packages of include_dir and include_dir_macros ship no
-# license file; patches/include_dir*-v0_7/0001-Add-LICENSE.patch add
-# upstream's MIT LICENSE (pdf-inspector embeds its CMap data with them).
-license_files = ["LICENSE"]
-
-[crate.include_dir_macros]
-license_files = ["LICENSE"]
-
 [crate.zopfli]
 license_files = ["COPYING"]
 extra_kv = { allow_unsafe = true }

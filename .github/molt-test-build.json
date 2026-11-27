@@ -6,7 +6,7 @@
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Eighty-fourth build, second try (include_dir's licence added) (incremental on the eighty-third, run 45910450280): the document parser's Rust crates for published advisories. anydoc 0.1.6 -> 0.2.5 (zip 8.6 -> 9.x; calamine dropped, anydoc reads spreadsheets itself), pdf-inspector 0.1.7 -> 1.x with lopdf 0.41 -> 0.45, url 2.5.8 -> 2.5.9 (adblock). vendor_dump on: gnrt's output goes into the log to commit. Runs the unit and browser tests and the typed spoken suite.",
+ "request": "Eighty-fourth build, third try: url 2.5.8 -> 2.5.9 only (adblock; RUSTSEC-2026-0592). The anydoc 0.2 update is set aside: it brings about 30 crates new to the tree (lopdf 0.45's crypto and brotli stacks, jiff 1, nix 0.32) into the document parser for advisories that are unreachable or end at most its sandboxed process. vendor_dump on.",
  "e2e_scenarios": "",
  "vendor_dump": true
 }
