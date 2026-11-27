@@ -30,9 +30,12 @@ the code that calls the crate.
   four Rust crates of the sandboxed document parser and MoltShield
   (`zip`, `calamine`, `lopdf`, `url`). Each published advisory was traced
   to the calling code: none is reachable as described, or it ends at
-  most the document parser's sandboxed process. Their updates need new
-  major versions of the parsers and a re-vendoring, a change of its own;
-  the details are tracked privately until it lands.
+  most the document parser's sandboxed process. `url` moved to 2.5.9
+  (with `form_urlencoded` 1.2.3). The others need `anydoc` 0.2, whose
+  `pdf-inspector` 1.x and `lopdf` 0.45 bring about 30 crates new to the
+  tree into that same parser (cryptography, brotli, `jiff` 1, `nix`
+  0.32): more third-party parsing code than the advisories it would
+  clear justify. Set aside until a review of that tree; tracked.
 - **llama.cpp b11641:** the 2026 advisories for code MoltBrowser builds
   (GGUF parsing: CVE-2026-33298, CVE-2026-27940) are fixed in the pin.
   The two others are in `llama-server` and the RPC backend, which are not

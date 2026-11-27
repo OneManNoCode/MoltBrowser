@@ -1,12 +1,12 @@
 {
- "resume_run": "45910450280",
+ "resume_run": "46065990174",
  "run_tests": true,
  "e2e_only": false,
  "e2e_runs": "typed",
  "e2e_speech_check": false,
  "e2e_field_trials": "",
  "e2e_model": "qwen3.5-4b",
- "request": "Eighty-fourth build, third try: url 2.5.8 -> 2.5.9 only (adblock; RUSTSEC-2026-0592). The anydoc 0.2 update is set aside: it brings about 30 crates new to the tree (lopdf 0.45's crypto and brotli stacks, jiff 1, nix 0.32) into the document parser for advisories that are unreachable or end at most its sandboxed process. vendor_dump on.",
+ "request": "Eighty-fifth build (incremental on the eighty-fourth, run 46065990174): the vendored tree build 84 printed, committed (url 2.5.9, form_urlencoded 1.2.3); gnrt's output must now match it. Runs the unit and browser tests and the typed spoken suite.",
  "e2e_scenarios": "",
- "vendor_dump": true
+ "vendor_dump": false
 }

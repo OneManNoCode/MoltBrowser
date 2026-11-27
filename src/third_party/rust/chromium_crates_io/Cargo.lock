@@ -1024,7 +1024,7 @@ dependencies = [
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "percent-encoding",
@@ -3161,6 +3161,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "unty"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "url"
+version = "2.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "form_urlencoded",
+ "idna",
+ "percent-encoding",
+ "serde",
+]
 
 [[package]]
 name = "utf16_iter"

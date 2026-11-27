@@ -1,7 +1,7 @@
 Name: url
 URL: https://crates.io/crates/url
-Version: 2.5.8
-Revision: d6ea13c5f8e7e6e627f6390161b3e185bda5e5ce
+Version: 2.5.9
+Revision: ad1c66cbff6e318393d872641e30589ff9687b9c
 Update Mechanism: Manual (https://crbug.com/449898466)
 License: Apache-2.0
 License File: //third_party/rust/chromium_crates_io/vendor/url-v2/LICENSE-APACHE

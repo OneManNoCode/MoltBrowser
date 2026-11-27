@@ -31,7 +31,7 @@ cargo_crate("lib") {
   cargo_pkg_description =
       "URL library for Rust, based on the WHATWG URL Standard"
   cargo_pkg_repository = "https://github.com/servo/rust-url"
-  cargo_pkg_version = "2.5.8"
+  cargo_pkg_version = "2.5.9"
 
   allow_unsafe = true
 

@@ -22,7 +22,7 @@ cargo_crate("lib") {
   cargo_pkg_name = "form_urlencoded"
   cargo_pkg_description = "Parser and serializer for the application/x-www-form-urlencoded syntax, as used by HTML forms."
   cargo_pkg_repository = "https://github.com/servo/rust-url"
-  cargo_pkg_version = "1.2.2"
+  cargo_pkg_version = "1.2.3"
 
   allow_unsafe = true
 
