@@ -1416,6 +1416,15 @@ extra_kv = { allow_unsafe = true }
 
 # --- MoltBrowser: anydoc (on-device document -> Markdown) dependency tree ---
 # zopfli ships its Apache-2.0 license as COPYING, which gnrt doesn't auto-detect.
+[crate.include_dir]
+# The crates.io packages of include_dir and include_dir_macros ship no
+# license file; patches/include_dir*-v0_7/0001-Add-LICENSE.patch add
+# upstream's MIT LICENSE (pdf-inspector embeds its CMap data with them).
+license_files = ["LICENSE"]
+
+[crate.include_dir_macros]
+license_files = ["LICENSE"]
+
 [crate.zopfli]
 license_files = ["COPYING"]
 extra_kv = { allow_unsafe = true }
