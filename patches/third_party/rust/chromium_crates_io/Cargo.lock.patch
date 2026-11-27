@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/rust/chromium_crates_io/Cargo.lock b/third_party/rust/chromium_crates_io/Cargo.lock
-index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..2a2e9ce1aa916e46c4e81fc01bd85acfebc951cb 100644
+index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..9583a965a96363d57b9f884dd01b29ac6a14f5bd 100644
 --- a/third_party/rust/chromium_crates_io/Cargo.lock
 +++ b/third_party/rust/chromium_crates_io/Cargo.lock
 @@ -2,6 +2,29 @@
@@ -558,7 +558,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..2a2e9ce1aa916e46c4e81fc01bd85acf
  
 +[[package]]
 +name = "form_urlencoded"
-+version = "1.2.2"
++version = "1.2.3"
 +source = "registry+https://github.com/rust-lang/crates.io-index"
 +dependencies = [
 + "percent-encoding",
@@ -1276,7 +1276,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..2a2e9ce1aa916e46c4e81fc01bd85acf
  
 +[[package]]
 +name = "url"
-+version = "2.5.8"
++version = "2.5.9"
 +source = "registry+https://github.com/rust-lang/crates.io-index"
 +dependencies = [
 + "form_urlencoded",
