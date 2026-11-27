@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-Upstream base: chromium/src@46876a0c2df3492ed67a8846950ba6d37170b58c (156.0.8078.100)
+Upstream base: chromium/src@ea19f9737303a76e07b53c6a1eec43355aca3b1d (156.0.8078.114)
 Generated from src/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index e014baae31c870f3fbd3d22fa1de0c2085aee587..aabe4bd91e282e7d3ad40f8ec99dca5a1d31a409 100644
+index ac508fe5b9570cb2a028cc1e33ae35f0d4efa030..50a1a9322befc0a5fcdda53416a2cfa323cc03ea 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -61,6 +61,8 @@

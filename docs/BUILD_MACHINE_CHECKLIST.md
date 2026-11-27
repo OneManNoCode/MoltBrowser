@@ -326,6 +326,10 @@ to §6 hold the detail (from build-readiness, round 44).
     (`scripts/bundle-tesseract.sh` copies it and its dylibs into the app;
     without it OCR is unavailable, from #17), Docker Desktop (Linux build),
     `gh` logged in with `repo` and `workflow` scopes;
+  - whisper.cpp: before a release bundles it, move `WHISPER_TAG` in
+    `scripts/bundle-whisper.sh` to the newest release (v1.9.6 on
+    2026-11-26, tag commit 96ec4d9823e9d0211944172da35f9f29134af990) with
+    its pinned commit, and check the helper still builds and transcribes;
   - GNU `gzip` (`brew install gzip`): when a pinned GitHub download fails,
     `scripts/bundle-speech.sh` rebuilds the archive from its pinned commit,
     which only GNU gzip reproduces byte for byte;

@@ -651,6 +651,44 @@ between the tags (about 360 are profile, orderfile and translation rolls
 or version bumps) and from the V8, Skia and ANGLE branch commits their
 rolls bring.
 
+`tools/chromium/rebase.py 156.0.8078.114 --apply --allow-conflicts` from
+156.0.8078.100 (Extended Stable's .108/.109 of 2026-11-17 and .114 of
+2026-11-23):
+
+| | Files |
+|---|---|
+| Patched upstream files | 669: 6 clean 3-way merges, 1 conflict, 662 left alone upstream, none deleted or moved |
+| Identical copies | none |
+| First-party paths now upstream | 0 |
+| Removed upstream symbols our code uses | 0 (969 headers scanned, 5 changed) |
+| DEPS whole files | 66; 32 in a subproject that moved (V8, Skia): 29 unchanged in it, 3 our own |
+
+The conflict, `components/download/internal/common/download_utils.cc`:
+upstream now fixes what `molt_fetch_credentials.h` patched. A Background
+Fetch's request carries its own fetch request mode ("cors") and
+credentials mode through the download service to
+`CreateResourceRequest()` (`DownloadUrlParameters::fetch_request_mode()`,
+kept in the download database and the service's request proto, behind
+`kBackgroundFetchCorsEnforcement`, on by default). Resolved to upstream's
+two lines followed by ours, and `MoltApplyDownloadCredentialsMode()` now
+only: makes "same-origin" without an initiator "omit" (in any mode), and
+turns a request still in navigation mode with a credentials mode other
+than "include" into no-cors (parameters with no fetch request mode: the
+in-memory download service's, and stored fetches with the feature off),
+since the network service refuses that pair. A "cors" request is kept as
+upstream made it. New test: `TheFetchsRequestModeIsKept`.
+
+The six clean merges are upstream's changes line for line:
+`chrome_file_system_access_permission_context.cc` and its test (writes
+under any `.git` are blocked but for object, ref and index data),
+`download_item_impl.cc` and `background_fetch_delegate_proxy.cc` (the
+fetch request mode above), `network_context.cc` and
+`base_rendering_context_2d.cc` (four lines each).
+
+The 156.0.8078.102 source tarball's SHA-256 is pinned (from its `.hashes`
+file, whose MD5 is the bucket's): the newest published tarball at or
+before the pin, since Extended Stable's respins have none.
+
 `tools/chromium/rebase.py 156.0.8078.100 --apply` from 156.0.8078.80:
 
 | | Files |

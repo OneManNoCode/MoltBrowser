@@ -519,6 +519,11 @@ For longer narrative posts behind each entry see
 
 ### Engineering
 
+- **Chromium 156.0.8078.114**, with Chrome's security fixes of 2026-11-17
+  and 2026-11-23 (Extended Stable's 156.0.8078.108, .109 and .114).
+  Chromium now applies a Background Fetch's own request and credentials
+  mode itself, which MoltBrowser had patched; MoltBrowser's patch is
+  reduced to what that leaves open.
 - **Building on a Mac says when its Xcode is too old.** `configure.sh`
   stops before generating the build, with the macOS SDK the pinned Chromium
   needs, what the selected Xcode has, and which macOS each Xcode needs;

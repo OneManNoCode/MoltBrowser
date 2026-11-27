@@ -12,8 +12,17 @@
 #   3. if the manifest of the build being restored is given, sets each file
 #      whose hash differs from it, or that it doesn't list, to now.
 #
-# Ninja then rebuilds exactly what changed since the restored build: within
-# one run nothing (the tree is the same), across runs the overlay's edits.
+# Ninja then rebuilds exactly what changed since the restored build.
+#
+# A build that takes more than one job: the next job's tree is the same as
+# this one's, so step 3 alone would leave every file at the old time, and
+# whatever this job did not get to rebuild would count as up to date (a
+# binary of objects built against two versions of a header). So the
+# manifest also lists each file step 3 set to now, with that time
+# ("@<time>  <path>"), and a later job gives a file it lists that time
+# again while its content is unchanged: newer than the outputs the
+# restored build made before the change, older than those made since. The
+# job that completes the build drops those lines (molt_test_build.sh save).
 #
 # Usage:
 #   molt_ci_times.py --tree chromium/src --write manifest.txt [--previous old.txt]
@@ -68,13 +77,22 @@ def set_time(path, when):
 
 
 def read_manifest(path):
+    """({path: sha1}, {path: time it was set to as changed})."""
     out = {}
+    pending = {}
     with open(path, encoding='utf-8', errors='surrogateescape') as f:
         for line in f:
             line = line.rstrip('\n')
-            if len(line) > 42 and line[40:42] == '  ':
+            if line.startswith('@'):
+                when, sep, rel = line[1:].partition('  ')
+                try:
+                    if sep and rel:
+                        pending[rel] = float(when)
+                except ValueError:
+                    pass
+            elif len(line) > 42 and line[40:42] == '  ':
                 out[line[42:]] = line[:40]
-    return out
+    return out, pending
 
 
 def main(argv):
@@ -105,27 +123,41 @@ def main(argv):
         hashes = list(pool.map(lambda r: file_hash(os.path.join(tree, r)),
                                files, chunksize=256))
     current = {r: h for r, h in zip(files, hashes) if h}
-    with open(args.write, 'w', encoding='utf-8',
-              errors='surrogateescape') as f:
-        for rel in files:
-            h = current.get(rel)
-            if h:
-                f.write('%s  %s\n' % (h, rel))
     print('molt_ci_times: %d files hashed in %.0f s' %
           (len(current), time.time() - started))
 
+    pending = {}
     if args.previous:
-        previous = read_manifest(args.previous)
+        previous, carried = read_manifest(args.previous)
         now = time.time()
         changed = [r for r, h in current.items() if previous.get(r) != h]
         for rel in changed:
             set_time(os.path.join(tree, rel), now)
+            pending[rel] = now
+        # Changed in an earlier job of a build still going, unchanged since.
+        kept = 0
+        for rel, when in carried.items():
+            if rel in current and rel not in pending:
+                set_time(os.path.join(tree, rel), when)
+                pending[rel] = when
+                kept += 1
         print('molt_ci_times: %d files changed since the restored build '
               '(set to now)' % len(changed))
         for rel in sorted(changed)[:200]:
             print('  ' + rel)
         if len(changed) > 200:
             print('  ... and %d more' % (len(changed) - 200))
+        print('molt_ci_times: %d files changed earlier in a build still '
+              'going (their time kept)' % kept)
+
+    with open(args.write, 'w', encoding='utf-8',
+              errors='surrogateescape') as f:
+        for rel in files:
+            h = current.get(rel)
+            if h:
+                f.write('%s  %s\n' % (h, rel))
+        for rel in sorted(pending):
+            f.write('@%r  %s\n' % (pending[rel], rel))
     return 0
 
 

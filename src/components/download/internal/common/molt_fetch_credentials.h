@@ -8,23 +8,26 @@
 // service (BackgroundFetchDelegateBase::DownloadUrl(),
 // download::RequestParams::credentials_mode), whose download driver puts it
 // in the download's parameters (DownloadUrlParameters::
-// set_credentials_mode()). Chromium 156's download request
-// (download::CreateResourceRequest()) never applied it: every download is a
-// navigation-mode request with credentials "include", so a Background
+// set_credentials_mode()). Up to 156.0.8078.100 Chromium's download request
+// (download::CreateResourceRequest()) never applied it: every download was
+// a navigation-mode request with credentials "include", so a Background
 // Fetch whose request asked for `credentials: 'omit'` sent the site's
 // cookies and HTTP authentication anyway, and one that asked for
-// "same-origin" sent them to other origins too. The network service accepts
-// only "include" for a navigation-mode request, so a request with another
-// mode is made in no-cors mode, as the page's own fetch() of it would reach
-// the network (Background Fetch refuses requests that would need a CORS
-// preflight, and filters cross-origin responses itself). "same-origin"
-// needs the request's initiator to compare with; without one, no origin is
-// the same, so nothing is sent. Every other download (links, "Save as",
+// "same-origin" sent them to other origins too.
+//
+// Since 156.0.8078.108 Chromium applies the parameters' credentials mode
+// itself, with the fetch's own request mode (fetch_request_mode(): "cors"
+// for a Background Fetch). What stays here is what that leaves open: a
+// request still in navigation mode with another credentials mode
+// (parameters that carry no fetch request mode: the in-memory download
+// service's, molt_registering_site_isolation.h, and a fetch stored before
+// Chromium kept the mode, with kBackgroundFetchCorsEnforcement off). The
+// network service accepts only "include" for a navigation-mode request, so
+// such a request is made in no-cors mode. "same-origin" needs the
+// request's initiator to compare with; without one, no origin is the same,
+// so nothing is sent, in any mode. Every other download (links, "Save as",
 // resumptions of them, the download service's other clients) carries
-// "include" and is unchanged. Off the record, Background Fetch goes through
-// the in-memory download service instead, which carries the mode itself
-// (components/download/internal/background_service/
-// molt_registering_site_isolation.h).
+// "include" and is unchanged.
 
 #ifndef COMPONENTS_DOWNLOAD_INTERNAL_COMMON_MOLT_FETCH_CREDENTIALS_H_
 #define COMPONENTS_DOWNLOAD_INTERNAL_COMMON_MOLT_FETCH_CREDENTIALS_H_
@@ -53,17 +56,20 @@ constexpr bool MoltDownloadIsNavigation(network::mojom::CredentialsMode mode) {
 }
 
 // Applies the parameters' credentials mode (`mode`) to `request`, built by
-// CreateResourceRequest() (navigation mode, "include").
+// CreateResourceRequest() with the parameters' fetch request mode: the
+// mode MoltDownloadCredentialsMode() gives, and no-cors in place of a
+// navigation mode that can't carry it. Another request mode (a Background
+// Fetch's "cors") is kept.
 inline void MoltApplyDownloadCredentialsMode(
     network::mojom::CredentialsMode mode,
     network::ResourceRequest& request) {
   const network::mojom::CredentialsMode applied =
       MoltDownloadCredentialsMode(mode, request.request_initiator.has_value());
-  if (MoltDownloadIsNavigation(applied)) {
-    return;
-  }
-  request.mode = network::mojom::RequestMode::kNoCors;
   request.credentials_mode = applied;
+  if (request.mode == network::mojom::RequestMode::kNavigate &&
+      !MoltDownloadIsNavigation(applied)) {
+    request.mode = network::mojom::RequestMode::kNoCors;
+  }
 }
 
 }  // namespace download

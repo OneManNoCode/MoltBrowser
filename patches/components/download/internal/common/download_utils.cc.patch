@@ -1,11 +1,11 @@
 MoltBrowser patch for components/download/internal/common/download_utils.cc
-Upstream base: chromium/src@46876a0c2df3492ed67a8846950ba6d37170b58c (156.0.8078.100)
+Upstream base: chromium/src@ea19f9737303a76e07b53c6a1eec43355aca3b1d (156.0.8078.114)
 Generated from src/components/download/internal/common/download_utils.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/download/internal/common/download_utils.cc b/components/download/internal/common/download_utils.cc
-index 468aa3905c34aa8fe60fce39c9074d8cd005fe63..22b500a907ad2edd8298d50cc5deba13afb7c04f 100644
+index 14c1a6b8722b628cc8fe412337a4c516df810397..ca1934927918881baad40c6c167538e19ae63245 100644
 --- a/components/download/internal/common/download_utils.cc
 +++ b/components/download/internal/common/download_utils.cc
 @@ -21,6 +21,7 @@
@@ -16,13 +16,15 @@ index 468aa3905c34aa8fe60fce39c9074d8cd005fe63..22b500a907ad2edd8298d50cc5deba13
  #include "components/download/public/common/download_create_info.h"
  #include "components/download/public/common/download_features.h"
  #include "components/download/public/common/download_interrupt_reasons_utils.h"
-@@ -493,6 +494,10 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
-   // - https://crbug.com/952834
-   // - https://github.com/whatwg/fetch/issues/896#issuecomment-484423278
-   request->mode = network::mojom::RequestMode::kNavigate;
-+  // MoltBrowser: unless the parameters ask for another credentials mode
-+  // (Background Fetch's), which the request is then made with
-+  // (molt_fetch_credentials.h).
+@@ -499,6 +500,12 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
+   // cross-origin information leaks.
+   request->mode = params->fetch_request_mode();
+   request->credentials_mode = params->credentials_mode();
++  // MoltBrowser: a request left in navigation mode with a credentials mode
++  // other than "include" (parameters that carry no fetch request mode: a
++  // fetch stored before Chromium kept it, the in-memory download service)
++  // is made in no-cors mode, and "same-origin" without an initiator sends
++  // nothing (molt_fetch_credentials.h).
 +  MoltApplyDownloadCredentialsMode(params->credentials_mode(), *request);
  
    bool has_upload_data = false;

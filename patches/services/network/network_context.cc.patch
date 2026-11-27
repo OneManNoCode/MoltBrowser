@@ -1,11 +1,11 @@
 MoltBrowser patch for services/network/network_context.cc
-Upstream base: chromium/src@46876a0c2df3492ed67a8846950ba6d37170b58c (156.0.8078.100)
+Upstream base: chromium/src@ea19f9737303a76e07b53c6a1eec43355aca3b1d (156.0.8078.114)
 Generated from src/services/network/network_context.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 66e2d0450518803f1531470045ffadc1412c497f..c41f9313f089d6312a85c9b130119d9e7389a248 100644
+index 1e95112e6790e2301a2baf5ff0428ed648869f81..a66667164d3e13f73a4936ea2bee3d2866de4a9d 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -88,12 +88,14 @@
@@ -636,7 +636,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c41f9313f089d6312a85c9b130119d9e
    if (network_service_->pins_list_updated()) {
      result.url_request_context->transport_security_state()->UpdatePinList(
          network_service_->pinsets(), network_service_->host_pins(),
-@@ -3856,6 +4228,53 @@ void NetworkContext::ClearNetworkRestrictions(
+@@ -3860,6 +4232,53 @@ void NetworkContext::ClearNetworkRestrictions(
    }
  }
  
@@ -690,7 +690,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c41f9313f089d6312a85c9b130119d9e
  void NetworkContext::Prefetch(
      int32_t request_id,
      uint32_t options,
-@@ -3865,6 +4284,10 @@ void NetworkContext::Prefetch(
+@@ -3869,6 +4288,10 @@ void NetworkContext::Prefetch(
    if (!prefetch_enabled_) {
      return;
    }

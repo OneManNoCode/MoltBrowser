@@ -81,6 +81,12 @@ PINNED_SHA256 = {
     # and the static GN check use as the nearest public tree.
     "chromium-156.0.8078.93-lite.tar.xz":
         "858bac041597aee091865adef72e39d469f40d3ed1da2136dab2073c60480a88",
+    # 955,126,656 bytes; MD5 3f45233c9fe78538e06915387dbd000e (the
+    # bucket's and the .hashes file's agree). The newest published tarball
+    # of the 156 branch at or before the pin 156.0.8078.114 (Extended
+    # Stable's .108, .109 and .114 have none).
+    "chromium-156.0.8078.102-lite.tar.xz":
+        "ecdf711a7ab3f6fe0fa55d14d8d4ac91afc96ba16ac4806a6d5a665998aabd91",
 }
 
 
